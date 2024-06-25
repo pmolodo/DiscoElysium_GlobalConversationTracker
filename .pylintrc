@@ -50,7 +50,7 @@ disable=import-outside-toplevel,
 [FORMAT]
 
 # Maximum number of characters on a single line.
-max-line-length=88
+max-line-length=120
 
 [TYPECHECK]
 # List of module names for which member attributes should not be checked

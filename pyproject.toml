@@ -25,16 +25,16 @@ experimental-string-processing = true
 preview = true
 enable-unstable-feature = ['string_processing']
 
-line-length = 88
+line-length = 120
 
 [tool.isort]
 profile = 'black'
 lines_between_types = 1
 combine_as_imports = true
-line_length = 88
+line_length = 120
 
 [tool.ruff]
-line-length = 88
+line-length = 120
 ignore = [
     "E402", # Module level import not at top of file
 ]
