@@ -8,9 +8,9 @@ __pycache__/
 _venv/
 
 # Linters / tools
+.mypy_cache/
 .bash_history
 .conan
-.mypy_cache
 
 # IDEs
 .idea/
