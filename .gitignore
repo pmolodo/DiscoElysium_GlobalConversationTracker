@@ -18,3 +18,7 @@ _venv/
 
 # OS - specific
 .DS_Store
+
+# AI Agent local override files
+CLAUDE.local.md
+AGENTS.override.md
