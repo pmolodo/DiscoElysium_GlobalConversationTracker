@@ -31,7 +31,7 @@ import sys
 import traceback
 
 # Type-code markers (as produced by reader.ReadChar / PeekChar).
-TABLE = ord("T")   # 84 - a nested table follows
+TABLE = ord("T")  # 84 - a nested table follows
 STRING = "S"
 NUMBER = "N"
 BOOLEAN = "B"
@@ -173,12 +173,8 @@ def get_parser():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("input", help="Path to the raw binary data file")
-    parser.add_argument(
-        "-o", "--output", help="Output JSON path (default: stdout)"
-    )
-    parser.add_argument(
-        "--indent", type=int, default=2, help="JSON indentation width"
-    )
+    parser.add_argument("-o", "--output", help="Output JSON path (default: stdout)")
+    parser.add_argument("--indent", type=int, default=2, help="JSON indentation width")
     return parser
 
 
