@@ -15,13 +15,16 @@ BinaryReader. Relevant .NET BinaryReader semantics reproduced here:
     used by this format ('T', 'S', 'N', 'B', 'X').
 
 A Lua table has an array part (List) and a hash part (Dict); the C# LuaTable
-keeps them separate. Each table is rendered here as one of:
+keeps them separate. This method combined them into a single dict, using
+1-indexed indices as the keys for the list part. ie, if we have:
 
-    {}                        if the list part is empty  (dict-only / empty table)
-    [...]                     if the dict part is empty  (list-only)
-    {"list": [...], "dict": {...}}   if both parts are populated
+    list_part = ["a", "b"]
+    dict_part = [0: "c", 10: "d"]
 
-Dict keys are stringified since JSON object keys must be strings.
+Then we produce:
+
+    {0: "c", 1: "a", 2: "b", 10: "d"}
+
 """
 
 import argparse
@@ -120,25 +123,22 @@ def read_value(reader):
 
 def read_table(reader):
     reader.read_byte()  # consume the 'T' table marker (C#: reader.Read())
-    list_part = []
-    dict_part = {}
+    combined = {}
 
     list_count = reader.read_int32()
-    for _ in range(list_count):
-        list_part.append(read_value(reader))
+    for i in range(1, list_count + 1):
+        # lua lists by convention are 1-indexed
+        value = read_value(reader)
+        combined[i] = value
 
     dict_count = reader.read_int32()
     for _ in range(dict_count):
         key = read_value(reader)
         value = read_value(reader)
-        dict_part[str(key)] = value  # JSON object keys must be strings
-
-    # Collapse to a plain array or object when only one part is populated.
-    if not list_part:
-        return dict_part
-    if not dict_part:
-        return list_part
-    return {"list": list_part, "dict": dict_part}
+        if key in combined:
+            raise ValueError("Duplicate key found between list and dict parts")
+        combined[key] = value
+    return combined
 
 
 def apply_raw_data(data):
