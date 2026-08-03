@@ -105,7 +105,12 @@ def read_value(reader):
     if c == STRING:
         return reader.read_string()
     if c == NUMBER:
-        return reader.read_double()
+        value = reader.read_double()
+        # Collapse integer-valued doubles to Python ints. is_integer() is False
+        # for inf/nan, so those stay floats and never reach int().
+        if value.is_integer():
+            return int(value)
+        return value
     if c == BOOLEAN:
         return reader.read_boolean()
     if c == NIL:
