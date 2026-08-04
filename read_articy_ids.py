@@ -42,7 +42,8 @@ FIELD_TITLE_KEY = "title"
 FIELD_VALUE_KEY = "value"
 ARTICY_ID_TITLE = "Articy Id"
 
-# Articy ids are 64-bit values, rendered in the source as 0x + 16 hex digits.
+# Articy ids are 64-bit values, rendered in the source as 0x + 16 hex digits,
+# sometimes with a suffix (e.g. "0x0000000000000002-START", "...-FORK").
 ARTICY_ID_HEX_WIDTH = 16
 
 
@@ -78,13 +79,16 @@ def load_asset(input_path):
 
 
 def normalize_articy_id(value):
-    """Return the articy id as a canonical 0x-prefixed, upper-case hex string.
+    """Return the articy id as a string.
 
-    The YAML parser reads source values like 0x0100001700001F84 as ints (hex),
-    so accept either an int or a hex string and render a consistent form.
+    Pure-hex ids are parsed by the YAML loader as ints; render those as a
+    canonical 0x-prefixed, upper-case, 16-digit hex string. Ids that carry a
+    suffix (e.g. "0x0000000000000002-START") arrive as strings and are used
+    as-is.
     """
-    int_value = value if isinstance(value, int) else int(str(value), 16)
-    return f"0x{int_value:0{ARTICY_ID_HEX_WIDTH}X}"
+    if isinstance(value, int):
+        return f"0x{value:0{ARTICY_ID_HEX_WIDTH}X}"
+    return str(value)
 
 
 def get_articy_id(fields):
