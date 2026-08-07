@@ -15,6 +15,13 @@
     "editor.insertSpaces": true,
     "editor.tabSize": 4,
     "editor.wordWrapColumn": 120,
+    "files.exclude": {
+        "**/.DS_Store": true,
+        "**/.git": true,
+        "**/.hg": true,
+        "**/.svn": true,
+        "**/CVS": true
+    },
     "files.trimTrailingWhitespace": true,
     "python.analysis.typeCheckingMode": "off", // use mypy for typing, not pylance
     "rewrap.wrappingColumn": 120,
