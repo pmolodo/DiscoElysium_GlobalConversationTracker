@@ -4,8 +4,13 @@
     },
     "[python]": {
         "editor.codeActionsOnSave": {
+            // generic actions - ruff is the only provider for both here
+            "source.fixAll": "explicit",
             "source.organizeImports": "explicit"
         },
+        // no generic equivalent - defaultFormatter takes an extension id.
+        // Ruff's fixes run first via codeActionsOnSave, then black formats.
+        "editor.defaultFormatter": "ms-python.black-formatter",
         "editor.rulers": [
             80,
             88
@@ -23,7 +28,6 @@
         "**/CVS": true
     },
     "files.trimTrailingWhitespace": true,
-    "python.analysis.typeCheckingMode": "off", // use mypy for typing, not pylance
-    "rewrap.wrappingColumn": 88,
-    "ruff.organizeImports": false
+    "python.analysis.typeCheckingMode": "off", // use ty for typing, not pylance
+    "rewrap.wrappingColumn": 88
 }

@@ -1,29 +1,42 @@
+# Hooks run in the order declared below: ruff, then black, then ty.
 repos:
-    # Black - Python code formatter
+    # Ruff - Python linter + import organizer (formatting is black's job).
+    # --fix applies every safe fix ruff has (unsafe fixes still need an explicit
+    # --unsafe-fixes).
+    - repo: https://github.com/astral-sh/ruff-pre-commit
+      rev: v0.16.2
+      hooks:
+          - id: ruff-check
+            args: [--config=pyproject.toml, --fix]
+
+    # Black - Python code formatter. Runs after ruff so that black, not ruff's
+    # fixes, gets the last word on layout.
     - repo: https://github.com/psf/black
-      rev: 24.10.0
+      rev: 26.5.1
       hooks:
           - id: black
             language_version: python3
             args: [--config=pyproject.toml]
 
-    # isort - Python import organizer (compatible with Black)
-    - repo: https://github.com/pycqa/isort
-      rev: 5.13.2
+    # ty - Python type checker. Runs last so it sees the code as it will
+    # actually be committed - after ruff's fixes (which can remove imports) and
+    # black's formatting - and so its line numbers match the final file.
+    # If ty ever gets `--fix`, move it first: ruff would then need to sort any
+    # imports it adds, and black to lay out what it writes.
+    # Informational only: the `[tool.ty]` settings in pyproject.toml demote all
+    # diagnostics to warnings and stop ty exiting non-zero, so type problems
+    # never block a commit. `verbose` keeps them visible even though ty passes.
+    # (--exit-zero cannot be used here: `args` are consumed by the hook's
+    # `uv check` wrapper, which does not accept ty's own flags.)
+    - repo: https://github.com/astral-sh/ty-pre-commit
+      rev: v0.0.69
       hooks:
-          - id: isort
-            args: [--settings-path=pyproject.toml]
-
-    # Ruff - Fast Python linter (no auto-fix, just report)
-    - repo: https://github.com/astral-sh/ruff-pre-commit
-      rev: v0.8.4
-      hooks:
-          - id: ruff
-            args: [--config=pyproject.toml]
+          - id: ty
+            verbose: true
 
     # General hooks
     - repo: https://github.com/pre-commit/pre-commit-hooks
-      rev: v4.6.0
+      rev: v6.0.0
       hooks:
           - id: trailing-whitespace
           - id: end-of-file-fixer
