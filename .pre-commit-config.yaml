@@ -1,3 +1,7 @@
+# enable these with:
+# uv tool install prek
+# prek install
+
 # Hooks run in the order declared below: ruff, then black, then ty.
 repos:
     # Ruff - Python linter + import organizer (formatting is black's job).
