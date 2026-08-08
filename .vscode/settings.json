@@ -2,6 +2,9 @@
     "[bat]": {
         "files.eol": "\r\n"
     },
+    "[powershell]": {
+        "files.eol": "\r\n"
+    },
     "[python]": {
         "editor.codeActionsOnSave": {
             // generic actions - ruff is the only provider for both here
