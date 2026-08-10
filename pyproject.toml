@@ -32,20 +32,14 @@ line-length = 88
 line-length = 88
 # ruff's default excludes already cover .git, .hg, .mypy_cache, .tox, .venv,
 # .vscode, __pycache__, etc.
-extend-exclude = [
-    ".DS_Store",
-    ".conan",
-    ".vs",
-    "CVS",
-    "_venv",
-]
+extend-exclude = [".DS_Store", ".conan", ".vs", "CVS", "_venv"]
 
 [tool.ruff.lint]
 select = [
-    "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings
-    "F",  # pyflakes
-    "I",  # isort
+    "E", # pycodestyle errors
+    "W", # pycodestyle warnings
+    "F", # pyflakes
+    "I", # isort
     # "PL", # pylint - disabling, too noisy
 ]
 ignore = [
