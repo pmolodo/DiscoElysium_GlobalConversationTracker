@@ -46,7 +46,7 @@ select = [
     "W",  # pycodestyle warnings
     "F",  # pyflakes
     "I",  # isort
-    "PL", # pylint
+    # "PL", # pylint - disabling, too noisy
 ]
 ignore = [
     # E203 = whitespace before ':' - black will format like `"mystr"[2 + 1 :]`, which this check doesn't like
