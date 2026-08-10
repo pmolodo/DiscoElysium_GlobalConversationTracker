@@ -32,20 +32,14 @@ line-length = 120
 line-length = 120
 # ruff's default excludes already cover .git, .hg, .mypy_cache, .tox, .venv,
 # .vscode, __pycache__, etc.
-extend-exclude = [
-    ".DS_Store",
-    ".conan",
-    ".vs",
-    "CVS",
-    "_venv",
-]
+extend-exclude = [".DS_Store", ".conan/", ".vs/", ".vscode/", "CVS/", "_venv/"]
 
 [tool.ruff.lint]
 select = [
-    "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings
-    "F",  # pyflakes
-    "I",  # isort
+    "E", # pycodestyle errors
+    "W", # pycodestyle warnings
+    "F", # pyflakes
+    "I", # isort
     # "PL", # pylint - disabling, too noisy
 ]
 ignore = [
@@ -70,6 +64,17 @@ combine-as-imports = true
 # because ty exits 1 on warnings too unless error-on-warning is turned off.
 [tool.ty.rules]
 all = "warn"
+
+# Keep in sync with the black/ruff excludes above. These are additive to ty's own
+# defaults (.git, .venv, __pycache__, dist, node_modules, ...), so only the extras
+# need listing. Patterns are anchored to the project root, matching black's rooted
+# excludes; use a "**/" prefix for a match at any depth.
+# ty has no force-exclude: paths passed as positional args are always checked, even
+# if excluded here. The pre-commit hook passes files explicitly, so the black/ruff
+# force-exclude set (packman, ipython_config.py) is handled by the top-level
+# `exclude:` in .pre-commit-config.yaml instead.
+[tool.ty.src]
+exclude = [".DS_Store", ".conan/", ".vs/", ".vscode/", "CVS/", "_venv/"]
 
 [tool.ty.terminal]
 error-on-warning = false
