@@ -59,12 +59,6 @@ ignore = [
 lines-between-types = 1
 combine-as-imports = true
 
-# ty is advisory: report type problems, but never fail a build or block a commit.
-# Both halves are required - demoting the diagnostics is not enough on its own,
-# because ty exits 1 on warnings too unless error-on-warning is turned off.
-[tool.ty.rules]
-all = "warn"
-
 # Keep in sync with the black/ruff excludes above. These are additive to ty's own
 # defaults (.git, .venv, __pycache__, dist, node_modules, ...), so only the extras
 # need listing. Patterns are anchored to the project root, matching black's rooted
@@ -75,6 +69,3 @@ all = "warn"
 # `exclude:` in .pre-commit-config.yaml instead.
 [tool.ty.src]
 exclude = [".DS_Store", ".conan/", ".vs/", ".vscode/", "CVS/", "_venv/"]
-
-[tool.ty.terminal]
-error-on-warning = false
