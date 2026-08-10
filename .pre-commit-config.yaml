@@ -2,8 +2,20 @@
 # uv tool install prek
 # prek install
 
-# Hooks run in the order declared below: ruff, then black, then ty.
+# Hooks run in the order declared below: ty, then ruff, then black.
 repos:
+    # ty - Python type checker. --fix applies ty's safe fixes, which makes this a
+    # file-modifying hook, so it runs first: ruff then sorts any imports ty adds,
+    # and black lays out whatever ty wrote.
+    # (--fix is passed through the hook's `uv check` wrapper, which exposes it.
+    # ty's own flags - --exit-zero, --warn, --add-ignore - are NOT reachable via
+    # args; configure those in pyproject.toml under [tool.ty] instead.)
+    - repo: https://github.com/astral-sh/ty-pre-commit
+      rev: v0.0.69
+      hooks:
+          - id: ty
+            args: [--fix]
+
     # Ruff - Python linter + import organizer (formatting is black's job).
     # --fix applies every safe fix ruff has (unsafe fixes still need an explicit
     # --unsafe-fixes).
@@ -13,7 +25,7 @@ repos:
           - id: ruff-check
             args: [--config=pyproject.toml, --fix]
 
-    # Black - Python code formatter. Runs after ruff so that black, not ruff's
+    # Black - Python code formatter. Runs last so that black, not ty's or ruff's
     # fixes, gets the last word on layout.
     - repo: https://github.com/psf/black
       rev: 26.5.1
@@ -21,16 +33,6 @@ repos:
           - id: black
             language_version: python3
             args: [--config=pyproject.toml]
-
-    # ty - Python type checker. Runs last so it sees the code as it will
-    # actually be committed - after ruff's fixes (which can remove imports) and
-    # black's formatting - and so its line numbers match the final file.
-    # If ty ever gets `--fix`, move it first: ruff would then need to sort any
-    # imports it adds, and black to lay out what it writes.
-    - repo: https://github.com/astral-sh/ty-pre-commit
-      rev: v0.0.69
-      hooks:
-          - id: ty
 
     # General hooks
     - repo: https://github.com/pre-commit/pre-commit-hooks
