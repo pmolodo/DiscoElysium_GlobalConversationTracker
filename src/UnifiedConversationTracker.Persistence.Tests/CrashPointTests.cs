@@ -61,15 +61,25 @@ namespace UnifiedConversationTracker.Persistence.Tests
                     $"Could not find the '{harnessProjectName}' project directory above {AppContext.BaseDirectory}.");
             }
 
-            string binDirectory = Path.Combine(directory.FullName, harnessProjectName, "bin");
-            string[] candidates = Directory.Exists(binDirectory)
-                ? Directory.GetFiles(binDirectory, harnessProjectName + ".dll", SearchOption.AllDirectories)
+            // Two output layouts have to work. Without Directory.Build.props the harness
+            // lands in <project>\bin\<config>\<tfm>\; with it, output is redirected to
+            // .build\bin\<project>\<config>\<tfm>\ and there is no "bin" segment below the
+            // project folder at all. Searching the project folder itself covers both.
+            string searchRoot = Path.Combine(directory.FullName, harnessProjectName);
+            string[] candidates = Directory.Exists(searchRoot)
+                ? Directory.GetFiles(searchRoot, harnessProjectName + ".dll", SearchOption.AllDirectories)
+                    // obj holds ref/refint reference assemblies, which carry no method
+                    // bodies and cannot be executed. Never hand one to the runner.
+                    .Where(path => !path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                        .Contains("obj", StringComparer.OrdinalIgnoreCase))
+                    .ToArray()
                 : Array.Empty<string>();
 
             if (candidates.Length == 0)
             {
                 throw new InvalidOperationException(
-                    $"The crash harness has not been built; no {harnessProjectName}.dll under '{binDirectory}'.");
+                    $"The crash harness has not been built; no runnable {harnessProjectName}.dll under '{searchRoot}'. " +
+                    $"Build it first: dotnet build src\\{harnessProjectName}");
             }
 
             // Most recently built configuration wins, so the tests exercise whatever was
