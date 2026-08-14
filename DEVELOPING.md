@@ -7,10 +7,10 @@ Disco Elysium - The Final Cut. The plugin's own notes live in
 ## TL;DR
 
 ```powershell
-.\deploy.ps1 -UseSteamInstall     # build + install into your Steam copy
+.\deploy.ps1     # build + install into your Steam copy
 ```
 
-Then launch the game. That is the whole iterate loop: edit -> `.\deploy.ps1 ...` -> relaunch.
+Then launch the game. That is the whole iterate loop: edit -> `.\deploy.ps1` -> relaunch.
 
 ## Requirements
 
@@ -63,10 +63,10 @@ is what actually runs. Prints the path of the built DLL.
 Build, then install into a **playable** copy of the game. The headline command.
 
 ```powershell
-.\deploy.ps1 -UseSteamInstall
+.\deploy.ps1                              # auto-discovered Steam copy
 .\deploy.ps1 -GameDir "C:\Apps (x86)\Games\Steam\steamapps\common\Disco Elysium"
 $env:DISCO_ELYSIUM_DEPLOY_DIR = "C:\...\Disco Elysium"; .\deploy.ps1
-.\deploy.ps1 -UseSteamInstall -DryRun     # show the target, write nothing
+.\deploy.ps1 -DryRun                      # show the target, write nothing
 ```
 
 What it does:
@@ -78,10 +78,16 @@ What it does:
    fresh `.dll` + `.pdb` in
 5. prints the log path and the line to look for
 
-**The target is never guessed.** With no `-GameDir`, no `DISCO_ELYSIUM_DEPLOY_DIR` and no
-`-UseSteamInstall`, the script stops and prints the auto-discovered Steam path plus the
-exact command to use - it will not pick for you. Uninstalling is just deleting that one
-plugin folder, so there is no uninstaller script to run.
+**Target resolution:** `-GameDir`, else `DISCO_ELYSIUM_DEPLOY_DIR`, else the
+auto-discovered Steam copy. It only stops and asks when all three come up empty, meaning
+no override was given *and* no Steam install was found.
+
+What actually keeps a stray deploy from doing damage is the guards, not the absence of a
+default: the resolved target is printed before anything is written, the repo's
+`Steam Install - *` reference copies are refused outright (`-AllowReferenceCopy` overrides),
+a copy without BepInEx is rejected because the plugin could never load there, and the only
+directory created or deleted is `<game>\BepInEx\plugins\UnifiedConversationTracker`.
+Uninstalling is deleting that one folder, so there is no uninstaller script to run.
 
 ### `make-release.ps1`
 

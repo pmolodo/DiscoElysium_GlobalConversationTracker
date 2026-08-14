@@ -13,22 +13,25 @@
          folder and copies the fresh build in.
       4. Prints where to look for the plugin's log line.
 
-    The install target is never guessed silently. It comes from, in order:
+    The install target comes from, in order:
 
       1. -GameDir <path>
       2. the DISCO_ELYSIUM_DEPLOY_DIR environment variable
-      3. -UseSteamInstall, which opts in to the auto-discovered Steam copy
+      3. the auto-discovered Steam copy (the everyday case, no flag needed)
 
-    With none of those given the script stops and tells you the discovered Steam
-    path plus the exact command to run - it does not pick a target for you.
+    Only when all three come up empty - no override given and no Steam install
+    found - does the script stop and ask you to name a target.
 
-    The repo's "Steam Install - *" reference copies are refused as targets (see
-    de-omm.13); -AllowReferenceCopy overrides that if you really mean it.
+    Defaulting to the Steam copy is not the thing keeping you safe; the guards
+    are. The resolved target is printed before anything is written, the repo's
+    "Steam Install - *" reference copies are refused outright (see de-omm.13,
+    -AllowReferenceCopy overrides), a copy without BepInEx is rejected because
+    the plugin could never load there, and the only directory ever created or
+    deleted is <game>\BepInEx\plugins\UnifiedConversationTracker.
 #>
 [CmdletBinding()]
 param(
     [string]$GameDir,
-    [switch]$UseSteamInstall,
     [string]$Configuration = "Release",
     # Install to build against; unrelated to -GameDir, which is written to.
     [string]$DiscoElysiumDir,
@@ -44,11 +47,10 @@ $ErrorActionPreference = "Stop"
 
 
 function Resolve-DeployGameDir {
-    # The game folder to install into. Explicit sources only - see the comment
-    # block above. Returns a validated path or throws with instructions.
-    param([string]$GameDir, [switch]$UseSteamInstall)
-
-    $steamDir = Find-SteamGameDir
+    # The game folder to install into: an override if given, else the
+    # auto-discovered Steam copy. Returns a validated path, or throws with
+    # instructions when there is genuinely nothing to deploy to.
+    param([string]$GameDir)
 
     $target = $null
     $source = $null
@@ -60,28 +62,17 @@ function Resolve-DeployGameDir {
         $target = $env:DISCO_ELYSIUM_DEPLOY_DIR
         $source = "`$env:DISCO_ELYSIUM_DEPLOY_DIR"
     }
-    elseif ($UseSteamInstall) {
-        if (-not $steamDir) {
-            throw "-UseSteamInstall was given but no Steam copy of Disco Elysium (AppID $DiscoElysiumAppId) could be found. Pass -GameDir <path> instead."
-        }
-        $target = $steamDir
-        $source = "-UseSteamInstall (Steam auto-discovery)"
-    }
     else {
-        $steamHint = if ($steamDir) {
-            "Auto-discovered Steam copy (not used unless you say so):`n  $steamDir`nTo install there:`n  .\deploy.ps1 -UseSteamInstall"
-        }
-        else {
-            "No Steam copy of Disco Elysium (AppID $DiscoElysiumAppId) was auto-discovered."
-        }
-        throw @"
-No deploy target given, and this script will not choose one for you.
-Pick one of:
+        $target = Find-SteamGameDir
+        $source = "Steam auto-discovery (AppID $DiscoElysiumAppId)"
+        if (-not $target) {
+            throw @"
+No deploy target: no Steam copy of Disco Elysium (AppID $DiscoElysiumAppId) was found, and no override was given.
+Name one explicitly:
   .\deploy.ps1 -GameDir "<path to game folder>"
   `$env:DISCO_ELYSIUM_DEPLOY_DIR = "<path to game folder>"; .\deploy.ps1
-  .\deploy.ps1 -UseSteamInstall
-$steamHint
 "@
+        }
     }
 
     if (-not (Test-Path -LiteralPath (Join-Path $target $GameExeName))) {
@@ -98,7 +89,7 @@ Invoke-ScriptMain {
 # Before the build, so an unusable target fails in a second rather than after a
 # full compile.
 Write-Host "== Resolving deploy target ==" -ForegroundColor Cyan
-$gameDir = Resolve-DeployGameDir -GameDir $GameDir -UseSteamInstall:$UseSteamInstall
+$gameDir = Resolve-DeployGameDir -GameDir $GameDir
 
 if ($AllowReferenceCopy) {
     if (Test-IsReferenceCopy -Path $gameDir) {
