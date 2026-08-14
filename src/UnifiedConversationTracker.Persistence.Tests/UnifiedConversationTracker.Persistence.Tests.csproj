@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>UnifiedConversationTracker.Persistence.Tests</RootNamespace>
+    <AssemblyName>UnifiedConversationTracker.Persistence.Tests</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\UnifiedConversationTracker.Persistence\UnifiedConversationTracker.Persistence.csproj" />
+    <!--
+      Referenced for two reasons: the shared payload definitions, and to guarantee
+      the harness is built before the crash tests try to launch it as a child
+      process from its own output directory.
+    -->
+    <ProjectReference Include="..\UnifiedConversationTracker.CrashHarness\UnifiedConversationTracker.CrashHarness.csproj" />
+  </ItemGroup>
+
+</Project>
