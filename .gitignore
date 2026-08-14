@@ -12,6 +12,11 @@ _venv/
 .bash_history
 .conan
 
+# C# / .NET build output
+bin/
+obj/
+*.user
+
 # IDEs
 .idea/
 .vs/
