@@ -26,15 +26,22 @@ where the game lives. Resolution order:
 
 The default is read-only reference use; nothing is ever written into that directory.
 
+Normally you do not run `dotnet` by hand: `build.ps1` at the repo root resolves the game
+directory for you and passes it in. See [DEVELOPING.md](../../DEVELOPING.md). The direct
+equivalent is:
+
 ```
-cd src\UnifiedConversationTracker.Plugin
-dotnet build -c Release
+dotnet build src\UnifiedConversationTracker.Plugin -c Release
 ```
 
-Output: `src\UnifiedConversationTracker.Plugin\bin\Release\net6.0\UnifiedConversationTracker.dll`
-(plus a `.pdb`). That single DLL is the whole plugin.
+Output: `.build\bin\UnifiedConversationTracker.Plugin\Release\net6.0\UnifiedConversationTracker.dll`
+(plus a `.pdb`; `Directory.Build.props` redirects `bin`/`obj` under `.build`). That single DLL
+is the whole plugin.
 
-## Installing and verifying (manual, until the deploy script from de-omm.4 exists)
+## Installing and verifying
+
+`deploy.ps1` at the repo root does steps 1-3 below in one command; see
+[DEVELOPING.md](../../DEVELOPING.md). The manual equivalent:
 
 No BepInEx installation is needed: a working 6.0.0-be.688 loader is already present in
 `Steam Install - Unaltered\Disco Elysium\BepInEx`, and its `LogOutput.log` shows a third-party
@@ -56,7 +63,7 @@ Steps:
 1. Build as above.
 2. Create the plugin folder:
    `<game>\BepInEx\plugins\UnifiedConversationTracker\`
-3. Copy `bin\Release\net6.0\UnifiedConversationTracker.dll` into that folder.
+3. Copy the built `UnifiedConversationTracker.dll` into that folder.
 4. Confirm the BepInEx console is on: in
    `<game>\BepInEx\config\BepInEx.cfg`, section `[Logging.Console]`, `Enabled = true`.
 5. Launch the game (Steam, or `disco.exe` directly).

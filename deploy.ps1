@@ -1,0 +1,159 @@
+#!/usr/bin/env -S powershell -NoProfile -ExecutionPolicy Bypass -File
+<#
+.SYNOPSIS
+    Builds the plugin and installs it into a playable copy of Disco Elysium.
+
+.DESCRIPTION
+    The everyday iterate command: edit -> .\deploy.ps1 -> relaunch the game.
+
+      1. Builds UnifiedConversationTracker.dll (via build.ps1).
+      2. Works out which game folder to install into, and says so out loud
+         before touching anything.
+      3. Deletes any previous <game>\BepInEx\plugins\UnifiedConversationTracker
+         folder and copies the fresh build in.
+      4. Prints where to look for the plugin's log line.
+
+    The install target is never guessed silently. It comes from, in order:
+
+      1. -GameDir <path>
+      2. the DISCO_ELYSIUM_DEPLOY_DIR environment variable
+      3. -UseSteamInstall, which opts in to the auto-discovered Steam copy
+
+    With none of those given the script stops and tells you the discovered Steam
+    path plus the exact command to run - it does not pick a target for you.
+
+    The repo's "Steam Install - *" reference copies are refused as targets (see
+    de-omm.13); -AllowReferenceCopy overrides that if you really mean it.
+#>
+[CmdletBinding()]
+param(
+    [string]$GameDir,
+    [switch]$UseSteamInstall,
+    [string]$Configuration = "Release",
+    # Install to build against; unrelated to -GameDir, which is written to.
+    [string]$DiscoElysiumDir,
+    [switch]$AllowReferenceCopy,
+    [switch]$DryRun
+)
+
+$ErrorActionPreference = "Stop"
+
+# Build helpers + shared project config, transitively including
+# provision-refs.ps1 (Find-SteamGameDir, Get-PluginInstallDir, ...).
+. (Join-Path $PSScriptRoot "build.ps1")
+
+
+function Resolve-DeployGameDir {
+    # The game folder to install into. Explicit sources only - see the comment
+    # block above. Returns a validated path or throws with instructions.
+    param([string]$GameDir, [switch]$UseSteamInstall)
+
+    $steamDir = Find-SteamGameDir
+
+    $target = $null
+    $source = $null
+    if ($GameDir) {
+        $target = $GameDir
+        $source = "-GameDir"
+    }
+    elseif ($env:DISCO_ELYSIUM_DEPLOY_DIR) {
+        $target = $env:DISCO_ELYSIUM_DEPLOY_DIR
+        $source = "`$env:DISCO_ELYSIUM_DEPLOY_DIR"
+    }
+    elseif ($UseSteamInstall) {
+        if (-not $steamDir) {
+            throw "-UseSteamInstall was given but no Steam copy of Disco Elysium (AppID $DiscoElysiumAppId) could be found. Pass -GameDir <path> instead."
+        }
+        $target = $steamDir
+        $source = "-UseSteamInstall (Steam auto-discovery)"
+    }
+    else {
+        $steamHint = if ($steamDir) {
+            "Auto-discovered Steam copy (not used unless you say so):`n  $steamDir`nTo install there:`n  .\deploy.ps1 -UseSteamInstall"
+        }
+        else {
+            "No Steam copy of Disco Elysium (AppID $DiscoElysiumAppId) was auto-discovered."
+        }
+        throw @"
+No deploy target given, and this script will not choose one for you.
+Pick one of:
+  .\deploy.ps1 -GameDir "<path to game folder>"
+  `$env:DISCO_ELYSIUM_DEPLOY_DIR = "<path to game folder>"; .\deploy.ps1
+  .\deploy.ps1 -UseSteamInstall
+$steamHint
+"@
+    }
+
+    if (-not (Test-Path -LiteralPath (Join-Path $target $GameExeName))) {
+        throw "Deploy target from $source does not look like a Disco Elysium install (no $GameExeName): $target"
+    }
+    Write-Host "Deploy target from ${source}: $target"
+    return (Get-Item -LiteralPath $target).FullName
+}
+
+
+Invoke-ScriptMain {
+
+# --- 1. Resolve and vet the target -------------------------------------------
+# Before the build, so an unusable target fails in a second rather than after a
+# full compile.
+Write-Host "== Resolving deploy target ==" -ForegroundColor Cyan
+$gameDir = Resolve-DeployGameDir -GameDir $GameDir -UseSteamInstall:$UseSteamInstall
+
+if ($AllowReferenceCopy) {
+    if (Test-IsReferenceCopy -Path $gameDir) {
+        Write-Warning "Target is one of this repo's read-only reference copies of the game; -AllowReferenceCopy was given, so writing anyway."
+    }
+}
+else {
+    Assert-NotReferenceCopy -Path $gameDir
+}
+
+if (-not (Test-Path -LiteralPath (Join-Path $gameDir $BepInExCoreRelDir))) {
+    throw "No $BepInExCoreRelDir in $gameDir - BepInEx is not installed in this copy of the game, so the plugin would never load. Install BepInEx 6 (IL2CPP) there first."
+}
+
+$pluginDir = Get-PluginInstallDir -GameDir $gameDir
+
+# --- 2. Build -----------------------------------------------------------------
+Write-Host ""
+Write-Host "== Building ==" -ForegroundColor Cyan
+$dllPath = Invoke-PluginBuild -Configuration $Configuration -DiscoElysiumDir $DiscoElysiumDir
+
+# --- 3. Replace the previous install -----------------------------------------
+# Say plainly what is about to be written, before writing it.
+Write-Host ""
+Write-Host "== Installing ==" -ForegroundColor Cyan
+Write-Host "About to write into:" -ForegroundColor Yellow
+Write-Host "  $pluginDir" -ForegroundColor Yellow
+if (Test-Path -LiteralPath $pluginDir) {
+    Write-Host "  (existing install found; it will be replaced)"
+}
+if ($DryRun) {
+    Write-Host "-DryRun given; nothing written." -ForegroundColor Green
+    return
+}
+
+if (Test-Path -LiteralPath $pluginDir) {
+    Remove-Item -LiteralPath $pluginDir -Recurse -Force
+}
+Copy-PluginPayload -DllPath $dllPath -DestDir $pluginDir
+
+# --- 4. Tell the user how to verify ------------------------------------------
+$logPath = Join-Path $gameDir $BepInExLogRelPath
+$configPath = Join-Path $gameDir $BepInExConfigRelPath
+Write-Host ""
+Write-Host "Deployed $AssemblyName v$(Get-PluginVersion). Launch the game to test." -ForegroundColor Green
+Write-Host "Log: $logPath"
+Write-Host "Look for: [Message:$AssemblyName] $AssemblyName v$(Get-PluginVersion) loaded."
+
+# The in-game console is the fastest way to see that line; report its state
+# rather than editing the user's BepInEx config behind their back.
+if (Test-Path -LiteralPath $configPath) {
+    $cfg = [System.IO.File]::ReadAllText($configPath)
+    if (-not [regex]::IsMatch($cfg, '(?ms)^\[Logging\.Console\].*?^Enabled\s*=\s*true')) {
+        Write-Host "Tip: set [Logging.Console] Enabled = true in $configPath to get a live console window."
+    }
+}
+
+}

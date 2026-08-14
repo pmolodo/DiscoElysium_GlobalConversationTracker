@@ -13,6 +13,9 @@ _venv/
 .conan
 
 # C# / .NET build output
+# Directory.Build.props redirects bin/ and obj/ into .build/; the PowerShell
+# build scripts add .build/cache, .build/stage and .build/dist there too.
+.build/
 bin/
 obj/
 *.user

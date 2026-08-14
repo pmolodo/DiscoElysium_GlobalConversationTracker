@@ -1,0 +1,14 @@
+<Project>
+
+  <!--
+    Keep every generated file under one gitignored .build\ folder at the repo
+    root, instead of scattering bin\ and obj\ through src\. The PowerShell build
+    scripts put their cache, staging and dist folders there too.
+  -->
+  <PropertyGroup>
+    <BuildRootDir>$(MSBuildThisFileDirectory).build\</BuildRootDir>
+    <BaseOutputPath>$(BuildRootDir)bin\$(MSBuildProjectName)\</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(BuildRootDir)obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+  </PropertyGroup>
+
+</Project>

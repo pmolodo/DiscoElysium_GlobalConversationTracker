@@ -1,0 +1,339 @@
+#!/usr/bin/env -S powershell -NoProfile -ExecutionPolicy Bypass -File
+<#
+.SYNOPSIS
+    Resolves and verifies the Disco Elysium install that supplies the build's
+    reference assemblies.
+
+.DESCRIPTION
+    UnifiedConversationTracker.Plugin.csproj references DLLs in place, out of a
+    Disco Elysium install that already has BepInEx 6 (IL2CPP) set up:
+
+      * <game>\BepInEx\core     - BepInEx / Il2CppInterop / Harmony assemblies
+      * <game>\BepInEx\interop  - IL2CPP interop assemblies for the game's own
+                                  code (Assembly-CSharp, DialogueSystem, ...)
+
+    Unlike a Mono game, none of these can be downloaded: the interop assemblies
+    are generated on the machine by running the game once with BepInEx
+    installed, and they are derived from the game's proprietary GameAssembly.dll.
+    So there is nothing to fetch - "provisioning" here means locating an install
+    that already has them and proving every DLL the csproj wants is present.
+
+    Resolution order for that reference install:
+
+      1. -DiscoElysiumDir
+      2. the DISCO_ELYSIUM_DIR environment variable
+      3. <repo>\Steam Install - Unaltered\Disco Elysium (the csproj's own default)
+      4. Steam auto-discovery (registry + libraryfolders.vdf, AppID 632470)
+
+    The result is cached under .build\cache so later builds skip discovery. The
+    reference install is only ever READ from; nothing is written into it.
+
+    Dot-source this file to reuse its constants and functions
+    (Resolve-ReferenceGameDir, Initialize-BuildReferences, Find-SteamGameDir,
+    Assert-NotReferenceCopy, ...); run it directly to just resolve and verify.
+#>
+[CmdletBinding()]
+param(
+    [string]$DiscoElysiumDir
+)
+
+$ErrorActionPreference = "Stop"
+
+# --- Shared project configuration --------------------------------------------
+$RepoRoot = $PSScriptRoot
+$AssemblyName = "UnifiedConversationTracker"
+$TargetFramework = "net6.0"
+$ProjectDir = Join-Path $RepoRoot "src\$AssemblyName.Plugin"
+$ProjectFile = Join-Path $ProjectDir "$AssemblyName.Plugin.csproj"
+
+# Everything generated lives under one gitignored folder: bin\ and obj\ are
+# redirected here by Directory.Build.props, and these scripts add cache\, stage\
+# and dist\ alongside them.
+$BuildDir = Join-Path $RepoRoot ".build"
+$CacheDir = Join-Path $BuildDir "cache"
+$DistDir = Join-Path $BuildDir "dist"
+# Must match BaseOutputPath in Directory.Build.props.
+$BinDir = Join-Path $BuildDir "bin\$AssemblyName.Plugin"
+# Caches the resolved reference install so repeat builds skip Steam discovery.
+$RefDirCacheFile = Join-Path $CacheDir "reference-game-dir.txt"
+
+# Steam AppID for Disco Elysium / The Final Cut (from appmanifest_632470.acf).
+$DiscoElysiumAppId = 632470
+# Conventional steamapps\common folder name, used if the manifest is unreadable.
+$DiscoElysiumInstallDirName = "Disco Elysium"
+# Present in every Disco Elysium install; used to sanity-check a candidate path.
+$GameExeName = "disco.exe"
+
+# Sub-paths of a game install, relative to its root.
+$BepInExCoreRelDir = "BepInEx\core"
+$BepInExInteropRelDir = "BepInEx\interop"
+$BepInExPluginsRelDir = "BepInEx\plugins"
+$BepInExLogRelPath = "BepInEx\LogOutput.log"
+$BepInExConfigRelPath = "BepInEx\config\BepInEx.cfg"
+# One folder per plugin under BepInEx\plugins; this is ours.
+$PluginFolderName = $AssemblyName
+
+# Read-only reference copies of the game kept in this repo. Builds must never
+# write into them, and deploy refuses to target them unless explicitly forced.
+# See de-omm.13 - the actual state of these copies is under question.
+$ReferenceCopyDirNames = @(
+    "Steam Install - Unaltered",
+    "Steam Install - AssetRipperSource"
+)
+
+# The csproj's own fallback, mirrored here so option 3 above matches it.
+$RepoDefaultGameDir = Join-Path $RepoRoot "Steam Install - Unaltered\Disco Elysium"
+
+# Maps the csproj's HintPath properties onto directories under a game install,
+# so Get-RequiredReferenceDll can read the reference list out of the csproj
+# instead of duplicating it here.
+$HintPathVarToRelDir = @{
+    "BepInExCoreDir"    = $BepInExCoreRelDir
+    "BepInExInteropDir" = $BepInExInteropRelDir
+}
+
+
+function Invoke-ScriptMain {
+    # Run an entry script's main flow, turning any thrown error into just its
+    # message plus exit code 1. These scripts throw messages written for a human
+    # to act on, and PowerShell's default dump buries them in position info and
+    # a repeat of the whole message.
+    param([Parameter(Mandatory = $true)][scriptblock]$Body)
+    try {
+        & $Body
+    }
+    catch {
+        Write-Host ""
+        Write-Host $_.Exception.Message -ForegroundColor Red
+        exit 1
+    }
+}
+
+
+function Get-PluginInstallDir {
+    # Where this plugin's files live inside a game install.
+    param([Parameter(Mandatory = $true)][string]$GameDir)
+    return Join-Path $GameDir "$BepInExPluginsRelDir\$PluginFolderName"
+}
+
+
+function Get-RequiredReferenceDll {
+    # Every reference DLL the csproj expects, as full paths under $GameDir.
+    # Parsed out of the csproj so the csproj stays the single source of truth.
+    param([Parameter(Mandatory = $true)][string]$GameDir)
+
+    $text = [System.IO.File]::ReadAllText($ProjectFile)
+    $pattern = 'HintPath="\$\((?<var>\w+)\)(?<file>[^"]+)"'
+    $paths = [System.Collections.Generic.List[string]]::new()
+    foreach ($m in [regex]::Matches($text, $pattern)) {
+        $var = $m.Groups["var"].Value
+        if (-not $HintPathVarToRelDir.ContainsKey($var)) {
+            throw "Unrecognized HintPath property '$var' in $ProjectFile; update `$HintPathVarToRelDir in provision-refs.ps1."
+        }
+        $paths.Add((Join-Path $GameDir (Join-Path $HintPathVarToRelDir[$var] $m.Groups["file"].Value)))
+    }
+    if ($paths.Count -eq 0) {
+        throw "No <Reference HintPath=...> entries found in $ProjectFile."
+    }
+    return $paths
+}
+
+
+function Test-ReferenceGameDir {
+    # Cheap check that a candidate path is a game install with BepInEx set up
+    # far enough to build against (core + generated interop assemblies).
+    param([string]$Path)
+    if (-not $Path) { return $false }
+    foreach ($rel in @($BepInExCoreRelDir, $BepInExInteropRelDir)) {
+        if (-not (Test-Path -LiteralPath (Join-Path $Path $rel))) { return $false }
+    }
+    return $true
+}
+
+
+function Get-SteamPath {
+    # Steam records its own location in the registry; return it, or $null if
+    # Steam is not installed. HKCU first (per-user, the active install), then
+    # the 32-bit HKLM fallback.
+    foreach ($probe in @(
+            @{ Path = "HKCU:\Software\Valve\Steam"; Name = "SteamPath" },
+            @{ Path = "HKLM:\SOFTWARE\WOW6432Node\Valve\Steam"; Name = "InstallPath" }
+        )) {
+        try {
+            $value = (Get-ItemProperty -Path $probe.Path -Name $probe.Name -ErrorAction Stop).($probe.Name)
+            if ($value) { return $value }
+        }
+        catch {
+            # Key/value absent - try the next probe.
+        }
+    }
+    return $null
+}
+
+
+function Get-SteamLibraryFolder {
+    # Every Steam library root: Steam's own, plus the "path" entries in
+    # libraryfolders.vdf (modern config\ location and legacy steamapps\ one).
+    # Games can live on other drives, so the default library is not enough.
+    param([Parameter(Mandatory = $true)][string]$SteamPath)
+
+    $roots = [System.Collections.Generic.List[string]]::new()
+    $roots.Add($SteamPath)
+
+    foreach ($rel in @("config\libraryfolders.vdf", "steamapps\libraryfolders.vdf")) {
+        $vdf = Join-Path $SteamPath $rel
+        if (-not (Test-Path -LiteralPath $vdf)) { continue }
+        $text = [System.IO.File]::ReadAllText($vdf)
+        foreach ($m in [regex]::Matches($text, '"path"\s*"([^"]+)"')) {
+            # VDF escapes backslashes as "\\"; unescape to a real Windows path.
+            $roots.Add(($m.Groups[1].Value -replace '\\\\', '\'))
+        }
+    }
+
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    return $roots | Where-Object { $_ -and $seen.Add($_) }
+}
+
+
+function Find-SteamGameDir {
+    # Auto-discover the Steam copy of Disco Elysium (the folder holding
+    # disco.exe). Returns $null if Steam or the game is not found - callers
+    # decide whether that is fatal, since nothing here is ever a silent default
+    # for a destructive operation.
+    $steamPath = Get-SteamPath
+    if (-not $steamPath) { return $null }
+
+    foreach ($lib in (Get-SteamLibraryFolder -SteamPath $steamPath)) {
+        # Prefer the installdir recorded in the app manifest; fall back to the
+        # conventional folder name.
+        $installDirs = [System.Collections.Generic.List[string]]::new()
+        $acf = Join-Path $lib "steamapps\appmanifest_$DiscoElysiumAppId.acf"
+        if (Test-Path -LiteralPath $acf) {
+            $m = [regex]::Match([System.IO.File]::ReadAllText($acf), '"installdir"\s*"([^"]+)"')
+            if ($m.Success) { $installDirs.Add($m.Groups[1].Value) }
+        }
+        $installDirs.Add($DiscoElysiumInstallDirName)
+
+        foreach ($installDir in $installDirs) {
+            $gameDir = Join-Path $lib "steamapps\common\$installDir"
+            if (Test-Path -LiteralPath (Join-Path $gameDir $GameExeName)) {
+                return $gameDir
+            }
+        }
+    }
+    return $null
+}
+
+
+function Test-IsReferenceCopy {
+    # True if $Path is inside one of the repo's read-only reference copies of
+    # the game. Compared per path segment so a merely similar name cannot match.
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $full = [System.IO.Path]::GetFullPath($Path)
+    $segments = $full -split '[\\/]+'
+    foreach ($name in $ReferenceCopyDirNames) {
+        if ($segments -contains $name) { return $true }
+    }
+    return $false
+}
+
+
+function Assert-NotReferenceCopy {
+    # Hard stop before writing anywhere inside a reference copy of the game.
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (Test-IsReferenceCopy -Path $Path) {
+        throw @"
+Refusing to write into a reference copy of the game:
+  $Path
+"$($ReferenceCopyDirNames -join '" and "')" are read-only reference material for
+this repo (see de-omm.13). Deploy into a playable copy of the game instead, e.g.
+the Steam install.
+"@
+    }
+}
+
+
+function Resolve-ReferenceGameDir {
+    # The game install the build reads its reference assemblies from. Resolution
+    # order: explicit parameter, DISCO_ELYSIUM_DIR, the repo-local reference
+    # copy, the cached previous answer, then Steam discovery. Read-only use, so
+    # falling back to a discovered install is safe.
+    param([string]$DiscoElysiumDir)
+
+    if ($DiscoElysiumDir) {
+        if (-not (Test-ReferenceGameDir -Path $DiscoElysiumDir)) {
+            throw "-DiscoElysiumDir '$DiscoElysiumDir' has no $BepInExCoreRelDir + $BepInExInteropRelDir. Point it at a Disco Elysium install that has been run once with BepInEx 6."
+        }
+        return $DiscoElysiumDir
+    }
+    if ($env:DISCO_ELYSIUM_DIR) {
+        if (-not (Test-ReferenceGameDir -Path $env:DISCO_ELYSIUM_DIR)) {
+            throw "DISCO_ELYSIUM_DIR='$($env:DISCO_ELYSIUM_DIR)' has no $BepInExCoreRelDir + $BepInExInteropRelDir. Point it at a Disco Elysium install that has been run once with BepInEx 6."
+        }
+        return $env:DISCO_ELYSIUM_DIR
+    }
+    if (Test-ReferenceGameDir -Path $RepoDefaultGameDir) {
+        return $RepoDefaultGameDir
+    }
+    if (Test-Path -LiteralPath $RefDirCacheFile) {
+        $cached = (Get-Content -LiteralPath $RefDirCacheFile -Raw).Trim()
+        if (Test-ReferenceGameDir -Path $cached) { return $cached }
+    }
+
+    $steamDir = Find-SteamGameDir
+    if ($steamDir -and (Test-ReferenceGameDir -Path $steamDir)) {
+        New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
+        Set-Content -LiteralPath $RefDirCacheFile -Value $steamDir -Encoding ascii
+        return $steamDir
+    }
+
+    $steamNote = if ($steamDir) {
+        "The Steam install at '$steamDir' has no $BepInExInteropRelDir - run the game once with BepInEx 6 installed to generate the interop assemblies."
+    }
+    else {
+        "No Steam copy of Disco Elysium (AppID $DiscoElysiumAppId) was found."
+    }
+    throw @"
+Could not find a Disco Elysium install to build against.
+Tried, in order:
+  1. -DiscoElysiumDir                      (not given)
+  2. `$env:DISCO_ELYSIUM_DIR               (not set)
+  3. $RepoDefaultGameDir
+  4. Steam auto-discovery
+$steamNote
+Pass -DiscoElysiumDir <path> or set DISCO_ELYSIUM_DIR to an install that has
+both $BepInExCoreRelDir and $BepInExInteropRelDir.
+"@
+}
+
+
+function Initialize-BuildReferences {
+    # Resolve the reference install and prove every DLL the csproj references is
+    # actually there, so a missing reference fails here with a clear message
+    # rather than as a wall of MSBuild errors. Returns the resolved game dir.
+    param([string]$DiscoElysiumDir)
+
+    $gameDir = Resolve-ReferenceGameDir -DiscoElysiumDir $DiscoElysiumDir
+    Write-Host "Reference install: $gameDir"
+
+    $missing = Get-RequiredReferenceDll -GameDir $gameDir |
+        Where-Object { -not (Test-Path -LiteralPath $_) }
+    if ($missing) {
+        throw @"
+Reference install is missing $($missing.Count) assembly/assemblies the build needs:
+$($missing -join "`n")
+If the interop ones are missing, run the game once with BepInEx 6 installed so
+it regenerates $BepInExInteropRelDir.
+"@
+    }
+    Write-Host "References: all present."
+    return $gameDir
+}
+
+
+# Resolve + verify when invoked directly (not when dot-sourced for reuse).
+if ($MyInvocation.InvocationName -ne '.') {
+    Invoke-ScriptMain {
+        Initialize-BuildReferences -DiscoElysiumDir $DiscoElysiumDir | Out-Null
+    }
+}
