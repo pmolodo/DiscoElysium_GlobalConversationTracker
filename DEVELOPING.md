@@ -146,13 +146,21 @@ So the csproj keeps resolving `DiscoElysiumDir` itself (see its `PropertyGroup` 
 competing with it: it decides *which* install, checks the DLLs are there, and hands the
 path to MSBuild.
 
-### No all-in-one archive bundling BepInEx
+### No all-in-one archive bundling BepInEx (deferred to phase 3, de-4pp.1)
 
-For a Mono game it is friendly to ship "BepInEx + plugin, extract and go". For BepInEx 6
-IL2CPP it is not: the archive would be far heavier, architecture-specific, and still
-useless until the player runs the game once to generate their own interop assemblies. Both
-game copies on this machine already have a working BepInEx (deployed by Vortex). So the
-release zip is plugin-only, and the README points at BepInEx's own install instructions.
+For a Mono game it is friendly to ship "BepInEx + plugin + uninstaller, extract and go".
+For BepInEx 6 IL2CPP it is not: the archive would be far heavier, architecture-specific,
+and still useless until the player runs the game once to generate their own interop
+assemblies. Both game copies on this machine already have a working BepInEx (deployed by
+Vortex). So phase 1 ships a plugin-only zip, and the README points at BepInEx's own
+install instructions.
+
+The knock-on effect on `deploy.ps1`: the prior-art script it was adapted from installs *by
+extracting its all-in-one zip* into the game folder. With no bundle, deploy installs the
+DLL directly instead, and there is deliberately no dormant extract-an-archive path waiting
+for one. It keeps that design's useful half - start from a known state - by removing
+`<game>\BepInEx\plugins\UnifiedConversationTracker\` before copying, and it never touches
+anything above that folder.
 
 ### Build output layout
 
