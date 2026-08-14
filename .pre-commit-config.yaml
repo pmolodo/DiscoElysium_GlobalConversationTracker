@@ -1,29 +1,42 @@
+# enable these with:
+# uv tool install prek
+# prek install
+
+# Hooks run in the order declared below: ty, then ruff, then black.
 repos:
-    # Black - Python code formatter
+    # ty - Python type checker. --fix applies ty's safe fixes, which makes this a
+    # file-modifying hook, so it runs first: ruff then sorts any imports ty adds,
+    # and black lays out whatever ty wrote.
+    # (--fix is passed through the hook's `uv check` wrapper, which exposes it.
+    # ty's own flags - --exit-zero, --warn, --add-ignore - are NOT reachable via
+    # args; configure those in pyproject.toml under [tool.ty] instead.)
+    - repo: https://github.com/astral-sh/ty-pre-commit
+      rev: v0.0.69
+      hooks:
+          - id: ty
+            args: [--fix]
+
+    # Ruff - Python linter + import organizer (formatting is black's job).
+    # --fix applies every safe fix ruff has (unsafe fixes still need an explicit
+    # --unsafe-fixes).
+    - repo: https://github.com/astral-sh/ruff-pre-commit
+      rev: v0.16.2
+      hooks:
+          - id: ruff-check
+            args: [--config=pyproject.toml, --fix]
+
+    # Black - Python code formatter. Runs last so that black, not ty's or ruff's
+    # fixes, gets the last word on layout.
     - repo: https://github.com/psf/black
-      rev: 24.10.0
+      rev: 26.5.1
       hooks:
           - id: black
             language_version: python3
             args: [--config=pyproject.toml]
 
-    # isort - Python import organizer (compatible with Black)
-    - repo: https://github.com/pycqa/isort
-      rev: 5.13.2
-      hooks:
-          - id: isort
-            args: [--settings-path=pyproject.toml]
-
-    # Ruff - Fast Python linter (no auto-fix, just report)
-    - repo: https://github.com/astral-sh/ruff-pre-commit
-      rev: v0.8.4
-      hooks:
-          - id: ruff
-            args: [--config=pyproject.toml]
-
     # General hooks
     - repo: https://github.com/pre-commit/pre-commit-hooks
-      rev: v4.6.0
+      rev: v6.0.0
       hooks:
           - id: trailing-whitespace
           - id: end-of-file-fixer

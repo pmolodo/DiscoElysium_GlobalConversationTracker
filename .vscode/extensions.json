@@ -3,12 +3,13 @@
     // Extension identifier format: ${publisher}.${name}. Example: vscode.csharp
     // List of extensions which should be recommended for users of this workspace.
     "recommendations": [
+        // Use ty for type checking (not mypy / pylance)
+        // Use ruff for linting + import sorting (not pylint / flake8 / isort)
+        // Use black for formatting (for preview long-string-literal splitting)
+        "astral-sh.ty",
+        "charliermarsh.ruff",
         "ms-python.black-formatter",
-        "ms-python.isort",
-        "ms-python.mypy-type-checker",
-        "ms-python.pylint",
-        "ms-python.python",
-        "ms-python.vscode-pylance"
+        "ms-python.python"
     ],
     // List of extensions recommended by VS Code that should not be recommended for users of this workspace.
     "unwantedRecommendations": []

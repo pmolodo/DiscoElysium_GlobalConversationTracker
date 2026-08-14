@@ -27,47 +27,45 @@ enable-unstable-feature = ['string_processing']
 
 line-length = 120
 
-[tool.isort]
-profile = 'black'
-lines_between_types = 1
-combine_as_imports = true
-line_length = 120
-
+# Black formats; ruff lints and sorts imports. Keep the two line-lengths in sync.
 [tool.ruff]
 line-length = 120
+# ruff's default excludes already cover .git, .hg, .mypy_cache, .tox, .venv,
+# .vscode, __pycache__, etc.
+extend-exclude = [".DS_Store", ".conan/", ".vs/", ".vscode/", "CVS/", "_venv/"]
+
+[tool.ruff.lint]
+select = [
+    "E", # pycodestyle errors
+    "W", # pycodestyle warnings
+    "F", # pyflakes
+    "I", # isort
+    # "PL", # pylint - disabling, too noisy
+]
 ignore = [
-    "E402", # Module level import not at top of file
+    # E203 = whitespace before ':' - black will format like `"mystr"[2 + 1 :]`, which this check doesn't like
+    "E203",
+    # E402 = module level import not at top of file
+    "E402",
+    # E501 = line too long - black handles line length, and can't split some long tokens
+    "E501",
+    # PLC0415 = import outside top-level
+    "PLC0415",
+    # PLW1510 = `subprocess.run` without an explicit `check` argument
+    "PLW1510",
 ]
 
-[tool.pylint.main]
-ignore = [
-    ".DS_Store",
-    ".conan",
-    ".git",
-    ".hg",
-    ".mypy_cache",
-    ".vs",
-    ".vscode",
-    "__pycache__",
-    "CVS",
-]
-ignore-paths = ["^\\.tox/.*$", "^\\.venv/.*$", "^\\_venv/.*$"]
+[tool.ruff.lint.isort]
+lines-between-types = 1
+combine-as-imports = true
 
-[tool.pylint."messages control"]
-disable = [
-    "import-outside-toplevel",
-    "line-too-long",
-    "missing-class-docstring",
-    "missing-function-docstring",
-    "subprocess-run-check",
-    "wrong-import-position",
-    # Until VSCode linting respects the .env file (or has some other way to add paths), "can't import" errors
-    # are useless: https://github.com/microsoft/vscode-python/issues/9185
-    "import-error",
-]
-
-[tool.pylint.format]
-max-line-length = 120
-
-[tool.pylint.typecheck]
-ignored-modules = ["winreg"]
+# Keep in sync with the black/ruff excludes above. These are additive to ty's own
+# defaults (.git, .venv, __pycache__, dist, node_modules, ...), so only the extras
+# need listing. Patterns are anchored to the project root, matching black's rooted
+# excludes; use a "**/" prefix for a match at any depth.
+# ty has no force-exclude: paths passed as positional args are always checked, even
+# if excluded here. The pre-commit hook passes files explicitly, so the black/ruff
+# force-exclude set (packman, ipython_config.py) is handled by the top-level
+# `exclude:` in .pre-commit-config.yaml instead.
+[tool.ty.src]
+exclude = [".DS_Store", ".conan/", ".vs/", ".vscode/", "CVS/", "_venv/"]

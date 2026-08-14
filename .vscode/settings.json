@@ -2,10 +2,18 @@
     "[bat]": {
         "files.eol": "\r\n"
     },
+    "[powershell]": {
+        "files.eol": "\r\n"
+    },
     "[python]": {
         "editor.codeActionsOnSave": {
+            // generic actions - ruff is the only provider for both here
+            "source.fixAll": "explicit",
             "source.organizeImports": "explicit"
         },
+        // no generic equivalent - defaultFormatter takes an extension id.
+        // Ruff's fixes run first via codeActionsOnSave, then black formats.
+        "editor.defaultFormatter": "ms-python.black-formatter",
         "editor.rulers": [
             80,
             120
@@ -15,8 +23,14 @@
     "editor.insertSpaces": true,
     "editor.tabSize": 4,
     "editor.wordWrapColumn": 120,
+    "files.exclude": {
+        "**/.DS_Store": true,
+        "**/.git": true,
+        "**/.hg": true,
+        "**/.svn": true,
+        "**/CVS": true
+    },
     "files.trimTrailingWhitespace": true,
-    "python.analysis.typeCheckingMode": "off", // use mypy for typing, not pylance
-    "rewrap.wrappingColumn": 120,
-    "ruff.organizeImports": false
+    "python.analysis.typeCheckingMode": "off", // use ty for typing, not pylance
+    "rewrap.wrappingColumn": 120
 }
