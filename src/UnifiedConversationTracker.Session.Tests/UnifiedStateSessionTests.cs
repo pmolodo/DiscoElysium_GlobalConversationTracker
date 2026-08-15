@@ -631,5 +631,211 @@ namespace UnifiedConversationTracker.Session.Tests
             Assert.False(File.Exists(store.BackupPath));
             Assert.Contains(log.Warnings, line => line.Contains("Not saving", StringComparison.Ordinal));
         }
+
+        // -------------------------------------------------------------------
+        // ResyncFromGame: the one SimStatus writer the write-through hook cannot
+        // see, PersistentDataManager rebuilding the table on a savegame load
+        // (de-0s5).
+        // -------------------------------------------------------------------
+
+        [Fact]
+        public void ResyncFromGame_AfterALoadRewritesTheGame_MergesWhatTheHookNeverSaw()
+        {
+            // The case that actually bites: a unified file already exists, so nothing
+            // seeds, and the save being loaded carries history the mod never observed.
+            using var dir = new TempDirectory();
+            UnifiedStateStore store = dir.CreateStore();
+            store.Save(StateWith((3, 17, SimStatus.WasDisplayed)));
+
+            var log = new RecordingLog();
+            var source = new FakeSimStatusSource()
+                .Add(3, 17, "WasDisplayed")
+                .Add(3, 18, "WasOffered")
+                .Add(9, 1, "WasDisplayed");
+            var session = new UnifiedStateSession(store, source, log);
+
+            Assert.Equal(2, session.ResyncFromGame());
+
+            Assert.Equal(1, session.ResyncCount);
+            Assert.Equal(0, session.SeedAttemptCount);
+            Assert.Equal(UnifiedStateOrigin.LiveFile, session.Origin);
+
+            // In memory and on disk alike.
+            Assert.Equal(SimStatus.WasOffered, session.State.GetStatus(3, 18));
+            Assert.Equal(SimStatus.WasDisplayed, session.State.GetStatus(9, 1));
+
+            UnifiedConversationState saved = store.Load().RequireState();
+            Assert.Equal(SimStatus.WasDisplayed, saved.GetStatus(3, 17));
+            Assert.Equal(SimStatus.WasOffered, saved.GetStatus(3, 18));
+            Assert.Equal(SimStatus.WasDisplayed, saved.GetStatus(9, 1));
+
+            Assert.Contains(log.Info, line => line.Contains("Resynced", StringComparison.Ordinal));
+            Assert.Empty(log.Errors);
+        }
+
+        [Fact]
+        public void ResyncFromGame_WithNothingNew_WalksButWritesNothing()
+        {
+            // de-omm.26 measured this as the common case: replaying a save the mod
+            // already tracked restored 89 entries and gained 0. Paying a whole-file
+            // write for that on every load would be pure cost.
+            using var dir = new TempDirectory();
+            UnifiedStateStore store = dir.CreateStore();
+            store.Save(StateWith((3, 17, SimStatus.WasDisplayed)));
+
+            var log = new RecordingLog();
+            var source = new FakeSimStatusSource().Add(3, 17, "WasDisplayed");
+            var session = new UnifiedStateSession(store, source, log);
+            session.EnsureInitialized();
+
+            // Delete the file: anything that writes again has to recreate it.
+            File.Delete(store.LivePath);
+
+            Assert.Equal(0, session.ResyncFromGame());
+
+            Assert.Equal(1, source.EnumerationCount);
+            Assert.Equal(1, session.ResyncCount);
+            Assert.False(File.Exists(store.LivePath));
+            Assert.Contains(log.Info, line => line.Contains("nothing new", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void ResyncFromGame_NeverLowersAStatusTheUnifiedStateAlreadyHolds()
+        {
+            // Loading an OLD save rewrites the game's tables downwards. The unified
+            // state is the union across saves, so it must not follow.
+            using var dir = new TempDirectory();
+            UnifiedStateStore store = dir.CreateStore();
+            store.Save(StateWith((3, 17, SimStatus.WasDisplayed)));
+
+            var source = new FakeSimStatusSource()
+                .Add(3, 17, "WasOffered")
+                .Add(3, 18, "Untouched");
+            var session = new UnifiedStateSession(store, source, new RecordingLog());
+
+            Assert.Equal(0, session.ResyncFromGame());
+
+            Assert.Equal(SimStatus.WasDisplayed, session.State.GetStatus(3, 17));
+            Assert.Equal(SimStatus.WasDisplayed, store.Load().RequireState().GetStatus(3, 17));
+        }
+
+        [Fact]
+        public void ResyncFromGame_WhenTheSameCallAlsoSeeded_DoesNotWalkTwice()
+        {
+            // A seed is the same full read of the game. Walking again straight after
+            // one would cost the whole walk to change nothing.
+            using var dir = new TempDirectory();
+            UnifiedStateStore store = dir.CreateStore();
+
+            var source = new FakeSimStatusSource().Add(3, 17, "WasDisplayed");
+            var session = new UnifiedStateSession(store, source, new RecordingLog());
+
+            Assert.Equal(0, session.ResyncFromGame());
+
+            Assert.Equal(1, source.EnumerationCount);
+            Assert.Equal(1, session.SeedAttemptCount);
+            Assert.Equal(0, session.ResyncCount);
+
+            // The seed still did its job.
+            Assert.Equal(UnifiedStateOrigin.SeededFromGame, session.Origin);
+            Assert.Equal(SimStatus.WasDisplayed, session.State.GetStatus(3, 17));
+        }
+
+        [Fact]
+        public void ResyncFromGame_OnEveryLoad_KeepsPickingUpWhatEachOneRestores()
+        {
+            // Unlike the seed, which is once per session, the resync runs per load.
+            using var dir = new TempDirectory();
+            UnifiedStateStore store = dir.CreateStore();
+            store.Save(StateWith((1, 1, SimStatus.WasOffered)));
+
+            var source = new FakeSimStatusSource().Add(1, 1, "WasOffered");
+            var session = new UnifiedStateSession(store, source, new RecordingLog());
+
+            Assert.Equal(0, session.ResyncFromGame());
+
+            source.Add(2, 2, "WasDisplayed");
+            Assert.Equal(1, session.ResyncFromGame());
+
+            source.Add(3, 3, "WasOffered");
+            Assert.Equal(1, session.ResyncFromGame());
+
+            Assert.Equal(3, session.ResyncCount);
+            Assert.Equal(3, source.EnumerationCount);
+
+            UnifiedConversationState saved = store.Load().RequireState();
+            Assert.Equal(SimStatus.WasDisplayed, saved.GetStatus(2, 2));
+            Assert.Equal(SimStatus.WasOffered, saved.GetStatus(3, 3));
+        }
+
+        [Fact]
+        public void ResyncFromGame_WhenTheGameIsNotReady_SkipsTheWalkAndSaysSo()
+        {
+            using var dir = new TempDirectory();
+            UnifiedStateStore store = dir.CreateStore();
+            store.Save(StateWith((3, 17, SimStatus.WasDisplayed)));
+
+            var log = new RecordingLog();
+            var source = new FakeSimStatusSource { IsReady = false }.Add(9, 1, "WasDisplayed");
+            var session = new UnifiedStateSession(store, source, log);
+
+            Assert.Equal(0, session.ResyncFromGame());
+
+            Assert.Equal(0, source.EnumerationCount);
+            Assert.Equal(0, session.ResyncCount);
+            Assert.Contains(log.Warnings, line => line.Contains("not readable yet", StringComparison.Ordinal));
+
+            // And it is not a permanent giving-up: the next load can still resync.
+            source.IsReady = true;
+            Assert.Equal(1, session.ResyncFromGame());
+            Assert.Equal(SimStatus.WasDisplayed, session.State.GetStatus(9, 1));
+        }
+
+        [Fact]
+        public void ResyncFromGame_WhenTheWalkThrows_LogsItAndNeverRetries()
+        {
+            // Same reasoning as the seed: the next load would call the same thing and
+            // fail the same way, so one error line beats one per load.
+            using var dir = new TempDirectory();
+            UnifiedStateStore store = dir.CreateStore();
+            store.Save(StateWith((3, 17, SimStatus.WasDisplayed)));
+
+            var log = new RecordingLog();
+            var source = new FakeSimStatusSource { ThrowOnEnumerate = new InvalidOperationException("no database") };
+            var session = new UnifiedStateSession(store, source, log);
+
+            Assert.Equal(0, session.ResyncFromGame());
+            Assert.Equal(0, session.ResyncFromGame());
+            Assert.Equal(0, session.ResyncFromGame());
+
+            Assert.Equal(1, source.EnumerationCount);
+            Assert.Equal(1, session.ResyncCount);
+            Assert.Single(log.Errors, line => line.Contains("no database", StringComparison.Ordinal));
+
+            // The state that was already there is untouched.
+            Assert.Equal(SimStatus.WasDisplayed, session.State.GetStatus(3, 17));
+        }
+
+        [Fact]
+        public void ResyncFromGame_AfterRefusingANewerFormat_DoesNotEvenWalk()
+        {
+            // The walk's only purpose is to be saved, so with saving disabled it is
+            // pure cost.
+            using var dir = new TempDirectory();
+            UnifiedStateStore store = dir.CreateStore();
+            const string newerFile = "{\"version\":99,\"conversations\":{\"3\":{\"17\":\"WasDisplayed\"}}}";
+            File.WriteAllText(store.LivePath, newerFile);
+
+            var log = new RecordingLog();
+            var source = new FakeSimStatusSource().Add(9, 1, "WasDisplayed");
+            var session = new UnifiedStateSession(store, source, log);
+
+            Assert.Equal(0, session.ResyncFromGame());
+
+            Assert.Equal(0, source.EnumerationCount);
+            Assert.Equal(0, session.ResyncCount);
+            Assert.Equal(newerFile, File.ReadAllText(store.LivePath));
+            Assert.Contains(log.Warnings, line => line.Contains("saving is disabled", StringComparison.Ordinal));
+        }
     }
 }
