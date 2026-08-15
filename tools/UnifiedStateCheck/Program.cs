@@ -7,25 +7,26 @@ const int ExitFail = 1;
 const int ExitError = 2;
 
 const string Usage = """
-    UnifiedStateCheck - verify unified-conversation-state.json is the union of two saves.
+    UnifiedStateCheck - verify unified-conversation-state.json is the union of some saves.
 
     Usage:
-      dotnet run --project tools/UnifiedStateCheck -- <saveA> <saveB> [options]
+      dotnet run --project tools/UnifiedStateCheck -- <save> <save> [<save>...] [options]
       dotnet run --project tools/UnifiedStateCheck -- --list
 
-    <saveA> and <saveB> each name a save: a path to a '<name>.ntwtf.zip', an
-    expanded '<name>.ntwtf' folder or a '<name>.ntwtf.lua' file, or a bare save
-    name resolved inside the SaveGames directory.
+    Each <save> names a save: a path to a '<name>.ntwtf.zip', an expanded
+    '<name>.ntwtf' folder or a '<name>.ntwtf.lua' file, or a bare save name
+    resolved inside the SaveGames directory. Two or more are required.
 
     Passes when, for every dialogue entry, the unified state is at least as high
-    as the higher of the two saves, ordering Untouched < WasOffered < WasDisplayed.
-    A unified status strictly higher than both saves is legal and is reported as
+    as the highest of the saves, ordering Untouched < WasOffered < WasDisplayed.
+    A unified status strictly higher than every save is legal and is reported as
     information, not as a failure.
 
     Options:
       -d, --dir PATH      SaveGames directory. Default: the game's own.
       -s, --state PATH    The unified state file.
                           Default: <dir>/unified-conversation-state.json
+      -n, --examples N    How many entries to name per reported category.
           --list          List the saves in <dir> and exit.
       -h, --help          Show this message.
 
@@ -44,11 +45,11 @@ catch (Exception ex)
 
 int Run(string[] argv)
 {
-    string? saveA = null;
-    string? saveB = null;
+    var saveArgs = new List<string>();
     string? directory = null;
     string? statePath = null;
     bool list = false;
+    int maxExamples = UnionReport.DefaultMaxExamples;
 
     for (int i = 0; i < argv.Length; i++)
     {
@@ -64,6 +65,15 @@ int Run(string[] argv)
             case "-s" or "--state":
                 statePath = NextArg(argv, ref i, arg);
                 break;
+            case "-n" or "--examples":
+                string raw = NextArg(argv, ref i, arg);
+                if (!int.TryParse(raw, out maxExamples) || maxExamples < 0)
+                {
+                    throw new ArgumentException(
+                        $"Option '{arg}' needs a non-negative whole number, not '{raw}'"
+                    );
+                }
+                break;
             case "--list":
                 list = true;
                 break;
@@ -72,18 +82,7 @@ int Run(string[] argv)
                 {
                     throw new ArgumentException($"Unknown option '{arg}'\n\n{Usage}");
                 }
-                if (saveA is null)
-                {
-                    saveA = arg;
-                }
-                else if (saveB is null)
-                {
-                    saveB = arg;
-                }
-                else
-                {
-                    throw new ArgumentException($"Unexpected extra argument '{arg}'\n\n{Usage}");
-                }
+                saveArgs.Add(arg);
                 break;
         }
     }
@@ -100,30 +99,28 @@ int Run(string[] argv)
         return ExitPass;
     }
 
-    if (saveA is null || saveB is null)
+    if (saveArgs.Count < 2)
     {
-        throw new ArgumentException($"Two saves are required\n\n{Usage}");
+        throw new ArgumentException($"At least two saves are required\n\n{Usage}");
     }
 
     statePath ??= Path.Combine(directory, UnifiedStateStore.FileName);
 
     Console.WriteLine($"SaveGames directory : {directory}");
 
-    UnifiedConversationState stateA = SaveConversationReader.Load(
-        saveA,
-        directory,
-        out string pathA
-    );
-    Console.WriteLine($"Save A : {pathA}");
-    Console.WriteLine($"         {Describe(stateA)}");
-
-    UnifiedConversationState stateB = SaveConversationReader.Load(
-        saveB,
-        directory,
-        out string pathB
-    );
-    Console.WriteLine($"Save B : {pathB}");
-    Console.WriteLine($"         {Describe(stateB)}");
+    var saves = new List<NamedSave>(saveArgs.Count);
+    foreach (string saveArg in saveArgs)
+    {
+        UnifiedConversationState state = SaveConversationReader.Load(
+            saveArg,
+            directory,
+            out string savePath
+        );
+        string label = Path.GetFileName(savePath);
+        Console.WriteLine($"Save : {savePath}");
+        Console.WriteLine($"       {Describe(state)}");
+        saves.Add(new NamedSave(label, state));
+    }
 
     if (!File.Exists(statePath))
     {
@@ -162,8 +159,8 @@ int Run(string[] argv)
     }
     Console.WriteLine();
 
-    UnionReport report = UnionReport.Compare(unified, stateA, stateB);
-    report.Write(Console.Out);
+    UnionReport report = UnionReport.Compare(unified, saves);
+    report.Write(Console.Out, maxExamples);
     return report.Passed ? ExitPass : ExitFail;
 }
 
