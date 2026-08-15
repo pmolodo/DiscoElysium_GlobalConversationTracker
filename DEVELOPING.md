@@ -56,10 +56,11 @@ the SDK this repo builds on and it can carry those notes as comments. It needs t
 
 ## The scripts
 
-Four PowerShell scripts at the repo root, each runnable directly. They dot-source each
+Five PowerShell scripts at the repo root, each runnable directly. They dot-source each
 other, so each reuses the previous one's constants and functions:
 
-`deploy.ps1` / `make-release.ps1` -> `build.ps1` -> `provision-refs.ps1`
+`deploy.ps1` / `make-release.ps1` -> `build.ps1` -> `provision-refs.ps1`, and
+`capture-log.ps1` -> `provision-refs.ps1` directly, since it builds nothing.
 
 ### `provision-refs.ps1`
 
@@ -142,6 +143,49 @@ UnifiedConversationTracker-README.md
 Each `.dll` ships with its `.pdb`; it is the same payload `deploy.ps1` installs, from the
 same helper. The version comes from `<Version>` in the csproj.
 
+### `capture-log.ps1`
+
+Copies a session's BepInEx log out of the game folder and proves the copy belongs to the
+run it is meant to document.
+
+```powershell
+.\capture-log.ps1 -Label smoke-test       # while the game is still running
+$state = "$env:USERPROFILE\AppData\LocalLow\ZAUM Studio\Disco Elysium\SaveGames\unified-conversation-state.json"
+.\capture-log.ps1 -Label session-c -RunArtifact $state
+```
+
+BepInEx truncates `LogOutput.log` at process start, so a session's log only survives until
+the next launch. "Copy it when the session is over" therefore loses the race whenever
+anything relaunches the game in between, and the copy is a different process's log while
+looking exactly like the right one - which is what happened in de-g1z, where a preserved
+session log turned out to come from a launch 44 seconds *after* that session had finished
+writing its state file, and a verification spot-check then drew a conclusion from the wrong
+file.
+
+So the script copies first - to `.build\logs\<label>-<timestamp>.log` unless `-Destination`
+says otherwise - and judges afterwards, using the Harmony banner written while the plugin
+patches in `Load()`:
+
+```
+### At 2026-08-15 09.34.31
+```
+
+That stamp identifies the process that wrote the log, so:
+
+- every `-RunArtifact` - a file that run wrote (the unified state file, a save, ...) - must
+  have been written at or after it. An artefact *older* than the stamp proves the log is a
+  later process's.
+- if the game is still running, the stamp must fall inside the running process's lifetime.
+- with neither available there is nothing to check against, which is a failure too: an
+  artefact that cannot be cross-checked is worse than none.
+
+The copy and a `<copy>.capture.json` manifest (md5, size, the stamp, every check and its
+verdict, `verified`) are written even when a check fails, but the script then exits
+non-zero unless `-Force` was given. Nothing is ever written into the game folder.
+
+**Which install it reads:** `-GameDir`, else `DISCO_ELYSIUM_DEPLOY_DIR`, else the
+auto-discovered Steam copy - the same playable copy `deploy.ps1` writes to.
+
 ## Safety rules baked into the scripts
 
 - **The repo's reference copy of the game is never written to.** `deploy.ps1` refuses any
@@ -150,7 +194,9 @@ same helper. The version comes from `<Version>` in the csproj.
   writes.
 - **No silent deploy default** - see `deploy.ps1` above.
 - **The BepInEx config is never edited.** If `[Logging.Console] Enabled` is not `true`,
-  deploy just says so and moves on.
+  deploy just says so and moves on; likewise `capture-log.ps1` only points out that
+  `[Logging.Disk] AppendLog = true` would keep every session in one log instead of
+  overwriting it at each launch.
 
 ## Verifying a deploy
 
@@ -164,7 +210,8 @@ Only the game itself can confirm the plugin loads.
    [Message:UnifiedConversationTracker] UnifiedConversationTracker v0.1.0 loaded.
    ```
 
-   The second line is the one that proves the plugin's entry point ran.
+   The second line is the one that proves the plugin's entry point ran. To keep that log,
+   run `.\capture-log.ps1` before anything relaunches the game - see above.
 3. For a live console, set `Enabled = true` under `[Logging.Console]` in
    `<game>\BepInEx\config\BepInEx.cfg`.
 
@@ -221,6 +268,7 @@ everything generated, so `src\` stays clean.
 | Plugin project | `src\UnifiedConversationTracker.Plugin\` |
 | Built DLL | `.build\bin\UnifiedConversationTracker.Plugin\<Configuration>\net6.0\UnifiedConversationTracker.dll` |
 | Release zip | `.build\dist\UnifiedConversationTracker-v<version>.zip` |
+| Captured logs | `.build\logs\<label>-<timestamp>.log` (+ `.capture.json`) |
 | Installed plugin | `<game>\BepInEx\plugins\UnifiedConversationTracker\` |
 | BepInEx log | `<game>\BepInEx\LogOutput.log` |
 | BepInEx config | `<game>\BepInEx\config\BepInEx.cfg` |
