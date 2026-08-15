@@ -1,6 +1,7 @@
 using System;
 using BepInEx;
 using BepInEx.Unity.IL2CPP;
+using HarmonyLib;
 using UnifiedConversationTracker.Persistence;
 using UnifiedConversationTracker.Session;
 
@@ -11,9 +12,11 @@ namespace UnifiedConversationTracker
     /// </summary>
     /// <remarks>
     /// <para><b>What Load does, and deliberately does not do.</b> It resolves the
-    /// SaveGames directory and builds the <see cref="UnifiedStateSession"/>. It does
-    /// not read the state file and it does not read the game. Both of those happen
-    /// on first access, through <see cref="UnifiedStateSession.EnsureInitialized"/>.
+    /// SaveGames directory, builds the <see cref="UnifiedStateSession"/> and installs
+    /// the <see cref="MarkDialogueEntryPatch"/> write-through hook. It does not read
+    /// the state file and it does not read the game. Both of those happen on first
+    /// access, through <see cref="UnifiedStateSession.EnsureInitialized"/>, which the
+    /// hook calls on its way in.
     /// </para>
     /// <para>
     /// That split is not tidiness, it is correctness. Seeding an empty unified state
@@ -47,6 +50,8 @@ namespace UnifiedConversationTracker
 
         private static UnifiedStateSession? _session;
 
+        private Harmony? _harmony;
+
         public override void Load()
         {
             Log.LogMessage($"{PluginName} v{PluginVersion} loaded.");
@@ -55,10 +60,31 @@ namespace UnifiedConversationTracker
             var store = new UnifiedStateStore(saveGameDirectory);
             Log.LogMessage($"Unified state file: {store.LivePath}");
 
-            _session = new UnifiedStateSession(
-                store,
-                new DialogueLuaSimStatusSource(),
-                new BepInExUnifiedStateLog(Log));
+            var log = new BepInExUnifiedStateLog(Log);
+            _session = new UnifiedStateSession(store, new DialogueLuaSimStatusSource(), log);
+
+            try
+            {
+                _harmony = new Harmony(PluginGuid);
+                MarkDialogueEntryPatch.Install(_harmony, _session, log);
+                Log.LogMessage("Hooked DialogueLua.MarkDialogueEntry; dialogue statuses are being tracked.");
+            }
+            catch (Exception ex)
+            {
+                // Failing to patch leaves the game exactly as it was, so it is not
+                // worth taking anything down over: say so loudly and stay inert.
+                _harmony = null;
+                Log.LogError(
+                    $"Failed to hook DialogueLua.MarkDialogueEntry: {ex}. "
+                    + "Nothing will be recorded this session; the game is unaffected.");
+            }
+        }
+
+        public override bool Unload()
+        {
+            _harmony?.UnpatchSelf();
+            _harmony = null;
+            return true;
         }
     }
 }

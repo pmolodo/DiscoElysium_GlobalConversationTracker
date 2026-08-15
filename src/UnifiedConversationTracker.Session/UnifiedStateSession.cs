@@ -23,8 +23,9 @@ namespace UnifiedConversationTracker.Session
     /// half-built one, and anything it merges survives: the merge rule only ever
     /// raises a status, so a later load or seed cannot undo it.</para>
     ///
-    /// <para><b>When to call it.</b> Call it from the write-through hook on
-    /// <c>DialogueLua.MarkDialogueEntry</c>, not from plugin <c>Load()</c>. The
+    /// <para><b>When to call it.</b> It is called from the write-through hook on
+    /// <c>DialogueLua.MarkDialogueEntry</c> - by way of <see cref="Record"/>, which
+    /// is what that hook actually calls - and not from plugin <c>Load()</c>. The
     /// difference matters because of the seeding path:
     /// <c>PersistentDataManager</c> rewrites the whole Lua SimStatus table when a
     /// savegame is loaded, without going through <c>MarkDialogueEntry</c> (see
@@ -56,12 +57,19 @@ namespace UnifiedConversationTracker.Session
         /// </summary>
         public const int MaxSeedWarnings = UnifiedStateJson.MaxWarnings;
 
+        /// <summary>What a null status string is called in the log and in the set of
+        /// already-warned-about statuses, since null cannot go in the set itself.</summary>
+        private const string NullStatusName = "null";
+
         private readonly object _gate = new object();
         private readonly UnifiedStateStore _store;
         private readonly ISimStatusSource _source;
         private readonly IUnifiedStateLog _log;
 
         private readonly UnifiedConversationState _state = new UnifiedConversationState();
+
+        /// <summary>Status strings from the game that have already been warned about.</summary>
+        private readonly HashSet<string> _unrecognizedStatuses = new HashSet<string>(StringComparer.Ordinal);
 
         private bool _diskLoadDone;
         private bool _seedPending;
@@ -180,6 +188,75 @@ namespace UnifiedConversationTracker.Session
 
                 return _state;
             }
+        }
+
+        /// <summary>
+        /// Records one status change from the running game: initializes the state if
+        /// this is the first access, merges the status, and rewrites the file if that
+        /// actually raised something.
+        /// </summary>
+        /// <param name="conversationId">The conversation's integer ID.</param>
+        /// <param name="dialogueEntryId">The dialogue entry's integer ID.</param>
+        /// <param name="statusName">
+        /// The status string the game passed, one of "Untouched", "WasOffered" or
+        /// "WasDisplayed". Anything else is warned about once and dropped.
+        /// </param>
+        /// <remarks>
+        /// <para><b>Nothing is written unless something changed.</b> The game marks
+        /// the same entry repeatedly - every time a line is offered again, and
+        /// "Untouched" over entries that already have history - and the merge rule
+        /// turns all of those into no-ops. Rewriting the whole file for a no-op would
+        /// put the file's entire cost on the common case (see de-omm.11), so the
+        /// write is driven by the merge's own changed flag.</para>
+        ///
+        /// <para>This is the write-through half of a write-only design: the unified
+        /// state never flows back into the game, so a failure here loses tracking and
+        /// nothing else.</para>
+        /// </remarks>
+        /// <returns>
+        /// True if this call raised a status in the unified state. The write that
+        /// follows is best effort and reports its own failures through the log, so a
+        /// true return does not by itself mean the file was updated.
+        /// </returns>
+        public bool Record(int conversationId, int dialogueEntryId, string? statusName)
+        {
+            lock (_gate)
+            {
+                EnsureInitialized();
+
+                if (!_state.TryMerge(conversationId, dialogueEntryId, statusName, out bool changed))
+                {
+                    WarnAboutUnrecognizedStatus(conversationId, dialogueEntryId, statusName);
+                    return false;
+                }
+
+                if (!changed)
+                {
+                    return false;
+                }
+
+                TrySave();
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Reports a status string the game passed that is not one of the three the
+        /// mod knows, once per distinct string. Once per string rather than once per
+        /// call: this runs on every line of dialogue, and a repeating warning would
+        /// bury everything else in the log without adding anything.
+        /// </summary>
+        private void WarnAboutUnrecognizedStatus(int conversationId, int dialogueEntryId, string? statusName)
+        {
+            if (!_unrecognizedStatuses.Add(statusName ?? NullStatusName))
+            {
+                return;
+            }
+
+            _log.Warning(
+                $"Ignoring an unrecognized SimStatus '{statusName ?? NullStatusName}' "
+                + $"(conversation {conversationId} entry {dialogueEntryId}). "
+                + "Further entries with this status will be dropped silently.");
         }
 
         /// <summary>
@@ -428,7 +505,7 @@ namespace UnifiedConversationTracker.Session
                     {
                         warnings.Add(
                             $"conversation {row.ConversationId} entry {row.DialogueEntryId}: "
-                            + $"unrecognized status '{row.StatusName ?? "null"}'");
+                            + $"unrecognized status '{row.StatusName ?? NullStatusName}'");
                     }
                 }
             }

@@ -1,7 +1,15 @@
 # UnifiedConversationTracker plugin
 
-BepInEx plugin skeleton for Disco Elysium - The Final Cut. At this stage it does exactly one
-thing: log a line when BepInEx loads it. No hooks, no persistence, no tracking logic yet.
+BepInEx plugin for Disco Elysium - The Final Cut. It Harmony-patches
+`DialogueLua.MarkDialogueEntry`, the game's single write funnel for dialogue SimStatus, and
+records every status it sees into a unified across-all-saves state file in the SaveGames
+directory (`unified-conversation-state.json`).
+
+The patch is a postfix, so the game's own per-save behavior runs first and unmodified, and
+nothing is ever read back into the game: the unified state is write-only. The state file is
+read from disk once per session, on the first mark, and rewritten whenever a mark raises a
+status. A status can only ever go up, so nothing the game does - including resetting a save
+to Untouched - can lose recorded history.
 
 ## Target environment
 
@@ -34,9 +42,12 @@ equivalent is:
 dotnet build src\UnifiedConversationTracker.Plugin -c Release
 ```
 
-Output: `.build\bin\UnifiedConversationTracker.Plugin\Release\net6.0\UnifiedConversationTracker.dll`
-(plus a `.pdb`; `Directory.Build.props` redirects `bin`/`obj` under `.build`). That single DLL
-is the whole plugin.
+Output: `.build\bin\UnifiedConversationTracker.Plugin\Release\net6.0\`, holding
+`UnifiedConversationTracker.dll` and the mod's own libraries next to it
+(`UnifiedConversationTracker.Core/.Persistence/.Session.dll`), each with a `.pdb`;
+`Directory.Build.props` redirects `bin`/`obj` under `.build`. An installed plugin is all four
+DLLs: BepInEx resolves a plugin's dependencies out of the plugin's own folder, so the entry
+point DLL alone would load and then fail on the first line of dialogue.
 
 ## Installing and verifying
 
@@ -63,7 +74,7 @@ Steps:
 1. Build as above.
 2. Create the plugin folder:
    `<game>\BepInEx\plugins\UnifiedConversationTracker\`
-3. Copy the built `UnifiedConversationTracker.dll` into that folder.
+3. Copy every built `UnifiedConversationTracker*.dll` into that folder (see Building above).
 4. Confirm the BepInEx console is on: in
    `<game>\BepInEx\config\BepInEx.cfg`, section `[Logging.Console]`, `Enabled = true`.
 5. Launch the game (Steam, or `disco.exe` directly).
@@ -73,9 +84,15 @@ Steps:
    ```
    [Info   :   BepInEx] Loading [UnifiedConversationTracker 0.1.0]
    [Message:UnifiedConversationTracker] UnifiedConversationTracker v0.1.0 loaded.
+   [Message:UnifiedConversationTracker] Unified state file: ...\SaveGames\unified-conversation-state.json
+   [Message:UnifiedConversationTracker] Hooked DialogueLua.MarkDialogueEntry; dialogue statuses are being tracked.
    ```
 
-   The second line is the one that proves the plugin's entry point ran.
+   The second line proves the plugin's entry point ran; the fourth proves the hook is on. With
+   HarmonyX logging enabled there is also a
+   `[Info :HarmonyX] Patching void PixelCrushers.DialogueSystem.DialogueLua::MarkDialogueEntry(...)`
+   line. Nothing touches the state file until the first line of dialogue is marked, which is
+   when the file is read (or seeded from the running game) and the first write happens.
 7. To uninstall, delete the `UnifiedConversationTracker` folder from `BepInEx\plugins`.
 
 If the plugin does not appear at all, check `BepInEx\LogOutput.log` for a load error and confirm

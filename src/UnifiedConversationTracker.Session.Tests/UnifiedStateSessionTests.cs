@@ -508,5 +508,128 @@ namespace UnifiedConversationTracker.Session.Tests
             Assert.False(session.TrySave());
             Assert.Contains(log.Errors, line => line.Contains("Failed to write", StringComparison.Ordinal));
         }
+
+        // -------------------------------------------------------------------
+        // Record: the write-through path the MarkDialogueEntry hook drives.
+        // -------------------------------------------------------------------
+
+        [Fact]
+        public void Record_RaisingAStatus_MergesItAndWritesTheFile()
+        {
+            using var dir = new TempDirectory();
+            UnifiedStateStore store = dir.CreateStore();
+
+            var log = new RecordingLog();
+            var session = new UnifiedStateSession(store, new FakeSimStatusSource(), log);
+
+            Assert.True(session.Record(3, 17, "WasOffered"));
+            Assert.True(session.Record(3, 17, "WasDisplayed"));
+
+            Assert.Equal(SimStatus.WasDisplayed, session.State.GetStatus(3, 17));
+            Assert.Equal(SimStatus.WasDisplayed, store.Load().RequireState().GetStatus(3, 17));
+            Assert.Empty(log.Errors);
+        }
+
+        [Fact]
+        public void Record_OnTheFirstCall_InitializesTheSessionFromDisk()
+        {
+            // The hook is the initialization trigger, so a mark arriving before
+            // anything else has to pick up the existing file rather than start empty.
+            using var dir = new TempDirectory();
+            UnifiedStateStore store = dir.CreateStore();
+            store.Save(StateWith((3, 17, SimStatus.WasDisplayed)));
+
+            var session = new UnifiedStateSession(store, new FakeSimStatusSource(), new RecordingLog());
+            Assert.False(session.IsInitialized);
+
+            session.Record(4, 1, "WasOffered");
+
+            Assert.True(session.IsInitialized);
+            Assert.Equal(UnifiedStateOrigin.LiveFile, session.Origin);
+            Assert.Equal(SimStatus.WasDisplayed, session.State.GetStatus(3, 17));
+            Assert.Equal(SimStatus.WasDisplayed, store.Load().RequireState().GetStatus(3, 17));
+        }
+
+        [Fact]
+        public void Record_WithNothingNewToSay_WritesNothing()
+        {
+            // The game re-marks entries constantly, and marks them Untouched outright.
+            // Rewriting the file for those would put its whole cost on the common case.
+            using var dir = new TempDirectory();
+            UnifiedStateStore store = dir.CreateStore();
+
+            var session = new UnifiedStateSession(store, new FakeSimStatusSource(), new RecordingLog());
+            Assert.True(session.Record(3, 17, "WasDisplayed"));
+
+            // Delete the file: anything that writes again has to recreate it.
+            File.Delete(store.LivePath);
+
+            Assert.False(session.Record(3, 17, "WasDisplayed"));
+            Assert.False(session.Record(3, 17, "WasOffered"));
+            Assert.False(session.Record(3, 17, "Untouched"));
+            Assert.False(session.Record(9, 9, "Untouched"));
+
+            Assert.False(File.Exists(store.LivePath));
+            Assert.Equal(SimStatus.WasDisplayed, session.State.GetStatus(3, 17));
+        }
+
+        [Fact]
+        public void Record_WithAnUnrecognizedStatus_WarnsOncePerStatusAndCarriesOn()
+        {
+            using var dir = new TempDirectory();
+            UnifiedStateStore store = dir.CreateStore();
+
+            var log = new RecordingLog();
+            var session = new UnifiedStateSession(store, new FakeSimStatusSource(), log);
+
+            Assert.False(session.Record(3, 17, "wasdisplayed"));
+            Assert.False(session.Record(3, 18, "wasdisplayed"));
+            Assert.False(session.Record(3, 19, null));
+            Assert.True(session.Record(3, 20, "WasDisplayed"));
+
+            Assert.Equal(1, session.State.EntryCount);
+            Assert.Equal(SimStatus.WasDisplayed, session.State.GetStatus(3, 20));
+
+            // One warning per distinct status string, however many entries carry it.
+            Assert.Single(log.Warnings, line => line.Contains("'wasdisplayed'", StringComparison.Ordinal));
+            Assert.Single(log.Warnings, line => line.Contains("'null'", StringComparison.Ordinal));
+            Assert.Empty(log.Errors);
+        }
+
+        [Fact]
+        public void Record_WhenTheWriteFails_LogsAndDoesNotThrow()
+        {
+            // A broken unified path must cost tracking and nothing else.
+            using var dir = new TempDirectory();
+            string blocked = Path.Combine(dir.Path, "blocked");
+            File.WriteAllText(blocked, "not a directory");
+
+            var log = new RecordingLog();
+            var store = new UnifiedStateStore(Path.Combine(blocked, "SaveGames"));
+            var session = new UnifiedStateSession(store, new FakeSimStatusSource(), log);
+
+            Assert.True(session.Record(3, 17, "WasDisplayed"));
+
+            Assert.Equal(SimStatus.WasDisplayed, session.State.GetStatus(3, 17));
+            Assert.Contains(log.Errors, line => line.Contains("Failed to write", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void Record_AfterRefusingANewerFormat_KeepsMergingButLeavesTheFileAlone()
+        {
+            using var dir = new TempDirectory();
+            UnifiedStateStore store = dir.CreateStore();
+            const string newerFile = "{\"version\":99,\"conversations\":{\"3\":{\"17\":\"WasDisplayed\"}}}";
+            File.WriteAllText(store.LivePath, newerFile);
+
+            var log = new RecordingLog();
+            var session = new UnifiedStateSession(store, new FakeSimStatusSource(), log);
+
+            Assert.True(session.Record(3, 17, "WasDisplayed"));
+
+            Assert.Equal(newerFile, File.ReadAllText(store.LivePath));
+            Assert.False(File.Exists(store.BackupPath));
+            Assert.Contains(log.Warnings, line => line.Contains("Not saving", StringComparison.Ordinal));
+        }
     }
 }
