@@ -334,8 +334,8 @@ namespace UnifiedStateBenchmark
         }
 
         /// <summary>
-        /// A source that never seeds. The no-op measurement supplies its own state
-        /// through the file, so seeding would only add noise.
+        /// A source with nothing in it. The no-op measurement supplies its own state
+        /// through the file, so reading a game would only add noise.
         /// </summary>
         private sealed class EmptySimStatusSource : ISimStatusSource
         {

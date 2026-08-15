@@ -5,10 +5,9 @@ namespace UnifiedConversationTracker.Persistence
     /// </summary>
     /// <remarks>
     /// The whole point of separating these is so first-access initialization
-    /// (de-omm.7) can tell "there is no history yet, seed from the running game"
-    /// apart from "there is history but this copy is damaged, try the backup and do
-    /// not overwrite anything until you know". Never collapse them into a nullable
-    /// state.
+    /// (de-omm.7) can tell "there is no history yet, start empty" apart from "there
+    /// is history but this copy is damaged, try the backup and do not overwrite
+    /// anything until you know". Never collapse them into a nullable state.
     /// </remarks>
     public enum UnifiedStateLoadOutcome
     {
@@ -21,7 +20,7 @@ namespace UnifiedConversationTracker.Persistence
 
         /// <summary>
         /// The file does not exist. Nothing is wrong; this is what a first run looks
-        /// like. Safe to seed and save over.
+        /// like. Safe to start empty and save over.
         /// </summary>
         Missing = 1,
 

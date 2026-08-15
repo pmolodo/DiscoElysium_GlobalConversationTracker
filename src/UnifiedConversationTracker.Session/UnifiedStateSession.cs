@@ -9,9 +9,9 @@ namespace UnifiedConversationTracker.Session
 {
     /// <summary>
     /// Owns the one unified state a game session has: reads it from disk exactly
-    /// once, seeds it from the running game when there is nothing to read, resyncs
-    /// it from the game whenever a savegame load rewrites the game's own tables,
-    /// and is the only thing that decides whether saving is allowed.
+    /// once, resyncs it from the running game whenever a savegame load rewrites the
+    /// game's own tables, and is the only thing that decides whether saving is
+    /// allowed.
     /// </summary>
     /// <remarks>
     /// <para><b>The trigger is explicit and idempotent.</b> Nothing happens in the
@@ -22,35 +22,30 @@ namespace UnifiedConversationTracker.Session
     /// exists and is valid from construction (empty, never null), so a hook that
     /// fires while initialization is in flight sees an empty state rather than a
     /// half-built one, and anything it merges survives: the merge rule only ever
-    /// raises a status, so a later load or seed cannot undo it.</para>
+    /// raises a status, so a later load or resync cannot undo it.</para>
     ///
-    /// <para><b>When to call it.</b> It is called from the write-through hook on
-    /// <c>DialogueLua.MarkDialogueEntry</c> - by way of <see cref="Record"/>, which
-    /// is what that hook actually calls - and not from plugin <c>Load()</c>. The
-    /// difference matters because of the seeding path:
-    /// <c>PersistentDataManager</c> rewrites the whole Lua SimStatus table when a
-    /// savegame is loaded, without going through <c>MarkDialogueEntry</c> (see
-    /// de-0s5). Seeding at plugin load, or at any point before a save has been
-    /// loaded, would copy an all-Untouched table and record nothing. A mark can
-    /// only happen inside a running conversation, which can only happen after a
-    /// game is in play, so the first mark is the earliest moment at which the
-    /// game's SimStatus values are real. <see cref="ISimStatusSource.IsReady"/> is
-    /// the belt to that braces: while it is false the seed is deferred and retried,
-    /// never written off.</para>
+    /// <para><b>Two ways in, and they cover different writers.</b>
+    /// <see cref="Record"/> is the write-through path, driven by the hook on
+    /// <c>DialogueLua.MarkDialogueEntry</c>: everything the game marks while it is
+    /// being played. <see cref="ResyncFromGame"/> is the load-time path, driven by
+    /// the hook on <c>PersistentDataManager.ExpandCompressedSimStatusData</c>: that
+    /// method rebuilds the whole Lua SimStatus table from a savegame without ever
+    /// calling <c>MarkDialogueEntry</c> (de-0s5), so nothing else would see it.
+    /// Between them they see every SimStatus the game ever holds - there is no
+    /// third writer (de-0s5 audited the whole build for one).</para>
     ///
-    /// <para><b>An empty seed is never persisted.</b> A brand new game legitimately
-    /// has nothing above Untouched. Writing a file for that would be worse than
-    /// writing nothing, because the file's existence is exactly what stops a later
-    /// session from seeding: the pre-existing history of a save made before the mod
-    /// was installed would then be unreachable forever.</para>
-    ///
-    /// <para><b>The seed is not enough on its own.</b> It only runs when there is
-    /// nothing usable on disk, so from the second session onwards it never fires
-    /// again - and <c>PersistentDataManager</c> keeps rewriting SimStatus behind
-    /// <c>MarkDialogueEntry</c> on every savegame load. <see cref="ResyncFromGame"/>
-    /// is the answer to that: the same full read of the game, triggered by the load
-    /// itself rather than by the file being absent. It is safe to run at any time
-    /// and however often, because the merge rule only ever raises a status.</para>
+    /// <para><b>There is no first-mark seed any more</b> (de-omm.23). There used to
+    /// be one, reading the whole game the first time a line was marked in a session
+    /// with no state file, and it cost 649 ms on the main thread at the moment a
+    /// conversation opened. It was a proxy for "a save has been loaded, so the Lua
+    /// table is real"; the load hook is that condition directly, so the proxy - and
+    /// its deferral, its retry, and the rule that an empty seed must never be
+    /// persisted lest the file suppress a later one - is gone. The resync strictly
+    /// subsumes it: it reads the same thing, it runs on every load rather than once
+    /// per playthrough-ever, and it runs inside a loading screen. Starting a brand
+    /// new game triggers neither, which is correct: a new game's table is
+    /// all-Untouched, so there is nothing to read, and everything from there on is
+    /// a mark.</para>
     ///
     /// <para>Not thread safe in the sense of being lock-free, but every public
     /// method takes the same lock and C# locks are reentrant, so a hook that
@@ -64,7 +59,7 @@ namespace UnifiedConversationTracker.Session
         /// listing them. Deliberately the file loader's own cap, so a skipped game row
         /// and a skipped file row read the same way in a log.
         /// </summary>
-        public const int MaxSeedWarnings = UnifiedStateJson.MaxWarnings;
+        public const int MaxGameWalkWarnings = UnifiedStateJson.MaxWarnings;
 
         /// <summary>What a null status string is called in the log and in the set of
         /// already-warned-about statuses, since null cannot go in the set itself.</summary>
@@ -81,14 +76,12 @@ namespace UnifiedConversationTracker.Session
         private readonly HashSet<string> _unrecognizedStatuses = new HashSet<string>(StringComparer.Ordinal);
 
         private bool _diskLoadDone;
-        private bool _seedPending;
-        private bool _deferralLogged;
         private bool _resyncGivenUp;
 
         /// <summary>Creates a session. Nothing is read, written or logged yet.</summary>
         /// <param name="store">The store over the SaveGames directory.</param>
-        /// <param name="simStatusSource">The running game, for the seeding path.</param>
-        /// <param name="log">Where recovery and seeding are reported.</param>
+        /// <param name="simStatusSource">The running game, for the resync path.</param>
+        /// <param name="log">Where recovery and resyncing are reported.</param>
         /// <exception cref="ArgumentNullException">Any argument is null.</exception>
         public UnifiedStateSession(
             UnifiedStateStore store,
@@ -106,7 +99,7 @@ namespace UnifiedConversationTracker.Session
         /// <summary>Where the in-memory state came from.</summary>
         public UnifiedStateOrigin Origin { get; private set; } = UnifiedStateOrigin.Uninitialized;
 
-        /// <summary>True once the disk read has happened. Seeding may still be pending.</summary>
+        /// <summary>True once the disk read has happened.</summary>
         public bool IsInitialized
         {
             get
@@ -119,28 +112,10 @@ namespace UnifiedConversationTracker.Session
         }
 
         /// <summary>
-        /// True while a seed is still owed because the game was not ready. Purely
-        /// informational; <see cref="EnsureInitialized"/> retries on its own.
-        /// </summary>
-        public bool IsSeedPending
-        {
-            get
-            {
-                lock (_gate)
-                {
-                    return _seedPending;
-                }
-            }
-        }
-
-        /// <summary>How many times the seeding path has been entered this session.</summary>
-        public int SeedAttemptCount { get; private set; }
-
-        /// <summary>
         /// How many times <see cref="ResyncFromGame"/> has actually walked the game
-        /// this session. Calls that were skipped - because a seed had just done the
-        /// same walk, because the game was not readable, or because saving is
-        /// disabled - are not counted.
+        /// this session. Calls that were skipped - because the game was not readable,
+        /// because a previous walk threw, or because saving is disabled - are not
+        /// counted.
         /// </summary>
         public int ResyncCount { get; private set; }
 
@@ -182,8 +157,8 @@ namespace UnifiedConversationTracker.Session
         /// <summary>
         /// Initializes the unified state if that has not happened yet, and returns
         /// it. Safe and cheap to call on every access: the disk is read at most
-        /// once per session, and after a successful seed this is a lock and a
-        /// couple of field reads.
+        /// once per session, and after that this is a lock and a couple of field
+        /// reads.
         /// </summary>
         /// <returns>The session's one state object, never null.</returns>
         public UnifiedConversationState EnsureInitialized()
@@ -197,11 +172,6 @@ namespace UnifiedConversationTracker.Session
                     // double-log the recovery it found.
                     _diskLoadDone = true;
                     LoadFromDisk();
-                }
-
-                if (_seedPending)
-                {
-                    TrySeedFromGame();
                 }
 
                 return _state;
@@ -381,12 +351,18 @@ namespace UnifiedConversationTracker.Session
                 QuarantineCorruptFile(recovery.Backup.SourcePath);
             }
 
+            // Nothing on disk is not a dead end: the next savegame load resyncs the
+            // whole of the game's own SimStatus table back in (see ResyncFromGame),
+            // and play is recorded as it happens. Say so, so an empty start does not
+            // read as data loss when it is a first run.
+            const string RecoveryHint =
+                "Starting empty; whatever the game itself still holds will be read back in "
+                + "the next time a savegame is loaded, and play is recorded as it happens.";
+
             if (recovery.Live.Outcome == UnifiedStateLoadOutcome.Missing
                 && (recovery.Backup == null || recovery.Backup.Outcome == UnifiedStateLoadOutcome.Missing))
             {
-                _log.Info(
-                    $"No unified state file at '{recovery.Live.SourcePath}'. "
-                    + $"Seeding from the running game ({_source.Description}).");
+                _log.Info($"No unified state file at '{recovery.Live.SourcePath}'. {RecoveryHint}");
             }
             else
             {
@@ -394,19 +370,17 @@ namespace UnifiedConversationTracker.Session
                     "No usable unified state on disk: "
                     + $"live file {DescribeFailure(recovery.Live)}, "
                     + $"backup {(recovery.Backup == null ? "not consulted" : DescribeFailure(recovery.Backup))}. "
-                    + $"Seeding from the running game ({_source.Description}); "
-                    + "cross-save history recorded before this point is gone.");
+                    + $"{RecoveryHint} Cross-save history for conversations this playthrough's "
+                    + "savegame does not itself hold is gone.");
             }
 
-            Origin = UnifiedStateOrigin.AwaitingGame;
-            _seedPending = true;
+            Origin = UnifiedStateOrigin.NoStateOnDisk;
         }
 
         private void RefuseNewerFormat(UnifiedStateLoadResult result)
         {
             Origin = UnifiedStateOrigin.RefusedNewerFormat;
             CanSave = false;
-            _seedPending = false;
             _log.Error(
                 $"The unified state file '{result.SourcePath}' was written by a newer version of this mod "
                 + $"({result.ErrorMessage ?? "unsupported format version"}). It holds history this build "
@@ -421,7 +395,6 @@ namespace UnifiedConversationTracker.Session
             // caller's reference to the state object stays valid.
             _state.MergeAll(result.RequireState());
             Origin = origin;
-            _seedPending = false;
             ReportSkippedRows(result);
         }
 
@@ -482,73 +455,7 @@ namespace UnifiedConversationTracker.Session
         }
 
         // -------------------------------------------------------------------
-        // Step 2: seeding. Retried until the game is ready, then done for good.
-        // -------------------------------------------------------------------
-
-        private void TrySeedFromGame()
-        {
-            if (!_source.IsReady)
-            {
-                if (!_deferralLogged)
-                {
-                    _deferralLogged = true;
-                    _log.Info(
-                        $"The game ({_source.Description}) is not ready to be read yet; "
-                        + "seeding the unified state is deferred until it is.");
-                }
-
-                return;
-            }
-
-            SeedAttemptCount++;
-            _seedPending = false;
-
-            var stopwatch = Stopwatch.StartNew();
-            int rowCount = 0;
-
-            try
-            {
-                MergeEverythingFromGame(ref rowCount);
-            }
-            catch (Exception ex)
-            {
-                // A throwing game walk is not retried: the same call would throw again
-                // on every dialogue line for the rest of the session.
-                Origin = UnifiedStateOrigin.SeedFailed;
-                _log.Error(
-                    $"Failed to seed the unified state from the running game ({_source.Description}) "
-                    + $"after {rowCount} rows: {ex}. The unified state will only contain what is "
-                    + "recorded from here on.");
-                return;
-            }
-
-            stopwatch.Stop();
-            Origin = UnifiedStateOrigin.SeededFromGame;
-
-            if (_state.IsEmpty)
-            {
-                // Deliberately no save. An empty file on disk is indistinguishable from
-                // a real one on the next run, and its presence is what would stop that
-                // run from seeding a save made before the mod was installed.
-                _log.Info(
-                    $"Seeded the unified state from the running game ({_source.Description}): "
-                    + $"nothing above Untouched in {rowCount} entries, so no file was written.");
-                return;
-            }
-
-            _log.Info(
-                $"Seeded the unified state from the running game ({_source.Description}): "
-                + $"{_state.ConversationCount} conversations, {_state.EntryCount} entries "
-                + $"from {rowCount} rows in {stopwatch.ElapsedMilliseconds} ms.");
-
-            if (TrySave())
-            {
-                _log.Info($"Wrote the seeded unified state to '{_store.LivePath}'.");
-            }
-        }
-
-        // -------------------------------------------------------------------
-        // Step 3: resyncing. Runs once per savegame load, for the whole session.
+        // Step 2: resyncing. Runs once per savegame load, for the whole session.
         // -------------------------------------------------------------------
 
         /// <summary>
@@ -566,18 +473,23 @@ namespace UnifiedConversationTracker.Session
         ///
         /// <para><b>It cannot lose anything.</b> The state is merged into, never
         /// replaced, and the merge rule only ever raises a status, so a resync can
-        /// only add. That is what makes it safe to run unconditionally on every load
-        /// and to overlap with the seed.</para>
+        /// only add. That is what makes it safe to run unconditionally on every
+        /// load, and however many times one load happens to trigger it (de-cvq).</para>
         ///
-        /// <para><b>Skips, because the walk is expensive</b> (de-omm.23 measured
-        /// 112,940 rows at 649 ms). The walk itself is skipped when a seed has just
-        /// done the same walk inside this very call, when the game is not readable,
-        /// when a previous walk threw, and when saving is disabled for the session -
-        /// that last one because the walk's only purpose is to be saved. The
-        /// <em>write</em> is skipped when nothing was raised, which de-omm.26 measured
-        /// as the common case: replaying a save the mod already tracked walked 89 rows
-        /// to gain 0 entries, and paying a whole-file write for that on every load
-        /// would be pure cost.</para>
+        /// <para><b>This is also the only bulk read of the game there is.</b> It
+        /// replaced the first-mark seed outright (de-omm.23), so the case the seed
+        /// existed for - a savegame whose history the unified state has never seen,
+        /// because the file was lost or the save predates the mod - is now covered
+        /// here, on every load rather than once per playthrough-ever.</para>
+        ///
+        /// <para><b>Skips, because the walk is not free</b> (de-omm.23 measured
+        /// 112,940 rows at 649 ms before the per-row lookup was hoisted). The walk
+        /// itself is skipped when the game is not readable, when a previous walk
+        /// threw, and when saving is disabled for the session - that last one because
+        /// the walk's only purpose is to be saved. The <em>write</em> is skipped when
+        /// nothing was raised, which de-omm.26 measured as the common case: replaying
+        /// a save the mod already tracked walked 89 rows to gain 0 entries, and paying
+        /// a whole-file write for that on every load would be pure cost.</para>
         /// </remarks>
         /// <returns>
         /// How many statuses this resync raised. Zero both when the game had nothing
@@ -593,17 +505,7 @@ namespace UnifiedConversationTracker.Session
                     return 0;
                 }
 
-                int seedsBefore = SeedAttemptCount;
                 EnsureInitialized();
-
-                // A seed is the same full read of the game. If one just happened on
-                // the way through EnsureInitialized, the state already holds
-                // everything the game has, and walking again would cost the whole
-                // 649 ms to change nothing.
-                if (SeedAttemptCount != seedsBefore)
-                {
-                    return 0;
-                }
 
                 if (!CanSave)
                 {
@@ -635,8 +537,8 @@ namespace UnifiedConversationTracker.Session
                 }
                 catch (Exception ex)
                 {
-                    // Not retried, for the same reason a failed seed is not: the next
-                    // load would call the same thing and fail the same way.
+                    // Not retried: the next load would call the same thing and fail
+                    // the same way, once per load, for the rest of the session.
                     _resyncGivenUp = true;
                     _log.Error(
                         $"Failed to resync the unified state from the running game ({_source.Description}) "
@@ -697,7 +599,7 @@ namespace UnifiedConversationTracker.Session
                 }
 
                 skippedCount++;
-                if (warnings.Count < MaxSeedWarnings)
+                if (warnings.Count < MaxGameWalkWarnings)
                 {
                     warnings.Add(
                         $"conversation {row.ConversationId} entry {row.DialogueEntryId}: "
@@ -722,6 +624,6 @@ namespace UnifiedConversationTracker.Session
         /// <inheritdoc />
         public override string ToString() =>
             $"UnifiedStateSession({Origin}, initialized={IsInitialized}, canSave={CanSave}, "
-            + $"seedPending={IsSeedPending})";
+            + $"resyncs={ResyncCount})";
     }
 }

@@ -28,12 +28,12 @@ namespace UnifiedConversationTracker
     /// </para>
     /// <para>
     /// Deferring the disk and game reads to first access is not tidiness, it is
-    /// correctness. Seeding an empty unified state from the running game only
-    /// produces anything after a savegame has been loaded, for exactly the de-0s5
-    /// reason above. At chainload there is no dialogue system, no database and no
-    /// save; seeding there would copy nothing, and the file it wrote would then
-    /// suppress the seed forever. Both triggers therefore belong to the hooks, each
-    /// of which can only fire once a game is in play.
+    /// correctness. At chainload there is no dialogue system, no database and no
+    /// save, so reading the game there would copy an all-Untouched table and record
+    /// nothing. Both triggers therefore belong to the hooks, each of which can only
+    /// fire once a game is in play - and the bulk read specifically belongs to the
+    /// load hook, which fires at the one moment the game's SimStatus values are
+    /// known to be real (de-omm.23).
     /// </para>
     /// </remarks>
     [BepInPlugin(PluginGuid, PluginName, PluginVersion)]

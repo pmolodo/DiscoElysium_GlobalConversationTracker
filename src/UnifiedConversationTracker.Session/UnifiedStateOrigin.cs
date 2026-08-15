@@ -5,6 +5,12 @@ namespace UnifiedConversationTracker.Session
     /// reader (and a test) can tell a normal load from a recovery, and a recovery
     /// from a first run.
     /// </summary>
+    /// <remarks>
+    /// This describes the DISK read only, which happens once per session. It is not
+    /// updated by <see cref="UnifiedStateSession.ResyncFromGame"/>: a resync merges
+    /// into whatever was loaded, and overwriting the origin would erase the one
+    /// signal that says a recovery happened.
+    /// </remarks>
     public enum UnifiedStateOrigin
     {
         /// <summary><see cref="UnifiedStateSession.EnsureInitialized"/> has not run yet.</summary>
@@ -21,29 +27,19 @@ namespace UnifiedConversationTracker.Session
         BackupFile = 2,
 
         /// <summary>
-        /// Nothing usable was on disk, so the state was copied out of the running
-        /// game. A first run, or a run after both generations were lost.
+        /// Nothing usable was on disk, so the state started empty. A first run, or a
+        /// run after both generations were lost. Not a failure and not transient:
+        /// the state fills up from the write-through hook as the game is played and
+        /// from <see cref="UnifiedStateSession.ResyncFromGame"/> on every savegame
+        /// load, which is what recovers history the lost file used to hold.
         /// </summary>
-        SeededFromGame = 3,
-
-        /// <summary>
-        /// Nothing usable was on disk and the game was not ready to be read yet, so
-        /// the state is empty and the seed will be retried on the next access. This
-        /// is a transient state, not a failure.
-        /// </summary>
-        AwaitingGame = 4,
+        NoStateOnDisk = 3,
 
         /// <summary>
         /// The live file was written by a newer build of the mod. The file is intact
         /// history, so it is left completely alone: the state is empty and
         /// <see cref="UnifiedStateSession.CanSave"/> is false for the whole session.
         /// </summary>
-        RefusedNewerFormat = 5,
-
-        /// <summary>
-        /// Nothing usable was on disk and reading the game threw. The state is empty
-        /// and no further seed is attempted this session.
-        /// </summary>
-        SeedFailed = 6,
+        RefusedNewerFormat = 4,
     }
 }

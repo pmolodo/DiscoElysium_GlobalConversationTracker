@@ -91,8 +91,9 @@ Steps:
    The second line proves the plugin's entry point ran; the fourth proves the hook is on. With
    HarmonyX logging enabled there is also a
    `[Info :HarmonyX] Patching void PixelCrushers.DialogueSystem.DialogueLua::MarkDialogueEntry(...)`
-   line. Nothing touches the state file until the first line of dialogue is marked, which is
-   when the file is read (or seeded from the running game) and the first write happens.
+   line. Nothing touches the state file until the first line of dialogue is marked, or a
+   savegame is loaded, whichever comes first: that is when the file is read and the first
+   write happens.
 7. To uninstall, delete the `UnifiedConversationTracker` folder from `BepInEx\plugins`.
 
 If the plugin does not appear at all, check `BepInEx\LogOutput.log` for a load error and confirm

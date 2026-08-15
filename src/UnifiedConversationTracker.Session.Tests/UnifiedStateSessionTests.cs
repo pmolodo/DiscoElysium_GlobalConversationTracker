@@ -7,9 +7,10 @@ using Xunit;
 namespace UnifiedConversationTracker.Session.Tests
 {
     /// <summary>
-    /// First-access initialization: the three recovery paths (live file, backup
-    /// fallback, seed from the running game), the two refusals (newer format,
-    /// failed game read), and the once-per-session guarantee.
+    /// First-access initialization: the three disk outcomes (live file, backup
+    /// fallback, nothing usable), the refusal to touch a newer format, the
+    /// once-per-session guarantee, and the two ways the state is filled - the
+    /// write-through <c>Record</c> and the load-time <c>ResyncFromGame</c>.
     /// </summary>
     public class UnifiedStateSessionTests
     {
@@ -104,7 +105,7 @@ namespace UnifiedConversationTracker.Session.Tests
             // fallback genuinely lost it. That is the loss the log has to make visible.
             Assert.Equal(SimStatus.Untouched, state.GetStatus(4, 1));
 
-            // Never seeded over a recovery.
+            // Never read the game over a recovery.
             Assert.Equal(0, source.EnumerationCount);
 
             Assert.True(log.WarningOrErrorContains("recovered"));
@@ -157,7 +158,7 @@ namespace UnifiedConversationTracker.Session.Tests
         }
 
         [Fact]
-        public void EnsureInitialized_WithBothFilesCorrupt_SeedsAndLogsTheLossAsAnError()
+        public void EnsureInitialized_WithBothFilesCorrupt_StartsEmptyAndLogsTheLossAsAnError()
         {
             using var dir = new TempDirectory();
             UnifiedStateStore store = dir.CreateStore();
@@ -170,25 +171,30 @@ namespace UnifiedConversationTracker.Session.Tests
 
             UnifiedConversationState state = session.EnsureInitialized();
 
-            Assert.Equal(UnifiedStateOrigin.SeededFromGame, session.Origin);
-            Assert.Equal(SimStatus.WasDisplayed, state.GetStatus(7, 2));
+            Assert.Equal(UnifiedStateOrigin.NoStateOnDisk, session.Origin);
+            Assert.True(state.IsEmpty);
+            Assert.Equal(0, source.EnumerationCount);
 
             // Both bad files named in the log, and the loss called out rather than
-            // left to be inferred from an unexpectedly small file later.
+            // left to be inferred from an unexpectedly small file later - along with
+            // what will put back what the game itself still holds.
             Assert.Contains(log.Errors, line => line.Contains(store.LivePath, StringComparison.Ordinal));
             Assert.Contains(log.Errors, line => line.Contains(store.BackupPath, StringComparison.Ordinal));
             Assert.Contains(log.Errors, line => line.Contains("gone", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(log.Errors, line => line.Contains("savegame is loaded", StringComparison.Ordinal));
 
             // Both sets of bad bytes preserved.
             Assert.Equal(2, Directory.GetFiles(dir.Path, "*.corrupt-*").Length);
         }
 
         // -------------------------------------------------------------------
-        // Path 3: nothing on disk, so seed from the running game.
+        // Path 3: nothing on disk. There is no first-mark seed any more
+        // (de-omm.23) - the state simply starts empty, and the load-time resync
+        // plus the write-through hook fill it.
         // -------------------------------------------------------------------
 
         [Fact]
-        public void EnsureInitialized_WithNoFiles_SeedsFromTheGameAndWritesTheResult()
+        public void EnsureInitialized_WithNoFiles_StartsEmptyWithoutReadingTheGame()
         {
             using var dir = new TempDirectory();
             UnifiedStateStore store = dir.CreateStore();
@@ -196,112 +202,24 @@ namespace UnifiedConversationTracker.Session.Tests
             var log = new RecordingLog();
             var source = new FakeSimStatusSource()
                 .Add(3, 17, "WasDisplayed")
-                .Add(3, 18, "WasOffered")
-                .Add(3, 19, "Untouched")
-                .Add(4, 1, "WasDisplayed");
+                .Add(3, 18, "WasOffered");
             var session = new UnifiedStateSession(store, source, log);
 
             UnifiedConversationState state = session.EnsureInitialized();
 
-            Assert.Equal(UnifiedStateOrigin.SeededFromGame, session.Origin);
-            Assert.Equal(SimStatus.WasDisplayed, state.GetStatus(3, 17));
-            Assert.Equal(SimStatus.WasOffered, state.GetStatus(3, 18));
-            Assert.Equal(SimStatus.WasDisplayed, state.GetStatus(4, 1));
+            Assert.Equal(UnifiedStateOrigin.NoStateOnDisk, session.Origin);
+            Assert.True(state.IsEmpty);
 
-            // Untouched is the bottom of the ordering and is never stored.
-            Assert.Equal(3, state.EntryCount);
-
-            // The seed reached disk, and reads back identically.
-            Assert.True(File.Exists(store.LivePath));
-            UnifiedStateLoadResult reloaded = store.Load();
-            Assert.True(reloaded.IsLoaded);
-            Assert.Equal(3, reloaded.RequireState().EntryCount);
-
+            // The 649 ms walk this used to do is gone from the dialogue hook, and so
+            // is the write that followed it.
+            Assert.Equal(0, source.EnumerationCount);
+            Assert.False(File.Exists(store.LivePath));
+            Assert.Empty(Directory.GetFiles(dir.Path));
             Assert.Empty(log.Errors);
         }
 
         [Fact]
-        public void EnsureInitialized_SeedingAnEmptyGame_WritesNoFile()
-        {
-            // A brand new game has nothing above Untouched. Writing a file for that
-            // would stop a later session from seeding a save made before the mod was
-            // installed, because the file's existence is what suppresses seeding.
-            using var dir = new TempDirectory();
-            UnifiedStateStore store = dir.CreateStore();
-
-            var log = new RecordingLog();
-            var source = new FakeSimStatusSource()
-                .Add(3, 17, "Untouched")
-                .Add(3, 18, "Untouched");
-            var session = new UnifiedStateSession(store, source, log);
-
-            UnifiedConversationState state = session.EnsureInitialized();
-
-            Assert.Equal(UnifiedStateOrigin.SeededFromGame, session.Origin);
-            Assert.True(state.IsEmpty);
-            Assert.False(File.Exists(store.LivePath));
-            Assert.Empty(Directory.GetFiles(dir.Path));
-        }
-
-        [Fact]
-        public void EnsureInitialized_WithUnrecognizedStatusStrings_SkipsThemAndLogsThem()
-        {
-            using var dir = new TempDirectory();
-            UnifiedStateStore store = dir.CreateStore();
-
-            var log = new RecordingLog();
-            var source = new FakeSimStatusSource()
-                .Add(3, 17, "WasDisplayed")
-                .Add(3, 18, "wasdisplayed")
-                .Add(3, 19, null);
-            var session = new UnifiedStateSession(store, source, log);
-
-            UnifiedConversationState state = session.EnsureInitialized();
-
-            Assert.Equal(1, state.EntryCount);
-            Assert.Contains(log.Warnings, line => line.Contains("wasdisplayed", StringComparison.Ordinal));
-            Assert.Contains(log.Warnings, line => line.Contains("null", StringComparison.Ordinal));
-        }
-
-        // -------------------------------------------------------------------
-        // Seeding timing: deferred while the game is not ready, retried after.
-        // -------------------------------------------------------------------
-
-        [Fact]
-        public void EnsureInitialized_WhenTheGameIsNotReady_DefersTheSeedAndRetriesLater()
-        {
-            using var dir = new TempDirectory();
-            UnifiedStateStore store = dir.CreateStore();
-
-            var log = new RecordingLog();
-            var source = new FakeSimStatusSource { IsReady = false }.Add(3, 17, "WasDisplayed");
-            var session = new UnifiedStateSession(store, source, log);
-
-            UnifiedConversationState first = session.EnsureInitialized();
-            Assert.Equal(UnifiedStateOrigin.AwaitingGame, session.Origin);
-            Assert.True(session.IsSeedPending);
-            Assert.True(first.IsEmpty);
-            Assert.Equal(0, source.EnumerationCount);
-
-            // Still not ready: no walk, no file, and no repeat of the deferral line.
-            session.EnsureInitialized();
-            Assert.Equal(0, source.EnumerationCount);
-            Assert.False(File.Exists(store.LivePath));
-            Assert.Single(log.Info, line => line.Contains("deferred", StringComparison.OrdinalIgnoreCase));
-
-            // The save loads and the game becomes readable.
-            source.IsReady = true;
-            UnifiedConversationState after = session.EnsureInitialized();
-
-            Assert.Same(first, after);
-            Assert.Equal(UnifiedStateOrigin.SeededFromGame, session.Origin);
-            Assert.Equal(SimStatus.WasDisplayed, after.GetStatus(3, 17));
-            Assert.False(session.IsSeedPending);
-            Assert.Equal(1, source.EnumerationCount);
-        }
-
-        [Fact]
-        public void EnsureInitialized_AfterASeed_NeverWalksTheGameAgain()
+        public void EnsureInitialized_HoweverOften_NeverReadsTheGame()
         {
             using var dir = new TempDirectory();
             UnifiedStateStore store = dir.CreateStore();
@@ -314,27 +232,37 @@ namespace UnifiedConversationTracker.Session.Tests
                 session.EnsureInitialized();
             }
 
-            Assert.Equal(1, source.EnumerationCount);
-            Assert.Equal(1, session.SeedAttemptCount);
+            Assert.Equal(0, source.EnumerationCount);
+            Assert.Equal(0, source.ReadinessCheckCount);
         }
 
         [Fact]
-        public void EnsureInitialized_WhenTheGameWalkThrows_LogsItAndDoesNotRetry()
+        public void NewGame_WithNoFileAndNoSavegameLoad_RecordsEverythingThroughTheHook()
         {
+            // Caveat (a) from de-0s5: starting a brand new game never calls
+            // PersistentDataManager.ExpandCompressedSimStatusData, so no resync runs
+            // and there is no seed left to run either. That is correct rather than a
+            // gap: a new game's SimStatus table is all-Untouched, so a bulk read would
+            // find nothing, and every status from there on arrives as a mark.
             using var dir = new TempDirectory();
             UnifiedStateStore store = dir.CreateStore();
 
             var log = new RecordingLog();
-            var source = new FakeSimStatusSource { ThrowOnEnumerate = new InvalidOperationException("no database") };
+            var source = new FakeSimStatusSource().Add(3, 17, "Untouched").Add(3, 18, "Untouched");
             var session = new UnifiedStateSession(store, source, log);
 
-            session.EnsureInitialized();
-            session.EnsureInitialized();
-            session.EnsureInitialized();
+            Assert.True(session.Record(3, 17, "WasOffered"));
+            Assert.True(session.Record(3, 17, "WasDisplayed"));
+            Assert.True(session.Record(4, 1, "WasDisplayed"));
 
-            Assert.Equal(UnifiedStateOrigin.SeedFailed, session.Origin);
-            Assert.Equal(1, source.EnumerationCount);
-            Assert.Contains(log.Errors, line => line.Contains("no database", StringComparison.Ordinal));
+            Assert.Equal(0, source.EnumerationCount);
+            Assert.Equal(UnifiedStateOrigin.NoStateOnDisk, session.Origin);
+
+            UnifiedConversationState saved = store.Load().RequireState();
+            Assert.Equal(SimStatus.WasDisplayed, saved.GetStatus(3, 17));
+            Assert.Equal(SimStatus.WasDisplayed, saved.GetStatus(4, 1));
+            Assert.Equal(2, saved.EntryCount);
+            Assert.Empty(log.Errors);
         }
 
         // -------------------------------------------------------------------
@@ -365,9 +293,8 @@ namespace UnifiedConversationTracker.Session.Tests
             Assert.False(session.CanSave);
             Assert.True(state.IsEmpty);
 
-            // Neither seeded over nor recovered from the backup.
+            // Neither read from the game nor recovered from the backup.
             Assert.Equal(0, source.EnumerationCount);
-            Assert.False(session.IsSeedPending);
 
             Assert.Contains(log.Errors, line => line.Contains("newer version", StringComparison.OrdinalIgnoreCase));
 
@@ -641,8 +568,8 @@ namespace UnifiedConversationTracker.Session.Tests
         [Fact]
         public void ResyncFromGame_AfterALoadRewritesTheGame_MergesWhatTheHookNeverSaw()
         {
-            // The case that actually bites: a unified file already exists, so nothing
-            // seeds, and the save being loaded carries history the mod never observed.
+            // The case that actually bites: the save being loaded carries history the
+            // mod never observed, whether or not a unified file already exists.
             using var dir = new TempDirectory();
             UnifiedStateStore store = dir.CreateStore();
             store.Save(StateWith((3, 17, SimStatus.WasDisplayed)));
@@ -657,7 +584,6 @@ namespace UnifiedConversationTracker.Session.Tests
             Assert.Equal(2, session.ResyncFromGame());
 
             Assert.Equal(1, session.ResyncCount);
-            Assert.Equal(0, session.SeedAttemptCount);
             Assert.Equal(UnifiedStateOrigin.LiveFile, session.Origin);
 
             // In memory and on disk alike.
@@ -720,31 +646,67 @@ namespace UnifiedConversationTracker.Session.Tests
         }
 
         [Fact]
-        public void ResyncFromGame_WhenTheSameCallAlsoSeeded_DoesNotWalkTwice()
+        public void ResyncFromGame_WithNothingOnDisk_IsWhatTheFirstMarkSeedUsedToBe()
         {
-            // A seed is the same full read of the game. Walking again straight after
-            // one would cost the whole walk to change nothing.
+            // The job the deleted seed existed for (de-omm.23): a first run, or a run
+            // after the file was lost, where everything the game holds has to be read
+            // in. It now happens on the load rather than on the first line of
+            // dialogue, and it writes a file for the same reasons the seed did not
+            // dare to - the file's existence no longer suppresses anything.
             using var dir = new TempDirectory();
             UnifiedStateStore store = dir.CreateStore();
 
-            var source = new FakeSimStatusSource().Add(3, 17, "WasDisplayed");
-            var session = new UnifiedStateSession(store, source, new RecordingLog());
+            var log = new RecordingLog();
+            var source = new FakeSimStatusSource()
+                .Add(3, 17, "WasDisplayed")
+                .Add(3, 18, "WasOffered")
+                .Add(3, 19, "Untouched")
+                .Add(4, 1, "WasDisplayed");
+            var session = new UnifiedStateSession(store, source, log);
 
-            Assert.Equal(0, session.ResyncFromGame());
+            Assert.Equal(3, session.ResyncFromGame());
 
+            Assert.Equal(1, session.ResyncCount);
             Assert.Equal(1, source.EnumerationCount);
-            Assert.Equal(1, session.SeedAttemptCount);
-            Assert.Equal(0, session.ResyncCount);
+            Assert.Equal(UnifiedStateOrigin.NoStateOnDisk, session.Origin);
 
-            // The seed still did its job.
-            Assert.Equal(UnifiedStateOrigin.SeededFromGame, session.Origin);
-            Assert.Equal(SimStatus.WasDisplayed, session.State.GetStatus(3, 17));
+            // Untouched is the bottom of the ordering and is never stored.
+            Assert.Equal(3, session.State.EntryCount);
+
+            UnifiedStateLoadResult reloaded = store.Load();
+            Assert.True(reloaded.IsLoaded);
+            UnifiedConversationState saved = reloaded.RequireState();
+            Assert.Equal(SimStatus.WasDisplayed, saved.GetStatus(3, 17));
+            Assert.Equal(SimStatus.WasOffered, saved.GetStatus(3, 18));
+            Assert.Equal(SimStatus.WasDisplayed, saved.GetStatus(4, 1));
+            Assert.Equal(3, saved.EntryCount);
+            Assert.Empty(log.Errors);
+        }
+
+        [Fact]
+        public void ResyncFromGame_WithUnrecognizedStatusStrings_SkipsThemAndLogsThem()
+        {
+            using var dir = new TempDirectory();
+            UnifiedStateStore store = dir.CreateStore();
+
+            var log = new RecordingLog();
+            var source = new FakeSimStatusSource()
+                .Add(3, 17, "WasDisplayed")
+                .Add(3, 18, "wasdisplayed")
+                .Add(3, 19, null);
+            var session = new UnifiedStateSession(store, source, log);
+
+            Assert.Equal(1, session.ResyncFromGame());
+
+            Assert.Equal(1, session.State.EntryCount);
+            Assert.Contains(log.Warnings, line => line.Contains("wasdisplayed", StringComparison.Ordinal));
+            Assert.Contains(log.Warnings, line => line.Contains("null", StringComparison.Ordinal));
         }
 
         [Fact]
         public void ResyncFromGame_OnEveryLoad_KeepsPickingUpWhatEachOneRestores()
         {
-            // Unlike the seed, which is once per session, the resync runs per load.
+            // The resync runs per load, not once per session the way the seed did.
             using var dir = new TempDirectory();
             UnifiedStateStore store = dir.CreateStore();
             store.Save(StateWith((1, 1, SimStatus.WasOffered)));
@@ -794,8 +756,8 @@ namespace UnifiedConversationTracker.Session.Tests
         [Fact]
         public void ResyncFromGame_WhenTheWalkThrows_LogsItAndNeverRetries()
         {
-            // Same reasoning as the seed: the next load would call the same thing and
-            // fail the same way, so one error line beats one per load.
+            // The next load would call the same thing and fail the same way, so one
+            // error line beats one per load.
             using var dir = new TempDirectory();
             UnifiedStateStore store = dir.CreateStore();
             store.Save(StateWith((3, 17, SimStatus.WasDisplayed)));

@@ -8,7 +8,7 @@ namespace UnifiedConversationTracker.Session
     /// The status is carried as the raw string rather than a <see cref="SimStatus"/>
     /// on purpose. The game's value is a Lua string, and an unrecognized one has to
     /// be skippable and countable exactly the way the file loader skips a damaged
-    /// row, instead of throwing part way through a seed and losing the rest.
+    /// row, instead of throwing part way through a walk and losing the rest.
     /// </remarks>
     public readonly struct SimStatusRow
     {
@@ -28,7 +28,7 @@ namespace UnifiedConversationTracker.Session
 
         /// <summary>
         /// The game's status string, expected to be one of Untouched / WasOffered /
-        /// WasDisplayed. Anything else is skipped and counted by the seeder.
+        /// WasDisplayed. Anything else is skipped and counted by the caller.
         /// </summary>
         public string? StatusName { get; }
 
