@@ -8,7 +8,7 @@ Disco Elysium - The Final Cut. The plugin's own notes live in
 
 ```powershell
 .\deploy.ps1     # build + install into your Steam copy
-dotnet test      # build every project and run every test
+dotnet test      # build every project but the plugin, and run every test
 ```
 
 Then launch the game. That is the whole iterate loop: edit -> `.\deploy.ps1` -> relaunch.
@@ -24,13 +24,13 @@ Then launch the game. That is the whole iterate loop: edit -> `.\deploy.ps1` -> 
 ## The solution
 
 `UnifiedConversationTracker.slnx` at the repo root is the single entry point for the
-libraries and their tests. `dotnet build` and `dotnet test` with no arguments pick it up,
-so there is no longer a project to `cd` into one at a time:
+libraries, their tests and the offline tools. `dotnet build` and `dotnet test` with no
+arguments pick it up, so there is no longer a project to `cd` into one at a time:
 
 ```powershell
-dotnet build                 # every project except the plugin
+dotnet build                 # every project except the plugin (Debug, dotnet's default)
 dotnet test                  # ... and run Core, Persistence and Session tests
-dotnet build -c Debug
+dotnet build -c Release      # what the .ps1 scripts build by default
 ```
 
 Two things about its contents are deliberate:
@@ -40,8 +40,15 @@ Two things about its contents are deliberate:
   and in a git worktree the repo-local reference copy is not even checked out. So it
   carries `<Build Project="false" />`: IDEs still load it, `dotnet build` skips it, and
   `.\build.ps1` (which resolves an install first) remains the way to build it.
-- **`tools\NtwtfDecode` is included**, even though it is not part of the plugin, so that a
-  repo-root build keeps the whole repo compiling rather than most of it.
+- **The `tools\` projects are included**, even though none of them is part of the plugin,
+  so that a repo-root build keeps the whole repo compiling rather than most of it. Each is
+  a standalone console app; run one with `dotnet run --project tools\<name> -- --help`.
+  - `NtwtfDecode` - dumps the Lua tables inside a `{save}.ntwtf` save (zip, folder or
+    `.lua` file) as JSON.
+  - `UnifiedStateCheck` - verifies `unified-conversation-state.json` is the union of two or
+    more saves, with no dialogue status lower than the highest save that mentions it.
+  - `UnifiedStateBenchmark` - times `UnifiedStateStore.Save`, broken out by phase, over a
+    sweep of state sizes.
 
 The `.slnx` format, not the classic `.sln`, because it is what `dotnet new sln` emits with
 the SDK this repo builds on and it can carry those notes as comments. It needs the .NET SDK
@@ -65,11 +72,12 @@ Resolution order:
 1. `-DiscoElysiumDir <path>`
 2. the `DISCO_ELYSIUM_DIR` environment variable
 3. `<repo>\Steam Install - Unaltered\Disco Elysium` (the csproj's own default)
-4. Steam auto-discovery: registry `Valve\Steam` + `libraryfolders.vdf`, AppID **632470**,
-   cached to `.build\cache\reference-game-dir.txt`
+4. the last discovered install, cached in `.build\cache\reference-game-dir.txt`
+5. Steam auto-discovery: registry `Valve\Steam` + `libraryfolders.vdf`, AppID **632470**
+   - its answer is what step 4 caches
 
-Step 4 is why the build works from a git worktree, where the repo-local reference copy in
-step 3 is not checked out. This install is only ever **read** from.
+Steps 4 and 5 are why the build works from a git worktree, where the repo-local reference
+copy in step 3 is not checked out. This install is only ever **read** from.
 
 Normally you do not run this directly - `build.ps1` does it for you.
 
@@ -102,7 +110,9 @@ What it does:
 2. builds
 3. prints the exact directory it is about to write to
 4. deletes any previous `<game>\BepInEx\plugins\UnifiedConversationTracker` and copies the
-   fresh `.dll` + `.pdb` in
+   fresh build in: the plugin DLL plus the mod's own `Core`, `Persistence` and `Session`
+   assemblies, each with its `.pdb`. BepInEx resolves a plugin's dependencies out of the
+   plugin's own folder, so the DLL alone would load and then fail.
 5. prints the log path and the line to look for
 
 **Target resolution:** `-GameDir`, else `DISCO_ELYSIUM_DEPLOY_DIR`, else the
@@ -123,18 +133,21 @@ extract straight into a game folder:
 
 ```
 BepInEx\plugins\UnifiedConversationTracker\UnifiedConversationTracker.dll
-BepInEx\plugins\UnifiedConversationTracker\UnifiedConversationTracker.pdb
+BepInEx\plugins\UnifiedConversationTracker\UnifiedConversationTracker.Core.dll
+BepInEx\plugins\UnifiedConversationTracker\UnifiedConversationTracker.Persistence.dll
+BepInEx\plugins\UnifiedConversationTracker\UnifiedConversationTracker.Session.dll
 UnifiedConversationTracker-README.md
 ```
 
-The version comes from `<Version>` in the csproj.
+Each `.dll` ships with its `.pdb`; it is the same payload `deploy.ps1` installs, from the
+same helper. The version comes from `<Version>` in the csproj.
 
 ## Safety rules baked into the scripts
 
 - **The repo's reference copy of the game is never written to.** `deploy.ps1` refuses any
   target path containing a `Steam Install - Unaltered` segment. (`-AllowReferenceCopy`
-  overrides it with a warning, but whether that copy is the reference we actually want is
-  still open - see de-omm.13.) Building only ever reads from a game install, never writes.
+  overrides it with a warning.) Building only ever reads from a game install, never
+  writes.
 - **No silent deploy default** - see `deploy.ps1` above.
 - **The BepInEx config is never edited.** If `[Logging.Console] Enabled` is not `true`,
   deploy just says so and moves on.
