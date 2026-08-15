@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      net6.0 to match Persistence (and the CoreCLR runtime BepInEx v6 gives an
+      IL2CPP plugin). This project is the layer that decides WHEN the unified
+      state is read, seeded and written; it deliberately knows nothing about
+      Unity, BepInEx or the Dialogue System, so it stays unit testable without
+      the game. The plugin supplies the game-facing pieces through
+      ISimStatusSource and IUnifiedStateLog.
+    -->
+    <TargetFramework>net6.0</TargetFramework>
+    <!-- net6.0 is chosen to match the game's runtime, not for support status. -->
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <RootNamespace>UnifiedConversationTracker.Session</RootNamespace>
+    <AssemblyName>UnifiedConversationTracker.Session</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\UnifiedConversationTracker.Core\UnifiedConversationTracker.Core.csproj" />
+    <ProjectReference Include="..\UnifiedConversationTracker.Persistence\UnifiedConversationTracker.Persistence.csproj" />
+  </ItemGroup>
+
+</Project>

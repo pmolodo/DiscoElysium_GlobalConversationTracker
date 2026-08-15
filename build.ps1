@@ -67,20 +67,35 @@ function Invoke-PluginBuild {
 
 
 function Copy-PluginPayload {
-    # Copy everything that makes up an installed plugin - the DLL plus its .pdb
-    # if one was produced, so exception stack traces carry line numbers - into
-    # $DestDir, creating it if needed. Shared by deploy.ps1 and make-release.ps1
-    # so an installed copy and a packaged copy always hold the same files.
+    # Copy everything that makes up an installed plugin into $DestDir, creating it
+    # if needed. Shared by deploy.ps1 and make-release.ps1 so an installed copy and
+    # a packaged copy always hold the same files.
+    #
+    # That is the plugin DLL plus the mod's own library assemblies next to it
+    # (Core, Persistence, Session), each with its .pdb if one was produced so
+    # exception stack traces carry line numbers. BepInEx resolves a plugin's
+    # dependencies out of the plugin's own folder, so shipping the DLL alone would
+    # load and then fail the moment it touched the unified state.
+    #
+    # Only $AssemblyName* is copied: the game and BepInEx reference assemblies are
+    # referenced with Private="false" and are not in the build output at all, so
+    # there is nothing here that could drag a copy of the game's own DLLs along.
     param(
         [Parameter(Mandatory = $true)][string]$DllPath,
         [Parameter(Mandatory = $true)][string]$DestDir
     )
     New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
-    $pdbPath = [System.IO.Path]::ChangeExtension($DllPath, ".pdb")
-    $files = @($DllPath) + @($pdbPath | Where-Object { Test-Path -LiteralPath $_ })
+    $buildDir = [System.IO.Path]::GetDirectoryName($DllPath)
+    $files = @(Get-ChildItem -LiteralPath $buildDir -File |
+        Where-Object { $_.Name -like "$AssemblyName*" -and $_.Extension -in ".dll", ".pdb" } |
+        Sort-Object Name)
+    $dllName = [System.IO.Path]::GetFileName($DllPath)
+    if (-not ($files | Where-Object { $_.Name -eq $dllName })) {
+        throw "Plugin assembly $dllName was not among the files to copy from $buildDir"
+    }
     foreach ($file in $files) {
-        Copy-Item -LiteralPath $file -Destination $DestDir -Force
-        Write-Host "  $([System.IO.Path]::GetFileName($file))"
+        Copy-Item -LiteralPath $file.FullName -Destination $DestDir -Force
+        Write-Host "  $($file.Name)"
     }
 }
 

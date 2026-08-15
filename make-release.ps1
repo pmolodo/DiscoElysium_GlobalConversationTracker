@@ -11,8 +11,11 @@
     laid out so that extracting it into a Disco Elysium game folder installs the
     plugin:
 
-        BepInEx\plugins\UnifiedConversationTracker\UnifiedConversationTracker.dll
+        BepInEx\plugins\UnifiedConversationTracker\UnifiedConversationTracker*.dll
         UnifiedConversationTracker-README.md
+
+    That is the plugin plus the mod's own library assemblies (Core, Persistence,
+    Session), which BepInEx resolves out of the plugin's own folder.
 
     BepInEx itself is deliberately NOT bundled. This plugin needs BepInEx 6
     (IL2CPP / CoreCLR) bleeding-edge builds, whose interop assemblies have to be
