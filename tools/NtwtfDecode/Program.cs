@@ -11,8 +11,10 @@ const string Usage = """
     Usage:
       dotnet run --project tools/NtwtfDecode -- <input> [options]
 
-    <input> is a {save}.ntwtf.lua file, or an expanded .ntwtf save folder
-    containing exactly one such file.
+    <input> is any of:
+      - a packed save archive, {save}.ntwtf.zip, as written to SaveGames
+      - a {save}.ntwtf.lua file
+      - an expanded .ntwtf save folder containing exactly one such file
 
     Options:
       -o, --output PATH   Write JSON here instead of stdout.
@@ -26,6 +28,13 @@ const string Usage = """
 try
 {
     return Run(args);
+}
+catch (Exception ex) when (IsUserError(ex))
+{
+    // Bad input is the caller's problem, not a defect: say what is wrong and
+    // stop. A stack trace here would bury the one line that helps.
+    Console.Error.WriteLine($"error: {ex.Message}");
+    return ExitFailure;
 }
 catch (Exception ex)
 {
@@ -79,8 +88,7 @@ int Run(string[] argv)
         throw new ArgumentException($"No input file given\n\n{Usage}");
     }
 
-    string inputPath = ResolveInputPath(input);
-    LuaTable allTables = RawDataReader.ReadAllTables(File.ReadAllBytes(inputPath), out int trailing);
+    LuaTable allTables = ReadTables(SaveBlob.Read(input), input, out int trailing);
     if (trailing > 0)
     {
         // PersistentDataManager.ApplyExtraData reads length-prefixed Lua source
@@ -132,22 +140,31 @@ static string NextArg(string[] argv, ref int i, string option)
     return argv[i];
 }
 
-static string ResolveInputPath(string input)
+/// <summary>
+/// Decodes the five tables, restating a format failure in terms of the input the
+/// caller actually named. Something that is not save data at all - the wrong
+/// file, a truncated copy - otherwise surfaces as a bare offset deep inside the
+/// reader, which says nothing about which argument was wrong.
+/// </summary>
+static LuaTable ReadTables(byte[] blob, string input, out int trailing)
 {
-    if (Directory.Exists(input))
+    try
     {
-        string[] candidates = Directory.GetFiles(input, "*.ntwtf.lua");
-        if (candidates.Length != 1)
-        {
-            throw new ArgumentException(
-                $"Expected exactly one *.ntwtf.lua in '{input}', found {candidates.Length}"
-            );
-        }
-        return candidates[0];
+        return RawDataReader.ReadAllTables(blob, out trailing);
     }
-    if (!File.Exists(input))
+    catch (Exception ex)
+        when (ex is InvalidDataException or EndOfStreamException or DecoderFallbackException)
     {
-        throw new FileNotFoundException($"No such file or directory: {input}", input);
+        throw new InvalidDataException(
+            $"'{input}' does not hold decodable {SaveBlob.LuaExtension} save data: "
+                + $"{ex.Message}. {SaveBlob.AcceptedInputs}",
+            ex
+        );
     }
-    return input;
 }
+
+/// <summary>
+/// Whether an exception describes bad input rather than a bug in this tool.
+/// </summary>
+static bool IsUserError(Exception ex) =>
+    ex is ArgumentException or IOException or InvalidDataException or UnauthorizedAccessException;
