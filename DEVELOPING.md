@@ -24,12 +24,12 @@ Then launch the game. That is the whole iterate loop: edit -> `.\deploy.ps1` -> 
 ## The solution
 
 `UnifiedConversationTracker.slnx` at the repo root is the single entry point for the
-libraries, their tests and the offline tools. `dotnet build` and `dotnet test` with no
+libraries, the offline tools and their tests. `dotnet build` and `dotnet test` with no
 arguments pick it up, so there is no longer a project to `cd` into one at a time:
 
 ```powershell
 dotnet build                 # every project except the plugin (Debug, dotnet's default)
-dotnet test                  # ... and run Core, Persistence and Session tests
+dotnet test                  # ... and run every test project, src\ and tools\ alike
 dotnet build -c Release      # what the .ps1 scripts build by default
 ```
 
