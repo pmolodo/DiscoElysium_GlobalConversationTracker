@@ -8,6 +8,7 @@ Disco Elysium - The Final Cut. The plugin's own notes live in
 
 ```powershell
 .\deploy.ps1     # build + install into your Steam copy
+dotnet test      # build every project and run every test
 ```
 
 Then launch the game. That is the whole iterate loop: edit -> `.\deploy.ps1` -> relaunch.
@@ -19,6 +20,32 @@ Then launch the game. That is the whole iterate loop: edit -> `.\deploy.ps1` -> 
 - a Disco Elysium install with **BepInEx 6.0.0-be.688 (IL2CPP / CoreCLR)** already set up
   **and run at least once**, so `<game>\BepInEx\interop` holds the generated interop
   assemblies
+
+## The solution
+
+`UnifiedConversationTracker.slnx` at the repo root is the single entry point for the
+libraries and their tests. `dotnet build` and `dotnet test` with no arguments pick it up,
+so there is no longer a project to `cd` into one at a time:
+
+```powershell
+dotnet build                 # every project except the plugin
+dotnet test                  # ... and run Core, Persistence and Session tests
+dotnet build -c Debug
+```
+
+Two things about its contents are deliberate:
+
+- **The plugin is in the solution but is not built by it.** It references BepInEx and the
+  IL2CPP interop assemblies out of a game install, which a checkout alone cannot supply -
+  and in a git worktree the repo-local reference copy is not even checked out. So it
+  carries `<Build Project="false" />`: IDEs still load it, `dotnet build` skips it, and
+  `.\build.ps1` (which resolves an install first) remains the way to build it.
+- **`tools\NtwtfDecode` is included**, even though it is not part of the plugin, so that a
+  repo-root build keeps the whole repo compiling rather than most of it.
+
+The `.slnx` format, not the classic `.sln`, because it is what `dotnet new sln` emits with
+the SDK this repo builds on and it can carry those notes as comments. It needs the .NET SDK
+9.0.200 or newer, Visual Studio 17.14+, or Rider 2024.3+.
 
 ## The scripts
 
@@ -177,6 +204,7 @@ everything generated, so `src\` stays clean.
 
 | What | Where |
 | --- | --- |
+| Solution | `UnifiedConversationTracker.slnx` |
 | Plugin project | `src\UnifiedConversationTracker.Plugin\` |
 | Built DLL | `.build\bin\UnifiedConversationTracker.Plugin\<Configuration>\net6.0\UnifiedConversationTracker.dll` |
 | Release zip | `.build\dist\UnifiedConversationTracker-v<version>.zip` |

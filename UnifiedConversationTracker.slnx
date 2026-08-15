@@ -1,0 +1,44 @@
+<!--
+  The one entry point for the whole repo: `dotnet build` and `dotnet test` at
+  the repo root pick this up with no arguments, instead of one `cd` per project.
+
+  XML .slnx rather than the classic .sln: it is what `dotnet new sln` produces
+  with the SDK this repo builds on (10.0.400), and it can carry the comments
+  below. Requires SDK 9.0.200+, Visual Studio 17.14+ or Rider 2024.3+.
+-->
+<Solution>
+
+  <Folder Name="/src/">
+    <Project Path="src/UnifiedConversationTracker.Core.Tests/UnifiedConversationTracker.Core.Tests.csproj" />
+    <Project Path="src/UnifiedConversationTracker.Core/UnifiedConversationTracker.Core.csproj" />
+    <!--
+      Test-only console app, built because the persistence tests launch it as a
+      child process. It is not shipped: only UnifiedConversationTracker* files
+      from the plugin's own output folder are deployed (see build.ps1).
+    -->
+    <Project Path="src/UnifiedConversationTracker.CrashHarness/UnifiedConversationTracker.CrashHarness.csproj" />
+    <Project Path="src/UnifiedConversationTracker.Persistence.Tests/UnifiedConversationTracker.Persistence.Tests.csproj" />
+    <Project Path="src/UnifiedConversationTracker.Persistence/UnifiedConversationTracker.Persistence.csproj" />
+    <!--
+      Listed so the plugin loads in an IDE, but deliberately NOT built by this
+      solution: it references BepInEx and the IL2CPP interop assemblies out of a
+      Disco Elysium install, so it cannot build on a machine without one (or in
+      a git worktree, where the repo-local reference copy is not checked out).
+      Build it through `.\build.ps1`, which resolves that install first.
+    -->
+    <Project Path="src/UnifiedConversationTracker.Plugin/UnifiedConversationTracker.Plugin.csproj">
+      <Build Project="false" />
+    </Project>
+    <Project Path="src/UnifiedConversationTracker.Session.Tests/UnifiedConversationTracker.Session.Tests.csproj" />
+    <Project Path="src/UnifiedConversationTracker.Session/UnifiedConversationTracker.Session.csproj" />
+  </Folder>
+
+  <!--
+    Not part of the plugin - a standalone offline decoder for the game's Lua
+    data. It is in the solution only so a repo-root build keeps it compiling.
+  -->
+  <Folder Name="/tools/">
+    <Project Path="tools/NtwtfDecode/NtwtfDecode.csproj" />
+  </Folder>
+
+</Solution>
