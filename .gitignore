@@ -31,3 +31,6 @@ obj/
 CLAUDE.local.md
 AGENTS.override.md
 .claude/settings.local.json
+
+# Throwaway git worktrees created for sub-agent isolation
+.claude/worktrees/
