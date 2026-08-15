@@ -37,10 +37,11 @@
     Not part of the plugin - standalone offline tools: a decoder for the game's
     Lua save data, the benchmark that times a whole-file rewrite of the unified
     state, and the checker that compares a unified state file against the saves
-    it should cover. They are in the solution only so a repo-root build keeps
-    them compiling.
+    it should cover. They are in the solution so a repo-root build keeps them
+    compiling, and so a repo-root `dotnet test` runs the decoder's tests.
   -->
   <Folder Name="/tools/">
+    <Project Path="tools/NtwtfDecode.Tests/NtwtfDecode.Tests.csproj" />
     <Project Path="tools/NtwtfDecode/NtwtfDecode.csproj" />
     <Project Path="tools/UnifiedStateBenchmark/UnifiedStateBenchmark.csproj" />
     <Project Path="tools/UnifiedStateCheck/UnifiedStateCheck.csproj" />

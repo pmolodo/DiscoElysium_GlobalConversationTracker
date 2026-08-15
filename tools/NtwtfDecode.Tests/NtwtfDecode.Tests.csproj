@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Test framework and versions match the three test projects under src\, so the
+    whole repo runs on one `dotnet test` with one set of packages. The target
+    framework is the tests' own (net10.0); the tool under test targets net8.0,
+    which a net10.0 test host loads unchanged.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>NtwtfDecode.Tests</RootNamespace>
+    <AssemblyName>NtwtfDecode.Tests</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NtwtfDecode\NtwtfDecode.csproj" />
+  </ItemGroup>
+
+</Project>
