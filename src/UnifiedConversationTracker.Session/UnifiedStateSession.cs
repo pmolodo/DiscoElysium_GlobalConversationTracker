@@ -9,8 +9,9 @@ namespace UnifiedConversationTracker.Session
 {
     /// <summary>
     /// Owns the one unified state a game session has: reads it from disk exactly
-    /// once, seeds it from the running game when there is nothing to read, and is
-    /// the only thing that decides whether saving is allowed.
+    /// once, seeds it from the running game when there is nothing to read, resyncs
+    /// it from the game whenever a savegame load rewrites the game's own tables,
+    /// and is the only thing that decides whether saving is allowed.
     /// </summary>
     /// <remarks>
     /// <para><b>The trigger is explicit and idempotent.</b> Nothing happens in the
@@ -43,6 +44,14 @@ namespace UnifiedConversationTracker.Session
     /// session from seeding: the pre-existing history of a save made before the mod
     /// was installed would then be unreachable forever.</para>
     ///
+    /// <para><b>The seed is not enough on its own.</b> It only runs when there is
+    /// nothing usable on disk, so from the second session onwards it never fires
+    /// again - and <c>PersistentDataManager</c> keeps rewriting SimStatus behind
+    /// <c>MarkDialogueEntry</c> on every savegame load. <see cref="ResyncFromGame"/>
+    /// is the answer to that: the same full read of the game, triggered by the load
+    /// itself rather than by the file being absent. It is safe to run at any time
+    /// and however often, because the merge rule only ever raises a status.</para>
+    ///
     /// <para>Not thread safe in the sense of being lock-free, but every public
     /// method takes the same lock and C# locks are reentrant, so a hook that
     /// re-enters during initialization gets the current state back instead of
@@ -51,9 +60,9 @@ namespace UnifiedConversationTracker.Session
     public sealed class UnifiedStateSession
     {
         /// <summary>
-        /// How many skipped-row descriptions a seed logs before it stops listing
-        /// them. Deliberately the file loader's own cap, so a skipped game row and a
-        /// skipped file row read the same way in a log.
+        /// How many skipped-row descriptions a walk of the game logs before it stops
+        /// listing them. Deliberately the file loader's own cap, so a skipped game row
+        /// and a skipped file row read the same way in a log.
         /// </summary>
         public const int MaxSeedWarnings = UnifiedStateJson.MaxWarnings;
 
@@ -74,6 +83,7 @@ namespace UnifiedConversationTracker.Session
         private bool _diskLoadDone;
         private bool _seedPending;
         private bool _deferralLogged;
+        private bool _resyncGivenUp;
 
         /// <summary>Creates a session. Nothing is read, written or logged yet.</summary>
         /// <param name="store">The store over the SaveGames directory.</param>
@@ -125,6 +135,14 @@ namespace UnifiedConversationTracker.Session
 
         /// <summary>How many times the seeding path has been entered this session.</summary>
         public int SeedAttemptCount { get; private set; }
+
+        /// <summary>
+        /// How many times <see cref="ResyncFromGame"/> has actually walked the game
+        /// this session. Calls that were skipped - because a seed had just done the
+        /// same walk, because the game was not readable, or because saving is
+        /// disabled - are not counted.
+        /// </summary>
+        public int ResyncCount { get; private set; }
 
         /// <summary>
         /// False when writing would destroy something we cannot replace: currently
@@ -487,27 +505,10 @@ namespace UnifiedConversationTracker.Session
 
             var stopwatch = Stopwatch.StartNew();
             int rowCount = 0;
-            int skippedCount = 0;
-            var warnings = new List<string>();
 
             try
             {
-                foreach (SimStatusRow row in _source.EnumerateSimStatuses())
-                {
-                    rowCount++;
-                    if (_state.TryMerge(row.ConversationId, row.DialogueEntryId, row.StatusName, out _))
-                    {
-                        continue;
-                    }
-
-                    skippedCount++;
-                    if (warnings.Count < MaxSeedWarnings)
-                    {
-                        warnings.Add(
-                            $"conversation {row.ConversationId} entry {row.DialogueEntryId}: "
-                            + $"unrecognized status '{row.StatusName ?? NullStatusName}'");
-                    }
-                }
+                MergeEverythingFromGame(ref rowCount);
             }
             catch (Exception ex)
             {
@@ -523,17 +524,6 @@ namespace UnifiedConversationTracker.Session
 
             stopwatch.Stop();
             Origin = UnifiedStateOrigin.SeededFromGame;
-
-            if (skippedCount > 0)
-            {
-                _log.Warning(
-                    $"{skippedCount} of {rowCount} SimStatus values read from the game were not "
-                    + "recognized and were skipped.");
-                foreach (string warning in warnings)
-                {
-                    _log.Warning($"  {warning}");
-                }
-            }
 
             if (_state.IsEmpty)
             {
@@ -555,6 +545,178 @@ namespace UnifiedConversationTracker.Session
             {
                 _log.Info($"Wrote the seeded unified state to '{_store.LivePath}'.");
             }
+        }
+
+        // -------------------------------------------------------------------
+        // Step 3: resyncing. Runs once per savegame load, for the whole session.
+        // -------------------------------------------------------------------
+
+        /// <summary>
+        /// Re-reads every SimStatus the game holds and merges it in, for the case the
+        /// write-through hook cannot see: <c>PersistentDataManager</c> rebuilding the
+        /// Lua SimStatus table wholesale when a savegame is loaded, without ever
+        /// calling <c>MarkDialogueEntry</c> (de-0s5).
+        /// </summary>
+        /// <remarks>
+        /// <para><b>Call it after the load has finished rewriting the table</b>, not
+        /// before: the plugin drives it from a postfix on
+        /// <c>PersistentDataManager.ExpandCompressedSimStatusData</c>, which is the
+        /// method that does the rewriting. Called too early it would read the
+        /// pre-load table, which is harmless but pointless.</para>
+        ///
+        /// <para><b>It cannot lose anything.</b> The state is merged into, never
+        /// replaced, and the merge rule only ever raises a status, so a resync can
+        /// only add. That is what makes it safe to run unconditionally on every load
+        /// and to overlap with the seed.</para>
+        ///
+        /// <para><b>Skips, because the walk is expensive</b> (de-omm.23 measured
+        /// 112,940 rows at 649 ms). The walk itself is skipped when a seed has just
+        /// done the same walk inside this very call, when the game is not readable,
+        /// when a previous walk threw, and when saving is disabled for the session -
+        /// that last one because the walk's only purpose is to be saved. The
+        /// <em>write</em> is skipped when nothing was raised, which de-omm.26 measured
+        /// as the common case: replaying a save the mod already tracked walked 89 rows
+        /// to gain 0 entries, and paying a whole-file write for that on every load
+        /// would be pure cost.</para>
+        /// </remarks>
+        /// <returns>
+        /// How many statuses this resync raised. Zero both when the game had nothing
+        /// the unified state was missing and when the walk was skipped; the log line
+        /// says which.
+        /// </returns>
+        public int ResyncFromGame()
+        {
+            lock (_gate)
+            {
+                if (_resyncGivenUp)
+                {
+                    return 0;
+                }
+
+                int seedsBefore = SeedAttemptCount;
+                EnsureInitialized();
+
+                // A seed is the same full read of the game. If one just happened on
+                // the way through EnsureInitialized, the state already holds
+                // everything the game has, and walking again would cost the whole
+                // 649 ms to change nothing.
+                if (SeedAttemptCount != seedsBefore)
+                {
+                    return 0;
+                }
+
+                if (!CanSave)
+                {
+                    _log.Warning(
+                        $"Not resyncing the unified state from the running game ({_source.Description}): "
+                        + $"saving is disabled for this session ({Origin}), so the walk could not be kept. "
+                        + $"See the earlier log lines about '{_store.LivePath}'.");
+                    return 0;
+                }
+
+                if (!_source.IsReady)
+                {
+                    _log.Warning(
+                        $"Not resyncing the unified state: the game ({_source.Description}) is not "
+                        + "readable yet. Statuses restored by this savegame load will only be recorded "
+                        + "if they are marked again during play.");
+                    return 0;
+                }
+
+                ResyncCount++;
+
+                var stopwatch = Stopwatch.StartNew();
+                int rowCount = 0;
+                int raisedCount;
+
+                try
+                {
+                    raisedCount = MergeEverythingFromGame(ref rowCount);
+                }
+                catch (Exception ex)
+                {
+                    // Not retried, for the same reason a failed seed is not: the next
+                    // load would call the same thing and fail the same way.
+                    _resyncGivenUp = true;
+                    _log.Error(
+                        $"Failed to resync the unified state from the running game ({_source.Description}) "
+                        + $"after {rowCount} rows: {ex}. No further resync will be attempted this session, "
+                        + "so statuses restored by loading a savegame will only be recorded if they are "
+                        + "marked again during play.");
+                    return 0;
+                }
+
+                stopwatch.Stop();
+
+                if (raisedCount == 0)
+                {
+                    _log.Info(
+                        $"Resynced the unified state from the running game ({_source.Description}) after a "
+                        + $"savegame load: nothing new in {rowCount} rows in {stopwatch.ElapsedMilliseconds} ms, "
+                        + "so no file was written.");
+                    return 0;
+                }
+
+                _log.Info(
+                    $"Resynced the unified state from the running game ({_source.Description}) after a "
+                    + $"savegame load: {raisedCount} statuses raised from {rowCount} rows in "
+                    + $"{stopwatch.ElapsedMilliseconds} ms; now {_state.ConversationCount} conversations, "
+                    + $"{_state.EntryCount} entries.");
+
+                TrySave();
+                return raisedCount;
+            }
+        }
+
+        /// <summary>
+        /// Walks every SimStatus the game currently holds and merges it into the
+        /// state, reporting the rows whose status string was not recognized.
+        /// </summary>
+        /// <param name="rowCount">
+        /// Counted up as the walk goes, so a caller that catches a throwing walk can
+        /// still say how far it got.
+        /// </param>
+        /// <returns>How many statuses this walk actually raised.</returns>
+        private int MergeEverythingFromGame(ref int rowCount)
+        {
+            int raisedCount = 0;
+            int skippedCount = 0;
+            var warnings = new List<string>();
+
+            foreach (SimStatusRow row in _source.EnumerateSimStatuses())
+            {
+                rowCount++;
+                if (_state.TryMerge(row.ConversationId, row.DialogueEntryId, row.StatusName, out bool changed))
+                {
+                    if (changed)
+                    {
+                        raisedCount++;
+                    }
+
+                    continue;
+                }
+
+                skippedCount++;
+                if (warnings.Count < MaxSeedWarnings)
+                {
+                    warnings.Add(
+                        $"conversation {row.ConversationId} entry {row.DialogueEntryId}: "
+                        + $"unrecognized status '{row.StatusName ?? NullStatusName}'");
+                }
+            }
+
+            if (skippedCount > 0)
+            {
+                _log.Warning(
+                    $"{skippedCount} of {rowCount} SimStatus values read from the game were not "
+                    + "recognized and were skipped.");
+                foreach (string warning in warnings)
+                {
+                    _log.Warning($"  {warning}");
+                }
+            }
+
+            return raisedCount;
         }
 
         /// <inheritdoc />

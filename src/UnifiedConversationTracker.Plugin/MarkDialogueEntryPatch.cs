@@ -17,8 +17,8 @@ namespace UnifiedConversationTracker
     /// <c>MarkDialogueEntryUntouched</c> all call it, it survives Final Cut with an
     /// unchanged signature, and it is not inlined (verified against the shipping
     /// IL2CPP binary in de-omm.1). The one writer that does not come through here is
-    /// <c>PersistentDataManager</c> rebuilding the table on savegame load, which is
-    /// tracked separately as de-0s5 and is not handled by this hook.</para>
+    /// <c>PersistentDataManager</c> rebuilding the table on savegame load (de-0s5),
+    /// which is covered by <see cref="ExpandCompressedSimStatusDataPatch"/> instead.</para>
     ///
     /// <para><b>Postfix, not prefix.</b> The stock per-save behavior runs first and
     /// completely unmodified; the unified state is a passive observer of what the
@@ -34,15 +34,8 @@ namespace UnifiedConversationTracker
     [HarmonyPatch(typeof(DialogueLua), nameof(DialogueLua.MarkDialogueEntry))]
     internal static class MarkDialogueEntryPatch
     {
-        /// <summary>
-        /// How many failures are reported before the hook gives up. The first is the
-        /// one that matters; a handful more in case the first was a one-off.
-        /// </summary>
-        private const int MaxFailures = 10;
-
         private static UnifiedStateSession? _session;
-        private static IUnifiedStateLog? _log;
-        private static int _failureCount;
+        private static HookFailureLimiter? _failures;
 
         /// <summary>
         /// Applies the patch. Call once, from plugin load, after the session exists.
@@ -63,7 +56,7 @@ namespace UnifiedConversationTracker
             }
 
             _session = session ?? throw new ArgumentNullException(nameof(session));
-            _log = log ?? throw new ArgumentNullException(nameof(log));
+            _failures = new HookFailureLimiter("recording dialogue statuses into the unified state", log);
             harmony.PatchAll(typeof(MarkDialogueEntryPatch));
         }
 
@@ -78,7 +71,8 @@ namespace UnifiedConversationTracker
         private static void MarkDialogueEntryPostfix(DialogueEntry dialogueEntry, string status)
         {
             UnifiedStateSession? session = _session;
-            if (session == null || _failureCount >= MaxFailures)
+            HookFailureLimiter? failures = _failures;
+            if (session == null || failures == null || failures.HasGivenUp)
             {
                 return;
             }
@@ -96,32 +90,7 @@ namespace UnifiedConversationTracker
             }
             catch (Exception ex)
             {
-                ReportFailure(ex);
-            }
-        }
-
-        /// <summary>
-        /// Logs a failure of the unified path, and switches the hook off once they
-        /// stop looking like one-offs.
-        /// </summary>
-        private static void ReportFailure(Exception ex)
-        {
-            _failureCount++;
-            IUnifiedStateLog? log = _log;
-            if (log == null)
-            {
-                return;
-            }
-
-            log.Error(
-                $"Recording a dialogue status into the unified state failed "
-                + $"({_failureCount} of {MaxFailures} allowed): {ex}");
-
-            if (_failureCount >= MaxFailures)
-            {
-                log.Error(
-                    "Giving up on the unified conversation state for the rest of this session; "
-                    + "the game itself is unaffected. Restart the game to try again.");
+                failures.Report(ex);
             }
         }
     }
