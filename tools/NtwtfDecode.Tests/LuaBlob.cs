@@ -16,6 +16,9 @@ namespace NtwtfDecode.Tests;
 /// </remarks>
 internal static class LuaBlob
 {
+    /// <summary>The one table in a save this repo's tools actually read.</summary>
+    public const string ConversationTableName = "Conversation";
+
     private const byte TableMarker = (byte)'T';
     private const byte StringCode = (byte)'S';
     private const byte NumberCode = (byte)'N';
@@ -65,7 +68,7 @@ internal static class LuaBlob
                 )
             ),
             (
-                "Conversation",
+                ConversationTableName,
                 Table(
                     (
                         "7",
@@ -114,6 +117,24 @@ internal static class LuaBlob
 
     /// <summary>The bytes of <see cref="SampleSave"/>.</summary>
     public static byte[] SerializeSampleSave() => Serialize(SampleSave());
+
+    /// <summary>
+    /// The bytes of a save whose Conversation table is the given one and whose
+    /// other four top-level tables are empty, so a test that is only about the
+    /// Conversation table can vary that table and nothing else.
+    /// </summary>
+    public static byte[] SerializeConversations(LuaTable conversations)
+    {
+        var tablesByName = new LuaTable();
+        foreach (string name in RawDataReader.TableNames)
+        {
+            tablesByName.Add(
+                name,
+                name == ConversationTableName ? conversations : new LuaTable()
+            );
+        }
+        return Serialize(tablesByName);
+    }
 
     private static void WriteTable(BinaryWriter writer, LuaTable table)
     {
