@@ -8,5 +8,6 @@ indent_size = 4
 [*.{bat,cmd,ps1}]
 end_of_line = crlf
 
-[.claude/settings.json]
+[.claude/settings{.local.json,.json}]
 insert_final_newline = true
+indent_size = 2
