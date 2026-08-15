@@ -24,10 +24,10 @@
 
     Defaulting to the Steam copy is not the thing keeping you safe; the guards
     are. The resolved target is printed before anything is written, the repo's
-    "Steam Install - *" reference copy is refused outright (see de-omm.13,
-    -AllowReferenceCopy overrides), a copy without BepInEx is rejected because
-    the plugin could never load there, and the only directory ever created or
-    deleted is <game>\BepInEx\plugins\UnifiedConversationTracker.
+    "Steam Install - *" reference copy is refused outright (-AllowReferenceCopy
+    overrides), a copy without BepInEx is rejected because the plugin could
+    never load there, and the only directory ever created or deleted is
+    <game>\BepInEx\plugins\UnifiedConversationTracker.
 #>
 [CmdletBinding()]
 param(

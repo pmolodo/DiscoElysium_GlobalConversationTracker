@@ -75,7 +75,9 @@ $PluginFolderName = $AssemblyName
 
 # Read-only reference copies of the game kept in this repo. Builds must never
 # write into them, and deploy refuses to target them unless explicitly forced.
-# See de-omm.13 - whether a truly unmodded copy is wanted is still open.
+# "Unaltered" means unaltered since the copy was taken, not unmodded: it carries
+# the same BepInEx tree as the Steam install it was copied from. That is settled
+# and accepted (de-omm.13, decided 2026-08-15); no pristine copy is kept.
 $ReferenceCopyDirNames = @(
     "Steam Install - Unaltered"
 )
@@ -245,8 +247,8 @@ function Assert-NotReferenceCopy {
 Refusing to write into a reference copy of the game:
   $Path
 Reference copies (currently: $($ReferenceCopyDirNames -join ', ')) are read-only
-material for this repo (see de-omm.13). Deploy into a playable copy of the game
-instead, e.g. the Steam install.
+material for this repo. Deploy into a playable copy of the game instead, e.g.
+the Steam install.
 "@
     }
 }
