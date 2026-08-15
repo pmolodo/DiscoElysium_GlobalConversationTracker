@@ -1,4 +1,5 @@
 #!/usr/bin/env -S powershell -NoProfile -ExecutionPolicy Bypass -File
+
 <#
 .SYNOPSIS
     Builds UnifiedConversationTracker.dll, the BepInEx plugin.

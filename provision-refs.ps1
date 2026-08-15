@@ -1,4 +1,5 @@
 #!/usr/bin/env -S powershell -NoProfile -ExecutionPolicy Bypass -File
+
 <#
 .SYNOPSIS
     Resolves and verifies the Disco Elysium install that supplies the build's

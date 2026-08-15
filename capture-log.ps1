@@ -1,4 +1,5 @@
 #!/usr/bin/env -S powershell -NoProfile -ExecutionPolicy Bypass -File
+
 <#
 .SYNOPSIS
     Copies a session's BepInEx log out of the game folder and proves the copy

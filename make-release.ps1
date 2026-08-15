@@ -1,4 +1,5 @@
 #!/usr/bin/env -S powershell -NoProfile -ExecutionPolicy Bypass -File
+
 <#
 .SYNOPSIS
     Builds the plugin and packages it into a versioned, shippable .zip.
