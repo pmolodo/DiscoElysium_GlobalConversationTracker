@@ -19,11 +19,14 @@ namespace NtwtfDecode;
 /// </remarks>
 public static class SaveBlob
 {
+    /// <summary>Extension of an already-expanded save folder.</summary>
+    public const string ExpandedExtension = ".ntwtf";
+
     /// <summary>Extension of a packed save.</summary>
-    public const string ZipExtension = ".ntwtf.zip";
+    public const string ZipExtension = ExpandedExtension + ".zip";
 
     /// <summary>Extension of the decodable blob inside a save.</summary>
-    public const string LuaExtension = ".ntwtf.lua";
+    public const string LuaExtension = ExpandedExtension + ".lua";
 
     /// <summary>One sentence naming every accepted input shape, for error messages.</summary>
     public const string AcceptedInputs =

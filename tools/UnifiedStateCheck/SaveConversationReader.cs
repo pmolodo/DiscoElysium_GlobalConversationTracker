@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.IO.Compression;
 using NtwtfDecode;
 using UnifiedConversationTracker;
 
@@ -35,15 +34,6 @@ public static class SaveConversationReader
     /// <summary>The per-entry field holding the status string.</summary>
     public const string SimStatusFieldName = "SimStatus";
 
-    /// <summary>Extension of a packed save.</summary>
-    public const string ZipExtension = ".ntwtf.zip";
-
-    /// <summary>Extension of the decodable blob inside a save.</summary>
-    public const string LuaExtension = ".ntwtf.lua";
-
-    /// <summary>Extension of an already-expanded save folder.</summary>
-    public const string ExpandedExtension = ".ntwtf";
-
     /// <summary>
     /// Loads a save's dialogue statuses.
     /// </summary>
@@ -61,7 +51,7 @@ public static class SaveConversationReader
     )
     {
         resolvedPath = ResolveSave(spec, saveDirectory);
-        byte[] blob = ReadBlob(resolvedPath);
+        byte[] blob = SaveBlob.Read(resolvedPath);
         LuaTable allTables = RawDataReader.ReadAllTables(blob, out _);
 
         if (
@@ -127,12 +117,12 @@ public static class SaveConversationReader
         }
 
         return Directory
-            .EnumerateFiles(saveDirectory, "*" + ZipExtension)
-            .Select(path => Path.GetFileName(path)[..^ZipExtension.Length])
+            .EnumerateFiles(saveDirectory, "*" + SaveBlob.ZipExtension)
+            .Select(path => Path.GetFileName(path)[..^SaveBlob.ZipExtension.Length])
             .Concat(
                 Directory
-                    .EnumerateDirectories(saveDirectory, "*" + ExpandedExtension)
-                    .Select(path => Path.GetFileName(path)[..^ExpandedExtension.Length])
+                    .EnumerateDirectories(saveDirectory, "*" + SaveBlob.ExpandedExtension)
+                    .Select(path => Path.GetFileName(path)[..^SaveBlob.ExpandedExtension.Length])
             )
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(name => name, StringComparer.OrdinalIgnoreCase);
@@ -146,7 +136,8 @@ public static class SaveConversationReader
         }
 
         // A bare save name: prefer the packed archive, fall back to an expanded folder.
-        foreach (string candidate in new[] { spec + ZipExtension, spec + ExpandedExtension })
+        string[] candidates = { spec + SaveBlob.ZipExtension, spec + SaveBlob.ExpandedExtension };
+        foreach (string candidate in candidates)
         {
             string path = Path.Combine(saveDirectory, candidate);
             if (File.Exists(path) || Directory.Exists(path))
@@ -156,50 +147,10 @@ public static class SaveConversationReader
         }
 
         throw new FileNotFoundException(
-            $"No save matching '{spec}' as a path, or as '{spec}{ZipExtension}' / "
-                + $"'{spec}{ExpandedExtension}' under '{saveDirectory}'.",
+            $"No save matching '{spec}' as a path, or as '{spec}{SaveBlob.ZipExtension}' / "
+                + $"'{spec}{SaveBlob.ExpandedExtension}' under '{saveDirectory}'.",
             spec
         );
-    }
-
-    private static byte[] ReadBlob(string path)
-    {
-        if (Directory.Exists(path))
-        {
-            // Same rule as NtwtfDecode.ResolveInputPath: exactly one blob, or it is
-            // ambiguous which save is meant.
-            string[] candidates = Directory.GetFiles(path, "*" + LuaExtension);
-            if (candidates.Length != 1)
-            {
-                throw new InvalidDataException(
-                    $"Expected exactly one *{LuaExtension} in '{path}', found {candidates.Length}."
-                );
-            }
-            return File.ReadAllBytes(candidates[0]);
-        }
-
-        if (!path.EndsWith(ZipExtension, StringComparison.OrdinalIgnoreCase))
-        {
-            return File.ReadAllBytes(path);
-        }
-
-        // Saves on disk are ZIP archives; read the blob straight out of the archive
-        // rather than expanding to a temp directory that would then need cleaning up.
-        using ZipArchive archive = ZipFile.OpenRead(path);
-        List<ZipArchiveEntry> blobs = archive
-            .Entries.Where(e => e.Name.EndsWith(LuaExtension, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        if (blobs.Count != 1)
-        {
-            throw new InvalidDataException(
-                $"Expected exactly one *{LuaExtension} inside '{path}', found {blobs.Count}."
-            );
-        }
-
-        using Stream entryStream = blobs[0].Open();
-        using var buffer = new MemoryStream();
-        entryStream.CopyTo(buffer);
-        return buffer.ToArray();
     }
 
     private static bool TryParseId(object key, out int id) =>
