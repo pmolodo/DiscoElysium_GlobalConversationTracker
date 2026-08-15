@@ -8,7 +8,7 @@ using UnifiedConversationTracker;
 using UnifiedConversationTracker.Persistence;
 using UnifiedConversationTracker.Session;
 
-namespace UnifiedConversationTracker.SaveBenchmark
+namespace UnifiedStateBenchmark
 {
     /// <summary>
     /// Times one whole-file rewrite of the unified state, broken out by phase, at

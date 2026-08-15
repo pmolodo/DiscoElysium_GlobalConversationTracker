@@ -16,13 +16,13 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <IsPackable>false</IsPackable>
-    <RootNamespace>UnifiedConversationTracker.SaveBenchmark</RootNamespace>
-    <AssemblyName>UnifiedConversationTracker.SaveBenchmark</AssemblyName>
+    <RootNamespace>UnifiedStateBenchmark</RootNamespace>
+    <AssemblyName>UnifiedStateBenchmark</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\UnifiedConversationTracker.Persistence\UnifiedConversationTracker.Persistence.csproj" />
-    <ProjectReference Include="..\UnifiedConversationTracker.Session\UnifiedConversationTracker.Session.csproj" />
+    <ProjectReference Include="..\..\src\UnifiedConversationTracker.Persistence\UnifiedConversationTracker.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\UnifiedConversationTracker.Session\UnifiedConversationTracker.Session.csproj" />
   </ItemGroup>
 
 </Project>
