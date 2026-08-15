@@ -34,3 +34,6 @@ AGENTS.override.md
 
 # Throwaway git worktrees created for sub-agent isolation
 .claude/worktrees/
+
+# ignore for now - can commit before releasing
+uv.lock
