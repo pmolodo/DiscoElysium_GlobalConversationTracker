@@ -252,6 +252,47 @@ instead, e.g. the Steam install.
 }
 
 
+function Resolve-TargetGameDir {
+    # The playable game folder a command should act on - the one deploy writes
+    # into and capture-log reads the session log out of. An override if given,
+    # else the auto-discovered Steam copy. Returns a validated path, or throws
+    # with instructions when there is genuinely no install to act on.
+    #
+    # Unrelated to Resolve-ReferenceGameDir below, which picks the install the
+    # build reads its reference assemblies from.
+    param([string]$GameDir)
+
+    $target = $null
+    $source = $null
+    if ($GameDir) {
+        $target = $GameDir
+        $source = "-GameDir"
+    }
+    elseif ($env:DISCO_ELYSIUM_DEPLOY_DIR) {
+        $target = $env:DISCO_ELYSIUM_DEPLOY_DIR
+        $source = "`$env:DISCO_ELYSIUM_DEPLOY_DIR"
+    }
+    else {
+        $target = Find-SteamGameDir
+        $source = "Steam auto-discovery (AppID $DiscoElysiumAppId)"
+        if (-not $target) {
+            throw @"
+No game folder to act on: no Steam copy of Disco Elysium (AppID $DiscoElysiumAppId) was found, and no override was given.
+Name one explicitly:
+  -GameDir "<path to game folder>"
+  `$env:DISCO_ELYSIUM_DEPLOY_DIR = "<path to game folder>"
+"@
+        }
+    }
+
+    if (-not (Test-Path -LiteralPath (Join-Path $target $GameExeName))) {
+        throw "Game folder from $source does not look like a Disco Elysium install (no $GameExeName): $target"
+    }
+    Write-Host "Game folder from ${source}: $target"
+    return (Get-Item -LiteralPath $target).FullName
+}
+
+
 function Resolve-ReferenceGameDir {
     # The game install the build reads its reference assemblies from. Resolution
     # order: explicit parameter, DISCO_ELYSIUM_DIR, the repo-local reference

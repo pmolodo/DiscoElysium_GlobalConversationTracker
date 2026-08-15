@@ -46,50 +46,14 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "build.ps1")
 
 
-function Resolve-DeployGameDir {
-    # The game folder to install into: an override if given, else the
-    # auto-discovered Steam copy. Returns a validated path, or throws with
-    # instructions when there is genuinely nothing to deploy to.
-    param([string]$GameDir)
-
-    $target = $null
-    $source = $null
-    if ($GameDir) {
-        $target = $GameDir
-        $source = "-GameDir"
-    }
-    elseif ($env:DISCO_ELYSIUM_DEPLOY_DIR) {
-        $target = $env:DISCO_ELYSIUM_DEPLOY_DIR
-        $source = "`$env:DISCO_ELYSIUM_DEPLOY_DIR"
-    }
-    else {
-        $target = Find-SteamGameDir
-        $source = "Steam auto-discovery (AppID $DiscoElysiumAppId)"
-        if (-not $target) {
-            throw @"
-No deploy target: no Steam copy of Disco Elysium (AppID $DiscoElysiumAppId) was found, and no override was given.
-Name one explicitly:
-  .\deploy.ps1 -GameDir "<path to game folder>"
-  `$env:DISCO_ELYSIUM_DEPLOY_DIR = "<path to game folder>"; .\deploy.ps1
-"@
-        }
-    }
-
-    if (-not (Test-Path -LiteralPath (Join-Path $target $GameExeName))) {
-        throw "Deploy target from $source does not look like a Disco Elysium install (no $GameExeName): $target"
-    }
-    Write-Host "Deploy target from ${source}: $target"
-    return (Get-Item -LiteralPath $target).FullName
-}
-
-
 Invoke-ScriptMain {
 
 # --- 1. Resolve and vet the target -------------------------------------------
 # Before the build, so an unusable target fails in a second rather than after a
-# full compile.
+# full compile. Resolve-TargetGameDir (provision-refs.ps1) is the same
+# resolution capture-log.ps1 uses, so both act on the same install.
 Write-Host "== Resolving deploy target ==" -ForegroundColor Cyan
-$gameDir = Resolve-DeployGameDir -GameDir $GameDir
+$gameDir = Resolve-TargetGameDir -GameDir $GameDir
 
 if ($AllowReferenceCopy) {
     if (Test-IsReferenceCopy -Path $gameDir) {
