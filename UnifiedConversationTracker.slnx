@@ -34,11 +34,14 @@
   </Folder>
 
   <!--
-    Not part of the plugin - a standalone offline decoder for the game's Lua
-    data. It is in the solution only so a repo-root build keeps it compiling.
+    Not part of the plugin - standalone offline tools: a decoder for the game's
+    Lua save data, and the checker that compares a unified state file against the
+    saves it should cover. They are in the solution only so a repo-root build
+    keeps them compiling.
   -->
   <Folder Name="/tools/">
     <Project Path="tools/NtwtfDecode/NtwtfDecode.csproj" />
+    <Project Path="tools/UnifiedStateCheck/UnifiedStateCheck.csproj" />
   </Folder>
 
 </Solution>

@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>UnifiedStateCheck</RootNamespace>
+    <AssemblyName>UnifiedStateCheck</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      NtwtfDecode owns the save-blob format (RawDataReader / LuaTable); referenced
+      rather than shelled out to so the Conversation table is read once, in process,
+      with no JSON round trip. Persistence owns the unified-state file format, so
+      the checker reads exactly what the plugin writes.
+    -->
+    <ProjectReference Include="..\NtwtfDecode\NtwtfDecode.csproj" />
+    <ProjectReference Include="..\..\src\UnifiedConversationTracker.Persistence\UnifiedConversationTracker.Persistence.csproj" />
+  </ItemGroup>
+
+</Project>
