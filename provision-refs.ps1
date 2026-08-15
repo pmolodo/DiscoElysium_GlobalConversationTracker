@@ -75,10 +75,9 @@ $PluginFolderName = $AssemblyName
 
 # Read-only reference copies of the game kept in this repo. Builds must never
 # write into them, and deploy refuses to target them unless explicitly forced.
-# See de-omm.13 - the actual state of these copies is under question.
+# See de-omm.13 - whether a truly unmodded copy is wanted is still open.
 $ReferenceCopyDirNames = @(
-    "Steam Install - Unaltered",
-    "Steam Install - AssetRipperSource"
+    "Steam Install - Unaltered"
 )
 
 # The csproj's own fallback, mirrored here so option 3 above matches it.
@@ -245,9 +244,9 @@ function Assert-NotReferenceCopy {
         throw @"
 Refusing to write into a reference copy of the game:
   $Path
-"$($ReferenceCopyDirNames -join '" and "')" are read-only reference material for
-this repo (see de-omm.13). Deploy into a playable copy of the game instead, e.g.
-the Steam install.
+Reference copies (currently: $($ReferenceCopyDirNames -join ', ')) are read-only
+material for this repo (see de-omm.13). Deploy into a playable copy of the game
+instead, e.g. the Steam install.
 "@
     }
 }

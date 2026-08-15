@@ -24,7 +24,7 @@
 
     Defaulting to the Steam copy is not the thing keeping you safe; the guards
     are. The resolved target is printed before anything is written, the repo's
-    "Steam Install - *" reference copies are refused outright (see de-omm.13,
+    "Steam Install - *" reference copy is refused outright (see de-omm.13,
     -AllowReferenceCopy overrides), a copy without BepInEx is rejected because
     the plugin could never load there, and the only directory ever created or
     deleted is <game>\BepInEx\plugins\UnifiedConversationTracker.
@@ -93,7 +93,7 @@ $gameDir = Resolve-DeployGameDir -GameDir $GameDir
 
 if ($AllowReferenceCopy) {
     if (Test-IsReferenceCopy -Path $gameDir) {
-        Write-Warning "Target is one of this repo's read-only reference copies of the game; -AllowReferenceCopy was given, so writing anyway."
+        Write-Warning "Target is a read-only reference copy of the game; -AllowReferenceCopy was given, so writing anyway."
     }
 }
 else {

@@ -84,7 +84,7 @@ no override was given *and* no Steam install was found.
 
 What actually keeps a stray deploy from doing damage is the guards, not the absence of a
 default: the resolved target is printed before anything is written, the repo's
-`Steam Install - *` reference copies are refused outright (`-AllowReferenceCopy` overrides),
+`Steam Install - *` reference copy is refused outright (`-AllowReferenceCopy` overrides),
 a copy without BepInEx is rejected because the plugin could never load there, and the only
 directory created or deleted is `<game>\BepInEx\plugins\UnifiedConversationTracker`.
 Uninstalling is deleting that one folder, so there is no uninstaller script to run.
@@ -104,11 +104,10 @@ The version comes from `<Version>` in the csproj.
 
 ## Safety rules baked into the scripts
 
-- **The repo's reference copies of the game are never written to.** `deploy.ps1` refuses
-  any target path containing a `Steam Install - Unaltered` or
-  `Steam Install - AssetRipperSource` segment. (`-AllowReferenceCopy` overrides it with a
-  warning, but the state of those copies is under question - see de-omm.13.) Building only
-  ever reads from a game install, never writes.
+- **The repo's reference copy of the game is never written to.** `deploy.ps1` refuses any
+  target path containing a `Steam Install - Unaltered` segment. (`-AllowReferenceCopy`
+  overrides it with a warning, but whether that copy is the reference we actually want is
+  still open - see de-omm.13.) Building only ever reads from a game install, never writes.
 - **No silent deploy default** - see `deploy.ps1` above.
 - **The BepInEx config is never edited.** If `[Logging.Console] Enabled` is not `true`,
   deploy just says so and moves on.
@@ -185,4 +184,4 @@ everything generated, so `src\` stays clean.
 | BepInEx log | `<game>\BepInEx\LogOutput.log` |
 | BepInEx config | `<game>\BepInEx\config\BepInEx.cfg` |
 | Playable Steam copy | `C:\Apps (x86)\Games\Steam\steamapps\common\Disco Elysium` |
-| Reference copies (read-only) | `Steam Install - Unaltered\`, `Steam Install - AssetRipperSource\` |
+| Reference copy (read-only) | `Steam Install - Unaltered\` |
