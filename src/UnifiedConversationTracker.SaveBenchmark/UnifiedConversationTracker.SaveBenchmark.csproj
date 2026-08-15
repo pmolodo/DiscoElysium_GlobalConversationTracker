@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      Investigatory console app for de-omm.11: how long does one whole-file
+      rewrite of the unified state actually take, broken out by phase? net6.0
+      to match the runtime BepInEx v6 IL2CPP gives the plugin, so the
+      System.Text.Json writer and the FileStream flush path are the same ones
+      that run in the game.
+    -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net6.0</TargetFramework>
+    <!-- net6.0 is chosen to match the game's runtime, not for support status. -->
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>UnifiedConversationTracker.SaveBenchmark</RootNamespace>
+    <AssemblyName>UnifiedConversationTracker.SaveBenchmark</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\UnifiedConversationTracker.Persistence\UnifiedConversationTracker.Persistence.csproj" />
+    <ProjectReference Include="..\UnifiedConversationTracker.Session\UnifiedConversationTracker.Session.csproj" />
+  </ItemGroup>
+
+</Project>
