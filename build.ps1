@@ -16,6 +16,21 @@
 
     Dot-source this file to reuse Invoke-PluginBuild and, transitively,
     provision-refs.ps1's constants and functions; run it directly to just build.
+
+.PARAMETER Configuration
+    The MSBuild configuration handed to `dotnet build -c`; "Release" unless
+    given. It also selects which output directory the built DLL is picked up
+    from (.build\bin\<project>\<Configuration>\<tfm>\), so a caller that goes on
+    to deploy or package the result ships the configuration it asked for.
+
+.PARAMETER DiscoElysiumDir
+    Game install to read the build's reference assemblies from, taking priority
+    over the rest of provision-refs.ps1's resolution order (DISCO_ELYSIUM_DIR,
+    the repo-local reference copy, the cached previous answer, Steam discovery).
+    It has to be an install that has already been run once with BepInEx 6, since
+    BepInEx\interop is generated on the machine and cannot be fetched; a path
+    without BepInEx\core and BepInEx\interop is an error rather than a reason to
+    fall back. The install is only read from.
 #>
 [CmdletBinding()]
 param(

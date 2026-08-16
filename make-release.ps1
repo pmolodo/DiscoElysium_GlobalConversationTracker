@@ -23,6 +23,21 @@
     generated on the player's own machine from their copy of the game, so an
     "all in one" archive could not work the way a Mono game's would. The README
     points at the BepInEx install instructions instead.
+
+.PARAMETER Configuration
+    The MSBuild configuration that gets built and then packaged; "Release"
+    unless given, and there is rarely a reason to ship anything else. Note that
+    the archive is named from the csproj's <Version> alone, so a zip built from
+    another configuration is indistinguishable by its file name.
+
+.PARAMETER DiscoElysiumDir
+    Game install to read the build's reference assemblies from, overriding
+    provision-refs.ps1's usual resolution order (DISCO_ELYSIUM_DIR, the
+    repo-local reference copy, the cached previous answer, Steam discovery). It
+    must already have BepInEx\core and BepInEx\interop. It affects only what the
+    build compiles against and never appears in the archive: the game and
+    BepInEx assemblies are referenced with Private="false", so nothing from that
+    install is packaged.
 #>
 [CmdletBinding()]
 param(

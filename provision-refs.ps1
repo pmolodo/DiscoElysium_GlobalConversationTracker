@@ -32,6 +32,17 @@
     Dot-source this file to reuse its constants and functions
     (Resolve-ReferenceGameDir, Initialize-BuildReferences, Find-SteamGameDir,
     Assert-NotReferenceCopy, ...); run it directly to just resolve and verify.
+
+.PARAMETER DiscoElysiumDir
+    Game install to take the reference assemblies from, skipping the other three
+    steps of the resolution order above. Unlike those, it is never silently
+    rejected: a path without BepInEx\core and BepInEx\interop throws instead of
+    falling through to the next candidate, on the grounds that an explicitly
+    named install that cannot be used is a mistake worth reporting. Nor is it
+    cached - only an install found by Steam discovery is written to
+    .build\cache. Applies when this script is run directly; when it is
+    dot-sourced, callers pass their own value to Initialize-BuildReferences
+    instead.
 #>
 [CmdletBinding()]
 param(

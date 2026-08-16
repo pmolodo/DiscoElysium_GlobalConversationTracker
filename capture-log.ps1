@@ -44,6 +44,38 @@
     be unverified is still worth keeping - but the script then exits non-zero
     unless -Force was given. Nothing is ever written into the game folder.
 
+.PARAMETER GameDir
+    The game folder to capture the log out of. Resolved exactly as deploy.ps1
+    resolves its target (this parameter, then DISCO_ELYSIUM_DEPLOY_DIR, then the
+    Steam copy), so by default the log captured is the one written by the install
+    deploy last wrote to. Read-only, like everything else this script does to the
+    game folder.
+
+.PARAMETER RunArtifact
+    Files the run being captured is claimed to have written - the unified state
+    file, a save - each of which is evidence of when that run was still going.
+    Every one of them must have been written at or after the log's Harmony
+    plugin-load stamp; one that is older proves the log belongs to a later
+    launch, and the capture fails. Giving none is only safe while the game is
+    still running: with no artefact and no live process there is nothing to check
+    against, which is itself a failure.
+
+.PARAMETER Label
+    Names the capture in the generated file name,
+    .build\logs\<Label>-<yyyyMMdd-HHmmss>.log. Defaults to "capture", and has no
+    effect when -Destination names the file outright.
+
+.PARAMETER Destination
+    Write the copy here instead of to the generated name under .build\logs.
+    Missing directories are created, an existing file is overwritten, and the
+    manifest lands beside it as <Destination>.capture.json.
+
+.PARAMETER Force
+    Keep the copy and its manifest but report failed cross-checks as warnings
+    instead of exiting non-zero. Nothing is hidden: the manifest still records
+    verified = false and lists every problem, so a forced capture stays
+    identifiable as one that could not be tied to its run.
+
 .EXAMPLE
     .\capture-log.ps1 -Label session-c -RunArtifact "$env:USERPROFILE\AppData\LocalLow\ZAUM Studio\Disco Elysium\SaveGames\unified-conversation-state.json"
 
@@ -53,13 +85,9 @@
 [CmdletBinding()]
 param(
     [string]$GameDir,
-    # Files the run being captured is claimed to have written. Each is proof of
-    # the run's existence and of when it was still going.
     [string[]]$RunArtifact = @(),
     [string]$Label = "capture",
     [string]$Destination,
-    # Keep the copy and the manifest, but report failed checks as warnings
-    # instead of exiting non-zero. The manifest still records verified = false.
     [switch]$Force
 )
 

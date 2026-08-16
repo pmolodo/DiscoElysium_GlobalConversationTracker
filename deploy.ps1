@@ -29,12 +29,42 @@
     overrides), a copy without BepInEx is rejected because the plugin could
     never load there, and the only directory ever created or deleted is
     <game>\BepInEx\plugins\UnifiedConversationTracker.
+
+.PARAMETER GameDir
+    The playable game folder to install into, taking priority over
+    DISCO_ELYSIUM_DEPLOY_DIR and over Steam auto-discovery. It has to contain
+    disco.exe and a BepInEx\core, and it must not be one of the repo's reference
+    copies unless -AllowReferenceCopy says otherwise. Whatever it resolves to is
+    printed before anything is written.
+
+.PARAMETER Configuration
+    The configuration built before installing; "Release" unless given. The
+    installed files are that build's output, so this decides which build ends up
+    in the game folder as well as which one is compiled.
+
+.PARAMETER DiscoElysiumDir
+    Game install to compile against - unrelated to -GameDir, which is the
+    install written into. The two are separate because the reference assemblies
+    can legitimately come from a copy you would never deploy to, such as the
+    repo's read-only reference copy. Left unset, the build resolves it the usual
+    way (see provision-refs.ps1).
+
+.PARAMETER AllowReferenceCopy
+    Deploy even when the target turns out to be one of the repo's read-only
+    reference copies of the game ("Steam Install - Unaltered"), which is
+    otherwise refused outright. The deploy then goes ahead with a warning, so
+    testing against a reference copy stays possible but never happens by
+    accident.
+
+.PARAMETER DryRun
+    Stop after resolving the target and building, printing the plugin folder
+    that would have been replaced without deleting or copying anything. The
+    build still runs, so this checks the whole path up to the write.
 #>
 [CmdletBinding()]
 param(
     [string]$GameDir,
     [string]$Configuration = "Release",
-    # Install to build against; unrelated to -GameDir, which is written to.
     [string]$DiscoElysiumDir,
     [switch]$AllowReferenceCopy,
     [switch]$DryRun
