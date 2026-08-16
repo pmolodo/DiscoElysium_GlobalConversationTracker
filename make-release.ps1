@@ -34,7 +34,10 @@
     Game install to read the build's reference assemblies from, overriding
     provision-refs.ps1's usual resolution order (DISCO_ELYSIUM_DIR, the
     repo-local reference copy, the cached previous answer, Steam discovery). It
-    must already have BepInEx\core and BepInEx\interop. It affects only what the
+    must already have BepInEx\core and BepInEx\interop, and a path that does not
+    is an error rather than a reason to fall back. Leaving it off is what asks
+    for that resolution order, ending in the auto-discovered Steam copy. It
+    affects only what the
     build compiles against and never appears in the archive: the game and
     BepInEx assemblies are referenced with Private="false", so nothing from that
     install is packaged.
@@ -47,8 +50,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Build helpers + shared project config, transitively including provision-refs.ps1.
-. (Join-Path $PSScriptRoot "build.ps1")
+# Build helpers + shared project config (Invoke-PluginBuild, Copy-PluginPayload,
+# Get-PluginVersion, ...). A module, not a dot-sourced script, so that its own
+# names cannot land in this script's scope and overwrite the parameters above -
+# see the header of build-support.psm1 (de-3pw).
+# -DisableNameChecking: Assert-NotReferenceCopy uses a verb PowerShell does not
+# have on its approved list, and the name says what it does better than any
+# approved verb would.
+Import-Module (Join-Path $PSScriptRoot "build-support.psm1") -Force -DisableNameChecking
 
 # Shipped alongside the DLL, renamed so it is obvious which mod it documents
 # once it has been extracted into the game folder next to disco.exe.

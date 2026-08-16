@@ -56,11 +56,20 @@ the SDK this repo builds on and it can carry those notes as comments. It needs t
 
 ## The scripts
 
-Five PowerShell scripts at the repo root, each runnable directly. They dot-source each
-other, so each reuses the previous one's constants and functions:
+Five PowerShell scripts at the repo root, each runnable directly, plus one module they
+all share:
 
-`deploy.ps1` / `make-release.ps1` -> `build.ps1` -> `provision-refs.ps1`, and
-`capture-log.ps1` -> `provision-refs.ps1` directly, since it builds nothing.
+`build.ps1`, `deploy.ps1`, `make-release.ps1`, `provision-refs.ps1` and `capture-log.ps1`
+each `Import-Module .\build-support.psm1`, which holds every shared constant and function
+(`Find-SteamGameDir`, `Resolve-TargetGameDir`, `Initialize-BuildReferences`,
+`Invoke-PluginBuild`, `Copy-PluginPayload`, ...). No script sources another.
+
+That module is a `.psm1` on purpose. The scripts used to dot-source each other
+(`deploy.ps1` -> `build.ps1` -> `provision-refs.ps1`), and PowerShell runs a dot-sourced
+script's `param()` block **in the caller's scope** - so each shared script silently reset
+its caller's `-DiscoElysiumDir` and `-Configuration` to their defaults before they were
+ever used (de-3pw). `Import-Module` never executes anything in the importer's scope, so
+the whole class of bug is gone rather than merely fixed once.
 
 ### `provision-refs.ps1`
 

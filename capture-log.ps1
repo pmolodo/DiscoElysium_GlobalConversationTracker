@@ -94,8 +94,13 @@ param(
 $ErrorActionPreference = "Stop"
 
 # Shared project config: $BepInExLogRelPath, $BuildDir, Resolve-TargetGameDir,
-# Invoke-ScriptMain, ...
-. (Join-Path $PSScriptRoot "provision-refs.ps1")
+# Invoke-ScriptMain, ... A module, not a dot-sourced script, so that its own
+# names cannot land in this script's scope and overwrite the parameters above -
+# see the header of build-support.psm1 (de-3pw).
+# -DisableNameChecking: Assert-NotReferenceCopy uses a verb PowerShell does not
+# have on its approved list, and the name says what it does better than any
+# approved verb would.
+Import-Module (Join-Path $PSScriptRoot "build-support.psm1") -Force -DisableNameChecking
 
 # The Harmony banner's own stamp format, e.g. "### At 2026-08-15 09.34.31".
 $HarmonyStampPattern = '(?m)^### At (\d{4}-\d{2}-\d{2} \d{2}\.\d{2}\.\d{2})\s*$'

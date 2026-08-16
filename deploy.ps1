@@ -46,8 +46,10 @@
     Game install to compile against - unrelated to -GameDir, which is the
     install written into. The two are separate because the reference assemblies
     can legitimately come from a copy you would never deploy to, such as the
-    repo's read-only reference copy. Left unset, the build resolves it the usual
-    way (see provision-refs.ps1).
+    repo's read-only reference copy. A path without BepInEx\core and
+    BepInEx\interop is an error rather than a reason to fall back; leaving it off
+    is what asks for the usual resolution order (see provision-refs.ps1), ending
+    in the auto-discovered Steam copy.
 
 .PARAMETER AllowReferenceCopy
     Deploy even when the target turns out to be one of the repo's read-only
@@ -72,16 +74,21 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Build helpers + shared project config, transitively including
-# provision-refs.ps1 (Find-SteamGameDir, Get-PluginInstallDir, ...).
-. (Join-Path $PSScriptRoot "build.ps1")
+# Build helpers + shared project config (Invoke-PluginBuild, Find-SteamGameDir,
+# Get-PluginInstallDir, ...). A module, not a dot-sourced script, so that its
+# own names cannot land in this script's scope and overwrite the parameters
+# above - see the header of build-support.psm1 (de-3pw).
+# -DisableNameChecking: Assert-NotReferenceCopy uses a verb PowerShell does not
+# have on its approved list, and the name says what it does better than any
+# approved verb would.
+Import-Module (Join-Path $PSScriptRoot "build-support.psm1") -Force -DisableNameChecking
 
 
 Invoke-ScriptMain {
 
 # --- 1. Resolve and vet the target -------------------------------------------
 # Before the build, so an unusable target fails in a second rather than after a
-# full compile. Resolve-TargetGameDir (provision-refs.ps1) is the same
+# full compile. Resolve-TargetGameDir (build-support.psm1) is the same
 # resolution capture-log.ps1 uses, so both act on the same install.
 Write-Host "== Resolving deploy target ==" -ForegroundColor Cyan
 $gameDir = Resolve-TargetGameDir -GameDir $GameDir
