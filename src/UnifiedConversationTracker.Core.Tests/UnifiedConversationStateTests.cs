@@ -409,6 +409,66 @@ namespace UnifiedConversationTracker.Tests
         }
 
         // -------------------------------------------------------------------
+        // Snapshot (what the background writer serializes, de-0m0.5)
+        // -------------------------------------------------------------------
+
+        [Fact]
+        public void Snapshot_HoldsExactlyTheSameEntriesAsItsSource()
+        {
+            // Equality of the enumeration in ID order is the property the on-disk
+            // format rests on: the serializer walks exactly this, so two states that
+            // enumerate the same way produce byte-identical files.
+            var state = new UnifiedConversationState();
+            state.Merge(10, 3, SimStatus.WasOffered);
+            state.Merge(2, 30, SimStatus.WasDisplayed);
+            state.Merge(2, 4, SimStatus.WasOffered);
+            state.Merge(-1, 0, SimStatus.WasDisplayed);
+
+            UnifiedConversationState snapshot = state.Snapshot();
+
+            Assert.Equal(state.EnumerateEntriesInIdOrder(), snapshot.EnumerateEntriesInIdOrder());
+            Assert.Equal(state.EntryCount, snapshot.EntryCount);
+            Assert.Equal(state.ConversationCount, snapshot.ConversationCount);
+        }
+
+        [Fact]
+        public void Snapshot_OfAnEmptyState_IsEmpty()
+        {
+            UnifiedConversationState snapshot = new UnifiedConversationState().Snapshot();
+
+            Assert.True(snapshot.IsEmpty);
+            Assert.Equal(0, snapshot.EntryCount);
+            Assert.Equal(0, snapshot.ConversationCount);
+            Assert.Empty(snapshot.EnumerateEntriesInIdOrder());
+        }
+
+        [Fact]
+        public void Snapshot_SharesNothingWithItsSource()
+        {
+            // The whole reason the snapshot exists: the writer serializes it outside the
+            // session lock, so marks keep arriving into the source while it does. If any
+            // dictionary were shared, that would be a concurrent read and write.
+            UnifiedConversationState state = StateWith(SimStatus.WasOffered);
+            UnifiedConversationState snapshot = state.Snapshot();
+
+            // Raise the existing entry, add one to the same conversation, and add a
+            // whole new conversation: every level of the structure is touched.
+            Assert.True(state.Merge(ConversationId, EntryId, SimStatus.WasDisplayed));
+            Assert.True(state.Merge(ConversationId, EntryId + 1, SimStatus.WasDisplayed));
+            Assert.True(state.Merge(ConversationId + 1, EntryId, SimStatus.WasDisplayed));
+
+            Assert.Equal(SimStatus.WasOffered, snapshot.GetStatus(ConversationId, EntryId));
+            Assert.Equal(1, snapshot.EntryCount);
+            Assert.Equal(1, snapshot.ConversationCount);
+
+            // And the other way round: the snapshot is an ordinary state, so it can be
+            // merged into, and doing so must not reach back into the source.
+            Assert.True(snapshot.Merge(500, 600, SimStatus.WasDisplayed));
+            Assert.Equal(SimStatus.Untouched, state.GetStatus(500, 600));
+            Assert.Equal(3, state.EntryCount);
+        }
+
+        // -------------------------------------------------------------------
         // The invariant: there is no way in except Merge
         // -------------------------------------------------------------------
 

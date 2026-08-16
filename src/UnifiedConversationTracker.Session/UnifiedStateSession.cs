@@ -62,7 +62,9 @@ namespace UnifiedConversationTracker.Session
     /// re-enters during initialization gets the current state back instead of
     /// deadlocking or recursing. That one lock is also the writer thread's condition
     /// variable, so there is exactly one lock in the whole design and therefore no
-    /// lock ordering to get wrong.</para>
+    /// lock ordering to get wrong. The writer holds it only long enough to copy the
+    /// state, and serializes and writes the copy outside it (de-0m0.5), so the longest
+    /// anything can make a mark wait is that copy.</para>
     /// </remarks>
     public sealed class UnifiedStateSession : IDisposable
     {
@@ -201,7 +203,7 @@ namespace UnifiedConversationTracker.Session
         /// </summary>
         /// <remarks>
         /// The lock covers getting the object, not using it. Since de-omm.22 there is
-        /// a second thread that reads this object - the writer, serializing it - so
+        /// a second thread that reads this object - the writer, copying it - so
         /// reading it here while marks are still arriving is a concurrent read and
         /// write of a plain <c>Dictionary</c>. Nothing in the mod does that; it is for
         /// tests and tools, which read it once the marking has stopped.
@@ -492,16 +494,27 @@ namespace UnifiedConversationTracker.Session
 
         /// <summary>
         /// The background writer. Sleeps on <see cref="_gate"/> until the state is
-        /// dirty, serializes a snapshot under the lock, and writes it outside the
-        /// lock.
+        /// dirty, copies the state under the lock, and serializes and writes the copy
+        /// outside it.
         /// </summary>
         /// <remarks>
-        /// <para><b>Why the lock is held for the serialize and nothing else.</b>
-        /// Serializing reads the live state, so it cannot happen concurrently with a
-        /// merge; the write touches only the filesystem, so it can. At the sizes
-        /// de-omm.11 measured that split puts 0.53 ms of a 7.4 ms save under the lock
-        /// and the other ~6.9 ms outside it, which is what takes the cost off the
-        /// hook's frame.</para>
+        /// <para><b>Why the lock is held for the copy and nothing else.</b> Reading the
+        /// live state cannot happen concurrently with a merge, so something has to be
+        /// under the lock; everything after the copy touches only the copy and the
+        /// filesystem, so nothing else has to be. de-omm.22 originally held the lock for
+        /// the whole serialize, which meant a mark arriving mid-serialize waited for it
+        /// on the Unity main thread - measured in de-0m0.5 at up to 16 ms at 30,000
+        /// entries and 39 ms at the 112,940-entry ceiling, a dropped frame either way.
+        /// Copying first shrinks what is under the lock by 24-25x at every size the
+        /// benchmark sweeps (0.008 ms against 0.21 ms at a realistic 1,473 entries,
+        /// 0.9 ms against 22 ms at the ceiling), at the price of one transient copy of
+        /// the state per write.</para>
+        ///
+        /// <para><b>It is still one lock.</b> The copy is taken under the same gate
+        /// everything else uses, so there is still no second lock and no ordering to get
+        /// wrong; the gate is simply held for less time. And it is still one writer: this
+        /// thread is the only thing that ever calls
+        /// <see cref="UnifiedStateStore.SavePayload"/>.</para>
         ///
         /// <para><b>Bursts coalesce for free.</b> A response menu marks every offered
         /// response, so several raises land in one frame. Each of those bumps
@@ -524,7 +537,7 @@ namespace UnifiedConversationTracker.Session
                 while (true)
                 {
                     long version;
-                    byte[] payload;
+                    UnifiedConversationState snapshot;
 
                     lock (_gate)
                     {
@@ -544,9 +557,12 @@ namespace UnifiedConversationTracker.Session
                         }
 
                         version = _dirtyVersion;
-                        payload = UnifiedStateJson.SerializeToUtf8Bytes(_state);
+                        snapshot = _state.Snapshot();
                     }
 
+                    // Everything from here on works on the copy, so nothing below this
+                    // line can make a mark on the main thread wait.
+                    byte[] payload = UnifiedStateJson.SerializeToUtf8Bytes(snapshot);
                     bool succeeded = TryWritePayload(payload);
 
                     lock (_gate)

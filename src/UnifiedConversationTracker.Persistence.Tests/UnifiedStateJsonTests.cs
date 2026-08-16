@@ -110,6 +110,27 @@ namespace UnifiedConversationTracker.Persistence.Tests
                 json);
         }
 
+        [Fact]
+        public void Serialize_OfASnapshot_IsByteIdenticalToSerializingItsSource()
+        {
+            // Since de-0m0.5 the background writer serializes a snapshot rather than the
+            // live state, so the file's determinism now depends on the snapshot being
+            // indistinguishable from its source to this serializer.
+            UnifiedConversationState state = StateWith(
+                (10, 5, SimStatus.WasDisplayed),
+                (2, 1, SimStatus.WasOffered),
+                (1, 2, SimStatus.WasDisplayed),
+                (1, 1, SimStatus.WasOffered));
+
+            Assert.Equal(
+                UnifiedStateJson.SerializeToUtf8Bytes(state),
+                UnifiedStateJson.SerializeToUtf8Bytes(state.Snapshot()));
+
+            Assert.Equal(
+                UnifiedStateJson.SerializeToUtf8Bytes(new UnifiedConversationState()),
+                UnifiedStateJson.SerializeToUtf8Bytes(new UnifiedConversationState().Snapshot()));
+        }
+
         // -------------------------------------------------------------------
         // Round trip
         // -------------------------------------------------------------------

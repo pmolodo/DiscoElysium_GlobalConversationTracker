@@ -243,13 +243,14 @@ namespace UnifiedConversationTracker.Persistence
         /// has already been serialized.
         /// </summary>
         /// <remarks>
-        /// Split out for de-omm.22. Serializing a state and writing the bytes have
-        /// very different costs and very different thread-safety needs: serializing
-        /// reads the live state and so has to happen under the session's lock, while
-        /// the write - which is ~85% of a save at realistic sizes, almost all of it
-        /// the flush and the two renames - touches nothing but the filesystem and so
-        /// must happen outside it. A caller that has both halves can only do that if
-        /// it can drive them separately.
+        /// Split out for de-omm.22. Serializing a state and writing the bytes have very
+        /// different costs and very different thread-safety needs: serializing reads a
+        /// state, while the write - which is ~85% of a save at realistic sizes, almost
+        /// all of it the flush and the two renames - touches nothing but the filesystem.
+        /// A caller that has both halves can only put them on different threads, or
+        /// inside and outside a lock, if it can drive them separately.
+        /// <c>UnifiedStateSession</c> does both: it copies its state under its lock and
+        /// then serializes and calls this outside it (de-0m0.5).
         /// </remarks>
         /// <param name="payload">The serialized state, as it will appear on disk.</param>
         /// <exception cref="ArgumentNullException"><paramref name="payload"/> is null.</exception>
