@@ -48,5 +48,18 @@ namespace UnifiedConversationTracker.Session
         /// costs nothing: the merge rule stores nothing for them.
         /// </remarks>
         IEnumerable<SimStatusRow> EnumerateSimStatuses();
+
+        /// <summary>
+        /// A one-line breakdown of where the most recent walk spent its time, or null
+        /// from a source that does not measure itself (which is every source but the
+        /// real one). Logged verbatim next to the resync's own total.
+        /// </summary>
+        /// <remarks>
+        /// This exists because the resync's total is one number for a walk, a merge
+        /// and a decision, and nothing in a BepInEx log said which of them was slow -
+        /// the first in-game measurement was 1744 ms and could not be attributed
+        /// (de-p1h). Called once per walk, after the walk, so it may format freely.
+        /// </remarks>
+        string? DescribeLastWalk() => null;
     }
 }

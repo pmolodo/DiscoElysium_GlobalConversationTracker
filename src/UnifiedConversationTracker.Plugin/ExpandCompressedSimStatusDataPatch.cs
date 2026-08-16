@@ -39,8 +39,8 @@ namespace UnifiedConversationTracker
     /// second resync walks the database again and raises nothing, because the first
     /// one already merged it. Correctness is unaffected either way, since the merge
     /// only ever raises and the write is skipped when nothing was raised, but the
-    /// walk is not free (de-omm.23 measured 649 ms) and a doubled one is tracked as
-    /// de-cvq.</para>
+    /// walk is not free (measured in-game at 1744 ms, de-p1h) and a doubled one is
+    /// tracked as de-cvq.</para>
     ///
     /// <para><b>Postfix, and nothing escapes into game code.</b> The game's own
     /// rewrite happens first and completely unmodified; the unified state is a

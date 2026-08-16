@@ -643,6 +643,62 @@ namespace UnifiedConversationTracker.Session.Tests
         }
 
         [Fact]
+        public void ResyncFromGame_WhenTheSourceMeasuredItself_LogsThatRightAfterTheTotal()
+        {
+            // de-p1h: the resync's total covers the walk, the merge and the write
+            // decision, and the first in-game measurement of it could not be
+            // attributed to any of them. The detail line has to sit next to the total
+            // to be read against it.
+            using var dir = new TempDirectory();
+            var log = new RecordingLog();
+            var source = new FakeSimStatusSource().Add(3, 17, "WasDisplayed");
+            source.WalkDetail = "1 rows over 1 conversations; and so on";
+            using var session = new UnifiedStateSession(dir.CreateStore(), source, log);
+
+            Assert.Equal(1, session.ResyncFromGame());
+
+            int total = log.Info.FindIndex(line => line.Contains("Resynced", StringComparison.Ordinal));
+            int detail = log.Info.FindIndex(line => line.Contains("Resync walk detail", StringComparison.Ordinal));
+            Assert.True(total >= 0, "the resync total was not logged");
+            Assert.Equal(total + 1, detail);
+            Assert.Contains("and so on", log.Info[detail], StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void ResyncFromGame_WhenTheWalkWroteNothing_StillLogsTheSourcesMeasurement()
+        {
+            // The nothing-raised path returns early, and it is the path the only
+            // in-game measurement so far took (de-p1h), so it is the one that most
+            // needs the breakdown.
+            using var dir = new TempDirectory();
+            UnifiedStateStore store = dir.CreateStore();
+            store.Save(StateWith((3, 17, SimStatus.WasDisplayed)));
+
+            var log = new RecordingLog();
+            var source = new FakeSimStatusSource().Add(3, 17, "WasDisplayed");
+            source.WalkDetail = "1 rows over 1 conversations; and so on";
+            using var session = new UnifiedStateSession(store, source, log);
+
+            Assert.Equal(0, session.ResyncFromGame());
+
+            Assert.Contains(log.Info, line => line.Contains("nothing new", StringComparison.Ordinal));
+            Assert.Contains(log.Info, line => line.Contains("Resync walk detail", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void ResyncFromGame_WhenTheSourceMeasuresNothing_LogsNoDetailLineAtAll()
+        {
+            using var dir = new TempDirectory();
+            var log = new RecordingLog();
+            var source = new FakeSimStatusSource().Add(3, 17, "WasDisplayed");
+            using var session = new UnifiedStateSession(dir.CreateStore(), source, log);
+
+            Assert.Equal(1, session.ResyncFromGame());
+
+            Assert.DoesNotContain(log.All, line => line.Contains("walk detail", StringComparison.Ordinal));
+        }
+
+        [Fact]
         public void ResyncFromGame_NeverLowersAStatusTheUnifiedStateAlreadyHolds()
         {
             // Loading an OLD save rewrites the game's tables downwards. The unified

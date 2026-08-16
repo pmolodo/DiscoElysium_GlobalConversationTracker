@@ -1045,8 +1045,9 @@ namespace UnifiedConversationTracker.Session
         /// because the file was lost or the save predates the mod - is now covered
         /// here, on every load rather than once per playthrough-ever.</para>
         ///
-        /// <para><b>Skips, because the walk is not free</b> (de-omm.23 measured
-        /// 112,940 rows at 649 ms before the per-row lookup was hoisted). The walk
+        /// <para><b>Skips, because the walk is not free</b> - the one in-game
+        /// measurement there is put 112,940 rows at 1744 ms, and hoisting the per-row
+        /// lookup made that worse rather than better (de-p1h). The walk
         /// itself is skipped when the game is not readable, when a previous walk
         /// threw, and when saving is disabled for the session - that last one because
         /// the walk's only purpose is to be saved. The <em>write</em> is skipped when
@@ -1127,20 +1128,32 @@ namespace UnifiedConversationTracker.Session
 
                 stopwatch.Stop();
 
-                if (raisedCount == 0)
+                string outcome =
+                    $"Resynced the unified state from the running game ({_source.Description}) after a "
+                    + "savegame load: ";
+                _log.Info(
+                    raisedCount == 0
+                        ? outcome
+                            + $"nothing new in {rowCount} rows in {stopwatch.ElapsedMilliseconds} ms, "
+                            + "so no file was written."
+                        : outcome
+                            + $"{raisedCount} statuses raised from {rowCount} rows in "
+                            + $"{stopwatch.ElapsedMilliseconds} ms; now {_state.ConversationCount} "
+                            + $"conversations, {_state.EntryCount} entries.");
+
+                // Immediately after the total, so the two lines can be read together:
+                // the total covers the walk, the merge and the write decision, and only
+                // this line says how the walk's own share of it was spent (de-p1h).
+                string? walkDetail = _source.DescribeLastWalk();
+                if (walkDetail != null)
                 {
-                    _log.Info(
-                        $"Resynced the unified state from the running game ({_source.Description}) after a "
-                        + $"savegame load: nothing new in {rowCount} rows in {stopwatch.ElapsedMilliseconds} ms, "
-                        + "so no file was written.");
-                    return 0;
+                    _log.Info($"Resync walk detail ({_source.Description}): {walkDetail}");
                 }
 
-                _log.Info(
-                    $"Resynced the unified state from the running game ({_source.Description}) after a "
-                    + $"savegame load: {raisedCount} statuses raised from {rowCount} rows in "
-                    + $"{stopwatch.ElapsedMilliseconds} ms; now {_state.ConversationCount} conversations, "
-                    + $"{_state.EntryCount} entries.");
+                if (raisedCount == 0)
+                {
+                    return 0;
+                }
 
                 MarkDirty();
                 return raisedCount;

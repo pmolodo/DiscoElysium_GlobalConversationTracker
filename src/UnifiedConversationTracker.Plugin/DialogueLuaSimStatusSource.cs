@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Il2CppInterop.Runtime;
 using PixelCrushers.DialogueSystem;
 using UnifiedConversationTracker.Session;
@@ -25,10 +26,40 @@ namespace UnifiedConversationTracker
     /// own accessor and it is correct, but it restarts the whole lookup chain from
     /// the Lua global root on every single row - <c>Environment["Conversation"]</c>,
     /// then the conversation, then <c>Dialog</c>, then the entry, then
-    /// <c>SimStatus</c> - which is five or six IL2CPP interop crossings per row.
-    /// Over the ~113,000 rows of a real playthrough that measured 649 ms. Everything
-    /// above the entry is invariant, so it is fetched once for the whole walk and
-    /// once per conversation instead, leaving two lookups per row.</para>
+    /// <c>SimStatus</c> - which is five or six Lua table lookups per row. Over the
+    /// ~113,000 rows of a real playthrough that measured 649 ms. Everything above
+    /// the entry is invariant, so it is fetched once for the whole walk and once per
+    /// conversation instead, leaving two lookups per row.</para>
+    ///
+    /// <para><b>Hoisting those lookups made the walk slower, not faster</b> (de-p1h).
+    /// The first in-game measurement of this walk was 1744 ms over the same 112,940
+    /// rows - 15.4 us a row against the old path's 5.7 us - and the reason is that
+    /// de-omm.23 counted the wrong thing. Those five or six lookups are not interop
+    /// crossings: <c>GetSimStatus</c> is <em>one</em> managed-to-IL2CPP call, and
+    /// every lookup inside it happens in the game's own compiled code, where a table
+    /// lookup is just a table lookup. Hoisting them into this assembly converted
+    /// four free native lookups into two more interop calls, and interop calls here
+    /// are expensive: BepInEx's generated wrappers all go through
+    /// <c>il2cpp_runtime_invoke</c> (verified against the IL of the interop
+    /// <c>DialogueSystem.dll</c>), each returned reference is rewrapped by
+    /// <c>Il2CppObjectPool.Get</c> and each <c>TryCast</c> allocates a further
+    /// wrapper whose constructor takes out an IL2CPP GC handle and registers a
+    /// finalizer, and the string key of <c>GetValue("SimStatus")</c> allocates a
+    /// fresh IL2CPP string on every row. Per row that is three
+    /// <c>il2cpp_runtime_invoke</c> calls and roughly four wrapper allocations where
+    /// <c>GetSimStatus</c> - a static taking two ints - had one call and none.</para>
+    ///
+    /// <para>It is not reverted, because the reason it replaced <c>GetSimStatus</c>
+    /// was never really the speed (see the next paragraph), and because the walk now
+    /// runs inside the savegame loading screen rather than at the moment a
+    /// conversation opens. What was added instead is <see cref="DescribeLastWalk"/>,
+    /// so the next in-game session says where the time went rather than being
+    /// argued about. The cache-miss count in that line also settles the assumption
+    /// this walk rests on - that entries arrive grouped by conversation, so the
+    /// Dialog table is resolved once per conversation and not once per row. The
+    /// shipped database agrees: 112,962 entries across 1,501 conversations, every
+    /// one of them carrying its parent conversation's id, so the expected miss
+    /// count is 1,501.</para>
     ///
     /// <para><b>It also stops mutating the game.</b> <c>GetSimStatus</c> goes through
     /// <c>GetSimStatusTable</c>, which does not report a miss - it CREATES the
@@ -60,6 +91,12 @@ namespace UnifiedConversationTracker
 
         private DialogueDatabase? _database;
 
+        /// <summary>
+        /// Where the last walk's time went. Written only by the walk, read only by
+        /// <see cref="DescribeLastWalk"/> after it, both on the main thread.
+        /// </summary>
+        private SimStatusWalkMeasurement _lastWalk;
+
         /// <inheritdoc />
         public string Description => "Dialogue System master database";
 
@@ -67,6 +104,18 @@ namespace UnifiedConversationTracker
         public bool IsReady => ResolveDatabase() != null && ResolveConversationTable() != null;
 
         /// <inheritdoc />
+        /// <remarks>
+        /// <para><b>The timestamps</b> (de-p1h). Three <see cref="Stopwatch.GetTimestamp"/>
+        /// reads a row, four on the rows where the Dialog table has to be resolved:
+        /// one splitting the database scan from the Lua status read, one ending the
+        /// read, one after the <c>yield return</c> so the caller's merge is charged
+        /// to neither section, and the extra one closing a resolve. On Windows that
+        /// is a <c>QueryPerformanceCounter</c> apiece, tens of nanoseconds; over
+        /// 113,000 rows it is single-digit milliseconds against a walk measured in
+        /// seconds, which is small enough not to move the number it is measuring -
+        /// and the count of reads is reported next to the times, so that stays a
+        /// judgement a reader can make rather than one they have to accept.</para>
+        /// </remarks>
         public IEnumerable<SimStatusRow> EnumerateSimStatuses()
         {
             DialogueDatabase database = ResolveDatabase()
@@ -77,6 +126,10 @@ namespace UnifiedConversationTracker
                 ?? throw new InvalidOperationException(
                     $"The Lua '{ConversationTableName}' table is not available; "
                     + "the walk should have been skipped.");
+
+            // Reset before anything is counted, so a walk that throws or is abandoned
+            // still describes itself rather than repeating the previous walk's line.
+            _lastWalk = SimStatusWalkMeasurement.Starting();
 
             // Hoisted out of the row loop: this is the first two of the five lookups
             // GetSimStatus would redo per row.
@@ -102,45 +155,87 @@ namespace UnifiedConversationTracker
             int dialogTableConversationId = 0;
             bool haveDialogTable = false;
 
-            for (int i = 0; i < conversations.Count; i++)
+            long rowCount = 0;
+            long conversationCount = 0;
+            long resolveCount = 0;
+            long scanTicks = 0;
+            long resolveTicks = 0;
+            long readTicks = 0;
+            long sectionStart = Stopwatch.GetTimestamp();
+
+            try
             {
-                Conversation conversation = conversations[i];
-                if (conversation == null)
+                for (int i = 0; i < conversations.Count; i++)
                 {
-                    continue;
-                }
-
-                Il2CppSystem.Collections.Generic.List<DialogueEntry> entries = conversation.dialogueEntries;
-                if (entries == null)
-                {
-                    continue;
-                }
-
-                for (int j = 0; j < entries.Count; j++)
-                {
-                    DialogueEntry entry = entries[j];
-                    if (entry == null)
+                    Conversation conversation = conversations[i];
+                    if (conversation == null)
                     {
                         continue;
                     }
 
-                    int conversationId = entry.conversationID;
-                    if (!haveDialogTable || conversationId != dialogTableConversationId)
+                    Il2CppSystem.Collections.Generic.List<DialogueEntry> entries = conversation.dialogueEntries;
+                    if (entries == null)
                     {
-                        dialogTable = ResolveDialogTable(conversationTable, conversationId);
-                        dialogTableConversationId = conversationId;
-                        haveDialogTable = true;
+                        continue;
                     }
 
-                    yield return new SimStatusRow(
-                        conversationId,
-                        entry.id,
-                        simStatusIsLive
-                            ? ReadSimStatus(dialogTable, entry.id)
-                            : SimStatusNames.Untouched);
+                    conversationCount++;
+
+                    for (int j = 0; j < entries.Count; j++)
+                    {
+                        DialogueEntry entry = entries[j];
+                        if (entry == null)
+                        {
+                            continue;
+                        }
+
+                        int conversationId = entry.conversationID;
+                        int entryId = entry.id;
+
+                        long scanned = Stopwatch.GetTimestamp();
+                        scanTicks += scanned - sectionStart;
+
+                        if (!haveDialogTable || conversationId != dialogTableConversationId)
+                        {
+                            dialogTable = ResolveDialogTable(conversationTable, conversationId);
+                            dialogTableConversationId = conversationId;
+                            haveDialogTable = true;
+
+                            resolveCount++;
+                            long resolved = Stopwatch.GetTimestamp();
+                            resolveTicks += resolved - scanned;
+                            scanned = resolved;
+                        }
+
+                        string statusName = simStatusIsLive
+                            ? ReadSimStatus(dialogTable, entryId)
+                            : SimStatusNames.Untouched;
+
+                        readTicks += Stopwatch.GetTimestamp() - scanned;
+                        rowCount++;
+
+                        yield return new SimStatusRow(conversationId, entryId, statusName);
+
+                        // After the yield, so the caller's merge is charged to neither
+                        // the read it follows nor the scan it precedes.
+                        sectionStart = Stopwatch.GetTimestamp();
+                    }
                 }
             }
+            finally
+            {
+                _lastWalk = new SimStatusWalkMeasurement(
+                    rowCount,
+                    conversationCount,
+                    resolveCount,
+                    scanTicks,
+                    resolveTicks,
+                    readTicks);
+            }
         }
+
+        /// <inheritdoc />
+        public string? DescribeLastWalk() => _lastWalk.Describe();
 
         /// <summary>
         /// The <c>Dialog</c> table of one conversation, or null if the Lua table has

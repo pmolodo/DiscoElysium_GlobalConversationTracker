@@ -117,6 +117,13 @@ namespace UnifiedConversationTracker.Session.Tests
         /// <summary>How many times readiness was polled.</summary>
         public int ReadinessCheckCount { get; private set; }
 
+        /// <summary>
+        /// Stands in for the real source's per-walk timing line. Null - the default,
+        /// and what the interface supplies when an implementation says nothing - means
+        /// no detail line should be logged at all.
+        /// </summary>
+        public string? WalkDetail { get; set; }
+
         public FakeSimStatusSource Add(int conversationId, int dialogueEntryId, string? statusName)
         {
             _rows.Add(new SimStatusRow(conversationId, dialogueEntryId, statusName));
@@ -142,5 +149,7 @@ namespace UnifiedConversationTracker.Session.Tests
 
             return _rows;
         }
+
+        public string? DescribeLastWalk() => WalkDetail;
     }
 }
