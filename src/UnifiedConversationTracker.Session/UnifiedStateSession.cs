@@ -54,8 +54,10 @@ namespace UnifiedConversationTracker.Session
     /// save at 6.7-7.4 ms for a realistic Day-1 save and ~40 ms at the ceiling, of
     /// which ~85% is the flush and the two renames - a whole dropped frame or more,
     /// inside a dialogue hook, mid-conversation. See <see cref="TrySave"/> for the
-    /// synchronous path that remains, and <see cref="Dispose"/> for the shutdown
-    /// flush that stops a clean exit losing the tail.</para>
+    /// synchronous path that remains, and <see cref="Shutdown"/> for the shutdown
+    /// flush that stops a clean exit losing the tail - which says in the log what it
+    /// did, including when it did nothing, because a silent success is
+    /// indistinguishable from a handler that never fired at all (de-6fi).</para>
     ///
     /// <para>Not thread safe in the sense of being lock-free, but every public
     /// method takes the same lock and C# locks are reentrant, so a hook that
@@ -100,6 +102,18 @@ namespace UnifiedConversationTracker.Session
 
         /// <summary>Name of the background writer thread, as a debugger shows it.</summary>
         private const string WriterThreadName = "UnifiedConversationTracker writer";
+
+        /// <summary>
+        /// What <see cref="Dispose"/> calls the trigger when nobody named one. The
+        /// plugin always names one; this covers tests, tools and <c>using</c> blocks.
+        /// </summary>
+        private const string DefaultShutdownTrigger = "Dispose";
+
+        /// <summary>
+        /// The prefix every shutdown line shares, so one search finds all of them
+        /// whatever the outcome was.
+        /// </summary>
+        private const string ShutdownLinePrefix = "Unified state shutdown flush";
 
         private readonly object _gate = new object();
         private readonly UnifiedStateStore _store;
@@ -146,6 +160,30 @@ namespace UnifiedConversationTracker.Session
         /// replacement is started: whatever broke would break the next one too.
         /// </summary>
         private bool _writerFaulted;
+
+        /// <summary>
+        /// What triggered the shutdown that stopped the writer. Kept so a second
+        /// trigger arriving afterwards can say which one got there first, rather than
+        /// returning silently and leaving the log looking as though it never fired.
+        /// </summary>
+        private string? _shutdownTrigger;
+
+        /// <summary>
+        /// How many writes have reached disk this session. Only ever read for the
+        /// shutdown line, where it separates "the writer ran all session and had
+        /// nothing left to do" from "the writer never wrote anything at all".
+        /// </summary>
+        private long _writesLanded;
+
+        /// <summary>
+        /// How many statuses <see cref="Record"/> has raised this session. Reported at
+        /// shutdown for the same reason as everything else on that line: a zero here
+        /// separates "the marking hook fired and the game marked nothing new" from
+        /// "the marking hook never fired", which no other line in the log distinguishes
+        /// (the resync reports its own raises separately, and a write can come from
+        /// either path).
+        /// </summary>
+        private long _statusesRecorded;
 
         /// <summary>Creates a session. Nothing is read, written or logged yet.</summary>
         /// <param name="store">The store over the SaveGames directory.</param>
@@ -309,6 +347,7 @@ namespace UnifiedConversationTracker.Session
                     return false;
                 }
 
+                _statusesRecorded++;
                 MarkDirty();
                 return true;
             }
@@ -399,28 +438,167 @@ namespace UnifiedConversationTracker.Session
         /// is tearing down.</para>
         /// <para>BepInEx does not call plugin <c>Unload</c> on game exit, so the
         /// plugin drives this from process- and application-level shutdown events
-        /// instead.</para>
+        /// instead. Use <see cref="Shutdown"/> to say which one; this overload exists
+        /// for <c>using</c> blocks, tests and tools, which have only one.</para>
         /// </remarks>
-        public void Dispose()
+        public void Dispose() => Shutdown(DefaultShutdownTrigger);
+
+        /// <summary>
+        /// Flushes anything still pending, shuts the background writer down, and says
+        /// so in the log under the name of whatever triggered it.
+        /// </summary>
+        /// <param name="trigger">
+        /// What is shutting the session down, as it should read in the log -
+        /// "Application.quitting", "AppDomain.ProcessExit", "BasePlugin.Unload".
+        /// Null or empty is reported as "Dispose".
+        /// </param>
+        /// <remarks>
+        /// <para><b>Same work as <see cref="Dispose"/>; the difference is the log</b>
+        /// (de-6fi). This used to be silent on success, which made "the handler fired
+        /// and there was nothing to flush" and "the handler never fired at all"
+        /// identical in a session log - and since BepInEx's IL2CPP chainloader calls
+        /// neither <c>Unload</c> nor anything else on the way out, which of the two
+        /// registered events actually fires is exactly the open question. It is now
+        /// two lines: one when the trigger arrives, before the gate is taken, so a
+        /// shutdown that then blocks behind a resync still proves it fired; one when
+        /// the drain is over, carrying the trigger, what was pending, whether it
+        /// landed, how long it took, how much the session recorded and wrote in total,
+        /// and whether the writer thread stopped.</para>
+        ///
+        /// <para><b>Why the closing line is logged outside the gate.</b> The gate is
+        /// the writer's condition variable, and the writer logs its own failures from
+        /// its own thread, so a log sink with a lock of its own is reachable from two
+        /// threads. Nothing in the writer ever holds a log's lock while it wants the
+        /// gate - <see cref="TryWritePayload"/> logs after releasing it and before
+        /// re-taking it, and <see cref="WriterLoop"/>'s catch logs after its lock
+        /// block - so there is no cycle either way round. The closing line is logged
+        /// after the gate is released anyway, which leaves the one line that has to be
+        /// early (the trigger line, logged before the gate is taken at all) touching no
+        /// session state whatsoever.</para>
+        ///
+        /// <para><b>Nothing here can hang.</b> The drain is
+        /// <see cref="WaitForWrite"/>, already bounded by
+        /// <see cref="WriteWaitTimeoutMilliseconds"/> and already loud when it expires;
+        /// the join is bounded by <see cref="WriterExitTimeoutMilliseconds"/>; the two
+        /// log calls are the same sink the rest of the class already writes to under
+        /// the gate.</para>
+        /// </remarks>
+        public void Shutdown(string? trigger)
         {
-            Thread? writer;
+            string triggerName = string.IsNullOrEmpty(trigger) ? DefaultShutdownTrigger : trigger;
+            var elapsed = Stopwatch.StartNew();
+
+            // Before the gate, and touching nothing but the argument: this is the line
+            // that proves the trigger fired even if everything after it wedges.
+            _log.Info($"{ShutdownLinePrefix} triggered by {triggerName}.");
+
+            Thread? writer = null;
+            string? alreadyShutDownBy = null;
+            UnifiedStateOrigin origin = UnifiedStateOrigin.Uninitialized;
+            bool canSave = false;
+            bool writerExisted = false;
+            bool flushed = false;
+            long pending = 0;
+            long writesLanded = 0;
+            long recorded = 0;
+
             lock (_gate)
             {
                 if (_writerStopping)
                 {
-                    return;
+                    alreadyShutDownBy = _shutdownTrigger ?? DefaultShutdownTrigger;
                 }
+                else
+                {
+                    _shutdownTrigger = triggerName;
+                    origin = Origin;
+                    canSave = CanSave;
+                    writerExisted = _writer != null;
+                    pending = _dirtyVersion - _writtenVersion;
 
-                // Flush before stopping, not after: the writer thread is what does the
-                // writing, so it has to still be running for the tail to land.
-                WaitForWrite(_dirtyVersion);
+                    // Flush before stopping, not after: the writer thread is what does
+                    // the writing, so it has to still be running for the tail to land.
+                    flushed = WaitForWrite(_dirtyVersion);
+                    writesLanded = _writesLanded;
+                    recorded = _statusesRecorded;
 
-                _writerStopping = true;
-                writer = _writer;
-                Monitor.PulseAll(_gate);
+                    _writerStopping = true;
+                    writer = _writer;
+                    Monitor.PulseAll(_gate);
+                }
             }
 
-            writer?.Join(WriterExitTimeoutMilliseconds);
+            if (alreadyShutDownBy != null)
+            {
+                _log.Info(
+                    $"{ShutdownLinePrefix} already ran on {alreadyShutDownBy}, so {triggerName} had "
+                    + "nothing left to do. Firing more than once is expected and harmless.");
+                return;
+            }
+
+            bool writerStopped = writer == null || writer.Join(WriterExitTimeoutMilliseconds);
+            elapsed.Stop();
+
+            string outcome =
+                $"{ShutdownLinePrefix} finished on {triggerName} in {elapsed.ElapsedMilliseconds} ms: "
+                + $"{DescribeShutdownFlush(origin, canSave, writerExisted, pending, flushed)}. "
+                + $"{recorded} status(es) recorded during play and "
+                + $"{writesLanded} write(s) reached disk this session; "
+                + $"{DescribeWriterExit(writerExisted, writerStopped)}.";
+
+            if (flushed && canSave && writerStopped)
+            {
+                _log.Info(outcome);
+            }
+            else
+            {
+                _log.Warning(outcome);
+            }
+        }
+
+        /// <summary>
+        /// Says what the shutdown flush actually did, including when the answer is
+        /// "nothing" - which is a result, not a reason to stay quiet.
+        /// </summary>
+        private string DescribeShutdownFlush(
+            UnifiedStateOrigin origin, bool canSave, bool writerExisted, long pending, bool flushed)
+        {
+            if (!canSave)
+            {
+                return $"saving was disabled for this session ({origin}), so nothing was written";
+            }
+
+            if (!writerExisted)
+            {
+                return "nothing was ever recorded this session, so there was nothing to write";
+            }
+
+            if (pending <= 0)
+            {
+                return flushed
+                    ? "nothing was pending; everything recorded this session was already on disk"
+                    : "nothing was pending, but the session's last write had already failed "
+                        + "(see the error above)";
+            }
+
+            return flushed
+                ? $"wrote the last {pending} pending change(s) to '{_store.LivePath}'"
+                : $"the last {pending} pending change(s) did NOT reach '{_store.LivePath}' "
+                    + "(see the error above)";
+        }
+
+        /// <summary>Says what became of the writer thread, for the shutdown line.</summary>
+        private static string DescribeWriterExit(bool writerExisted, bool writerStopped)
+        {
+            if (!writerExisted)
+            {
+                return "no writer thread was ever started";
+            }
+
+            return writerStopped
+                ? "the writer thread stopped"
+                : $"the writer thread had not stopped {WriterExitTimeoutMilliseconds} ms later "
+                    + "(it is a background thread, so it cannot hold the process open)";
         }
 
         // -------------------------------------------------------------------
@@ -569,6 +747,11 @@ namespace UnifiedConversationTracker.Session
                     {
                         _writtenVersion = version;
                         _lastWriteSucceeded = succeeded;
+                        if (succeeded)
+                        {
+                            _writesLanded++;
+                        }
+
                         Monitor.PulseAll(_gate);
                     }
                 }

@@ -308,6 +308,137 @@ namespace UnifiedConversationTracker.Session.Tests
         }
 
         // -------------------------------------------------------------------
+        // Shutdown says what it did (de-6fi).
+        // -------------------------------------------------------------------
+
+        /// <summary>What the plugin passes for Unity's own quit event.</summary>
+        private const string QuittingTrigger = "Application.quitting";
+
+        /// <summary>What the plugin passes for the runtime's graceful-exit event.</summary>
+        private const string ProcessExitTrigger = "AppDomain.ProcessExit";
+
+        /// <summary>
+        /// Returns the one line reporting a finished shutdown flush, failing if there
+        /// is not exactly one.
+        /// </summary>
+        private static string FinishedLine(RecordingLog log, string trigger) =>
+            Assert.Single(
+                log.All,
+                line => line.Contains(
+                    $"shutdown flush finished on {trigger}", StringComparison.OrdinalIgnoreCase));
+
+        [Fact]
+        public void Shutdown_NamesTheTriggerOnArrivalAndOnCompletion()
+        {
+            // The whole point of de-6fi: a clean quit that flushed and a handler that
+            // never fired used to look identical in a log, because success was silent.
+            using var dir = new TempDirectory();
+            UnifiedStateStore store = dir.CreateStore();
+
+            var log = new RecordingLog();
+            var session = new UnifiedStateSession(store, new FakeSimStatusSource(), log);
+
+            Assert.True(session.Record(3, 17, "WasDisplayed"));
+
+            // Flushing first is what makes the counts below deterministic rather than a
+            // race with the writer: exactly one write, and nothing left pending.
+            Assert.True(session.Flush());
+
+            session.Shutdown(QuittingTrigger);
+
+            Assert.Contains(
+                log.Info,
+                line => line.Contains(
+                    $"shutdown flush triggered by {QuittingTrigger}.", StringComparison.OrdinalIgnoreCase));
+
+            string finished = FinishedLine(log, QuittingTrigger);
+            Assert.Contains("nothing was pending", finished, StringComparison.Ordinal);
+            Assert.Contains(
+                "1 status(es) recorded during play and 1 write(s) reached disk this session",
+                finished,
+                StringComparison.Ordinal);
+            Assert.Contains("the writer thread stopped", finished, StringComparison.Ordinal);
+            Assert.Contains(" ms:", finished, StringComparison.Ordinal);
+            Assert.Empty(log.Warnings);
+            Assert.Empty(log.Errors);
+        }
+
+        [Fact]
+        public void Shutdown_WithNothingEverRecorded_SaysSoRatherThanStayingSilent()
+        {
+            // The de-0m0.3 session exactly: a run that raised nothing, so a perfectly
+            // working flush had nothing to write. "Nothing pending" is a finding; it
+            // must not be indistinguishable from a handler that never ran.
+            using var dir = new TempDirectory();
+            UnifiedStateStore store = dir.CreateStore();
+
+            var log = new RecordingLog();
+            var session = new UnifiedStateSession(store, new FakeSimStatusSource(), log);
+            session.EnsureInitialized();
+
+            session.Shutdown(ProcessExitTrigger);
+
+            string finished = FinishedLine(log, ProcessExitTrigger);
+            Assert.Contains("nothing was ever recorded this session", finished, StringComparison.Ordinal);
+            Assert.Contains(
+                "0 status(es) recorded during play and 0 write(s) reached disk this session",
+                finished,
+                StringComparison.Ordinal);
+            Assert.Contains("no writer thread was ever started", finished, StringComparison.Ordinal);
+            Assert.Empty(log.Warnings);
+            Assert.Empty(log.Errors);
+        }
+
+        [Fact]
+        public void Shutdown_FiringTwice_SaysWhichTriggerAlreadyDidTheWork()
+        {
+            // Both events are registered because neither is confirmed to fire under
+            // BepInEx's IL2CPP chainloader. If both fire, the log has to say so - that
+            // is the answer to "which shutdown event does this game actually raise".
+            using var dir = new TempDirectory();
+            UnifiedStateStore store = dir.CreateStore();
+
+            var log = new RecordingLog();
+            var session = new UnifiedStateSession(store, new FakeSimStatusSource(), log);
+
+            Assert.True(session.Record(3, 17, "WasDisplayed"));
+            session.Shutdown(QuittingTrigger);
+            session.Shutdown(ProcessExitTrigger);
+
+            FinishedLine(log, QuittingTrigger);
+            Assert.Contains(
+                log.Info,
+                line => line.Contains(
+                    $"already ran on {QuittingTrigger}, so {ProcessExitTrigger} had nothing left to do",
+                    StringComparison.OrdinalIgnoreCase));
+
+            // The second trigger did no work, so it must not claim to have finished one.
+            Assert.DoesNotContain(
+                log.All,
+                line => line.Contains(
+                    $"shutdown flush finished on {ProcessExitTrigger}", StringComparison.OrdinalIgnoreCase));
+            Assert.Empty(log.Errors);
+        }
+
+        [Fact]
+        public void Dispose_WithNoTriggerNamed_StillSaysItRan()
+        {
+            // using-blocks, tests and tools have only one way out, so they get a name
+            // rather than a blank.
+            using var dir = new TempDirectory();
+            UnifiedStateStore store = dir.CreateStore();
+
+            var log = new RecordingLog();
+            var session = new UnifiedStateSession(store, new FakeSimStatusSource(), log);
+            session.EnsureInitialized();
+
+            session.Dispose();
+
+            FinishedLine(log, "Dispose");
+            Assert.Empty(log.Errors);
+        }
+
+        // -------------------------------------------------------------------
         // Under concurrency.
         // -------------------------------------------------------------------
 

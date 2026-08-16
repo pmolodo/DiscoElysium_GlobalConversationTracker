@@ -44,6 +44,15 @@ namespace UnifiedConversationTracker
         public const string PluginName = "UnifiedConversationTracker";
         public const string PluginVersion = "0.1.0";
 
+        /// <summary>Unity's own "the player is quitting" event, as it reads in the log.</summary>
+        private const string ApplicationQuittingTrigger = "Application.quitting";
+
+        /// <summary>The BCL's graceful-runtime-shutdown event, as it reads in the log.</summary>
+        private const string ProcessExitTrigger = "AppDomain.ProcessExit";
+
+        /// <summary>BepInEx's plugin unload, as it reads in the log if a host ever calls it.</summary>
+        private const string UnloadTrigger = "BasePlugin.Unload";
+
         /// <summary>
         /// The session for this run of the game, available from the moment
         /// <see cref="Load"/> returns. The hook calls
@@ -119,36 +128,68 @@ namespace UnifiedConversationTracker
         /// shutdown, which a Unity player exiting through native code may not give it.
         /// Both funnel into the same idempotent call, so firing twice, once, or in
         /// either order all behave the same.</para>
+        ///
+        /// <para><b>Which one actually fires is an open question, so the log answers
+        /// it</b> (de-6fi). Each handler passes its own name into
+        /// <see cref="UnifiedStateSession.Shutdown"/>, which logs on arrival and again
+        /// on completion; a second trigger reports that the first already did the work.
+        /// This line - the one that says what was registered - is the other half: a log
+        /// showing a registration and no trigger says the event never fired, which is
+        /// the finding <c>de-0m0.4</c> is waiting on.</para>
         /// </remarks>
         private void RegisterShutdownFlush(UnifiedStateSession session)
         {
+            bool quittingSubscribed = true;
             try
             {
-                Application.quitting += (Action)(() => FlushOnShutdown(session, "Application.quitting"));
+                Application.quitting += (Action)(() => FlushOnShutdown(session, ApplicationQuittingTrigger));
             }
             catch (Exception ex)
             {
+                quittingSubscribed = false;
                 Log.LogWarning(
-                    $"Could not subscribe to Application.quitting: {ex}. The unified state will still "
-                    + "be flushed at process exit if the runtime shuts down cleanly.");
+                    $"Could not subscribe to {ApplicationQuittingTrigger}: {ex}. The unified state will "
+                    + "still be flushed at process exit if the runtime shuts down cleanly.");
             }
 
-            AppDomain.CurrentDomain.ProcessExit += (_, _) => FlushOnShutdown(session, "process exit");
+            AppDomain.CurrentDomain.ProcessExit += (_, _) => FlushOnShutdown(session, ProcessExitTrigger);
+
+            string registered = quittingSubscribed
+                ? $"{ApplicationQuittingTrigger} and {ProcessExitTrigger}"
+                : ProcessExitTrigger;
+            Log.LogMessage(
+                $"Shutdown flush registered on {registered}. Whichever fires first flushes and names "
+                + "itself in the log; any later one reports that it had nothing left to do. No such "
+                + "line at the end of a session means neither event ever fired.");
         }
 
         /// <summary>
         /// Flushes and stops the session's writer, reporting failures rather than
         /// throwing out of a shutdown handler.
         /// </summary>
+        /// <remarks>
+        /// The report itself is guarded too. Since de-6fi the shutdown path logs on
+        /// every outcome rather than only on failure, and one of the two triggers is
+        /// <c>AppDomain.ProcessExit</c>, where BepInEx's own log sink may already be
+        /// tearing itself down. Throwing out of a process-exit handler over a failed
+        /// log line would be a strictly worse outcome than the missing line.
+        /// </remarks>
         private void FlushOnShutdown(UnifiedStateSession session, string trigger)
         {
             try
             {
-                session.Dispose();
+                session.Shutdown(trigger);
             }
             catch (Exception ex)
             {
-                Log.LogError($"Failed to flush the unified state on {trigger}: {ex}");
+                try
+                {
+                    Log.LogError($"Failed to flush the unified state on {trigger}: {ex}");
+                }
+                catch (Exception)
+                {
+                    // Nowhere left to report to. The process is going away regardless.
+                }
             }
         }
 
@@ -189,7 +230,7 @@ namespace UnifiedConversationTracker
 
             // Unpatch first: with the hooks gone nothing new can be recorded, so the
             // flush that follows is the last word rather than a race with the game.
-            _session?.Dispose();
+            _session?.Shutdown(UnloadTrigger);
             return true;
         }
     }
