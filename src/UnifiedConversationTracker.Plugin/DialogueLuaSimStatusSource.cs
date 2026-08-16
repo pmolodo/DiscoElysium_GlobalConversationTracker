@@ -26,38 +26,48 @@ namespace UnifiedConversationTracker
     /// own accessor and it is correct, but it restarts the whole lookup chain from
     /// the Lua global root on every single row - <c>Environment["Conversation"]</c>,
     /// then the conversation, then <c>Dialog</c>, then the entry, then
-    /// <c>SimStatus</c> - which is five or six Lua table lookups per row. Over the
-    /// ~113,000 rows of a real playthrough that measured 649 ms. Everything above
-    /// the entry is invariant, so it is fetched once for the whole walk and once per
-    /// conversation instead, leaving two lookups per row.</para>
+    /// <c>SimStatus</c> - which is five or six lookups per row. Over the ~113,000
+    /// rows of a real playthrough that measured 649 ms. Everything above the entry
+    /// is invariant, so it is fetched once for the whole walk and once per
+    /// conversation instead, leaving two lookups per row. de-omm.23 took those five
+    /// or six to be IL2CPP interop crossings, and expected the hoist to be cheaper
+    /// on that basis; the count is now disputed and has never been measured either
+    /// way, so read it as what was believed at the time rather than as a result.</para>
     ///
-    /// <para><b>Hoisting those lookups made the walk slower, not faster</b> (de-p1h).
+    /// <para><b>Whether the hoist actually helped is an open question</b> (de-p1h.1).
     /// The first in-game measurement of this walk was 1744 ms over the same 112,940
-    /// rows - 15.4 us a row against the old path's 5.7 us - and the reason is that
-    /// de-omm.23 counted the wrong thing. Those five or six lookups are not interop
-    /// crossings: <c>GetSimStatus</c> is <em>one</em> managed-to-IL2CPP call, and
-    /// every lookup inside it happens in the game's own compiled code, where a table
-    /// lookup is just a table lookup. Hoisting them into this assembly converted
-    /// four free native lookups into two more interop calls, and interop calls here
-    /// are expensive: BepInEx's generated wrappers all go through
-    /// <c>il2cpp_runtime_invoke</c> (verified against the IL of the interop
-    /// <c>DialogueSystem.dll</c>), each returned reference is rewrapped by
-    /// <c>Il2CppObjectPool.Get</c> and each <c>TryCast</c> allocates a further
-    /// wrapper whose constructor takes out an IL2CPP GC handle and registers a
-    /// finalizer, and the string key of <c>GetValue("SimStatus")</c> allocates a
-    /// fresh IL2CPP string on every row. Per row that is three
-    /// <c>il2cpp_runtime_invoke</c> calls and roughly four wrapper allocations where
-    /// <c>GetSimStatus</c> - a static taking two ints - had one call and none.</para>
+    /// rows - 15.4 us a row against the 5.7 us the old path's 649 ms works out to.
+    /// de-p1h.1 established the two figures are comparable: same method, same rows,
+    /// same thread, same real game, both excluding the file write. It could not
+    /// establish why they differ. Its reading of the source - analysis only, nothing
+    /// was run - is that the five or six are Lua table lookups rather than interop
+    /// crossings, and that the two are not the same cost. On that reading
+    /// <c>GetSimStatus</c> would be <em>one</em> managed-to-IL2CPP call whose lookups
+    /// then run inside the game's own compiled code, while this walk pays roughly
+    /// three <c>il2cpp_runtime_invoke</c> calls, about four interop wrapper
+    /// allocations, and a fresh <c>Il2CppString</c> for the <c>"SimStatus"</c> key on
+    /// every row - which would make the hoist a pessimization rather than an
+    /// improvement. It is not the only candidate: the 649 ms walk ran mid-conversation
+    /// on an otherwise idle main thread, and the 1744 ms one on the first savegame
+    /// load of a cold process, competing with the load and paying first-call JIT and
+    /// interop warmup. Both are n=1. Nothing rules either out.</para>
     ///
-    /// <para>It is not reverted, because the reason it replaced <c>GetSimStatus</c>
+    /// <para><b>What would settle it.</b> <see cref="DescribeLastWalk"/> splits the
+    /// walk into the database scan, the per-conversation Dialog resolves and the
+    /// per-row status read, so an in-game load says where the time actually went. If
+    /// de-p1h.1's reading holds, the per-row read dominates and the resolves are
+    /// negligible; if the scan dominates instead, the cost is in the database
+    /// traversal and neither lookup chain is the subject. What the line cannot show
+    /// is that the hoist made things worse, because it only times the path that is
+    /// here - an A/B needs a second walk calling <c>GetSimStatus</c>, timed the same
+    /// way, and there is not one. Until
+    /// then this is not reverted, because the reason it replaced <c>GetSimStatus</c>
     /// was never really the speed (see the next paragraph), and because the walk now
     /// runs inside the savegame loading screen rather than at the moment a
-    /// conversation opens. What was added instead is <see cref="DescribeLastWalk"/>,
-    /// so the next in-game session says where the time went rather than being
-    /// argued about. The cache-miss count in that line also settles the assumption
-    /// this walk rests on - that entries arrive grouped by conversation, so the
-    /// Dialog table is resolved once per conversation and not once per row. The
-    /// shipped database agrees: 112,962 entries across 1,501 conversations, every
+    /// conversation opens. The cache-miss count in that line also settles the
+    /// assumption this walk rests on - that entries arrive grouped by conversation,
+    /// so the Dialog table is resolved once per conversation and not once per row.
+    /// The shipped database agrees: 112,962 entries across 1,501 conversations, every
     /// one of them carrying its parent conversation's id, so the expected miss
     /// count is 1,501.</para>
     ///

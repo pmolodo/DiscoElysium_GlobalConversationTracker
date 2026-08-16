@@ -1045,9 +1045,10 @@ namespace UnifiedConversationTracker.Session
         /// because the file was lost or the save predates the mod - is now covered
         /// here, on every load rather than once per playthrough-ever.</para>
         ///
-        /// <para><b>Skips, because the walk is not free</b> - the one in-game
-        /// measurement there is put 112,940 rows at 1744 ms, and hoisting the per-row
-        /// lookup made that worse rather than better (de-p1h). The walk
+        /// <para><b>Skips, because the walk is not free</b> - the two in-game
+        /// measurements there are put 112,940 rows at 649 ms before the per-row lookup
+        /// was hoisted and 1744 ms after it, over the same rows and the same method,
+        /// and why they differ is not yet established (de-p1h.1). The walk
         /// itself is skipped when the game is not readable, when a previous walk
         /// threw, and when saving is disabled for the session - that last one because
         /// the walk's only purpose is to be saved. The <em>write</em> is skipped when
