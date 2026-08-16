@@ -32,8 +32,11 @@ namespace UnifiedConversationTracker
     /// in memory or on disk.
     /// </para>
     /// <para>
-    /// Not thread safe. The design assumes a single game process making calls from the
-    /// Unity main thread (see ProjectGoal.md).
+    /// Not thread safe, and it does not synchronize itself. Marks arrive from the
+    /// Unity main thread, but since de-omm.22 the background writer reads this object
+    /// to serialize it; <c>UnifiedStateSession</c> owns the lock that keeps those two
+    /// apart, and is the only thing that should be reaching this object once a session
+    /// exists.
     /// </para>
     /// </remarks>
     public sealed class UnifiedConversationState

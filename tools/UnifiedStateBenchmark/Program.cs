@@ -90,6 +90,7 @@ namespace UnifiedStateBenchmark
             }
 
             MeasureNoOpRecord(fullDirectory);
+            MeasureRaisingRecord(fullDirectory);
         }
 
         private static void MeasureSize(string directory, int entryCount)
@@ -273,6 +274,72 @@ namespace UnifiedStateBenchmark
                 + $"= {elapsed * 1000.0 * 1000.0 / noOpCalls:F1} ns/call");
             Console.WriteLine();
 
+            ResetDirectory(sizeDirectory);
+            Directory.Delete(sizeDirectory);
+        }
+
+        /// <summary>
+        /// Times the path the hook takes on a mark that <em>does</em> raise a status,
+        /// which before de-omm.22 meant a whole synchronous file rewrite - 6.7-7.4 ms
+        /// at this size - on the Unity main thread. It now marks a dirty flag and
+        /// returns, so what is measured here is the caller's share and nothing else:
+        /// the merge, the flag, and whatever contention the background writer causes
+        /// by holding the session lock while it serializes.
+        /// </summary>
+        /// <remarks>
+        /// The writer is deliberately left running throughout, writing the file over
+        /// and over, because a measurement taken with it idle would flatter the
+        /// design by leaving out the only cost it added.
+        /// </remarks>
+        private static void MeasureRaisingRecord(string directory)
+        {
+            const int raisingCalls = 20_000;
+            const int warmupCalls = 1_000;
+
+            // Above every conversation ID BuildState uses, so each call is a new entry
+            // and therefore genuinely raises something.
+            const int freshConversationId = 1_000_000;
+
+            string sizeDirectory = Path.Combine(directory, "raising");
+            ResetDirectory(sizeDirectory);
+
+            var store = new UnifiedStateStore(sizeDirectory);
+            UnifiedConversationState state = BuildState(EntryCounts[0]);
+            store.Save(state);
+
+            using var session = new UnifiedStateSession(
+                store, new EmptySimStatusSource(), NullUnifiedStateLog.Instance);
+            session.EnsureInitialized();
+
+            for (int i = 0; i < warmupCalls; i++)
+            {
+                session.Record(freshConversationId, i, SimStatusNames.WasDisplayed);
+            }
+
+            long start = Stopwatch.GetTimestamp();
+            for (int i = 0; i < raisingCalls; i++)
+            {
+                if (!session.Record(freshConversationId, warmupCalls + i, SimStatusNames.WasDisplayed))
+                {
+                    throw new InvalidOperationException("A raising record reported no change.");
+                }
+            }
+
+            double elapsed = ToMilliseconds(Stopwatch.GetTimestamp() - start);
+            Console.WriteLine("=== Record() on a mark that raises a status (write deferred, de-omm.22) ===");
+            Console.WriteLine(
+                $"  {raisingCalls:N0} calls in {elapsed:F2} ms "
+                + $"= {elapsed * 1000.0 * 1000.0 / raisingCalls:F1} ns/call");
+
+            long flushStart = Stopwatch.GetTimestamp();
+            bool flushed = session.Flush();
+            Console.WriteLine(
+                $"  final Flush(): {ToMilliseconds(Stopwatch.GetTimestamp() - flushStart):F2} ms, "
+                + $"succeeded={flushed}, {session.State.EntryCount:N0} entries");
+            Console.WriteLine();
+
+            // Safe without stopping the writer first: the flush above left nothing
+            // dirty, so nothing is going to recreate these files.
             ResetDirectory(sizeDirectory);
             Directory.Delete(sizeDirectory);
         }

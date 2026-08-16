@@ -4,6 +4,7 @@ using BepInEx.Unity.IL2CPP;
 using HarmonyLib;
 using UnifiedConversationTracker.Persistence;
 using UnifiedConversationTracker.Session;
+using UnityEngine;
 
 namespace UnifiedConversationTracker
 {
@@ -89,6 +90,66 @@ namespace UnifiedConversationTracker
             {
                 _harmony = null;
             }
+
+            RegisterShutdownFlush(session);
+        }
+
+        /// <summary>
+        /// Arranges for the unified state to be flushed when the game goes away.
+        /// </summary>
+        /// <remarks>
+        /// <para><b>Why this is needed at all.</b> The unified state is written by a
+        /// background thread now (de-omm.22), so at any moment the last few marks may
+        /// be in memory and not yet on disk. Losing those to a hard crash is an
+        /// accepted, recorded cost - every one of them is re-marked the next time the
+        /// line is reached - but losing them when the player simply quits is not.</para>
+        ///
+        /// <para><b>Why not <see cref="Unload"/>.</b> BepInEx's IL2CPP chainloader
+        /// never calls it: <c>IL2CPPChainloader</c> calls <c>Load()</c> on every
+        /// plugin and has no unload path at all. It is overridden below anyway,
+        /// because a host that does call it should get a clean shutdown, but nothing
+        /// may depend on it.</para>
+        ///
+        /// <para><b>Two events, because neither is guaranteed on its own.</b>
+        /// <c>Application.quitting</c> is Unity's own "the player is quitting" signal
+        /// and fires on the main thread while the engine is still up, which is the
+        /// right moment; it is reached through IL2CPP interop, so it is registered
+        /// defensively. <c>AppDomain.ProcessExit</c> is plain BCL and touches nothing
+        /// of Unity's, but it only fires if the hosted runtime gets a graceful
+        /// shutdown, which a Unity player exiting through native code may not give it.
+        /// Both funnel into the same idempotent call, so firing twice, once, or in
+        /// either order all behave the same.</para>
+        /// </remarks>
+        private void RegisterShutdownFlush(UnifiedStateSession session)
+        {
+            try
+            {
+                Application.quitting += (Action)(() => FlushOnShutdown(session, "Application.quitting"));
+            }
+            catch (Exception ex)
+            {
+                Log.LogWarning(
+                    $"Could not subscribe to Application.quitting: {ex}. The unified state will still "
+                    + "be flushed at process exit if the runtime shuts down cleanly.");
+            }
+
+            AppDomain.CurrentDomain.ProcessExit += (_, _) => FlushOnShutdown(session, "process exit");
+        }
+
+        /// <summary>
+        /// Flushes and stops the session's writer, reporting failures rather than
+        /// throwing out of a shutdown handler.
+        /// </summary>
+        private void FlushOnShutdown(UnifiedStateSession session, string trigger)
+        {
+            try
+            {
+                session.Dispose();
+            }
+            catch (Exception ex)
+            {
+                Log.LogError($"Failed to flush the unified state on {trigger}: {ex}");
+            }
         }
 
         /// <summary>
@@ -125,6 +186,10 @@ namespace UnifiedConversationTracker
         {
             _harmony?.UnpatchSelf();
             _harmony = null;
+
+            // Unpatch first: with the hooks gone nothing new can be recorded, so the
+            // flush that follows is the last word rather than a race with the game.
+            _session?.Dispose();
             return true;
         }
     }

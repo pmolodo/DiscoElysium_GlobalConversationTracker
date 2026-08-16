@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Threading;
 using UnifiedConversationTracker.Persistence;
 
 namespace UnifiedConversationTracker.Session
@@ -47,12 +48,23 @@ namespace UnifiedConversationTracker.Session
     /// all-Untouched, so there is nothing to read, and everything from there on is
     /// a mark.</para>
     ///
+    /// <para><b>Nothing writes the file on the caller's thread</b> (de-omm.22).
+    /// <see cref="Record"/> and <see cref="ResyncFromGame"/> merge and then mark the
+    /// state dirty; a single background thread does the writing. de-omm.11 measured a
+    /// save at 6.7-7.4 ms for a realistic Day-1 save and ~40 ms at the ceiling, of
+    /// which ~85% is the flush and the two renames - a whole dropped frame or more,
+    /// inside a dialogue hook, mid-conversation. See <see cref="TrySave"/> for the
+    /// synchronous path that remains, and <see cref="Dispose"/> for the shutdown
+    /// flush that stops a clean exit losing the tail.</para>
+    ///
     /// <para>Not thread safe in the sense of being lock-free, but every public
     /// method takes the same lock and C# locks are reentrant, so a hook that
     /// re-enters during initialization gets the current state back instead of
-    /// deadlocking or recursing.</para>
+    /// deadlocking or recursing. That one lock is also the writer thread's condition
+    /// variable, so there is exactly one lock in the whole design and therefore no
+    /// lock ordering to get wrong.</para>
     /// </remarks>
-    public sealed class UnifiedStateSession
+    public sealed class UnifiedStateSession : IDisposable
     {
         /// <summary>
         /// How many skipped-row descriptions a walk of the game logs before it stops
@@ -64,6 +76,28 @@ namespace UnifiedConversationTracker.Session
         /// <summary>What a null status string is called in the log and in the set of
         /// already-warned-about statuses, since null cannot go in the set itself.</summary>
         private const string NullStatusName = "null";
+
+        /// <summary>
+        /// How long a caller waiting for a write to land - <see cref="TrySave"/>,
+        /// <see cref="Flush"/>, the flush inside <see cref="Dispose"/> - waits before
+        /// giving up and saying so. Generous by two orders of magnitude against the
+        /// 40 ms de-omm.11 measured at the largest file it could construct, because
+        /// the only thing a shorter one buys is giving up on a write that was about
+        /// to succeed. It exists so a writer wedged on a locked file cannot hang the
+        /// game's shutdown for ever.
+        /// </summary>
+        private const int WriteWaitTimeoutMilliseconds = 30_000;
+
+        /// <summary>
+        /// How long <see cref="Dispose"/> waits for the writer thread to notice it
+        /// should exit, after its work has already been waited for. Short, because by
+        /// then there is nothing left to lose by not waiting: the thread is a
+        /// background thread, so leaving it behind cannot hold the process open.
+        /// </summary>
+        private const int WriterExitTimeoutMilliseconds = 1_000;
+
+        /// <summary>Name of the background writer thread, as a debugger shows it.</summary>
+        private const string WriterThreadName = "UnifiedConversationTracker writer";
 
         private readonly object _gate = new object();
         private readonly UnifiedStateStore _store;
@@ -77,6 +111,39 @@ namespace UnifiedConversationTracker.Session
 
         private bool _diskLoadDone;
         private bool _resyncGivenUp;
+
+        // ---- The deferred write (de-omm.22). All guarded by _gate. ----
+
+        /// <summary>
+        /// Bumped every time the state changes into something the file does not yet
+        /// reflect. A counter rather than a bool so a caller can say "wait until
+        /// everything I had recorded by now is on disk" without caring what has
+        /// happened since.
+        /// </summary>
+        private long _dirtyVersion;
+
+        /// <summary>
+        /// The highest <see cref="_dirtyVersion"/> a write has been <em>attempted</em>
+        /// for, successfully or not. Attempted rather than achieved, so a failing
+        /// write cannot leave a flush waiting for ever; <see cref="_lastWriteSucceeded"/>
+        /// carries the outcome.
+        /// </summary>
+        private long _writtenVersion;
+
+        /// <summary>Whether the most recent write attempt reached disk.</summary>
+        private bool _lastWriteSucceeded = true;
+
+        private Thread? _writer;
+
+        /// <summary>Set by <see cref="Dispose"/> to let the writer thread finish and exit.</summary>
+        private bool _writerStopping;
+
+        /// <summary>
+        /// Set when the writer thread died of something other than a write failure,
+        /// which it is not built to do. Nothing waits on a dead writer, and no
+        /// replacement is started: whatever broke would break the next one too.
+        /// </summary>
+        private bool _writerFaulted;
 
         /// <summary>Creates a session. Nothing is read, written or logged yet.</summary>
         /// <param name="store">The store over the SaveGames directory.</param>
@@ -132,6 +199,13 @@ namespace UnifiedConversationTracker.Session
         /// exists for callers that have already initialized and want to read without
         /// re-checking. It never returns null and never returns a different object.
         /// </summary>
+        /// <remarks>
+        /// The lock covers getting the object, not using it. Since de-omm.22 there is
+        /// a second thread that reads this object - the writer, serializing it - so
+        /// reading it here while marks are still arriving is a concurrent read and
+        /// write of a plain <c>Dictionary</c>. Nothing in the mod does that; it is for
+        /// tests and tools, which read it once the marking has stopped.
+        /// </remarks>
         /// <exception cref="InvalidOperationException">
         /// <see cref="EnsureInitialized"/> has not run yet. Reading the state before
         /// the disk copy has been consulted would silently start from empty, which
@@ -180,8 +254,8 @@ namespace UnifiedConversationTracker.Session
 
         /// <summary>
         /// Records one status change from the running game: initializes the state if
-        /// this is the first access, merges the status, and rewrites the file if that
-        /// actually raised something.
+        /// this is the first access, merges the status, and marks the file out of date
+        /// if that actually raised something.
         /// </summary>
         /// <param name="conversationId">The conversation's integer ID.</param>
         /// <param name="dialogueEntryId">The dialogue entry's integer ID.</param>
@@ -197,14 +271,24 @@ namespace UnifiedConversationTracker.Session
         /// put the file's entire cost on the common case (see de-omm.11), so the
         /// write is driven by the merge's own changed flag.</para>
         ///
+        /// <para><b>This never writes the file.</b> It merges, marks the state dirty
+        /// and returns; the background writer does the rest (de-omm.22). This is the
+        /// <c>DialogueLua.MarkDialogueEntry</c> postfix, so it runs on the Unity main
+        /// thread mid-conversation, where the 6.7-40 ms a save costs is a dropped
+        /// frame. Deferring it is safe for the same reason the whole design is: the
+        /// unified state is write-only, so nothing reads back what has not landed yet,
+        /// and a mark lost to a hard crash is re-marked the next time the line is
+        /// reached.</para>
+        ///
         /// <para>This is the write-through half of a write-only design: the unified
         /// state never flows back into the game, so a failure here loses tracking and
         /// nothing else.</para>
         /// </remarks>
         /// <returns>
         /// True if this call raised a status in the unified state. The write that
-        /// follows is best effort and reports its own failures through the log, so a
-        /// true return does not by itself mean the file was updated.
+        /// follows is deferred and best effort and reports its own failures through
+        /// the log, so a true return does not mean the file has been updated - only
+        /// that it will be. Use <see cref="Flush"/> to wait for that.
         /// </returns>
         public bool Record(int conversationId, int dialogueEntryId, string? statusName)
         {
@@ -223,7 +307,7 @@ namespace UnifiedConversationTracker.Session
                     return false;
                 }
 
-                TrySave();
+                MarkDirty();
                 return true;
             }
         }
@@ -248,42 +332,322 @@ namespace UnifiedConversationTracker.Session
         }
 
         /// <summary>
-        /// Writes the current state, unless <see cref="CanSave"/> says the file on
-        /// disk must not be touched.
+        /// Writes the current state and waits for the write to finish, unless
+        /// <see cref="CanSave"/> says the file on disk must not be touched.
         /// </summary>
         /// <remarks>
-        /// IO failures are logged and swallowed rather than thrown: this runs inside
-        /// a game hook, and taking the frame down because a save file was locked
-        /// would be worse than losing one write. The next write attempt retries from
-        /// scratch, and <see cref="UnifiedStateStore.Save"/> never leaves a partial
-        /// file behind.
+        /// <para><b>Synchronous, and deliberately the exception.</b> Everything the
+        /// game drives goes through the dirty flag instead (de-omm.22); this is for
+        /// the callers that genuinely need the bytes on disk before they carry on -
+        /// shutdown, and tests. It still writes on the background thread, because that
+        /// thread is the only thing allowed to touch the three files, and simply waits
+        /// for it. Nothing is skipped when the state is clean: an explicit "save now"
+        /// means save now.</para>
+        ///
+        /// <para>IO failures are logged and swallowed rather than thrown: a save file
+        /// being locked must cost tracking and nothing else. The next write attempt
+        /// retries from scratch, and <see cref="UnifiedStateStore.Save"/> never leaves
+        /// a partial file behind.</para>
         /// </remarks>
         /// <returns>True if the state reached disk.</returns>
         public bool TrySave()
         {
             lock (_gate)
             {
-                if (!CanSave)
+                if (!RequestWrite())
                 {
-                    _log.Warning(
-                        $"Not saving the unified state: saving is disabled for this session ({Origin}). "
-                        + $"See the earlier log lines about '{_store.LivePath}'.");
                     return false;
                 }
 
-                try
+                return WaitForWrite(_dirtyVersion);
+            }
+        }
+
+        /// <summary>
+        /// Waits for everything recorded so far to reach disk, without asking for a
+        /// write that is not already needed.
+        /// </summary>
+        /// <remarks>
+        /// The counterpart to the deferred write: <see cref="Record"/> and
+        /// <see cref="ResyncFromGame"/> return before the file has been rewritten, and
+        /// this is how a caller that has to see the result waits for it. Returns
+        /// immediately when the file is already up to date.
+        /// </remarks>
+        /// <returns>
+        /// True if everything recorded before this call is on disk - including the
+        /// vacuous case where nothing needed writing. False if the write failed, timed
+        /// out, or saving is disabled for this session.
+        /// </returns>
+        public bool Flush()
+        {
+            lock (_gate)
+            {
+                return CanSave && WaitForWrite(_dirtyVersion);
+            }
+        }
+
+        /// <summary>
+        /// Flushes anything still pending and shuts the background writer down.
+        /// </summary>
+        /// <remarks>
+        /// <para>This is the "never lose the tail on a clean exit" half of de-omm.22,
+        /// and the reason the deferred write does not need any durability machinery of
+        /// its own. It is idempotent; after it, the session still merges but no longer
+        /// writes, which is the right behaviour for a mark that arrives while the game
+        /// is tearing down.</para>
+        /// <para>BepInEx does not call plugin <c>Unload</c> on game exit, so the
+        /// plugin drives this from process- and application-level shutdown events
+        /// instead.</para>
+        /// </remarks>
+        public void Dispose()
+        {
+            Thread? writer;
+            lock (_gate)
+            {
+                if (_writerStopping)
                 {
-                    _store.Save(_state);
-                    return true;
+                    return;
                 }
-                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+
+                // Flush before stopping, not after: the writer thread is what does the
+                // writing, so it has to still be running for the tail to land.
+                WaitForWrite(_dirtyVersion);
+
+                _writerStopping = true;
+                writer = _writer;
+                Monitor.PulseAll(_gate);
+            }
+
+            writer?.Join(WriterExitTimeoutMilliseconds);
+        }
+
+        // -------------------------------------------------------------------
+        // The deferred write: a dirty flag, and one thread that acts on it.
+        // -------------------------------------------------------------------
+
+        /// <summary>
+        /// Marks the state as something the file does not reflect yet, and wakes the
+        /// writer. Caller must hold <see cref="_gate"/>.
+        /// </summary>
+        private void MarkDirty() => RequestWrite();
+
+        /// <summary>
+        /// Asks for a write of the current state. Caller must hold
+        /// <see cref="_gate"/>.
+        /// </summary>
+        /// <returns>
+        /// False if no write will happen, in which case the reason has been logged.
+        /// </returns>
+        private bool RequestWrite()
+        {
+            if (!CanSave)
+            {
+                _log.Warning(
+                    $"Not saving the unified state: saving is disabled for this session ({Origin}). "
+                    + $"See the earlier log lines about '{_store.LivePath}'.");
+                return false;
+            }
+
+            _dirtyVersion++;
+
+            if (_writerStopping || _writerFaulted)
+            {
+                // Shut down, or dead of something already reported. The merge still
+                // happened and the version is still bumped, so a later Flush reports
+                // honestly that the file is behind; there is simply nothing left that
+                // could catch it up.
+                return false;
+            }
+
+            EnsureWriterStarted();
+            Monitor.PulseAll(_gate);
+            return true;
+        }
+
+        /// <summary>
+        /// Starts the writer thread on first use. Caller must hold
+        /// <see cref="_gate"/>.
+        /// </summary>
+        /// <remarks>
+        /// Lazily, so a session that is built and never written to - the BepInEx
+        /// chainload case, and most of the test suite - never has a thread at all. A
+        /// background thread, so a writer that somehow wedges cannot keep the game's
+        /// process alive after the window has closed; <see cref="Dispose"/> is what
+        /// makes the tail land, not the thread outliving the process.
+        /// </remarks>
+        private void EnsureWriterStarted()
+        {
+            if (_writer != null)
+            {
+                return;
+            }
+
+            _writer = new Thread(WriterLoop)
+            {
+                IsBackground = true,
+                Name = WriterThreadName,
+            };
+            _writer.Start();
+        }
+
+        /// <summary>
+        /// The background writer. Sleeps on <see cref="_gate"/> until the state is
+        /// dirty, serializes a snapshot under the lock, and writes it outside the
+        /// lock.
+        /// </summary>
+        /// <remarks>
+        /// <para><b>Why the lock is held for the serialize and nothing else.</b>
+        /// Serializing reads the live state, so it cannot happen concurrently with a
+        /// merge; the write touches only the filesystem, so it can. At the sizes
+        /// de-omm.11 measured that split puts 0.53 ms of a 7.4 ms save under the lock
+        /// and the other ~6.9 ms outside it, which is what takes the cost off the
+        /// hook's frame.</para>
+        ///
+        /// <para><b>Bursts coalesce for free.</b> A response menu marks every offered
+        /// response, so several raises land in one frame. Each of those bumps
+        /// <see cref="_dirtyVersion"/> while this thread is busy with the previous
+        /// snapshot, and one further pass then covers all of them - so a burst of any
+        /// size costs at most two writes rather than one per mark. That is why there
+        /// is no debounce delay here: the delay would buy the difference between two
+        /// writes and one, at the price of a tunable and a wider window in which a
+        /// hard crash loses something.</para>
+        ///
+        /// <para><b>It never touches the game.</b> Only the unified state and the
+        /// filesystem, never the Dialogue System, <c>DialogueLua</c>, the Lua
+        /// environment or any IL2CPP object. Reading the game off the Unity thread is
+        /// not established as safe and this design does not need it.</para>
+        /// </remarks>
+        private void WriterLoop()
+        {
+            try
+            {
+                while (true)
                 {
+                    long version;
+                    byte[] payload;
+
+                    lock (_gate)
+                    {
+                        while (!_writerStopping && _dirtyVersion == _writtenVersion)
+                        {
+                            Monitor.Wait(_gate);
+                        }
+
+                        if (_writerStopping)
+                        {
+                            // Dispose drains before it sets this, under this same lock,
+                            // so nothing that was pending at that moment is lost here.
+                            // Anything recorded after it is deliberately not written:
+                            // the game is going away, and a mark that arrives during
+                            // teardown must not be able to restart the writing.
+                            return;
+                        }
+
+                        version = _dirtyVersion;
+                        payload = UnifiedStateJson.SerializeToUtf8Bytes(_state);
+                    }
+
+                    bool succeeded = TryWritePayload(payload);
+
+                    lock (_gate)
+                    {
+                        _writtenVersion = version;
+                        _lastWriteSucceeded = succeeded;
+                        Monitor.PulseAll(_gate);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Not reachable by design - the write's own failures are caught in
+                // TryWritePayload - so getting here means something unforeseen. Say so,
+                // and release anything waiting rather than leaving it on a dead thread.
+                lock (_gate)
+                {
+                    _writerFaulted = true;
+                    _writtenVersion = _dirtyVersion;
+                    _lastWriteSucceeded = false;
+                    Monitor.PulseAll(_gate);
+                }
+
+                _log.Error(
+                    $"The unified state writer stopped unexpectedly: {ex}. Nothing further will be "
+                    + $"written to '{_store.LivePath}' this session; the in-memory state is intact "
+                    + "and the game is unaffected.");
+            }
+        }
+
+        /// <summary>
+        /// Writes one serialized snapshot. Must be called without
+        /// <see cref="_gate"/> held, and only ever from the writer thread - it is the
+        /// single-writer guarantee <see cref="UnifiedStateStore"/> relies on.
+        /// </summary>
+        private bool TryWritePayload(byte[] payload)
+        {
+            try
+            {
+                _store.SavePayload(payload);
+                return true;
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                _log.Error(
+                    $"Failed to write the unified state to '{_store.LivePath}': {ex.Message}. "
+                    + "The in-memory state is intact and the next change will try again.");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Blocks until a write has been attempted for <paramref name="target"/>.
+        /// Caller must hold <see cref="_gate"/>.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="Monitor.Wait(object, int)"/> releases the lock fully, however
+        /// many times the calling thread has entered it, and restores the recursion
+        /// count on the way back - so this is safe to reach from inside another
+        /// method that already holds the gate.
+        /// </remarks>
+        private bool WaitForWrite(long target)
+        {
+            if (_writtenVersion >= target)
+            {
+                return _lastWriteSucceeded;
+            }
+
+            if (_writer == null || _writerStopping || _writerFaulted)
+            {
+                return false;
+            }
+
+            var elapsed = Stopwatch.StartNew();
+            while (_writtenVersion < target)
+            {
+                long remaining = WriteWaitTimeoutMilliseconds - elapsed.ElapsedMilliseconds;
+                if (remaining <= 0 || !Monitor.Wait(_gate, (int)remaining))
+                {
+                    if (_writtenVersion >= target)
+                    {
+                        break;
+                    }
+
                     _log.Error(
-                        $"Failed to write the unified state to '{_store.LivePath}': {ex.Message}. "
-                        + "The in-memory state is intact and the next change will try again.");
+                        $"Timed out after {WriteWaitTimeoutMilliseconds} ms waiting for the unified "
+                        + $"state to be written to '{_store.LivePath}'. The in-memory state is intact.");
+                    return false;
+                }
+
+                if (_writtenVersion < target && (_writerFaulted || _writerStopping))
+                {
+                    // Nothing is going to write it now. Never reached by a wait that
+                    // started before Dispose - Dispose waits for a version at least as
+                    // high as any outstanding one before it stops the writer - but a
+                    // faulted writer can land here.
                     return false;
                 }
             }
+
+            return _lastWriteSucceeded;
         }
 
         // -------------------------------------------------------------------
@@ -490,6 +854,20 @@ namespace UnifiedConversationTracker.Session
         /// nothing was raised, which de-omm.26 measured as the common case: replaying
         /// a save the mod already tracked walked 89 rows to gain 0 entries, and paying
         /// a whole-file write for that on every load would be pure cost.</para>
+        ///
+        /// <para><b>Its write is deferred too</b> (de-omm.22), even though it is one
+        /// big write at a known point rather than <see cref="Record"/>'s per-frame
+        /// trickle. Two reasons, and the first is the load-bearing one.
+        /// <see cref="UnifiedStateStore"/> is not safe against two concurrent writes -
+        /// they would share one temp path and race over the two renames - so writing
+        /// here on the caller's thread would mean two threads that can write, and a
+        /// resync that lands while the writer is mid-save is exactly the window that
+        /// loses a generation. Routing everything through one thread makes that
+        /// impossible by construction rather than by timing. Second, this runs on the
+        /// Unity main thread in a load hook, inside the player's loading screen, so
+        /// the write is worth taking off it for the same reason as anywhere else -
+        /// and there is nothing to be gained by waiting, since a process that dies
+        /// before the write lands resyncs the identical data on the next load.</para>
         /// </remarks>
         /// <returns>
         /// How many statuses this resync raised. Zero both when the game had nothing
@@ -565,7 +943,7 @@ namespace UnifiedConversationTracker.Session
                     + $"{stopwatch.ElapsedMilliseconds} ms; now {_state.ConversationCount} conversations, "
                     + $"{_state.EntryCount} entries.");
 
-                TrySave();
+                MarkDirty();
                 return raisedCount;
             }
         }

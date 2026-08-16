@@ -42,33 +42,52 @@ namespace UnifiedConversationTracker.Session.Tests
     /// Captures every line the session logs, so "log loudly" can actually be
     /// asserted rather than hoped for.
     /// </summary>
+    /// <remarks>
+    /// Synchronized, because the background writer reports its own failures from its
+    /// own thread (de-omm.22), so a real log genuinely does get written to
+    /// concurrently. An unsynchronized <see cref="List{T}"/> would corrupt or throw
+    /// under exactly the concurrency the writer tests exist to exercise. Reads are
+    /// synchronized too, so an assertion made while a writer is still running sees a
+    /// consistent snapshot rather than a list mid-resize.
+    /// </remarks>
     internal sealed class RecordingLog : IUnifiedStateLog
     {
-        public List<string> Info { get; } = new List<string>();
+        private readonly object _gate = new object();
+        private readonly List<string> _info = new List<string>();
+        private readonly List<string> _warnings = new List<string>();
+        private readonly List<string> _errors = new List<string>();
+        private readonly List<string> _all = new List<string>();
 
-        public List<string> Warnings { get; } = new List<string>();
+        public List<string> Info => Snapshot(_info);
 
-        public List<string> Errors { get; } = new List<string>();
+        public List<string> Warnings => Snapshot(_warnings);
+
+        public List<string> Errors => Snapshot(_errors);
 
         /// <summary>Everything, in the order it was logged, prefixed by level.</summary>
-        public List<string> All { get; } = new List<string>();
+        public List<string> All => Snapshot(_all);
 
-        void IUnifiedStateLog.Info(string message)
+        void IUnifiedStateLog.Info(string message) => Add(_info, "INFO ", message);
+
+        void IUnifiedStateLog.Warning(string message) => Add(_warnings, "WARN ", message);
+
+        void IUnifiedStateLog.Error(string message) => Add(_errors, "ERROR ", message);
+
+        private void Add(List<string> level, string prefix, string message)
         {
-            Info.Add(message);
-            All.Add("INFO " + message);
+            lock (_gate)
+            {
+                level.Add(message);
+                _all.Add(prefix + message);
+            }
         }
 
-        void IUnifiedStateLog.Warning(string message)
+        private List<string> Snapshot(List<string> lines)
         {
-            Warnings.Add(message);
-            All.Add("WARN " + message);
-        }
-
-        void IUnifiedStateLog.Error(string message)
-        {
-            Errors.Add(message);
-            All.Add("ERROR " + message);
+            lock (_gate)
+            {
+                return new List<string>(lines);
+            }
         }
 
         public bool AnyContains(IEnumerable<string> lines, string fragment) =>

@@ -34,7 +34,12 @@ namespace UnifiedConversationTracker.Persistence
     /// same-directory, so they are metadata operations rather than copies.</para>
     /// <para>
     /// Not thread safe, and it does not need to be: ProjectGoal.md assumes a single
-    /// running game, and the on-disk copy is never read before overwriting.
+    /// running game, and the on-disk copy is never read before overwriting. What it
+    /// does require is that only one thread is inside <see cref="Save"/> or
+    /// <see cref="SavePayload"/> at a time - two concurrent saves would share one
+    /// <see cref="TempPath"/> and race over the two renames, which is the one way
+    /// this type could lose a generation. <c>UnifiedStateSession</c> guarantees that
+    /// by doing every write on a single background thread (de-omm.22).
     /// </para>
     /// </remarks>
     public sealed class UnifiedStateStore
@@ -229,7 +234,32 @@ namespace UnifiedConversationTracker.Persistence
                 throw new ArgumentNullException(nameof(state));
             }
 
-            byte[] payload = UnifiedStateJson.SerializeToUtf8Bytes(state);
+            SavePayload(UnifiedStateJson.SerializeToUtf8Bytes(state));
+        }
+
+        /// <summary>
+        /// The file half of <see cref="Save"/>: everything from
+        /// <see cref="Directory.CreateDirectory(string)"/> onwards, for a payload that
+        /// has already been serialized.
+        /// </summary>
+        /// <remarks>
+        /// Split out for de-omm.22. Serializing a state and writing the bytes have
+        /// very different costs and very different thread-safety needs: serializing
+        /// reads the live state and so has to happen under the session's lock, while
+        /// the write - which is ~85% of a save at realistic sizes, almost all of it
+        /// the flush and the two renames - touches nothing but the filesystem and so
+        /// must happen outside it. A caller that has both halves can only do that if
+        /// it can drive them separately.
+        /// </remarks>
+        /// <param name="payload">The serialized state, as it will appear on disk.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="payload"/> is null.</exception>
+        /// <exception cref="IOException">The directory or files could not be written.</exception>
+        public void SavePayload(byte[] payload)
+        {
+            if (payload == null)
+            {
+                throw new ArgumentNullException(nameof(payload));
+            }
 
             Directory.CreateDirectory(DirectoryPath);
             WriteTempFile(payload);
