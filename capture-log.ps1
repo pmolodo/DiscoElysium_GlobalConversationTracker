@@ -133,7 +133,10 @@ function Get-LogProvenance {
     # Everything the log says about the process that wrote it: when this plugin
     # loaded in it (the Harmony banner), whether the plugin's own load line is
     # there at all, and which unified state file it reported writing.
-    param([Parameter(Mandatory = $true)][string]$LogText)
+    param([Parameter(Mandatory = $true)][string]$LogPath)
+
+    $LogText = [System.IO.File]::ReadAllText($LogPath)
+    $written = (Get-Item -LiteralPath $LogPath).LastWriteTime
 
     $stamps = [regex]::Matches($LogText, $HarmonyStampPattern)
     $loadStamp = $null
@@ -143,6 +146,14 @@ function Get-LogProvenance {
         $loadStamp = [datetime]::ParseExact(
             $stamps[0].Groups[1].Value, $HarmonyStampFormat,
             [System.Globalization.CultureInfo]::InvariantCulture)
+    }
+
+    # Harmony only writes a 12-hour timestamp, without an am/pm designation, so the exact 24-hour-time is ambiguous
+    # Assume that if the log write time's is more than 12 hours after the logStamp, that the logStamp was pm, and add
+    # 12 hours to it to get the correct 24-hour-time
+    if ($written -gt $loadStamp + [TimeSpan]::FromHours(12))
+    {
+        $loadStamp = $loadStamp + [TimeSpan]::FromHours(12)
     }
 
     $version = $null
@@ -199,6 +210,7 @@ function Test-ArtifactWrittenByRun {
     }
     $written = (Get-Item -LiteralPath $Path).LastWriteTime
     $result.lastWriteTime = $written
+
     if ($written -lt $LoadStamp - $StampSlack) {
         $result.note = "written $(Format-Stamp $written), which is BEFORE the plugin loaded at $(Format-Stamp $LoadStamp)"
         return $result
@@ -235,7 +247,7 @@ Write-Host "      -> $Destination"
 Write-Host "  md5 $md5  ($($copy.Length) bytes)"
 
 # --- 2. Work out whose log it is ----------------------------------------------
-$provenance = Get-LogProvenance -LogText ([System.IO.File]::ReadAllText($Destination))
+$provenance = Get-LogProvenance -LogPath $Destination
 $loadStamp = $provenance.LoadStamp
 $game = Get-RunningGameProcess
 
