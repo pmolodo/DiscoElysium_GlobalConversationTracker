@@ -104,20 +104,15 @@ namespace UnifiedConversationTracker.Session
                 return null;
             }
 
-            string perPair = PairCount == 0
-                ? string.Empty
-                : $"per pair {Us(TotalTicks)} us = read {Us(ReadTicks)} + decode {Us(DecodeTicks)}; ";
-
-            return $"{BlobCount} blobs read for {ConversationCount} conversations "
-                + $"({MissingBlobCount} with no blob, which is what a conversation with no dialogue "
-                + "entries looks like and is not an error); "
-                + $"{PairCount} pairs decoded, {ShadowedPairCount} shadowed by a duplicate articy id, "
-                + $"{RowCount} non-Untouched rows merged; "
-                + $"inside the interception {Ms(TotalTicks)} ms = read {Ms(ReadTicks)} + decode "
-                + $"{Ms(DecodeTicks)}; "
-                + perPair
-                + $"{ClockReadCount} clock reads at {Stopwatch.Frequency} ticks/s. "
-                + "Whatever the resync total above has beyond 'inside the interception' is the merge.";
+            return $"{BlobCount} blobs read for {ConversationCount} conversations"
+                + $" ({MissingBlobCount} with no blob)"
+                + $"\n{PairCount} pairs, {ShadowedPairCount} with duplicate articy id,"
+                + $" {RowCount} non-Untouched rows merged"
+                + "\nTiming (Get-Value per conversation-variable):"
+                + $"\n    inside the interception (total): {Ms(TotalTicks)} ms"
+                + $"\n        read: {Ms(ReadTicks)} ms"
+                + $"\n        decode: {Ms(DecodeTicks)}"
+                + $"\n    {ClockReadCount} clock reads at {Stopwatch.Frequency} ticks/s";
         }
 
         /// <inheritdoc />
