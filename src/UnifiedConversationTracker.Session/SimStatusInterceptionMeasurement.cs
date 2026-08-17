@@ -121,7 +121,7 @@ namespace UnifiedConversationTracker.Session
                 + $"\n{PairCount} pairs, {ShadowedPairCount} with duplicate articy id,"
                 + $" {RowCount} non-Untouched rows merged"
                 + $"\n{VariableCount} variables"
-                + "\nTiming (pre-convert Variable LuaTable to C#):"
+                + "\nTiming (pre-convert only conversation variableNames in Variable LuaTable to C#):"
                 + $"\n    inside the interception (total): {Ms(TotalTicks)} ms"
                 + $"\n        convert: {Ms(ConvertTicks)} ms"
                 + $"\n        read: {Ms(ReadTicks)} ms"

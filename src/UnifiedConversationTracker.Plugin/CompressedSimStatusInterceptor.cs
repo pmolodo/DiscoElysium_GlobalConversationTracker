@@ -125,8 +125,8 @@ namespace UnifiedConversationTracker
                 return SimStatusInterception.Unavailable(wrongBranch);
             }
 
-            LuaTable? variablesLuaToLua = ResolveVariableTable();
-            if (variablesLuaToLua == null)
+            LuaTable? variablesLua = ResolveVariableTable();
+            if (variablesLua == null)
             {
                 return SimStatusInterception.Unavailable(
                     $"the Lua '{VariableTableName}' table is not available, so there is nothing "
@@ -140,7 +140,7 @@ namespace UnifiedConversationTracker
             long decodeTicks = 0;
             long sectionStart = Stopwatch.GetTimestamp();
 
-            Dictionary<string, string> variablesStringToString = convertLuaTableToStringStringDict(variablesLuaToLua);
+            Dictionary<string, string> conversationBlobs = getConversationBlobsFromVariables(variablesLua);
 
             long finishedConvert = Stopwatch.GetTimestamp();
             long convertTicks = finishedConvert - sectionStart;
@@ -150,7 +150,7 @@ namespace UnifiedConversationTracker
             foreach (ArticyConversation conversation in _map.Conversations)
             {
                 // Single lookup: checks existence and extracts the value
-                bool found = variablesStringToString.TryGetValue(conversation.VariableName, out var blob);
+                bool found = conversationBlobs.TryGetValue(conversation.VariableName, out var blob);
                 long read = Stopwatch.GetTimestamp();
                 readTicks += read - sectionStart;
                 if (found && !string.IsNullOrEmpty(blob))
@@ -188,7 +188,7 @@ namespace UnifiedConversationTracker
                     pairCount: _decoder.PairCount,
                     shadowedPairCount: _decoder.ShadowedPairCount,
                     rowCount: _decoder.Rows.Count,
-                    variableCount: variablesLuaToLua.Count,
+                    variableCount: variablesLua.Count,
                     convertTicks: convertTicks,
                     readTicks: readTicks,
                     decodeTicks: decodeTicks));
@@ -282,10 +282,26 @@ namespace UnifiedConversationTracker
             return null;
         }
 
-        private static Dictionary<string, string> convertLuaTableToStringStringDict(LuaTable luaTable)
+        private Dictionary<string, string> getConversationBlobsFromVariables(LuaTable variablesLua)
         {
+            // Because LuaTable.GetValue is slow if the key has never been seen before (it does a linear search
+            // for each unseen key, and crosses interop boundaries), it's faster for us to do a one-time iteration
+            // over the whole table, and make our own (fast-lookup-CSharp) dictionary.
+
+            // To avoid marshalling the lua data for all variables (and crossing interop boundaries), we only want to
+            // get the values we care abouts - ie, conversations. However, _map.Conversations is a list... and we want
+            // iterate over the LuaTable.  So we effectively want the intersection of two linear iterations.  To do that
+            // efficiently we first need to convert one of them - the conversations, since it's smaller (1494 vs ~12k) -
+            // to a fast-hash-lookup datatype...
             Dictionary<string, string> stringDict = new();
-            foreach(var pair in luaTable.Dict)
+            foreach(var conversation in _map.Conversations)
+            {
+                // We "seed" our final map with empty string values, just so we have a way to lookup variable keys
+                // we want quickly.
+                stringDict[conversation.VariableName] = "";
+            }
+
+            foreach(var pair in variablesLua.Dict)
             {
                 string? possibleStringKey = LuaValues.AsText(pair.Key);
                 if (possibleStringKey is not string stringKey)
@@ -310,7 +326,13 @@ namespace UnifiedConversationTracker
                 {
                     continue;
                 }
-                stringDict[stringKey] = stringValue;
+                // I wanted something that would allow us to do a key lookup, and if there's a hit, return something
+                // like a writable pointer, so I can then overwrite the value without doing a second lookup. Couldn't
+                // find something like that, though...
+                if (stringDict.ContainsKey(stringKey))
+                {
+                    stringDict[stringKey] = stringValue;
+                }
             }
             return stringDict;
         }
