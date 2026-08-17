@@ -152,4 +152,46 @@ namespace UnifiedConversationTracker.Session.Tests
 
         public string? DescribeLastWalk() => WalkDetail;
     }
+
+    /// <summary>
+    /// A stand-in for reading a savegame's compressed SimStatus blobs, which needs the
+    /// game, an articy id map and a save that is mid-load.
+    /// </summary>
+    internal sealed class FakeSimStatusInterceptor : ISimStatusInterceptor
+    {
+        private readonly List<SimStatusRow> _rows = new List<SimStatusRow>();
+
+        public string Description { get; set; } = "fake interception";
+
+        /// <summary>Set to make interception decline, standing in for any of its guards.</summary>
+        public string? UnavailableReason { get; set; }
+
+        /// <summary>Set to throw, standing in for a game-side failure inside the prefix.</summary>
+        public Exception? ThrowOnIntercept { get; set; }
+
+        /// <summary>How many times interception was actually attempted.</summary>
+        public int InterceptCount { get; private set; }
+
+        /// <summary>What the detail line will say, so the log's shape can be asserted.</summary>
+        public SimStatusInterceptionMeasurement Measurement { get; set; }
+
+        public FakeSimStatusInterceptor Add(int conversationId, int dialogueEntryId, string? statusName)
+        {
+            _rows.Add(new SimStatusRow(conversationId, dialogueEntryId, statusName));
+            return this;
+        }
+
+        public SimStatusInterception Intercept()
+        {
+            InterceptCount++;
+            if (ThrowOnIntercept != null)
+            {
+                throw ThrowOnIntercept;
+            }
+
+            return UnavailableReason != null
+                ? SimStatusInterception.Unavailable(UnavailableReason)
+                : SimStatusInterception.Succeeded(_rows, Measurement);
+        }
+    }
 }

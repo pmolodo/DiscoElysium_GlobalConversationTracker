@@ -28,12 +28,21 @@ namespace UnifiedConversationTracker.Session
     /// <para><b>Two ways in, and they cover different writers.</b>
     /// <see cref="Record"/> is the write-through path, driven by the hook on
     /// <c>DialogueLua.MarkDialogueEntry</c>: everything the game marks while it is
-    /// being played. <see cref="ResyncFromGame"/> is the load-time path, driven by
-    /// the hook on <c>PersistentDataManager.ExpandCompressedSimStatusData</c>: that
-    /// method rebuilds the whole Lua SimStatus table from a savegame without ever
-    /// calling <c>MarkDialogueEntry</c> (de-0s5), so nothing else would see it.
-    /// Between them they see every SimStatus the game ever holds - there is no
-    /// third writer (de-0s5 audited the whole build for one).</para>
+    /// being played. The load-time path covers the writer that never goes through it -
+    /// <c>PersistentDataManager.ExpandCompressedSimStatusData</c> rebuilding the whole
+    /// Lua SimStatus table from a savegame without ever calling
+    /// <c>MarkDialogueEntry</c> (de-0s5). Between them they see every SimStatus the
+    /// game ever holds; there is no third writer (de-0s5 audited the whole build for
+    /// one).</para>
+    ///
+    /// <para><b>The load-time path has two routes to the same rows.</b>
+    /// <see cref="TryResyncFromInterception"/> reads the compressed blobs the savegame
+    /// arrived in, from a prefix, before that method destroys them;
+    /// <see cref="ResyncFromGame"/> walks the master database from a postfix
+    /// afterwards. They produce the same triples and merge identically - the only
+    /// difference is cost, and which one ran is on the log line. The caller runs at
+    /// most one of them per load; see the seam in
+    /// <c>ExpandCompressedSimStatusDataPatch</c>.</para>
     ///
     /// <para><b>There is no first-mark seed any more</b> (de-omm.23). There used to
     /// be one, reading the whole game the first time a line was marked in a session
@@ -115,9 +124,35 @@ namespace UnifiedConversationTracker.Session
         /// </summary>
         private const string ShutdownLinePrefix = "Unified state shutdown flush";
 
+        /// <summary>What the detail line calls itself after a walk of the game.</summary>
+        private const string WalkDetailLabel = "walk";
+
+        /// <summary>
+        /// What the detail line calls itself after an interception. Different from
+        /// <see cref="WalkDetailLabel"/> so that a log makes plain which route ran,
+        /// which is the whole point of keeping both.
+        /// </summary>
+        private const string InterceptDetailLabel = "intercept";
+
+        /// <summary>How every failed-interception line starts, so one search finds them all.</summary>
+        private const string InterceptionFailurePrefix = "FAILED to intercept the savegame's SimStatus";
+
+        /// <summary>
+        /// What a failed interception says happens instead. PROVISIONAL, and the only
+        /// place in this class that mentions the fallback at all: the walk it names is
+        /// kept only until interception has one clean in-game measurement, and
+        /// de-0m0.25 deletes both it and this sentence, after which a failure here is
+        /// simply a failure.
+        /// </summary>
+        private const string InterceptionFallbackNotice =
+            " For now the load falls back to walking the whole master database instead, which is "
+            + "far slower; de-0m0.25 removes that fallback once interception has been measured "
+            + "in-game, after which this will be a hard failure.";
+
         private readonly object _gate = new object();
         private readonly UnifiedStateStore _store;
         private readonly ISimStatusSource _source;
+        private readonly ISimStatusInterceptor? _interceptor;
         private readonly IUnifiedStateLog _log;
 
         private readonly UnifiedConversationState _state = new UnifiedConversationState();
@@ -185,7 +220,7 @@ namespace UnifiedConversationTracker.Session
         /// </summary>
         private long _statusesRecorded;
 
-        /// <summary>Creates a session. Nothing is read, written or logged yet.</summary>
+        /// <summary>Creates a session with no interception, so every resync walks.</summary>
         /// <param name="store">The store over the SaveGames directory.</param>
         /// <param name="simStatusSource">The running game, for the resync path.</param>
         /// <param name="log">Where recovery and resyncing are reported.</param>
@@ -194,9 +229,31 @@ namespace UnifiedConversationTracker.Session
             UnifiedStateStore store,
             ISimStatusSource simStatusSource,
             IUnifiedStateLog log)
+            : this(store, simStatusSource, null, log)
+        {
+        }
+
+        /// <summary>Creates a session. Nothing is read, written or logged yet.</summary>
+        /// <param name="store">The store over the SaveGames directory.</param>
+        /// <param name="simStatusSource">The running game, for the resync path.</param>
+        /// <param name="interceptor">
+        /// The cheaper load-time route, or null when it is not available on this
+        /// machine - which is the state the mod ships in until the articy id map it
+        /// needs has been audited (de-0m0.21). Null simply means every resync walks.
+        /// </param>
+        /// <param name="log">Where recovery and resyncing are reported.</param>
+        /// <exception cref="ArgumentNullException">
+        /// Any argument but <paramref name="interceptor"/> is null.
+        /// </exception>
+        public UnifiedStateSession(
+            UnifiedStateStore store,
+            ISimStatusSource simStatusSource,
+            ISimStatusInterceptor? interceptor,
+            IUnifiedStateLog log)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _source = simStatusSource ?? throw new ArgumentNullException(nameof(simStatusSource));
+            _interceptor = interceptor;
             _log = log ?? throw new ArgumentNullException(nameof(log));
         }
 
@@ -219,12 +276,20 @@ namespace UnifiedConversationTracker.Session
         }
 
         /// <summary>
-        /// How many times <see cref="ResyncFromGame"/> has actually walked the game
-        /// this session. Calls that were skipped - because the game was not readable,
-        /// because a previous walk threw, or because saving is disabled - are not
-        /// counted.
+        /// How many resyncs actually read the game this session, by either route.
+        /// Calls that were skipped - because the game was not readable, because a
+        /// previous resync threw, or because saving is disabled - are not counted, and
+        /// neither is an interception that declined and left the walk to run, since
+        /// the walk that follows it counts itself.
         /// </summary>
         public int ResyncCount { get; private set; }
+
+        /// <summary>
+        /// How many of <see cref="ResyncCount"/> came from intercepting the savegame's
+        /// compressed blobs rather than walking the master database. The difference
+        /// between the two is how often the guarded fallback fired.
+        /// </summary>
+        public int InterceptedResyncCount { get; private set; }
 
         /// <summary>
         /// False when writing would destroy something we cannot replace: currently
@@ -1079,19 +1144,8 @@ namespace UnifiedConversationTracker.Session
         {
             lock (_gate)
             {
-                if (_resyncGivenUp)
+                if (!CanResync(_source.Description))
                 {
-                    return 0;
-                }
-
-                EnsureInitialized();
-
-                if (!CanSave)
-                {
-                    _log.Warning(
-                        $"Not resyncing the unified state from the running game ({_source.Description}): "
-                        + $"saving is disabled for this session ({Origin}), so the walk could not be kept. "
-                        + $"See the earlier log lines about '{_store.LivePath}'.");
                     return 0;
                 }
 
@@ -1104,79 +1158,241 @@ namespace UnifiedConversationTracker.Session
                     return 0;
                 }
 
-                ResyncCount++;
-
-                var stopwatch = Stopwatch.StartNew();
-                int rowCount = 0;
-                int raisedCount;
-
-                try
-                {
-                    raisedCount = MergeEverythingFromGame(ref rowCount);
-                }
-                catch (Exception ex)
-                {
-                    // Not retried: the next load would call the same thing and fail
-                    // the same way, once per load, for the rest of the session.
-                    _resyncGivenUp = true;
-                    _log.Error(
-                        $"Failed to resync the unified state from the running game ({_source.Description}) "
-                        + $"after {rowCount} rows: {ex}. No further resync will be attempted this session, "
-                        + "so statuses restored by loading a savegame will only be recorded if they are "
-                        + "marked again during play.");
-                    return 0;
-                }
-
-                stopwatch.Stop();
-
-                string outcome =
-                    $"Resynced the unified state from the running game ({_source.Description}) after a "
-                    + "savegame load: ";
-                _log.Info(
-                    raisedCount == 0
-                        ? outcome
-                            + $"nothing new in {rowCount} rows in {stopwatch.ElapsedMilliseconds} ms, "
-                            + "so no file was written."
-                        : outcome
-                            + $"{raisedCount} statuses raised from {rowCount} rows in "
-                            + $"{stopwatch.ElapsedMilliseconds} ms; now {_state.ConversationCount} "
-                            + $"conversations, {_state.EntryCount} entries.");
-
-                // Immediately after the total, so the two lines can be read together:
-                // the total covers the walk, the merge and the write decision, and only
-                // this line says how the walk's own share of it was spent (de-p1h).
-                string? walkDetail = _source.DescribeLastWalk();
-                if (walkDetail != null)
-                {
-                    _log.Info($"Resync walk detail ({_source.Description}): {walkDetail}");
-                }
-
-                if (raisedCount == 0)
-                {
-                    return 0;
-                }
-
-                MarkDirty();
-                return raisedCount;
+                return Resync(
+                    _source.Description,
+                    WalkDetailLabel,
+                    () => _source.EnumerateSimStatuses(),
+                    () => _source.DescribeLastWalk());
             }
         }
 
         /// <summary>
-        /// Walks every SimStatus the game currently holds and merges it into the
-        /// state, reporting the rows whose status string was not recognized.
+        /// Resyncs from the savegame's own compressed SimStatus blobs, before the game
+        /// has expanded and destroyed them, instead of walking the whole master
+        /// database afterwards.
         /// </summary>
+        /// <remarks>
+        /// <para><b>Call it from a PREFIX</b> on
+        /// <c>PersistentDataManager.ExpandCompressedSimStatusData</c>, which is the only
+        /// place the compressed form still exists: that method nils every
+        /// <c>Variable["Conversation_SimX_*"]</c> through <c>Lua.Run</c> before it
+        /// returns, so by the time <see cref="ResyncFromGame"/>'s postfix runs there is
+        /// nothing left to intercept (de-0m0.19, confirmed against the Final Cut
+        /// ISIL).</para>
+        ///
+        /// <para><b>It covers the same population the walk does.</b> The blobs are
+        /// complete rather than a delta - a real save's 1,494 blobs encoded exactly the
+        /// 112,940 pairs the walk visits - so absence still means Untouched and the
+        /// merge rule is unchanged. What differs is the cost: ~1,500 keyed Lua reads
+        /// and ~1,473 non-Untouched rows, instead of 112,940 rows read one interop
+        /// crossing at a time.</para>
+        ///
+        /// <para><b>Failing is LOUD.</b> Every way this can decline - no articy id map,
+        /// an encoding it does not recognize, a pair it cannot resolve, a row count
+        /// that does not add up, an exception - is reported as an ERROR naming exactly
+        /// what went wrong, from the one place below that decides. That is deliberate
+        /// even while a fallback still exists: an unexercised fallback rots, and a
+        /// quiet one would hide the difference between interception working and
+        /// interception silently never running.</para>
+        /// </remarks>
+        /// <returns>
+        /// True if interception ran and its rows were merged. False if it did not, in
+        /// which case the caller has to resync some other way; see the fallback seam in
+        /// <c>ExpandCompressedSimStatusDataPatch</c>.
+        /// </returns>
+        public bool TryResyncFromInterception()
+        {
+            lock (_gate)
+            {
+                if (_interceptor == null)
+                {
+                    ReportInterceptionFailure(
+                        "none",
+                        "no interceptor was installed, which means the articy id map was not "
+                        + "available when the plugin loaded - see the startup log line that says so.");
+                    return false;
+                }
+
+                if (!CanResync(_interceptor.Description))
+                {
+                    // Not an interception failure: nothing may be kept this session, or
+                    // a previous resync gave up, and CanResync has already said which.
+                    return false;
+                }
+
+                SimStatusInterception intercepted;
+                try
+                {
+                    intercepted = _interceptor.Intercept();
+                }
+                catch (Exception ex)
+                {
+                    // Deliberately does NOT set _resyncGivenUp: this failed, the merge
+                    // did not, and tracking is not what is at stake here.
+                    intercepted = SimStatusInterception.Unavailable($"it threw: {ex}");
+                }
+
+                if (!intercepted.IsUsable)
+                {
+                    ReportInterceptionFailure(_interceptor.Description, intercepted.Reason!);
+                    return false;
+                }
+
+                IReadOnlyList<SimStatusRow> rows = intercepted.Rows;
+                SimStatusInterceptionMeasurement measurement = intercepted.Measurement;
+                InterceptedResyncCount++;
+                Resync(
+                    _interceptor.Description,
+                    InterceptDetailLabel,
+                    () => rows,
+                    () => measurement.Describe());
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Reports one failed interception, as an ERROR, naming what failed.
+        /// </summary>
+        /// <param name="sourceDescription">
+        /// The route that failed, or "none" when there was not one to try.
+        /// </param>
+        /// <param name="reason">What went wrong, as a sentence.</param>
+        /// <remarks>
+        /// An ERROR rather than a warning on purpose. Once de-0m0.25 has removed the
+        /// fallback these are hard failures, and the diagnostics have to be good enough
+        /// to act on before that, not after.
+        /// </remarks>
+        private void ReportInterceptionFailure(string sourceDescription, string reason)
+        {
+            _log.Error(
+                $"{InterceptionFailurePrefix} ({sourceDescription}): {reason}"
+                + InterceptionFallbackNotice);
+        }
+
+        /// <summary>
+        /// Whether a resync may run at all, logging the reason when it may not. Caller
+        /// must hold <see cref="_gate"/>.
+        /// </summary>
+        /// <param name="sourceDescription">Where the resync would have read from.</param>
+        private bool CanResync(string sourceDescription)
+        {
+            if (_resyncGivenUp)
+            {
+                return false;
+            }
+
+            EnsureInitialized();
+
+            if (!CanSave)
+            {
+                _log.Warning(
+                    $"Not resyncing the unified state from the running game ({sourceDescription}): "
+                    + $"saving is disabled for this session ({Origin}), so what it read could not be "
+                    + $"kept. See the earlier log lines about '{_store.LivePath}'.");
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Merges one resync's rows, whichever route produced them, and logs the two
+        /// lines that describe it. Caller must hold <see cref="_gate"/>, and must
+        /// already have established through <see cref="CanResync"/> that a resync may
+        /// run.
+        /// </summary>
+        /// <param name="sourceDescription">Where the rows came from, for the log.</param>
+        /// <param name="detailLabel">What the second line calls itself.</param>
+        /// <param name="rows">Produces the rows. Called exactly once.</param>
+        /// <param name="describe">
+        /// Produces the detail line, called after the rows have been consumed because
+        /// the walk only knows its own timings once it has finished.
+        /// </param>
+        /// <returns>How many statuses were raised.</returns>
+        private int Resync(
+            string sourceDescription,
+            string detailLabel,
+            Func<IEnumerable<SimStatusRow>> rows,
+            Func<string?> describe)
+        {
+            ResyncCount++;
+
+            var stopwatch = Stopwatch.StartNew();
+            int rowCount = 0;
+            int raisedCount;
+
+            try
+            {
+                raisedCount = MergeEverythingFromGame(rows(), ref rowCount);
+            }
+            catch (Exception ex)
+            {
+                // Not retried: the next load would call the same thing and fail
+                // the same way, once per load, for the rest of the session.
+                _resyncGivenUp = true;
+                _log.Error(
+                    $"Failed to resync the unified state from the running game ({sourceDescription}) "
+                    + $"after {rowCount} rows: {ex}. No further resync will be attempted this session, "
+                    + "so statuses restored by loading a savegame will only be recorded if they are "
+                    + "marked again during play.");
+                return 0;
+            }
+
+            stopwatch.Stop();
+
+            string outcome =
+                $"Resynced the unified state from the running game ({sourceDescription}) after a "
+                + "savegame load: ";
+            _log.Info(
+                raisedCount == 0
+                    ? outcome
+                        + $"nothing new in {rowCount} rows in {stopwatch.ElapsedMilliseconds} ms, "
+                        + "so no file was written."
+                    : outcome
+                        + $"{raisedCount} statuses raised from {rowCount} rows in "
+                        + $"{stopwatch.ElapsedMilliseconds} ms; now {_state.ConversationCount} "
+                        + $"conversations, {_state.EntryCount} entries.");
+
+            // Immediately after the total, so the two lines can be read together: the
+            // total covers the read, the merge and the write decision, and only this
+            // line says how the read's own share of it was spent (de-p1h). Both routes
+            // report the same shape, so they can be compared directly.
+            string? detail = describe();
+            if (detail != null)
+            {
+                _log.Info($"Resync {detailLabel} detail ({sourceDescription}): {detail}");
+            }
+
+            if (raisedCount == 0)
+            {
+                return 0;
+            }
+
+            MarkDirty();
+            return raisedCount;
+        }
+
+        /// <summary>
+        /// Merges every SimStatus a resync read into the state, reporting the rows
+        /// whose status string was not recognized.
+        /// </summary>
+        /// <param name="rows">
+        /// The rows to merge, from either resync route. Lazy for the walk, which
+        /// produces them one interop crossing at a time, and already in hand for an
+        /// interception.
+        /// </param>
         /// <param name="rowCount">
-        /// Counted up as the walk goes, so a caller that catches a throwing walk can
+        /// Counted up as the merge goes, so a caller that catches a throwing read can
         /// still say how far it got.
         /// </param>
-        /// <returns>How many statuses this walk actually raised.</returns>
-        private int MergeEverythingFromGame(ref int rowCount)
+        /// <returns>How many statuses this resync actually raised.</returns>
+        private int MergeEverythingFromGame(IEnumerable<SimStatusRow> rows, ref int rowCount)
         {
             int raisedCount = 0;
             int skippedCount = 0;
             var warnings = new List<string>();
 
-            foreach (SimStatusRow row in _source.EnumerateSimStatuses())
+            foreach (SimStatusRow row in rows)
             {
                 rowCount++;
                 if (_state.TryMerge(row.ConversationId, row.DialogueEntryId, row.StatusName, out bool changed))
@@ -1215,6 +1431,6 @@ namespace UnifiedConversationTracker.Session
         /// <inheritdoc />
         public override string ToString() =>
             $"UnifiedStateSession({Origin}, initialized={IsInitialized}, canSave={CanSave}, "
-            + $"resyncs={ResyncCount})";
+            + $"resyncs={ResyncCount}, intercepted={InterceptedResyncCount})";
     }
 }

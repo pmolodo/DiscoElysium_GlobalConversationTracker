@@ -282,21 +282,15 @@ namespace UnifiedConversationTracker
                 return SimStatusNames.Untouched;
             }
 
-            LuaValue? status = entryFields.GetValue(SimStatusFieldName);
-            LuaString? text = status?.TryCast<LuaString>();
-
             // Pass the game's string through as-is, including one that is not one of
             // the three known names: the session counts and reports those, and
             // silently turning one into Untouched here would hide it.
-            return text == null ? SimStatusNames.Untouched : text.Text;
+            return LuaValues.AsText(entryFields.GetValue(SimStatusFieldName))
+                ?? SimStatusNames.Untouched;
         }
 
-        /// <summary>
-        /// A Lua value as a table, or null if it is nil or something else. Folds the
-        /// nil-versus-null distinction away: <c>GetValue</c> returns
-        /// <c>LuaNil.Nil</c> for an absent key rather than a null reference.
-        /// </summary>
-        private static LuaTable? AsTable(LuaValue? value) => value?.TryCast<LuaTable>();
+        /// <summary>Shorthand for the shared nil-folding cast.</summary>
+        private static LuaTable? AsTable(LuaValue? value) => LuaValues.AsTable(value);
 
         /// <summary>
         /// The master database, or null while the dialogue system is not up.

@@ -43,12 +43,23 @@ namespace UnifiedConversationTracker
     /// one, the only two in-game measurements there are, over the same rows and the
     /// same method (de-p1h.1) - and a doubled one is tracked as de-cvq.</para>
     ///
-    /// <para><b>Postfix, and nothing escapes into game code.</b> The game's own
-    /// rewrite happens first and completely unmodified; the unified state is a
-    /// passive observer. Everything this postfix does is inside a catch-all, and it
-    /// runs inside the load coroutine's own try block, so an exception escaping here
-    /// would abort the player's load and show them an error dialog. That must never
-    /// happen for a tracking failure.</para>
+    /// <para><b>Two hooks on the one method, because the data exists twice.</b> The
+    /// PREFIX is the fast path: the savegame's SimStatus is still in the compressed
+    /// <c>Variable["Conversation_SimX_*"]</c> strings it arrived in, and reading
+    /// ~1,500 of those is what <c>ExpandCompressedSimStatusData</c> is about to spend
+    /// its time expanding. A postfix cannot see any of it - the same method nils every
+    /// one of those variables through <c>Lua.Run</c> before it returns (de-0m0.19,
+    /// confirmed against the Final Cut ISIL), and leaves no intermediate bulk form
+    /// behind. The POSTFIX is the slow path that was here first: once expansion has
+    /// finished, the same information is readable from the game's own tables, one
+    /// interop crossing per row, 112,940 rows, measured at 1,892 ms (de-0m0.17).</para>
+    ///
+    /// <para><b>Nothing escapes into game code.</b> The game's own rewrite happens
+    /// completely unmodified either way; the unified state is a passive observer that
+    /// reads Lua values and calls nothing. Both hooks are wrapped in a catch-all, and
+    /// they run inside the load coroutine's own try block, so an exception escaping
+    /// here would abort the player's load and show them an error dialog. That must
+    /// never happen for a tracking failure.</para>
     /// </remarks>
     [HarmonyPatch(
         typeof(PersistentDataManager),
@@ -57,6 +68,19 @@ namespace UnifiedConversationTracker
     {
         private static UnifiedStateSession? _session;
         private static HookFailureLimiter? _failures;
+
+        /// <summary>
+        /// Whether the prefix of the call currently in flight already merged this
+        /// load's SimStatus, so the postfix must not walk as well.
+        /// </summary>
+        /// <remarks>
+        /// A plain static is enough. <c>ExpandCompressedSimStatusData</c> is called
+        /// from the game's load coroutine on the Unity main thread and is not
+        /// re-entrant, so prefix and postfix always pair up on one thread; and the
+        /// prefix clears it before doing anything, so a prefix that never ran and a
+        /// prefix that failed both leave it false.
+        /// </remarks>
+        private static bool _interceptionMerged;
 
         /// <summary>
         /// Applies the patch. Call once, from plugin load, after the session exists.
@@ -83,12 +107,61 @@ namespace UnifiedConversationTracker
         }
 
         /// <summary>
+        /// Runs while the savegame's compressed SimStatus blobs are still there, which
+        /// is only until this method's own <c>Lua.Run</c> nils them.
+        /// </summary>
+        [HarmonyPrefix]
+        private static void ExpandCompressedSimStatusDataPrefix()
+        {
+            // Cleared first, so every way out of here below leaves the postfix to do
+            // the work.
+            _interceptionMerged = false;
+
+            UnifiedStateSession? session = _session;
+            HookFailureLimiter? failures = _failures;
+            if (session == null || failures == null || failures.HasGivenUp)
+            {
+                return;
+            }
+
+            try
+            {
+                _interceptionMerged = session.TryResyncFromInterception();
+            }
+            catch (Exception ex)
+            {
+                failures.Report(ex);
+            }
+        }
+
+        /// <summary>
         /// Runs after the game has finished rebuilding its SimStatus tables from a
         /// save.
         /// </summary>
         [HarmonyPostfix]
         private static void ExpandCompressedSimStatusDataPostfix()
         {
+            // ------------------------------------------------------------------
+            // PROVISIONAL FALLBACK SEAM (de-0m0.25).
+            //
+            // Everything below this comment is the previous route: walking the
+            // master database after expansion, which is the only path with an
+            // in-game measurement behind it (1,892 ms over 112,940 rows, de-0m0.17)
+            // and the only reason a failed interception is not yet fatal.
+            // Interception's own cost has never been observed in a running game.
+            //
+            // It is kept until interception has one clean in-game measurement, and
+            // de-0m0.25 then deletes it: this method, this flag, and the branch
+            // below. Nothing in the prefix path depends on it, so removing it is a
+            // deletion rather than an unpicking. The prefix already reports its own
+            // failures as errors, so nothing diagnostic is lost with it.
+            // ------------------------------------------------------------------
+            if (_interceptionMerged)
+            {
+                _interceptionMerged = false;
+                return;
+            }
+
             UnifiedStateSession? session = _session;
             HookFailureLimiter? failures = _failures;
             if (session == null || failures == null || failures.HasGivenUp)
