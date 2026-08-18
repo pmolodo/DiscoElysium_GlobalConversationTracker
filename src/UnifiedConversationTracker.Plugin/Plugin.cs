@@ -114,13 +114,26 @@ namespace UnifiedConversationTracker
                 "Dialogue seen during play will not be recorded this session",
                 () => MarkDialogueEntryPatch.Install(harmony, session, log));
 
-            bool resyncing = TryInstall(
-                "PersistentDataManager.ExpandCompressedSimStatusData",
-                "the unified state is resynced whenever a savegame is loaded",
-                "Statuses restored by loading a savegame will be missed this session",
-                () => ExpandCompressedSimStatusDataPatch.Install(harmony, session, log));
+            bool resyncing = false;
+            // bool resyncing = TryInstall(
+            //     "PersistentDataManager.ExpandCompressedSimStatusData",
+            //     "the unified state is resynced whenever a savegame is loaded (using lua blobs)",
+            //     "Statuses restored by loading a savegame will be missed this session",
+            //     () => ExpandCompressedSimStatusDataPatch.Install(harmony, session, log));
 
-            if (!recording && !resyncing)
+            bool UnzipBytesToMemoryTiming = TryInstall(
+                "SunshinePersistenceFileManager.UnzipBytesToMemory",
+                "timing of SunshinePersistenceFileManager.UnzipBytesToMemory is being tracked",
+                "Timing of SunshinePersistenceFileManager.UnzipBytesToMemory is untracked",
+                () => UnzipBytesToMemoryPatch.Install(harmony, session, log));
+
+            bool InitializeMissingVariableValuesTiming = TryInstall(
+                "SunshinePersistenceLuaDataCollector.InitializeMissingVariableValues",
+                "timing of SunshinePersistenceLuaDataCollector.InitializeMissingVariableValues is being tracked",
+                "Timing of SunshinePersistenceLuaDataCollector.InitializeMissingVariableValues is untracked",
+                () => InitializeMissingVariableValuesPatch.Install(harmony, session, log));
+
+            if (!recording && !resyncing && !UnzipBytesToMemoryTiming && !InitializeMissingVariableValuesTiming)
             {
                 _harmony = null;
             }
