@@ -114,12 +114,17 @@ namespace UnifiedConversationTracker
                 "Dialogue seen during play will not be recorded this session",
                 () => MarkDialogueEntryPatch.Install(harmony, session, log));
 
-            bool resyncing = false;
             // bool resyncing = TryInstall(
             //     "PersistentDataManager.ExpandCompressedSimStatusData",
             //     "the unified state is resynced whenever a savegame is loaded (using lua blobs)",
             //     "Statuses restored by loading a savegame will be missed this session",
             //     () => ExpandCompressedSimStatusDataPatch.Install(harmony, session, log));
+            bool resyncing = TryInstall(
+                // "SunshinePersistenceFileManager.ReadLuaBytesFromSaveGameFile",
+                "PersistentDataManager.ApplyRawData",
+                "the unified state is resynced whenever a savegame is loaded (using raw file bytes)",
+                "Statuses restored by loading a savegame will be missed this session",
+                () => ApplyRawDataPatch.Install(harmony, session, log));
 
             bool UnzipBytesToMemoryTiming = TryInstall(
                 "SunshinePersistenceFileManager.UnzipBytesToMemory",

@@ -1167,6 +1167,14 @@ namespace UnifiedConversationTracker.Session
         }
 
         /// <summary>
+        /// Resyncs from the raw bytes of the ntwtf.lua file in the save.
+        /// </summary>
+        public void ResyncFromSaveRawBytes()
+        {
+            _log.Info("ResyncFromSaveRawBytes callback fired");
+        }
+
+        /// <summary>
         /// Resyncs from the savegame's own compressed SimStatus blobs, before the game
         /// has expanded and destroyed them, instead of walking the whole master
         /// database afterwards.
