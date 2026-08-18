@@ -1,6 +1,8 @@
 using NtwtfDecode;
 using NtwtfDecode.Tests;
 using UnifiedConversationTracker;
+using UnifiedConversationTracker.Persistence;
+using UnifiedConversationTracker.Persistence.Tests;
 using Xunit;
 
 namespace UnifiedStateCheck.Tests;

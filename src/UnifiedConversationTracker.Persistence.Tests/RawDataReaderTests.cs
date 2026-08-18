@@ -1,7 +1,10 @@
+using System;
+using System.IO;
+using System.Linq;
 using System.Text;
 using Xunit;
 
-namespace NtwtfDecode.Tests;
+namespace UnifiedConversationTracker.Persistence.Tests;
 
 /// <summary>
 /// Round trip and failure tests for the save-blob decoder, over blobs written by

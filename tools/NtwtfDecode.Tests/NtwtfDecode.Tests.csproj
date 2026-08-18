@@ -24,6 +24,13 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NtwtfDecode\NtwtfDecode.csproj" />
+    <ProjectReference
+      Include="..\..\src\UnifiedConversationTracker.Persistence.Tests\UnifiedConversationTracker.Persistence.Tests.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\src\UnifiedConversationTracker.Persistence.Tests\LuaBlob.cs" Link="LuaBlob.cs" />
+  </ItemGroup>
+
 
 </Project>

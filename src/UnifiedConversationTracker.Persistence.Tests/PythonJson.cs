@@ -1,8 +1,10 @@
+using System;
+using System.IO;
 using System.Globalization;
 using System.Numerics;
 using System.Text;
 
-namespace NtwtfDecode;
+namespace UnifiedConversationTracker.Persistence.Tests;
 
 /// <summary>
 /// Writes decoded Lua data as JSON, byte-for-byte compatible with Python's

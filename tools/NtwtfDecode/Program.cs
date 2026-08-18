@@ -1,5 +1,7 @@
 using System.Text;
 using NtwtfDecode;
+using UnifiedConversationTracker.Persistence;
+using PythonJson = UnifiedConversationTracker.Persistence.Tests.PythonJson;
 
 const string AllTables = "all";
 const int DefaultIndent = 2;

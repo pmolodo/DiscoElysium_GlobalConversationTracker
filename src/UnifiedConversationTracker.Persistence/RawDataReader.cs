@@ -1,8 +1,10 @@
+using System;
 using System.Buffers.Binary;
+using System.IO;
 using System.Numerics;
 using System.Text;
 
-namespace NtwtfDecode;
+namespace UnifiedConversationTracker.Persistence;
 
 /// <summary>
 /// Reads the binary "raw data" blob stored in a {save}.ntwtf.lua file.
@@ -48,6 +50,7 @@ public sealed class RawDataReader
     private readonly byte[] _data;
     private int _pos;
 
+    /// <summary>Constructor - takes bytes from .ntwtf.lua file.</summary>
     public RawDataReader(byte[] data)
     {
         _data = data;
@@ -69,6 +72,7 @@ public sealed class RawDataReader
         return result;
     }
 
+    /// <summary>Consume a lua table entry from the byte stream.</summary>
     public LuaTable ReadTable()
     {
         ReadByte(); // consume the 'T' table marker (C#: reader.Read())
@@ -103,6 +107,7 @@ public sealed class RawDataReader
         return table;
     }
 
+    /// <summary>Consume a lua value from the byte stream.</summary>
     public object? ReadValue()
     {
         if (PeekByte() == TableMarker)
@@ -134,7 +139,8 @@ public sealed class RawDataReader
     /// </summary>
     private static object NormalizeNumber(double value)
     {
-        if (!double.IsInteger(value))
+        // double.IsInteger() not available until .NET 7
+        if (value % 1 != 0)
         {
             return value;
         }
