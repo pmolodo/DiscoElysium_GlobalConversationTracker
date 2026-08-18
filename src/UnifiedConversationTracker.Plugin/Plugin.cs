@@ -116,11 +116,18 @@ namespace UnifiedConversationTracker
 
             bool resyncing = TryInstall(
                 "PersistentDataManager.ExpandCompressedSimStatusData",
-                "the unified state is resynced whenever a savegame is loaded",
+                "the unified state is resynced whenever a savegame is loaded (using lua blobs)",
                 "Statuses restored by loading a savegame will be missed this session",
                 () => ExpandCompressedSimStatusDataPatch.Install(harmony, session, log));
 
-            if (!recording && !resyncing)
+            bool detectingLoad = TryInstall(
+                // "SunshinePersistenceFileManager.ReadLuaBytesFromSaveGameFile",
+                "PersistentDataManager.ApplyRawData",
+                "the unified state is resynced whenever a savegame is loaded (using raw file bytes)",
+                "Statuses restored by loading a savegame will be missed this session",
+                () => ApplyRawDataPatch.Install(harmony, session, log));
+
+            if (!recording && !resyncing && !detectingLoad)
             {
                 _harmony = null;
             }
