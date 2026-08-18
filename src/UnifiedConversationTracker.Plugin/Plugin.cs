@@ -121,13 +121,48 @@ namespace UnifiedConversationTracker
                 () => ExpandCompressedSimStatusDataPatch.Install(harmony, session, log));
 
             bool detectingLoad = TryInstall(
-                // "SunshinePersistenceFileManager.ReadLuaBytesFromSaveGameFile",
                 "PersistentDataManager.ApplyRawData",
                 "the unified state is resynced whenever a savegame is loaded (using raw file bytes)",
                 "Statuses restored by loading a savegame will be missed this session",
                 () => ApplyRawDataPatch.Install(harmony, session, log));
 
-            if (!recording && !resyncing && !detectingLoad)
+            bool loadTiming = TryInstall(
+                "SunshinePersistence.Load",
+                "timing of loading is being tracked",
+                "Timing of loading is untracked",
+                () => LoadPatch.Install(harmony, session, log));
+
+            // bool loadCoRTiming = TryInstall(
+            //     "SunshinePersistence.LoadCoR",
+            //     "timing of loading co-routine is being tracked",
+            //     "Timing of loading co-routine is untracked",
+            //     () => LoadCoRPatch.Install(harmony, session, log));
+
+            bool GetZipBytesTiming = TryInstall(
+                "SunshinePersistenceFileManager.GetZipBytes",
+                "timing of SunshinePersistenceFileManager.GetZipBytes is being tracked",
+                "Timing of SunshinePersistenceFileManager.GetZipBytes is untracked",
+                () => GetZipBytesPatch.Install(harmony, session, log));
+
+            bool UnzipBytesToMemoryTiming = TryInstall(
+                "SunshinePersistenceFileManager.UnzipBytesToMemory",
+                "timing of SunshinePersistenceFileManager.UnzipBytesToMemory is being tracked",
+                "Timing of SunshinePersistenceFileManager.UnzipBytesToMemory is untracked",
+                () => UnzipBytesToMemoryPatch.Install(harmony, session, log));
+
+            bool InitTablesTiming = TryInstall(
+                "GenericLuaFunctions.InitTables",
+                "timing of GenericLuaFunctions.InitTables is being tracked",
+                "Timing of GenericLuaFunctions.InitTables is untracked",
+                () => InitTablesPatch.Install(harmony, session, log));
+
+            bool InitializeMissingVariableValuesTiming = TryInstall(
+                "SunshinePersistenceLuaDataCollector.InitializeMissingVariableValues",
+                "timing of SunshinePersistenceLuaDataCollector.InitializeMissingVariableValues is being tracked",
+                "Timing of SunshinePersistenceLuaDataCollector.InitializeMissingVariableValues is untracked",
+                () => InitializeMissingVariableValuesPatch.Install(harmony, session, log));
+
+            if (!recording && !resyncing && !detectingLoad && !loadTiming && !GetZipBytesTiming &!UnzipBytesToMemoryTiming && !InitTablesTiming && !InitializeMissingVariableValuesTiming)
             {
                 _harmony = null;
             }

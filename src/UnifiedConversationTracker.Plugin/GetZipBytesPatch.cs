@@ -1,21 +1,19 @@
 using System;
 using System.Diagnostics;
 using System.Globalization;
+using System.Numerics;
 using HarmonyLib;
-using PixelCrushers.DialogueSystem;
 using UnifiedConversationTracker.Session;
 
 namespace UnifiedConversationTracker
 {
     /// <summary>
-    /// The load-time hook: after a savegame has rewritten the game's SimStatus
-    /// tables behind <c>MarkDialogueEntry</c>'s back, the unified state is resynced
-    /// from the game (de-0s5).
+    /// Installs timing hooks for measuring load times.
     /// </summary>
     [HarmonyPatch(
-        typeof(PersistentDataManager),
-        nameof(PersistentDataManager.ApplyRawData))]
-    internal static class ApplyRawDataPatch
+        typeof(SunshinePersistenceFileManager),
+        nameof(SunshinePersistenceFileManager.GetZipBytes))]
+    internal static class GetZipBytesPatch
     {
         private static UnifiedStateSession? _session;
         private static HookFailureLimiter? _failures;
@@ -26,7 +24,7 @@ namespace UnifiedConversationTracker
         private static long _lastPostfixTime = 0;
         private static long _totalInCallTicks = 0;
 
-        private const string _methodName = "PersistentDataManager.ApplyRawData";
+        private const string _methodName = "SunshinePersistenceFileManager.GetZipBytes";
 
         /// <summary>
         /// Applies the patch. Call once, from plugin load, after the session exists.
@@ -41,6 +39,7 @@ namespace UnifiedConversationTracker
         /// </exception>
         internal static void Install(Harmony harmony, UnifiedStateSession session, IUnifiedStateLog log)
         {
+            _log = log;
             if (harmony == null)
             {
                 throw new ArgumentNullException(nameof(harmony));
@@ -48,16 +47,15 @@ namespace UnifiedConversationTracker
 
             _session = session ?? throw new ArgumentNullException(nameof(session));
             _failures = new HookFailureLimiter(
-                "resyncing the unified state after a savegame load", log);
-            _log = log;
-            harmony.PatchAll(typeof(ApplyRawDataPatch));
+                $"installing '{_methodName}' timing patches", log);
+            harmony.PatchAll(typeof(GetZipBytesPatch));
         }
 
         /// <summary>
-        /// Runs once the game has read the raw save file bytes.
+        /// Runs before each invocation of the GetZipBytes method
         /// </summary>
         [HarmonyPrefix]
-        private static void ApplyRawDataPrefix(byte[] bytes)
+        private static void GetZipBytesPrefix()
         {
             UnifiedStateSession? session = _session;
             HookFailureLimiter? failures = _failures;
@@ -77,8 +75,6 @@ namespace UnifiedConversationTracker
                     _log?.Info($"  Total time since last '{_methodName}' started: {Ms(now - _lastPrefixTime)}");
                 }
                 _lastPrefixTime = now;
-
-                session.ResyncFromSaveRawBytes(bytes);
             }
             catch (Exception ex)
             {
@@ -87,10 +83,10 @@ namespace UnifiedConversationTracker
         }
 
         /// <summary>
-        /// Runs after each invocation of the ApplyRawData method.
+        /// Runs after each invocation of the GetZipBytes method.
         /// </summary>
         [HarmonyPostfix]
-        private static void ApplyRawDataPostfix()
+        private static void GetZipBytesPostfix()
         {
             UnifiedStateSession? session = _session;
             HookFailureLimiter? failures = _failures;
