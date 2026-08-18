@@ -64,7 +64,9 @@ namespace UnifiedConversationTracker.Session.Tests
                     blobCount: 1494,
                     pairCount: 112940,
                     shadowedPairCount: 19814,
+                    variableCount: 12144,
                     rowCount: 1473,
+                    convertTicks: Stopwatch.Frequency / 100,
                     readTicks: Stopwatch.Frequency / 100,
                     decodeTicks: Stopwatch.Frequency / 100),
             };
