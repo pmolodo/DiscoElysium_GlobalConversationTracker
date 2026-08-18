@@ -1,6 +1,8 @@
+using System.Collections.Generic;
+using System.IO;
 using System.Numerics;
 
-namespace NtwtfDecode;
+namespace UnifiedConversationTracker.Persistence;
 
 /// <summary>
 /// A Lua table read out of the raw save blob.
@@ -29,8 +31,10 @@ public sealed class LuaTable
     /// string, long, BigInteger, double, bool, or LuaTable.</summary>
     public IReadOnlyList<KeyValuePair<object, object?>> Entries => _entries;
 
+    /// <summary>Number of combined entries in the list and dict parts</summary>
     public int Count => _entries.Count;
 
+    /// <summary>Insert a new key/value pair</summary>
     public void Add(object key, object? value)
     {
         if (_indexByKey.ContainsKey(key))
@@ -43,6 +47,7 @@ public sealed class LuaTable
         _entries.Add(new KeyValuePair<object, object?>(key, value));
     }
 
+    /// <summary>Analogue of Dictionary.TryGetValue</summary>
     public bool TryGetValue(object key, out object? value)
     {
         if (_indexByKey.TryGetValue(key, out int index))
@@ -68,7 +73,7 @@ public static class LuaKey
             string s => s,
             long l => l.ToString(System.Globalization.CultureInfo.InvariantCulture),
             BigInteger b => b.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            double d => PythonJson.FormatDouble(d),
+            double d => d.ToString(System.Globalization.CultureInfo.InvariantCulture),
             bool b => b ? "true" : "false",
             _ => throw new InvalidDataException(
                 $"Unsupported Lua table key type {key.GetType().Name}"

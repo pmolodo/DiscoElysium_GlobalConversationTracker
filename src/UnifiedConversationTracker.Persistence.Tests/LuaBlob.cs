@@ -1,6 +1,9 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Text;
 
-namespace NtwtfDecode.Tests;
+namespace UnifiedConversationTracker.Persistence.Tests;
 
 /// <summary>
 /// Writes the binary "raw data" blob that <see cref="RawDataReader"/> reads, so

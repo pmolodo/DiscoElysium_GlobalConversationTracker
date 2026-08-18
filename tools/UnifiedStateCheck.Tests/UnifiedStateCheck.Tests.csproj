@@ -38,7 +38,7 @@
       TempDirectory is the one place that builds SaveGames-shaped fixtures. Two
       copies would be two formats waiting to drift.
     -->
-    <Compile Include="..\NtwtfDecode.Tests\LuaBlob.cs" Link="LuaBlob.cs" />
+    <Compile Include="..\..\src\UnifiedConversationTracker.Persistence.Tests\LuaBlob.cs" Link="LuaBlob.cs" />
     <Compile Include="..\NtwtfDecode.Tests\TempDirectory.cs" Link="TempDirectory.cs" />
   </ItemGroup>
 
