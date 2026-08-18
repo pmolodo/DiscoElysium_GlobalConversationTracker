@@ -38,6 +38,7 @@ namespace UnifiedConversationTracker.Session
         /// <param name="pairCount">Id/status pairs the blobs held, Untouched included.</param>
         /// <param name="shadowedPairCount">Pairs overwritten by a later duplicate articy id.</param>
         /// <param name="rowCount">Non-Untouched rows handed to the merge.</param>
+        /// <param name="variableCount">Number of entries in the "Variable" lua table.</param>
         /// <param name="readTicks">Time fetching blobs out of the Lua Variable table.</param>
         /// <param name="decodeTicks">Time decoding and resolving them, in managed code.</param>
         public SimStatusInterceptionMeasurement(
@@ -45,6 +46,7 @@ namespace UnifiedConversationTracker.Session
             long blobCount,
             long pairCount,
             long shadowedPairCount,
+            long variableCount,
             long rowCount,
             long readTicks,
             long decodeTicks)
@@ -54,6 +56,7 @@ namespace UnifiedConversationTracker.Session
             BlobCount = blobCount;
             PairCount = pairCount;
             ShadowedPairCount = shadowedPairCount;
+            VariableCount = variableCount;
             RowCount = rowCount;
             ReadTicks = readTicks;
             DecodeTicks = decodeTicks;
@@ -73,6 +76,9 @@ namespace UnifiedConversationTracker.Session
 
         /// <summary>Non-Untouched rows handed to the merge.</summary>
         public long RowCount { get; }
+
+        /// <summary>Number of entries in the "Variable" lua table.</summary>
+        public long VariableCount { get; }
 
         /// <summary>Ticks spent fetching blobs out of Lua.</summary>
         public long ReadTicks { get; }
@@ -108,6 +114,7 @@ namespace UnifiedConversationTracker.Session
                 + $" ({MissingBlobCount} with no blob)"
                 + $"\n{PairCount} pairs, {ShadowedPairCount} with duplicate articy id,"
                 + $" {RowCount} non-Untouched rows merged"
+                + $"\n{VariableCount} variables"
                 + "\nTiming (Get-Value per conversation-variable):"
                 + $"\n    inside the interception (total): {Ms(TotalTicks)} ms"
                 + $"\n        read: {Ms(ReadTicks)} ms"

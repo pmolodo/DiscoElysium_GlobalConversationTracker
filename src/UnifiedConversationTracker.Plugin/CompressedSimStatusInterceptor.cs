@@ -181,6 +181,7 @@ namespace UnifiedConversationTracker
                     pairCount: _decoder.PairCount,
                     shadowedPairCount: _decoder.ShadowedPairCount,
                     rowCount: _decoder.Rows.Count,
+                    variableCount: variables.Count,
                     readTicks: readTicks,
                     decodeTicks: decodeTicks));
         }
