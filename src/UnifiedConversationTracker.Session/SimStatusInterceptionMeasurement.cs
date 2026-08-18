@@ -39,6 +39,7 @@ namespace UnifiedConversationTracker.Session
         /// <param name="shadowedPairCount">Pairs overwritten by a later duplicate articy id.</param>
         /// <param name="rowCount">Non-Untouched rows handed to the merge.</param>
         /// <param name="variableCount">Number of entries in the "Variable" lua table.</param>
+        /// <param name="convertTicks">Time spent converting the Variable lua table.</param>
         /// <param name="readTicks">Time fetching blobs out of the Lua Variable table.</param>
         /// <param name="decodeTicks">Time decoding and resolving them, in managed code.</param>
         public SimStatusInterceptionMeasurement(
@@ -48,6 +49,7 @@ namespace UnifiedConversationTracker.Session
             long shadowedPairCount,
             long variableCount,
             long rowCount,
+            long convertTicks,
             long readTicks,
             long decodeTicks)
         {
@@ -58,6 +60,7 @@ namespace UnifiedConversationTracker.Session
             ShadowedPairCount = shadowedPairCount;
             VariableCount = variableCount;
             RowCount = rowCount;
+            ConvertTicks = convertTicks;
             ReadTicks = readTicks;
             DecodeTicks = decodeTicks;
         }
@@ -80,14 +83,17 @@ namespace UnifiedConversationTracker.Session
         /// <summary>Number of entries in the "Variable" lua table.</summary>
         public long VariableCount { get; }
 
+        /// <summary>Ticks spent converting the Variable lua table.</summary>
+        public long ConvertTicks { get; }
+
         /// <summary>Ticks spent fetching blobs out of Lua.</summary>
         public long ReadTicks { get; }
 
         /// <summary>Ticks spent decoding blobs into rows.</summary>
         public long DecodeTicks { get; }
 
-        /// <summary>Both measured sections together.</summary>
-        public long TotalTicks => ReadTicks + DecodeTicks;
+        /// <summary>All measured sections together.</summary>
+        public long TotalTicks => ConvertTicks + ReadTicks + DecodeTicks;
 
         /// <summary>
         /// Conversations the map knew that had no blob. Expected to be small and
@@ -115,8 +121,9 @@ namespace UnifiedConversationTracker.Session
                 + $"\n{PairCount} pairs, {ShadowedPairCount} with duplicate articy id,"
                 + $" {RowCount} non-Untouched rows merged"
                 + $"\n{VariableCount} variables"
-                + "\nTiming (Get-Value per conversation-variable):"
+                + "\nTiming (pre-convert Variable LuaTable to C#):"
                 + $"\n    inside the interception (total): {Ms(TotalTicks)} ms"
+                + $"\n        convert: {Ms(ConvertTicks)} ms"
                 + $"\n        read: {Ms(ReadTicks)} ms"
                 + $"\n        decode: {Ms(DecodeTicks)}"
                 + $"\n    {ClockReadCount} clock reads at {Stopwatch.Frequency} ticks/s";

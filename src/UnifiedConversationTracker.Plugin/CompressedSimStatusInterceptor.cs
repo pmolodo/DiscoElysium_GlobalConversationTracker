@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using PixelCrushers.DialogueSystem;
@@ -124,8 +125,8 @@ namespace UnifiedConversationTracker
                 return SimStatusInterception.Unavailable(wrongBranch);
             }
 
-            LuaTable? variables = ResolveVariableTable();
-            if (variables == null)
+            LuaTable? variablesLuaToLua = ResolveVariableTable();
+            if (variablesLuaToLua == null)
             {
                 return SimStatusInterception.Unavailable(
                     $"the Lua '{VariableTableName}' table is not available, so there is nothing "
@@ -139,15 +140,28 @@ namespace UnifiedConversationTracker
             long decodeTicks = 0;
             long sectionStart = Stopwatch.GetTimestamp();
 
+            Dictionary<string, string> variablesStringToString = convertLuaTableToStringStringDict(variablesLuaToLua);
+
+            long finishedConvert = Stopwatch.GetTimestamp();
+            long convertTicks = finishedConvert - sectionStart;
+
+            sectionStart = finishedConvert;
+
             foreach (ArticyConversation conversation in _map.Conversations)
             {
-                string? blob = ReadBlob(variables, conversation.VariableName);
-
+                // Single lookup: checks existence and extracts the value
+                bool found = variablesStringToString.TryGetValue(conversation.VariableName, out var blob);
                 long read = Stopwatch.GetTimestamp();
                 readTicks += read - sectionStart;
-
-                if (blob == null)
+                if (found && !string.IsNullOrEmpty(blob))
                 {
+                    _decoder.Decode(conversation.ConversationId, blob);
+                    sectionStart = Stopwatch.GetTimestamp();
+                    decodeTicks += sectionStart - read;
+                }
+                else
+                {
+                    sectionStart = read;
                     missingBlobs++;
                     if (missingBlobs > MaxMissingBlobs)
                     {
@@ -158,13 +172,6 @@ namespace UnifiedConversationTracker
                             + "conversations are empty.");
                     }
                 }
-                else
-                {
-                    _decoder.Decode(conversation.ConversationId, blob);
-                }
-
-                sectionStart = Stopwatch.GetTimestamp();
-                decodeTicks += sectionStart - read;
             }
 
             string? refusal = DescribeUntrustworthyResult();
@@ -181,7 +188,8 @@ namespace UnifiedConversationTracker
                     pairCount: _decoder.PairCount,
                     shadowedPairCount: _decoder.ShadowedPairCount,
                     rowCount: _decoder.Rows.Count,
-                    variableCount: variables.Count,
+                    variableCount: variablesLuaToLua.Count,
+                    convertTicks: convertTicks,
                     readTicks: readTicks,
                     decodeTicks: decodeTicks));
         }
@@ -272,6 +280,39 @@ namespace UnifiedConversationTracker
             }
 
             return null;
+        }
+
+        private static Dictionary<string, string> convertLuaTableToStringStringDict(LuaTable luaTable)
+        {
+            Dictionary<string, string> stringDict = new();
+            foreach(var pair in luaTable.Dict)
+            {
+                string? possibleStringKey = LuaValues.AsText(pair.Key);
+                if (possibleStringKey is not string stringKey)
+                {
+                    continue;
+                }
+                if (string.IsNullOrEmpty(stringKey) || string.Equals(stringKey, LuaNilText, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                if (!stringDict.ContainsKey(stringKey))
+                {
+                    continue;
+                }
+
+                string? possibleStringValue = LuaValues.AsText(pair.Value);
+                if (possibleStringValue is not string stringValue)
+                {
+                    continue;
+                }
+                if (string.IsNullOrEmpty(stringValue) || string.Equals(stringValue, LuaNilText, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                stringDict[stringKey] = stringValue;
+            }
+            return stringDict;
         }
 
         /// <summary>
