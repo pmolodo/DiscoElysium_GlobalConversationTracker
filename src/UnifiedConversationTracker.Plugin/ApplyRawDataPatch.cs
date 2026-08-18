@@ -1,5 +1,6 @@
 using System;
 using HarmonyLib;
+using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using PixelCrushers.DialogueSystem;
 using UnifiedConversationTracker.Session;
 
@@ -46,7 +47,7 @@ namespace UnifiedConversationTracker
         /// Runs once the game has read the raw save file bytes.
         /// </summary>
         [HarmonyPrefix]
-        private static void ApplyRawDataPrefix()
+        private static void ApplyRawDataPrefix(Il2CppStructArray<byte> bytes)
         {
             UnifiedStateSession? session = _session;
             HookFailureLimiter? failures = _failures;
@@ -57,7 +58,7 @@ namespace UnifiedConversationTracker
 
             try
             {
-                session.ResyncFromSaveRawBytes();
+                session.ResyncFromSaveRawBytes(bytes);
             }
             catch (Exception ex)
             {

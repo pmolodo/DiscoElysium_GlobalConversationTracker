@@ -20,6 +20,27 @@
     <AssemblyName>UnifiedConversationTracker.Session</AssemblyName>
   </PropertyGroup>
 
+
+  <!--
+    Location of the Disco Elysium - Final Cut install whose BepInEx installation
+    supplies the reference assemblies. Override with either the DISCO_ELYSIUM_DIR
+    environment variable or -p:DiscoElysiumDir=<path>.
+  -->
+  <PropertyGroup>
+    <DiscoElysiumDir Condition="'$(DiscoElysiumDir)' == '' and '$(DISCO_ELYSIUM_DIR)' != ''">$(DISCO_ELYSIUM_DIR)</DiscoElysiumDir>
+    <DiscoElysiumDir Condition="'$(DiscoElysiumDir)' == ''">$(MSBuildThisFileDirectory)..\..\Steam Install - Unaltered\Disco Elysium</DiscoElysiumDir>
+    <BepInExCoreDir>$(DiscoElysiumDir)\BepInEx\core\</BepInExCoreDir>
+  </PropertyGroup>
+
+  <Target Name="ValidateBepInExReferenceDirs" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('$(BepInExCoreDir)')"
+           Text="BepInEx core directory not found: $(BepInExCoreDir). Set DISCO_ELYSIUM_DIR or pass -p:DiscoElysiumDir=&lt;game dir&gt;." />
+  </Target>
+
+  <ItemGroup>
+    <Reference Include="Il2CppInterop.Runtime" HintPath="$(BepInExCoreDir)Il2CppInterop.Runtime.dll" Private="false" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\UnifiedConversationTracker.Core\UnifiedConversationTracker.Core.csproj" />
     <ProjectReference Include="..\UnifiedConversationTracker.Persistence\UnifiedConversationTracker.Persistence.csproj" />

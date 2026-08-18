@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Threading;
+using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using UnifiedConversationTracker.Persistence;
 
 namespace UnifiedConversationTracker.Session
@@ -1169,9 +1170,13 @@ namespace UnifiedConversationTracker.Session
         /// <summary>
         /// Resyncs from the raw bytes of the ntwtf.lua file in the save.
         /// </summary>
-        public void ResyncFromSaveRawBytes()
+        public void ResyncFromSaveRawBytes(Il2CppStructArray<byte> bytes)
         {
-            _log.Info("ResyncFromSaveRawBytes callback fired");
+            // Print the first byte just to make sure that the compiler doesn't
+            // optimize out the arg (and the marshalling through the interop
+            // layer)
+            string byteInfo = bytes == null ? "<null> bytes" : (bytes.Length == 0 ? "<empty> bytes" : $"{bytes.Length} bytes, first byte: {bytes[0]}");
+            _log.Info($"ResyncFromSaveRawBytes callback fired - {byteInfo}");
         }
 
         /// <summary>
