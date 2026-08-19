@@ -61,7 +61,6 @@ public ref struct RawDataReader
 
     private readonly ByteArrayWrapper _data;
     private int _pos;
-    private readonly bool _enableLogging = false;
 
     /// <summary>Constructor - takes bytes from .ntwtf.lua file.</summary>
     public RawDataReader(byte[] data)
@@ -70,45 +69,9 @@ public ref struct RawDataReader
     }
 
     /// <summary>Constructor - takes bytes from ApplyRawData prefix hook.</summary>
-    public RawDataReader(Il2CppStructArray<byte> data, bool enableLogging = false)
+    public RawDataReader(Il2CppStructArray<byte> data)
     {
         _data = data;
-        _enableLogging = enableLogging;
-
-        if (_enableLogging)
-        {
-            Info($"Created RawDataReader with {_data.Length} bytes");
-            if (_data.Length > 0)
-            {
-                StringBuilder stringBuilder = new();
-                int previewLength = Math.Min(16, _data.Length);
-                for (int i = 0; i < previewLength; i++)
-                {
-                    stringBuilder.Append($"{_data[i]:X2} ");
-                }
-                Info($"First {previewLength} bytes: {stringBuilder.ToString().Trim()}");
-            }
-
-            Info($"Original Il2CppStructArray<byte> length: {data.Length}");
-            if (data.Length > 0)
-            {
-                StringBuilder stringBuilder = new();
-                int previewLength = Math.Min(16, data.Length);
-                for (int i = 0; i < previewLength; i++)
-                {
-                    stringBuilder.Append($"{data[i]:X2} ");
-                }
-                Info($"First {previewLength} bytes: {stringBuilder.ToString().Trim()}");
-            }
-        }
-    }
-
-    private void Info(string message)
-    {
-        if (_enableLogging)
-        {
-            Console.WriteLine($"RawDataReader: {message}");
-        }
     }
 
     /// <summary>
@@ -287,7 +250,6 @@ public ref struct RawDataReader
         {
             throw new EndOfStreamException($"Unexpected end of data at offset {_pos}");
         }
-        Info($"ReadByte: {_data[_pos]} at position {_pos}");
         return _data[_pos++];
     }
 
@@ -301,7 +263,6 @@ public ref struct RawDataReader
         _data.Slice(_pos, 4).CopyTo(stackBuffer);
         int value = BinaryPrimitives.ReadInt32LittleEndian(stackBuffer);
         _pos += sizeof(int);
-        Info($"ReadInt32: {value} at position {_pos}");
         return value;
     }
 
@@ -312,7 +273,6 @@ public ref struct RawDataReader
         _data.Slice(_pos, 8).CopyTo(stackBuffer);
         double value = BinaryPrimitives.ReadDoubleLittleEndian(stackBuffer);
         _pos += sizeof(double);
-        Info($"ReadDouble: {value} at position {_pos}");
         return value;
     }
 
@@ -351,7 +311,6 @@ public ref struct RawDataReader
         Span<byte> stackBuffer = stackalloc byte[length];
         _data.Slice(_pos, length).CopyTo(stackBuffer);
         string value = Utf8.GetString(stackBuffer);
-        Info($"ReadString: '{value}' at position {_pos}");
         _pos += length;
         return value;
     }
