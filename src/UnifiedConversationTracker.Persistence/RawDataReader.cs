@@ -82,22 +82,6 @@ public ref struct RawDataReader
     }
 
     /// <summary>
-    /// A reader over bytes from the ApplyRawData prefix hook.
-    ///
-    /// The span aliases the IL2CPP array's element vector in place - nothing is copied - so the
-    /// caller must keep <paramref name="data"/> alive (GC.KeepAlive) until the reader is done.
-    /// Note that the implicit Il2CppStructArray-to-byte[] conversion would copy the whole blob,
-    /// which is exactly what this exists to avoid.
-    /// </summary>
-    /// <remarks>
-    /// A named factory rather than a constructor overload on purpose: as an overload it would
-    /// drag Il2CppStructArray into the resolution of every `new RawDataReader(...)` anywhere,
-    /// and so force an Il2CppInterop reference on projects that never touch the game.
-    /// </remarks>
-    public static RawDataReader FromIl2CppBytes(Il2CppStructArray<byte> data) =>
-        new(data.AsSpan());
-
-    /// <summary>
     /// True when the byte data seems valid.
     /// </summary>
     public bool IsReady()
