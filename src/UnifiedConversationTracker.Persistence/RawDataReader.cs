@@ -1,8 +1,12 @@
 using System;
 using System.Buffers.Binary;
+using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
 using System.Text;
+using Il2CppInterop.Runtime.InteropTypes.Arrays;
+using Microsoft.VisualBasic;
+using UnifiedConversationTracker.Core;
 
 namespace UnifiedConversationTracker.Persistence;
 
@@ -22,10 +26,18 @@ namespace UnifiedConversationTracker.Persistence;
 ///   - The type-code markers ('T', 'S', 'N', 'B', 'X') are read with
 ///     ReadChar / PeekChar; they are ASCII, so one byte each.
 /// </summary>
-public sealed class RawDataReader
+
+// Implemented as ref struct so it can hold a ReadOnlySpan<byte>
+public ref struct RawDataReader
 {
+    /// <summary>
+    /// Source of this data - used like ISimStatusSource.Description and
+    /// ISimStatusInterceptor.Description
+    /// </summary>
+    public const string Description = "raw bytes of .ntwtf.lua save file";
+
     // Type-code markers (as produced by reader.ReadChar / PeekChar).
-    private const byte TableMarker = (byte)'T';
+    private const char TableMarker = 'T';
     private const char StringCode = 'S';
     private const char NumberCode = 'N';
     private const char BooleanCode = 'B';
@@ -47,13 +59,123 @@ public sealed class RawDataReader
         throwOnInvalidBytes: true
     );
 
-    private readonly byte[] _data;
+    private readonly ByteArrayWrapper _data;
     private int _pos;
+    private readonly bool _enableLogging = false;
 
     /// <summary>Constructor - takes bytes from .ntwtf.lua file.</summary>
     public RawDataReader(byte[] data)
     {
         _data = data;
+    }
+
+    /// <summary>Constructor - takes bytes from ApplyRawData prefix hook.</summary>
+    public RawDataReader(Il2CppStructArray<byte> data, bool enableLogging = false)
+    {
+        _data = data;
+        _enableLogging = enableLogging;
+
+        if (_enableLogging)
+        {
+            Info($"Created RawDataReader with {_data.Length} bytes");
+            if (_data.Length > 0)
+            {
+                StringBuilder stringBuilder = new();
+                int previewLength = Math.Min(16, _data.Length);
+                for (int i = 0; i < previewLength; i++)
+                {
+                    stringBuilder.Append($"{_data[i]:X2} ");
+                }
+                Info($"First {previewLength} bytes: {stringBuilder.ToString().Trim()}");
+            }
+
+            Info($"Original Il2CppStructArray<byte> length: {data.Length}");
+            if (data.Length > 0)
+            {
+                StringBuilder stringBuilder = new();
+                int previewLength = Math.Min(16, data.Length);
+                for (int i = 0; i < previewLength; i++)
+                {
+                    stringBuilder.Append($"{data[i]:X2} ");
+                }
+                Info($"First {previewLength} bytes: {stringBuilder.ToString().Trim()}");
+            }
+        }
+    }
+
+    private void Info(string message)
+    {
+        if (_enableLogging)
+        {
+            Console.WriteLine($"RawDataReader: {message}");
+        }
+    }
+
+    /// <summary>
+    /// True when the byte data seems valid.
+    /// </summary>
+    public bool IsReady()
+    {
+        return _data.Length > 0;
+    }
+
+    /// <summary>
+    /// Every SimStatus the save currently holds. Only called when
+    /// <see cref="IsReady"/> is true.
+    /// </summary>
+    public List<SimStatusRow> GetSimStatuses()
+    {
+        // We only want the last table - skip the others
+        for (int i = 0; i < TableNames.Length - 1; i++)
+        {
+            // Read just to advance the pointer
+            ReadTable(consumeMarker: true);
+        }
+
+        // Could probably do this nicer by implementing a dedicated iterator,
+        // and making ReadTable() use that, rather than vice-versa, but this
+        // is good enough for now...
+        LuaTable conversations = ReadTable(consumeMarker: true);
+
+        List<SimStatusRow> rows = new();
+        foreach (KeyValuePair<object, object?> convoPair in conversations.Entries)
+        {
+            if (convoPair.Key is int conversationId && convoPair.Value is LuaTable table)
+            {
+                if (table.TryGetValue("Dialog", out object? dialogValue) && dialogValue is LuaTable dialogTable)
+                {
+                    foreach (KeyValuePair<object, object?> dialoguePair in dialogTable.Entries)
+                    {
+                        if (dialoguePair.Key is int dialogueId && dialoguePair.Value is LuaTable dialogEntries)
+                        {
+                            if (dialogTable.TryGetValue("SimStatus", out object? statusObj) && statusObj is string status)
+                            {
+                                rows.Add(new SimStatusRow(conversationId, dialogueId, status));
+                            }
+                            else
+                            {
+                                throw new InvalidDataException($"Dialogue {dialogueId} in conversation {conversationId} has missing or non-string 'SimStatus' field");
+                            }
+                        }
+                        else
+                        {
+                            throw new InvalidDataException($"Non-conforming Dialoge table entry for conversation {conversationId}:"
+                                + $" {dialoguePair.Key} = {dialoguePair.Value}");
+                        }
+                    }
+                }
+                else
+                {
+                    throw new InvalidDataException($"Conversation {conversationId} has no 'Dialog' field");
+                }
+            }
+            else
+            {
+                throw new InvalidDataException("Non-conforming Conversation table entry:"
+                    + $" {convoPair.Key} = {convoPair.Value}");
+            }
+        }
+        return rows;
     }
 
     /// <summary>Number of bytes not yet consumed.</summary>
@@ -66,16 +188,25 @@ public sealed class RawDataReader
         var result = new LuaTable();
         foreach (string name in TableNames)
         {
-            result.Add(name, reader.ReadTable());
+            result.Add(name, reader.ReadTable(consumeMarker: true));
         }
         trailingBytes = reader.Remaining;
         return result;
     }
 
     /// <summary>Consume a lua table entry from the byte stream.</summary>
-    public LuaTable ReadTable()
+    public LuaTable ReadTable(bool consumeMarker = false)
     {
-        ReadByte(); // consume the 'T' table marker (C#: reader.Read())
+        if (consumeMarker)
+        {
+            char code = (char)ReadByte();
+            if (code != TableMarker)
+            {
+                throw new InvalidDataException(
+                    $"ReadTable expected table marker 'T' (0x{(int)TableMarker:X2}), got '{code}' (0x{(int)code:X2}) at offset {_pos - 1}"
+                );
+            }
+        }
         var table = new LuaTable();
 
         int listCount = ReadInt32();
@@ -110,11 +241,6 @@ public sealed class RawDataReader
     /// <summary>Consume a lua value from the byte stream.</summary>
     public object? ReadValue()
     {
-        if (PeekByte() == TableMarker)
-        {
-            return ReadTable();
-        }
-
         char code = (char)ReadByte();
         switch (code)
         {
@@ -124,6 +250,8 @@ public sealed class RawDataReader
                 return NormalizeNumber(ReadDouble());
             case BooleanCode:
                 return ReadBoolean();
+            case TableMarker:
+                return ReadTable(consumeMarker: false);
             case NilCode:
                 return null;
             default:
@@ -159,6 +287,7 @@ public sealed class RawDataReader
         {
             throw new EndOfStreamException($"Unexpected end of data at offset {_pos}");
         }
+        Info($"ReadByte: {_data[_pos]} at position {_pos}");
         return _data[_pos++];
     }
 
@@ -168,16 +297,22 @@ public sealed class RawDataReader
     private int ReadInt32()
     {
         EnsureAvailable(sizeof(int));
-        int value = BinaryPrimitives.ReadInt32LittleEndian(_data.AsSpan(_pos));
+        Span<byte> stackBuffer = stackalloc byte[4];
+        _data.Slice(_pos, 4).CopyTo(stackBuffer);
+        int value = BinaryPrimitives.ReadInt32LittleEndian(stackBuffer);
         _pos += sizeof(int);
+        Info($"ReadInt32: {value} at position {_pos}");
         return value;
     }
 
     private double ReadDouble()
     {
         EnsureAvailable(sizeof(double));
-        double value = BinaryPrimitives.ReadDoubleLittleEndian(_data.AsSpan(_pos));
+        Span<byte> stackBuffer = stackalloc byte[8];
+        _data.Slice(_pos, 8).CopyTo(stackBuffer);
+        double value = BinaryPrimitives.ReadDoubleLittleEndian(stackBuffer);
         _pos += sizeof(double);
+        Info($"ReadDouble: {value} at position {_pos}");
         return value;
     }
 
@@ -213,7 +348,10 @@ public sealed class RawDataReader
             throw new InvalidDataException($"Negative string length {length} at offset {_pos}");
         }
         EnsureAvailable(length);
-        string value = Utf8.GetString(_data, _pos, length);
+        Span<byte> stackBuffer = stackalloc byte[length];
+        _data.Slice(_pos, length).CopyTo(stackBuffer);
+        string value = Utf8.GetString(stackBuffer);
+        Info($"ReadString: '{value}' at position {_pos}");
         _pos += length;
         return value;
     }

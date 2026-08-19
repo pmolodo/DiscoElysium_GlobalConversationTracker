@@ -136,6 +136,12 @@ namespace UnifiedConversationTracker.Session
         /// </summary>
         private const string InterceptDetailLabel = "intercept";
 
+        /// <summary>
+        /// What the detail line calls itself when using raw bytes from save.
+        /// </summary>
+        private const string RawBytesDetailLabel = "save raw bytes";
+
+
         /// <summary>How every failed-interception line starts, so one search finds them all.</summary>
         private const string InterceptionFailurePrefix = "FAILED to intercept the savegame's SimStatus";
 
@@ -1171,13 +1177,37 @@ namespace UnifiedConversationTracker.Session
         /// <summary>
         /// Resyncs from the raw bytes of the ntwtf.lua file in the save.
         /// </summary>
-        public void ResyncFromSaveRawBytes(Il2CppStructArray<byte> bytes)
+        public int ResyncFromSaveRawBytes(Il2CppStructArray<byte> bytes)
         {
-            // Print the first byte just to make sure that the compiler doesn't
-            // optimize out the arg (and the marshalling through the interop
-            // layer)
-            string byteInfo = bytes == null ? "<null> bytes" : (bytes.Length == 0 ? "<empty> bytes" : $"{bytes.Length} bytes, first byte: {bytes[0]}");
+            string byteInfo = bytes.Length == 0 ? "<empty> bytes" : $"{bytes.Length} bytes, first byte: {bytes[0]}";
             _log.Info($"ResyncFromSaveRawBytes callback fired - {byteInfo}");
+            RawDataReader reader = new RawDataReader(bytes, enableLogging: true);
+            _log.Info($"reader.IsReady()? {reader.IsReady()}");
+
+            lock (_gate)
+            {
+                if (!CanResync(RawDataReader.Description))
+                {
+                    return 0;
+                }
+
+                if (!reader.IsReady())
+                {
+                    _log.Warning(
+                        "Not resyncing the unified state: received a null or empty byte string for "
+                        + $"{RawDataReader.Description}");
+                    return 0;
+                }
+
+                List<SimStatusRow> rows = reader.GetSimStatuses();
+
+                return Resync(
+                    RawDataReader.Description,
+                    RawBytesDetailLabel,
+                    () => rows,
+                    () => "TODO: implement raw byte read details");
+
+            }
         }
 
         /// <summary>
