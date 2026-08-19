@@ -1201,6 +1201,11 @@ namespace UnifiedConversationTracker.Session
 
                 List<SimStatusRow> rows = reader.GetSimStatuses();
 
+                // reader holds a span aliasing the IL2CPP array's elements in place rather than a
+                // copy, and bytes is dead from here on, so without this the wrapper could be
+                // finalized - freeing its GCHandle, and with it the array - mid-read.
+                GC.KeepAlive(bytes);
+
                 return Resync(
                     RawDataReader.Description,
                     RawBytesDetailLabel,

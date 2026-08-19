@@ -7,6 +7,7 @@ using System.Text;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using Microsoft.VisualBasic;
 using UnifiedConversationTracker.Core;
+using UnifiedConversationTracker.Persistence.Interop;
 
 namespace UnifiedConversationTracker.Persistence;
 
@@ -59,19 +60,26 @@ public ref struct RawDataReader
         throwOnInvalidBytes: true
     );
 
-    private readonly ByteArrayWrapper _data;
+    private readonly ReadOnlySpan<byte> _data;
     private int _pos;
 
     /// <summary>Constructor - takes bytes from .ntwtf.lua file.</summary>
-    public RawDataReader(byte[] data)
+    public RawDataReader(ReadOnlySpan<byte> data)
     {
         _data = data;
     }
 
-    /// <summary>Constructor - takes bytes from ApplyRawData prefix hook.</summary>
+    /// <summary>
+    /// Constructor - takes bytes from ApplyRawData prefix hook.
+    ///
+    /// The span aliases the IL2CPP array's element vector in place - nothing is copied - so the
+    /// caller must keep <paramref name="data"/> alive (GC.KeepAlive) until this reader is done.
+    /// Note that the implicit Il2CppStructArray-to-byte[] conversion would copy the whole blob,
+    /// which is exactly what this overload exists to avoid.
+    /// </summary>
     public RawDataReader(Il2CppStructArray<byte> data)
+        : this(data.AsSpan())
     {
-        _data = data;
     }
 
     /// <summary>
@@ -312,9 +320,7 @@ public ref struct RawDataReader
     private int ReadInt32()
     {
         EnsureAvailable(sizeof(int));
-        Span<byte> stackBuffer = stackalloc byte[4];
-        _data.Slice(_pos, 4).CopyTo(stackBuffer);
-        int value = BinaryPrimitives.ReadInt32LittleEndian(stackBuffer);
+        int value = BinaryPrimitives.ReadInt32LittleEndian(_data.Slice(_pos, sizeof(int)));
         _pos += sizeof(int);
         return value;
     }
@@ -322,9 +328,7 @@ public ref struct RawDataReader
     private double ReadDouble()
     {
         EnsureAvailable(sizeof(double));
-        Span<byte> stackBuffer = stackalloc byte[8];
-        _data.Slice(_pos, 8).CopyTo(stackBuffer);
-        double value = BinaryPrimitives.ReadDoubleLittleEndian(stackBuffer);
+        double value = BinaryPrimitives.ReadDoubleLittleEndian(_data.Slice(_pos, sizeof(double)));
         _pos += sizeof(double);
         return value;
     }
@@ -361,9 +365,7 @@ public ref struct RawDataReader
             throw new InvalidDataException($"Negative string length {length} at offset {_pos}");
         }
         EnsureAvailable(length);
-        Span<byte> stackBuffer = stackalloc byte[length];
-        _data.Slice(_pos, length).CopyTo(stackBuffer);
-        string value = Utf8.GetString(stackBuffer);
+        string value = Utf8.GetString(_data.Slice(_pos, length));
         _pos += length;
         return value;
     }
