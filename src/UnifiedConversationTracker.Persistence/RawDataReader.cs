@@ -82,6 +82,26 @@ public ref struct RawDataReader
         return _data.Length > 0;
     }
 
+    private static string GetTypeName(object? obj)
+    {
+        if (obj == null)
+        {
+            return "<null>";
+        }
+        else
+        {
+            var typeObj = obj.GetType();
+            if (typeObj.FullName == null)
+            {
+                return typeObj.ToString();
+            }
+            else
+            {
+                return typeObj.FullName;
+            }
+        }
+    }
+
     /// <summary>
     /// Every SimStatus the save currently holds. Only called when
     /// <see cref="IsReady"/> is true.
@@ -103,39 +123,69 @@ public ref struct RawDataReader
         List<SimStatusRow> rows = new();
         foreach (KeyValuePair<object, object?> convoPair in conversations.Entries)
         {
-            if (convoPair.Key is int conversationId && convoPair.Value is LuaTable table)
+            if (convoPair.Key is int convID)
             {
-                if (table.TryGetValue("Dialog", out object? dialogValue) && dialogValue is LuaTable dialogTable)
+                if (convoPair.Value is LuaTable convTable)
                 {
-                    foreach (KeyValuePair<object, object?> dialoguePair in dialogTable.Entries)
+                    if (!convTable.TryGetValue("Dialog", out object? dialogValue))
                     {
-                        if (dialoguePair.Key is int dialogueId && dialoguePair.Value is LuaTable dialogEntries)
+                        throw new InvalidDataException($"Conversation ID {convID} did not have a 'Dialog' entry");
+                    }
+                    if (dialogValue == null)
+                    {
+                        throw new InvalidDataException($"Conversation ID {convID} had a null 'Dialog' entry");
+                    }
+                    if (dialogValue is LuaTable dialogsTable)
+                    {
+                        foreach (KeyValuePair<object, object?> dialoguePair in dialogsTable.Entries)
                         {
-                            if (dialogTable.TryGetValue("SimStatus", out object? statusObj) && statusObj is string status)
+                            if (dialoguePair.Key is int dialogueID)
                             {
-                                rows.Add(new SimStatusRow(conversationId, dialogueId, status));
+                                if (dialoguePair.Value is LuaTable dialogData)
+                                {
+                                    if (!dialogData.TryGetValue("SimStatus", out object? statusObj))
+                                    {
+                                        throw new InvalidDataException($"Conversation {convID}, dialogue {dialogueID} did not have a 'SimStatus' entry");
+                                    }
+                                    if (statusObj == null)
+                                    {
+                                        throw new InvalidDataException($"Conversation {convoPair.Key}, dialogue {dialogueID} had a null 'SimStatus' entry");
+                                    }
+                                    if (statusObj is string status)
+                                    {
+                                        rows.Add(new SimStatusRow(convID, dialogueID, status));
+                                    }
+                                    else
+                                    {
+                                        throw new InvalidDataException($"Non-string value for conversation {convoPair.Key}, dialogue {dialogueID} 'SimStatus' entry: {GetTypeName(statusObj)}");
+                                    }
+
+                                }
+                                else
+                                {
+                                    throw new InvalidDataException($"Non-table value for conversation {convID}, dialogue {dialogueID}: '{GetTypeName(dialoguePair.Value)}'");
+                                }
                             }
                             else
                             {
-                                throw new InvalidDataException($"Dialogue {dialogueId} in conversation {conversationId} has missing or non-string 'SimStatus' field");
+                                throw new InvalidDataException($"Non-integer dialog ID for converstion {convID}: '{dialoguePair.Key}'");
                             }
                         }
-                        else
-                        {
-                            throw new InvalidDataException($"Non-conforming Dialoge table entry for conversation {conversationId}:"
-                                + $" {dialoguePair.Key} = {dialoguePair.Value}");
-                        }
+
+                    }
+                    else
+                    {
+                        throw new InvalidDataException($"Non-table value for conversation ID {convID} 'Dialog' entry: '{GetTypeName(dialogValue)}'");
                     }
                 }
                 else
                 {
-                    throw new InvalidDataException($"Conversation {conversationId} has no 'Dialog' field");
+                    throw new InvalidDataException($"Non-table value for conversation ID {convID}: '{GetTypeName(convoPair.Value)}'");
                 }
             }
             else
             {
-                throw new InvalidDataException("Non-conforming Conversation table entry:"
-                    + $" {convoPair.Key} = {convoPair.Value}");
+                throw new InvalidDataException($"Non-integer conversation ID: '{convoPair.Key}'");
             }
         }
         return rows;
