@@ -45,7 +45,7 @@ internal static class LuaBlob
         var table = new LuaTable();
         for (int i = 0; i < items.Length; i++)
         {
-            table.Add((long)(i + 1), items[i]);
+            table.Add(i + 1, items[i]);
         }
         return table;
     }
@@ -63,11 +63,11 @@ internal static class LuaBlob
             (
                 "Variable",
                 Table(
-                    ("Money", 12L),
+                    ("Money", 12),
                     ("Health", 0.5),
                     ("Nickname", "the Bird's Nest"),
                     ("Unset", null),
-                    ("Flags", List("a", "b", 3L))
+                    ("Flags", List("a", "b", 3))
                 )
             ),
             (
@@ -146,11 +146,7 @@ internal static class LuaBlob
         // The leading run of keys 1, 2, 3, ... is the array part; everything
         // after it is the hash part, which is how the game's writer splits them.
         int listCount = 0;
-        while (
-            listCount < entries.Count
-            && entries[listCount].Key is long key
-            && key == listCount + 1
-        )
+        while (listCount < entries.Count && IsListKey(entries[listCount].Key, listCount + 1))
         {
             listCount++;
         }
@@ -169,6 +165,18 @@ internal static class LuaBlob
             WriteValue(writer, entries[i].Value);
         }
     }
+
+    /// <summary>
+    /// True when a key is the integer <paramref name="expected"/>, as either an int or a
+    /// long - see the note on the number cases in <see cref="WriteValue"/>.
+    /// </summary>
+    private static bool IsListKey(object key, int expected) =>
+        key switch
+        {
+            int i => i == expected,
+            long l => l == expected,
+            _ => false,
+        };
 
     private static void WriteValue(BinaryWriter writer, object? value)
     {
@@ -189,9 +197,11 @@ internal static class LuaBlob
                 writer.Write(BooleanCode);
                 writer.Write(flag);
                 break;
-            case long number:
+            // Every Lua number goes out as a double, so int and long are the same
+            // thing on the wire; a fixture may be written either way.
+            case int or long:
                 writer.Write(NumberCode);
-                writer.Write((double)number);
+                writer.Write(Convert.ToDouble(value));
                 break;
             case double number:
                 writer.Write(NumberCode);

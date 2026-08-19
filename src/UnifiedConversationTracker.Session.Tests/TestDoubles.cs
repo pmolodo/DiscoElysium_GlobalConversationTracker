@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using UnifiedConversationTracker.Core;
 using UnifiedConversationTracker.Persistence;
 
 namespace UnifiedConversationTracker.Session.Tests

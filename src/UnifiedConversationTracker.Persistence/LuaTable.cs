@@ -71,6 +71,9 @@ public static class LuaKey
         key switch
         {
             string s => s,
+            // NormalizeNumber picks int, long or double by magnitude alone, so a key
+            // that is conceptually the same number can arrive as any of the three.
+            int i => i.ToString(System.Globalization.CultureInfo.InvariantCulture),
             long l => l.ToString(System.Globalization.CultureInfo.InvariantCulture),
             BigInteger b => b.ToString(System.Globalization.CultureInfo.InvariantCulture),
             double d => d.ToString(System.Globalization.CultureInfo.InvariantCulture),

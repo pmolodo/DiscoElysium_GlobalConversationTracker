@@ -38,11 +38,10 @@ public static class PythonJson
             case bool b:
                 writer.Write(b ? "true" : "false");
                 break;
-            case long l:
-                writer.Write(l.ToString(CultureInfo.InvariantCulture));
-                break;
-            case BigInteger bi:
-                writer.Write(bi.ToString(CultureInfo.InvariantCulture));
+            // All three render identically; which one arrives depends only on the
+            // value's magnitude.
+            case int or long or BigInteger:
+                writer.Write(((IFormattable)value).ToString(null, CultureInfo.InvariantCulture));
                 break;
             case double d:
                 writer.Write(FormatDouble(d));

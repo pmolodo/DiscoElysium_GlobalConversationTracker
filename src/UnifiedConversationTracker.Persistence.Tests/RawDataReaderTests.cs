@@ -79,9 +79,9 @@ public class RawDataReaderTests
         LuaTable tables = ReadSample(out _);
 
         LuaTable flags = Assert.IsType<LuaTable>(Lookup(tables, "Variable", "Flags"));
-        Assert.Equal(new object[] { 1L, 2L, 3L }, flags.Entries.Select(entry => entry.Key));
+        Assert.Equal(new object[] { 1, 2, 3 }, flags.Entries.Select(entry => entry.Key));
         Assert.Equal("a", flags.Entries[0].Value);
-        Assert.Equal(3L, flags.Entries[2].Value);
+        Assert.Equal(3, flags.Entries[2].Value);
     }
 
     [Fact]
@@ -91,7 +91,7 @@ public class RawDataReaderTests
 
         // Every number on the wire is a double; IDs and counts are only useful
         // as 12 rather than 12.0, but a real fraction has to survive.
-        Assert.Equal(12L, Lookup(tables, "Variable", "Money"));
+        Assert.Equal(12, Lookup(tables, "Variable", "Money"));
         Assert.Equal(0.5, Lookup(tables, "Variable", "Health"));
         Assert.Equal(false, Lookup(tables, "Actor", "Kim", "IsPlayer"));
         Assert.Null(Lookup(tables, "Variable", "Unset"));
