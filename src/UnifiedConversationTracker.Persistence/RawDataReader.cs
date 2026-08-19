@@ -168,7 +168,7 @@ public ref struct RawDataReader
                             }
                             else
                             {
-                                throw new InvalidDataException($"Non-integer dialog ID for converstion {convID}: '{dialoguePair.Key}'");
+                                throw new InvalidDataException($"Non-int dialog ID for converstion {convID}: '{dialoguePair.Key}' - {GetTypeName(dialoguePair.Key)}");
                             }
                         }
 
@@ -185,7 +185,7 @@ public ref struct RawDataReader
             }
             else
             {
-                throw new InvalidDataException($"Non-integer conversation ID: '{convoPair.Key}'");
+                throw new InvalidDataException($"Non-int conversation ID: '{convoPair.Key}' - {GetTypeName(convoPair.Key)}");
             }
         }
         return rows;
@@ -230,7 +230,7 @@ public ref struct RawDataReader
         for (int i = 1; i <= listCount; i++)
         {
             // Lua lists are 1-indexed by convention.
-            table.Add((long)i, ReadValue());
+            table.Add(i, ReadValue());
         }
 
         int dictCount = ReadInt32();
@@ -285,13 +285,16 @@ public ref struct RawDataReader
         {
             return value;
         }
+        if (value >= int.MinValue && value <= int.MaxValue)
+        {
+            return Convert.ToInt32(value);
+        }
         if (value >= long.MinValue && value <= long.MaxValue)
         {
-            return (long)value;
+            return Convert.ToInt64(value);
         }
-        // Huge integral doubles still have an exact integer value; keep it
-        // exact rather than losing it to long overflow.
-        return new BigInteger(value);
+        // We shouldn't get huge integers in this format - keep as double
+        return value;
     }
 
     private byte ReadByte()
