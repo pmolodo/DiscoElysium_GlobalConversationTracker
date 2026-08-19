@@ -60,8 +60,20 @@ public ref struct RawDataReader
         throwOnInvalidBytes: true
     );
 
+    /// <summary>
+    /// Stands in for a value that was walked but not decoded. Returning this rather than
+    /// null keeps a skipped nil distinguishable from a skipped string or number, so the
+    /// nil-key check still means something on a table that is only being stepped over.
+    /// </summary>
+    private static readonly object SkippedValue = new();
+
     private readonly ReadOnlySpan<byte> _data;
     private int _pos;
+
+    // Set for the duration of a SkipTable call. Every type code and length prefix is
+    // still read while it is on - that is the only thing that says where a value ends -
+    // but nothing is decoded, boxed or allocated.
+    private bool _skipping;
 
     /// <summary>Constructor - takes bytes from .ntwtf.lua file.</summary>
     public RawDataReader(ReadOnlySpan<byte> data)
@@ -70,17 +82,20 @@ public ref struct RawDataReader
     }
 
     /// <summary>
-    /// Constructor - takes bytes from ApplyRawData prefix hook.
+    /// A reader over bytes from the ApplyRawData prefix hook.
     ///
     /// The span aliases the IL2CPP array's element vector in place - nothing is copied - so the
-    /// caller must keep <paramref name="data"/> alive (GC.KeepAlive) until this reader is done.
+    /// caller must keep <paramref name="data"/> alive (GC.KeepAlive) until the reader is done.
     /// Note that the implicit Il2CppStructArray-to-byte[] conversion would copy the whole blob,
-    /// which is exactly what this overload exists to avoid.
+    /// which is exactly what this exists to avoid.
     /// </summary>
-    public RawDataReader(Il2CppStructArray<byte> data)
-        : this(data.AsSpan())
-    {
-    }
+    /// <remarks>
+    /// A named factory rather than a constructor overload on purpose: as an overload it would
+    /// drag Il2CppStructArray into the resolution of every `new RawDataReader(...)` anywhere,
+    /// and so force an Il2CppInterop reference on projects that never touch the game.
+    /// </remarks>
+    public static RawDataReader FromIl2CppBytes(Il2CppStructArray<byte> data) =>
+        new(data.AsSpan());
 
     /// <summary>
     /// True when the byte data seems valid.
@@ -116,11 +131,12 @@ public ref struct RawDataReader
     /// </summary>
     public List<SimStatusRow> GetSimStatuses()
     {
-        // We only want the last table - skip the others
+        // We only want the last table. Actor / Item / Location / Variable are the bulk
+        // of the blob, and building LuaTables out of them only to drop them is most of
+        // what this hook costs the savegame load, so step over them instead.
         for (int i = 0; i < TableNames.Length - 1; i++)
         {
-            // Read just to advance the pointer
-            ReadTable(consumeMarker: true);
+            SkipTable(consumeMarker: true);
         }
 
         // Could probably do this nicer by implementing a dedicated iterator,
@@ -216,7 +232,36 @@ public ref struct RawDataReader
     }
 
     /// <summary>Consume a lua table entry from the byte stream.</summary>
-    public LuaTable ReadTable(bool consumeMarker = false)
+    public LuaTable ReadTable(bool consumeMarker = false) => ReadTableEntries(consumeMarker)!;
+
+    /// <summary>
+    /// Consume a lua table entry without building it, for a table whose contents are not
+    /// wanted. The structure is still walked in full - a value's length is only knowable
+    /// from its own encoding - and the markers, counts and nil keys are still checked, but
+    /// no string is decoded, no number is converted and no LuaTable is allocated.
+    /// </summary>
+    /// <remarks>
+    /// Duplicate keys are the one check this gives up: it is LuaTable.Add that catches
+    /// those, and a skipped table never builds one.
+    /// </remarks>
+    public void SkipTable(bool consumeMarker = false)
+    {
+        _skipping = true;
+        try
+        {
+            ReadTableEntries(consumeMarker);
+        }
+        finally
+        {
+            _skipping = false;
+        }
+    }
+
+    /// <summary>
+    /// Consume a table, returning it - or null when <see cref="SkipTable"/> is walking,
+    /// since nothing is built then.
+    /// </summary>
+    private LuaTable? ReadTableEntries(bool consumeMarker)
     {
         if (consumeMarker)
         {
@@ -228,7 +273,7 @@ public ref struct RawDataReader
                 );
             }
         }
-        var table = new LuaTable();
+        LuaTable? table = _skipping ? null : new LuaTable();
 
         int listCount = ReadInt32();
         if (listCount < 0)
@@ -238,7 +283,8 @@ public ref struct RawDataReader
         for (int i = 1; i <= listCount; i++)
         {
             // Lua lists are 1-indexed by convention.
-            table.Add(i, ReadValue());
+            object? value = ReadValue();
+            table?.Add(i, value);
         }
 
         int dictCount = ReadInt32();
@@ -254,7 +300,7 @@ public ref struct RawDataReader
             {
                 throw new InvalidDataException($"nil table key at offset {_pos}");
             }
-            table.Add(key, value);
+            table?.Add(key, value);
         }
         return table;
     }
@@ -268,11 +314,18 @@ public ref struct RawDataReader
             case StringCode:
                 return ReadString();
             case NumberCode:
+                if (_skipping)
+                {
+                    SkipBytes(sizeof(double));
+                    return SkippedValue;
+                }
                 return NormalizeNumber(ReadDouble());
             case BooleanCode:
-                return ReadBoolean();
+                // The byte has to be consumed either way; only the boxing is skipped.
+                bool flag = ReadBoolean();
+                return _skipping ? SkippedValue : (object)flag;
             case TableMarker:
-                return ReadTable(consumeMarker: false);
+                return ReadTableEntries(consumeMarker: false) ?? SkippedValue;
             case NilCode:
                 return null;
             default:
@@ -357,7 +410,11 @@ public ref struct RawDataReader
         return count;
     }
 
-    private string ReadString()
+    /// <summary>
+    /// Reads a length-prefixed string. The length prefix is read either way; while
+    /// skipping, the UTF-8 decode and the string it allocates are what is avoided.
+    /// </summary>
+    private object ReadString()
     {
         int length = Read7BitEncodedInt();
         if (length < 0)
@@ -365,9 +422,16 @@ public ref struct RawDataReader
             throw new InvalidDataException($"Negative string length {length} at offset {_pos}");
         }
         EnsureAvailable(length);
-        string value = Utf8.GetString(_data.Slice(_pos, length));
+        object value = _skipping ? SkippedValue : Utf8.GetString(_data.Slice(_pos, length));
         _pos += length;
         return value;
+    }
+
+    /// <summary>Steps over <paramref name="count"/> bytes, after checking they are there.</summary>
+    private void SkipBytes(int count)
+    {
+        EnsureAvailable(count);
+        _pos += count;
     }
 
     private void EnsureAvailable(int count)

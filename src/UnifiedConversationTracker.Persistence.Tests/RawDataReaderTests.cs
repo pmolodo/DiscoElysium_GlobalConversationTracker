@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using UnifiedConversationTracker.Core;
 using Xunit;
 
 namespace UnifiedConversationTracker.Persistence.Tests;
@@ -161,6 +163,119 @@ public class RawDataReaderTests
         Assert.True(
             error is InvalidDataException or EndOfStreamException or DecoderFallbackException,
             $"Unexpected failure: {error}"
+        );
+    }
+
+    /// <summary>
+    /// A Conversation table keyed the way a real save keys one: integer conversation
+    /// and dialogue ids, not the strings the other fixtures here use.
+    /// </summary>
+    private static LuaTable IntKeyedConversations() =>
+        LuaBlob.Table(
+            (
+                7,
+                LuaBlob.Table(
+                    ("Title", "Kim Kitsuragi"),
+                    (
+                        "Dialog",
+                        LuaBlob.Table(
+                            (10, LuaBlob.Table(("SimStatus", "WasDisplayed"))),
+                            (11, LuaBlob.Table(("SimStatus", "WasOffered")))
+                        )
+                    )
+                )
+            )
+        );
+
+    /// <summary>The sample save's five tables, with its Conversation table replaced.</summary>
+    private static byte[] SerializeSampleSaveWith(LuaTable conversations)
+    {
+        LuaTable sample = LuaBlob.SampleSave();
+        return LuaBlob.Serialize(
+            LuaBlob.Table(
+                ("Actor", Lookup(sample, "Actor")),
+                ("Item", Lookup(sample, "Item")),
+                ("Location", Lookup(sample, "Location")),
+                ("Variable", Lookup(sample, "Variable")),
+                (LuaBlob.ConversationTableName, conversations)
+            )
+        );
+    }
+
+    [Fact]
+    public void SkipTable_LeavesTheReaderWhereReadTableWould()
+    {
+        byte[] blob = LuaBlob.SerializeSampleSave();
+
+        var reading = new RawDataReader(blob);
+        var skipping = new RawDataReader(blob);
+        foreach (string unused in RawDataReader.TableNames)
+        {
+            reading.ReadTable(consumeMarker: true);
+            skipping.SkipTable(consumeMarker: true);
+        }
+
+        Assert.Equal(0, reading.Remaining);
+        Assert.Equal(reading.Remaining, skipping.Remaining);
+    }
+
+    [Fact]
+    public void SkipTable_DoesNotDisturbTheTableReadAfterIt()
+    {
+        byte[] blob = LuaBlob.SerializeSampleSave();
+
+        var reader = new RawDataReader(blob);
+        for (int i = 0; i < RawDataReader.TableNames.Length - 1; i++)
+        {
+            reader.SkipTable(consumeMarker: true);
+        }
+        LuaTable afterSkips = reader.ReadTable(consumeMarker: true);
+
+        object? readWholly = Lookup(ReadSample(out _), LuaBlob.ConversationTableName);
+        Assert.Equal(ToJson(readWholly), ToJson(afterSkips));
+    }
+
+    [Fact]
+    public void SkipTable_StillRejectsAnUnknownTypeCode()
+    {
+        // The same blob ReadAllTables rejects: skipping gives up building the table,
+        // not checking that what it steps over is the format it claims to be.
+        byte[] blob = { (byte)'T', 0, 0, 0, 0, 1, 0, 0, 0, (byte)'Q' };
+
+        InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
+        {
+            var reader = new RawDataReader(blob);
+            reader.SkipTable(consumeMarker: true);
+        });
+
+        Assert.Contains("'Q'", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SkipTable_StillRejectsANilKey()
+    {
+        // No list part, one hash entry, and both its key and its value are nil.
+        byte[] blob = { (byte)'T', 0, 0, 0, 0, 1, 0, 0, 0, (byte)'X', (byte)'X' };
+
+        InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
+        {
+            var reader = new RawDataReader(blob);
+            reader.SkipTable(consumeMarker: true);
+        });
+
+        Assert.Contains("nil table key", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GetSimStatuses_ReadsTheConversationTableOverSkippedOnes()
+    {
+        var reader = new RawDataReader(SerializeSampleSaveWith(IntKeyedConversations()));
+
+        List<SimStatusRow> rows = reader.GetSimStatuses();
+
+        Assert.Equal(
+            new[] { (7, 10, "WasDisplayed"), (7, 11, "WasOffered") },
+            rows.Select(row => (row.ConversationId, row.DialogueEntryId, row.StatusName))
         );
     }
 }

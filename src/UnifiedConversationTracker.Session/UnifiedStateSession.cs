@@ -1181,7 +1181,7 @@ namespace UnifiedConversationTracker.Session
         {
             string byteInfo = bytes.Length == 0 ? "<empty> bytes" : $"{bytes.Length} bytes, first byte: {bytes[0]}";
             _log.Info($"ResyncFromSaveRawBytes callback fired - {byteInfo}");
-            RawDataReader reader = new RawDataReader(bytes);
+            RawDataReader reader = RawDataReader.FromIl2CppBytes(bytes);
             _log.Info($"reader.IsReady()? {reader.IsReady()}");
 
             lock (_gate)
