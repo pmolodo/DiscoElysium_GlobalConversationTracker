@@ -1,4 +1,4 @@
-namespace UnifiedConversationTracker.Session
+namespace UnifiedConversationTracker.Core
 {
     /// <summary>
     /// One SimStatus reading taken out of the running game: which conversation,

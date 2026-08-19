@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using Il2CppInterop.Runtime;
 using PixelCrushers.DialogueSystem;
+using UnifiedConversationTracker.Core;
 using UnifiedConversationTracker.Session;
 using Language.Lua;
 

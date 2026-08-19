@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Threading;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
+using UnifiedConversationTracker.Core;
 using UnifiedConversationTracker.Persistence;
 
 namespace UnifiedConversationTracker.Session
