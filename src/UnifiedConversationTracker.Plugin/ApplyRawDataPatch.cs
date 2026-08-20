@@ -7,9 +7,9 @@ using UnifiedConversationTracker.Session;
 namespace UnifiedConversationTracker
 {
     /// <summary>
-    /// The load-time hook: after a savegame has rewritten the game's SimStatus
-    /// tables behind <c>MarkDialogueEntry</c>'s back, the unified state is resynced
-    /// from the game (de-0s5).
+    /// The load-time hook: a savegame load rebuilds the game's SimStatus table behind
+    /// <c>MarkDialogueEntry</c>'s back, so the unified state is resynced from the raw
+    /// save bytes the game is about to apply.
     /// </summary>
     [HarmonyPatch(
         typeof(PersistentDataManager),
@@ -44,7 +44,8 @@ namespace UnifiedConversationTracker
         }
 
         /// <summary>
-        /// Runs once the game has read the raw save file bytes.
+        /// Runs once the game has the raw save file bytes in hand, before it applies
+        /// them.
         /// </summary>
         [HarmonyPrefix]
         private static void ApplyRawDataPrefix(Il2CppStructArray<byte> bytes)

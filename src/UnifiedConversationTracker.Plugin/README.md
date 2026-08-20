@@ -1,15 +1,21 @@
 # UnifiedConversationTracker plugin
 
-BepInEx plugin for Disco Elysium - The Final Cut. It Harmony-patches
-`DialogueLua.MarkDialogueEntry`, the game's single write funnel for dialogue SimStatus, and
-records every status it sees into a unified across-all-saves state file in the SaveGames
-directory (`unified-conversation-state.json`).
+BepInEx plugin for Disco Elysium - The Final Cut. It Harmony-patches the game's two SimStatus
+writers and records every status it sees into a unified across-all-saves state file in the
+SaveGames directory (`unified-conversation-state.json`):
 
-The patch is a postfix, so the game's own per-save behavior runs first and unmodified, and
-nothing is ever read back into the game: the unified state is write-only. The state file is
-read from disk once per session, on the first mark, and rewritten whenever a mark raises a
-status. A status can only ever go up, so nothing the game does - including resetting a save
-to Untouched - can lose recorded history.
+- `DialogueLua.MarkDialogueEntry` - the game's single write funnel for dialogue SimStatus
+  while playing. The patch is a postfix, so the game's own per-save behavior runs first and
+  unmodified.
+- `PersistentDataManager.ApplyRawData` - loading a savegame rebuilds the whole SimStatus table
+  without going through `MarkDialogueEntry`. The patch is a prefix that reads the raw save
+  bytes the game is about to apply and resyncs the unified state from them.
+
+The two hooks are installed independently, so one failing to patch costs only what that hook
+covered. Nothing is ever read back into the game: the unified state is write-only. The state
+file is read from disk once per session, on the first mark or savegame load, and rewritten
+whenever a mark raises a status. A status can only ever go up, so nothing the game does -
+including resetting a save to Untouched - can lose recorded history.
 
 ## Target environment
 
@@ -63,8 +69,8 @@ Pick the game copy to install into (`<game>` below):
 
 - `D:\Downloads\Apps\Games\Disco Elysium\Decompilation\Steam Install - Unaltered\Disco Elysium`
   - has the working BepInEx loader, so nothing else to set up
-  - despite the name it is not actually pristine (it already carries BepInEx and a third-party
-    plugin); which copy counts as clean is tracked separately in de-omm.13
+  - despite the name it is not actually pristine: it already carries BepInEx and a third-party
+    plugin
   - installing here means writing into that directory, which is otherwise treated as read-only
 - `C:\Apps (x86)\Games\Steam\steamapps\common\Disco Elysium` - the playable Steam copy the
   existing `LogOutput.log` was produced from; use this if the directory above must stay untouched
@@ -79,21 +85,23 @@ Steps:
    `<game>\BepInEx\config\BepInEx.cfg`, section `[Logging.Console]`, `Enabled = true`.
 5. Launch the game (Steam, or `disco.exe` directly).
 6. In the BepInEx console - or afterwards in `...\Disco Elysium\BepInEx\LogOutput.log` - look for
-   these two lines:
+   these lines:
 
    ```
    [Info   :   BepInEx] Loading [UnifiedConversationTracker 0.1.0]
    [Message:UnifiedConversationTracker] UnifiedConversationTracker v0.1.0 loaded.
    [Message:UnifiedConversationTracker] Unified state file: ...\SaveGames\unified-conversation-state.json
    [Message:UnifiedConversationTracker] Hooked DialogueLua.MarkDialogueEntry; dialogue statuses are being tracked.
+   [Message:UnifiedConversationTracker] Hooked PersistentDataManager.ApplyRawData; the unified state is resynced whenever a savegame is loaded (using raw file bytes).
+   [Message:UnifiedConversationTracker] Shutdown flush registered on Application.quitting and AppDomain.ProcessExit. ...
    ```
 
-   The second line proves the plugin's entry point ran; the fourth proves the hook is on. With
-   HarmonyX logging enabled there is also a
-   `[Info :HarmonyX] Patching void PixelCrushers.DialogueSystem.DialogueLua::MarkDialogueEntry(...)`
-   line. Nothing touches the state file until the first line of dialogue is marked, or a
-   savegame is loaded, whichever comes first: that is when the file is read and the first
-   write happens.
+   The `v0.1.0 loaded` line proves the plugin's entry point ran; the two `Hooked` lines prove
+   the hooks are on. A hook that could not be installed logs `Failed to hook <method>` instead,
+   and the other one carries on without it. With HarmonyX logging enabled there is also an
+   `[Info :HarmonyX] Patching ...` line per patched method. Nothing touches the state file
+   until the first line of dialogue is marked, or a savegame is loaded, whichever comes first:
+   that is when the file is read and the first write happens.
 7. To uninstall, delete the `UnifiedConversationTracker` folder from `BepInEx\plugins`.
 
 If the plugin does not appear at all, check `BepInEx\LogOutput.log` for a load error and confirm

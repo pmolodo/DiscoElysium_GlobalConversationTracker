@@ -23,10 +23,9 @@ namespace UnifiedConversationTracker
     /// </para>
     /// <para><b>Two hooks, because there are two SimStatus writers.</b>
     /// <see cref="MarkDialogueEntryPatch"/> is the write-through hook for everything
-    /// the game does while playing (de-omm.8).
-    /// <see cref="ApplyRawDataPatch"/> covers the one writer that
-    /// never goes through it: <c>PersistentDataManager</c> rebuilding the whole Lua
-    /// SimStatus table when a savegame is loaded (de-0s5). Between them they see
+    /// the game does while playing. <see cref="ApplyRawDataPatch"/> covers the one
+    /// writer that never goes through it: <c>PersistentDataManager</c> rebuilding the
+    /// whole Lua SimStatus table when a savegame is loaded. Between them they see
     /// every write; nothing else in the game writes SimStatus.
     /// </para>
     /// <para>
@@ -36,7 +35,7 @@ namespace UnifiedConversationTracker
     /// nothing. Both triggers therefore belong to the hooks, each of which can only
     /// fire once a game is in play - and the bulk read specifically belongs to the
     /// load hook, which fires at the one moment the game's SimStatus values are
-    /// known to be real (de-omm.23).
+    /// known to be real.
     /// </para>
     /// </remarks>
     [BepInPlugin(PluginGuid, PluginName, PluginVersion)]
@@ -110,10 +109,10 @@ namespace UnifiedConversationTracker
         /// </summary>
         /// <remarks>
         /// <para><b>Why this is needed at all.</b> The unified state is written by a
-        /// background thread now (de-omm.22), so at any moment the last few marks may
-        /// be in memory and not yet on disk. Losing those to a hard crash is an
-        /// accepted, recorded cost - every one of them is re-marked the next time the
-        /// line is reached - but losing them when the player simply quits is not.</para>
+        /// background thread, so at any moment the last few marks may be in memory and
+        /// not yet on disk. Losing those to a hard crash is an accepted, recorded cost
+        /// - every one of them is re-marked the next time the line is reached - but
+        /// losing them when the player simply quits is not.</para>
         ///
         /// <para><b>Why not <see cref="Unload"/>.</b> BepInEx's IL2CPP chainloader
         /// never calls it: <c>IL2CPPChainloader</c> calls <c>Load()</c> on every
@@ -132,12 +131,11 @@ namespace UnifiedConversationTracker
         /// either order all behave the same.</para>
         ///
         /// <para><b>Which one actually fires is an open question, so the log answers
-        /// it</b> (de-6fi). Each handler passes its own name into
+        /// it.</b> Each handler passes its own name into
         /// <see cref="UnifiedStateSession.Shutdown"/>, which logs on arrival and again
         /// on completion; a second trigger reports that the first already did the work.
         /// This line - the one that says what was registered - is the other half: a log
-        /// showing a registration and no trigger says the event never fired, which is
-        /// the finding <c>de-0m0.4</c> is waiting on.</para>
+        /// showing a registration and no trigger says the event never fired.</para>
         /// </remarks>
         private void RegisterShutdownFlush(UnifiedStateSession session)
         {
@@ -170,8 +168,8 @@ namespace UnifiedConversationTracker
         /// throwing out of a shutdown handler.
         /// </summary>
         /// <remarks>
-        /// The report itself is guarded too. Since de-6fi the shutdown path logs on
-        /// every outcome rather than only on failure, and one of the two triggers is
+        /// The report itself is guarded too. The shutdown path logs on every outcome
+        /// rather than only on failure, and one of the two triggers is
         /// <c>AppDomain.ProcessExit</c>, where BepInEx's own log sink may already be
         /// tearing itself down. Throwing out of a process-exit handler over a failed
         /// log line would be a strictly worse outcome than the missing line.

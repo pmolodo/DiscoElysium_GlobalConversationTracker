@@ -16,14 +16,15 @@ namespace UnifiedConversationTracker
     /// <c>MarkDialogueEntryDisplayed</c>, <c>MarkDialogueEntryOffered</c> and
     /// <c>MarkDialogueEntryUntouched</c> all call it, it survives Final Cut with an
     /// unchanged signature, and it is not inlined (verified against the shipping
-    /// IL2CPP binary in de-omm.1). The one writer that does not come through here is
-    /// <c>PersistentDataManager</c> rebuilding the table on savegame load (de-0s5),
-    /// which is covered by <see cref="ExpandCompressedSimStatusDataPatch"/> instead.</para>
+    /// IL2CPP binary). The one writer that does not come through here is
+    /// <c>PersistentDataManager</c> rebuilding the table on savegame load; that one is
+    /// covered by <see cref="ApplyRawDataPatch"/>, which hands the raw save bytes to
+    /// <see cref="UnifiedStateSession.ResyncFromSaveRawBytes"/>.</para>
     ///
     /// <para><b>Postfix, not prefix.</b> The stock per-save behavior runs first and
     /// completely unmodified; the unified state is a passive observer of what the
     /// game already did. Nothing here changes what the game sees, which is the whole
-    /// of the phase 1 design: the unified state is write-only.</para>
+    /// point of the design: the unified state is write-only.</para>
     ///
     /// <para><b>Nothing escapes into game code.</b> Everything the postfix does is
     /// inside a catch-all. A mod that corrupts a playthrough is worse than a mod that

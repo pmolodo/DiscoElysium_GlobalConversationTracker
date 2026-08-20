@@ -11,7 +11,7 @@ namespace UnifiedConversationTracker
     /// </summary>
     /// <remarks>
     /// Both calls were verified callable from a BepInEx 6 IL2CPP plugin against
-    /// this game build's own interop assemblies (de-omm.2).
+    /// this game build's own interop assemblies.
     /// <c>SunshinePersistenceFileManager.GetSaveGameDirectoryPath()</c> is literally
     /// what the game runs (<c>Application.persistentDataPath + "/SaveGames/"</c>),
     /// so it is preferred; it is also coupled to the Assembly-CSharp interop shape,
