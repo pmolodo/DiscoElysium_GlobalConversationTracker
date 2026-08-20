@@ -139,11 +139,34 @@ public ref struct RawDataParser
     /// <summary>
     /// Every SimStatus the save holds, read without building the tables around them.
     /// </summary>
-    public static List<SimStatusRow> GetSimStatuses(ReadOnlySpan<byte> data)
+    public static List<SimStatusRow> GetSimStatuses(ReadOnlySpan<byte> data) =>
+        GetSimStatuses(data, out _);
+
+    /// <summary>
+    /// Every SimStatus the save holds, together with how much of the blob had to be
+    /// walked to find them.
+    /// </summary>
+    /// <param name="data">The blob, as stored in a {save}.ntwtf.lua file.</param>
+    /// <param name="counts">
+    /// What the parse stepped over. A caller that times this call needs these to say
+    /// what the time was spent on; one that does not can use the overload without
+    /// them and pay nothing, since the counting happens either way.
+    /// </param>
+    public static List<SimStatusRow> GetSimStatuses(
+        ReadOnlySpan<byte> data,
+        out SimStatusParseCounts counts
+    )
     {
         SimStatusVisitor visitor = new();
         RawDataParser parser = new(data, visitor);
         parser.Parse();
+        counts = new SimStatusParseCounts(
+            visitor.ConversationCount,
+            visitor.TableCount,
+            visitor.ValueCount,
+            // Whatever Parse did not consume is the blob's uninterpreted extra data.
+            parser.Remaining
+        );
         return visitor.Rows;
     }
 

@@ -1201,7 +1201,19 @@ namespace UnifiedConversationTracker.Session
                     return 0;
                 }
 
-                List<SimStatusRow> rows = RawDataParser.GetSimStatuses(data);
+                // The parse gets a clock of its own because it finishes before Resync
+                // starts: Resync is handed the list this line produces, so its own
+                // total covers the merge and nothing else, and the two are additive.
+                var parseStopwatch = Stopwatch.StartNew();
+                List<SimStatusRow> rows = RawDataParser.GetSimStatuses(
+                    data, out SimStatusParseCounts parseCounts);
+                parseStopwatch.Stop();
+
+                var parseMeasurement = new SimStatusRawParseMeasurement(
+                    byteCount: data.Length,
+                    rowCount: rows.Count,
+                    counts: parseCounts,
+                    parseTicks: parseStopwatch.ElapsedTicks);
 
                 // data aliases the IL2CPP array in place, and bytes is dead from here on, so
                 // without this the wrapper could be finalized - freeing its GCHandle, and with
@@ -1212,7 +1224,7 @@ namespace UnifiedConversationTracker.Session
                     RawDataParser.Description,
                     RawBytesDetailLabel,
                     () => rows,
-                    () => "TODO: implement raw byte read details");
+                    () => parseMeasurement.Describe());
 
             }
         }

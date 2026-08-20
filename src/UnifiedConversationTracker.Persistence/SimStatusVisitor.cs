@@ -75,8 +75,27 @@ public sealed class SimStatusVisitor : IRawDataVisitor
     private int _conversationId;
     private int _dialogueEntryId;
 
+    // How much was walked to find the rows. One increment each on paths that already
+    // run for every value and every table, so that a caller timing the parse can say
+    // what the time was spent on rather than only how long it was.
+    private long _conversationCount;
+    private long _tableCount;
+    private long _valueCount;
+
     /// <summary>Every SimStatus found, in file order.</summary>
     public List<SimStatusRow> Rows => _rows;
+
+    /// <summary>Conversations found in the Conversation table.</summary>
+    public long ConversationCount => _conversationCount;
+
+    /// <summary>Tables opened, at every depth, across all five top-level tables.</summary>
+    public long TableCount => _tableCount;
+
+    /// <summary>
+    /// Values stepped over. Table keys are values too and are counted here, since
+    /// stepping over one costs the same as stepping over anything else.
+    /// </summary>
+    public long ValueCount => _valueCount;
 
     private Scope CurrentScope =>
         _frames.Count > 0 ? _frames[_frames.Count - 1].Scope : Scope.Ignored;
@@ -105,6 +124,7 @@ public sealed class SimStatusVisitor : IRawDataVisitor
     /// <inheritdoc />
     public void VisitValue(ref RawDataParser parser, RawDataParser.DataType type)
     {
+        _valueCount++;
         Scope scope = CurrentScope;
         if (_expectingKey)
         {
@@ -239,6 +259,7 @@ public sealed class SimStatusVisitor : IRawDataVisitor
     /// <inheritdoc />
     public void OpenTable(ref RawDataParser parser)
     {
+        _tableCount++;
         Scope child;
         if (_frames.Count == 0)
         {
@@ -250,6 +271,7 @@ public sealed class SimStatusVisitor : IRawDataVisitor
             {
                 case Scope.Conversations:
                     _conversationId = _pendingIntKey;
+                    _conversationCount++;
                     child = Scope.Conversation;
                     break;
                 case Scope.Conversation:

@@ -333,4 +333,54 @@ public class RawDataParserTests
         Assert.Equal(new (int, int, string?)[] { (7, 10, "WasOffered") },
             rows.Select(row => (row.ConversationId, row.DialogueEntryId, row.StatusName)));
     }
+
+    [Fact]
+    public void GetSimStatuses_CountsWhatItWalkedOverBesideTheRowsItFound()
+    {
+        // A parse time is only interpretable against how much there was to parse, so
+        // these counts travel with the rows. A second conversation is more of
+        // everything: more tables to open and more values to step over.
+        RawDataParser.GetSimStatuses(
+            SerializeSampleSaveWith(IntKeyedConversations()),
+            out SimStatusParseCounts one
+        );
+        RawDataParser.GetSimStatuses(
+            SerializeSampleSaveWith(
+                LuaBlob.Table(
+                    (7, LuaBlob.Table(("Dialog", LuaBlob.Table((10, SimStatusEntry()))))),
+                    (8, LuaBlob.Table(("Dialog", LuaBlob.Table((10, SimStatusEntry())))))
+                )
+            ),
+            out SimStatusParseCounts two
+        );
+
+        Assert.Equal(1, one.ConversationCount);
+        Assert.Equal(2, two.ConversationCount);
+        // Every table is itself a value, and its keys are values too, so there are
+        // always strictly more of the latter.
+        Assert.True(one.ValueCount > one.TableCount);
+        Assert.True(two.TableCount > one.TableCount);
+        Assert.True(two.ValueCount > one.ValueCount);
+    }
+
+    [Fact]
+    public void GetSimStatuses_ReportsTheExtraDataItNeverInterpretsAsTrailingBytes()
+    {
+        // The five tables can be followed by length-prefixed Lua source this parser
+        // does not read. Its size is what says whether a blob is all table or not.
+        byte[] blob = SerializeSampleSaveWith(IntKeyedConversations());
+
+        RawDataParser.GetSimStatuses(blob, out SimStatusParseCounts exact);
+        List<SimStatusRow> rows = RawDataParser.GetSimStatuses(
+            blob.Concat(new byte[] { 1, 2, 3 }).ToArray(),
+            out SimStatusParseCounts withExtra
+        );
+
+        Assert.Equal(0, exact.TrailingByteCount);
+        Assert.Equal(3, withExtra.TrailingByteCount);
+        Assert.Equal(2, rows.Count);
+    }
+
+    /// <summary>One dialogue entry, carrying the one field this parser reads.</summary>
+    private static LuaTable SimStatusEntry() => LuaBlob.Table(("SimStatus", "WasOffered"));
 }
