@@ -15,22 +15,16 @@ namespace UnifiedConversationTracker
     /// </summary>
     /// <remarks>
     /// <para><b>What Load does, and deliberately does not do.</b> It resolves the
-    /// SaveGames directory, reads the optional articy id map, builds the
-    /// <see cref="UnifiedStateSession"/> and installs the two hooks. It does not read
+    /// SaveGames directory, builds the <see cref="UnifiedStateSession"/>
+    /// and installs the two hooks. It does not read
     /// the state file and it does not read the game. Both of those happen on first
     /// access, through <see cref="UnifiedStateSession.EnsureInitialized"/>, which
     /// either hook calls on its way in.
     /// </para>
-    /// <para><b>The map is the one thing read here on purpose</b>, and it is the
-    /// exception that proves the rule: it is a pure function of the dialogue database
-    /// rather than of the game's live state, so there is nothing to wait for, and
-    /// reading it later would put it on the load path it exists to shorten. See
-    /// <see cref="TryCreateInterceptor"/>.
-    /// </para>
     /// <para><b>Two hooks, because there are two SimStatus writers.</b>
     /// <see cref="MarkDialogueEntryPatch"/> is the write-through hook for everything
     /// the game does while playing (de-omm.8).
-    /// <see cref="ExpandCompressedSimStatusDataPatch"/> covers the one writer that
+    /// <see cref="ApplyRawDataPatch"/> covers the one writer that
     /// never goes through it: <c>PersistentDataManager</c> rebuilding the whole Lua
     /// SimStatus table when a savegame is loaded (de-0s5). Between them they see
     /// every write; nothing else in the game writes SimStatus.
@@ -119,19 +113,7 @@ namespace UnifiedConversationTracker
                 "Statuses restored by loading a savegame will be missed this session",
                 () => ApplyRawDataPatch.Install(harmony, session, log));
 
-            bool UnzipBytesToMemoryTiming = TryInstall(
-                "SunshinePersistenceFileManager.UnzipBytesToMemory",
-                "timing of SunshinePersistenceFileManager.UnzipBytesToMemory is being tracked",
-                "Timing of SunshinePersistenceFileManager.UnzipBytesToMemory is untracked",
-                () => UnzipBytesToMemoryPatch.Install(harmony, session, log));
-
-            bool InitializeMissingVariableValuesTiming = TryInstall(
-                "SunshinePersistenceLuaDataCollector.InitializeMissingVariableValues",
-                "timing of SunshinePersistenceLuaDataCollector.InitializeMissingVariableValues is being tracked",
-                "Timing of SunshinePersistenceLuaDataCollector.InitializeMissingVariableValues is untracked",
-                () => InitializeMissingVariableValuesPatch.Install(harmony, session, log));
-
-            if (!recording && !resyncing && !UnzipBytesToMemoryTiming && !InitializeMissingVariableValuesTiming)
+            if (!recording && !resyncing)
             {
                 _harmony = null;
             }
