@@ -9,10 +9,10 @@ using Xunit;
 namespace UnifiedConversationTracker.Session.Tests
 {
     /// <summary>
-    /// The deferred write (de-omm.22): that recording a status does not write the
-    /// file on the caller's thread, that bursts collapse into a couple of writes
-    /// instead of one per mark, that shutdown lands the tail, and that all of it
-    /// survives being hammered from several threads at once.
+    /// The deferred write: that recording a status does not write the file on the
+    /// caller's thread, that bursts collapse into a couple of writes instead of one
+    /// per mark, that shutdown lands the tail, and that all of it survives being
+    /// hammered from several threads at once.
     /// </summary>
     /// <remarks>
     /// <para>These tests drive the writer through
@@ -118,16 +118,15 @@ namespace UnifiedConversationTracker.Session.Tests
         [Fact]
         public void Record_WhileAWriteIsInFlight_DoesNotWaitForIt()
         {
-            // The point of the whole issue: MarkDialogueEntry's postfix runs on the
-            // Unity main thread, and de-omm.11 measured a save at 6.7-40 ms, which is
-            // a dropped frame. With a save deliberately stuck, a Record that still
-            // returns cannot have been the thing doing it.
+            // MarkDialogueEntry's postfix runs on the Unity main thread, where a
+            // save costs a dropped frame. With a save deliberately stuck, a Record
+            // that still returns cannot have been the thing doing it.
             using var dir = new TempDirectory();
             UnifiedStateStore store = dir.CreateStore();
             using var held = new HeldWrite(store);
 
             var log = new RecordingLog();
-            using var session = new UnifiedStateSession(store, new FakeSimStatusSource(), log);
+            using var session = new UnifiedStateSession(store, log);
 
             Assert.True(session.Record(3, 17, "WasDisplayed"));
             held.WaitUntilInFlight();
@@ -148,36 +147,6 @@ namespace UnifiedConversationTracker.Session.Tests
             Assert.Empty(log.Errors);
         }
 
-        [Fact]
-        public void ResyncFromGame_WhileAWriteIsInFlight_DoesNotWaitForIt()
-        {
-            // The resync's bulk save goes through the same dirty flag, so that the
-            // writer thread stays the only thing that ever touches the three files.
-            using var dir = new TempDirectory();
-            UnifiedStateStore store = dir.CreateStore();
-            using var held = new HeldWrite(store);
-
-            var source = new FakeSimStatusSource()
-                .Add(9, 1, "WasDisplayed")
-                .Add(9, 2, "WasOffered");
-            var log = new RecordingLog();
-            using var session = new UnifiedStateSession(store, source, log);
-
-            Assert.True(session.Record(3, 17, "WasDisplayed"));
-            held.WaitUntilInFlight();
-
-            AssertDoesNotBlock("ResyncFromGame", () => Assert.Equal(2, session.ResyncFromGame()));
-
-            held.Release();
-            Assert.True(session.Flush());
-
-            UnifiedConversationState saved = store.Load().RequireState();
-            Assert.Equal(SimStatus.WasDisplayed, saved.GetStatus(3, 17));
-            Assert.Equal(SimStatus.WasDisplayed, saved.GetStatus(9, 1));
-            Assert.Equal(SimStatus.WasOffered, saved.GetStatus(9, 2));
-            Assert.Empty(log.Errors);
-        }
-
         // -------------------------------------------------------------------
         // Bursts coalesce.
         // -------------------------------------------------------------------
@@ -186,17 +155,17 @@ namespace UnifiedConversationTracker.Session.Tests
         public void Record_InABurst_CollapsesIntoAHandfulOfWritesRatherThanOnePerMark()
         {
             // A response menu marks every offered response, so several raises land in
-            // one frame; before de-omm.22 each one rewrote the whole file. Marks that
-            // arrive while the writer is busy are all picked up by its next pass, so
-            // the cost of a burst is bounded by the writer's speed rather than by its
-            // length.
+            // one frame, and rewriting the whole file for each would be pure cost.
+            // Marks that arrive while the writer is busy are all picked up by its
+            // next pass, so the cost of a burst is bounded by the writer's speed
+            // rather than by its length.
             const int burstSize = 200;
 
             using var dir = new TempDirectory();
             UnifiedStateStore store = dir.CreateStore();
             using var held = new HeldWrite(store);
 
-            using var session = new UnifiedStateSession(store, new FakeSimStatusSource(), new RecordingLog());
+            using var session = new UnifiedStateSession(store, new RecordingLog());
 
             Assert.True(session.Record(3, 0, "WasDisplayed"));
             held.WaitUntilInFlight();
@@ -228,7 +197,7 @@ namespace UnifiedConversationTracker.Session.Tests
             using var held = new HeldWrite(store);
 
             var log = new RecordingLog();
-            var session = new UnifiedStateSession(store, new FakeSimStatusSource(), log);
+            var session = new UnifiedStateSession(store, log);
 
             Assert.True(session.Record(3, 17, "WasDisplayed"));
             held.WaitUntilInFlight();
@@ -254,7 +223,7 @@ namespace UnifiedConversationTracker.Session.Tests
             UnifiedStateStore store = dir.CreateStore();
 
             var log = new RecordingLog();
-            var session = new UnifiedStateSession(store, new FakeSimStatusSource(), log);
+            var session = new UnifiedStateSession(store, log);
 
             for (int entryId = 0; entryId < markCount; entryId++)
             {
@@ -276,7 +245,7 @@ namespace UnifiedConversationTracker.Session.Tests
             UnifiedStateStore store = dir.CreateStore();
 
             var log = new RecordingLog();
-            var session = new UnifiedStateSession(store, new FakeSimStatusSource(), log);
+            var session = new UnifiedStateSession(store, log);
 
             Assert.True(session.Record(3, 17, "WasDisplayed"));
             session.Dispose();
@@ -299,7 +268,7 @@ namespace UnifiedConversationTracker.Session.Tests
             UnifiedStateStore store = dir.CreateStore();
 
             var log = new RecordingLog();
-            using var session = new UnifiedStateSession(store, new FakeSimStatusSource(), log);
+            using var session = new UnifiedStateSession(store, log);
             session.EnsureInitialized();
 
             Assert.True(session.Flush());
@@ -308,7 +277,7 @@ namespace UnifiedConversationTracker.Session.Tests
         }
 
         // -------------------------------------------------------------------
-        // Shutdown says what it did (de-6fi).
+        // Shutdown says what it did.
         // -------------------------------------------------------------------
 
         /// <summary>What the plugin passes for Unity's own quit event.</summary>
@@ -330,13 +299,13 @@ namespace UnifiedConversationTracker.Session.Tests
         [Fact]
         public void Shutdown_NamesTheTriggerOnArrivalAndOnCompletion()
         {
-            // The whole point of de-6fi: a clean quit that flushed and a handler that
-            // never fired used to look identical in a log, because success was silent.
+            // Success has to be reported: a clean quit that flushed and a handler
+            // that never fired would otherwise look identical in a log.
             using var dir = new TempDirectory();
             UnifiedStateStore store = dir.CreateStore();
 
             var log = new RecordingLog();
-            var session = new UnifiedStateSession(store, new FakeSimStatusSource(), log);
+            var session = new UnifiedStateSession(store, log);
 
             Assert.True(session.Record(3, 17, "WasDisplayed"));
 
@@ -366,14 +335,14 @@ namespace UnifiedConversationTracker.Session.Tests
         [Fact]
         public void Shutdown_WithNothingEverRecorded_SaysSoRatherThanStayingSilent()
         {
-            // The de-0m0.3 session exactly: a run that raised nothing, so a perfectly
-            // working flush had nothing to write. "Nothing pending" is a finding; it
-            // must not be indistinguishable from a handler that never ran.
+            // A run that raised nothing leaves a perfectly working flush with
+            // nothing to write. "Nothing pending" is a finding; it must not be
+            // indistinguishable from a handler that never ran.
             using var dir = new TempDirectory();
             UnifiedStateStore store = dir.CreateStore();
 
             var log = new RecordingLog();
-            var session = new UnifiedStateSession(store, new FakeSimStatusSource(), log);
+            var session = new UnifiedStateSession(store, log);
             session.EnsureInitialized();
 
             session.Shutdown(ProcessExitTrigger);
@@ -399,7 +368,7 @@ namespace UnifiedConversationTracker.Session.Tests
             UnifiedStateStore store = dir.CreateStore();
 
             var log = new RecordingLog();
-            var session = new UnifiedStateSession(store, new FakeSimStatusSource(), log);
+            var session = new UnifiedStateSession(store, log);
 
             Assert.True(session.Record(3, 17, "WasDisplayed"));
             session.Shutdown(QuittingTrigger);
@@ -429,7 +398,7 @@ namespace UnifiedConversationTracker.Session.Tests
             UnifiedStateStore store = dir.CreateStore();
 
             var log = new RecordingLog();
-            var session = new UnifiedStateSession(store, new FakeSimStatusSource(), log);
+            var session = new UnifiedStateSession(store, log);
             session.EnsureInitialized();
 
             session.Dispose();
@@ -447,28 +416,20 @@ namespace UnifiedConversationTracker.Session.Tests
         {
             // A soak rather than a scenario: a green run of the tests above says the
             // design is right, not that the interleavings are. Every writer the design
-            // has runs at once here - the marking path, the resync path, the
-            // synchronous save and the flush - against one session and one file, and
-            // the invariant checked at the end is total: every status recorded is in
-            // memory, and the file matches memory exactly.
+            // has runs at once here - the marking path, the synchronous save and the
+            // flush - against one session and one file, and the invariant checked at
+            // the end is total: every status recorded is in memory, and the file
+            // matches memory exactly.
             const int recorderCount = 4;
             const int marksPerRecorder = 250;
-            const int resyncCount = 20;
             const int flushCount = 50;
             const int trySaveCount = 20;
 
             using var dir = new TempDirectory();
             UnifiedStateStore store = dir.CreateStore();
 
-            // Rows the resync keeps re-merging. They raise nothing after the first
-            // pass, which is the common case de-omm.26 measured.
-            var source = new FakeSimStatusSource()
-                .Add(1000, 1, "WasDisplayed")
-                .Add(1000, 2, "WasOffered")
-                .Add(1001, 1, "WasDisplayed");
-
             var log = new RecordingLog();
-            var session = new UnifiedStateSession(store, source, log);
+            var session = new UnifiedStateSession(store, log);
 
             var tasks = new List<Task>();
             for (int recorder = 0; recorder < recorderCount; recorder++)
@@ -490,14 +451,6 @@ namespace UnifiedConversationTracker.Session.Tests
 
             tasks.Add(Task.Run(() =>
             {
-                for (int i = 0; i < resyncCount; i++)
-                {
-                    session.ResyncFromGame();
-                }
-            }));
-
-            tasks.Add(Task.Run(() =>
-            {
                 for (int i = 0; i < flushCount; i++)
                 {
                     session.Flush();
@@ -514,7 +467,7 @@ namespace UnifiedConversationTracker.Session.Tests
 
             AssertCompletes("The soak", Task.WhenAll(tasks));
 
-            const int expectedEntryCount = (recorderCount * marksPerRecorder) + 3;
+            const int expectedEntryCount = recorderCount * marksPerRecorder;
             Assert.Equal(expectedEntryCount, session.State.EntryCount);
 
             session.Dispose();
@@ -529,9 +482,6 @@ namespace UnifiedConversationTracker.Session.Tests
                 }
             }
 
-            Assert.Equal(SimStatus.WasDisplayed, saved.GetStatus(1000, 1));
-            Assert.Equal(SimStatus.WasOffered, saved.GetStatus(1000, 2));
-            Assert.Equal(SimStatus.WasDisplayed, saved.GetStatus(1001, 1));
             Assert.Empty(log.Errors);
         }
 
@@ -549,7 +499,7 @@ namespace UnifiedConversationTracker.Session.Tests
             UnifiedStateStore store = dir.CreateStore();
 
             var log = new RecordingLog();
-            var session = new UnifiedStateSession(store, new FakeSimStatusSource(), log);
+            var session = new UnifiedStateSession(store, log);
 
             // One mark up front, so there is definitely a file to assert about however
             // the race between the flush and the rest of the marks falls out.

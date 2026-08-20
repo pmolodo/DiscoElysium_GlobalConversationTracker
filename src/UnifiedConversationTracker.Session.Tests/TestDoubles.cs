@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using UnifiedConversationTracker.Core;
 using UnifiedConversationTracker.Persistence;
 
 namespace UnifiedConversationTracker.Session.Tests
@@ -45,11 +44,11 @@ namespace UnifiedConversationTracker.Session.Tests
     /// </summary>
     /// <remarks>
     /// Synchronized, because the background writer reports its own failures from its
-    /// own thread (de-omm.22), so a real log genuinely does get written to
-    /// concurrently. An unsynchronized <see cref="List{T}"/> would corrupt or throw
-    /// under exactly the concurrency the writer tests exist to exercise. Reads are
-    /// synchronized too, so an assertion made while a writer is still running sees a
-    /// consistent snapshot rather than a list mid-resize.
+    /// own thread, so a real log genuinely does get written to concurrently. An
+    /// unsynchronized <see cref="List{T}"/> would corrupt or throw under exactly the
+    /// concurrency the writer tests exist to exercise. Reads are synchronized too, so
+    /// an assertion made while a writer is still running sees a consistent snapshot
+    /// rather than a list mid-resize.
     /// </remarks>
     internal sealed class RecordingLog : IUnifiedStateLog
     {
@@ -96,61 +95,5 @@ namespace UnifiedConversationTracker.Session.Tests
 
         public bool WarningOrErrorContains(string fragment) =>
             AnyContains(Warnings, fragment) || AnyContains(Errors, fragment);
-    }
-
-    /// <summary>
-    /// A stand-in for the running game's SimStatus tables.
-    /// </summary>
-    internal sealed class FakeSimStatusSource : ISimStatusSource
-    {
-        private readonly List<SimStatusRow> _rows = new List<SimStatusRow>();
-
-        public string Description { get; set; } = "fake game";
-
-        public bool IsReady { get; set; } = true;
-
-        /// <summary>Set to throw from the walk, standing in for a game-side failure.</summary>
-        public Exception? ThrowOnEnumerate { get; set; }
-
-        /// <summary>How many times the rows were actually walked.</summary>
-        public int EnumerationCount { get; private set; }
-
-        /// <summary>How many times readiness was polled.</summary>
-        public int ReadinessCheckCount { get; private set; }
-
-        /// <summary>
-        /// Stands in for the real source's per-walk timing line. Null - the default,
-        /// and what the interface supplies when an implementation says nothing - means
-        /// no detail line should be logged at all.
-        /// </summary>
-        public string? WalkDetail { get; set; }
-
-        public FakeSimStatusSource Add(int conversationId, int dialogueEntryId, string? statusName)
-        {
-            _rows.Add(new SimStatusRow(conversationId, dialogueEntryId, statusName));
-            return this;
-        }
-
-        bool ISimStatusSource.IsReady
-        {
-            get
-            {
-                ReadinessCheckCount++;
-                return IsReady;
-            }
-        }
-
-        public IEnumerable<SimStatusRow> EnumerateSimStatuses()
-        {
-            EnumerationCount++;
-            if (ThrowOnEnumerate != null)
-            {
-                throw ThrowOnEnumerate;
-            }
-
-            return _rows;
-        }
-
-        public string? DescribeLastWalk() => WalkDetail;
     }
 }
