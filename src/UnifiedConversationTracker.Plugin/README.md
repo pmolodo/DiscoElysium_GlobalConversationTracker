@@ -11,29 +11,6 @@ read from disk once per session, on the first mark, and rewritten whenever a mar
 status. A status can only ever go up, so nothing the game does - including resetting a save
 to Untouched - can lose recorded history.
 
-## Optional: `articy_ids_final_cut.json`
-
-Loading a savegame rewrites the game's whole SimStatus table without going through the
-marking hook, so the plugin resyncs on every load. There are two ways it can do that, and
-which one runs depends on whether one optional file is sitting next to
-`UnifiedConversationTracker.dll` in the plugin folder:
-
-| File present | What a load does |
-| --- | --- |
-| yes | Reads the ~1,500 compressed `Conversation_SimX_*` strings the save itself carries, in a Harmony **prefix**, before the game expands and deletes them |
-| no | Walks all 112,940 rows of the master database in the **postfix** afterwards - measured in-game at 1892 ms (de-0m0.17) |
-
-Both produce the same rows. Checked against a real savegame, the compressed route reproduces
-that save's own expanded SimStatus exactly: 1,473 non-Untouched rows, zero disagreements.
-
-The file is **not shipped with the mod**, deliberately - where it came from has not been
-audited yet (de-0m0.21) - and `deploy.ps1` neither installs nor deletes it, so a copy you put
-there by hand survives a redeploy. Build one with `read_articy_ids.py` at the repo root, from
-the Final Cut dialogue database asset.
-
-Without it the mod works exactly as before, and says so once at startup. The plugin logs an
-error on every load that has to fall back, naming what was missing.
-
 ## Target environment
 
 Values observed in the BepInEx installation under

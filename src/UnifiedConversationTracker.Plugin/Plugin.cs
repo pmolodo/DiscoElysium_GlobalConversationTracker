@@ -56,13 +56,6 @@ namespace UnifiedConversationTracker
         private const string UnloadTrigger = "BasePlugin.Unload";
 
         /// <summary>
-        /// The articy id map, looked for next to this DLL. Not shipped with the mod:
-        /// its provenance has not been audited (de-0m0.21), so it is something a user
-        /// puts there deliberately, and everything works without it.
-        /// </summary>
-        private const string ArticyIdMapFileName = "articy_ids_final_cut.json";
-
-        /// <summary>
         /// What the log says the load path does when there is no map. One string
         /// because every way of failing to get one ends the same way, and because
         /// de-0m0.25 deletes all of them together.
