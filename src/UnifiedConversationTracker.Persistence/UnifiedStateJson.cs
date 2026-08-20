@@ -12,7 +12,7 @@ namespace UnifiedConversationTracker.Persistence
     /// bytes-to-state conversion with no file IO.
     /// </summary>
     /// <remarks>
-    /// <para>Shape (format version 1), as decided in de-omm.5:</para>
+    /// <para>Shape (format version 1):</para>
     /// <code>
     /// {"version":1,"conversations":{"3":{"17":"WasDisplayed","18":"WasOffered"}}}
     /// </code>
@@ -26,7 +26,7 @@ namespace UnifiedConversationTracker.Persistence
     /// <see cref="SimStatus.Untouched"/> is never written: the state never stores it,
     /// and an absent conversation or entry already reads back as Untouched. A real
     /// save therefore holds roughly a thousand entries, not the ~113,000 the game
-    /// tracks (measured in de-omm.9: 111,467 Untouched, 142 WasOffered, 1,331
+    /// tracks (in one real save: 111,467 Untouched, 142 WasOffered, 1,331
     /// WasDisplayed).
     /// </para>
     /// <para>

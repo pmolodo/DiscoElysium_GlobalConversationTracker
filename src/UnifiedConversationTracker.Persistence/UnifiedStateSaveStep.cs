@@ -4,7 +4,7 @@ namespace UnifiedConversationTracker.Persistence
     /// The points during <see cref="UnifiedStateStore.Save"/> at which the process
     /// could die. Internal: this exists so tests can crash the save exactly here,
     /// in-process by throwing and out-of-process by killing the process, and prove
-    /// the on-disk result is recoverable. Not part of the API de-omm.7 consumes.
+    /// the on-disk result is recoverable. Not part of the public API.
     /// </summary>
     internal enum UnifiedStateSaveStep
     {

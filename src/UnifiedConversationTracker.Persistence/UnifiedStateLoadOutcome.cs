@@ -4,10 +4,10 @@ namespace UnifiedConversationTracker.Persistence
     /// How an attempt to load the unified state from one file ended.
     /// </summary>
     /// <remarks>
-    /// The whole point of separating these is so first-access initialization
-    /// (de-omm.7) can tell "there is no history yet, start empty" apart from "there
-    /// is history but this copy is damaged, try the backup and do not overwrite
-    /// anything until you know". Never collapse them into a nullable state.
+    /// The whole point of separating these is so first-access initialization can
+    /// tell "there is no history yet, start empty" apart from "there is history
+    /// but this copy is damaged, try the backup and do not overwrite anything
+    /// until you know". Never collapse them into a nullable state.
     /// </remarks>
     public enum UnifiedStateLoadOutcome
     {

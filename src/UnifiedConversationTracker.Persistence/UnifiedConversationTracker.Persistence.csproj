@@ -51,12 +51,9 @@
   <ItemGroup>
     <!--
       The crash-point test seams (UnifiedStateStore.SaveStepHook and
-      WriteChunkSize) are internal so they never become part of the API that
-      de-omm.7 consumes, but the unit tests, the out-of-process crash harness
-      and the session tests all have to reach them. The session tests use
-      SaveStepHook as a different kind of seam: not to crash mid-write, but to
-      hold a write open long enough to prove that the dialogue hook is not the
-      thread doing it (de-omm.22).
+      WriteChunkSize) are internal so they stay out of the public API, but the
+      unit tests, the out-of-process crash harness and the session tests all
+      have to reach them.
     -->
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>UnifiedConversationTracker.Persistence.Tests</_Parameter1>
