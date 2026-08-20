@@ -119,10 +119,12 @@ What it does:
 1. resolves and vets the target (before building, so a bad target fails in a second)
 2. builds
 3. prints the exact directory it is about to write to
-4. deletes any previous `<game>\BepInEx\plugins\UnifiedConversationTracker` and copies the
-   fresh build in: the plugin DLL plus the mod's own `Core`, `Persistence` and `Session`
-   assemblies, each with its `.pdb`. BepInEx resolves a plugin's dependencies out of the
-   plugin's own folder, so the DLL alone would load and then fail.
+4. replaces the previous build in `<game>\BepInEx\plugins\UnifiedConversationTracker`:
+   the plugin DLL plus the mod's own `Core`, `Persistence` and `Session` assemblies, each
+   with its `.pdb`. BepInEx resolves a plugin's dependencies out of the plugin's own
+   folder, so the DLL alone would load and then fail. Only `UnifiedConversationTracker*`
+   `.dll`/`.pdb` are deleted first, so anything else in that folder - the optional
+   hand-placed `articy_ids_final_cut.json` above all - survives a redeploy (de-bx9).
 5. prints the log path and the line to look for
 
 **Target resolution:** `-GameDir`, else `DISCO_ELYSIUM_DEPLOY_DIR`, else the

@@ -10,8 +10,11 @@
       1. Builds UnifiedConversationTracker.dll (via build.ps1).
       2. Works out which game folder to install into, and says so out loud
          before touching anything.
-      3. Deletes any previous <game>\BepInEx\plugins\UnifiedConversationTracker
-         folder and copies the fresh build in.
+      3. Clears the previous build out of
+         <game>\BepInEx\plugins\UnifiedConversationTracker and copies the fresh
+         one in. Only the plugin's own UnifiedConversationTracker*.dll/.pdb are
+         removed, so anything else kept in that folder - notably the optional
+         articy_ids_final_cut.json - survives a redeploy.
       4. Prints where to look for the plugin's log line.
 
     The install target comes from, in order:
@@ -27,8 +30,9 @@
     are. The resolved target is printed before anything is written, the repo's
     "Steam Install - *" reference copy is refused outright (-AllowReferenceCopy
     overrides), a copy without BepInEx is rejected because the plugin could
-    never load there, and the only directory ever created or deleted is
-    <game>\BepInEx\plugins\UnifiedConversationTracker.
+    never load there, the only directory ever created is
+    <game>\BepInEx\plugins\UnifiedConversationTracker, and the only files ever
+    deleted are that folder's own UnifiedConversationTracker*.dll/.pdb.
 
 .PARAMETER GameDir
     The playable game folder to install into, taking priority over
@@ -60,8 +64,8 @@
 
 .PARAMETER DryRun
     Stop after resolving the target and building, printing the plugin folder
-    that would have been replaced without deleting or copying anything. The
-    build still runs, so this checks the whole path up to the write.
+    whose payload would have been replaced without deleting or copying anything.
+    The build still runs, so this checks the whole path up to the write.
 #>
 [CmdletBinding()]
 param(
@@ -114,21 +118,24 @@ Write-Host "== Building ==" -ForegroundColor Cyan
 $dllPath = Invoke-PluginBuild -Configuration $Configuration -DiscoElysiumDir $DiscoElysiumDir
 
 # --- 3. Replace the previous install -----------------------------------------
-# Say plainly what is about to be written, before writing it.
+# Say plainly what is about to be written, before writing it. Only this plugin's
+# own files are replaced; anything else in the folder is left where it is
+# (de-bx9), which is what lets a hand-placed articy_ids_final_cut.json stay put.
 Write-Host ""
 Write-Host "== Installing ==" -ForegroundColor Cyan
 Write-Host "About to write into:" -ForegroundColor Yellow
 Write-Host "  $pluginDir" -ForegroundColor Yellow
 if (Test-Path -LiteralPath $pluginDir) {
-    Write-Host "  (existing install found; it will be replaced)"
+    Write-Host "  (existing install found; its $AssemblyName files will be replaced, anything else there left alone)"
 }
 if ($DryRun) {
     Write-Host "-DryRun given; nothing written." -ForegroundColor Green
     return
 }
 
-if (Test-Path -LiteralPath $pluginDir) {
-    Remove-Item -LiteralPath $pluginDir -Recurse -Force
+$removedCount = Remove-PluginPayload -DestDir $pluginDir
+if ($removedCount -gt 0) {
+    Write-Host "Removed $removedCount file(s) of the previous install."
 }
 Copy-PluginPayload -DllPath $dllPath -DestDir $pluginDir
 

@@ -65,6 +65,11 @@ $BepInExLogRelPath = "BepInEx\LogOutput.log"
 $BepInExConfigRelPath = "BepInEx\config\BepInEx.cfg"
 # One folder per plugin under BepInEx\plugins; this is ours.
 $PluginFolderName = $AssemblyName
+# What an installed payload is made of: $AssemblyName*.dll and its .pdb. Both
+# the copy in and the clear out of a previous install go through this, so the
+# files deploy.ps1 removes are exactly the files it writes (see
+# Get-PluginPayloadFile).
+$PluginPayloadExtensions = @(".dll", ".pdb")
 
 # Read-only reference copies of the game kept in this repo. Builds must never
 # write into them, and deploy refuses to target them unless explicitly forced.
@@ -407,6 +412,46 @@ function Invoke-PluginBuild {
 }
 
 
+function Get-PluginPayloadFile {
+    # The plugin payload files present in $Directory - $AssemblyName*.dll/.pdb
+    # and nothing else - sorted by name, as FileInfo objects. Empty if the
+    # directory does not exist.
+    #
+    # One predicate, used against both ends of an install: the build output
+    # Copy-PluginPayload reads from, and the previous install Remove-PluginPayload
+    # clears out. Keeping those the same set is what makes it safe for deploy.ps1
+    # to delete files instead of the whole folder.
+    param([Parameter(Mandatory = $true)][string]$Directory)
+    if (-not (Test-Path -LiteralPath $Directory)) {
+        return @()
+    }
+    return @(Get-ChildItem -LiteralPath $Directory -File |
+        Where-Object { $_.Name -like "$AssemblyName*" -and $_.Extension -in $PluginPayloadExtensions } |
+        Sort-Object Name)
+}
+
+
+function Remove-PluginPayload {
+    # Remove a previous install's payload files from $DestDir, leaving everything
+    # else in the folder untouched, and return how many files were removed.
+    #
+    # deploy.ps1 used to delete the whole plugin folder before copying the fresh
+    # build in, which also destroyed articy_ids_final_cut.json - the optional
+    # articy id map a user puts there by hand, next to the plugin's own DLL
+    # (de-bx9). Only the files deploy.ps1 itself wrote are its to delete.
+    #
+    # Selecting by the same predicate Copy-PluginPayload copies by, rather than by
+    # the new build's file list, means an assembly a previous build produced and
+    # this one no longer does is still cleared out; nothing stale survives.
+    param([Parameter(Mandatory = $true)][string]$DestDir)
+    $files = @(Get-PluginPayloadFile -Directory $DestDir)
+    foreach ($file in $files) {
+        Remove-Item -LiteralPath $file.FullName -Force
+    }
+    return $files.Count
+}
+
+
 function Copy-PluginPayload {
     # Copy everything that makes up an installed plugin into $DestDir, creating it
     # if needed. Shared by deploy.ps1 and make-release.ps1 so an installed copy and
@@ -427,9 +472,7 @@ function Copy-PluginPayload {
     )
     New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
     $buildDir = [System.IO.Path]::GetDirectoryName($DllPath)
-    $files = @(Get-ChildItem -LiteralPath $buildDir -File |
-        Where-Object { $_.Name -like "$AssemblyName*" -and $_.Extension -in ".dll", ".pdb" } |
-        Sort-Object Name)
+    $files = @(Get-PluginPayloadFile -Directory $buildDir)
     $dllName = [System.IO.Path]::GetFileName($DllPath)
     if (-not ($files | Where-Object { $_.Name -eq $dllName })) {
         throw "Plugin assembly $dllName was not among the files to copy from $buildDir"
