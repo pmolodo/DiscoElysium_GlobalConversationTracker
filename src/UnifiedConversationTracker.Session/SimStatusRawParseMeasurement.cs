@@ -83,11 +83,11 @@ namespace UnifiedConversationTracker.Session
 
             return $"{RowCount} rows over {Counts.ConversationCount} conversations; "
                 + $"{ByteCount} bytes parsed ({Counts.TrailingByteCount} trailing bytes not read); "
-                + $"{Counts.ValueCount} values in {Counts.TableCount} tables; "
-                + $"inside the parse {Ms(ParseTicks)} ms; "
-                + perRow
-                + $"{ClockReads} clock reads at {Stopwatch.Frequency} ticks/s. "
-                + "The resync total above is the merge over rows this parse had already "
+                + $"\n{Counts.ValueCount} values in {Counts.TableCount} tables; "
+                + $"\nTiming (GetSimStatusRows only reads minimum needed):"
+                + $"\n    inside the parse {Ms(ParseTicks)} ms ({perRow}); "
+                + $"\n    {ClockReads} clock reads at {Stopwatch.Frequency} ticks/s. "
+                + "\nThe resync total above is the merge over rows this parse had already "
                 + "produced, so the two lines add up rather than overlap.";
         }
 
