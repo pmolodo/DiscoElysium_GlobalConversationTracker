@@ -24,10 +24,11 @@
       1. -DiscoElysiumDir
       2. the DISCO_ELYSIUM_DIR environment variable
       3. <repo>\Steam Install - Unaltered\Disco Elysium (the csproj's own default)
-      4. Steam auto-discovery (registry + libraryfolders.vdf, AppID 632470)
+      4. the last discovered install, cached in .build\cache
+      5. Steam auto-discovery (registry + libraryfolders.vdf, AppID 632470)
 
-    The result is cached under .build\cache so later builds skip discovery. The
-    reference install is only ever READ from; nothing is written into it.
+    A discovered install is what step 4 caches, so later builds skip discovery.
+    The reference install is only ever READ from; nothing is written into it.
 
     The work itself lives in build-support.psm1 (Resolve-ReferenceGameDir,
     Initialize-BuildReferences, Find-SteamGameDir, Assert-NotReferenceCopy, ...);

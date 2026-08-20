@@ -47,8 +47,9 @@ Two things about its contents are deliberate:
     `.lua` file) as JSON.
   - `UnifiedStateCheck` - verifies `unified-conversation-state.json` is the union of two or
     more saves, with no dialogue status lower than the highest save that mentions it.
-  - `UnifiedStateBenchmark` - times `UnifiedStateStore.Save`, broken out by phase, over a
-    sweep of state sizes.
+  - `UnifiedStateBenchmark` - times `UnifiedStateStore.Save` broken out by phase, and what
+    a caller pays now that the write runs on a background thread, over a sweep of state
+    sizes.
 
 The `.slnx` format, not the classic `.sln`, because it is what `dotnet new sln` emits with
 the SDK this repo builds on and it can carry those notes as comments. It needs the .NET SDK
@@ -64,12 +65,11 @@ each `Import-Module .\build-support.psm1`, which holds every shared constant and
 (`Find-SteamGameDir`, `Resolve-TargetGameDir`, `Initialize-BuildReferences`,
 `Invoke-PluginBuild`, `Copy-PluginPayload`, ...). No script sources another.
 
-That module is a `.psm1` on purpose. The scripts used to dot-source each other
-(`deploy.ps1` -> `build.ps1` -> `provision-refs.ps1`), and PowerShell runs a dot-sourced
-script's `param()` block **in the caller's scope** - so each shared script silently reset
-its caller's `-DiscoElysiumDir` and `-Configuration` to their defaults before they were
-ever used. `Import-Module` never executes anything in the importer's scope, so
-the whole class of bug is gone rather than merely fixed once.
+That module is a `.psm1` on purpose. PowerShell runs a dot-sourced script's `param()`
+block **in the caller's scope**, so a shared script that declares `-DiscoElysiumDir` or
+`-Configuration` resets its caller's copy to the default before the caller ever reads it.
+`Import-Module` never executes anything in the importer's scope, so that whole class of
+bug cannot arise.
 
 ### `provision-refs.ps1`
 
@@ -167,10 +167,8 @@ $state = "$env:USERPROFILE\AppData\LocalLow\ZAUM Studio\Disco Elysium\SaveGames\
 
 BepInEx truncates `LogOutput.log` at process start, so a session's log only survives until
 the next launch. "Copy it when the session is over" therefore loses the race whenever
-anything relaunches the game in between, and the copy is a different process's log while
-looking exactly like the right one. That has actually happened here: a preserved session
-log came from a launch *after* the session it was meant to document, and a spot-check then
-drew its conclusion from the wrong file.
+anything relaunches the game in between, and the copy is then a different process's log
+while looking exactly like the right one.
 
 So the script copies first - to `.build\logs\<label>-<timestamp>.log` unless `-Destination`
 says otherwise - and judges afterwards, using the Harmony banner written while the plugin
@@ -254,15 +252,14 @@ For a Mono game it is friendly to ship "BepInEx + plugin + uninstaller, extract 
 For BepInEx 6 IL2CPP it is not: the archive would be far heavier, architecture-specific,
 and still useless until the player runs the game once to generate their own interop
 assemblies. Both game copies on this machine already have a working BepInEx (deployed by
-Vortex). So phase 1 ships a plugin-only zip, and the README points at BepInEx's own
+Vortex). So the release is a plugin-only zip, and the README points at BepInEx's own
 install instructions.
 
-The knock-on effect on `deploy.ps1`: the prior-art script it was adapted from installs *by
-extracting its all-in-one zip* into the game folder. With no bundle, deploy installs the
-DLL directly instead, and there is deliberately no dormant extract-an-archive path waiting
-for one. It keeps that design's useful half - start from a known state - by removing
-`<game>\BepInEx\plugins\UnifiedConversationTracker\` before copying, and it never touches
-anything above that folder.
+The knock-on effect on `deploy.ps1`: with no bundle to extract, it installs the payload
+files directly, and there is deliberately no dormant extract-an-archive path waiting for
+one. It still starts from a known state, clearing the previous build's
+`UnifiedConversationTracker*` files out of `<game>\BepInEx\plugins\UnifiedConversationTracker\`
+before copying, and it never touches anything above that folder.
 
 ### Build output layout
 

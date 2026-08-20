@@ -3,13 +3,11 @@
 
     A MODULE, deliberately, and not a dot-sourced .ps1. PowerShell runs a
     dot-sourced script's param() block in the CALLER's scope, so a shared script
-    that declares -DiscoElysiumDir silently reset its caller's $DiscoElysiumDir
-    to $null the moment it was dot-sourced: build.ps1 -DiscoElysiumDir <path>
-    built happily against the auto-discovered Steam install instead, and
-    deploy.ps1 / make-release.ps1 lost -Configuration the same way.
+    declaring -DiscoElysiumDir or -Configuration silently resets its caller's
+    copy of that parameter to the default before the caller ever reads it.
     Import-Module has no such scope leak - a module's contents are never
     executed in the importer's scope - so keeping every shared name in here
-    makes that whole class of bug impossible rather than merely absent.
+    makes that whole class of bug impossible.
 
     Each root script therefore stays a self-contained entry point: its own
     param() block, this module imported, its own main flow. None of them

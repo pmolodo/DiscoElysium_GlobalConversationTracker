@@ -9,10 +9,8 @@
     BepInEx truncates <game>\BepInEx\LogOutput.log at process start, so a
     session's log only survives until the next launch. "Copy it when the
     session is over" therefore loses the race whenever anything relaunches the
-    game in between, and the copy is a different process's log while looking
-    exactly like the right one. That has actually happened here: a preserved
-    session log came from a launch AFTER the session it was meant to document,
-    and a spot-check then read its conclusion out of the wrong file.
+    game in between, and the copy is then a different process's log while
+    looking exactly like the right one.
 
     So this script does two things, in this order:
 
@@ -147,9 +145,9 @@ function Get-LogProvenance {
             [System.Globalization.CultureInfo]::InvariantCulture)
     }
 
-    # Harmony only writes a 12-hour timestamp, without an am/pm designation, so the exact 24-hour-time is ambiguous
-    # Assume that if the log write time's is more than 12 hours after the logStamp, that the logStamp was pm, and add
-    # 12 hours to it to get the correct 24-hour-time
+    # Harmony writes a 12-hour clock time with no am/pm designation, so the
+    # 24-hour time is ambiguous. If the log's write time is more than 12 hours
+    # after the stamp, the stamp must have been pm; add 12 hours to recover it.
     if ($written -gt $loadStamp + [TimeSpan]::FromHours(12))
     {
         $loadStamp = $loadStamp + [TimeSpan]::FromHours(12)
