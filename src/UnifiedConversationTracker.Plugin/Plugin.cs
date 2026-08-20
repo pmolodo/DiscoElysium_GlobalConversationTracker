@@ -56,15 +56,6 @@ namespace UnifiedConversationTracker
         private const string UnloadTrigger = "BasePlugin.Unload";
 
         /// <summary>
-        /// What the log says the load path does when there is no map. One string
-        /// because every way of failing to get one ends the same way, and because
-        /// de-0m0.25 deletes all of them together.
-        /// </summary>
-        private const string WithoutTheMapNotice =
-            "Savegame loads will resync by walking the whole master database instead, which the "
-            + "only in-game measurement there is puts at 1892 ms (de-0m0.17).";
-
-        /// <summary>
         /// The session for this run of the game, available from the moment
         /// <see cref="Load"/> returns. The hook calls
         /// <see cref="UnifiedStateSession.EnsureInitialized"/> on it before every
