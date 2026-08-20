@@ -38,30 +38,11 @@ namespace UnifiedConversationTracker.Session
     /// game ever holds; there is no third writer (de-0s5 audited the whole build for
     /// one).</para>
     ///
-    /// <para><b>The load-time path has two routes to the same rows.</b>
-    /// <see cref="TryResyncFromInterception"/> reads the compressed blobs the savegame
-    /// arrived in, from a prefix, before that method destroys them;
-    /// <see cref="ResyncFromGame"/> walks the master database from a postfix
-    /// afterwards. They produce the same triples and merge identically - the only
-    /// difference is cost, and which one ran is on the log line. The caller runs at
-    /// most one of them per load; see the seam in
-    /// <c>ExpandCompressedSimStatusDataPatch</c>.</para>
-    ///
-    /// <para><b>There is no first-mark seed any more</b> (de-omm.23). There used to
-    /// be one, reading the whole game the first time a line was marked in a session
-    /// with no state file, and it cost 649 ms on the main thread at the moment a
-    /// conversation opened. It was a proxy for "a save has been loaded, so the Lua
-    /// table is real"; the load hook is that condition directly, so the proxy - and
-    /// its deferral, its retry, and the rule that an empty seed must never be
-    /// persisted lest the file suppress a later one - is gone. The resync strictly
-    /// subsumes it: it reads the same thing, it runs on every load rather than once
-    /// per playthrough-ever, and it runs inside a loading screen. Starting a brand
-    /// new game triggers neither, which is correct: a new game's table is
-    /// all-Untouched, so there is nothing to read, and everything from there on is
-    /// a mark.</para>
+    /// <para><b>The load-time path uses <see cref="ResyncFromSaveRawBytes"/>
+    /// to read the dialogue data straight from the save bytes.</b></para>
     ///
     /// <para><b>Nothing writes the file on the caller's thread</b> (de-omm.22).
-    /// <see cref="Record"/> and <see cref="ResyncFromGame"/> merge and then mark the
+    /// <see cref="Record"/> and <see cref="ResyncFromSaveRawBytes"/> merge and then mark the
     /// state dirty; a single background thread does the writing. de-omm.11 measured a
     /// save at 6.7-7.4 ms for a realistic Day-1 save and ~40 ms at the ceiling, of
     /// which ~85% is the flush and the two renames - a whole dropped frame or more,
@@ -127,41 +108,13 @@ namespace UnifiedConversationTracker.Session
         /// </summary>
         private const string ShutdownLinePrefix = "Unified state shutdown flush";
 
-        /// <summary>What the detail line calls itself after a walk of the game.</summary>
-        private const string WalkDetailLabel = "walk";
-
-        /// <summary>
-        /// What the detail line calls itself after an interception. Different from
-        /// <see cref="WalkDetailLabel"/> so that a log makes plain which route ran,
-        /// which is the whole point of keeping both.
-        /// </summary>
-        private const string InterceptDetailLabel = "intercept";
-
         /// <summary>
         /// What the detail line calls itself when using raw bytes from save.
         /// </summary>
         private const string RawBytesDetailLabel = "save raw bytes";
 
-
-        /// <summary>How every failed-interception line starts, so one search finds them all.</summary>
-        private const string InterceptionFailurePrefix = "FAILED to intercept the savegame's SimStatus";
-
-        /// <summary>
-        /// What a failed interception says happens instead. PROVISIONAL, and the only
-        /// place in this class that mentions the fallback at all: the walk it names is
-        /// kept only until interception has one clean in-game measurement, and
-        /// de-0m0.25 deletes both it and this sentence, after which a failure here is
-        /// simply a failure.
-        /// </summary>
-        private const string InterceptionFallbackNotice =
-            " For now the load falls back to walking the whole master database instead, which is "
-            + "far slower; de-0m0.25 removes that fallback once interception has been measured "
-            + "in-game, after which this will be a hard failure.";
-
         private readonly object _gate = new object();
         private readonly UnifiedStateStore _store;
-        private readonly ISimStatusSource _source;
-        private readonly ISimStatusInterceptor? _interceptor;
         private readonly IUnifiedStateLog _log;
 
         private readonly UnifiedConversationState _state = new UnifiedConversationState();
@@ -229,40 +182,15 @@ namespace UnifiedConversationTracker.Session
         /// </summary>
         private long _statusesRecorded;
 
-        /// <summary>Creates a session with no interception, so every resync walks.</summary>
+        /// <summary>Creates a session.</summary>
         /// <param name="store">The store over the SaveGames directory.</param>
-        /// <param name="simStatusSource">The running game, for the resync path.</param>
         /// <param name="log">Where recovery and resyncing are reported.</param>
         /// <exception cref="ArgumentNullException">Any argument is null.</exception>
         public UnifiedStateSession(
             UnifiedStateStore store,
-            ISimStatusSource simStatusSource,
-            IUnifiedStateLog log)
-            : this(store, simStatusSource, null, log)
-        {
-        }
-
-        /// <summary>Creates a session. Nothing is read, written or logged yet.</summary>
-        /// <param name="store">The store over the SaveGames directory.</param>
-        /// <param name="simStatusSource">The running game, for the resync path.</param>
-        /// <param name="interceptor">
-        /// The cheaper load-time route, or null when it is not available on this
-        /// machine - which is the state the mod ships in until the articy id map it
-        /// needs has been audited (de-0m0.21). Null simply means every resync walks.
-        /// </param>
-        /// <param name="log">Where recovery and resyncing are reported.</param>
-        /// <exception cref="ArgumentNullException">
-        /// Any argument but <paramref name="interceptor"/> is null.
-        /// </exception>
-        public UnifiedStateSession(
-            UnifiedStateStore store,
-            ISimStatusSource simStatusSource,
-            ISimStatusInterceptor? interceptor,
             IUnifiedStateLog log)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
-            _source = simStatusSource ?? throw new ArgumentNullException(nameof(simStatusSource));
-            _interceptor = interceptor;
             _log = log ?? throw new ArgumentNullException(nameof(log));
         }
 
@@ -292,13 +220,6 @@ namespace UnifiedConversationTracker.Session
         /// the walk that follows it counts itself.
         /// </summary>
         public int ResyncCount { get; private set; }
-
-        /// <summary>
-        /// How many of <see cref="ResyncCount"/> came from intercepting the savegame's
-        /// compressed blobs rather than walking the master database. The difference
-        /// between the two is how often the guarded fallback fired.
-        /// </summary>
-        public int InterceptedResyncCount { get; private set; }
 
         /// <summary>
         /// False when writing would destroy something we cannot replace: currently
@@ -484,7 +405,7 @@ namespace UnifiedConversationTracker.Session
         /// </summary>
         /// <remarks>
         /// The counterpart to the deferred write: <see cref="Record"/> and
-        /// <see cref="ResyncFromGame"/> return before the file has been rewritten, and
+        /// <see cref="ResyncFromSaveRawBytes"/> return before the file has been rewritten, and
         /// this is how a caller that has to see the result waits for it. Returns
         /// immediately when the file is already up to date.
         /// </remarks>
@@ -989,7 +910,7 @@ namespace UnifiedConversationTracker.Session
             }
 
             // Nothing on disk is not a dead end: the next savegame load resyncs the
-            // whole of the game's own SimStatus table back in (see ResyncFromGame),
+            // whole of the game's own SimStatus table back in (see ResyncFromSaveRawBytes),
             // and play is recorded as it happens. Say so, so an empty start does not
             // read as data loss when it is a first run.
             const string RecoveryHint =
@@ -1096,86 +1017,6 @@ namespace UnifiedConversationTracker.Session
         // -------------------------------------------------------------------
 
         /// <summary>
-        /// Re-reads every SimStatus the game holds and merges it in, for the case the
-        /// write-through hook cannot see: <c>PersistentDataManager</c> rebuilding the
-        /// Lua SimStatus table wholesale when a savegame is loaded, without ever
-        /// calling <c>MarkDialogueEntry</c> (de-0s5).
-        /// </summary>
-        /// <remarks>
-        /// <para><b>Call it after the load has finished rewriting the table</b>, not
-        /// before: the plugin drives it from a postfix on
-        /// <c>PersistentDataManager.ExpandCompressedSimStatusData</c>, which is the
-        /// method that does the rewriting. Called too early it would read the
-        /// pre-load table, which is harmless but pointless.</para>
-        ///
-        /// <para><b>It cannot lose anything.</b> The state is merged into, never
-        /// replaced, and the merge rule only ever raises a status, so a resync can
-        /// only add. That is what makes it safe to run unconditionally on every
-        /// load, and however many times one load happens to trigger it (de-cvq).</para>
-        ///
-        /// <para><b>This is also the only bulk read of the game there is.</b> It
-        /// replaced the first-mark seed outright (de-omm.23), so the case the seed
-        /// existed for - a savegame whose history the unified state has never seen,
-        /// because the file was lost or the save predates the mod - is now covered
-        /// here, on every load rather than once per playthrough-ever.</para>
-        ///
-        /// <para><b>Skips, because the walk is not free</b> - the two in-game
-        /// measurements there are put 112,940 rows at 649 ms before the per-row lookup
-        /// was hoisted and 1744 ms after it, over the same rows and the same method,
-        /// and why they differ is not yet established (de-p1h.1). The walk
-        /// itself is skipped when the game is not readable, when a previous walk
-        /// threw, and when saving is disabled for the session - that last one because
-        /// the walk's only purpose is to be saved. The <em>write</em> is skipped when
-        /// nothing was raised, which de-omm.26 measured as the common case: replaying
-        /// a save the mod already tracked walked 89 rows to gain 0 entries, and paying
-        /// a whole-file write for that on every load would be pure cost.</para>
-        ///
-        /// <para><b>Its write is deferred too</b> (de-omm.22), even though it is one
-        /// big write at a known point rather than <see cref="Record"/>'s per-frame
-        /// trickle. Two reasons, and the first is the load-bearing one.
-        /// <see cref="UnifiedStateStore"/> is not safe against two concurrent writes -
-        /// they would share one temp path and race over the two renames - so writing
-        /// here on the caller's thread would mean two threads that can write, and a
-        /// resync that lands while the writer is mid-save is exactly the window that
-        /// loses a generation. Routing everything through one thread makes that
-        /// impossible by construction rather than by timing. Second, this runs on the
-        /// Unity main thread in a load hook, inside the player's loading screen, so
-        /// the write is worth taking off it for the same reason as anywhere else -
-        /// and there is nothing to be gained by waiting, since a process that dies
-        /// before the write lands resyncs the identical data on the next load.</para>
-        /// </remarks>
-        /// <returns>
-        /// How many statuses this resync raised. Zero both when the game had nothing
-        /// the unified state was missing and when the walk was skipped; the log line
-        /// says which.
-        /// </returns>
-        public int ResyncFromGame()
-        {
-            lock (_gate)
-            {
-                if (!CanResync(_source.Description))
-                {
-                    return 0;
-                }
-
-                if (!_source.IsReady)
-                {
-                    _log.Warning(
-                        $"Not resyncing the unified state: the game ({_source.Description}) is not "
-                        + "readable yet. Statuses restored by this savegame load will only be recorded "
-                        + "if they are marked again during play.");
-                    return 0;
-                }
-
-                return Resync(
-                    _source.Description,
-                    WalkDetailLabel,
-                    () => _source.EnumerateSimStatuses(),
-                    () => _source.DescribeLastWalk());
-            }
-        }
-
-        /// <summary>
         /// Resyncs from the raw bytes of the ntwtf.lua file in the save.
         /// </summary>
         public int ResyncFromSaveRawBytes(Il2CppStructArray<byte> bytes)
@@ -1227,109 +1068,6 @@ namespace UnifiedConversationTracker.Session
                     () => parseMeasurement.Describe());
 
             }
-        }
-
-        /// <summary>
-        /// Resyncs from the savegame's own compressed SimStatus blobs, before the game
-        /// has expanded and destroyed them, instead of walking the whole master
-        /// database afterwards.
-        /// </summary>
-        /// <remarks>
-        /// <para><b>Call it from a PREFIX</b> on
-        /// <c>PersistentDataManager.ExpandCompressedSimStatusData</c>, which is the only
-        /// place the compressed form still exists: that method nils every
-        /// <c>Variable["Conversation_SimX_*"]</c> through <c>Lua.Run</c> before it
-        /// returns, so by the time <see cref="ResyncFromGame"/>'s postfix runs there is
-        /// nothing left to intercept (de-0m0.19, confirmed against the Final Cut
-        /// ISIL).</para>
-        ///
-        /// <para><b>It covers the same population the walk does.</b> The blobs are
-        /// complete rather than a delta - a real save's 1,494 blobs encoded exactly the
-        /// 112,940 pairs the walk visits - so absence still means Untouched and the
-        /// merge rule is unchanged. What differs is the cost: ~1,500 keyed Lua reads
-        /// and ~1,473 non-Untouched rows, instead of 112,940 rows read one interop
-        /// crossing at a time.</para>
-        ///
-        /// <para><b>Failing is LOUD.</b> Every way this can decline - no articy id map,
-        /// an encoding it does not recognize, a pair it cannot resolve, a row count
-        /// that does not add up, an exception - is reported as an ERROR naming exactly
-        /// what went wrong, from the one place below that decides. That is deliberate
-        /// even while a fallback still exists: an unexercised fallback rots, and a
-        /// quiet one would hide the difference between interception working and
-        /// interception silently never running.</para>
-        /// </remarks>
-        /// <returns>
-        /// True if interception ran and its rows were merged. False if it did not, in
-        /// which case the caller has to resync some other way; see the fallback seam in
-        /// <c>ExpandCompressedSimStatusDataPatch</c>.
-        /// </returns>
-        public bool TryResyncFromInterception()
-        {
-            lock (_gate)
-            {
-                if (_interceptor == null)
-                {
-                    ReportInterceptionFailure(
-                        "none",
-                        "no interceptor was installed, which means the articy id map was not "
-                        + "available when the plugin loaded - see the startup log line that says so.");
-                    return false;
-                }
-
-                if (!CanResync(_interceptor.Description))
-                {
-                    // Not an interception failure: nothing may be kept this session, or
-                    // a previous resync gave up, and CanResync has already said which.
-                    return false;
-                }
-
-                SimStatusInterception intercepted;
-                try
-                {
-                    intercepted = _interceptor.Intercept();
-                }
-                catch (Exception ex)
-                {
-                    // Deliberately does NOT set _resyncGivenUp: this failed, the merge
-                    // did not, and tracking is not what is at stake here.
-                    intercepted = SimStatusInterception.Unavailable($"it threw: {ex}");
-                }
-
-                if (!intercepted.IsUsable)
-                {
-                    ReportInterceptionFailure(_interceptor.Description, intercepted.Reason!);
-                    return false;
-                }
-
-                IReadOnlyList<SimStatusRow> rows = intercepted.Rows;
-                SimStatusInterceptionMeasurement measurement = intercepted.Measurement;
-                InterceptedResyncCount++;
-                Resync(
-                    _interceptor.Description,
-                    InterceptDetailLabel,
-                    () => rows,
-                    () => measurement.Describe());
-                return true;
-            }
-        }
-
-        /// <summary>
-        /// Reports one failed interception, as an ERROR, naming what failed.
-        /// </summary>
-        /// <param name="sourceDescription">
-        /// The route that failed, or "none" when there was not one to try.
-        /// </param>
-        /// <param name="reason">What went wrong, as a sentence.</param>
-        /// <remarks>
-        /// An ERROR rather than a warning on purpose. Once de-0m0.25 has removed the
-        /// fallback these are hard failures, and the diagnostics have to be good enough
-        /// to act on before that, not after.
-        /// </remarks>
-        private void ReportInterceptionFailure(string sourceDescription, string reason)
-        {
-            _log.Error(
-                $"{InterceptionFailurePrefix} ({sourceDescription}): {reason}"
-                + InterceptionFallbackNotice);
         }
 
         /// <summary>
@@ -1494,6 +1232,6 @@ namespace UnifiedConversationTracker.Session
         /// <inheritdoc />
         public override string ToString() =>
             $"UnifiedStateSession({Origin}, initialized={IsInitialized}, canSave={CanSave}, "
-            + $"resyncs={ResyncCount}, intercepted={InterceptedResyncCount})";
+            + $"resyncs={ResyncCount})";
     }
 }

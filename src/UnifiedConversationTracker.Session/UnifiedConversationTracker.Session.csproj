@@ -6,8 +6,7 @@
       IL2CPP plugin). This project is the layer that decides WHEN the unified
       state is read, seeded and written; it deliberately knows nothing about
       Unity, BepInEx or the Dialogue System, so it stays unit testable without
-      the game. The plugin supplies the game-facing pieces through
-      ISimStatusSource and IUnifiedStateLog.
+      the game. The plugin supplies the game-facing pieces.
     -->
     <TargetFramework>net6.0</TargetFramework>
     <!-- net6.0 is chosen to match the game's runtime, not for support status. -->

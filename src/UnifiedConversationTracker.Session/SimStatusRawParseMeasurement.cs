@@ -9,11 +9,6 @@ namespace UnifiedConversationTracker.Session
     /// make that cost interpretable, as one loggable line.
     /// </summary>
     /// <remarks>
-    /// <para>The third of the same family as <see cref="SimStatusWalkMeasurement"/>
-    /// and <see cref="SimStatusInterceptionMeasurement"/>, so all three routes into a
-    /// resync report themselves the same way and can be read against each other in
-    /// one log. It lives here rather than in the plugin for the same reason they do:
-    /// its arithmetic and its wording can then be tested without the game.</para>
     ///
     /// <para><b>Why the parse needs a clock of its own.</b> The raw-bytes route parses
     /// the blob into a list and only then calls the merge, so the resync total that

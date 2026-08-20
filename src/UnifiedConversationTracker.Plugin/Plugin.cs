@@ -101,8 +101,7 @@ namespace UnifiedConversationTracker
             Log.LogMessage($"Unified state file: {store.LivePath}");
 
             var log = new BepInExUnifiedStateLog(Log);
-            var session = new UnifiedStateSession(
-                store, new DialogueLuaSimStatusSource(), TryCreateInterceptor(), log);
+            var session = new UnifiedStateSession(store, log);
             _session = session;
 
             var harmony = new Harmony(PluginGuid);
@@ -114,13 +113,7 @@ namespace UnifiedConversationTracker
                 "Dialogue seen during play will not be recorded this session",
                 () => MarkDialogueEntryPatch.Install(harmony, session, log));
 
-            // bool resyncing = TryInstall(
-            //     "PersistentDataManager.ExpandCompressedSimStatusData",
-            //     "the unified state is resynced whenever a savegame is loaded (using lua blobs)",
-            //     "Statuses restored by loading a savegame will be missed this session",
-            //     () => ExpandCompressedSimStatusDataPatch.Install(harmony, session, log));
             bool resyncing = TryInstall(
-                // "SunshinePersistenceFileManager.ReadLuaBytesFromSaveGameFile",
                 "PersistentDataManager.ApplyRawData",
                 "the unified state is resynced whenever a savegame is loaded (using raw file bytes)",
                 "Statuses restored by loading a savegame will be missed this session",
@@ -144,65 +137,6 @@ namespace UnifiedConversationTracker
             }
 
             RegisterShutdownFlush(session);
-        }
-
-        /// <summary>
-        /// Builds the interceptor that reads a savegame's compressed SimStatus blobs,
-        /// or returns null - saying why - when the articy id map it needs is not on
-        /// this machine.
-        /// </summary>
-        /// <remarks>
-        /// <para><b>At startup, deliberately, and not on the load path.</b> The map is
-        /// a pure function of the dialogue database, identical for every save and every
-        /// session, and it is several megabytes of JSON. Parsing it inside the load
-        /// hook would spend exactly the budget interception exists to save, so it is
-        /// paid once here, where a few hundred milliseconds of plugin load costs the
-        /// player nothing.</para>
-        ///
-        /// <para><b>Absent is a normal state, not a broken one.</b> The map is not
-        /// shipped with the mod: de-0m0.21 tracks the audit of where it came from, and
-        /// until that is settled it is something a user drops next to this DLL. So a
-        /// missing file is logged plainly and the mod carries on with the walk. A file
-        /// that is present but unreadable is a different thing and is an error.</para>
-        /// </remarks>
-        private ISimStatusInterceptor? TryCreateInterceptor()
-        {
-            string? directory = Path.GetDirectoryName(GetType().Assembly.Location);
-            if (string.IsNullOrEmpty(directory))
-            {
-                Log.LogWarning(
-                    "Could not work out which directory this plugin was loaded from, so the articy "
-                    + $"id map could not be looked for. {WithoutTheMapNotice}");
-                return null;
-            }
-
-            string path = Path.Combine(directory, ArticyIdMapFileName);
-            if (!File.Exists(path))
-            {
-                Log.LogMessage($"No articy id map at '{path}'. {WithoutTheMapNotice}");
-                return null;
-            }
-
-            var stopwatch = Stopwatch.StartNew();
-            ArticyIdMap map;
-            try
-            {
-                map = ArticyIdMap.LoadFromFile(path);
-            }
-            catch (Exception ex)
-            {
-                Log.LogError($"Could not read the articy id map '{path}': {ex}. {WithoutTheMapNotice}");
-                return null;
-            }
-
-            stopwatch.Stop();
-            Log.LogMessage(
-                $"Read the articy id map '{path}' in {stopwatch.ElapsedMilliseconds} ms: "
-                + $"{map.Conversations.Count} conversations, {map.EntryArticyIdCount} entry articy ids "
-                + $"over {map.DialogueEntryCount} dialogue entries. Savegame loads will read their "
-                + "SimStatus from the save's own compressed blobs rather than walking the master "
-                + "database.");
-            return new CompressedSimStatusInterceptor(map);
         }
 
         /// <summary>

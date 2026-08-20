@@ -7,7 +7,7 @@ namespace UnifiedConversationTracker.Session
     /// </summary>
     /// <remarks>
     /// This describes the DISK read only, which happens once per session. It is not
-    /// updated by <see cref="UnifiedStateSession.ResyncFromGame"/>: a resync merges
+    /// updated by <see cref="UnifiedStateSession.ResyncFromSaveRawBytes"/>: a resync merges
     /// into whatever was loaded, and overwriting the origin would erase the one
     /// signal that says a recovery happened.
     /// </remarks>
@@ -30,7 +30,7 @@ namespace UnifiedConversationTracker.Session
         /// Nothing usable was on disk, so the state started empty. A first run, or a
         /// run after both generations were lost. Not a failure and not transient:
         /// the state fills up from the write-through hook as the game is played and
-        /// from <see cref="UnifiedStateSession.ResyncFromGame"/> on every savegame
+        /// from <see cref="UnifiedStateSession.ResyncFromSaveRawBytes"/> on every savegame
         /// load, which is what recovers history the lost file used to hold.
         /// </summary>
         NoStateOnDisk = 3,

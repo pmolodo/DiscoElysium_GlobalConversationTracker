@@ -7,7 +7,7 @@ namespace UnifiedConversationTracker.Session
     /// <remarks>
     /// <para><b>Why a replica rather than a call.</b> This layer deliberately knows
     /// nothing about Unity or the Dialogue System so it can be unit tested without the
-    /// game (see <see cref="ISimStatusSource"/>), and the rule is four character
+    /// game, and the rule is four character
     /// substitutions. Calling the game's own would also cost an IL2CPP crossing per
     /// conversation on a path whose whole point is to avoid them.</para>
     ///

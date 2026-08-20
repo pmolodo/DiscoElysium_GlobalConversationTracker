@@ -36,8 +36,8 @@ namespace UnifiedConversationTracker.Persistence;
 public ref struct RawDataParser
 {
     /// <summary>
-    /// Source of this data - used like ISimStatusSource.Description and
-    /// ISimStatusInterceptor.Description
+    /// Source of this data - used like detail how the save's dialogue statuses
+    /// are obtained.
     /// </summary>
     public const string Description = "raw bytes of .ntwtf.lua save file";
 
