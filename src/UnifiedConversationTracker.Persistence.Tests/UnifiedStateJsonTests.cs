@@ -113,8 +113,8 @@ namespace UnifiedConversationTracker.Persistence.Tests
         [Fact]
         public void Serialize_OfASnapshot_IsByteIdenticalToSerializingItsSource()
         {
-            // Since de-0m0.5 the background writer serializes a snapshot rather than the
-            // live state, so the file's determinism now depends on the snapshot being
+            // The background writer serializes a snapshot rather than the live state,
+            // so the file's determinism depends on the snapshot being
             // indistinguishable from its source to this serializer.
             UnifiedConversationState state = StateWith(
                 (10, 5, SimStatus.WasDisplayed),
@@ -171,10 +171,10 @@ namespace UnifiedConversationTracker.Persistence.Tests
         [Fact]
         public void RoundTrip_AtRealisticScale_IsLinearAndCorrect()
         {
-            // de-omm.9 measured a real save at 1,331 WasDisplayed plus 142 WasOffered,
-            // so ~1,500 rows is the realistic file. This runs 50,000 to leave headroom
-            // and to make anything accidentally quadratic blow the time budget: 50k
-            // squared would be 2.5 billion operations, far past ten seconds.
+            // A real save runs to something like 1,500 rows. This runs 50,000 to leave
+            // headroom and to make anything accidentally quadratic blow the time
+            // budget: 50k squared would be 2.5 billion operations, far past ten
+            // seconds.
             const int conversationCount = 500;
             const int entriesPerConversation = 100;
             var original = new UnifiedConversationState();

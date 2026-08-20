@@ -1,10 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    Test framework and versions match the three test projects under src\, so the
-    whole repo runs on one `dotnet test` with one set of packages. The target
-    framework is the tests' own (net10.0); the tool under test targets net8.0,
-    which a net10.0 test host loads unchanged.
+    Test framework and versions match the test projects under src\, so the whole
+    repo runs on one `dotnet test` with one set of packages.
   -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -24,11 +22,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NtwtfDecode\NtwtfDecode.csproj" />
-    <ProjectReference
-      Include="..\..\src\UnifiedConversationTracker.Persistence.Tests\UnifiedConversationTracker.Persistence.Tests.csproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The blob writer the persistence tests use, shared as source: it builds the
+         fixtures these tests decode. -->
     <Compile Include="..\..\src\UnifiedConversationTracker.Persistence.Tests\LuaBlob.cs" Link="LuaBlob.cs" />
   </ItemGroup>
 

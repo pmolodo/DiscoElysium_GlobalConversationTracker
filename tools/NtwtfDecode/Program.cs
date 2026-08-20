@@ -1,7 +1,6 @@
 using System.Text;
 using NtwtfDecode;
 using UnifiedConversationTracker.Persistence;
-using PythonJson = UnifiedConversationTracker.Persistence.Tests.PythonJson;
 
 const string AllTables = "all";
 const int DefaultIndent = 2;
@@ -117,18 +116,10 @@ int Run(string[] argv)
         );
     }
 
-    if (output is null)
-    {
-        var stdout = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false));
-        PythonJson.Write(stdout, selected, indent);
-        stdout.Write('\n');
-        stdout.Flush();
-    }
-    else
-    {
-        using var writer = new StreamWriter(output, false, new UTF8Encoding(false));
-        PythonJson.Write(writer, selected, indent);
-    }
+    using Stream stream = output is null ? Console.OpenStandardOutput() : File.Create(output);
+    LuaJson.Write(stream, selected, indent);
+    stream.WriteByte((byte)'\n');
+    stream.Flush();
     return 0;
 }
 

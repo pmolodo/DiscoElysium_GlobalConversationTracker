@@ -464,8 +464,8 @@ namespace UnifiedConversationTracker.Persistence.Tests
             Assert.Throws<SimulatedCrashException>(() => crashing.Save(NewGeneration()));
 
             // Missing, not Corrupt: a half-written temp file must never be mistaken for
-            // the live state, or de-omm.7 would treat a first run as damaged history
-            // and refuse to save over it.
+            // the live state, or a first run would look like damaged history and be
+            // refused a save over it.
             Assert.Equal(UnifiedStateLoadOutcome.Missing, crashing.Load().Outcome);
             Assert.Equal(UnifiedStateLoadOutcome.Missing, crashing.LoadWithBackupFallback().Outcome);
         }

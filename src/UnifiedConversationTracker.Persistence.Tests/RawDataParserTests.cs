@@ -30,13 +30,49 @@ public class RawDataParserTests
         return current;
     }
 
-    /// <summary>The tool's own rendering, used to compare whole tables at once.</summary>
-    private static string ToJson(object? value)
+    /// <summary>
+    /// Asserts that two decoded values match entry for entry and in order, so a
+    /// whole table can be checked at once. <paramref name="path"/> names where a
+    /// mismatch is, which a bare "not equal" on nested tables would not.
+    /// </summary>
+    private static void AssertSameValue(object? expected, object? actual, string path = "$")
     {
-        var writer = new StringWriter();
-        PythonJson.Write(writer, value, indent: 2);
-        return writer.ToString();
+        if (expected is not LuaTable expectedTable)
+        {
+            Assert.True(
+                Equals(expected, actual),
+                $"{path}: expected {Describe(expected)}, got {Describe(actual)}."
+            );
+            return;
+        }
+
+        Assert.True(actual is LuaTable, $"{path}: expected a table, got {Describe(actual)}.");
+        LuaTable actualTable = (LuaTable)actual!;
+        Assert.True(
+            expectedTable.Count == actualTable.Count,
+            $"{path}: expected {expectedTable.Count} entries, got {actualTable.Count}."
+        );
+        for (int i = 0; i < expectedTable.Count; i++)
+        {
+            KeyValuePair<object, object?> expectedEntry = expectedTable.Entries[i];
+            KeyValuePair<object, object?> actualEntry = actualTable.Entries[i];
+            Assert.True(
+                Equals(expectedEntry.Key, actualEntry.Key),
+                $"{path}: entry {i} is keyed {Describe(actualEntry.Key)}, expected "
+                    + $"{Describe(expectedEntry.Key)}."
+            );
+            AssertSameValue(expectedEntry.Value, actualEntry.Value, $"{path}.{expectedEntry.Key}");
+        }
     }
+
+    /// <summary>A value, with its type, for a mismatch message.</summary>
+    private static string Describe(object? value) =>
+        value switch
+        {
+            null => "nil",
+            LuaTable table => $"a table of {table.Count}",
+            _ => $"{value.GetType().Name} {value}",
+        };
 
     [Fact]
     public void ReadAllTables_RoundTripsAWrittenBlob()
@@ -49,7 +85,7 @@ public class RawDataParserTests
         );
 
         Assert.Equal(0, trailingBytes);
-        Assert.Equal(ToJson(expected), ToJson(actual));
+        AssertSameValue(expected, actual);
     }
 
     [Fact]
