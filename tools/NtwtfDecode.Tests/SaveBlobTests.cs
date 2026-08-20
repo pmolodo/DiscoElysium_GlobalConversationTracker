@@ -144,7 +144,7 @@ public class SaveBlobTests
 
         Assert.Equal(truncated, SaveBlob.Read(path));
         Assert.Throws<EndOfStreamException>(
-            () => RawDataParser.ReadAllTables(SaveBlob.Read(path), out _)
+            () => LuaTableVisitor.ReadAllTables(SaveBlob.Read(path), out _)
         );
     }
 

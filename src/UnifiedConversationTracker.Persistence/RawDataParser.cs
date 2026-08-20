@@ -22,8 +22,7 @@ namespace UnifiedConversationTracker.Persistence;
 /// The parser decides where every value ends and the visitor decides what any of
 /// it means, which is what makes a caller that wants one field out of one table
 /// cheap: see <see cref="SimStatusVisitor"/>, which reads the SimStatus strings
-/// without building a single <see cref="LuaTable"/>, against
-/// <see cref="LuaTableVisitor"/>, which builds all of them.
+/// without building an all-inclusive in-memory representation
 ///
 /// Binary format notes (.NET BinaryReader semantics):
 ///   - Int32 / Double are little-endian.
@@ -118,16 +117,6 @@ public ref struct RawDataParser
             ParseValue();
         }
         _visitor.EndParse(ref this);
-    }
-
-    /// <summary>Reads the five top-level tables, keyed by name in file order.</summary>
-    public static LuaTable ReadAllTables(ReadOnlySpan<byte> data, out int trailingBytes)
-    {
-        LuaTableVisitor visitor = new();
-        RawDataParser parser = new(data, visitor);
-        parser.Parse();
-        trailingBytes = parser.Remaining;
-        return visitor.Root;
     }
 
     /// <summary>

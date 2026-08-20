@@ -16,12 +16,6 @@ namespace UnifiedConversationTracker.Persistence;
 /// looked at at all - they still have to be walked, since a value's length is only
 /// knowable from its own encoding, but nothing in them is read.
 /// </summary>
-/// <remarks>
-/// This is the reason <see cref="RawDataParser"/> is a visitor rather than a
-/// decoder: building the <see cref="LuaTable"/>s that <see cref="LuaTableVisitor"/>
-/// builds, only to pick three fields out of them and drop the rest, was the bulk of
-/// what reading a save cost.
-/// </remarks>
 public sealed class SimStatusVisitor : IRawDataVisitor
 {
     private static ReadOnlySpan<byte> DialogKey => "Dialog"u8;

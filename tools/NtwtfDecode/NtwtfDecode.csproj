@@ -18,6 +18,8 @@
     -->
     <ProjectReference
       Include="..\..\src\UnifiedConversationTracker.Persistence\UnifiedConversationTracker.Persistence.csproj" />
+    <ProjectReference
+      Include="..\..\src\UnifiedConversationTracker.Persistence.Tests\UnifiedConversationTracker.Persistence.Tests.csproj" />
   </ItemGroup>
 
 </Project>

@@ -143,7 +143,7 @@ static LuaTable ReadTables(byte[] blob, string input, out int trailing)
 {
     try
     {
-        return RawDataParser.ReadAllTables(blob, out trailing);
+        return LuaTableVisitor.ReadAllTables(blob, out trailing);
     }
     catch (Exception ex)
         when (ex is InvalidDataException or EndOfStreamException or DecoderFallbackException)

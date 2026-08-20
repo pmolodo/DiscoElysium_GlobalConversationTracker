@@ -16,7 +16,7 @@ public class RawDataParserTests
 {
     /// <summary>The five tables, decoded from a freshly written sample blob.</summary>
     private static LuaTable ReadSample(out int trailingBytes) =>
-        RawDataParser.ReadAllTables(LuaBlob.SerializeSampleSave(), out trailingBytes);
+        LuaTableVisitor.ReadAllTables(LuaBlob.SerializeSampleSave(), out trailingBytes);
 
     /// <summary>Follows a chain of keys into nested tables.</summary>
     private static object? Lookup(LuaTable table, params object[] path)
@@ -79,7 +79,7 @@ public class RawDataParserTests
     {
         LuaTable expected = LuaBlob.SampleSave();
 
-        LuaTable actual = RawDataParser.ReadAllTables(
+        LuaTable actual = LuaTableVisitor.ReadAllTables(
             LuaBlob.Serialize(expected),
             out int trailingBytes
         );
@@ -151,7 +151,7 @@ public class RawDataParserTests
         byte[] extra = Encoding.UTF8.GetBytes("return { extra = true }");
         byte[] blob = LuaBlob.SerializeSampleSave().Concat(extra).ToArray();
 
-        RawDataParser.ReadAllTables(blob, out int trailingBytes);
+        LuaTableVisitor.ReadAllTables(blob, out int trailingBytes);
 
         Assert.Equal(extra.Length, trailingBytes);
     }
@@ -162,7 +162,7 @@ public class RawDataParserTests
         byte[] blob = LuaBlob.SerializeSampleSave();
 
         Assert.Throws<EndOfStreamException>(
-            () => RawDataParser.ReadAllTables(blob[..(blob.Length / 2)], out _)
+            () => LuaTableVisitor.ReadAllTables(blob[..(blob.Length / 2)], out _)
         );
     }
 
@@ -170,7 +170,7 @@ public class RawDataParserTests
     public void ReadAllTables_EmptyBlobThrowsEndOfStream()
     {
         Assert.Throws<EndOfStreamException>(
-            () => RawDataParser.ReadAllTables(Array.Empty<byte>(), out _)
+            () => LuaTableVisitor.ReadAllTables(Array.Empty<byte>(), out _)
         );
     }
 
@@ -181,7 +181,7 @@ public class RawDataParserTests
         byte[] blob = { (byte)'T', 0, 0, 0, 0, 1, 0, 0, 0, (byte)'Q' };
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(
-            () => RawDataParser.ReadAllTables(blob, out _)
+            () => LuaTableVisitor.ReadAllTables(blob, out _)
         );
 
         Assert.Contains("'Q'", error.Message, StringComparison.Ordinal);
@@ -194,7 +194,7 @@ public class RawDataParserTests
         // file. It has to fail as bad input, not as an unhandled crash.
         byte[] blob = Encoding.UTF8.GetBytes(new string('x', 512));
 
-        Exception? error = Record.Exception(() => RawDataParser.ReadAllTables(blob, out _));
+        Exception? error = Record.Exception(() => LuaTableVisitor.ReadAllTables(blob, out _));
 
         Assert.True(
             error is InvalidDataException or EndOfStreamException or DecoderFallbackException,

@@ -19,7 +19,7 @@ namespace UnifiedStateCheck.Tests;
 /// </para>
 /// <para>
 /// The reader's "no Conversation table" guard has no test: <see
-/// cref="RawDataParser.ReadAllTables"/> always returns all five of
+/// cref="LuaTableVisitor.ReadAllTables"/> always returns all five of
 /// <see cref="RawDataParser.TableNames"/>, so a blob that decodes at all has a
 /// Conversation table. The guard is there for a decoder that stops doing that.
 /// </para>

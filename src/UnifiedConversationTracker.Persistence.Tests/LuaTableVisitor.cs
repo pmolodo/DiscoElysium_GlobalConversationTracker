@@ -13,6 +13,16 @@ namespace UnifiedConversationTracker.Persistence;
 /// </summary>
 public sealed class LuaTableVisitor : IRawDataVisitor
 {
+    /// <summary>Reads the five top-level tables, keyed by name in file order.</summary>
+    public static LuaTable ReadAllTables(ReadOnlySpan<byte> data, out int trailingBytes)
+    {
+        LuaTableVisitor visitor = new();
+        RawDataParser parser = new(data, visitor);
+        parser.Parse();
+        trailingBytes = parser.Remaining;
+        return visitor.Root;
+    }
+
     private readonly LuaTable _root = new();
     private readonly Stack<LuaTable> _open = new();
 

@@ -111,7 +111,7 @@ public class LuaJsonTests
     [Fact]
     public void Write_ProducesJsonThatParsesBack()
     {
-        LuaTable tables = RawDataParser.ReadAllTables(LuaBlob.SerializeSampleSave(), out _);
+        LuaTable tables = LuaTableVisitor.ReadAllTables(LuaBlob.SerializeSampleSave(), out _);
 
         using JsonDocument parsed = JsonDocument.Parse(Render(tables));
 
