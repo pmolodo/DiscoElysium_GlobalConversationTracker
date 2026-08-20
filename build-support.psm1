@@ -68,6 +68,11 @@ $PluginFolderName = $AssemblyName
 # files deploy.ps1 removes are exactly the files it writes (see
 # Get-PluginPayloadFile).
 $PluginPayloadExtensions = @(".dll", ".pdb")
+# Appended to the commit hash the build stamps into the plugin assembly when the
+# tree it was built from had uncommitted changes. Written by Get-SourceRevisionId
+# and read back by Get-PluginBuildStamp, which is why it lives here and not in
+# either of them.
+$PluginCommitDirtySuffix = ".dirty"
 
 # Read-only reference copies of the game kept in this repo. Builds must never
 # write into them, and deploy refuses to target them unless explicitly forced.
@@ -374,6 +379,73 @@ it regenerates $BepInExInteropRelDir.
 
 # --- Building and packaging ---------------------------------------------------
 
+function Get-SourceRevisionId {
+    # The commit this repo is at, with $PluginCommitDirtySuffix appended when the
+    # tree holds anything uncommitted, in the exact form the build stamps into
+    # the plugin assembly (see Invoke-PluginBuild). $null when git cannot answer,
+    # which is not an error: a source drop without a .git still builds, it just
+    # produces an assembly that cannot name its origin.
+    #
+    # Untracked files count as dirty. An untracked .cs is compiled like any
+    # other, so a tree holding one is not the commit it would otherwise claim.
+    try {
+        $commit = (& git -C $RepoRoot rev-parse HEAD 2>$null)
+        if ($LASTEXITCODE -ne 0 -or -not $commit) { return $null }
+        $status = (& git -C $RepoRoot status --porcelain 2>$null)
+        if ($LASTEXITCODE -ne 0) { return $null }
+    }
+    catch {
+        # No git on PATH.
+        return $null
+    }
+    $revision = "$commit".Trim()
+    if ($status) { $revision += $PluginCommitDirtySuffix }
+    return $revision
+}
+
+
+function Get-PluginBuildStamp {
+    # What a built plugin assembly says about its own origin: the commit it was
+    # compiled from, and whether that tree was dirty.
+    #
+    # The build passes the revision as SourceRevisionId, which the SDK appends to
+    # the assembly's informational version and Windows exposes as the file's
+    # ProductVersion - so the commit and the code it describes are the same file
+    # and cannot drift apart. Fields come back $null for an assembly built
+    # without a stamp, which is a fact to record rather than an error.
+    param([Parameter(Mandatory = $true)][string]$DllPath)
+
+    $stamp = [ordered]@{
+        informationalVersion = $null
+        version              = $null
+        commit               = $null
+        dirty                = $null
+    }
+    if (-not (Test-Path -LiteralPath $DllPath)) { return $stamp }
+
+    $product = (Get-Item -LiteralPath $DllPath).VersionInfo.ProductVersion
+    if (-not $product) { return $stamp }
+    $stamp.informationalVersion = $product
+
+    # "<version>+<revision>" - the SDK's own spelling of an informational version
+    # carrying a SourceRevisionId. No "+" means nothing was stamped.
+    $plus = $product.IndexOf("+")
+    if ($plus -lt 0) {
+        $stamp.version = $product
+        return $stamp
+    }
+    $stamp.version = $product.Substring(0, $plus)
+
+    $revision = $product.Substring($plus + 1)
+    $stamp.dirty = $revision.EndsWith($PluginCommitDirtySuffix)
+    if ($stamp.dirty) {
+        $revision = $revision.Substring(0, $revision.Length - $PluginCommitDirtySuffix.Length)
+    }
+    $stamp.commit = $revision
+    return $stamp
+}
+
+
 function Get-PluginVersion {
     # The plugin version, read from <Version> in the csproj (the source of truth
     # that BepInEx also reports at load time).
@@ -396,8 +468,20 @@ function Invoke-PluginBuild {
 
     $gameDir = Initialize-BuildReferences -DiscoElysiumDir $DiscoElysiumDir
 
+    # Stamped into the assembly so a deployed DLL - and any log captured from a
+    # session that loaded it - can be tied back to the source it was built from.
+    $buildArgs = @("-p:DiscoElysiumDir=$gameDir")
+    $revision = Get-SourceRevisionId
+    if ($revision) {
+        $buildArgs += "-p:SourceRevisionId=$revision"
+        Write-Host "Source revision: $revision"
+    }
+    else {
+        Write-Warning "Could not read the source revision from git; this build will carry no commit stamp, so a log captured from a session running it cannot name the source it came from."
+    }
+
     Write-Host "Building $AssemblyName v$(Get-PluginVersion) ($Configuration)..."
-    dotnet build $ProjectFile -c $Configuration "-p:DiscoElysiumDir=$gameDir" | Out-Host
+    dotnet build $ProjectFile -c $Configuration @buildArgs | Out-Host
     if ($LASTEXITCODE -ne 0) {
         throw "dotnet build failed with exit code $LASTEXITCODE"
     }

@@ -103,6 +103,22 @@ is what actually runs. Prints the path of the built DLL.
 .\build.ps1 -DiscoElysiumDir "C:\path\to\Disco Elysium"
 ```
 
+It also stamps the commit it is building into the assembly, as
+`-p:SourceRevisionId=<commit>[.dirty]`. The SDK appends that to the assembly's
+informational version, which Windows exposes as the DLL's `ProductVersion`:
+
+```
+0.1.0+80da8e807ba78addfd8ffa379292654bec5f1d55.dirty
+```
+
+The commit therefore travels *inside* the DLL rather than beside it, so a deployed
+plugin - and any log captured from a session that loaded it - can be tied back to the
+source it was built from, and cannot be paired with the wrong commit by copying a file
+around. `.dirty` means the tree had uncommitted changes, untracked files included: an
+untracked `.cs` is compiled like any other, so a tree holding one is not the commit it
+would otherwise claim. A build with no `git` available is stamped with nothing and says
+so.
+
 ### `deploy.ps1`
 
 Build, then install into a **playable** copy of the game. The headline command.
@@ -190,6 +206,21 @@ That stamp identifies the process that wrote the log, so:
 The copy and a `<copy>.capture.json` manifest (md5, size, the stamp, every check and its
 verdict, `verified`) are written even when a check fails, but the script then exits
 non-zero unless `-Force` was given. Nothing is ever written into the game folder.
+
+The manifest also records what the run *was*, not just that the log belongs to it:
+
+| Field | What it is |
+| --- | --- |
+| `pluginCommit`, `pluginTreeDirty`, `pluginBuildVersion` | read out of the installed `UnifiedConversationTracker.dll`'s own `ProductVersion` (see `build.ps1` above) |
+| `pluginDir`, `pluginFiles` | every file installed in `<game>\BepInEx\plugins\UnifiedConversationTracker` with size, write time and md5 - which covers the optional `articy_ids_final_cut.json` without naming it |
+| `route` | the source named in the log's `Resynced the unified state from the running game (...)` line |
+| `envelopeOperation`, `averageEnvelopeMs`, `envelopeCallCount` | the run's final `Average envelope for <op>` figure, so runs can be compared without re-parsing logs |
+
+Each is recorded when present and left `null` when not; a log from a build that stamped
+nothing is a fact worth recording rather than a failure. Two warnings come out of this:
+an installed DLL with no commit stamp cannot tie the log to a source revision at all, and
+an installed DLL written *after* the run's plugin-load stamp means a deploy happened
+between the run and the capture, so the folder listed is a later build's.
 
 **Which install it reads:** `-GameDir`, else `DISCO_ELYSIUM_DEPLOY_DIR`, else the
 auto-discovered Steam copy - the same playable copy `deploy.ps1` writes to.

@@ -41,6 +41,19 @@
     be unverified is still worth keeping - but the script then exits non-zero
     unless -Force was given. Nothing is ever written into the game folder.
 
+    The manifest also records what the run was, not just that the log is its:
+
+      * the commit the installed plugin was built from, and whether that tree was
+        dirty, read out of the assembly's own informational version - the build
+        stamps it there, so the commit travels inside the DLL it describes.
+      * every file in <game>\BepInEx\plugins\UnifiedConversationTracker with its
+        size and md5, which covers the optional articy id map without naming it.
+      * the resync route the log reports and its final average envelope, promoted
+        into fields so runs can be compared without re-parsing logs.
+
+    All of these are recorded when present and left null when not; a log from a
+    build that stamped nothing is a fact worth recording, not a failure.
+
 .PARAMETER GameDir
     The game folder to capture the log out of. Resolved exactly as deploy.ps1
     resolves its target (this parameter, then DISCO_ELYSIUM_DEPLOY_DIR, then the
@@ -104,6 +117,12 @@ $HarmonyStampPattern = '(?m)^### At (\d{4}-\d{2}-\d{2} \d{2}\.\d{2}\.\d{2})\s*$'
 $HarmonyStampFormat = "yyyy-MM-dd HH.mm.ss"
 # How stamps are written into the manifest and the console summary.
 $ReportStampFormat = "yyyy-MM-dd HH:mm:ss.fff"
+# The resync line names, in parentheses, the route the run took to read the
+# save. Builds that do not name a route simply do not match.
+$RouteLinePattern = "(?m)^\[\w+\s*:$AssemblyName\] Resynced the unified state from the running game \(([^)]+)\)"
+# The running average a measured run logs after each hooked call. The last one
+# in a log is that run's final figure.
+$EnvelopeLinePattern = "(?m)^\[\w+\s*:$AssemblyName\]\s+Average envelope for (\S+)\s*:\s*([\d,]+(?:\.\d+)?) ms \((\d+) calls?\)"
 # The banner is written to whole seconds, so a file written in the same second
 # as the plugin loaded can look a fraction of a second older than the stamp.
 $StampSlack = [TimeSpan]::FromSeconds(1)
@@ -129,7 +148,9 @@ function Format-Stamp {
 function Get-LogProvenance {
     # Everything the log says about the process that wrote it: when this plugin
     # loaded in it (the Harmony banner), whether the plugin's own load line is
-    # there at all, and which unified state file it reported writing.
+    # there at all, which unified state file it reported writing, and the two
+    # figures a comparison between runs is actually made of - the route taken
+    # and the final average envelope.
     param([Parameter(Mandatory = $true)][string]$LogPath)
 
     $LogText = [System.IO.File]::ReadAllText($LogPath)
@@ -161,12 +182,63 @@ function Get-LogProvenance {
     $m = [regex]::Match($LogText, "(?m)^\[Message:$AssemblyName\] Unified state file: (.+?)\s*$")
     if ($m.Success) { $statePath = $m.Groups[1].Value }
 
-    return [ordered]@{
-        LoadStamp     = $loadStamp
-        StampCount    = $stamps.Count
-        PluginVersion = $version
-        StatePath     = $statePath
+    # Distinct, in order of appearance: one run takes one route, so more than
+    # one here is worth saying out loud rather than silently picking from.
+    $routes = [System.Collections.Generic.List[string]]::new()
+    foreach ($m in [regex]::Matches($LogText, $RouteLinePattern)) {
+        if (-not $routes.Contains($m.Groups[1].Value)) { $routes.Add($m.Groups[1].Value) }
     }
+
+    $operation = $null
+    $averageMs = $null
+    $callCount = $null
+    $averages = [regex]::Matches($LogText, $EnvelopeLinePattern)
+    if ($averages.Count -gt 0) {
+        # Each line restates the average over every call so far, so the last one
+        # is the whole run's figure.
+        $final = $averages[$averages.Count - 1]
+        $operation = $final.Groups[1].Value
+        $averageMs = [double]::Parse(
+            $final.Groups[2].Value,
+            [System.Globalization.NumberStyles]::Float -bor [System.Globalization.NumberStyles]::AllowThousands,
+            [System.Globalization.CultureInfo]::InvariantCulture)
+        $callCount = [int]$final.Groups[3].Value
+    }
+
+    return [ordered]@{
+        LoadStamp         = $loadStamp
+        StampCount        = $stamps.Count
+        PluginVersion     = $version
+        StatePath         = $statePath
+        Routes            = $routes
+        EnvelopeOperation = $operation
+        AverageEnvelopeMs = $averageMs
+        EnvelopeCallCount = $callCount
+    }
+}
+
+
+function Get-PluginFolderState {
+    # Everything installed in the game's plugin folder, with size, write time and
+    # md5. Listed wholesale rather than probed for by name, so the optional
+    # articy id map - which changes what a run does and how long it takes - is
+    # recorded without being special-cased, along with anything else put there.
+    # $null when the folder does not exist, which is different from empty.
+    #
+    # md5 for every file: the folder holds the plugin's own assemblies plus at
+    # most a hand-placed data file, and identifying which articy map was in place
+    # is worth the few megabytes of hashing.
+    param([Parameter(Mandatory = $true)][string]$PluginDir)
+
+    if (-not (Test-Path -LiteralPath $PluginDir)) { return $null }
+    return @(Get-ChildItem -LiteralPath $PluginDir -File | Sort-Object Name | ForEach-Object {
+            [ordered]@{
+                name          = $_.Name
+                bytes         = $_.Length
+                lastWriteTime = Format-Stamp $_.LastWriteTime
+                md5           = (Get-FileHash -LiteralPath $_.FullName -Algorithm MD5).Hash.ToLowerInvariant()
+            }
+        })
 }
 
 
@@ -256,6 +328,44 @@ if (-not $provenance.PluginVersion) {
     $warnings.Add("This log has no '$AssemblyName v<version> loaded.' line, so the plugin never loaded in that process.")
 }
 
+if ($provenance.Routes.Count -gt 1) {
+    $warnings.Add("This log names more than one resync route ($($provenance.Routes -join ', ')); the manifest records the first.")
+}
+
+# --- What was installed, and what it was built from ---------------------------
+# The log cannot see the folder its plugin was loaded from, so the folder is read
+# here instead. The commit comes off the assembly itself (Get-PluginBuildStamp),
+# which is what makes a captured log attributable to a source revision at all.
+$pluginDir = Get-PluginInstallDir -GameDir $gameDir
+$pluginFiles = Get-PluginFolderState -PluginDir $pluginDir
+$pluginDllPath = Join-Path $pluginDir "$AssemblyName.dll"
+$pluginBuild = Get-PluginBuildStamp -DllPath $pluginDllPath
+
+if ($null -eq $pluginFiles) {
+    $warnings.Add("No plugin folder at $pluginDir, so this manifest cannot record what was installed for this run.")
+}
+else {
+    Write-Host "  installed: $($pluginFiles.Count) file(s) in $pluginDir"
+    if (-not $pluginBuild.commit) {
+        $warnings.Add("The installed $AssemblyName.dll carries no commit stamp, so this log cannot be tied to a source revision. Redeploy with deploy.ps1, which stamps into the assembly the commit it was built from.")
+    }
+    else {
+        Write-Host "  built from $($pluginBuild.commit)$(if ($pluginBuild.dirty) { " (dirty tree)" })"
+        if ($pluginBuild.dirty) {
+            $warnings.Add("The installed $AssemblyName.dll was built from commit $($pluginBuild.commit) with uncommitted changes in the tree, so the source behind this log is not any committed state.")
+        }
+    }
+
+    # The folder is read now; the run happened earlier. A deploy in between makes
+    # this listing a later build's than the one that wrote the log.
+    if ($loadStamp -and (Test-Path -LiteralPath $pluginDllPath)) {
+        $installedWritten = (Get-Item -LiteralPath $pluginDllPath).LastWriteTime
+        if ($installedWritten -gt $loadStamp + $StampSlack) {
+            $warnings.Add("The installed $AssemblyName.dll was written $(Format-Stamp $installedWritten), after the plugin loaded in this run at $(Format-Stamp $loadStamp): the plugin folder recorded here is a later deploy's, not the one this log came from.")
+        }
+    }
+}
+
 if (-not $loadStamp) {
     $problems.Add(@"
 No Harmony '### At <date>' banner in this log, so there is nothing to identify
@@ -323,6 +433,15 @@ $manifest = [ordered]@{
     harmonyLoadStamp     = Format-Stamp $loadStamp
     harmonyStampCount    = $provenance.StampCount
     pluginVersion        = $provenance.PluginVersion
+    pluginCommit         = $pluginBuild.commit
+    pluginTreeDirty      = $pluginBuild.dirty
+    pluginBuildVersion   = $pluginBuild.informationalVersion
+    pluginDir            = $pluginDir
+    pluginFiles          = $pluginFiles
+    route                = if ($provenance.Routes.Count -gt 0) { $provenance.Routes[0] } else { $null }
+    envelopeOperation    = $provenance.EnvelopeOperation
+    averageEnvelopeMs    = $provenance.AverageEnvelopeMs
+    envelopeCallCount    = $provenance.EnvelopeCallCount
     unifiedStatePath     = $provenance.StatePath
     gameProcessId        = if ($game) { $game.Id } else { $null }
     gameProcessStartTime = if ($game) { Format-Stamp $game.StartTime } else { $null }
