@@ -32,25 +32,23 @@ namespace UnifiedConversationTracker.Session
     /// <see cref="Record"/> is the write-through path, driven by the hook on
     /// <c>DialogueLua.MarkDialogueEntry</c>: everything the game marks while it is
     /// being played. The load-time path covers the writer that never goes through it -
-    /// <c>PersistentDataManager.ExpandCompressedSimStatusData</c> rebuilding the whole
-    /// Lua SimStatus table from a savegame without ever calling
-    /// <c>MarkDialogueEntry</c> (de-0s5). Between them they see every SimStatus the
-    /// game ever holds; there is no third writer (de-0s5 audited the whole build for
-    /// one).</para>
+    /// a savegame load rebuilding the whole SimStatus table at once, without ever
+    /// calling <c>MarkDialogueEntry</c>. Between them they see every SimStatus the
+    /// game ever holds; there is no third writer.</para>
     ///
-    /// <para><b>The load-time path uses <see cref="ResyncFromSaveRawBytes"/>
-    /// to read the dialogue data straight from the save bytes.</b></para>
+    /// <para><b>The load-time path is <see cref="ResyncFromSaveRawBytes"/>, which
+    /// reads the dialogue data straight from the save bytes.</b></para>
     ///
-    /// <para><b>Nothing writes the file on the caller's thread</b> (de-omm.22).
+    /// <para><b>Nothing writes the file on the caller's thread.</b>
     /// <see cref="Record"/> and <see cref="ResyncFromSaveRawBytes"/> merge and then mark the
-    /// state dirty; a single background thread does the writing. de-omm.11 measured a
-    /// save at 6.7-7.4 ms for a realistic Day-1 save and ~40 ms at the ceiling, of
-    /// which ~85% is the flush and the two renames - a whole dropped frame or more,
-    /// inside a dialogue hook, mid-conversation. See <see cref="TrySave"/> for the
+    /// state dirty; a single background thread does the writing. A save costs
+    /// 6.7-7.4 ms for a realistic Day-1 save and ~40 ms at the ceiling, of which ~85%
+    /// is the flush and the two renames - a whole dropped frame or more, inside a
+    /// dialogue hook, mid-conversation. See <see cref="TrySave"/> for the
     /// synchronous path that remains, and <see cref="Shutdown"/> for the shutdown
     /// flush that stops a clean exit losing the tail - which says in the log what it
     /// did, including when it did nothing, because a silent success is
-    /// indistinguishable from a handler that never fired at all (de-6fi).</para>
+    /// indistinguishable from a handler that never fired at all.</para>
     ///
     /// <para>Not thread safe in the sense of being lock-free, but every public
     /// method takes the same lock and C# locks are reentrant, so a hook that
@@ -58,15 +56,15 @@ namespace UnifiedConversationTracker.Session
     /// deadlocking or recursing. That one lock is also the writer thread's condition
     /// variable, so there is exactly one lock in the whole design and therefore no
     /// lock ordering to get wrong. The writer holds it only long enough to copy the
-    /// state, and serializes and writes the copy outside it (de-0m0.5), so the longest
+    /// state, and serializes and writes the copy outside it, so the longest
     /// anything can make a mark wait is that copy.</para>
     /// </remarks>
     public sealed class UnifiedStateSession : IDisposable
     {
         /// <summary>
-        /// How many skipped-row descriptions a walk of the game logs before it stops
-        /// listing them. Deliberately the file loader's own cap, so a skipped game row
-        /// and a skipped file row read the same way in a log.
+        /// How many skipped-row descriptions a resync logs before it stops listing
+        /// them. Deliberately the file loader's own cap, so a skipped save row and a
+        /// skipped file row read the same way in a log.
         /// </summary>
         public const int MaxGameWalkWarnings = UnifiedStateJson.MaxWarnings;
 
@@ -78,7 +76,7 @@ namespace UnifiedConversationTracker.Session
         /// How long a caller waiting for a write to land - <see cref="TrySave"/>,
         /// <see cref="Flush"/>, the flush inside <see cref="Dispose"/> - waits before
         /// giving up and saying so. Generous by two orders of magnitude against the
-        /// 40 ms de-omm.11 measured at the largest file it could construct, because
+        /// 40 ms a save costs at the largest file that can be constructed, because
         /// the only thing a shorter one buys is giving up on a write that was about
         /// to succeed. It exists so a writer wedged on a locked file cannot hang the
         /// game's shutdown for ever.
@@ -120,7 +118,7 @@ namespace UnifiedConversationTracker.Session
         private bool _diskLoadDone;
         private bool _resyncGivenUp;
 
-        // ---- The deferred write (de-omm.22). All guarded by _gate. ----
+        // ---- The deferred write. All guarded by _gate. ----
 
         /// <summary>
         /// Bumped every time the state changes into something the file does not yet
@@ -208,11 +206,9 @@ namespace UnifiedConversationTracker.Session
         }
 
         /// <summary>
-        /// How many resyncs actually read the game this session, by either route.
-        /// Calls that were skipped - because the game was not readable, because a
-        /// previous resync threw, or because saving is disabled - are not counted, and
-        /// neither is an interception that declined and left the walk to run, since
-        /// the walk that follows it counts itself.
+        /// How many resyncs actually read the save this session. Calls that were
+        /// skipped - because the save bytes were not readable, because a previous
+        /// resync threw, or because saving is disabled - are not counted.
         /// </summary>
         public int ResyncCount { get; private set; }
 
@@ -230,11 +226,11 @@ namespace UnifiedConversationTracker.Session
         /// re-checking. It never returns null and never returns a different object.
         /// </summary>
         /// <remarks>
-        /// The lock covers getting the object, not using it. Since de-omm.22 there is
-        /// a second thread that reads this object - the writer, copying it - so
-        /// reading it here while marks are still arriving is a concurrent read and
-        /// write of a plain <c>Dictionary</c>. Nothing in the mod does that; it is for
-        /// tests and tools, which read it once the marking has stopped.
+        /// The lock covers getting the object, not using it. There is a second thread
+        /// that reads this object - the writer, copying it - so reading it here while
+        /// marks are still arriving is a concurrent read and write of a plain
+        /// <c>Dictionary</c>. Nothing in the mod does that; it is for tests and tools,
+        /// which read it once the marking has stopped.
         /// </remarks>
         /// <exception cref="InvalidOperationException">
         /// <see cref="EnsureInitialized"/> has not run yet. Reading the state before
@@ -298,11 +294,11 @@ namespace UnifiedConversationTracker.Session
         /// the same entry repeatedly - every time a line is offered again, and
         /// "Untouched" over entries that already have history - and the merge rule
         /// turns all of those into no-ops. Rewriting the whole file for a no-op would
-        /// put the file's entire cost on the common case (see de-omm.11), so the
-        /// write is driven by the merge's own changed flag.</para>
+        /// put the file's entire cost on the common case, so the write is driven by
+        /// the merge's own changed flag.</para>
         ///
         /// <para><b>This never writes the file.</b> It merges, marks the state dirty
-        /// and returns; the background writer does the rest (de-omm.22). This is the
+        /// and returns; the background writer does the rest. This is the
         /// <c>DialogueLua.MarkDialogueEntry</c> postfix, so it runs on the Unity main
         /// thread mid-conversation, where the 6.7-40 ms a save costs is a dropped
         /// frame. Deferring it is safe for the same reason the whole design is: the
@@ -368,8 +364,8 @@ namespace UnifiedConversationTracker.Session
         /// </summary>
         /// <remarks>
         /// <para><b>Synchronous, and deliberately the exception.</b> Everything the
-        /// game drives goes through the dirty flag instead (de-omm.22); this is for
-        /// the callers that genuinely need the bytes on disk before they carry on -
+        /// game drives goes through the dirty flag instead; this is for the callers
+        /// that genuinely need the bytes on disk before they carry on -
         /// shutdown, and tests. It still writes on the background thread, because that
         /// thread is the only thing allowed to touch the three files, and simply waits
         /// for it. Nothing is skipped when the state is clean: an explicit "save now"
@@ -421,8 +417,8 @@ namespace UnifiedConversationTracker.Session
         /// Flushes anything still pending and shuts the background writer down.
         /// </summary>
         /// <remarks>
-        /// <para>This is the "never lose the tail on a clean exit" half of de-omm.22,
-        /// and the reason the deferred write does not need any durability machinery of
+        /// <para>This is the "never lose the tail on a clean exit" half of the
+        /// deferred write, and the reason that write needs no durability machinery of
         /// its own. It is idempotent; after it, the session still merges but no longer
         /// writes, which is the right behaviour for a mark that arrives while the game
         /// is tearing down.</para>
@@ -443,12 +439,12 @@ namespace UnifiedConversationTracker.Session
         /// Null or empty is reported as "Dispose".
         /// </param>
         /// <remarks>
-        /// <para><b>Same work as <see cref="Dispose"/>; the difference is the log</b>
-        /// (de-6fi). This used to be silent on success, which made "the handler fired
-        /// and there was nothing to flush" and "the handler never fired at all"
-        /// identical in a session log - and since BepInEx's IL2CPP chainloader calls
-        /// neither <c>Unload</c> nor anything else on the way out, which of the two
-        /// registered events actually fires is exactly the open question. It is now
+        /// <para><b>Same work as <see cref="Dispose"/>; the difference is the log.</b>
+        /// A shutdown that said nothing on success would make "the handler fired and
+        /// there was nothing to flush" and "the handler never fired at all" identical
+        /// in a session log - and since BepInEx's IL2CPP chainloader calls neither
+        /// <c>Unload</c> nor anything else on the way out, which of the two registered
+        /// events actually fires is exactly the open question. So the shutdown logs
         /// two lines: one when the trigger arrives, before the gate is taken, so a
         /// shutdown that then blocks behind a resync still proves it fired; one when
         /// the drain is over, carrying the trigger, what was pending, whether it
@@ -669,10 +665,10 @@ namespace UnifiedConversationTracker.Session
         /// <para><b>Why the lock is held for the copy and nothing else.</b> Reading the
         /// live state cannot happen concurrently with a merge, so something has to be
         /// under the lock; everything after the copy touches only the copy and the
-        /// filesystem, so nothing else has to be. de-omm.22 originally held the lock for
-        /// the whole serialize, which meant a mark arriving mid-serialize waited for it
-        /// on the Unity main thread - measured in de-0m0.5 at up to 16 ms at 30,000
-        /// entries and 39 ms at the 112,940-entry ceiling, a dropped frame either way.
+        /// filesystem, so nothing else has to be. Holding the lock for the whole
+        /// serialize instead would make a mark arriving mid-serialize wait for it on
+        /// the Unity main thread - up to 16 ms at 30,000 entries and 39 ms at the
+        /// 112,940-entry ceiling, a dropped frame either way.
         /// Copying first shrinks what is under the lock by 24-25x at every size the
         /// benchmark sweeps (0.008 ms against 0.21 ms at a realistic 1,473 entries,
         /// 0.9 ms against 22 ms at the ceiling), at the price of one transient copy of
@@ -904,8 +900,8 @@ namespace UnifiedConversationTracker.Session
                 QuarantineCorruptFile(recovery.Backup.SourcePath);
             }
 
-            // Nothing on disk is not a dead end: the next savegame load resyncs the
-            // whole of the game's own SimStatus table back in (see ResyncFromSaveRawBytes),
+            // Nothing on disk is not a dead end: the next savegame load reads the
+            // save's whole SimStatus table back in (see ResyncFromSaveRawBytes),
             // and play is recorded as it happens. Say so, so an empty start does not
             // read as data loss when it is a first run.
             const string RecoveryHint =
@@ -1075,10 +1071,9 @@ namespace UnifiedConversationTracker.Session
         }
 
         /// <summary>
-        /// Merges one resync's rows, whichever route produced them, and logs the two
-        /// lines that describe it. Caller must hold <see cref="_gate"/>, and must
-        /// already have established through <see cref="CanResync"/> that a resync may
-        /// run.
+        /// Merges one resync's rows and logs the line that describes the outcome.
+        /// Caller must hold <see cref="_gate"/>, and must already have established
+        /// through <see cref="CanResync"/> that a resync may run.
         /// </summary>
         /// <param name="rows">Latest rows from save.</param>
         /// <returns>How many statuses were raised.</returns>
@@ -1132,9 +1127,7 @@ namespace UnifiedConversationTracker.Session
         /// whose status string was not recognized.
         /// </summary>
         /// <param name="rows">
-        /// The rows to merge, from either resync route. Lazy for the walk, which
-        /// produces them one interop crossing at a time, and already in hand for an
-        /// interception.
+        /// The rows to merge, as parsed out of the loaded save's bytes.
         /// </param>
         /// <param name="rowCount">
         /// Counted up as the merge goes, so a caller that catches a throwing read can
