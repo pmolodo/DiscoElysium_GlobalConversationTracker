@@ -108,11 +108,6 @@ namespace UnifiedConversationTracker.Session
         /// </summary>
         private const string ShutdownLinePrefix = "Unified state shutdown flush";
 
-        /// <summary>
-        /// What the detail line calls itself when using raw bytes from save.
-        /// </summary>
-        private const string RawBytesDetailLabel = "save raw bytes";
-
         private readonly object _gate = new object();
         private readonly UnifiedStateStore _store;
         private readonly IUnifiedStateLog _log;
@@ -1029,7 +1024,7 @@ namespace UnifiedConversationTracker.Session
 
             lock (_gate)
             {
-                if (!CanResync(RawDataParser.Description))
+                if (!CanResync())
                 {
                     return 0;
                 }
@@ -1037,36 +1032,20 @@ namespace UnifiedConversationTracker.Session
                 if (data.Length == 0)
                 {
                     _log.Warning(
-                        "Not resyncing the unified state: received a null or empty byte string for "
-                        + $"{RawDataParser.Description}");
+                        "Not resyncing the unified state: received a null or empty byte string for raw save bytes"
+                    );
                     return 0;
                 }
 
-                // The parse gets a clock of its own because it finishes before Resync
-                // starts: Resync is handed the list this line produces, so its own
-                // total covers the merge and nothing else, and the two are additive.
-                var parseStopwatch = Stopwatch.StartNew();
                 List<SimStatusRow> rows = RawDataParser.GetSimStatuses(
                     data, out SimStatusParseCounts parseCounts);
-                parseStopwatch.Stop();
-
-                var parseMeasurement = new SimStatusRawParseMeasurement(
-                    byteCount: data.Length,
-                    rowCount: rows.Count,
-                    counts: parseCounts,
-                    parseTicks: parseStopwatch.ElapsedTicks);
 
                 // data aliases the IL2CPP array in place, and bytes is dead from here on, so
                 // without this the wrapper could be finalized - freeing its GCHandle, and with
                 // it the array - mid-read.
                 GC.KeepAlive(bytes);
 
-                return Resync(
-                    RawDataParser.Description,
-                    RawBytesDetailLabel,
-                    () => rows,
-                    () => parseMeasurement.Describe());
-
+                return Resync(rows);
             }
         }
 
@@ -1074,8 +1053,7 @@ namespace UnifiedConversationTracker.Session
         /// Whether a resync may run at all, logging the reason when it may not. Caller
         /// must hold <see cref="_gate"/>.
         /// </summary>
-        /// <param name="sourceDescription">Where the resync would have read from.</param>
-        private bool CanResync(string sourceDescription)
+        private bool CanResync()
         {
             if (_resyncGivenUp)
             {
@@ -1087,7 +1065,7 @@ namespace UnifiedConversationTracker.Session
             if (!CanSave)
             {
                 _log.Warning(
-                    $"Not resyncing the unified state from the running game ({sourceDescription}): "
+                    $"Not resyncing the unified state from the loaded save data: "
                     + $"saving is disabled for this session ({Origin}), so what it read could not be "
                     + $"kept. See the earlier log lines about '{_store.LivePath}'.");
                 return false;
@@ -1102,29 +1080,19 @@ namespace UnifiedConversationTracker.Session
         /// already have established through <see cref="CanResync"/> that a resync may
         /// run.
         /// </summary>
-        /// <param name="sourceDescription">Where the rows came from, for the log.</param>
-        /// <param name="detailLabel">What the second line calls itself.</param>
-        /// <param name="rows">Produces the rows. Called exactly once.</param>
-        /// <param name="describe">
-        /// Produces the detail line, called after the rows have been consumed because
-        /// the walk only knows its own timings once it has finished.
-        /// </param>
+        /// <param name="rows">Latest rows from save.</param>
         /// <returns>How many statuses were raised.</returns>
         private int Resync(
-            string sourceDescription,
-            string detailLabel,
-            Func<IEnumerable<SimStatusRow>> rows,
-            Func<string?> describe)
+            List<SimStatusRow> rows)
         {
             ResyncCount++;
 
-            var stopwatch = Stopwatch.StartNew();
             int rowCount = 0;
             int raisedCount;
 
             try
             {
-                raisedCount = MergeEverythingFromGame(rows(), ref rowCount);
+                raisedCount = MergeEverythingFromGame(rows, ref rowCount);
             }
             catch (Exception ex)
             {
@@ -1132,37 +1100,23 @@ namespace UnifiedConversationTracker.Session
                 // the same way, once per load, for the rest of the session.
                 _resyncGivenUp = true;
                 _log.Error(
-                    $"Failed to resync the unified state from the running game ({sourceDescription}) "
+                    $"Failed to resync the unified state from the loaded save game "
                     + $"after {rowCount} rows: {ex}. No further resync will be attempted this session, "
                     + "so statuses restored by loading a savegame will only be recorded if they are "
                     + "marked again during play.");
                 return 0;
             }
 
-            stopwatch.Stop();
-
             string outcome =
-                $"Resynced the unified state from the running game ({sourceDescription}) after a "
-                + "savegame load: ";
+                $"Resynced the unified state after a savegame load: ";
             _log.Info(
                 raisedCount == 0
                     ? outcome
-                        + $"nothing new in {rowCount} rows in {stopwatch.ElapsedMilliseconds} ms, "
-                        + "so no file was written."
+                        + $"nothing new in {rowCount} rows, so no file was written."
                     : outcome
-                        + $"{raisedCount} statuses raised from {rowCount} rows in "
-                        + $"{stopwatch.ElapsedMilliseconds} ms; now {_state.ConversationCount} "
+                        + $"{raisedCount} statuses raised from {rowCount} rows; "
+                        + $"now {_state.ConversationCount} "
                         + $"conversations, {_state.EntryCount} entries.");
-
-            // Immediately after the total, so the two lines can be read together: the
-            // total covers the read, the merge and the write decision, and only this
-            // line says how the read's own share of it was spent (de-p1h). Both routes
-            // report the same shape, so they can be compared directly.
-            string? detail = describe();
-            if (detail != null)
-            {
-                _log.Info($"Resync {detailLabel} detail ({sourceDescription}): {detail}");
-            }
 
             if (raisedCount == 0)
             {

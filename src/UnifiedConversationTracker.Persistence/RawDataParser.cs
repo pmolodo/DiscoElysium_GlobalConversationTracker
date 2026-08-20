@@ -36,12 +36,6 @@ namespace UnifiedConversationTracker.Persistence;
 public ref struct RawDataParser
 {
     /// <summary>
-    /// Source of this data - used like detail how the save's dialogue statuses
-    /// are obtained.
-    /// </summary>
-    public const string Description = "raw bytes of .ntwtf.lua save file";
-
-    /// <summary>
     /// The type-code markers, as produced by reader.ReadChar / PeekChar. They are
     /// ASCII, so the underlying value is the single byte in the file.
     /// </summary>
