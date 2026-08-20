@@ -6,7 +6,6 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using UnifiedConversationTracker;
-using UnifiedConversationTracker.Core;
 using UnifiedConversationTracker.Persistence;
 using UnifiedConversationTracker.Session;
 
@@ -17,12 +16,11 @@ namespace UnifiedStateBenchmark
     /// of entry counts. Investigatory tooling only - nothing here ships.
     /// </summary>
     /// <remarks>
-    /// <para>Three questions, added in that order. de-omm.11 asked how expensive one
-    /// whole-file rewrite is, broken out by phase. de-omm.22 moved the write off the
-    /// caller's thread and added the two <c>Record</c> measurements, to show what the
-    /// caller pays now. de-0m0.5 asked what the caller pays in the <em>worst</em> case,
-    /// since the writer still serializes under the session lock: an average hides that
-    /// completely, so the last section reports percentiles and a maximum.</para>
+    /// <para>Three questions. How expensive is one whole-file rewrite, broken out by
+    /// phase? What does a caller pay now that the write happens on a background thread
+    /// (the two <c>Record</c> measurements)? And what does a caller pay in the
+    /// <em>worst</em> case, which an average hides completely, so the last section
+    /// reports percentiles and a maximum instead.</para>
     /// <para>The phase breakdown is a hand-rolled replay of <see cref="UnifiedStateStore.Save"/>
     /// using the store's own public paths, because Save itself is one opaque call.
     /// Every run also times the real Save end to end and prints both, so a drift
@@ -31,9 +29,9 @@ namespace UnifiedStateBenchmark
     public static class Program
     {
         /// <summary>
-        /// Entry counts to sweep. 1,473 is the real MARTINAISE DAY 1 12-33 save
-        /// measured in de-omm.9 (142 WasOffered + 1,331 WasDisplayed; Untouched is
-        /// never stored). 10k and 30k stand in for a mid and late playthrough.
+        /// Entry counts to sweep. 1,473 is a real MARTINAISE DAY 1 12-33 save
+        /// (142 WasOffered + 1,331 WasDisplayed; Untouched is never stored).
+        /// 10k and 30k stand in for a mid and late playthrough.
         /// 112,940 is the pathological ceiling: every row in the master database
         /// raised above Untouched, which cannot happen in a real playthrough.
         /// </summary>
@@ -56,12 +54,12 @@ namespace UnifiedStateBenchmark
 
         /// <summary>
         /// Share of stored entries that are WasOffered rather than WasDisplayed.
-        /// de-omm.9 measured 142 of 1,473, so roughly one in ten.
+        /// The real Day 1 save has 142 of 1,473, so roughly one in ten.
         /// </summary>
         private const int WasOfferedEveryNth = 10;
 
         /// <summary>
-        /// Entry counts the contention measurement sweeps (de-0m0.5). A subset of
+        /// Entry counts the contention measurement sweeps. A subset of
         /// <see cref="EntryCounts"/>: the realistic Day-1 save, a late playthrough, and
         /// the pathological ceiling. Each size costs
         /// <see cref="ContentionProbeCount"/> x <see cref="ContentionProbeIntervalMs"/>
@@ -101,8 +99,8 @@ namespace UnifiedStateBenchmark
 
         /// <summary>
         /// How many samples the contention measurement takes of each of the two halves
-        /// of a snapshot: the copy that is under the lock, and the serialize that used
-        /// to be and is not since de-0m0.5.
+        /// of a snapshot: the copy, which happens under the session lock, and the
+        /// serialize, which does not.
         /// </summary>
         private const int LockHoldReferenceSamples = 25;
 
@@ -122,7 +120,7 @@ namespace UnifiedStateBenchmark
         {
             string directory = args.Length > 0
                 ? args[0]
-                : Path.Combine(Path.GetTempPath(), "de-omm-11-bench");
+                : Path.Combine(Path.GetTempPath(), "unified-state-bench");
 
             try
             {
@@ -305,9 +303,9 @@ namespace UnifiedStateBenchmark
         }
 
         /// <summary>
-        /// Times the path the hook takes on a mark that changes nothing, which
-        /// de-omm.8 established is the overwhelming majority of calls: merge finds
-        /// an equal-or-lower status, returns changed=false, and no file is written.
+        /// Times the path the hook takes on a mark that changes nothing, which is the
+        /// overwhelming majority of calls: merge finds an equal-or-lower status,
+        /// returns changed=false, and no file is written.
         /// </summary>
         private static void MeasureNoOpRecord(string directory)
         {
@@ -319,7 +317,7 @@ namespace UnifiedStateBenchmark
             UnifiedConversationState state = BuildState(EntryCounts[0]);
             store.Save(state);
 
-            var session = new UnifiedStateSession(store, new EmptySimStatusSource(), NullUnifiedStateLog.Instance);
+            var session = new UnifiedStateSession(store, NullUnifiedStateLog.Instance);
             session.EnsureInitialized();
 
             // Every one of these re-marks an entry that is already WasDisplayed, so
@@ -350,12 +348,11 @@ namespace UnifiedStateBenchmark
         }
 
         /// <summary>
-        /// Times the path the hook takes on a mark that <em>does</em> raise a status,
-        /// which before de-omm.22 meant a whole synchronous file rewrite - 6.7-7.4 ms
-        /// at this size - on the Unity main thread. It now marks a dirty flag and
-        /// returns, so what is measured here is the caller's share and nothing else:
-        /// the merge, the flag, and whatever contention the background writer causes
-        /// by holding the session lock while it copies the state.
+        /// Times the path the hook takes on a mark that <em>does</em> raise a status.
+        /// The mark sets a dirty flag and returns rather than writing the file, so what
+        /// is measured here is the caller's share and nothing else: the merge, the flag,
+        /// and whatever contention the background writer causes by holding the session
+        /// lock while it copies the state.
         /// </summary>
         /// <remarks>
         /// <para>The writer is deliberately left running throughout, writing the file
@@ -363,9 +360,9 @@ namespace UnifiedStateBenchmark
         /// design by leaving out the only cost it added.</para>
         /// <para>This is an average over a tight loop, which is the right shape for "what
         /// does a mark cost on the common path" and the wrong shape for "how bad can one
-        /// mark get" - 20,000 calls run in about 3 ms of wall time, so almost none of
-        /// them overlap the writer at all. <see cref="MeasureRecordUnderContention"/> is
-        /// the one that answers the second question.</para>
+        /// mark get": the loop finishes in a few ms of wall time, so almost none of the
+        /// calls overlap the writer at all. <see cref="MeasureRecordUnderContention"/>
+        /// is the one that answers the second question.</para>
         /// </remarks>
         private static void MeasureRaisingRecord(string directory)
         {
@@ -383,8 +380,7 @@ namespace UnifiedStateBenchmark
             UnifiedConversationState state = BuildState(EntryCounts[0]);
             store.Save(state);
 
-            using var session = new UnifiedStateSession(
-                store, new EmptySimStatusSource(), NullUnifiedStateLog.Instance);
+            using var session = new UnifiedStateSession(store, NullUnifiedStateLog.Instance);
             session.EnsureInitialized();
 
             for (int i = 0; i < warmupCalls; i++)
@@ -402,7 +398,7 @@ namespace UnifiedStateBenchmark
             }
 
             double elapsed = ToMilliseconds(Stopwatch.GetTimestamp() - start);
-            Console.WriteLine("=== Record() on a mark that raises a status (write deferred, de-omm.22) ===");
+            Console.WriteLine("=== Record() on a mark that raises a status (write deferred) ===");
             Console.WriteLine(
                 $"  {raisingCalls:N0} calls in {elapsed:F2} ms "
                 + $"= {elapsed * 1000.0 * 1000.0 / raisingCalls:F1} ns/call");
@@ -421,21 +417,18 @@ namespace UnifiedStateBenchmark
         }
 
         /// <summary>
-        /// The tail of <c>Record</c>'s latency while the background writer is running
-        /// (de-0m0.5): not the average, which hides the thing being asked about, but the
-        /// worst case and the high percentiles.
+        /// The tail of <c>Record</c>'s latency while the background writer is running:
+        /// not the average, which hides the thing being asked about, but the worst case
+        /// and the high percentiles.
         /// </summary>
         /// <remarks>
-        /// <para><b>The question.</b> de-omm.22 moved the file write off the caller's
-        /// thread but not the serialize: <c>WriterLoop</c> called
-        /// <see cref="UnifiedStateJson.SerializeToUtf8Bytes"/> inside the session lock,
-        /// and <c>Record</c> takes that same lock, so a mark arriving mid-serialize
-        /// waited for it on the Unity main thread. The average cannot see that - the
-        /// collision is rare, so it disappears into hundreds of thousands of ~100 ns
-        /// calls - which is why this reports percentiles and a maximum instead. That is
-        /// how de-0m0.5 found the tail (max 16 ms at 30,000 entries, 39 ms at the
-        /// 112,940-entry ceiling, both a dropped frame) and why the writer now copies
-        /// under the lock and serializes outside it.</para>
+        /// <para><b>The question.</b> <c>Record</c> and the background writer take the
+        /// same session lock, so a mark arriving while the writer holds it waits for it
+        /// on the Unity main thread. The average cannot see that - the collision is
+        /// rare, so it disappears into hundreds of thousands of ~100 ns calls - which is
+        /// why this reports percentiles and a maximum instead. Keeping the writer's hold
+        /// down to a state copy, with <see cref="UnifiedStateJson.SerializeToUtf8Bytes"/>
+        /// outside the lock, is what keeps that tail below a frame.</para>
         ///
         /// <para><b>Why the probes are paced.</b> A tight loop of <c>Record</c> calls
         /// runs 20,000 of them in about 2 ms of wall time, during which the writer
@@ -446,8 +439,8 @@ namespace UnifiedStateBenchmark
         ///
         /// <para><b>Why most probes are no-ops.</b> <c>Record</c> takes the lock before
         /// it knows whether the mark changes anything, so a no-op mark blocks on the
-        /// writer exactly as a raising one does - and de-omm.8 established the no-op is
-        /// the overwhelming majority of real calls. Every
+        /// writer exactly as a raising one does - and the no-op is the overwhelming
+        /// majority of real calls. Every
         /// <see cref="ContentionRaiseEveryNth"/>th probe raises instead, which is what
         /// keeps the writer with something to write.</para>
         ///
@@ -469,9 +462,8 @@ namespace UnifiedStateBenchmark
             // Timed on a state that is not the session's, so nothing here contends with
             // the writer; these are the references the tail is compared against. The copy
             // is what the writer holds the lock for, so it is the ceiling on how long a
-            // Record can be made to wait. The serialize is what it used to hold the lock
-            // for (de-omm.22, until de-0m0.5 moved it out), so the gap between the two is
-            // what that move bought.
+            // Record can be made to wait. The serialize runs outside the lock, and is
+            // reported next to the copy for scale.
             var serialize = new List<double>();
             var snapshot = new List<double>();
             for (int i = 0; i < WarmupIterations + LockHoldReferenceSamples; i++)
@@ -490,8 +482,7 @@ namespace UnifiedStateBenchmark
 
             List<UnifiedStatusEntry> raisable = FindRaisableEntries(state);
 
-            using var session = new UnifiedStateSession(
-                store, new EmptySimStatusSource(), NullUnifiedStateLog.Instance);
+            using var session = new UnifiedStateSession(store, NullUnifiedStateLog.Instance);
             session.EnsureInitialized();
 
             var latencies = new List<double>(ContentionProbeCount);
@@ -555,7 +546,7 @@ namespace UnifiedStateBenchmark
                 + $"1 in {ContentionRaiseEveryNth} raising; ended at {session.State.EntryCount:N0} entries "
                 + $"({freshEntries:N0} added because the raisable pool ran out)");
             Report("  under the lock: Snapshot()", snapshot);
-            Report("  was under it: serialize", serialize);
+            Report("  outside the lock: serialize", serialize);
             ReportLatencyTail("  Record()", latencies);
             Console.WriteLine();
 
@@ -694,19 +685,6 @@ namespace UnifiedStateBenchmark
             {
                 File.Delete(file);
             }
-        }
-
-        /// <summary>
-        /// A source with nothing in it. The no-op measurement supplies its own state
-        /// through the file, so reading a game would only add noise.
-        /// </summary>
-        private sealed class EmptySimStatusSource : ISimStatusSource
-        {
-            public string Description => "benchmark stub";
-
-            public bool IsReady => true;
-
-            public IEnumerable<SimStatusRow> EnumerateSimStatuses() => Array.Empty<SimStatusRow>();
         }
     }
 }

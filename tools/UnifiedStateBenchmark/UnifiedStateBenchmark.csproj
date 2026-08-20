@@ -2,9 +2,9 @@
 
   <PropertyGroup>
     <!--
-      Investigatory console app for de-omm.11: how long does one whole-file
-      rewrite of the unified state actually take, broken out by phase? net6.0
-      to match the runtime BepInEx v6 IL2CPP gives the plugin, so the
+      Investigatory console app: how long does one whole-file rewrite of the
+      unified state actually take, broken out by phase? net6.0 to match the
+      runtime BepInEx v6 IL2CPP gives the plugin, so the
       System.Text.Json writer and the FileStream flush path are the same ones
       that run in the game.
     -->
