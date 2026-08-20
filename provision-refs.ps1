@@ -53,7 +53,7 @@ $ErrorActionPreference = "Stop"
 
 # Shared project config and functions. A module, not a dot-sourced script, so
 # that its own names cannot land in this script's scope and overwrite the
-# parameter above - see the header of build-support.psm1 (de-3pw).
+# parameter above - see the header of build-support.psm1.
 # -DisableNameChecking: Assert-NotReferenceCopy uses a verb PowerShell does not
 # have on its approved list, and the name says what it does better than any
 # approved verb would.

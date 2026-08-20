@@ -10,10 +10,9 @@
     session's log only survives until the next launch. "Copy it when the
     session is over" therefore loses the race whenever anything relaunches the
     game in between, and the copy is a different process's log while looking
-    exactly like the right one - see de-g1z, where a preserved session log
-    turned out to come from a launch 44 seconds AFTER that session had already
-    finished writing its state file, and a verification spot-check then read a
-    conclusion out of the wrong file.
+    exactly like the right one. That has actually happened here: a preserved
+    session log came from a launch AFTER the session it was meant to document,
+    and a spot-check then read its conclusion out of the wrong file.
 
     So this script does two things, in this order:
 
@@ -33,7 +32,7 @@
       * Every -RunArtifact - a file that run is claimed to have written, e.g.
         the unified state file or a save - must have been written at or after
         the stamp. An artefact OLDER than the stamp proves the log came from a
-        later process, which is exactly how de-g1z was found.
+        later process.
       * If the game is still running, the stamp must fall inside the running
         process's lifetime.
       * With neither of those available there is nothing to check against, and
@@ -96,7 +95,7 @@ $ErrorActionPreference = "Stop"
 # Shared project config: $BepInExLogRelPath, $BuildDir, Resolve-TargetGameDir,
 # Invoke-ScriptMain, ... A module, not a dot-sourced script, so that its own
 # names cannot land in this script's scope and overwrite the parameters above -
-# see the header of build-support.psm1 (de-3pw).
+# see the header of build-support.psm1.
 # -DisableNameChecking: Assert-NotReferenceCopy uses a verb PowerShell does not
 # have on its approved list, and the name says what it does better than any
 # approved verb would.

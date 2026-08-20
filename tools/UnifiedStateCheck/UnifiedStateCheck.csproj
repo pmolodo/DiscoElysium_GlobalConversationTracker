@@ -14,9 +14,11 @@
 
   <ItemGroup>
     <!--
-      Persistence owns the unified-state file format, so
-      the checker reads exactly what the plugin writes, and the save-blob format
-      reader (RawDataReader / LuaTable).
+      Persistence owns both the unified-state file format - so the checker reads
+      exactly what the plugin writes - and the save-blob reader (RawDataParser /
+      LuaTable). NtwtfDecode owns finding and unpacking a save on disk
+      (SaveBlob); referenced rather than shelled out to so the Conversation
+      table is read once, in process, with no JSON round trip.
     -->
     <ProjectReference Include="..\NtwtfDecode\NtwtfDecode.csproj" />
     <ProjectReference Include="..\..\src\UnifiedConversationTracker.Persistence\UnifiedConversationTracker.Persistence.csproj" />

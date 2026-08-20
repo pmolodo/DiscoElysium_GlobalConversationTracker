@@ -25,7 +25,7 @@ Then launch the game. That is the whole iterate loop: edit -> `.\deploy.ps1` -> 
 
 `UnifiedConversationTracker.slnx` at the repo root is the single entry point for the
 libraries, the offline tools and their tests. `dotnet build` and `dotnet test` with no
-arguments pick it up, so there is no longer a project to `cd` into one at a time:
+arguments pick it up, so there is no need to `cd` into one project at a time:
 
 ```powershell
 dotnet build                 # every project except the plugin (Debug, dotnet's default)
@@ -68,7 +68,7 @@ That module is a `.psm1` on purpose. The scripts used to dot-source each other
 (`deploy.ps1` -> `build.ps1` -> `provision-refs.ps1`), and PowerShell runs a dot-sourced
 script's `param()` block **in the caller's scope** - so each shared script silently reset
 its caller's `-DiscoElysiumDir` and `-Configuration` to their defaults before they were
-ever used (de-3pw). `Import-Module` never executes anything in the importer's scope, so
+ever used. `Import-Module` never executes anything in the importer's scope, so
 the whole class of bug is gone rather than merely fixed once.
 
 ### `provision-refs.ps1`
@@ -124,7 +124,7 @@ What it does:
    with its `.pdb`. BepInEx resolves a plugin's dependencies out of the plugin's own
    folder, so the DLL alone would load and then fail. Only `UnifiedConversationTracker*`
    `.dll`/`.pdb` are deleted first, so anything else in that folder - the optional
-   hand-placed `articy_ids_final_cut.json` above all - survives a redeploy (de-bx9).
+   hand-placed `articy_ids_final_cut.json` above all - survives a redeploy.
 5. prints the log path and the line to look for
 
 **Target resolution:** `-GameDir`, else `DISCO_ELYSIUM_DEPLOY_DIR`, else the
@@ -168,10 +168,9 @@ $state = "$env:USERPROFILE\AppData\LocalLow\ZAUM Studio\Disco Elysium\SaveGames\
 BepInEx truncates `LogOutput.log` at process start, so a session's log only survives until
 the next launch. "Copy it when the session is over" therefore loses the race whenever
 anything relaunches the game in between, and the copy is a different process's log while
-looking exactly like the right one - which is what happened in de-g1z, where a preserved
-session log turned out to come from a launch 44 seconds *after* that session had finished
-writing its state file, and a verification spot-check then drew a conclusion from the wrong
-file.
+looking exactly like the right one. That has actually happened here: a preserved session
+log came from a launch *after* the session it was meant to document, and a spot-check then
+drew its conclusion from the wrong file.
 
 So the script copies first - to `.build\logs\<label>-<timestamp>.log` unless `-Destination`
 says otherwise - and judges afterwards, using the Harmony banner written while the plugin
@@ -249,7 +248,7 @@ So the csproj keeps resolving `DiscoElysiumDir` itself (see its `PropertyGroup` 
 competing with it: it decides *which* install, checks the DLLs are there, and hands the
 path to MSBuild.
 
-### No all-in-one archive bundling BepInEx (deferred to phase 3, de-4pp.1)
+### No all-in-one archive bundling BepInEx
 
 For a Mono game it is friendly to ship "BepInEx + plugin + uninstaller, extract and go".
 For BepInEx 6 IL2CPP it is not: the archive would be far heavier, architecture-specific,

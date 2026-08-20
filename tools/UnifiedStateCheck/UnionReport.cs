@@ -26,11 +26,10 @@ public readonly record struct NamedSave(string Label, UnifiedConversationState S
 /// missing union member - is a failure.
 /// </para>
 /// <para>
-/// Two saves was the original shape (de-omm.10). Three or more matters because an
-/// entry that only ever existed in one save is the load-bearing evidence: it can
-/// only be in the unified file if the file carried it across, and when that save
-/// belongs to a playthrough the current session never touched, the only path is a
-/// read off disk.
+/// Three or more saves matters because an entry that only ever existed in one
+/// save is the load-bearing evidence: it can only be in the unified file if the
+/// file carried it across, and when that save belongs to a playthrough the
+/// current session never touched, the only path is a read off disk.
 /// </para>
 /// </remarks>
 public sealed class UnionReport

@@ -81,7 +81,7 @@ $ErrorActionPreference = "Stop"
 # Build helpers + shared project config (Invoke-PluginBuild, Find-SteamGameDir,
 # Get-PluginInstallDir, ...). A module, not a dot-sourced script, so that its
 # own names cannot land in this script's scope and overwrite the parameters
-# above - see the header of build-support.psm1 (de-3pw).
+# above - see the header of build-support.psm1.
 # -DisableNameChecking: Assert-NotReferenceCopy uses a verb PowerShell does not
 # have on its approved list, and the name says what it does better than any
 # approved verb would.
@@ -119,8 +119,8 @@ $dllPath = Invoke-PluginBuild -Configuration $Configuration -DiscoElysiumDir $Di
 
 # --- 3. Replace the previous install -----------------------------------------
 # Say plainly what is about to be written, before writing it. Only this plugin's
-# own files are replaced; anything else in the folder is left where it is
-# (de-bx9), which is what lets a hand-placed articy_ids_final_cut.json stay put.
+# own files are replaced; anything else in the folder is left where it is,
+# which is what lets a hand-placed articy_ids_final_cut.json stay put.
 Write-Host ""
 Write-Host "== Installing ==" -ForegroundColor Cyan
 Write-Host "About to write into:" -ForegroundColor Yellow

@@ -4,12 +4,12 @@
     A MODULE, deliberately, and not a dot-sourced .ps1. PowerShell runs a
     dot-sourced script's param() block in the CALLER's scope, so a shared script
     that declares -DiscoElysiumDir silently reset its caller's $DiscoElysiumDir
-    to $null the moment it was dot-sourced. That is de-3pw: build.ps1
-    -DiscoElysiumDir <path> built happily against the auto-discovered Steam
-    install instead, and deploy.ps1 / make-release.ps1 lost -Configuration the
-    same way. Import-Module has no such scope leak - a module's contents are
-    never executed in the importer's scope - so keeping every shared name in
-    here makes that whole class of bug impossible rather than merely absent.
+    to $null the moment it was dot-sourced: build.ps1 -DiscoElysiumDir <path>
+    built happily against the auto-discovered Steam install instead, and
+    deploy.ps1 / make-release.ps1 lost -Configuration the same way.
+    Import-Module has no such scope leak - a module's contents are never
+    executed in the importer's scope - so keeping every shared name in here
+    makes that whole class of bug impossible rather than merely absent.
 
     Each root script therefore stays a self-contained entry point: its own
     param() block, this module imported, its own main flow. None of them
@@ -74,8 +74,8 @@ $PluginPayloadExtensions = @(".dll", ".pdb")
 # Read-only reference copies of the game kept in this repo. Builds must never
 # write into them, and deploy refuses to target them unless explicitly forced.
 # "Unaltered" means unaltered since the copy was taken, not unmodded: it carries
-# the same BepInEx tree as the Steam install it was copied from. That is settled
-# and accepted (de-omm.13, decided 2026-08-15); no pristine copy is kept.
+# the same BepInEx tree as the Steam install it was copied from. That is
+# accepted; no pristine copy is kept.
 $ReferenceCopyDirNames = @(
     "Steam Install - Unaltered"
 )
@@ -435,10 +435,10 @@ function Remove-PluginPayload {
     # Remove a previous install's payload files from $DestDir, leaving everything
     # else in the folder untouched, and return how many files were removed.
     #
-    # deploy.ps1 used to delete the whole plugin folder before copying the fresh
-    # build in, which also destroyed articy_ids_final_cut.json - the optional
-    # articy id map a user puts there by hand, next to the plugin's own DLL
-    # (de-bx9). Only the files deploy.ps1 itself wrote are its to delete.
+    # Deleting the whole plugin folder would also destroy
+    # articy_ids_final_cut.json - the optional articy id map a user puts there
+    # by hand, next to the plugin's own DLL. Only the files deploy.ps1 itself
+    # wrote are its to delete.
     #
     # Selecting by the same predicate Copy-PluginPayload copies by, rather than by
     # the new build's file list, means an assembly a previous build produced and

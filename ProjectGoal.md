@@ -37,8 +37,7 @@ locations:
   differs anywhere (GameAssembly.dll is md5-identical to the playable Steam
   copy below), and BepInEx\interop is precisely what the mod builds against,
   so a modded copy is an asset here rather than a liability.
-  There is no pristine/unmodded copy of the game on disk, and none is wanted
-  (decided in beads issue de-omm.13).
+  There is no pristine/unmodded copy of the game on disk, and none is wanted.
   Should be left as-is; nothing in this project writes to it.
 - AssetRipperExport
   The destination of the AssetRipper export of "Steam Install - Unaltered".

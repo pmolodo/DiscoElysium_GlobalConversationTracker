@@ -7,9 +7,7 @@
     those. Keeping them apart also keeps the two tools' failures attributable.
 
     Test framework and versions match every other test project in the repo, so
-    the whole repo still runs on one `dotnet test` with one set of packages. The
-    target framework is the tests' own (net10.0); the tool under test targets
-    net8.0, which a net10.0 test host loads unchanged.
+    the whole repo still runs on one `dotnet test` with one set of packages.
   -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>

@@ -18,7 +18,7 @@ namespace UnifiedStateCheck;
 /// and the unified file never records Untouched either.
 /// </para>
 /// <para>
-/// Save-side shape, confirmed against the de-omm.9 reference decode:
+/// Save-side shape:
 /// <code>
 /// Conversation = { "&lt;convId&gt;": { Title = ..., Dialog = { "&lt;entryId&gt;": { SimStatus = "WasDisplayed" } } } }
 /// </code>
