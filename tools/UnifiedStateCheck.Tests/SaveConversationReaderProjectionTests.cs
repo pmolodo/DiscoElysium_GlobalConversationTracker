@@ -19,8 +19,8 @@ namespace UnifiedStateCheck.Tests;
 /// </para>
 /// <para>
 /// The reader's "no Conversation table" guard has no test: <see
-/// cref="RawDataReader.ReadAllTables"/> always returns all five of
-/// <see cref="RawDataReader.TableNames"/>, so a blob that decodes at all has a
+/// cref="RawDataParser.ReadAllTables"/> always returns all five of
+/// <see cref="RawDataParser.TableNames"/>, so a blob that decodes at all has a
 /// Conversation table. The guard is there for a decoder that stops doing that.
 /// </para>
 /// </remarks>

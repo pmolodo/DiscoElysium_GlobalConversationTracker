@@ -7,6 +7,7 @@ using System.Threading;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using UnifiedConversationTracker.Core;
 using UnifiedConversationTracker.Persistence;
+using UnifiedConversationTracker.Persistence.Interop;
 
 namespace UnifiedConversationTracker.Session
 {
@@ -1181,33 +1182,34 @@ namespace UnifiedConversationTracker.Session
         {
             string byteInfo = bytes.Length == 0 ? "<empty> bytes" : $"{bytes.Length} bytes, first byte: {bytes[0]}";
             _log.Info($"ResyncFromSaveRawBytes callback fired - {byteInfo}");
-            RawDataReader reader = new RawDataReader(bytes.AsSpan());
-            _log.Info($"reader.IsReady()? {reader.IsReady()}");
+            // Aliases the IL2CPP array's elements in place rather than copying them.
+            Span<byte> data = bytes.AsSpan();
+            _log.Info($"raw data ready? {data.Length > 0}");
 
             lock (_gate)
             {
-                if (!CanResync(RawDataReader.Description))
+                if (!CanResync(RawDataParser.Description))
                 {
                     return 0;
                 }
 
-                if (!reader.IsReady())
+                if (data.Length == 0)
                 {
                     _log.Warning(
                         "Not resyncing the unified state: received a null or empty byte string for "
-                        + $"{RawDataReader.Description}");
+                        + $"{RawDataParser.Description}");
                     return 0;
                 }
 
-                List<SimStatusRow> rows = reader.GetSimStatuses();
+                List<SimStatusRow> rows = RawDataParser.GetSimStatuses(data);
 
-                // reader holds a span aliasing the IL2CPP array's elements in place rather than a
-                // copy, and bytes is dead from here on, so without this the wrapper could be
-                // finalized - freeing its GCHandle, and with it the array - mid-read.
+                // data aliases the IL2CPP array in place, and bytes is dead from here on, so
+                // without this the wrapper could be finalized - freeing its GCHandle, and with
+                // it the array - mid-read.
                 GC.KeepAlive(bytes);
 
                 return Resync(
-                    RawDataReader.Description,
+                    RawDataParser.Description,
                     RawBytesDetailLabel,
                     () => rows,
                     () => "TODO: implement raw byte read details");

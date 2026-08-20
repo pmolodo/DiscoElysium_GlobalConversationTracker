@@ -53,7 +53,7 @@ public static class SaveConversationReader
     {
         resolvedPath = ResolveSave(spec, saveDirectory);
         byte[] blob = SaveBlob.Read(resolvedPath);
-        LuaTable allTables = RawDataReader.ReadAllTables(blob, out _);
+        LuaTable allTables = RawDataParser.ReadAllTables(blob, out _);
 
         if (
             !allTables.TryGetValue(ConversationTableName, out object? conversationValue)

@@ -12,11 +12,11 @@ namespace UnifiedConversationTracker.Persistence.Tests;
 /// Round trip and failure tests for the save-blob decoder, over blobs written by
 /// <see cref="LuaBlob"/>.
 /// </summary>
-public class RawDataReaderTests
+public class RawDataParserTests
 {
     /// <summary>The five tables, decoded from a freshly written sample blob.</summary>
     private static LuaTable ReadSample(out int trailingBytes) =>
-        RawDataReader.ReadAllTables(LuaBlob.SerializeSampleSave(), out trailingBytes);
+        RawDataParser.ReadAllTables(LuaBlob.SerializeSampleSave(), out trailingBytes);
 
     /// <summary>Follows a chain of keys into nested tables.</summary>
     private static object? Lookup(LuaTable table, params object[] path)
@@ -43,7 +43,7 @@ public class RawDataReaderTests
     {
         LuaTable expected = LuaBlob.SampleSave();
 
-        LuaTable actual = RawDataReader.ReadAllTables(
+        LuaTable actual = RawDataParser.ReadAllTables(
             LuaBlob.Serialize(expected),
             out int trailingBytes
         );
@@ -58,7 +58,7 @@ public class RawDataReaderTests
         LuaTable tables = ReadSample(out _);
 
         Assert.Equal(
-            RawDataReader.TableNames,
+            RawDataParser.TableNames,
             tables.Entries.Select(entry => entry.Key).Cast<string>().ToArray()
         );
     }
@@ -115,7 +115,7 @@ public class RawDataReaderTests
         byte[] extra = Encoding.UTF8.GetBytes("return { extra = true }");
         byte[] blob = LuaBlob.SerializeSampleSave().Concat(extra).ToArray();
 
-        RawDataReader.ReadAllTables(blob, out int trailingBytes);
+        RawDataParser.ReadAllTables(blob, out int trailingBytes);
 
         Assert.Equal(extra.Length, trailingBytes);
     }
@@ -126,7 +126,7 @@ public class RawDataReaderTests
         byte[] blob = LuaBlob.SerializeSampleSave();
 
         Assert.Throws<EndOfStreamException>(
-            () => RawDataReader.ReadAllTables(blob[..(blob.Length / 2)], out _)
+            () => RawDataParser.ReadAllTables(blob[..(blob.Length / 2)], out _)
         );
     }
 
@@ -134,7 +134,7 @@ public class RawDataReaderTests
     public void ReadAllTables_EmptyBlobThrowsEndOfStream()
     {
         Assert.Throws<EndOfStreamException>(
-            () => RawDataReader.ReadAllTables(Array.Empty<byte>(), out _)
+            () => RawDataParser.ReadAllTables(Array.Empty<byte>(), out _)
         );
     }
 
@@ -145,7 +145,7 @@ public class RawDataReaderTests
         byte[] blob = { (byte)'T', 0, 0, 0, 0, 1, 0, 0, 0, (byte)'Q' };
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(
-            () => RawDataReader.ReadAllTables(blob, out _)
+            () => RawDataParser.ReadAllTables(blob, out _)
         );
 
         Assert.Contains("'Q'", error.Message, StringComparison.Ordinal);
@@ -158,7 +158,7 @@ public class RawDataReaderTests
         // file. It has to fail as bad input, not as an unhandled crash.
         byte[] blob = Encoding.UTF8.GetBytes(new string('x', 512));
 
-        Exception? error = Record.Exception(() => RawDataReader.ReadAllTables(blob, out _));
+        Exception? error = Record.Exception(() => RawDataParser.ReadAllTables(blob, out _));
 
         Assert.True(
             error is InvalidDataException or EndOfStreamException or DecoderFallbackException,
@@ -202,80 +202,135 @@ public class RawDataReaderTests
         );
     }
 
-    [Fact]
-    public void SkipTable_LeavesTheReaderWhereReadTableWould()
+    /// <summary>
+    /// A visitor that decodes nothing at all. Every callback on
+    /// <see cref="IRawDataVisitor"/> has a do-nothing default, so this is what a
+    /// visitor stepping over a table it does not care about reduces to.
+    /// </summary>
+    private sealed class NoOpVisitor : IRawDataVisitor { }
+
+    /// <summary>Walks a blob with the given visitor and returns what it did not consume.</summary>
+    private static int Walk(byte[] blob, IRawDataVisitor visitor)
     {
-        byte[] blob = LuaBlob.SerializeSampleSave();
-
-        var reading = new RawDataReader(blob);
-        var skipping = new RawDataReader(blob);
-        foreach (string unused in RawDataReader.TableNames)
-        {
-            reading.ReadTable(consumeMarker: true);
-            skipping.SkipTable(consumeMarker: true);
-        }
-
-        Assert.Equal(0, reading.Remaining);
-        Assert.Equal(reading.Remaining, skipping.Remaining);
+        var parser = new RawDataParser(blob, visitor);
+        parser.Parse();
+        return parser.Remaining;
     }
 
     [Fact]
-    public void SkipTable_DoesNotDisturbTheTableReadAfterIt()
+    public void AVisitorThatReadsNothingLandsWhereTheDecodingOneDoes()
     {
+        // The parser owns the cursor, so what a visitor decodes cannot move it: a
+        // value's length is knowable only from its own encoding either way.
         byte[] blob = LuaBlob.SerializeSampleSave();
 
-        var reader = new RawDataReader(blob);
-        for (int i = 0; i < RawDataReader.TableNames.Length - 1; i++)
-        {
-            reader.SkipTable(consumeMarker: true);
-        }
-        LuaTable afterSkips = reader.ReadTable(consumeMarker: true);
+        int afterDecoding = Walk(blob, new LuaTableVisitor());
+        int afterReadingNothing = Walk(blob, new NoOpVisitor());
 
-        object? readWholly = Lookup(ReadSample(out _), LuaBlob.ConversationTableName);
-        Assert.Equal(ToJson(readWholly), ToJson(afterSkips));
+        Assert.Equal(0, afterDecoding);
+        Assert.Equal(afterDecoding, afterReadingNothing);
     }
 
     [Fact]
-    public void SkipTable_StillRejectsAnUnknownTypeCode()
+    public void AVisitorThatReadsNothingStillRejectsAnUnknownTypeCode()
     {
-        // The same blob ReadAllTables rejects: skipping gives up building the table,
+        // The same blob ReadAllTables rejects: a visitor gives up decoding the table,
         // not checking that what it steps over is the format it claims to be.
         byte[] blob = { (byte)'T', 0, 0, 0, 0, 1, 0, 0, 0, (byte)'Q' };
 
-        InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
-        {
-            var reader = new RawDataReader(blob);
-            reader.SkipTable(consumeMarker: true);
-        });
+        InvalidDataException error = Assert.Throws<InvalidDataException>(
+            () => Walk(blob, new NoOpVisitor())
+        );
 
         Assert.Contains("'Q'", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void SkipTable_StillRejectsANilKey()
+    public void AVisitorThatReadsNothingStillRejectsANilKey()
     {
         // No list part, one hash entry, and both its key and its value are nil.
         byte[] blob = { (byte)'T', 0, 0, 0, 0, 1, 0, 0, 0, (byte)'X', (byte)'X' };
 
-        InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
-        {
-            var reader = new RawDataReader(blob);
-            reader.SkipTable(consumeMarker: true);
-        });
+        InvalidDataException error = Assert.Throws<InvalidDataException>(
+            () => Walk(blob, new NoOpVisitor())
+        );
 
         Assert.Contains("nil table key", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void GetSimStatuses_ReadsTheConversationTableOverSkippedOnes()
+    public void GetSimStatuses_ReadsTheConversationTableOverTheOthers()
     {
-        var reader = new RawDataReader(SerializeSampleSaveWith(IntKeyedConversations()));
-
-        List<SimStatusRow> rows = reader.GetSimStatuses();
+        List<SimStatusRow> rows = RawDataParser.GetSimStatuses(
+            SerializeSampleSaveWith(IntKeyedConversations())
+        );
 
         Assert.Equal(
-            new[] { (7, 10, "WasDisplayed"), (7, 11, "WasOffered") },
+            new (int, int, string?)[] { (7, 10, "WasDisplayed"), (7, 11, "WasOffered") },
             rows.Select(row => (row.ConversationId, row.DialogueEntryId, row.StatusName))
         );
+    }
+
+    [Fact]
+    public void GetSimStatuses_RejectsAConversationWithNoDialogTable()
+    {
+        LuaTable conversations = LuaBlob.Table((7, LuaBlob.Table(("Title", "Kim Kitsuragi"))));
+
+        InvalidDataException error = Assert.Throws<InvalidDataException>(
+            () => RawDataParser.GetSimStatuses(SerializeSampleSaveWith(conversations))
+        );
+
+        Assert.Contains("'Dialog'", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GetSimStatuses_RejectsADialogueEntryWithNoSimStatus()
+    {
+        LuaTable conversations = LuaBlob.Table(
+            (7, LuaBlob.Table(("Dialog", LuaBlob.Table((10, LuaBlob.Table(("Title", "x")))))))
+        );
+
+        InvalidDataException error = Assert.Throws<InvalidDataException>(
+            () => RawDataParser.GetSimStatuses(SerializeSampleSaveWith(conversations))
+        );
+
+        Assert.Contains("'SimStatus'", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GetSimStatuses_RejectsANonIntConversationId()
+    {
+        LuaTable conversations = LuaBlob.Table(
+            ("seven", LuaBlob.Table(("Dialog", LuaBlob.Table())))
+        );
+
+        InvalidDataException error = Assert.Throws<InvalidDataException>(
+            () => RawDataParser.GetSimStatuses(SerializeSampleSaveWith(conversations))
+        );
+
+        Assert.Contains("conversation ID", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GetSimStatuses_IgnoresConversationFieldsOtherThanDialog()
+    {
+        // Title sits beside Dialog, and its own nested tables must not be mistaken
+        // for dialogue entries.
+        LuaTable conversations = LuaBlob.Table(
+            (
+                7,
+                LuaBlob.Table(
+                    ("Fields", LuaBlob.Table((1, LuaBlob.Table(("SimStatus", "NotAnEntry"))))),
+                    ("Dialog", LuaBlob.Table((10, LuaBlob.Table(("SimStatus", "WasOffered")))))
+                )
+            )
+        );
+
+        List<SimStatusRow> rows = RawDataParser.GetSimStatuses(
+            SerializeSampleSaveWith(conversations)
+        );
+
+        Assert.Equal(new (int, int, string?)[] { (7, 10, "WasOffered") },
+            rows.Select(row => (row.ConversationId, row.DialogueEntryId, row.StatusName)));
     }
 }

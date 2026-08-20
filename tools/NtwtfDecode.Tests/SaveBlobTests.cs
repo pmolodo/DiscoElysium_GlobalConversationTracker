@@ -144,7 +144,7 @@ public class SaveBlobTests
 
         Assert.Equal(truncated, SaveBlob.Read(path));
         Assert.Throws<EndOfStreamException>(
-            () => RawDataReader.ReadAllTables(SaveBlob.Read(path), out _)
+            () => RawDataParser.ReadAllTables(SaveBlob.Read(path), out _)
         );
     }
 

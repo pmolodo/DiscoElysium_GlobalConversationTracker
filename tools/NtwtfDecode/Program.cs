@@ -113,7 +113,7 @@ int Run(string[] argv)
     {
         throw new ArgumentException(
             $"Unknown table '{table}'; expected one of "
-                + $"{string.Join(", ", RawDataReader.TableNames)}, {AllTables}"
+                + $"{string.Join(", ", RawDataParser.TableNames)}, {AllTables}"
         );
     }
 
@@ -152,7 +152,7 @@ static LuaTable ReadTables(byte[] blob, string input, out int trailing)
 {
     try
     {
-        return RawDataReader.ReadAllTables(blob, out trailing);
+        return RawDataParser.ReadAllTables(blob, out trailing);
     }
     catch (Exception ex)
         when (ex is InvalidDataException or EndOfStreamException or DecoderFallbackException)

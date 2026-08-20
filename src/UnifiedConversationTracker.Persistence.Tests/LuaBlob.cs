@@ -6,7 +6,7 @@ using System.Text;
 namespace UnifiedConversationTracker.Persistence.Tests;
 
 /// <summary>
-/// Writes the binary "raw data" blob that <see cref="RawDataReader"/> reads, so
+/// Writes the binary "raw data" blob that <see cref="RawDataParser"/> reads, so
 /// the tests can synthesise save data instead of needing a real save.
 /// </summary>
 /// <remarks>
@@ -14,7 +14,7 @@ namespace UnifiedConversationTracker.Persistence.Tests;
 /// PixelCrushers side that produces the format: the type markers, the
 /// little-endian Int32/Double, and the 7-bit length prefix on strings all come
 /// from BinaryWriter rather than from this test's idea of the layout, so a
-/// round trip actually pins <see cref="RawDataReader"/> to BinaryReader
+/// round trip actually pins <see cref="RawDataParser"/> to BinaryReader
 /// semantics.
 /// </remarks>
 internal static class LuaBlob
@@ -93,14 +93,14 @@ internal static class LuaBlob
 
     /// <summary>
     /// Serialises the five top-level tables, keyed by name, in the order
-    /// <see cref="RawDataReader.TableNames"/> gives.
+    /// <see cref="RawDataParser.TableNames"/> gives.
     /// </summary>
     public static byte[] Serialize(LuaTable tablesByName)
     {
         using var buffer = new MemoryStream();
         using (var writer = new BinaryWriter(buffer, new UTF8Encoding(false), leaveOpen: true))
         {
-            foreach (string name in RawDataReader.TableNames)
+            foreach (string name in RawDataParser.TableNames)
             {
                 if (
                     !tablesByName.TryGetValue(name, out object? value)
@@ -129,7 +129,7 @@ internal static class LuaBlob
     public static byte[] SerializeConversations(LuaTable conversations)
     {
         var tablesByName = new LuaTable();
-        foreach (string name in RawDataReader.TableNames)
+        foreach (string name in RawDataParser.TableNames)
         {
             tablesByName.Add(
                 name,
