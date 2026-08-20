@@ -11,8 +11,16 @@ SaveGames directory (`unified-conversation-state.json`):
   without going through `MarkDialogueEntry`. The patch is a prefix that reads the raw save
   bytes the game is about to apply and resyncs the unified state from them.
 
-The two hooks are installed independently, so one failing to patch costs only what that hook
-covered. Nothing is ever read back into the game: the unified state is write-only. The state
+It also patches the character sheet so the tracked total is visible in game:
+
+- `CharacterSheetInfoPanel.ShowCharsheetInfo` and `CharacterSheetInfoPanel.ShowModifiable` -
+  the two redraws of the sheet's info panel, one for when nothing is selected and one for
+  when a skill or attribute is. Both postfixes append a line to the panel's bonus text giving
+  the number of dialogue entries reached across all saves.
+
+Each hook is installed independently, so one failing to patch costs only what that hook
+covered. Nothing is ever fed back into the game's own state: the unified state is read only to
+display the character sheet line, never to change what the game records. The state
 file is read from disk once per session, on the first mark or savegame load, and rewritten
 whenever a mark raises a status. A status can only ever go up, so nothing the game does -
 including resetting a save to Untouched - can lose recorded history.
@@ -93,12 +101,15 @@ Steps:
    [Message:UnifiedConversationTracker] Unified state file: ...\SaveGames\unified-conversation-state.json
    [Message:UnifiedConversationTracker] Hooked DialogueLua.MarkDialogueEntry; dialogue statuses are being tracked.
    [Message:UnifiedConversationTracker] Hooked PersistentDataManager.ApplyRawData; the unified state is resynced whenever a savegame is loaded (using raw file bytes).
+   [Message:UnifiedConversationTracker] Hooked CharacterSheetInfoPanel.ShowCharsheetInfo and .ShowModifiable; the character sheet shows how many dialogue entries have been reached across all saves.
    [Message:UnifiedConversationTracker] Shutdown flush registered on Application.quitting and AppDomain.ProcessExit. ...
    ```
 
-   The `v0.1.0 loaded` line proves the plugin's entry point ran; the two `Hooked` lines prove
+   The `v0.1.0 loaded` line proves the plugin's entry point ran; the `Hooked` lines prove
    the hooks are on. A hook that could not be installed logs `Failed to hook <method>` instead,
-   and the other one carries on without it. With HarmonyX logging enabled there is also an
+   and the others carry on without it. The character sheet line itself shows up in the info
+   panel's bonus text block on the Charsheet screen, both with nothing selected and with a
+   skill selected. With HarmonyX logging enabled there is also an
    `[Info :HarmonyX] Patching ...` line per patched method. Nothing touches the state file
    until the first line of dialogue is marked, or a savegame is loaded, whichever comes first:
    that is when the file is read and the first write happens.

@@ -64,6 +64,8 @@
     <Reference Include="Il2CppSystem.Core" HintPath="$(BepInExInteropDir)Il2CppSystem.Core.dll" Private="false" />
     <Reference Include="UnityEngine" HintPath="$(BepInExInteropDir)UnityEngine.dll" Private="false" />
     <Reference Include="UnityEngine.CoreModule" HintPath="$(BepInExInteropDir)UnityEngine.CoreModule.dll" Private="false" />
+    <!-- TextMeshProUGUI, the type of the character sheet text fields the mod writes to. -->
+    <Reference Include="Unity.TextMeshPro" HintPath="$(BepInExInteropDir)Unity.TextMeshPro.dll" Private="false" />
   </ItemGroup>
 
 </Project>

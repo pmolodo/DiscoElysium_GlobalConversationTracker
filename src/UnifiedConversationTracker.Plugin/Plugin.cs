@@ -16,17 +16,22 @@ namespace UnifiedConversationTracker
     /// <remarks>
     /// <para><b>What Load does, and deliberately does not do.</b> It resolves the
     /// SaveGames directory, builds the <see cref="UnifiedStateSession"/>
-    /// and installs the two hooks. It does not read
+    /// and installs the hooks. It does not read
     /// the state file and it does not read the game. Both of those happen on first
     /// access, through <see cref="UnifiedStateSession.EnsureInitialized"/>, which
-    /// either hook calls on its way in.
+    /// every hook calls on its way in.
     /// </para>
-    /// <para><b>Two hooks, because there are two SimStatus writers.</b>
+    /// <para><b>Two tracking hooks, because there are two SimStatus writers.</b>
     /// <see cref="MarkDialogueEntryPatch"/> is the write-through hook for everything
     /// the game does while playing. <see cref="ApplyRawDataPatch"/> covers the one
     /// writer that never goes through it: <c>PersistentDataManager</c> rebuilding the
     /// whole Lua SimStatus table when a savegame is loaded. Between them they see
     /// every write; nothing else in the game writes SimStatus.
+    /// </para>
+    /// <para><b>One display hook.</b> <see cref="CharsheetDialogueCountPatch"/> reads
+    /// the tracked total back out onto the character sheet. It writes to the game's
+    /// UI and to nothing else, so it is independent of the two above and is installed
+    /// separately.
     /// </para>
     /// <para>
     /// Deferring the disk and game reads to first access is not tidiness, it is
@@ -96,7 +101,13 @@ namespace UnifiedConversationTracker
                 "Statuses restored by loading a savegame will be missed this session",
                 () => ApplyRawDataPatch.Install(harmony, session, log));
 
-            if (!recording && !resyncing)
+            bool showingCount = TryInstall(
+                "CharacterSheetInfoPanel.ShowCharsheetInfo and .ShowModifiable",
+                "the character sheet shows how many dialogue entries have been reached across all saves",
+                "The character sheet will not show the across-all-saves dialogue count this session",
+                () => CharsheetDialogueCountPatch.Install(harmony, session, log));
+
+            if (!recording && !resyncing && !showingCount)
             {
                 _harmony = null;
             }
