@@ -348,7 +348,7 @@ namespace UnifiedConversationTracker.Tests
         }
 
         // -------------------------------------------------------------------
-        // Read-only projections (what de-omm.6 serializes)
+        // Read-only projections (what the serializer reads)
         // -------------------------------------------------------------------
 
         [Fact]
@@ -409,7 +409,7 @@ namespace UnifiedConversationTracker.Tests
         }
 
         // -------------------------------------------------------------------
-        // Snapshot (what the background writer serializes, de-0m0.5)
+        // Snapshot (what the background writer serializes)
         // -------------------------------------------------------------------
 
         [Fact]

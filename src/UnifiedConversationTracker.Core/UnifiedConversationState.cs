@@ -33,10 +33,9 @@ namespace UnifiedConversationTracker
     /// </para>
     /// <para>
     /// Not thread safe, and it does not synchronize itself. Marks arrive from the
-    /// Unity main thread, and since de-omm.22 a background writer reads the state too -
-    /// but since de-0m0.5 it reads it only long enough to take a
-    /// <see cref="Snapshot"/> and then works on that, so the window the two have to be
-    /// kept apart for is a copy rather than a whole serialize.
+    /// Unity main thread, and a background writer reads the state too - but only long
+    /// enough to take a <see cref="Snapshot"/> and then work on that, so the window
+    /// the two have to be kept apart for is a copy rather than a whole serialize.
     /// <c>UnifiedStateSession</c> owns the lock that keeps them apart, and is the only
     /// thing that should be reaching this object once a session exists.
     /// </para>
@@ -341,14 +340,11 @@ namespace UnifiedConversationTracker
         /// changed by anything done to the other.
         /// </summary>
         /// <remarks>
-        /// <para>This exists so the background writer can stop serializing the live
-        /// state (de-0m0.5). Serializing reads every entry, so it has to be kept apart
-        /// from the merges arriving on the Unity main thread, and the cheapest way to do
-        /// that was to hold the session lock for the whole serialize - which meant a mark
-        /// landing mid-serialize waited for it. Copying first moves that wait onto the
-        /// copy, which the benchmark measures at 24-25x cheaper than the serialize at
-        /// every size it sweeps: 0.008 ms against 0.21 ms at a realistic 1,473 entries,
-        /// 0.9 ms against 22 ms at the 112,940-entry ceiling.</para>
+        /// <para>This exists so the background writer never serializes the live state.
+        /// Serializing reads every entry, so it has to be kept apart from the merges
+        /// arriving on the Unity main thread; copying under the session lock and
+        /// serializing the copy holds that lock only for the copy, which the benchmark
+        /// measures at 24-25x cheaper than the serialize at every size it sweeps.</para>
         /// <para>The copy is deep in the only sense that matters here: the outer
         /// dictionary and every inner one are new, and <see cref="SimStatus"/> is an enum,
         /// so there is nothing left that could still be shared. The result is an ordinary

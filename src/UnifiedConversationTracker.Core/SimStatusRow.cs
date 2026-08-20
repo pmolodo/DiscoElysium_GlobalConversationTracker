@@ -8,7 +8,8 @@ namespace UnifiedConversationTracker.Core
     /// The status is carried as the raw string rather than a <see cref="SimStatus"/>
     /// on purpose. The game's value is a Lua string, and an unrecognized one has to
     /// be skippable and countable exactly the way the file loader skips a damaged
-    /// row, instead of throwing part way through a walk and losing the rest.
+    /// row, instead of throwing part way through a parse and losing every row
+    /// after it.
     /// </remarks>
     public readonly struct SimStatusRow
     {
