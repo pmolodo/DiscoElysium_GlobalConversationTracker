@@ -1,9 +1,13 @@
 using System;
 using System.Globalization;
+using System.IO;
+using System.Reflection;
 using HarmonyLib;
+using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using TMPro;
 using UnifiedConversationTracker.Session;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace UnifiedConversationTracker
 {
@@ -51,6 +55,17 @@ namespace UnifiedConversationTracker
     /// through every dialogue, cutscene and menu that fades the rest of the HUD out.
     /// A child of the money display inherits its group, so the count fades exactly
     /// when the number beside it does.</para>
+    ///
+    /// <para><b>Why the speech bubble is a texture and not a character.</b> Because
+    /// there is no character to use. Every font asset the game ships is a static SDF
+    /// atlas with no source font behind it, so nothing can be added at runtime, and
+    /// the highest codepoint in any of them is U+FF70 - emoji start at U+1F300. The
+    /// project's TMP sprite asset, which is what would otherwise stand in, is
+    /// TextMesh Pro's own EmojiOne sample: fourteen smileys and no bubble. With
+    /// <c>m_missingGlyphCharacter: 0</c> and warnings off in TMP Settings, an emoji
+    /// character would therefore draw as nothing at all and say nothing about it. So
+    /// the icon is a flat white PNG embedded in the plugin, drawn through an
+    /// <see cref="Image"/> and tinted to the count's own colour.</para>
     ///
     /// <para><b>Read-only, and cheap.</b> The number is
     /// <see cref="UnifiedConversationState.EntryCount"/>, already the count of entries
@@ -104,6 +119,25 @@ namespace UnifiedConversationTracker
         /// </summary>
         private const float FallbackRectHeight = 48f;
 
+        /// <summary>
+        /// The file the speech-bubble icon is embedded in the plugin under. Matched by
+        /// suffix at runtime, so the manifest prefix MSBuild chooses does not matter.
+        /// </summary>
+        private const string IconResourceFileName = "dialogue-count-icon.png";
+
+        /// <summary>The name given to the object the icon is drawn on.</summary>
+        private const string IconObjectName = "UnifiedConversationTracker Dialogue Icon";
+
+        /// <summary>
+        /// How tall the icon's box is as a multiple of the count's font size. The
+        /// bubble fills about five-sixths of that box, which puts it a little taller
+        /// than the digits beside it - the same proportion an emoji would have.
+        /// </summary>
+        private const float IconHeightInFontSizes = 1f;
+
+        /// <summary>The gap between the icon and the first digit, in canvas units.</summary>
+        private const float IconGap = 6f;
+
         private static UnifiedStateSession? _session;
         private static HookFailureLimiter? _failures;
         private static IUnifiedStateLog? _log;
@@ -111,6 +145,8 @@ namespace UnifiedConversationTracker
         private static float _offsetY;
 
         private static TextMeshProUGUI? _display;
+        private static RectTransform? _icon;
+        private static Sprite? _iconSprite;
         private static int _displayedCount = -1;
 
         /// <summary>
@@ -268,6 +304,7 @@ namespace UnifiedConversationTracker
 
                 TextMeshProUGUI display = Build(panel, moneyRect, donor);
                 _display = display;
+                _icon = BuildIcon(display, log);
                 _displayedCount = -1;
                 Write(display, session.EnsureInitialized().EntryCount);
 
@@ -363,6 +400,121 @@ namespace UnifiedConversationTracker
             return display;
         }
 
+        /// <summary>
+        /// Creates the speech-bubble icon just left of the count, or returns null and
+        /// says why if the icon cannot be had. The count works without it.
+        /// </summary>
+        /// <remarks>
+        /// It is a child of the count's own text object so that the two share a right
+        /// edge: the digits are right aligned against it, so pushing the icon left by
+        /// the text's own width always lands it against the leftmost digit, whatever
+        /// the number is. <see cref="PositionIcon"/> is what redoes that when the
+        /// count grows a digit.
+        /// </remarks>
+        private static RectTransform? BuildIcon(TextMeshProUGUI display, IUnifiedStateLog log)
+        {
+            Sprite? sprite = LoadIconSprite(log);
+            if (sprite is null)
+            {
+                return null;
+            }
+
+            var carrier = new GameObject(IconObjectName);
+            carrier.layer = display.gameObject.layer;
+            carrier.transform.SetParent(display.rectTransform, false);
+
+            Image image = carrier.AddComponent<Image>();
+            image.sprite = sprite;
+
+            // The icon ships as flat white, so the tint is what makes it the HUD's
+            // colour, and keeps it the same colour as the digits if that ever changes.
+            image.color = display.color;
+            image.raycastTarget = false;
+            image.preserveAspect = true;
+
+            float height = display.fontSize * IconHeightInFontSizes;
+            RectTransform rect = image.rectTransform;
+            rect.anchorMin = new Vector2(1f, 0.5f);
+            rect.anchorMax = new Vector2(1f, 0.5f);
+            rect.pivot = new Vector2(1f, 0.5f);
+            rect.sizeDelta = new Vector2(height * (sprite.rect.width / sprite.rect.height), height);
+            return rect;
+        }
+
+        /// <summary>
+        /// Decodes the embedded icon once per session. Returns null, having said so,
+        /// if it cannot be read or decoded.
+        /// </summary>
+        private static Sprite? LoadIconSprite(IUnifiedStateLog log)
+        {
+            if (_iconSprite is not null)
+            {
+                return _iconSprite;
+            }
+
+            Assembly assembly = typeof(MainHudDialogueCountPatch).Assembly;
+            string? resource = null;
+            foreach (string candidate in assembly.GetManifestResourceNames())
+            {
+                if (candidate.EndsWith(IconResourceFileName, StringComparison.Ordinal))
+                {
+                    resource = candidate;
+                    break;
+                }
+            }
+
+            if (resource is null)
+            {
+                log.Warning(
+                    $"The plugin has no embedded {IconResourceFileName}, so the HUD dialogue count is "
+                    + "shown without its icon.");
+                return null;
+            }
+
+            byte[] png;
+            using (Stream? stream = assembly.GetManifestResourceStream(resource))
+            {
+                if (stream is null)
+                {
+                    log.Warning(
+                        $"The embedded {resource} could not be opened, so the HUD dialogue count is "
+                        + "shown without its icon.");
+                    return null;
+                }
+
+                using var buffer = new MemoryStream();
+                stream.CopyTo(buffer);
+                png = buffer.ToArray();
+            }
+
+            // Hidden and not saved: this texture belongs to the mod, and nothing in the
+            // game should be able to collect it out from under the sprite or write it
+            // into a scene.
+            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false)
+            {
+                name = IconObjectName,
+                hideFlags = HideFlags.HideAndDontSave,
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear,
+            };
+
+            if (!ImageConversion.LoadImage(texture, new Il2CppStructArray<byte>(png)))
+            {
+                log.Warning(
+                    $"The embedded {resource} is not a texture Unity could decode, so the HUD dialogue "
+                    + "count is shown without its icon.");
+                return null;
+            }
+
+            Sprite sprite = Sprite.Create(
+                texture,
+                new Rect(0f, 0f, texture.width, texture.height),
+                new Vector2(0.5f, 0.5f));
+            sprite.hideFlags = HideFlags.HideAndDontSave;
+            _iconSprite = sprite;
+            return sprite;
+        }
+
         /// <summary>Writes the count, if it is not already what is on screen.</summary>
         private static void Write(TextMeshProUGUI display, int count)
         {
@@ -373,6 +525,24 @@ namespace UnifiedConversationTracker
 
             display.text = count.ToString(CountFormat, CultureInfo.InvariantCulture);
             _displayedCount = count;
+            PositionIcon(display);
+        }
+
+        /// <summary>
+        /// Puts the icon against the leftmost digit. Called after every write, because
+        /// the number it is measured from is what just changed.
+        /// </summary>
+        private static void PositionIcon(TextMeshProUGUI display)
+        {
+            RectTransform? icon = _icon;
+            if (icon is null)
+            {
+                return;
+            }
+
+            // preferredWidth is the width of the digits themselves, not of the rect
+            // they are right aligned in, which is deliberately much wider.
+            icon.anchoredPosition = new Vector2(-(display.preferredWidth + IconGap), 0f);
         }
     }
 }

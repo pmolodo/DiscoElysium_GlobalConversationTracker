@@ -68,6 +68,19 @@
     <Reference Include="Unity.TextMeshPro" HintPath="$(BepInExInteropDir)Unity.TextMeshPro.dll" Private="false" />
     <!-- Graphic, TextMeshProUGUI's base: colour and raycastTarget are declared there. -->
     <Reference Include="UnityEngine.UI" HintPath="$(BepInExInteropDir)UnityEngine.UI.dll" Private="false" />
+    <!-- ImageConversion.LoadImage, which decodes the embedded icon into a texture. -->
+    <Reference Include="UnityEngine.ImageConversionModule" HintPath="$(BepInExInteropDir)UnityEngine.ImageConversionModule.dll" Private="false" />
+  </ItemGroup>
+
+  <!--
+    The dialogue count's speech-bubble icon. None of the game's fonts carry a glyph
+    above U+FF70 and its TMP sprite asset is TextMesh Pro's 14-smiley EmojiOne sample,
+    so an emoji character would draw as nothing; the icon ships as a texture instead.
+    Embedded rather than deployed beside the DLL so there is one file to install and
+    nothing to lose. Resources\make-dialogue-count-icon.py is what drew it.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\dialogue-count-icon.png" />
   </ItemGroup>
 
 </Project>
