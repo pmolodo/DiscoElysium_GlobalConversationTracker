@@ -24,8 +24,8 @@ playthrough:
   in the plugin's config file nudge it from there.
 
 A speech-bubble icon sits to the left of the number. It is a white PNG embedded in the
-plugin (`Resources\dialogue-count-icon.png`, drawn by the script beside it), tinted to the
-count's colour at runtime, and not a character: every font asset the game ships is a static
+plugin (`Resources\dialogue-count-icon.png`), tinted to the count's colour at runtime, and
+not a character: every font asset the game ships is a static
 atlas whose highest codepoint is U+FF70, emoji start at U+1F300, and the project's TMP sprite
 asset is TextMesh Pro's fourteen-smiley EmojiOne sample. An emoji character would draw as
 nothing. If the icon cannot be decoded the count is shown without it.

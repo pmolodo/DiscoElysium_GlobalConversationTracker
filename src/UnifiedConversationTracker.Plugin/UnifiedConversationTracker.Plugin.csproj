@@ -77,7 +77,7 @@
     above U+FF70 and its TMP sprite asset is TextMesh Pro's 14-smiley EmojiOne sample,
     so an emoji character would draw as nothing; the icon ships as a texture instead.
     Embedded rather than deployed beside the DLL so there is one file to install and
-    nothing to lose. Resources\make-dialogue-count-icon.py is what drew it.
+    nothing to lose.
   -->
   <ItemGroup>
     <EmbeddedResource Include="Resources\dialogue-count-icon.png" />
