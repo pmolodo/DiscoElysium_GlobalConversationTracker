@@ -27,10 +27,12 @@ namespace UnifiedConversationTracker
     /// point of the design: the unified state is write-only.</para>
     ///
     /// <para><b>Nothing escapes into game code.</b> Everything the postfix does is
-    /// inside a catch-all. A mod that corrupts a playthrough is worse than a mod that
-    /// stops tracking, so a failure here costs tracking and nothing else. Repeated
-    /// failures stop being logged, and then stop being attempted, rather than
-    /// producing one log line per line of dialogue for the rest of the session.</para>
+    /// inside a catch-all - the recording under this hook's own, and the HUD refresh
+    /// that follows under the display hook's. A mod that corrupts a playthrough is
+    /// worse than a mod that stops tracking, so a failure here costs tracking and
+    /// nothing else. Repeated failures stop being logged, and then stop being
+    /// attempted, rather than producing one log line per line of dialogue for the rest
+    /// of the session.</para>
     /// </remarks>
     [HarmonyPatch(typeof(DialogueLua), nameof(DialogueLua.MarkDialogueEntry))]
     internal static class MarkDialogueEntryPatch
@@ -87,12 +89,22 @@ namespace UnifiedConversationTracker
                     return;
                 }
 
-                session.Record(dialogueEntry.conversationID, dialogueEntry.id, status);
+                if (!session.Record(dialogueEntry.conversationID, dialogueEntry.id, status))
+                {
+                    return;
+                }
             }
             catch (Exception ex)
             {
                 failures.Report(ex);
+                return;
             }
+
+            // Outside the catch on purpose: the display has its own failure budget,
+            // and a HUD that cannot draw itself must not be able to spend the one
+            // that keeps tracking alive. This call reports its own failures and
+            // never throws.
+            MainHudDialogueCountPatch.RefreshDisplayedCount();
         }
     }
 }

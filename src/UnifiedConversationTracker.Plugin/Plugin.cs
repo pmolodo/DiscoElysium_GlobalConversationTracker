@@ -28,10 +28,12 @@ namespace UnifiedConversationTracker
     /// whole Lua SimStatus table when a savegame is loaded. Between them they see
     /// every write; nothing else in the game writes SimStatus.
     /// </para>
-    /// <para><b>One display hook.</b> <see cref="CharsheetDialogueCountPatch"/> reads
-    /// the tracked total back out onto the character sheet. It writes to the game's
-    /// UI and to nothing else, so it is independent of the two above and is installed
-    /// separately.
+    /// <para><b>One display hook.</b> <see cref="MainHudDialogueCountPatch"/> reads
+    /// the tracked total back out onto the main HUD, beside the money and the clock.
+    /// It writes to the game's UI and to nothing else, so it is independent of the two
+    /// above and is installed separately. The two tracking hooks tell it when the
+    /// count has moved, which is the only coupling between them: nothing polls, and a
+    /// display that never installed is a no-op to call.
     /// </para>
     /// <para>
     /// Deferring the disk and game reads to first access is not tidiness, it is
@@ -86,6 +88,24 @@ namespace UnifiedConversationTracker
             var session = new UnifiedStateSession(store, log);
             _session = session;
 
+            // The HUD count's placement is computed from the game's own rects, so
+            // these are a nudge and not a coordinate: the display lands beside the
+            // money whatever the screen's aspect ratio, and these move it from there.
+            // They are config rather than constants because the one thing that cannot
+            // be checked from the dumps is how it looks.
+            var hudCountOffsetX = Config.Bind(
+                "Display",
+                "HudCountOffsetX",
+                MainHudDialogueCountPatch.DefaultOffsetX,
+                "How far left of the HUD's money/time panel the dialogue count sits, in canvas units. "
+                + "Negative is left, towards the thought cabinet button.");
+            var hudCountOffsetY = Config.Bind(
+                "Display",
+                "HudCountOffsetY",
+                MainHudDialogueCountPatch.DefaultOffsetY,
+                "How far above the money display's own line the dialogue count sits, in canvas units. "
+                + "Negative is down. Zero puts the two numbers on one line.");
+
             var harmony = new Harmony(PluginGuid);
             _harmony = harmony;
 
@@ -102,10 +122,11 @@ namespace UnifiedConversationTracker
                 () => ApplyRawDataPatch.Install(harmony, session, log));
 
             bool showingCount = TryInstall(
-                "CharacterSheetInfoPanel.ShowCharsheetInfo and .ShowModifiable",
-                "the character sheet shows how many dialogue entries have been reached across all saves",
-                "The character sheet will not show the across-all-saves dialogue count this session",
-                () => CharsheetDialogueCountPatch.Install(harmony, session, log));
+                "HudMoneyController.Start",
+                "the main HUD shows how many dialogue entries have been reached across all saves",
+                "The main HUD will not show the across-all-saves dialogue count this session",
+                () => MainHudDialogueCountPatch.Install(
+                    harmony, session, log, hudCountOffsetX.Value, hudCountOffsetY.Value));
 
             if (!recording && !resyncing && !showingCount)
             {

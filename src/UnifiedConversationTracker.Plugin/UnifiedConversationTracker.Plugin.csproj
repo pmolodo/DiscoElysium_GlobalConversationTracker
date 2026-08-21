@@ -64,8 +64,10 @@
     <Reference Include="Il2CppSystem.Core" HintPath="$(BepInExInteropDir)Il2CppSystem.Core.dll" Private="false" />
     <Reference Include="UnityEngine" HintPath="$(BepInExInteropDir)UnityEngine.dll" Private="false" />
     <Reference Include="UnityEngine.CoreModule" HintPath="$(BepInExInteropDir)UnityEngine.CoreModule.dll" Private="false" />
-    <!-- TextMeshProUGUI, the type of the character sheet text fields the mod writes to. -->
+    <!-- TextMeshProUGUI, the type of the HUD text the mod adds and of the one it copies. -->
     <Reference Include="Unity.TextMeshPro" HintPath="$(BepInExInteropDir)Unity.TextMeshPro.dll" Private="false" />
+    <!-- Graphic, TextMeshProUGUI's base: colour and raycastTarget are declared there. -->
+    <Reference Include="UnityEngine.UI" HintPath="$(BepInExInteropDir)UnityEngine.UI.dll" Private="false" />
   </ItemGroup>
 
 </Project>
