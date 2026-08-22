@@ -35,13 +35,16 @@ namespace UnifiedConversationTracker
     /// current-save count on screen. It resets that tally only; the across-all-saves
     /// state is what a new game exists to survive.
     /// </para>
-    /// <para><b>One display hook.</b> <see cref="MainHudDialogueCountPatch"/> reads
+    /// <para><b>Two display hooks.</b> <see cref="MainHudDialogueCountPatch"/> reads
     /// the tracked totals back out onto the main HUD, beside the money and the clock:
     /// this save on one line, every save on the next. It writes to the game's UI and
     /// to nothing else, so it is independent of the three above and is installed
     /// separately. Those three tell it when a count has moved, which is the only
     /// coupling between them: nothing polls, and a display that never installed is a
-    /// no-op to call.
+    /// no-op to call. <see cref="NovelResponseColorPatch"/> is the other, and reads
+    /// the state one entry at a time rather than in total: it colours a dialogue
+    /// option differently when no save has ever picked it, which is the one thing the
+    /// game cannot work out for itself.
     /// </para>
     /// <para>
     /// Deferring the disk and game reads to first access is not tidiness, it is
@@ -114,6 +117,18 @@ namespace UnifiedConversationTracker
                 "How far above the money display's own line the pair of dialogue counts sits, in canvas "
                 + "units. Negative is down. Zero straddles that line, one count either side of it.");
 
+            // The one thing the dumps cannot settle is what a colour looks like next
+            // to the game's own, so the novel-option colour is config rather than a
+            // constant. Anything Unity's ColorUtility can read works here.
+            var novelOptionColor = Config.Bind(
+                "Display",
+                "NovelOptionColor",
+                NovelResponseColorPatch.DefaultNovelColorHtml,
+                "Colour for dialogue options that have never been picked in any save, as #RRGGBB, "
+                + "#RRGGBBAA, or a colour name. Options picked in this save keep the game's "
+                + "exhausted colour; options picked only in other saves keep the game's normal "
+                + "option colour.");
+
             var harmony = new Harmony(PluginGuid);
             _harmony = harmony;
 
@@ -143,7 +158,16 @@ namespace UnifiedConversationTracker
                 () => MainHudDialogueCountPatch.Install(
                     harmony, session, log, hudCountOffsetX.Value, hudCountOffsetY.Value));
 
-            if (!recording && !resyncing && !resettingCurrentSave && !showingCount)
+            bool colouringNovelOptions = TryInstall(
+                "SunshineResponseButton.GetData",
+                "dialogue options never picked in any save are drawn in their own colour",
+                "Every unpicked dialogue option will look the same this session, whether or not it "
+                    + "was picked in another save",
+                () => NovelResponseColorPatch.Install(
+                    harmony, session, log, novelOptionColor.Value));
+
+            if (!recording && !resyncing && !resettingCurrentSave && !showingCount
+                && !colouringNovelOptions)
             {
                 _harmony = null;
             }
