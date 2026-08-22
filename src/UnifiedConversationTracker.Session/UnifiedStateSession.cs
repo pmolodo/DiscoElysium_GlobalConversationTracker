@@ -112,11 +112,27 @@ namespace UnifiedConversationTracker.Session
 
         private readonly UnifiedConversationState _state = new UnifiedConversationState();
 
+        /// <summary>
+        /// The count for the save being played, as opposed to the across-all-saves
+        /// state beside it. Filled from the save's own rows at every resync and kept
+        /// live off <see cref="Record"/> in between, because a count that is only
+        /// right as of the last savegame load is not what "this save" means while
+        /// somebody is playing it.
+        /// </summary>
+        private readonly CurrentSaveTally _currentSave = new CurrentSaveTally();
+
         /// <summary>Status strings from the game that have already been warned about.</summary>
         private readonly HashSet<string> _unrecognizedStatuses = new HashSet<string>(StringComparer.Ordinal);
 
         private bool _diskLoadDone;
         private bool _resyncGivenUp;
+
+        /// <summary>
+        /// When the last resync refilled the current save's tally, or null if none
+        /// has. Only ever read for <see cref="ResetCurrentSave"/>'s log line, which
+        /// uses it to show whether a reset landed suspiciously close to a load.
+        /// </summary>
+        private DateTime? _lastResyncUtc;
 
         // ---- The deferred write. All guarded by _gate. ----
 
@@ -201,6 +217,32 @@ namespace UnifiedConversationTracker.Session
                 lock (_gate)
                 {
                     return _diskLoadDone;
+                }
+            }
+        }
+
+        /// <summary>
+        /// How many dialogue entries are above Untouched in the save currently being
+        /// played.
+        /// </summary>
+        /// <remarks>
+        /// <para>Zero is a real answer, not a missing one: a new game has reached
+        /// nothing yet, and reads zero from the moment the mod is asked. What it is
+        /// never allowed to be is the previous save's figure, which is why both the
+        /// resync and <see cref="ResetCurrentSave"/> empty the tally before anything
+        /// refills it.</para>
+        ///
+        /// <para>Unlike <see cref="UnifiedConversationState.EntryCount"/> this can go
+        /// down. The game marks entries Untouched, and in this save that is a real
+        /// loss rather than history to be preserved.</para>
+        /// </remarks>
+        public int CurrentSaveEntryCount
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _currentSave.Count;
                 }
             }
         }
@@ -327,6 +369,13 @@ namespace UnifiedConversationTracker.Session
                     WarnAboutUnrecognizedStatus(conversationId, dialogueEntryId, statusName);
                     return false;
                 }
+
+                // Before the early return below, and not gated on it: a mark that the
+                // unified state ignores can still move this save's count. Marking an
+                // entry Untouched is the case that matters - history keeps it, this
+                // save loses it - and re-marking an entry the unified state already
+                // has at a higher status is the common one.
+                _currentSave.TrySet(conversationId, dialogueEntryId, statusName, out _);
 
                 if (!changed)
                 {
@@ -1046,6 +1095,47 @@ namespace UnifiedConversationTracker.Session
         }
 
         /// <summary>
+        /// Throws away the current save's tally, for a new game that has reset the
+        /// game's own SimStatus table behind the mod's back.
+        /// </summary>
+        /// <remarks>
+        /// <para><b>Only the current save's tally.</b> The unified state is not
+        /// touched and must never be: a new game is precisely the event the
+        /// across-all-saves history exists to survive.</para>
+        ///
+        /// <para><b>Why the mod cannot see this any other way.</b> A new game rebuilds
+        /// the whole Lua Conversation table rather than marking entries one at a time,
+        /// so <c>MarkDialogueEntry</c> never fires and there is no savegame load to
+        /// resync from. Without an explicit signal the previous save's count would
+        /// simply stay on screen while the player starts over.</para>
+        ///
+        /// <para><b>The log line is the instrument for an open question.</b> If the
+        /// game also resets world state <em>during</em> a savegame load, and does it
+        /// after the load's resync rather than before, this would empty a tally that
+        /// was just filled correctly. Reporting how long it has been since the last
+        /// resync is what makes that visible in a log instead of showing up as a
+        /// number that is quietly wrong.</para>
+        /// </remarks>
+        /// <param name="trigger">What detected the new game, for the log.</param>
+        /// <returns>How many entries the tally was holding.</returns>
+        public int ResetCurrentSave(string? trigger)
+        {
+            lock (_gate)
+            {
+                int dropped = _currentSave.Clear();
+                string sinceResync = _lastResyncUtc is null
+                    ? "no savegame has been resynced this session"
+                    : $"{(DateTime.UtcNow - _lastResyncUtc.Value).TotalSeconds:F1} s since the last resync";
+
+                _log.Info(
+                    $"Current-save dialogue count reset by {trigger ?? "an unnamed trigger"}: "
+                    + $"dropped {dropped} entries ({sinceResync}). The across-all-saves state is "
+                    + $"untouched and still has {(_diskLoadDone ? _state.EntryCount : 0)} entries.");
+                return dropped;
+            }
+        }
+
+        /// <summary>
         /// Whether a resync may run at all, logging the reason when it may not. Caller
         /// must hold <see cref="_gate"/>.
         /// </summary>
@@ -1085,6 +1175,14 @@ namespace UnifiedConversationTracker.Session
             int rowCount = 0;
             int raisedCount;
 
+            // The rows are the whole SimStatus table of the save being loaded, so they
+            // are the current save's count in full. Emptying first is what stops the
+            // previous save's entries from surviving into this one: this is a
+            // replacement, not a merge, and it is the only difference between the two
+            // states either side of this loop.
+            _currentSave.Clear();
+            _lastResyncUtc = DateTime.UtcNow;
+
             try
             {
                 raisedCount = MergeEverythingFromGame(rows, ref rowCount);
@@ -1104,14 +1202,17 @@ namespace UnifiedConversationTracker.Session
 
             string outcome =
                 $"Resynced the unified state after a savegame load: ";
+            string currentSave =
+                $" The loaded save itself has {_currentSave.Count} of {rowCount} entries above Untouched.";
             _log.Info(
-                raisedCount == 0
+                (raisedCount == 0
                     ? outcome
                         + $"nothing new in {rowCount} rows, so no file was written."
                     : outcome
                         + $"{raisedCount} statuses raised from {rowCount} rows; "
                         + $"now {_state.ConversationCount} "
-                        + $"conversations, {_state.EntryCount} entries.");
+                        + $"conversations, {_state.EntryCount} entries.")
+                + currentSave);
 
             if (raisedCount == 0)
             {
@@ -1145,6 +1246,11 @@ namespace UnifiedConversationTracker.Session
                 rowCount++;
                 if (_state.TryMerge(row.ConversationId, row.DialogueEntryId, row.StatusName, out bool changed))
                 {
+                    // The same row, counted for this save. Untouched rows are the bulk
+                    // of the table and are exactly the ones that must not count, which
+                    // the tally handles by storing nothing for them.
+                    _currentSave.TrySet(row.ConversationId, row.DialogueEntryId, row.StatusName, out _);
+
                     if (changed)
                     {
                         raisedCount++;

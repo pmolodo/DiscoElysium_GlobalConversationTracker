@@ -12,9 +12,10 @@ using UnityEngine.UI;
 namespace UnifiedConversationTracker
 {
     /// <summary>
-    /// The display hook: the main HUD carries the number of dialogue entries reached
-    /// across every save, in the gap between the thought cabinet button and the
-    /// money/time panel at the bottom of the screen.
+    /// The display hook: the main HUD carries how many dialogue entries have been
+    /// reached, in the gap between the thought cabinet button and the money/time
+    /// panel at the bottom of the screen. Two rows - this save above, every save
+    /// below - each prefixed by its own icon.
     /// </summary>
     /// <remarks>
     /// <para><b>Why the HUD and not the character sheet.</b> The character sheet is
@@ -43,100 +44,127 @@ namespace UnifiedConversationTracker
     /// not the one on screen.</para>
     ///
     /// <para><b>Where the text goes.</b> The panel's own left edge is the right-hand
-    /// wall of the gap this display sits in, so the text is placed against that edge
-    /// with a right-hand pivot and grows leftwards, towards the thought cabinet
-    /// button, on the money's own centre line.</para>
+    /// wall of the gap this display sits in, so the rows are placed against that edge
+    /// with a right-hand pivot and grow leftwards, towards the thought cabinet button,
+    /// straddling the money's centre line. The two numbers share a right edge, and the
+    /// two icons share a left one: the icon column is measured off whichever number is
+    /// wider, so the icons stay in a column instead of stepping in and out with the
+    /// digits beside them.</para>
     ///
-    /// <para><b>Why it is a child of the money display and not of the panel.</b>
-    /// Because that is what makes it disappear at the right times. The HUD does not
+    /// <para><b>Why the rows are children of the money display and not of the panel.</b>
+    /// Because that is what makes them disappear at the right times. The HUD does not
     /// hide itself as a panel: each element - the money, the clock, the held items -
     /// carries its own <c>CanvasGroup</c> and its own alpha tween, and the panel they
     /// share is left alone. A child of the panel would therefore stay on screen
     /// through every dialogue, cutscene and menu that fades the rest of the HUD out.
-    /// A child of the money display inherits its group, so the count fades exactly
-    /// when the number beside it does.</para>
+    /// A child of the money display inherits its group, so the counts fade exactly
+    /// when the number beside them does.</para>
     ///
-    /// <para><b>Why the speech bubble is a texture and not a character.</b> Because
-    /// there is no character to use. Every font asset the game ships is a static SDF
-    /// atlas with no source font behind it, so nothing can be added at runtime, and
-    /// the highest codepoint in any of them is U+FF70 - emoji start at U+1F300. The
-    /// project's TMP sprite asset, which is what would otherwise stand in, is
-    /// TextMesh Pro's own EmojiOne sample: fourteen smileys and no bubble. With
+    /// <para><b>Why the icons are textures and not characters.</b> Because there are no
+    /// characters to use. Every font asset the game ships is a static SDF atlas with
+    /// no source font behind it, so nothing can be added at runtime, and the highest
+    /// codepoint in any of them is U+FF70 - emoji start at U+1F300. The project's TMP
+    /// sprite asset, which is what would otherwise stand in, is TextMesh Pro's own
+    /// EmojiOne sample: fourteen smileys, no speech bubble and no globe. With
     /// <c>m_missingGlyphCharacter: 0</c> and warnings off in TMP Settings, an emoji
     /// character would therefore draw as nothing at all and say nothing about it. So
-    /// the icon is a flat white PNG embedded in the plugin, drawn through an
-    /// <see cref="Image"/> and tinted to the count's own colour.</para>
+    /// the icons are flat white PNGs embedded in the plugin, drawn through
+    /// <see cref="Image"/>s and tinted to the counts' own colour.</para>
     ///
-    /// <para><b>Read-only, and cheap.</b> The number is
-    /// <see cref="UnifiedConversationState.EntryCount"/>, already the count of entries
-    /// above Untouched across all saves - Untouched is never stored - so there is
-    /// nothing to count and nothing to enumerate. Nothing polls: the count can only
-    /// change when a mark is recorded or a savegame is loaded, and both of those hooks
-    /// call <see cref="RefreshDisplayedCount"/> on their way out. As with every other
+    /// <para><b>Read-only, and cheap.</b> The two numbers are
+    /// <see cref="UnifiedConversationState.EntryCount"/> and
+    /// <see cref="UnifiedStateSession.CurrentSaveEntryCount"/>, both of which are a
+    /// collection's own size rather than anything that has to be counted. Nothing
+    /// polls: the counts can only change when a mark is recorded, a savegame is
+    /// loaded, or a new game resets the current save, and all three of those hooks
+    /// call <see cref="RefreshDisplayedCounts"/> on their way out. As with every other
     /// hook, a failure here costs the display and never the playthrough.</para>
     /// </remarks>
     internal static class MainHudDialogueCountPatch
     {
         /// <summary>
-        /// How far left of the money/time panel's left edge the count's right-hand
+        /// How far left of the money/time panel's left edge the counts' right-hand
         /// edge sits, in canvas units. Negative is left. The measured gap between that
         /// edge and the thought cabinet button is about 117 units, so this leaves room
-        /// for six or seven digits before anything collides.
+        /// for an icon and six or seven digits before anything collides.
         /// </summary>
         internal const float DefaultOffsetX = -10f;
 
         /// <summary>
-        /// How far the count sits above (positive) or below (negative) the money
-        /// display's own centre line, in canvas units. Zero puts the two numbers on
-        /// one line, which is the point.
+        /// How far the pair of rows sits above (positive) or below (negative) the
+        /// money display's own centre line, in canvas units. Zero straddles it, which
+        /// keeps the block tied to the row of the HUD it lives in.
         /// </summary>
         internal const float DefaultOffsetY = 0f;
 
         /// <summary>
-        /// The name given to the object the count is drawn on. Long and explicit
-        /// because it appears in the game's own hierarchy, where anything ambiguous
-        /// would look like something the game shipped.
+        /// The file the current-save row's speech-bubble icon is embedded under.
+        /// Matched by suffix at runtime, so the manifest prefix MSBuild chooses does
+        /// not matter.
         /// </summary>
-        private const string DisplayObjectName = "UnifiedConversationTracker Dialogue Count";
+        private const string CurrentSaveIconFileName = "current-save-count-icon.png";
+
+        /// <summary>The file the all-saves row's globe icon is embedded under.</summary>
+        private const string AllSavesIconFileName = "all-saves-count-icon.png";
 
         /// <summary>
-        /// Group separators, no decimals: the count runs into five figures, and the
-        /// money display beside it is grouped the same way.
+        /// The names given to the objects the rows are drawn on. Long and explicit
+        /// because they appear in the game's own hierarchy, where anything ambiguous
+        /// would look like something the game shipped.
+        /// </summary>
+        private const string CurrentSaveRowName = "UnifiedConversationTracker Current Save Count";
+
+        /// <summary>The all-saves row's object name.</summary>
+        private const string AllSavesRowName = "UnifiedConversationTracker All Saves Count";
+
+        /// <summary>Suffix given to a row's icon object, appended to the row's name.</summary>
+        private const string IconNameSuffix = " Icon";
+
+        /// <summary>
+        /// Group separators, no decimals: the all-saves count runs into five figures,
+        /// and the money display beside it is grouped the same way.
         /// </summary>
         private const string CountFormat = "N0";
 
         /// <summary>
-        /// How wide the count's own rect is, in canvas units. The text is right
-        /// aligned and does not wrap, so this is headroom to grow leftwards into and
-        /// not a box anything is fitted to.
+        /// How wide a row's own rect is, in canvas units. The text is right aligned
+        /// and does not wrap, so this is headroom to grow leftwards into and not a box
+        /// anything is fitted to.
         /// </summary>
         private const float RectWidth = 240f;
 
         /// <summary>
-        /// The height used when the money display's rect cannot supply one. Only
-        /// affects where the text sits vertically inside its own rect, which is
+        /// The gap between one row's baseline and the next, as a multiple of the font
+        /// size. The pair is centred on the money's line, so each row sits half of this
+        /// away from it.
+        /// </summary>
+        private const float LineSpacingInFontSizes = 1.15f;
+
+        /// <summary>
+        /// How tall an icon's box is as a multiple of the font size. The artwork fills
+        /// about five-sixths of that box, which puts it a little taller than the digits
+        /// beside it - the same proportion an emoji would have.
+        /// </summary>
+        /// <remarks>
+        /// Sized off legibility rather than taste. The canvas scales by
+        /// screenHeight/1080, so at 1080p one font size is 22 screen pixels and the
+        /// globe inside it would draw about 18 across - not enough for its meridians
+        /// to survive the downsample. At 1.1 it draws about 21 at 1080p and 23 at
+        /// 1200p, which is where the grid stops turning to mush. It cannot go much
+        /// past this: the box is centred on its row and the rows are only
+        /// <see cref="LineSpacingInFontSizes"/> apart.
+        /// </remarks>
+        private const float IconHeightInFontSizes = 1.1f;
+
+        /// <summary>The gap between the icon column and the widest number, in canvas units.</summary>
+        private const float IconGap = 6f;
+
+        /// <summary>
+        /// The height used for a row when the money display's rect cannot supply one.
+        /// Only affects where the text sits vertically inside its own rect, which is
         /// centred either way.
         /// </summary>
-        private const float FallbackRectHeight = 48f;
-
-        /// <summary>
-        /// The file the speech-bubble icon is embedded in the plugin under. Matched by
-        /// suffix at runtime, so the manifest prefix MSBuild chooses does not matter.
-        /// </summary>
-        private const string IconResourceFileName = "dialogue-count-icon.png";
-
-        /// <summary>The name given to the object the icon is drawn on.</summary>
-        private const string IconObjectName = "UnifiedConversationTracker Dialogue Icon";
-
-        /// <summary>
-        /// How tall the icon's box is as a multiple of the count's font size. The
-        /// bubble fills about five-sixths of that box, which puts it a little taller
-        /// than the digits beside it - the same proportion an emoji would have.
-        /// </summary>
-        private const float IconHeightInFontSizes = 1f;
-
-        /// <summary>The gap between the icon and the first digit, in canvas units.</summary>
-        private const float IconGap = 6f;
+        private const float FallbackRowHeight = 24f;
 
         private static UnifiedStateSession? _session;
         private static HookFailureLimiter? _failures;
@@ -144,16 +172,14 @@ namespace UnifiedConversationTracker
         private static float _offsetX;
         private static float _offsetY;
 
-        private static TextMeshProUGUI? _display;
-        private static RectTransform? _icon;
-        private static Sprite? _iconSprite;
-        private static int _displayedCount = -1;
+        private static CountRow? _currentSaveRow;
+        private static CountRow? _allSavesRow;
 
         /// <summary>
         /// Applies the patch. Call once, from plugin load, after the session exists.
         /// </summary>
         /// <param name="harmony">The plugin's Harmony instance.</param>
-        /// <param name="session">The session the displayed count is read from.</param>
+        /// <param name="session">The session the displayed counts are read from.</param>
         /// <param name="log">Where hook failures are reported.</param>
         /// <param name="offsetX">
         /// Horizontal placement, as <see cref="DefaultOffsetX"/> describes it.
@@ -182,7 +208,7 @@ namespace UnifiedConversationTracker
             _session = session ?? throw new ArgumentNullException(nameof(session));
             _log = log ?? throw new ArgumentNullException(nameof(log));
             _failures = new HookFailureLimiter(
-                "showing the across-all-saves dialogue count on the main HUD", log);
+                "showing the dialogue counts on the main HUD", log);
             _offsetX = offsetX;
             _offsetY = offsetY;
 
@@ -190,32 +216,40 @@ namespace UnifiedConversationTracker
         }
 
         /// <summary>
-        /// Brings the displayed number up to date with the session, if it is out of
-        /// date and if there is anything on screen to update.
+        /// Brings both displayed numbers up to date with the session, if they are out
+        /// of date and if there is anything on screen to update.
         /// </summary>
         /// <remarks>
-        /// <para><b>This never throws.</b> It is called from inside the two tracking
+        /// <para><b>This never throws.</b> It is called from inside the tracking
         /// hooks, which have their own failure budgets to spend on tracking; a display
         /// that cannot draw itself must not be able to spend theirs, so this reports
         /// through its own limiter and returns.</para>
         ///
-        /// <para><b>And it is called rather than polled.</b> The count changes exactly
-        /// when a mark is recorded or a savegame is resynced, so those two callers see
-        /// every change there is. Between them the display costs nothing per frame.</para>
+        /// <para><b>And it is called rather than polled.</b> The counts change exactly
+        /// when a mark is recorded, a savegame is resynced, or a new game clears the
+        /// current save, so those callers see every change there is. Between them the
+        /// display costs nothing per frame.</para>
         /// </remarks>
-        internal static void RefreshDisplayedCount()
+        internal static void RefreshDisplayedCounts()
         {
-            TextMeshProUGUI? display = _display;
+            CountRow? currentSave = _currentSaveRow;
+            CountRow? allSaves = _allSavesRow;
             UnifiedStateSession? session = _session;
             HookFailureLimiter? failures = _failures;
-            if (display is null || session == null || failures == null || failures.HasGivenUp)
+            if (currentSave is null || allSaves is null || session == null || failures == null
+                || failures.HasGivenUp)
             {
                 return;
             }
 
             try
             {
-                Write(display, session.EnsureInitialized().EntryCount);
+                bool changed = currentSave.Write(session.CurrentSaveEntryCount);
+                changed |= allSaves.Write(session.EnsureInitialized().EntryCount);
+                if (changed)
+                {
+                    AlignIcons(currentSave, allSaves);
+                }
             }
             catch (Exception ex)
             {
@@ -225,7 +259,7 @@ namespace UnifiedConversationTracker
 
         /// <summary>
         /// Postfixes the money display's own startup, which is where the live HUD
-        /// hands over both the panel to hang the count off and the text to copy.
+        /// hands over both the panel to hang the rows off and the text to copy.
         /// </summary>
         /// <remarks>
         /// The method is named by string rather than by <c>nameof</c> because
@@ -244,8 +278,8 @@ namespace UnifiedConversationTracker
         }
 
         /// <summary>
-        /// Builds the count's text object beside the given money display, replacing
-        /// any earlier one.
+        /// Builds both rows beside the given money display, replacing any earlier
+        /// ones.
         /// </summary>
         private static void Attach(HudMoneyController money)
         {
@@ -269,7 +303,7 @@ namespace UnifiedConversationTracker
                 {
                     log.Warning(
                         "The HUD money display is not a child rect the way the Init scene builds it, so "
-                        + "there is nowhere to put the dialogue count. The HUD is unchanged.");
+                        + "there is nowhere to put the dialogue counts. The HUD is unchanged.");
                     return;
                 }
 
@@ -277,44 +311,53 @@ namespace UnifiedConversationTracker
                 if (panel is null)
                 {
                     log.Warning(
-                        "The HUD money display's parent is not a rect, so the dialogue count has no panel "
-                        + "edge to sit beside. The HUD is unchanged.");
+                        "The HUD money display's parent is not a rect, so the dialogue counts have no "
+                        + "panel edge to sit beside. The HUD is unchanged.");
                     return;
                 }
 
                 // Taken from the money display's own flip clock, which is the number
-                // this one is meant to look like a sibling of. Copying beats guessing:
+                // these are meant to look like siblings of. Copying beats guessing:
                 // the font asset is whichever one the current language loaded.
                 TextMeshProUGUI donor = moneyRect.GetComponentInChildren<TextMeshProUGUI>(true);
                 if (donor is null)
                 {
                     log.Warning(
                         "The HUD money display has no text component to copy a font from, so the dialogue "
-                        + "count would be invisible. The HUD is unchanged.");
+                        + "counts would be invisible. The HUD is unchanged.");
                     return;
                 }
 
                 // Start() can only run once per HUD, but a rebuilt HUD would run it
-                // again; leaving the old object behind would stack up copies.
-                Transform stale = moneyRect.Find(DisplayObjectName);
-                if (stale is not null)
-                {
-                    UnityEngine.Object.Destroy(stale.gameObject);
-                }
+                // again; leaving the old objects behind would stack up copies.
+                DestroyStale(moneyRect, CurrentSaveRowName);
+                DestroyStale(moneyRect, AllSavesRowName);
 
-                TextMeshProUGUI display = Build(panel, moneyRect, donor);
-                _display = display;
-                _icon = BuildIcon(display, log);
-                _displayedCount = -1;
-                Write(display, session.EnsureInitialized().EntryCount);
+                // Half a line above the money's own line and half a line below it, so
+                // the pair straddles the row of the HUD it belongs to.
+                float lineSpacing = donor.fontSize * LineSpacingInFontSizes;
+                CountRow currentSave = Build(
+                    panel, moneyRect, donor, CurrentSaveRowName, CurrentSaveIconFileName,
+                    lineSpacing / 2f, log);
+                CountRow allSaves = Build(
+                    panel, moneyRect, donor, AllSavesRowName, AllSavesIconFileName,
+                    -lineSpacing / 2f, log);
 
-                RectTransform placed = display.rectTransform;
+                _currentSaveRow = currentSave;
+                _allSavesRow = allSaves;
+
+                currentSave.Write(session.CurrentSaveEntryCount);
+                allSaves.Write(session.EnsureInitialized().EntryCount);
+                AlignIcons(currentSave, allSaves);
+
                 log.Info(
-                    $"Dialogue count added to the main HUD, under '{panel.name}/{moneyRect.name}' at "
-                    + $"{placed.anchoredPosition.ToString()}, {(-_offsetX).ToString(CultureInfo.InvariantCulture)} "
-                    + $"units left of a {panel.rect.width.ToString(CultureInfo.InvariantCulture)} x "
+                    $"Dialogue counts added to the main HUD, under '{panel.name}/{moneyRect.name}' at "
+                    + $"{currentSave.Text.rectTransform.anchoredPosition.ToString()} and "
+                    + $"{allSaves.Text.rectTransform.anchoredPosition.ToString()}, "
+                    + $"{(-_offsetX).ToString(CultureInfo.InvariantCulture)} units left of a "
+                    + $"{panel.rect.width.ToString(CultureInfo.InvariantCulture)} x "
                     + $"{panel.rect.height.ToString(CultureInfo.InvariantCulture)} panel, at font size "
-                    + $"{display.fontSize.ToString(CultureInfo.InvariantCulture)}. Nudge it with "
+                    + $"{donor.fontSize.ToString(CultureInfo.InvariantCulture)}. Nudge them with "
                     + "HudCountOffsetX / HudCountOffsetY in the plugin's config file.");
             }
             catch (Exception ex)
@@ -323,9 +366,20 @@ namespace UnifiedConversationTracker
             }
         }
 
+        /// <summary>Removes a row left over from an earlier attach, if there is one.</summary>
+        private static void DestroyStale(RectTransform parent, string name)
+        {
+            Transform stale = parent.Find(name);
+            if (stale is not null)
+            {
+                UnityEngine.Object.Destroy(stale.gameObject);
+            }
+        }
+
         /// <summary>
-        /// Creates the text object under the money display, styles it after that
-        /// display's own number and places it against the panel's left edge.
+        /// Creates one row - a right-aligned number with its icon - and places it
+        /// against the panel's left edge, <paramref name="verticalOffset"/> units from
+        /// the money display's centre line.
         /// </summary>
         /// <remarks>
         /// <para><b>Why the placement is computed and not written down.</b> The whole
@@ -336,19 +390,25 @@ namespace UnifiedConversationTracker
         /// 16:9 one.</para>
         ///
         /// <para><b>Two coordinate systems, because the parent is not the reference.</b>
-        /// The count hangs off the money display so that it inherits its fading, but
-        /// what it is positioned against is the panel's left edge, and the money's own
-        /// rect is far wider than the number drawn in it - the digits are right
+        /// The rows hang off the money display so that they inherit its fading, but
+        /// what they are positioned against is the panel's left edge, and the money's
+        /// own rect is far wider than the number drawn in it - the digits are right
         /// aligned inside it, and its left edge is off past the other side of the
         /// screen. So the panel's left edge is converted into the money's coordinates
-        /// and the count is placed there, with a right-hand pivot so a negative x
-        /// offset moves it into the gap and the number grows leftwards, away from the
-        /// panel. The vertical is the money rect's own centre line, which is where its
-        /// flip clock draws.</para>
+        /// and the rows are placed there, with a right-hand pivot so a negative x
+        /// offset moves them into the gap and the numbers grow leftwards, away from
+        /// the panel.</para>
         /// </remarks>
-        private static TextMeshProUGUI Build(RectTransform panel, RectTransform moneyRect, TextMeshProUGUI donor)
+        private static CountRow Build(
+            RectTransform panel,
+            RectTransform moneyRect,
+            TextMeshProUGUI donor,
+            string name,
+            string iconFileName,
+            float verticalOffset,
+            IUnifiedStateLog log)
         {
-            var carrier = new GameObject(DisplayObjectName);
+            var carrier = new GameObject(name);
 
             // Layer 5 is UI, but taking the money display's own layer is the version
             // of that which stays right if the game ever moves its HUD somewhere else.
@@ -373,7 +433,7 @@ namespace UnifiedConversationTracker
 
             // The panel's bottom-left corner, said in the money display's own
             // coordinates. Only the x of it is used; the y comes from the money rect,
-            // which is the line the number has to share.
+            // which is the line the numbers have to share.
             float panelLeft = moneyRect.InverseTransformPoint(
                 panel.TransformPoint(new Vector3(panelRect.x, panelRect.y, 0f))).x;
             float moneyCentreY = moneyLocal.y + (moneyLocal.height / 2f);
@@ -385,49 +445,50 @@ namespace UnifiedConversationTracker
             rect.anchorMin = new Vector2(0f, 0f);
             rect.anchorMax = new Vector2(0f, 0f);
             rect.pivot = new Vector2(1f, 0.5f);
+            float rowHeight = donor.fontSize * LineSpacingInFontSizes;
             rect.sizeDelta = new Vector2(
                 RectWidth,
-                moneyLocal.height > 0f ? moneyLocal.height : FallbackRectHeight);
+                rowHeight > 0f ? rowHeight : FallbackRowHeight);
             rect.anchoredPosition = new Vector2(
                 (panelLeft + _offsetX) - moneyLocal.x,
-                (moneyCentreY + _offsetY) - moneyLocal.y);
+                (moneyCentreY + verticalOffset + _offsetY) - moneyLocal.y);
 
             // Drawn after the money display's own flip clock. The two do not overlap,
             // but a number that could end up behind another one would be a silent
             // failure rather than a visible one.
             rect.SetAsLastSibling();
 
-            return display;
+            return new CountRow(display, BuildIcon(display, name + IconNameSuffix, iconFileName, log));
         }
 
         /// <summary>
-        /// Creates the speech-bubble icon just left of the count, or returns null and
-        /// says why if the icon cannot be had. The count works without it.
+        /// Creates one row's icon, or returns null and says why if the artwork cannot
+        /// be had. The counts work without it.
         /// </summary>
         /// <remarks>
-        /// It is a child of the count's own text object so that the two share a right
-        /// edge: the digits are right aligned against it, so pushing the icon left by
-        /// the text's own width always lands it against the leftmost digit, whatever
-        /// the number is. <see cref="PositionIcon"/> is what redoes that when the
-        /// count grows a digit.
+        /// It is a child of its row's own text object so that the two share a right
+        /// edge: the digits are right aligned against it, so an offset measured
+        /// leftwards from that edge lands predictably whatever the number is.
+        /// <see cref="AlignIcons"/> is what then puts both rows' icons in one column.
         /// </remarks>
-        private static RectTransform? BuildIcon(TextMeshProUGUI display, IUnifiedStateLog log)
+        private static RectTransform? BuildIcon(
+            TextMeshProUGUI display, string name, string iconFileName, IUnifiedStateLog log)
         {
-            Sprite? sprite = LoadIconSprite(log);
+            Sprite? sprite = LoadIconSprite(iconFileName, log);
             if (sprite is null)
             {
                 return null;
             }
 
-            var carrier = new GameObject(IconObjectName);
+            var carrier = new GameObject(name);
             carrier.layer = display.gameObject.layer;
             carrier.transform.SetParent(display.rectTransform, false);
 
             Image image = carrier.AddComponent<Image>();
             image.sprite = sprite;
 
-            // The icon ships as flat white, so the tint is what makes it the HUD's
-            // colour, and keeps it the same colour as the digits if that ever changes.
+            // The icons ship as flat white, so the tint is what makes them the HUD's
+            // colour, and keeps them the same colour as the digits if that changes.
             image.color = display.color;
             image.raycastTarget = false;
             image.preserveAspect = true;
@@ -442,21 +503,35 @@ namespace UnifiedConversationTracker
         }
 
         /// <summary>
-        /// Decodes the embedded icon once per session. Returns null, having said so,
-        /// if it cannot be read or decoded.
+        /// Puts both icons in one column, left of whichever number is wider.
         /// </summary>
-        private static Sprite? LoadIconSprite(IUnifiedStateLog log)
+        /// <remarks>
+        /// Measured off the wider row rather than each row separately, which is the
+        /// whole point: aligned with each other is what makes them read as one block
+        /// rather than two labels that happen to be stacked.
+        /// </remarks>
+        private static void AlignIcons(CountRow currentSave, CountRow allSaves)
         {
-            if (_iconSprite is not null)
-            {
-                return _iconSprite;
-            }
+            // preferredWidth is the width of the digits themselves, not of the rect
+            // they are right aligned in, which is deliberately much wider.
+            float widest = Math.Max(currentSave.Text.preferredWidth, allSaves.Text.preferredWidth);
+            var position = new Vector2(-(widest + IconGap), 0f);
 
+            currentSave.PlaceIcon(position);
+            allSaves.PlaceIcon(position);
+        }
+
+        /// <summary>
+        /// Decodes one embedded icon, once per session per file. Returns null, having
+        /// said so, if it cannot be read or decoded.
+        /// </summary>
+        private static Sprite? LoadIconSprite(string iconFileName, IUnifiedStateLog log)
+        {
             Assembly assembly = typeof(MainHudDialogueCountPatch).Assembly;
             string? resource = null;
             foreach (string candidate in assembly.GetManifestResourceNames())
             {
-                if (candidate.EndsWith(IconResourceFileName, StringComparison.Ordinal))
+                if (candidate.EndsWith(iconFileName, StringComparison.Ordinal))
                 {
                     resource = candidate;
                     break;
@@ -466,8 +541,8 @@ namespace UnifiedConversationTracker
             if (resource is null)
             {
                 log.Warning(
-                    $"The plugin has no embedded {IconResourceFileName}, so the HUD dialogue count is "
-                    + "shown without its icon.");
+                    $"The plugin has no embedded {iconFileName}, so that HUD dialogue count is shown "
+                    + "without its icon.");
                 return null;
             }
 
@@ -477,7 +552,7 @@ namespace UnifiedConversationTracker
                 if (stream is null)
                 {
                     log.Warning(
-                        $"The embedded {resource} could not be opened, so the HUD dialogue count is "
+                        $"The embedded {resource} could not be opened, so that HUD dialogue count is "
                         + "shown without its icon.");
                     return null;
                 }
@@ -492,7 +567,7 @@ namespace UnifiedConversationTracker
             // into a scene.
             var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false)
             {
-                name = IconObjectName,
+                name = iconFileName,
                 hideFlags = HideFlags.HideAndDontSave,
                 wrapMode = TextureWrapMode.Clamp,
                 filterMode = FilterMode.Bilinear,
@@ -501,7 +576,7 @@ namespace UnifiedConversationTracker
             if (!ImageConversion.LoadImage(texture, new Il2CppStructArray<byte>(png)))
             {
                 log.Warning(
-                    $"The embedded {resource} is not a texture Unity could decode, so the HUD dialogue "
+                    $"The embedded {resource} is not a texture Unity could decode, so that HUD dialogue "
                     + "count is shown without its icon.");
                 return null;
             }
@@ -511,38 +586,56 @@ namespace UnifiedConversationTracker
                 new Rect(0f, 0f, texture.width, texture.height),
                 new Vector2(0.5f, 0.5f));
             sprite.hideFlags = HideFlags.HideAndDontSave;
-            _iconSprite = sprite;
             return sprite;
         }
 
-        /// <summary>Writes the count, if it is not already what is on screen.</summary>
-        private static void Write(TextMeshProUGUI display, int count)
-        {
-            if (count == _displayedCount)
-            {
-                return;
-            }
-
-            display.text = count.ToString(CountFormat, CultureInfo.InvariantCulture);
-            _displayedCount = count;
-            PositionIcon(display);
-        }
-
         /// <summary>
-        /// Puts the icon against the leftmost digit. Called after every write, because
-        /// the number it is measured from is what just changed.
+        /// One line of the display: a number, and the icon that says which number it
+        /// is.
         /// </summary>
-        private static void PositionIcon(TextMeshProUGUI display)
+        private sealed class CountRow
         {
-            RectTransform? icon = _icon;
-            if (icon is null)
+            /// <summary>
+            /// What is currently drawn, so a refresh that changes nothing does nothing.
+            /// Starts at -1 rather than 0, because 0 is a real count that must still be
+            /// written the first time.
+            /// </summary>
+            private int _shown = -1;
+
+            internal CountRow(TextMeshProUGUI text, RectTransform? icon)
             {
-                return;
+                Text = text;
+                Icon = icon;
             }
 
-            // preferredWidth is the width of the digits themselves, not of the rect
-            // they are right aligned in, which is deliberately much wider.
-            icon.anchoredPosition = new Vector2(-(display.preferredWidth + IconGap), 0f);
+            /// <summary>The number itself.</summary>
+            internal TextMeshProUGUI Text { get; }
+
+            /// <summary>The icon left of it, or null if the artwork could not be loaded.</summary>
+            private RectTransform? Icon { get; }
+
+            /// <summary>Writes the count if it is not already what is on screen.</summary>
+            /// <returns>True if the text changed, so the icons need re-aligning.</returns>
+            internal bool Write(int count)
+            {
+                if (count == _shown)
+                {
+                    return false;
+                }
+
+                Text.text = count.ToString(CountFormat, CultureInfo.InvariantCulture);
+                _shown = count;
+                return true;
+            }
+
+            /// <summary>Moves this row's icon, if it has one.</summary>
+            internal void PlaceIcon(Vector2 position)
+            {
+                if (Icon is not null)
+                {
+                    Icon.anchoredPosition = position;
+                }
+            }
         }
     }
 }

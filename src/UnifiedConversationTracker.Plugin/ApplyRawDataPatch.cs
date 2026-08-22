@@ -70,7 +70,7 @@ namespace UnifiedConversationTracker
             // A load is the other way the count moves, so the HUD is told here too.
             // Outside the catch on purpose: the display has its own failure budget,
             // and this call reports its own failures and never throws.
-            MainHudDialogueCountPatch.RefreshDisplayedCount();
+            MainHudDialogueCountPatch.RefreshDisplayedCounts();
         }
     }
 }

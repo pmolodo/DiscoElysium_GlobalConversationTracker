@@ -11,27 +11,36 @@ SaveGames directory (`unified-conversation-state.json`):
   without going through `MarkDialogueEntry`. The patch is a prefix that reads the raw save
   bytes the game is about to apply and resyncs the unified state from them.
 
-It also patches the main HUD so the tracked total is visible in game from the first frame of a
-playthrough:
+A third hook covers the one event neither writer above can see:
+
+- `World.ResetStates` - a new game rebuilds the whole SimStatus table at once rather than
+  marking entries, so nothing else tells the mod that the save being played has started over.
+  The postfix resets the current-save tally only. The across-all-saves state is never reset by
+  anything; a new game is what it exists to survive.
+
+It also patches the main HUD so the tracked totals are visible in game from the first frame of
+a playthrough:
 
 - `HudMoneyController.Start` - the money display's own startup, in the live HUD the `Init`
-  scene builds. The postfix adds one text object under that display, showing the number of
-  dialogue entries reached across all saves. It sits in the gap between the thought cabinet
-  button and the money, in the money's own font, and is placed off the `HUD Money Time`
-  panel's rect as measured at runtime, so it lands in the same place at any aspect ratio.
-  Hanging it off the money display is what makes it fade with the HUD: each HUD element
-  fades itself, and the panel they share never does. `HudCountOffsetX` and `HudCountOffsetY`
-  in the plugin's config file nudge it from there.
+  scene builds. The postfix adds two rows under that display: how many dialogue entries have
+  been reached in the save being played, and how many across all saves. They sit in the gap
+  between the thought cabinet button and the money, in the money's own font, and are placed
+  off the `HUD Money Time` panel's rect as measured at runtime, so they land in the same place
+  at any aspect ratio. Hanging them off the money display is what makes them fade with the
+  HUD: each HUD element fades itself, and the panel they share never does. `HudCountOffsetX`
+  and `HudCountOffsetY` in the plugin's config file nudge the pair from there.
 
-A speech-bubble icon sits to the left of the number. It is a white PNG embedded in the
-plugin (`Resources\dialogue-count-icon.png`), tinted to the count's colour at runtime, and
-not a character: every font asset the game ships is a static
-atlas whose highest codepoint is U+FF70, emoji start at U+1F300, and the project's TMP sprite
-asset is TextMesh Pro's fourteen-smiley EmojiOne sample. An emoji character would draw as
-nothing. If the icon cannot be decoded the count is shown without it.
+The layout is one number per line, this save above and all saves below, the two numbers right
+aligned with each other and the two icons in a column left of whichever number is wider - a
+speech bubble for this save, a globe for all saves. Both are white PNGs embedded in the plugin
+(`Resources\current-save-count-icon.png` and `Resources\all-saves-count-icon.png`), tinted to
+the counts' colour at runtime, and neither is a character: every font asset the game ships is a
+static atlas whose highest codepoint is U+FF70, emoji start at U+1F300, and the project's TMP
+sprite asset is TextMesh Pro's fourteen-smiley EmojiOne sample. An emoji character would draw
+as nothing. If an icon cannot be decoded its count is shown without it.
 
-Nothing polls it: the two tracking hooks tell the display when the count has moved, which is
-the only time it can have.
+Nothing polls: the three hooks above tell the display when a count has moved, which is the
+only time one can have.
 
 Each hook is installed independently, so one failing to patch costs only what that hook
 covered. Nothing is ever fed back into the game's own state: the unified state is read only to
@@ -116,15 +125,16 @@ Steps:
    [Message:UnifiedConversationTracker] Unified state file: ...\SaveGames\unified-conversation-state.json
    [Message:UnifiedConversationTracker] Hooked DialogueLua.MarkDialogueEntry; dialogue statuses are being tracked.
    [Message:UnifiedConversationTracker] Hooked PersistentDataManager.ApplyRawData; the unified state is resynced whenever a savegame is loaded (using raw file bytes).
-   [Message:UnifiedConversationTracker] Hooked HudMoneyController.Start; the main HUD shows how many dialogue entries have been reached across all saves.
+   [Message:UnifiedConversationTracker] Hooked World.ResetStates; the current save's dialogue count is reset when a new game starts.
+   [Message:UnifiedConversationTracker] Hooked HudMoneyController.Start; the main HUD shows how many dialogue entries have been reached, in this save and across all saves.
    [Message:UnifiedConversationTracker] Shutdown flush registered on Application.quitting and AppDomain.ProcessExit. ...
    ```
 
    The `v0.1.0 loaded` line proves the plugin's entry point ran; the `Hooked` lines prove
    the hooks are on. A hook that could not be installed logs `Failed to hook <method>` instead,
-   and the others carry on without it. The count itself shows up once a game is in play, to the
-   left of the money at the bottom of the screen, and logs a `Dialogue count added to the main
-   HUD` line saying where it put itself. With HarmonyX logging enabled there is also an
+   and the others carry on without it. The counts themselves show up once a game is in play, to
+   the left of the money at the bottom of the screen, and log a `Dialogue counts added to the
+   main HUD` line saying where they put themselves. With HarmonyX logging enabled there is also an
    `[Info :HarmonyX] Patching ...` line per patched method. Nothing touches the state file
    until the first line of dialogue is marked, or a savegame is loaded, whichever comes first:
    that is when the file is read and the first write happens.

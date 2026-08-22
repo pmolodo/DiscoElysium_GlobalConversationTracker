@@ -89,10 +89,7 @@ namespace UnifiedConversationTracker
                     return;
                 }
 
-                if (!session.Record(dialogueEntry.conversationID, dialogueEntry.id, status))
-                {
-                    return;
-                }
+                session.Record(dialogueEntry.conversationID, dialogueEntry.id, status);
             }
             catch (Exception ex)
             {
@@ -104,7 +101,7 @@ namespace UnifiedConversationTracker
             // and a HUD that cannot draw itself must not be able to spend the one
             // that keeps tracking alive. This call reports its own failures and
             // never throws.
-            MainHudDialogueCountPatch.RefreshDisplayedCount();
+            MainHudDialogueCountPatch.RefreshDisplayedCounts();
         }
     }
 }

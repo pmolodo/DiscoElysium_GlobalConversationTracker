@@ -28,12 +28,20 @@ namespace UnifiedConversationTracker
     /// whole Lua SimStatus table when a savegame is loaded. Between them they see
     /// every write; nothing else in the game writes SimStatus.
     /// </para>
+    /// <para><b>A third hook, for the count that can go down.</b>
+    /// <see cref="NewGameResetPatch"/> covers the one event neither writer above can
+    /// see: a new game, which rebuilds the game's whole SimStatus table at once rather
+    /// than marking entries, and so would otherwise leave the previous save's
+    /// current-save count on screen. It resets that tally only; the across-all-saves
+    /// state is what a new game exists to survive.
+    /// </para>
     /// <para><b>One display hook.</b> <see cref="MainHudDialogueCountPatch"/> reads
-    /// the tracked total back out onto the main HUD, beside the money and the clock.
-    /// It writes to the game's UI and to nothing else, so it is independent of the two
-    /// above and is installed separately. The two tracking hooks tell it when the
-    /// count has moved, which is the only coupling between them: nothing polls, and a
-    /// display that never installed is a no-op to call.
+    /// the tracked totals back out onto the main HUD, beside the money and the clock:
+    /// this save on one line, every save on the next. It writes to the game's UI and
+    /// to nothing else, so it is independent of the three above and is installed
+    /// separately. Those three tell it when a count has moved, which is the only
+    /// coupling between them: nothing polls, and a display that never installed is a
+    /// no-op to call.
     /// </para>
     /// <para>
     /// Deferring the disk and game reads to first access is not tidiness, it is
@@ -97,14 +105,14 @@ namespace UnifiedConversationTracker
                 "Display",
                 "HudCountOffsetX",
                 MainHudDialogueCountPatch.DefaultOffsetX,
-                "How far left of the HUD's money/time panel the dialogue count sits, in canvas units. "
+                "How far left of the HUD's money/time panel the dialogue counts sit, in canvas units. "
                 + "Negative is left, towards the thought cabinet button.");
             var hudCountOffsetY = Config.Bind(
                 "Display",
                 "HudCountOffsetY",
                 MainHudDialogueCountPatch.DefaultOffsetY,
-                "How far above the money display's own line the dialogue count sits, in canvas units. "
-                + "Negative is down. Zero puts the two numbers on one line.");
+                "How far above the money display's own line the pair of dialogue counts sits, in canvas "
+                + "units. Negative is down. Zero straddles that line, one count either side of it.");
 
             var harmony = new Harmony(PluginGuid);
             _harmony = harmony;
@@ -121,14 +129,21 @@ namespace UnifiedConversationTracker
                 "Statuses restored by loading a savegame will be missed this session",
                 () => ApplyRawDataPatch.Install(harmony, session, log));
 
+            bool resettingCurrentSave = TryInstall(
+                "World.ResetStates",
+                "the current save's dialogue count is reset when a new game starts",
+                "A new game will keep showing the previous save's dialogue count this session",
+                () => NewGameResetPatch.Install(harmony, session, log));
+
             bool showingCount = TryInstall(
                 "HudMoneyController.Start",
-                "the main HUD shows how many dialogue entries have been reached across all saves",
-                "The main HUD will not show the across-all-saves dialogue count this session",
+                "the main HUD shows how many dialogue entries have been reached, in this save and "
+                    + "across all saves",
+                "The main HUD will not show the dialogue counts this session",
                 () => MainHudDialogueCountPatch.Install(
                     harmony, session, log, hudCountOffsetX.Value, hudCountOffsetY.Value));
 
-            if (!recording && !resyncing && !showingCount)
+            if (!recording && !resyncing && !resettingCurrentSave && !showingCount)
             {
                 _harmony = null;
             }
