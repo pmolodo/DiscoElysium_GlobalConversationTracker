@@ -14,12 +14,15 @@
 
   <ItemGroup>
     <!--
-      Persistence owns the save-blob format reader (RawDataReader / LuaTable).
+      Persistence owns the save-blob format reader: RawDataParser, and the
+      LuaTable / LuaTableVisitor pair that builds the whole blob as nested
+      tables, which is what this tool needs and the plugin does not. That pair
+      lived in Persistence.Tests until 2026-08-26, which made a test assembly -
+      and its xunit package graph - a runtime dependency of two shipping console
+      apps.
     -->
     <ProjectReference
       Include="..\..\src\GlobalConversationTracker.Persistence\GlobalConversationTracker.Persistence.csproj" />
-    <ProjectReference
-      Include="..\..\src\GlobalConversationTracker.Persistence.Tests\GlobalConversationTracker.Persistence.Tests.csproj" />
   </ItemGroup>
 
 </Project>

@@ -14,12 +14,12 @@
 
   <ItemGroup>
     <!--
-      Persistence owns both the global-state file format - so the checker reads
-      exactly what the plugin writes - and the save-blob parser (RawDataParser).
-      NtwtfDecode owns finding and unpacking a save on disk (SaveBlob), and
-      brings with it the LuaTable / LuaTableVisitor decode layer this tool reads
-      the Conversation table through; referenced rather than shelled out to so
-      the table is read once, in process, with no JSON round trip.
+      Persistence owns the global-state file format - so the checker reads
+      exactly what the plugin writes - the save-blob parser (RawDataParser), and
+      the LuaTable / LuaTableVisitor decode layer this tool reads the
+      Conversation table through. NtwtfDecode owns finding and unpacking a save
+      on disk (SaveBlob); referenced rather than shelled out to so the table is
+      read once, in process, with no JSON round trip.
     -->
     <ProjectReference Include="..\NtwtfDecode\NtwtfDecode.csproj" />
     <ProjectReference
