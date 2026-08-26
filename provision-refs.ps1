@@ -24,18 +24,24 @@
 
       1. -DiscoElysiumDir
       2. the DISCO_ELYSIUM_DIR environment variable
-      3. <repo>\Steam Install - Unaltered\Disco Elysium (untracked, so absent
-         in a git worktree)
+      3. Steam auto-discovery (registry + libraryfolders.vdf, AppID 632470)
       4. the last resolved install, cached per-machine in
          %LOCALAPPDATA%\GlobalConversationTracker\reference-game-dir.txt
-      5. Steam auto-discovery (registry + libraryfolders.vdf, AppID 632470)
+      5. a copy under <repo>\.game_reference_copies (untracked, so absent in
+         a git worktree)
 
-    Steps 1 to 4 are the same four Directory.Build.props applies to the three
-    projects that reference a game install, so 'dotnet build' at the repo root
-    resolves exactly as this script does, without running it. Only step 5,
-    Steam discovery, needs PowerShell - which is why the cache exists: whichever
-    route answers the question, the answer is written there for every checkout
-    on the machine to read, worktrees included.
+    The live Steam install comes before either stored answer deliberately: it
+    is the copy that gets patched and re-run as the game updates, so its
+    interop assemblies match the game actually being played. Read-only use, so
+    preferring it is safe.
+
+    Directory.Build.props resolves the same question for the three projects
+    that reference a game install, but not by the same route: MSBuild cannot
+    read Steam's library folders, so it drops step 3 and takes the repo copy
+    before the cache rather than after. That divergence is what the cache is
+    for - whichever route answers the question here, the answer is written
+    there, and a bare 'dotnet build' in any checkout on the machine picks it
+    up, worktrees included.
 
     The reference install is only ever READ from; nothing is written into it.
 
