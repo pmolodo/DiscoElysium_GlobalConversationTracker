@@ -80,6 +80,21 @@
     Missing directories are created, an existing file is overwritten, and the
     manifest lands beside it as <Destination>.capture.json.
 
+.PARAMETER Rename
+    Rename an already-captured log instead of capturing a new one, moving its
+    manifest with it: the manifest is renamed to match, its 'copy' field is
+    rewritten to the new path, and the old path is kept in 'renamedFrom'. Give
+    the log's path here and the new name in -NewName. This exists because
+    renaming a capture by hand - which is the natural thing to do, since
+    capture-20260819-162547.log says nothing about the run it documents - leaves
+    the manifest behind under the old name, pointing at a path that no longer
+    resolves.
+
+.PARAMETER NewName
+    The name to give the log named by -Rename. A bare file name renames it where
+    it is; a path with a directory moves it there. An existing file is never
+    overwritten.
+
 .PARAMETER Force
     Keep the copy and its manifest but report failed cross-checks as warnings
     instead of exiting non-zero. Nothing is hidden: the manifest still records
@@ -91,6 +106,11 @@
 
 .EXAMPLE
     .\capture-log.ps1 -Label smoke-test    # while the game is still running
+
+.EXAMPLE
+    # Rename a capture and take its manifest with it
+    .\capture-log.ps1 -Rename .build\logs\capture-20260819-162547.log `
+                      -NewName ApplyRawBytes-Hook-06-skip4tables.log
 #>
 [CmdletBinding()]
 param(
@@ -98,6 +118,8 @@ param(
     [string[]]$RunArtifact = @(),
     [string]$Label = "capture",
     [string]$Destination,
+    [string]$Rename,
+    [string]$NewName,
     [switch]$Force
 )
 
@@ -291,6 +313,19 @@ function Test-ArtifactWrittenByRun {
 
 Invoke-ScriptMain {
 
+# --- 0. The rename mode, which captures nothing --------------------------------
+# Handled before anything looks at the game: renaming an existing capture needs
+# no game folder, no log and no process, and doing it here keeps that true.
+if ($Rename -or $NewName) {
+    if (-not ($Rename -and $NewName)) {
+        throw "-Rename and -NewName go together: -Rename names the captured log, -NewName what to call it."
+    }
+    Write-Host "Renaming capture:"
+    $renamed = Rename-Capture -Path $Rename -NewName $NewName
+    Write-Host "Renamed. The manifest travels with the log; anything reading captures should pair them by name."
+    return
+}
+
 # --- 1. Copy the log out, first -----------------------------------------------
 # Preserving the bytes beats judging them: every check below can be redone from
 # the copy, but a relaunch while we deliberate destroys the original.
@@ -424,6 +459,11 @@ and there would be no way to tell. Pass -RunArtifact <a file the run wrote>, or
 # --- 3. Record the verdict next to the copy -----------------------------------
 $verified = $problems.Count -eq 0
 $manifest = [ordered]@{
+    # Identifies the run no matter what the files are called later: the moment
+    # of capture plus the head of the copy's own hash. A manifest that has been
+    # separated from its log can still be matched back to it by md5 and bytes,
+    # and two captures of the same log at different times stay distinguishable.
+    runId                = "$(Get-Date -Format 'yyyyMMdd-HHmmss')-$($md5.Substring(0, 8))"
     capturedAt           = Format-Stamp (Get-Date)
     source               = $source.FullName
     sourceLastWriteTime  = Format-Stamp $source.LastWriteTime

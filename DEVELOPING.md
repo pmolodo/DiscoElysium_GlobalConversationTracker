@@ -246,6 +246,25 @@ between the run and the capture, so the folder listed is a later build's.
 **Which install it reads:** `-GameDir`, else `DISCO_ELYSIUM_DEPLOY_DIR`, else the
 auto-discovered Steam copy - the same playable copy `deploy.ps1` writes to.
 
+**Renaming a capture:** do it through the script, not by hand.
+
+```powershell
+.\capture-log.ps1 -Rename .build\logs\capture-20260819-162547.log `
+                  -NewName ApplyRawBytes-Hook-06-skip4tables.log
+```
+
+A generated name says nothing about the run it documents, so renaming one is the natural
+thing to do - and renaming the `.log` by hand leaves `<old name>.log.capture.json` behind,
+describing a file that is no longer there. `-Rename` moves both, rewrites the manifest's
+`copy` to where the copy now is, and keeps the old path in `renamedFrom`. It refuses to
+overwrite an existing name, and it needs no game folder, no log and no running process.
+
+A capture is paired with its manifest **by name** - `<log>.capture.json` beside `<log>` -
+and that is the pairing to rely on. `copy` is where the copy was when the manifest was
+written, which is history, not a pointer. Each manifest also carries a `runId`
+(`<capture timestamp>-<first 8 of the md5>`), so a manifest that has been separated from
+its log can still be matched back to it by `md5` and `bytes`.
+
 ## Safety rules baked into the scripts
 
 - **The repo's reference copy of the game is never written to.** `deploy.ps1` refuses any

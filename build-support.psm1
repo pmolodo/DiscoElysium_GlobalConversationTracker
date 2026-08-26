@@ -519,6 +519,76 @@ function Get-SourceRevisionId {
 }
 
 
+function Get-CaptureManifestPath {
+    # The manifest that belongs to a captured log. One spelling of the
+    # convention, so the writer, the renamer and any reader agree on it.
+    #
+    # The pairing is BY NAME - <log>.capture.json sits beside <log> - and that
+    # is the only pairing anything should rely on. A manifest's own 'copy' field
+    # records where the copy was when it was written, which is history rather
+    # than a pointer: rename the log and that path stops resolving, while the
+    # name pairing still holds because Rename-Capture moves both together.
+    param([Parameter(Mandatory = $true)][string]$LogPath)
+    return "$LogPath.capture.json"
+}
+
+
+function Rename-Capture {
+    # Rename a captured log and keep its manifest with it: the manifest moves to
+    # match the new name, its 'copy' field is rewritten to where the copy now
+    # is, and the old name is remembered in 'renamedFrom'.
+    #
+    # This exists because renaming a capture by hand is the obvious thing to do
+    # - a log called capture-20260819-162547.log says nothing about the run it
+    # documents - and doing it by hand leaves the manifest behind under the old
+    # name, describing a path that no longer exists. Eight manifests in one
+    # .build\logs folder had already been orphaned that way.
+    #
+    # Returns the new log path.
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$NewName
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "No captured log at $Path"
+    }
+    $log = Get-Item -LiteralPath $Path
+    # A bare name renames in place; a path with a directory moves it there too.
+    $newPath = if ([System.IO.Path]::GetDirectoryName($NewName)) {
+        [System.IO.Path]::GetFullPath($NewName)
+    }
+    else {
+        Join-Path $log.DirectoryName $NewName
+    }
+    if ($newPath -eq $log.FullName) { return $log.FullName }
+    if (Test-Path -LiteralPath $newPath) {
+        throw "Refusing to overwrite $newPath; rename to a name that is free."
+    }
+
+    $manifestPath = Get-CaptureManifestPath -LogPath $log.FullName
+    $newManifestPath = Get-CaptureManifestPath -LogPath $newPath
+
+    Move-Item -LiteralPath $log.FullName -Destination $newPath
+    Write-Host "  $($log.Name) -> $([System.IO.Path]::GetFileName($newPath))"
+
+    if (-not (Test-Path -LiteralPath $manifestPath)) {
+        Write-Warning "No manifest at $manifestPath, so this capture carries no record of what it documents; the log itself was renamed."
+        return $newPath
+    }
+
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $renamedFrom = @($manifest.renamedFrom) + @($manifest.copy) | Where-Object { $_ }
+    $manifest | Add-Member -NotePropertyName renamedFrom -NotePropertyValue $renamedFrom -Force
+    $manifest | Add-Member -NotePropertyName copy -NotePropertyValue $newPath -Force
+    # WriteAllText rather than Set-Content: no BOM, matching how it was written.
+    [System.IO.File]::WriteAllText($newManifestPath, ($manifest | ConvertTo-Json -Depth 5))
+    Remove-Item -LiteralPath $manifestPath
+    Write-Host "  $([System.IO.Path]::GetFileName($manifestPath)) -> $([System.IO.Path]::GetFileName($newManifestPath))"
+    return $newPath
+}
+
+
 function Get-PluginBuildStamp {
     # What a built plugin assembly says about its own origin: the commit it was
     # compiled from, and whether that tree was dirty.
