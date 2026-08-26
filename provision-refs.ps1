@@ -23,11 +23,19 @@
 
       1. -DiscoElysiumDir
       2. the DISCO_ELYSIUM_DIR environment variable
-      3. <repo>\Steam Install - Unaltered\Disco Elysium (the csproj's own default)
-      4. the last discovered install, cached in .build\cache
+      3. <repo>\Steam Install - Unaltered\Disco Elysium (untracked, so absent
+         in a git worktree)
+      4. the last resolved install, cached per-machine in
+         %LOCALAPPDATA%\GlobalConversationTracker\reference-game-dir.txt
       5. Steam auto-discovery (registry + libraryfolders.vdf, AppID 632470)
 
-    A discovered install is what step 4 caches, so later builds skip discovery.
+    Steps 1 to 4 are the same four Directory.Build.props applies to the three
+    projects that reference a game install, so 'dotnet build' at the repo root
+    resolves exactly as this script does, without running it. Only step 5,
+    Steam discovery, needs PowerShell - which is why the cache exists: whichever
+    route answers the question, the answer is written there for every checkout
+    on the machine to read, worktrees included.
+
     The reference install is only ever READ from; nothing is written into it.
 
     The work itself lives in build-support.psm1 (Resolve-ReferenceGameDir,
@@ -40,10 +48,11 @@
     steps of the resolution order above. Unlike those, it is never silently
     rejected: a path without BepInEx\core and BepInEx\interop throws instead of
     falling through to the next candidate, on the grounds that an explicitly
-    named install that cannot be used is a mistake worth reporting. Nor is it
-    cached - only an install found by Steam discovery is written to
-    .build\cache. Leaving it off is what asks for the rest of the resolution
-    order, ending in the auto-discovered Steam copy.
+    named install that cannot be used is a mistake worth reporting. It is
+    cached like every other route that resolves, so naming an install once is
+    enough for later builds in any checkout on the machine. Leaving it off is
+    what asks for the rest of the resolution order, ending in the
+    auto-discovered Steam copy.
 #>
 [CmdletBinding()]
 param(

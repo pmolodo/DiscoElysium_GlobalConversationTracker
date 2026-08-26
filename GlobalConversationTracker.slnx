@@ -26,9 +26,12 @@
         <!--
       Listed so the plugin loads in an IDE, but deliberately NOT built by this
       solution: it references BepInEx and the IL2CPP interop assemblies out of a
-      Disco Elysium install, so it cannot build on a machine without one (or in
-      a git worktree, where the repo-local reference copy is not checked out).
-      Build it through `.\build.ps1`, which resolves that install first.
+      Disco Elysium install, so it cannot build on a machine without one. The
+      Persistence and Session projects reference that install too (for
+      Il2CppInterop.Runtime alone) and ARE built here; all three resolve it the
+      same way, through Directory.Build.props. Build the plugin with
+      `.\build.ps1`, which also covers the one resolution step MSBuild cannot do
+      for itself - Steam auto-discovery.
     -->
         <Project Path="src/GlobalConversationTracker.Plugin/GlobalConversationTracker.Plugin.csproj">
             <Build Project="false" />

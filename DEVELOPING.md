@@ -81,13 +81,20 @@ Resolution order:
 
 1. `-DiscoElysiumDir <path>`
 2. the `DISCO_ELYSIUM_DIR` environment variable
-3. `<repo>\Steam Install - Unaltered\Disco Elysium` (the csproj's own default)
-4. the last discovered install, cached in `.build\cache\reference-game-dir.txt`
+3. `<repo>\Steam Install - Unaltered\Disco Elysium` - untracked, so present in a clone
+   and absent in a git worktree
+4. the last resolved install, cached per-machine in
+   `%LOCALAPPDATA%\GlobalConversationTracker\reference-game-dir.txt`
 5. Steam auto-discovery: registry `Valve\Steam` + `libraryfolders.vdf`, AppID **632470**
-   - its answer is what step 4 caches
 
-Steps 4 and 5 are why the build works from a git worktree, where the repo-local reference
-copy in step 3 is not checked out. This install is only ever **read** from.
+Every route that resolves writes step 4's cache, not just discovery, and the cache lives
+outside the repo on purpose: a worktree has neither the untracked copy from step 3 nor a
+`.build\` of its own, so a cache kept in the repo could never answer the question there.
+One `.\provision-refs.ps1` anywhere on the machine answers it for every checkout on it.
+
+`Directory.Build.props` applies steps 1 to 4 itself, so a bare `dotnet build` resolves the
+same install without going through PowerShell; only step 5 needs these scripts. This
+install is only ever **read** from.
 
 Normally you do not run this directly - `build.ps1` does it for you.
 

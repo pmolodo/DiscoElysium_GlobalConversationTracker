@@ -38,14 +38,22 @@ $ProjectDir = Join-Path $RepoRoot "src\$AssemblyName.Plugin"
 $ProjectFile = Join-Path $ProjectDir "$AssemblyName.Plugin.csproj"
 
 # Everything generated lives under one gitignored folder: bin\ and obj\ are
-# redirected here by Directory.Build.props, and these scripts add cache\, stage\
-# and dist\ alongside them.
+# redirected here by Directory.Build.props, and these scripts add stage\ and
+# dist\ alongside them.
 $BuildDir = Join-Path $RepoRoot ".build"
-$CacheDir = Join-Path $BuildDir "cache"
 $DistDir = Join-Path $BuildDir "dist"
 # Must match BaseOutputPath in Directory.Build.props.
 $BinDir = Join-Path $BuildDir "bin\$AssemblyName.Plugin"
-# Caches the resolved reference install so repeat builds skip Steam discovery.
+
+# Caches the resolved reference install, so repeat builds skip Steam discovery.
+#
+# Per-user and OUTSIDE the repo, which is the point: a git worktree does not
+# contain the untracked 'Steam Install - Unaltered' copy, and its own .build\ is
+# empty, so a cache kept in the repo could never answer the question there. One
+# cache per machine answers it for every checkout on that machine, and
+# Directory.Build.props reads this same file, so a bare 'dotnet build' resolves
+# an install without going through these scripts at all.
+$CacheDir = Join-Path $env:LOCALAPPDATA $AssemblyName
 $RefDirCacheFile = Join-Path $CacheDir "reference-game-dir.txt"
 
 # Steam AppID for Disco Elysium / The Final Cut (from appmanifest_632470.acf).
@@ -299,40 +307,82 @@ Name one explicitly:
 }
 
 
+function Save-ReferenceGameDir {
+    # Record a resolved reference install as this machine's cached answer.
+    #
+    # Called for EVERY route that resolves one, not just Steam discovery: the
+    # cache is what a checkout with no reference copy of its own reads - an
+    # agent worktree above all, and Directory.Build.props reads it directly - so
+    # the useful moment to write it is whenever the answer is known, including
+    # the ordinary build in the main checkout that never gets as far as
+    # discovery. Best effort: a machine that will not let us write here still
+    # builds, it just re-resolves every time.
+    param([Parameter(Mandatory = $true)][string]$GameDir)
+    if (-not $env:LOCALAPPDATA) { return }
+    try {
+        $full = (Get-Item -LiteralPath $GameDir).FullName
+        if ((Test-Path -LiteralPath $RefDirCacheFile) -and
+            (Get-Content -LiteralPath $RefDirCacheFile -Raw).Trim() -eq $full) {
+            return
+        }
+        New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
+        Set-Content -LiteralPath $RefDirCacheFile -Value $full -Encoding ascii
+    }
+    catch {
+        Write-Verbose "Could not cache the reference game dir at ${RefDirCacheFile}: $($_.Exception.Message)"
+    }
+}
+
+
 function Resolve-ReferenceGameDir {
     # The game install the build reads its reference assemblies from. Resolution
     # order: explicit parameter, DISCO_ELYSIUM_DIR, the repo-local reference
     # copy, the cached previous answer, then Steam discovery. Read-only use, so
     # falling back to a discovered install is safe.
+    #
+    # Whatever it resolves to is written to the machine-level cache on the way
+    # out, which is what lets a worktree - where steps 3 and 5 both come up
+    # empty - build at all. Directory.Build.props reads the same file, so a bare
+    # 'dotnet build' gets the same answer without running any of this.
     param([string]$DiscoElysiumDir)
 
     if ($DiscoElysiumDir) {
         if (-not (Test-ReferenceGameDir -Path $DiscoElysiumDir)) {
             throw "-DiscoElysiumDir '$DiscoElysiumDir' has no $BepInExCoreRelDir + $BepInExInteropRelDir. Point it at a Disco Elysium install that has been run once with BepInEx 6."
         }
+        Save-ReferenceGameDir -GameDir $DiscoElysiumDir
         return $DiscoElysiumDir
     }
     if ($env:DISCO_ELYSIUM_DIR) {
         if (-not (Test-ReferenceGameDir -Path $env:DISCO_ELYSIUM_DIR)) {
             throw "DISCO_ELYSIUM_DIR='$($env:DISCO_ELYSIUM_DIR)' has no $BepInExCoreRelDir + $BepInExInteropRelDir. Point it at a Disco Elysium install that has been run once with BepInEx 6."
         }
+        Save-ReferenceGameDir -GameDir $env:DISCO_ELYSIUM_DIR
         return $env:DISCO_ELYSIUM_DIR
     }
     if (Test-ReferenceGameDir -Path $RepoDefaultGameDir) {
+        Save-ReferenceGameDir -GameDir $RepoDefaultGameDir
         return $RepoDefaultGameDir
     }
+
+    $cachedGameDir = $null
     if (Test-Path -LiteralPath $RefDirCacheFile) {
-        $cached = (Get-Content -LiteralPath $RefDirCacheFile -Raw).Trim()
-        if (Test-ReferenceGameDir -Path $cached) { return $cached }
+        $cachedGameDir = (Get-Content -LiteralPath $RefDirCacheFile -Raw).Trim()
+        if (Test-ReferenceGameDir -Path $cachedGameDir) { return $cachedGameDir }
     }
 
     $steamDir = Find-SteamGameDir
     if ($steamDir -and (Test-ReferenceGameDir -Path $steamDir)) {
-        New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
-        Set-Content -LiteralPath $RefDirCacheFile -Value $steamDir -Encoding ascii
+        Save-ReferenceGameDir -GameDir $steamDir
         return $steamDir
     }
 
+    $cacheNote = if (-not $cachedGameDir) {
+        "(no cache file at $RefDirCacheFile)"
+    }
+    else {
+        "$cachedGameDir (cached, rejected: no $BepInExCoreRelDir + $BepInExInteropRelDir)"
+    }
     $steamNote = if ($steamDir) {
         "The Steam install at '$steamDir' has no $BepInExInteropRelDir - run the game once with BepInEx 6 installed to generate the interop assemblies."
     }
@@ -345,7 +395,8 @@ Tried, in order:
   1. -DiscoElysiumDir                      (not given)
   2. `$env:DISCO_ELYSIUM_DIR               (not set)
   3. $RepoDefaultGameDir
-  4. Steam auto-discovery
+  4. $cacheNote
+  5. Steam auto-discovery
 $steamNote
 Pass -DiscoElysiumDir <path> or set DISCO_ELYSIUM_DIR to an install that has
 both $BepInExCoreRelDir and $BepInExInteropRelDir.

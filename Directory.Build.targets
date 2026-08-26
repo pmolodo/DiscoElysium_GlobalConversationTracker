@@ -1,0 +1,34 @@
+<Project>
+
+  <!--
+    One error message for the three projects that build against a game install,
+    so a missing reference fails with one sentence and the whole resolution
+    order instead of a wall of MSBuild reference errors.
+
+    A project opts in by declaring what it needs:
+
+      <NeedsBepInExCore>true</NeedsBepInExCore>       BepInEx\core     (BepInEx, Harmony, Il2CppInterop)
+      <NeedsBepInExInterop>true</NeedsBepInExInterop> BepInEx\interop  (the generated game assemblies)
+
+    Projects that declare neither - Core, the tests, the offline tools - never
+    run this and never need an install, which is what keeps a bare
+    'dotnet build' working in a checkout that has none.
+
+    See Directory.Build.props for how DiscoElysiumDir is resolved; the two files
+    are two halves of one mechanism.
+  -->
+  <PropertyGroup>
+    <BepInExReferenceHelp>The build looks for a Disco Elysium install in this order: -p:DiscoElysiumDir=&lt;path&gt;, the DISCO_ELYSIUM_DIR environment variable, '$(RepoDefaultGameDir)' (untracked, so absent in a git worktree), then the path cached in '$(RefGameDirCacheFile)'. Run .\provision-refs.ps1 once on this machine to write that cache, or set DISCO_ELYSIUM_DIR.</BepInExReferenceHelp>
+  </PropertyGroup>
+
+  <Target Name="ValidateBepInExReferenceDirs" BeforeTargets="BeforeBuild"
+    Condition="'$(NeedsBepInExCore)' == 'true' or '$(NeedsBepInExInterop)' == 'true'">
+    <Error Condition="'$(DiscoElysiumDir)' == ''"
+      Text="No Disco Elysium install was found, and $(MSBuildProjectName) references assemblies from one. $(BepInExReferenceHelp)" />
+    <Error Condition="'$(NeedsBepInExCore)' == 'true' and !Exists('$(BepInExCoreDir)')"
+      Text="BepInEx core directory not found: $(BepInExCoreDir). $(BepInExReferenceHelp)" />
+    <Error Condition="'$(NeedsBepInExInterop)' == 'true' and !Exists('$(BepInExInteropDir)')"
+      Text="BepInEx interop directory not found: $(BepInExInteropDir). Run the game once with BepInEx installed to generate the IL2CPP interop assemblies." />
+  </Target>
+
+</Project>
