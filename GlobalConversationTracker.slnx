@@ -38,10 +38,13 @@
       itself - Steam auto-discovery - but it is no longer the only way to
       compile the plugin.
 
-      One gap remains, and it is dotnet's, not this file's: `dotnet test`
-      builds only the test projects and what they reference, and nothing
-      references the plugin, so a compile error here still passes `dotnet test`
-      alone. `dotnet build` catches it. Run both.
+      `dotnet test` reaches it too, though not through this file: it builds only
+      the test projects and what they reference, so
+      GlobalConversationTracker.Session.Tests carries a project reference to the
+      plugin with ReferenceOutputAssembly="false" - a build-order dependency
+      that adds no assembly reference and copies no DLL. That is a build trigger
+      and not test coverage, and the comment at the reference says so, since a
+      reference nobody explains is one somebody will misread.
     -->
         <Project
             Path="src/GlobalConversationTracker.Plugin/GlobalConversationTracker.Plugin.csproj" />

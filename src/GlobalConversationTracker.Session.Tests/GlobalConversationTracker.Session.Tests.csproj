@@ -20,4 +20,37 @@
       Include="..\GlobalConversationTracker.Session\GlobalConversationTracker.Session.csproj" />
   </ItemGroup>
 
+  <!--
+    A BUILD TRIGGER, NOT TEST COVERAGE. Nothing here tests the plugin, and
+    nothing here can: it needs BepInEx, the IL2CPP interop assemblies and a
+    running game. This reference exists for one reason, stated plainly so that
+    nobody reads it as a claim about what is tested.
+
+    `dotnet test` builds the test projects and what they reference, and nothing
+    referenced the plugin - so a compile error in it passed the standard
+    end-of-change check while `dotnet build` caught it. Two commands where one
+    would do is a rule people forget; a project reference is a rule the build
+    remembers for them.
+
+    ReferenceOutputAssembly="false" is what keeps it honest: MSBuild keeps the
+    build-order dependency and drops everything else, so these tests are not
+    compiled against the plugin, cannot use a type from it, and do not get its
+    DLL copied into their output. The only observable effect is that the plugin
+    must compile before these tests run.
+
+    This adds no new requirement on a checkout: Session and Persistence already
+    reference assemblies out of a game install, and this project already
+    references Session, so `dotnet test` has needed a resolvable install since
+    long before this line (see Directory.Build.props for how one is found).
+
+    Chosen here rather than in another test project because Session is the last
+    layer under the plugin; if that ever stops being true, move the line rather
+    than adding a second one.
+  -->
+  <ItemGroup>
+    <ProjectReference
+      Include="..\GlobalConversationTracker.Plugin\GlobalConversationTracker.Plugin.csproj"
+      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
 </Project>

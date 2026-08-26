@@ -8,16 +8,19 @@ Disco Elysium - The Final Cut. The plugin's own notes live in
 
 ```powershell
 .\deploy.ps1     # build + install into your Steam copy
-dotnet build     # compile every project, the plugin included
-dotnet test      # run every test
+dotnet test      # compile every project, the plugin included, and run every test
 ```
 
 Then launch the game. That is the whole iterate loop: edit -> `.\deploy.ps1` -> relaunch.
 
-Run **both** `dotnet build` and `dotnet test` as the end-of-change check, not `dotnet test`
-alone: `dotnet test` builds only the test projects and what they reference, and nothing
-references the plugin, so a compile error in the plugin passes it. `dotnet build` compiles
-every project in the solution and is what catches that.
+`dotnet test` alone is enough as the end-of-change check, and that took arranging.
+`dotnet test` builds only the test projects and what they reference, so the plugin - which
+no test references, and none can meaningfully test - used to sit outside it, and a compile
+error in it passed. `GlobalConversationTracker.Session.Tests` therefore carries a project
+reference to the plugin marked `ReferenceOutputAssembly="false"`: a build-order dependency
+and nothing else, adding no assembly reference and copying no DLL. It is a build trigger,
+not coverage, and the comment at the reference says so at length. Nothing tests the
+plugin, which would need BepInEx, the IL2CPP interop assemblies and a running game.
 
 ## Requirements
 
@@ -41,16 +44,17 @@ dotnet build -c Release      # what the .ps1 scripts build by default
 
 Two things about its contents are deliberate:
 
-- **The plugin is built by the solution**, as of 2026-08-26. It used to be listed with
+- **The plugin is built by `dotnet build` and by `dotnet test`**, as of 2026-08-26. It used to be listed with
   `<Build Project="false" />`, on the grounds that it alone needed a game install to
   compile against; that stopped being true when Persistence and Session gained their own
   `Il2CppInterop.Runtime` reference. The exclusion then protected nothing - a root build
   in a checkout without an install failed on those two projects first - while quietly
   costing coverage: a compile error in the plugin passed `dotnet build` and `dotnet test`
   and only appeared when someone built the csproj by hand. All three projects resolve the
-  install through `Directory.Build.props` (see `provision-refs.ps1` below for the order).
-  `.\build.ps1` remains the way to *package* the plugin - it stamps the commit and prints
-  the DLL path - but it is no longer the only way to compile it.
+  install through `Directory.Build.props` (see `provision-refs.ps1` below for the order),
+  and `dotnet test` reaches the plugin through the deliberate build-order reference
+  described in the TL;DR. `.\build.ps1` remains the way to *package* the plugin - it stamps
+  the commit and prints the DLL path - but it is no longer the only way to compile it.
 - **The `tools\` projects are included**, even though none of them is part of the plugin,
   so that a repo-root build keeps the whole repo compiling rather than most of it. Each is
   a standalone console app; run one with `dotnet run --project tools\<name> -- --help`.
