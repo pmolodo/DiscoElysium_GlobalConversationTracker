@@ -57,26 +57,65 @@ $CacheDir = Join-Path $env:LOCALAPPDATA $AssemblyName
 $RefDirCacheFile = Join-Path $CacheDir "reference-game-dir.txt"
 
 # --- The BepInEx build the all-in-one bundle ships -----------------------------
-# Pinned to the exact build the reference install runs and DEVELOPING.md names,
-# because IL2CPP interop is generated against a specific BepInEx AND a specific
-# game build: "whatever is newest" is not a thing this mod can be tested against.
-# Bumping it means re-running the whole end-to-end check, not just editing these
-# lines.
-$BepInExBuild = 688
-$BepInExVersion = "6.0.0-be.$BepInExBuild"
-$BepInExCommit = "49015217f3becf052d33fa4658ac19229f5daa3a"
-$BepInExShortCommit = $BepInExCommit.Substring(0, 7)
-$BepInExZipName = "BepInEx-Unity.IL2CPP-win-x64-$BepInExVersion+$BepInExShortCommit.zip"
-# builds.bepinex.dev is where the bleeding-edge IL2CPP builds live; the GitHub
-# releases page carries the -pre line, which is not what this game needs.
-$BepInExZipUrl = "https://builds.bepinex.dev/projects/bepinex_be/$BepInExBuild/BepInEx-Unity.IL2CPP-win-x64-$BepInExVersion%2B$BepInExShortCommit.zip"
-# Verified on download, so a redirected or replaced artifact fails loudly rather
-# than being packaged into a release.
-$BepInExZipSha256 = "f68b83d58d3107a219343188137808ca66b5fd214b9051e385d86eb39b2eb65c"
-# LGPL-2.1. Fetched at the pinned commit so the licence shipped always matches
-# the binaries shipped.
-$BepInExLicenseUrl = "https://raw.githubusercontent.com/BepInEx/BepInEx/$BepInExCommit/LICENSE"
-$BepInExCacheDir = Join-Path $CacheDir "bepinex"
+
+function Read-MSBuildProperties {
+    # Every <PropertyGroup> child of an MSBuild file as a hashtable, with
+    # $(Name) references expanded - against the other properties first, then
+    # against the environment, which is how MSBuild itself resolves them.
+    #
+    # This exists so the BepInEx pin lives in exactly one file. MSBuild needs
+    # those values to reference BepInEx\core, this module needs the same ones to
+    # package the same archive into the all-in-one release, and a pinned URL and
+    # hash kept in two places are a pin waiting to drift.
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    [xml]$doc = Get-Content -LiteralPath $Path -Raw
+    $props = @{}
+    foreach ($group in @($doc.Project.PropertyGroup)) {
+        foreach ($node in $group.ChildNodes) {
+            if ($node.NodeType -ne "Element") { continue }
+            $props[$node.Name] = $node.InnerText
+        }
+    }
+
+    # Repeated passes, because one property is written in terms of another and
+    # this file's order is for a human rather than for a resolver. Bounded so a
+    # circular reference stops rather than spins.
+    for ($pass = 0; $pass -lt 10; $pass++) {
+        $changed = $false
+        foreach ($name in @($props.Keys)) {
+            $expanded = [regex]::Replace($props[$name], '\$\((?<ref>[A-Za-z_][A-Za-z0-9_]*)\)', {
+                    param($match)
+                    $key = $match.Groups["ref"].Value
+                    if ($props.ContainsKey($key)) { return $props[$key] }
+                    $fromEnv = [Environment]::GetEnvironmentVariable($key)
+                    if ($fromEnv) { return $fromEnv }
+                    return $match.Value
+                })
+            if ($expanded -ne $props[$name]) {
+                $props[$name] = $expanded
+                $changed = $true
+            }
+        }
+        if (-not $changed) { break }
+    }
+    return $props
+}
+
+# Read once at import, from the file MSBuild reads. Bump the pin there, not here.
+$BepInExPin = Read-MSBuildProperties -Path (Join-Path $RepoRoot "BepInEx.props")
+$BepInExBuild = $BepInExPin["BepInExBuild"]
+$BepInExVersion = $BepInExPin["BepInExVersion"]
+$BepInExCommit = $BepInExPin["BepInExCommit"]
+$BepInExShortCommit = $BepInExPin["BepInExShortCommit"]
+$BepInExZipName = $BepInExPin["BepInExZipName"]
+$BepInExZipUrl = $BepInExPin["BepInExZipUrl"]
+$BepInExZipSha256 = $BepInExPin["BepInExZipSha256"]
+$BepInExLicenseUrl = $BepInExPin["BepInExLicenseUrl"]
+# Trailing separators come from MSBuild's habit of ending directory properties
+# with one; PowerShell's paths read better without.
+$BepInExCacheDir = $BepInExPin["BepInExCacheDir"].TrimEnd("\")
+$BepInExUnpackedDir = $BepInExPin["BepInExUnpackedDir"].TrimEnd("\")
 
 # Entries of the BepInEx archive that must not be shipped. Empty, and kept
 # because the question is worth answering once in writing rather than twice by
@@ -144,18 +183,26 @@ $PluginCommitDirtySuffix = ".dirty"
 $SharingViolation = 32
 $LockViolation = 33
 
-# Read-only reference copies of the game kept in this repo. Builds must never
-# write into them, and deploy refuses to target them unless explicitly forced.
-# "Unaltered" means unaltered since the copy was taken, not unmodded: it carries
-# the same BepInEx tree as the Steam install it was copied from. That is
-# accepted; no pristine copy is kept.
+# Read-only reference material kept in this repo: game copies straight from
+# Steam, AssetRipper exports, decompiler output. Builds must never write into
+# any of it, and deploy refuses to target it unless explicitly forced.
+#
+# The FOLDER is the rule, not a list of names. Everything reference-ish moved
+# under .game_reference_copies on 2026-08-26, so a copy added tomorrow is
+# protected without anyone remembering to add it here. The old individual name
+# stays beside it, for a checkout that still has one at the repo root.
+$GameRefCopiesDirName = ".game_reference_copies"
 $ReferenceCopyDirNames = @(
+    $GameRefCopiesDirName,
     "Steam Install - Unaltered"
 )
+$GameRefCopiesDir = Join-Path $RepoRoot $GameRefCopiesDirName
 
-# The csproj's own fallback, mirrored here so option 3 of the reference
-# resolution order (see Resolve-ReferenceGameDir) matches it.
-$RepoDefaultGameDir = Join-Path $RepoRoot "Steam Install - Unaltered\Disco Elysium"
+# Mirrors step 3 of the MSBuild resolution in Directory.Build.props. A copy in
+# there only counts if it has BepInEx in it - Test-ReferenceGameDir decides -
+# because most of what lives in that folder now is PRISTINE game content, which
+# carries none of the assemblies this build references.
+$RepoDefaultGameDir = Join-Path $GameRefCopiesDir "Steam Install - Unaltered\Disco Elysium"
 
 # Maps the csproj's HintPath properties onto directories under a game install,
 # so Get-RequiredReferenceDll can read the reference list out of the csproj
@@ -397,15 +444,25 @@ function Save-ReferenceGameDir {
 
 
 function Resolve-ReferenceGameDir {
-    # The game install the build reads its reference assemblies from. Resolution
-    # order: explicit parameter, DISCO_ELYSIUM_DIR, the repo-local reference
-    # copy, the cached previous answer, then Steam discovery. Read-only use, so
-    # falling back to a discovered install is safe.
+    # The game install the build reads its reference assemblies from.
+    #
+    # Order: explicit parameter, DISCO_ELYSIUM_DIR, the LIVE STEAM INSTALL, the
+    # cached previous answer, then a copy kept in .game_reference_copies. The
+    # live install comes before either stored answer on purpose - it is the one
+    # that is patched, re-run and regenerated as the game updates, so it is the
+    # one whose interop assemblies match the game a developer is actually
+    # playing. Read-only use, so preferring it is safe.
+    #
+    # What CANNOT satisfy this is a pristine copy from depot_download.ps1. Those
+    # are the game as Steam ships it, with no BepInEx in them at all, and what
+    # the build needs is BepInEx\core plus the BepInEx\interop assemblies that
+    # only exist once BepInEx has been installed into a copy and the game run
+    # once. Test-ReferenceGameDir is what enforces that, and it is why a folder
+    # full of reference copies can still leave this throwing.
     #
     # Whatever it resolves to is written to the machine-level cache on the way
-    # out, which is what lets a worktree - where steps 3 and 5 both come up
-    # empty - build at all. Directory.Build.props reads the same file, so a bare
-    # 'dotnet build' gets the same answer without running any of this.
+    # out, which is what lets a git worktree build at all: Directory.Build.props
+    # reads that same file, and MSBuild cannot discover Steam for itself.
     param([string]$DiscoElysiumDir)
 
     if ($DiscoElysiumDir) {
@@ -422,9 +479,10 @@ function Resolve-ReferenceGameDir {
         Save-ReferenceGameDir -GameDir $env:DISCO_ELYSIUM_DIR
         return $env:DISCO_ELYSIUM_DIR
     }
-    if (Test-ReferenceGameDir -Path $RepoDefaultGameDir) {
-        Save-ReferenceGameDir -GameDir $RepoDefaultGameDir
-        return $RepoDefaultGameDir
+    $steamDir = Find-SteamGameDir
+    if ($steamDir -and (Test-ReferenceGameDir -Path $steamDir)) {
+        Save-ReferenceGameDir -GameDir $steamDir
+        return $steamDir
     }
 
     $cachedGameDir = $null
@@ -433,10 +491,9 @@ function Resolve-ReferenceGameDir {
         if (Test-ReferenceGameDir -Path $cachedGameDir) { return $cachedGameDir }
     }
 
-    $steamDir = Find-SteamGameDir
-    if ($steamDir -and (Test-ReferenceGameDir -Path $steamDir)) {
-        Save-ReferenceGameDir -GameDir $steamDir
-        return $steamDir
+    if (Test-ReferenceGameDir -Path $RepoDefaultGameDir) {
+        Save-ReferenceGameDir -GameDir $RepoDefaultGameDir
+        return $RepoDefaultGameDir
     }
 
     $cacheNote = if (-not $cachedGameDir) {
@@ -456,12 +513,19 @@ Could not find a Disco Elysium install to build against.
 Tried, in order:
   1. -DiscoElysiumDir                      (not given)
   2. `$env:DISCO_ELYSIUM_DIR               (not set)
-  3. $RepoDefaultGameDir
+  3. Steam auto-discovery
   4. $cacheNote
-  5. Steam auto-discovery
+  5. $RepoDefaultGameDir
 $steamNote
-Pass -DiscoElysiumDir <path> or set DISCO_ELYSIUM_DIR to an install that has
-both $BepInExCoreRelDir and $BepInExInteropRelDir.
+What this needs is an install with BOTH $BepInExCoreRelDir and
+$BepInExInteropRelDir - a copy with BepInEx 6 installed that has been RUN once,
+so BepInEx has generated the interop assemblies from it. A pristine copy from
+depot_download.ps1 is not that: it is the game as Steam ships it, with no
+BepInEx in it. Downloading one is the first half of making a reference install,
+not the whole of it.
+
+So: install BepInEx 6 (IL2CPP) into a copy and launch the game once, then pass
+-DiscoElysiumDir <path> or set DISCO_ELYSIUM_DIR.
 "@
 }
 

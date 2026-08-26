@@ -1,5 +1,8 @@
 <Project>
 
+  <!-- The pinned BepInEx build, shared with build-support.psm1. -->
+  <Import Project="$(MSBuildThisFileDirectory)BepInEx.props" />
+
   <!--
     Keep every generated file under one gitignored .build\ folder at the repo
     root, instead of scattering bin\ and obj\ through src\. The PowerShell build
@@ -21,33 +24,75 @@
 
       1. -p:DiscoElysiumDir=<path>   (a command-line property beats anything set here)
       2. the DISCO_ELYSIUM_DIR environment variable
-      3. <repo>\Steam Install - Unaltered\Disco Elysium, IF it is there
+      3. a modded copy kept in <repo>\.game_reference_copies
       4. the machine-level cache the PowerShell scripts write
 
-    Step 3 is existence-checked on purpose. It is untracked, so it is present in
-    a normal clone and absent in a git worktree; without the check the path
-    would be taken anyway and step 4 could never run, which is exactly what used
-    to make a bare 'dotnet build' fail in every agent worktree.
+    EVERY candidate is checked for BepInEx\core rather than merely for
+    existing, and both halves of that matter:
 
-    Step 4 is what makes those worktrees work. The cache is per-user and lives
+      * A path that is simply gone must not win. The cache is a file naming a
+        directory, and the directory can be deleted without the file noticing -
+        which is exactly what happened when the repo's old reference install was
+        removed, leaving a bare 'dotnet build' failing on a path that no longer
+        existed while a perfectly good install sat elsewhere on the machine.
+      * A PRISTINE copy must not win either. The reference copies in
+        .game_reference_copies are mostly straight from Steam, and a game
+        without BepInEx cannot supply a single one of the assemblies these
+        projects reference. Checking for BepInEx\core is what tells the two
+        kinds of copy apart.
+
+    Step 4 is what makes git worktrees work: the cache is per-user and lives
     outside the repo (see $RefDirCacheFile in build-support.psm1), so one
     .\provision-refs.ps1 or .\build.ps1 anywhere on the machine answers the
-    question for every checkout on it, worktrees included.
+    question for every checkout on it. It is also the only step that can find
+    the Steam install, since MSBuild cannot read Steam's library folders -
+    which makes the PowerShell scripts the way to recover when nothing here
+    resolves.
 
     None of these values may be wrapped across lines: MSBuild trims only the
     ends of a property value, so a line break inside one lands in the middle of
     the path and every Exists() check on it then fails.
   -->
   <PropertyGroup>
-    <RepoDefaultGameDir>$(MSBuildThisFileDirectory)Steam Install - Unaltered\Disco Elysium</RepoDefaultGameDir>
+    <GameRefCopiesDir>$(MSBuildThisFileDirectory).game_reference_copies\</GameRefCopiesDir>
+    <RepoDefaultGameDir>$(GameRefCopiesDir)Steam Install - Unaltered\Disco Elysium</RepoDefaultGameDir>
     <RefGameDirCacheFile Condition="'$(LOCALAPPDATA)' != ''">$(LOCALAPPDATA)\GlobalConversationTracker\reference-game-dir.txt</RefGameDirCacheFile>
   </PropertyGroup>
 
   <PropertyGroup>
+    <_CachedGameDir Condition="'$(RefGameDirCacheFile)' != '' and Exists('$(RefGameDirCacheFile)')">$([System.IO.File]::ReadAllText('$(RefGameDirCacheFile)').Trim())</_CachedGameDir>
     <DiscoElysiumDir Condition="'$(DiscoElysiumDir)' == '' and '$(DISCO_ELYSIUM_DIR)' != ''">$(DISCO_ELYSIUM_DIR)</DiscoElysiumDir>
-    <DiscoElysiumDir Condition="'$(DiscoElysiumDir)' == '' and Exists('$(RepoDefaultGameDir)')">$(RepoDefaultGameDir)</DiscoElysiumDir>
-    <DiscoElysiumDir Condition="'$(DiscoElysiumDir)' == '' and '$(RefGameDirCacheFile)' != '' and Exists('$(RefGameDirCacheFile)')">$([System.IO.File]::ReadAllText('$(RefGameDirCacheFile)').Trim())</DiscoElysiumDir>
-    <BepInExCoreDir>$(DiscoElysiumDir)\BepInEx\core\</BepInExCoreDir>
+    <DiscoElysiumDir Condition="'$(DiscoElysiumDir)' == '' and Exists('$(RepoDefaultGameDir)\BepInEx\core')">$(RepoDefaultGameDir)</DiscoElysiumDir>
+    <DiscoElysiumDir Condition="'$(DiscoElysiumDir)' == '' and '$(_CachedGameDir)' != '' and Exists('$(_CachedGameDir)\BepInEx\core')">$(_CachedGameDir)</DiscoElysiumDir>
+  </PropertyGroup>
+
+  <!--
+    The two halves of what a build references, which come from different places
+    and are worth keeping straight:
+
+      BepInEx\core     BepInEx itself, Harmony, Il2CppInterop. Published as an
+                       archive, identical on every machine, so it can simply be
+                       DOWNLOADED - see the EnsureBepInExCore target, which
+                       fetches the pinned build into the cache the first time
+                       anything needs it. Persistence and Session reference
+                       nothing else, so they need no game install at all.
+
+      BepInEx\interop  Assembly-CSharp, DialogueSystem, UnityEngine.*, and the
+                       rest of the game as IL2CPP interop assemblies. GENERATED
+                       on the machine, by BepInEx, out of the game's own
+                       GameAssembly.dll, the first time the game is launched
+                       with BepInEx installed. There is nowhere to download
+                       these from and no copy that is right for every game
+                       build, which is why the plugin - and only the plugin -
+                       still needs a real install.
+
+    An install that has core is preferred over the download, so that a build
+    references the same BepInEx the game beside it is running rather than two
+    versions that merely happen to be pinned together.
+  -->
+  <PropertyGroup>
+    <BepInExCoreDir Condition="'$(DiscoElysiumDir)' != '' and Exists('$(DiscoElysiumDir)\BepInEx\core')">$(DiscoElysiumDir)\BepInEx\core\</BepInExCoreDir>
+    <BepInExCoreDir Condition="'$(BepInExCoreDir)' == '' and '$(BepInExUnpackedDir)' != ''">$(BepInExUnpackedDir)BepInEx\core\</BepInExCoreDir>
     <BepInExInteropDir>$(DiscoElysiumDir)\BepInEx\interop\</BepInExInteropDir>
   </PropertyGroup>
 

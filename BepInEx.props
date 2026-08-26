@@ -1,0 +1,44 @@
+<Project>
+
+  <!--
+    The BepInEx build this repo pins, in one place.
+
+    Two things need these facts and used to each carry their own copy: MSBuild,
+    which references assemblies out of BepInEx\core, and build-support.psm1,
+    which packages the same archive into the all-in-one release. A pinned URL
+    and a pinned hash that live in two files are a pin waiting to drift, so they
+    live here and the PowerShell reads them out of this file.
+
+    Pinned to the exact build the docs name and the released bundle carries,
+    because IL2CPP interop is generated against a specific BepInEx AND a
+    specific game build: "whatever is newest" is not something this mod can be
+    tested against. Bumping it means re-running the end-to-end install check,
+    not just editing these lines.
+  -->
+  <PropertyGroup>
+    <BepInExBuild>688</BepInExBuild>
+    <BepInExVersion>6.0.0-be.$(BepInExBuild)</BepInExVersion>
+    <BepInExCommit>49015217f3becf052d33fa4658ac19229f5daa3a</BepInExCommit>
+    <BepInExShortCommit>4901521</BepInExShortCommit>
+    <BepInExZipName>BepInEx-Unity.IL2CPP-win-x64-$(BepInExVersion)+$(BepInExShortCommit).zip</BepInExZipName>
+    <!-- builds.bepinex.dev carries the bleeding-edge IL2CPP builds; the GitHub releases page carries the -pre line, which is not what this game needs. -->
+    <BepInExZipUrl>https://builds.bepinex.dev/projects/bepinex_be/$(BepInExBuild)/BepInEx-Unity.IL2CPP-win-x64-$(BepInExVersion)%2B$(BepInExShortCommit).zip</BepInExZipUrl>
+    <!-- Checked on download, so a replaced or redirected artifact fails loudly instead of being compiled or shipped. -->
+    <BepInExZipSha256>f68b83d58d3107a219343188137808ca66b5fd214b9051e385d86eb39b2eb65c</BepInExZipSha256>
+    <!-- LGPL-2.1, fetched at the pinned commit so the licence shipped always matches the binaries shipped. -->
+    <BepInExLicenseUrl>https://raw.githubusercontent.com/BepInEx/BepInEx/$(BepInExCommit)/LICENSE</BepInExLicenseUrl>
+  </PropertyGroup>
+
+  <!--
+    Where the downloaded archive and its unpacked copy live: per-user, outside
+    the repo, beside the reference-game-dir cache and for the same reasons - one
+    copy per machine serves every checkout and every git worktree on it, and
+    nothing large or redistributable lands in the tree.
+  -->
+  <PropertyGroup>
+    <BepInExCacheDir Condition="'$(LOCALAPPDATA)' != ''">$(LOCALAPPDATA)\GlobalConversationTracker\bepinex\</BepInExCacheDir>
+    <BepInExZipPath Condition="'$(BepInExCacheDir)' != ''">$(BepInExCacheDir)$(BepInExZipName)</BepInExZipPath>
+    <BepInExUnpackedDir Condition="'$(BepInExCacheDir)' != ''">$(BepInExCacheDir)unpacked\$(BepInExVersion)\</BepInExUnpackedDir>
+  </PropertyGroup>
+
+</Project>

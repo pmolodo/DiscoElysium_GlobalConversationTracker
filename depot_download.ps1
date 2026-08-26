@@ -21,7 +21,7 @@
 
     It lands in a folder named after the version it is:
 
-        <repo>\steam_<build date>_<edition>_<manifest id>
+        <repo>\.game_reference_copies\steam_<build date>_<edition>_<manifest id>
 
     All three parts earn their place. The date says which version this is at a
     glance; the edition says which of the two it was asked for, since a bare
@@ -94,8 +94,10 @@
     date and a reason instead of a number in someone's shell history.
 
 .PARAMETER OutputRoot
-    Where the version folder is created. Defaults to this script's own folder,
-    the repo root.
+    Where the version folder is created. Defaults to .game_reference_copies
+    beside this script, which is where the repo keeps every read-only copy of the
+    game and of its decompiled output, and which .gitignore keeps out of git. It
+    is created if it is not there.
 
 .PARAMETER Validate
     Re-hash files that are already on disk instead of trusting them. Slower, and
@@ -211,7 +213,8 @@ function ConvertFrom-UnixSeconds {
 
 
 try {
-    if (-not $OutputRoot) { $OutputRoot = $PSScriptRoot }
+    if (-not $OutputRoot) { $OutputRoot = Join-Path $PSScriptRoot ".game_reference_copies" }
+    New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
     $OutputRoot = (Get-Item -LiteralPath $OutputRoot).FullName
 
     if (-not (Get-Command $DepotDownloaderExe -ErrorAction SilentlyContinue)) {
