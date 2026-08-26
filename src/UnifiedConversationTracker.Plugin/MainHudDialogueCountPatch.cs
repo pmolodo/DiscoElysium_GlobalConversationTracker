@@ -171,6 +171,8 @@ namespace UnifiedConversationTracker
         private static IUnifiedStateLog? _log;
         private static float _offsetX;
         private static float _offsetY;
+        private static bool _showCurrentSave;
+        private static bool _showAllSaves;
 
         private static CountRow? _currentSaveRow;
         private static CountRow? _allSavesRow;
@@ -187,7 +189,10 @@ namespace UnifiedConversationTracker
         /// <param name="offsetY">
         /// Vertical placement, as <see cref="DefaultOffsetY"/> describes it.
         /// </param>
+        /// <param name="showCurrentSave">Whether to draw the this-save row.</param>
+        /// <param name="showAllSaves">Whether to draw the across-all-saves row.</param>
         /// <exception cref="ArgumentNullException">Any argument is null.</exception>
+        /// <exception cref="ArgumentException">Both rows are switched off.</exception>
         /// <exception cref="Exception">
         /// Harmony could not patch the method - it was not found, or the detour
         /// failed. The caller decides what that means; the HUD is unchanged either
@@ -198,11 +203,20 @@ namespace UnifiedConversationTracker
             UnifiedStateSession session,
             IUnifiedStateLog log,
             float offsetX,
-            float offsetY)
+            float offsetY,
+            bool showCurrentSave,
+            bool showAllSaves)
         {
             if (harmony == null)
             {
                 throw new ArgumentNullException(nameof(harmony));
+            }
+
+            if (!showCurrentSave && !showAllSaves)
+            {
+                throw new ArgumentException(
+                    "Both HUD rows are switched off, so there is nothing to install. Callers should "
+                    + "skip the install instead of asking for an empty display.");
             }
 
             _session = session ?? throw new ArgumentNullException(nameof(session));
@@ -211,13 +225,15 @@ namespace UnifiedConversationTracker
                 "showing the dialogue counts on the main HUD", log);
             _offsetX = offsetX;
             _offsetY = offsetY;
+            _showCurrentSave = showCurrentSave;
+            _showAllSaves = showAllSaves;
 
             harmony.PatchAll(typeof(MoneyStartPatch));
         }
 
         /// <summary>
-        /// Brings both displayed numbers up to date with the session, if they are out
-        /// of date and if there is anything on screen to update.
+        /// Brings whichever numbers are on screen up to date with the session, if they
+        /// are out of date and if there is anything on screen to update.
         /// </summary>
         /// <remarks>
         /// <para><b>This never throws.</b> It is called from inside the tracking
@@ -236,7 +252,7 @@ namespace UnifiedConversationTracker
             CountRow? allSaves = _allSavesRow;
             UnifiedStateSession? session = _session;
             HookFailureLimiter? failures = _failures;
-            if (currentSave is null || allSaves is null || session == null || failures == null
+            if ((currentSave is null && allSaves is null) || session == null || failures == null
                 || failures.HasGivenUp)
             {
                 return;
@@ -244,8 +260,10 @@ namespace UnifiedConversationTracker
 
             try
             {
-                bool changed = currentSave.Write(session.CurrentSaveEntryCount);
-                changed |= allSaves.Write(session.EnsureInitialized().EntryCount);
+                bool changed = currentSave is not null
+                    && currentSave.Write(session.CurrentSaveEntryCount);
+                changed |= allSaves is not null
+                    && allSaves.Write(session.EnsureInitialized().EntryCount);
                 if (changed)
                 {
                     AlignIcons(currentSave, allSaves);
@@ -278,8 +296,8 @@ namespace UnifiedConversationTracker
         }
 
         /// <summary>
-        /// Builds both rows beside the given money display, replacing any earlier
-        /// ones.
+        /// Builds whichever rows are switched on beside the given money display,
+        /// replacing any earlier ones.
         /// </summary>
         private static void Attach(HudMoneyController money)
         {
@@ -334,37 +352,53 @@ namespace UnifiedConversationTracker
                 DestroyStale(moneyRect, AllSavesRowName);
 
                 // Half a line above the money's own line and half a line below it, so
-                // the pair straddles the row of the HUD it belongs to.
+                // the pair straddles the row of the HUD it belongs to. With one row
+                // switched off there is no pair to straddle with, so the survivor sits
+                // on that line rather than hanging half a line off it.
                 float lineSpacing = donor.fontSize * LineSpacingInFontSizes;
-                CountRow currentSave = Build(
-                    panel, moneyRect, donor, CurrentSaveRowName, CurrentSaveIconFileName,
-                    lineSpacing / 2f, log);
-                CountRow allSaves = Build(
-                    panel, moneyRect, donor, AllSavesRowName, AllSavesIconFileName,
-                    -lineSpacing / 2f, log);
+                float halfLine = _showCurrentSave && _showAllSaves ? lineSpacing / 2f : 0f;
+
+                CountRow? currentSave = _showCurrentSave
+                    ? Build(
+                        panel, moneyRect, donor, CurrentSaveRowName, CurrentSaveIconFileName,
+                        halfLine, log)
+                    : null;
+                CountRow? allSaves = _showAllSaves
+                    ? Build(
+                        panel, moneyRect, donor, AllSavesRowName, AllSavesIconFileName,
+                        -halfLine, log)
+                    : null;
 
                 _currentSaveRow = currentSave;
                 _allSavesRow = allSaves;
 
-                currentSave.Write(session.CurrentSaveEntryCount);
-                allSaves.Write(session.EnsureInitialized().EntryCount);
+                currentSave?.Write(session.CurrentSaveEntryCount);
+                allSaves?.Write(session.EnsureInitialized().EntryCount);
                 AlignIcons(currentSave, allSaves);
 
                 log.Info(
-                    $"Dialogue counts added to the main HUD, under '{panel.name}/{moneyRect.name}' at "
-                    + $"{currentSave.Text.rectTransform.anchoredPosition.ToString()} and "
-                    + $"{allSaves.Text.rectTransform.anchoredPosition.ToString()}, "
+                    $"Dialogue counts added to the main HUD, under '{panel.name}/{moneyRect.name}': "
+                    + $"{DescribeRow("this save", currentSave)}, {DescribeRow("all saves", allSaves)}. "
                     + $"{(-_offsetX).ToString(CultureInfo.InvariantCulture)} units left of a "
                     + $"{panel.rect.width.ToString(CultureInfo.InvariantCulture)} x "
                     + $"{panel.rect.height.ToString(CultureInfo.InvariantCulture)} panel, at font size "
                     + $"{donor.fontSize.ToString(CultureInfo.InvariantCulture)}. Nudge them with "
-                    + "HudCountOffsetX / HudCountOffsetY in the plugin's config file.");
+                    + "HudCountOffsetX / HudCountOffsetY in the plugin's config file, or switch "
+                    + "either off with ShowCurrentSaveCount / ShowAllSavesCount.");
             }
             catch (Exception ex)
             {
                 failures.Report(ex);
             }
         }
+
+        /// <summary>
+        /// Says where one row landed, or that it was switched off, for the attach log.
+        /// </summary>
+        private static string DescribeRow(string what, CountRow? row) =>
+            row is null
+                ? $"{what} off"
+                : $"{what} at {row.Text.rectTransform.anchoredPosition.ToString()}";
 
         /// <summary>Removes a row left over from an earlier attach, if there is one.</summary>
         private static void DestroyStale(RectTransform parent, string name)
@@ -510,15 +544,27 @@ namespace UnifiedConversationTracker
         /// whole point: aligned with each other is what makes them read as one block
         /// rather than two labels that happen to be stacked.
         /// </remarks>
-        private static void AlignIcons(CountRow currentSave, CountRow allSaves)
+        private static void AlignIcons(CountRow? currentSave, CountRow? allSaves)
         {
             // preferredWidth is the width of the digits themselves, not of the rect
-            // they are right aligned in, which is deliberately much wider.
-            float widest = Math.Max(currentSave.Text.preferredWidth, allSaves.Text.preferredWidth);
+            // they are right aligned in, which is deliberately much wider. A row that
+            // is switched off contributes no width: with one row there is no column to
+            // keep, only that row's own icon to place.
+            float widest = 0f;
+            if (currentSave is not null)
+            {
+                widest = currentSave.Text.preferredWidth;
+            }
+
+            if (allSaves is not null)
+            {
+                widest = Math.Max(widest, allSaves.Text.preferredWidth);
+            }
+
             var position = new Vector2(-(widest + IconGap), 0f);
 
-            currentSave.PlaceIcon(position);
-            allSaves.PlaceIcon(position);
+            currentSave?.PlaceIcon(position);
+            allSaves?.PlaceIcon(position);
         }
 
         /// <summary>

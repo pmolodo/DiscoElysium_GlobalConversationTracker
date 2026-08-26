@@ -30,12 +30,17 @@ namespace UnifiedConversationTracker
     /// <para><b>Only the current save is reset.</b> The across-all-saves state is
     /// untouched, and a new game is precisely the event it exists to survive.</para>
     ///
-    /// <para><b>One open question, which the log answers rather than a guess.</b> If
-    /// the game also resets world state during a savegame <em>load</em>, and does it
-    /// after that load's resync rather than before, this would empty a tally that was
-    /// just filled correctly. <see cref="UnifiedStateSession.ResetCurrentSave"/>
-    /// reports how long it has been since the last resync for exactly that reason: one
-    /// session's log settles it.</para>
+    /// <para><b>It does not fire on a savegame load, which was the one thing worth
+    /// checking.</b> Had the game also reset world state during a load, and done it
+    /// after that load's resync rather than before, this hook would have emptied a
+    /// tally that had just been filled correctly. Settled from a log rather than
+    /// guessed: a session that did nothing but load a save produced the resync line
+    /// and no reset line at all. <see cref="UnifiedStateSession.ResetCurrentSave"/>
+    /// still reports how long it has been since the last resync, which is what makes
+    /// that check repeatable - a reset reading "N s since the last resync" instead of
+    /// "no savegame has been resynced this session" is the failure this survived.
+    /// Only the main-menu load path has been exercised; loading from inside a running
+    /// game has not.</para>
     /// </remarks>
     internal static class NewGameResetPatch
     {

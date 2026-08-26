@@ -67,6 +67,17 @@ namespace UnifiedConversationTracker
     /// colour. As with every other hook, a failure costs the display and never the
     /// playthrough.
     /// </para>
+    ///
+    /// <para><b>Switching it off is switching it off.</b> A player who wants to go
+    /// into a run blind sets <c>MarkNovelOptions</c> to false, and this hook is never
+    /// installed - not installed and inert, but absent, so the game's own
+    /// <c>GetData</c> runs undetoured. Tracking is unaffected either way: the unified
+    /// state is written by hooks that have nothing to do with this one, so a run
+    /// played blind still contributes everything it sees to every later run. The
+    /// switch is global rather than per save, because the mod has no notion of which
+    /// save is loaded - the current-save tally is an anonymous in-memory counter with
+    /// no name or id behind it.
+    /// </para>
     /// </remarks>
     internal static class NovelResponseColorPatch
     {

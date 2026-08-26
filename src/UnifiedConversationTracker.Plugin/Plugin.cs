@@ -99,6 +99,30 @@ namespace UnifiedConversationTracker
             var session = new UnifiedStateSession(store, log);
             _session = session;
 
+            // Three switches, one per thing the mod draws. All default on: the mod
+            // exists to show these. They are separate because the three answer
+            // different questions - how far along this run is, how much of the game
+            // has ever been seen, and which options in front of me are new - and a
+            // player who wants one of those does not necessarily want the others.
+            // Switching a display off never stops tracking; the write path does not
+            // pass through any of them.
+            var showCurrentSaveCount = Config.Bind(
+                "Display",
+                "ShowCurrentSaveCount",
+                true,
+                "Show the this-save dialogue count on the main HUD.");
+            var showAllSavesCount = Config.Bind(
+                "Display",
+                "ShowAllSavesCount",
+                true,
+                "Show the across-all-saves dialogue count on the main HUD.");
+            var markNovelOptions = Config.Bind(
+                "Display",
+                "MarkNovelOptions",
+                true,
+                "Colour dialogue options that have never been picked in any save. Switch off to play "
+                + "a run blind; the mod keeps tracking either way.");
+
             // The HUD count's placement is computed from the game's own rects, so
             // these are a nudge and not a coordinate: the display lands beside the
             // money whatever the screen's aspect ratio, and these move it from there.
@@ -150,21 +174,44 @@ namespace UnifiedConversationTracker
                 "A new game will keep showing the previous save's dialogue count this session",
                 () => NewGameResetPatch.Install(harmony, session, log));
 
-            bool showingCount = TryInstall(
-                "HudMoneyController.Start",
-                "the main HUD shows how many dialogue entries have been reached, in this save and "
-                    + "across all saves",
-                "The main HUD will not show the dialogue counts this session",
-                () => MainHudDialogueCountPatch.Install(
-                    harmony, session, log, hudCountOffsetX.Value, hudCountOffsetY.Value));
+            bool showingCount = showCurrentSaveCount.Value || showAllSavesCount.Value;
+            if (showingCount)
+            {
+                showingCount = TryInstall(
+                    "HudMoneyController.Start",
+                    "the main HUD shows how many dialogue entries have been reached"
+                        + DescribeCountRows(showCurrentSaveCount.Value, showAllSavesCount.Value),
+                    "The main HUD will not show the dialogue counts this session",
+                    () => MainHudDialogueCountPatch.Install(
+                        harmony, session, log, hudCountOffsetX.Value, hudCountOffsetY.Value,
+                        showCurrentSaveCount.Value, showAllSavesCount.Value));
+            }
+            else
+            {
+                Log.LogMessage(
+                    "Both HUD dialogue counts are switched off in the config, so the main HUD is left "
+                    + "alone. Tracking is unaffected. Turn either back on with ShowCurrentSaveCount "
+                    + "or ShowAllSavesCount.");
+            }
 
-            bool colouringNovelOptions = TryInstall(
-                "SunshineResponseButton.GetData",
-                "dialogue options never picked in any save are drawn in their own colour",
-                "Every unpicked dialogue option will look the same this session, whether or not it "
-                    + "was picked in another save",
-                () => NovelResponseColorPatch.Install(
-                    harmony, session, log, novelOptionColor.Value));
+            bool colouringNovelOptions = markNovelOptions.Value;
+            if (colouringNovelOptions)
+            {
+                colouringNovelOptions = TryInstall(
+                    "SunshineResponseButton.GetData",
+                    "dialogue options never picked in any save are drawn in their own colour",
+                    "Every unpicked dialogue option will look the same this session, whether or not it "
+                        + "was picked in another save",
+                    () => NovelResponseColorPatch.Install(
+                        harmony, session, log, novelOptionColor.Value));
+            }
+            else
+            {
+                Log.LogMessage(
+                    "Novel-option colouring is switched off in the config, so dialogue options are "
+                    + "drawn exactly as the game draws them. Tracking is unaffected. Turn it back on "
+                    + "with MarkNovelOptions.");
+            }
 
             if (!recording && !resyncing && !resettingCurrentSave && !showingCount
                 && !colouringNovelOptions)
@@ -262,6 +309,23 @@ namespace UnifiedConversationTracker
                     // Nowhere left to report to. The process is going away regardless.
                 }
             }
+        }
+
+        /// <summary>
+        /// Names which of the two HUD count rows are switched on, for the install log.
+        /// </summary>
+        /// <remarks>
+        /// The caller never asks with both off - that case does not install at all -
+        /// so there are only three answers to give.
+        /// </remarks>
+        private static string DescribeCountRows(bool currentSave, bool allSaves)
+        {
+            if (currentSave && allSaves)
+            {
+                return ", in this save and across all saves";
+            }
+
+            return currentSave ? ", in this save" : ", across all saves";
         }
 
         /// <summary>
