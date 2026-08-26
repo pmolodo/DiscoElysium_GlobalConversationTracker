@@ -77,9 +77,9 @@ $PluginFolderName = $AssemblyName
 # Get-PluginPayloadFile).
 $PluginPayloadExtensions = @(".dll", ".pdb")
 # Appended to the commit hash the build stamps into the plugin assembly when the
-# tree it was built from had uncommitted changes. Written by Get-SourceRevisionId
-# and read back by Get-PluginBuildStamp, which is why it lives here and not in
-# either of them.
+# tree it was built from differed from that commit in a way the build could see.
+# Written by Get-SourceRevisionId and read back by Get-PluginBuildStamp, which is
+# why it lives here and not in either of them.
 $PluginCommitDirtySuffix = ".dirty"
 
 # Read-only reference copies of the game kept in this repo. Builds must never
@@ -430,27 +430,91 @@ it regenerates $BepInExInteropRelDir.
 
 # --- Building and packaging ---------------------------------------------------
 
-function Get-SourceRevisionId {
-    # The commit this repo is at, with $PluginCommitDirtySuffix appended when the
-    # tree holds anything uncommitted, in the exact form the build stamps into
-    # the plugin assembly (see Invoke-PluginBuild). $null when git cannot answer,
-    # which is not an error: a source drop without a .git still builds, it just
-    # produces an assembly that cannot name its origin.
+function Test-BuildAffectingUntracked {
+    # Whether an untracked path could end up in the build.
     #
-    # Untracked files count as dirty. An untracked .cs is compiled like any
-    # other, so a tree holding one is not the commit it would otherwise claim.
+    # Everything the compiler reads lives under src\ or tools\, plus the build
+    # inputs at the repo root - the solution and the Directory.Build.* files. An
+    # untracked file anywhere else (a stray debug.log, a scratch note, an
+    # exported save) cannot change a single byte of output.
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $normalized = $Path -replace "\\", "/"
+    return $normalized -like "src/*" -or
+    $normalized -like "tools/*" -or
+    $normalized -like "Directory.Build.*" -or
+    $normalized -like "*.slnx"
+}
+
+
+function Get-SourceRevisionStatus {
+    # What the build can say about its own origin: the commit, whether the tree
+    # differs from it in a way that affects the build, and what those
+    # differences are. $null when git cannot answer, which is not an error: a
+    # source drop without a .git still builds, it just produces an assembly that
+    # cannot name its origin.
+    #
+    # Tracked changes always count. Untracked files count only if they could be
+    # compiled (see Test-BuildAffectingUntracked): an untracked .cs under src\
+    # is compiled like any other, so a tree holding one is not the commit it
+    # would otherwise claim - but a stray file the build never reads is not a
+    # reason to call every build of a clean checkout ".dirty", which is what
+    # used to happen and what made the flag worth nothing.
     try {
         $commit = (& git -C $RepoRoot rev-parse HEAD 2>$null)
         if ($LASTEXITCODE -ne 0 -or -not $commit) { return $null }
-        $status = (& git -C $RepoRoot status --porcelain 2>$null)
+        $status = @(& git -C $RepoRoot status --porcelain 2>$null)
         if ($LASTEXITCODE -ne 0) { return $null }
     }
     catch {
         # No git on PATH.
         return $null
     }
-    $revision = "$commit".Trim()
-    if ($status) { $revision += $PluginCommitDirtySuffix }
+
+    $tracked = [System.Collections.Generic.List[string]]::new()
+    $untracked = [System.Collections.Generic.List[string]]::new()
+    $ignoredUntracked = [System.Collections.Generic.List[string]]::new()
+    foreach ($line in $status) {
+        if (-not $line) { continue }
+        # Porcelain v1: two status columns, a space, then the path. A rename
+        # reads "old -> new"; the new name is the one that is on disk.
+        $path = $line.Substring(3).Trim('"')
+        if ($path -match "^.* -> (?<new>.*)$") { $path = $Matches.new.Trim('"') }
+        if ($line.StartsWith("??")) {
+            if (Test-BuildAffectingUntracked -Path $path) { $untracked.Add($path) }
+            else { $ignoredUntracked.Add($path) }
+        }
+        else {
+            $tracked.Add($path)
+        }
+    }
+
+    $reasons = [System.Collections.Generic.List[string]]::new()
+    if ($tracked.Count -gt 0) {
+        $reasons.Add("$($tracked.Count) tracked file(s) changed: $($tracked -join ', ')")
+    }
+    if ($untracked.Count -gt 0) {
+        $reasons.Add("$($untracked.Count) untracked file(s) the build reads: $($untracked -join ', ')")
+    }
+
+    return [pscustomobject]@{
+        Commit           = "$commit".Trim()
+        Dirty            = $reasons.Count -gt 0
+        Reasons          = $reasons.ToArray()
+        IgnoredUntracked = $ignoredUntracked.ToArray()
+    }
+}
+
+
+function Get-SourceRevisionId {
+    # The commit this repo is at, with $PluginCommitDirtySuffix appended when the
+    # tree differs from it in a way that affects the build, in the exact form the
+    # build stamps into the plugin assembly (see Invoke-PluginBuild). $null when
+    # git cannot answer. See Get-SourceRevisionStatus for what counts.
+    param($Status)
+    if (-not $PSBoundParameters.ContainsKey("Status")) { $Status = Get-SourceRevisionStatus }
+    if (-not $Status) { return $null }
+    $revision = $Status.Commit
+    if ($Status.Dirty) { $revision += $PluginCommitDirtySuffix }
     return $revision
 }
 
@@ -522,10 +586,20 @@ function Invoke-PluginBuild {
     # Stamped into the assembly so a deployed DLL - and any log captured from a
     # session that loaded it - can be tied back to the source it was built from.
     $buildArgs = @("-p:DiscoElysiumDir=$gameDir")
-    $revision = Get-SourceRevisionId
+    $status = Get-SourceRevisionStatus
+    $revision = Get-SourceRevisionId -Status $status
     if ($revision) {
         $buildArgs += "-p:SourceRevisionId=$revision"
         Write-Host "Source revision: $revision"
+        # Say WHAT made it dirty, and what was deliberately not counted. A flag
+        # with no explanation behind it is the thing this reporting exists to
+        # stop: nobody can act on ".dirty" alone.
+        foreach ($reason in $status.Reasons) {
+            Write-Host "  dirty: $reason"
+        }
+        if ($status.IgnoredUntracked.Count -gt 0) {
+            Write-Host "  ignored (untracked, outside the build): $($status.IgnoredUntracked -join ', ')"
+        }
     }
     else {
         Write-Warning "Could not read the source revision from git; this build will carry no commit stamp, so a log captured from a session running it cannot name the source it came from."

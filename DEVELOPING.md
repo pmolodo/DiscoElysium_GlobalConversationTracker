@@ -132,10 +132,14 @@ informational version, which Windows exposes as the DLL's `ProductVersion`:
 The commit therefore travels *inside* the DLL rather than beside it, so a deployed
 plugin - and any log captured from a session that loaded it - can be tied back to the
 source it was built from, and cannot be paired with the wrong commit by copying a file
-around. `.dirty` means the tree had uncommitted changes, untracked files included: an
-untracked `.cs` is compiled like any other, so a tree holding one is not the commit it
-would otherwise claim. A build with no `git` available is stamped with nothing and says
-so.
+around. `.dirty` means the tree differed from that commit **in a way the build could
+see**: any change to a tracked file, or an untracked file under `src\`, `tools\`, or one
+of the root build inputs (`*.slnx`, `Directory.Build.*`). An untracked `.cs` under `src\`
+is compiled like any other, so a tree holding one is not the commit it claims - but a
+stray `debug.log` at the root is not, and used to set the flag on every build of an
+otherwise clean checkout, which is worth nothing to read. The build prints what made it
+dirty, and names untracked files it deliberately did not count. A build with no `git`
+available is stamped with nothing and says so.
 
 ### `deploy.ps1`
 
