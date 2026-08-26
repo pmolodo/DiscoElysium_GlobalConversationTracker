@@ -24,24 +24,25 @@
 
       1. -DiscoElysiumDir
       2. the DISCO_ELYSIUM_DIR environment variable
-      3. Steam auto-discovery (registry + libraryfolders.vdf, AppID 632470)
-      4. the last resolved install, cached per-machine in
+      3. the last resolved install, cached per-machine in
          %LOCALAPPDATA%\GlobalConversationTracker\reference-game-dir.txt
+      4. Steam auto-discovery (registry + libraryfolders.vdf, AppID 632470)
       5. a copy under <repo>\.game_reference_copies (untracked, so absent in
          a git worktree)
 
-    The live Steam install comes before either stored answer deliberately: it
-    is the copy that gets patched and re-run as the game updates, so its
-    interop assemblies match the game actually being played. Read-only use, so
-    preferring it is safe.
+    Steps 1, 2, 4 and 5 are the sources; step 3 is not one of them. The cache
+    is an optimization over that list, and it sits where the expense begins -
+    the first two lookups are free, discovery is not, and a memo read only
+    after the expensive work has been redone would save nothing. Among the
+    sources themselves, the live Steam install beats the repo copy: it is the
+    one patched and re-run as the game updates, so its interop assemblies match
+    the game actually being played. Read-only use, so preferring it is safe.
 
-    Directory.Build.props resolves the same question for the three projects
-    that reference a game install, but not by the same route: MSBuild cannot
-    read Steam's library folders, so it drops step 3 and takes the repo copy
-    before the cache rather than after. That divergence is what the cache is
-    for - whichever route answers the question here, the answer is written
-    there, and a bare 'dotnet build' in any checkout on the machine picks it
-    up, worktrees included.
+    Directory.Build.props applies the same list to the three projects that
+    reference a game install, minus step 4, since MSBuild cannot read Steam's
+    library folders. There the cache is not an optimization at all but the only
+    channel by which a discovered Steam copy ever arrives - which is why every
+    route that resolves here writes it, worktrees included.
 
     The reference install is only ever READ from; nothing is written into it.
 
@@ -51,15 +52,15 @@
     and verify.
 
 .PARAMETER DiscoElysiumDir
-    Game install to take the reference assemblies from, skipping the other three
-    steps of the resolution order above. Unlike those, it is never silently
+    Game install to take the reference assemblies from, skipping the rest of
+    the resolution order above. Unlike those, it is never silently
     rejected: a path without BepInEx\core and BepInEx\interop throws instead of
     falling through to the next candidate, on the grounds that an explicitly
     named install that cannot be used is a mistake worth reporting. It is
     cached like every other route that resolves, so naming an install once is
-    enough for later builds in any checkout on the machine. Leaving it off is
-    what asks for the rest of the resolution order, ending in the
-    auto-discovered Steam copy.
+    enough for later builds in any checkout on the machine - the cache is read
+    before discovery can overwrite it. Leaving it off is what asks for the rest
+    of the resolution order.
 #>
 [CmdletBinding()]
 param(

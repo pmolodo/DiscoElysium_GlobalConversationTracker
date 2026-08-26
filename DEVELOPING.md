@@ -98,20 +98,27 @@ Resolution order:
 
 1. `-DiscoElysiumDir <path>`
 2. the `DISCO_ELYSIUM_DIR` environment variable
-3. **Steam auto-discovery**: registry `Valve\Steam` + `libraryfolders.vdf`, AppID **632470**
-4. the last resolved install, cached per-machine in
+3. the last resolved install, cached per-machine in
    `%LOCALAPPDATA%\GlobalConversationTracker\reference-game-dir.txt`
+4. **Steam auto-discovery**: registry `Valve\Steam` + `libraryfolders.vdf`, AppID **632470**
 5. a modded copy under `<repo>\.game_reference_copies`
 
-The live Steam install comes before either stored answer deliberately: it is the copy that
-gets patched and re-run as the game updates, so its interop assemblies match the game you
-are actually playing.
+**Step 3 is not a source, it is an optimization over the ones around it.** Steps 1 and 2
+cost nothing to read, discovery does, so the cache goes between them: consulted after
+discovery it would save nothing, and discovery rewrites it on the way out, which is what
+used to make an install named once stick for zero later builds.
+
+Among the sources, the live Steam install beats the repo copy - it is the one that gets
+patched and re-run as the game updates, so its interop assemblies match the game you are
+actually playing. The price of reading the cache first is that an install you named by hand
+goes on winning after the game updates, with nothing to notice its interop has aged. Name
+another, or delete the cache file, to move off it.
 
 **Every candidate must contain BepInEx.** A pristine copy from `depot_download.ps1` is the
 game as Steam ships it and carries none of these assemblies, so a folder full of reference
 copies can still leave resolution failing - correctly.
 
-Every route that resolves writes step 4's cache, and the cache lives outside the repo on
+Every route that resolves writes step 3's cache, and the cache lives outside the repo on
 purpose: a git worktree has no reference copy of its own, so a cache kept in the tree could
 never answer the question there. One `.\provision-refs.ps1` anywhere on the machine answers
 it for every checkout on it.

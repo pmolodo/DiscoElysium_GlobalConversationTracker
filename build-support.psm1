@@ -472,12 +472,23 @@ function Save-ReferenceGameDir {
 function Resolve-ReferenceGameDir {
     # The game install the build reads its reference assemblies from.
     #
-    # Order: explicit parameter, DISCO_ELYSIUM_DIR, the LIVE STEAM INSTALL, the
-    # cached previous answer, then a copy kept in .game_reference_copies. The
-    # live install comes before either stored answer on purpose - it is the one
-    # that is patched, re-run and regenerated as the game updates, so it is the
-    # one whose interop assemblies match the game a developer is actually
-    # playing. Read-only use, so preferring it is safe.
+    # Sources, in order: explicit parameter, DISCO_ELYSIUM_DIR, the LIVE STEAM
+    # INSTALL, then a copy kept in .game_reference_copies. The live install
+    # beats the repo copy on purpose - it is the one that is patched, re-run and
+    # regenerated as the game updates, so it is the one whose interop assemblies
+    # match the game a developer is actually playing. Read-only use, so
+    # preferring it is safe.
+    #
+    # The cache is NOT one of those sources. It is an optimization over them, so
+    # it goes exactly where the expense begins: after the two free lookups,
+    # ahead of discovery. A memo consulted only once the work it memoizes has
+    # been redone saves nothing - and discovery rewrites the cache on its way
+    # out, so reading it later made -DiscoElysiumDir stick for zero later runs.
+    #
+    # The price is that an install named by hand keeps winning after the game
+    # updates, with its interop assemblies quietly ageing: Test-ReferenceGameDir
+    # checks the two directories are there, not how old they are. Naming another
+    # install, or deleting the cache file, is the way out.
     #
     # What CANNOT satisfy this is a pristine copy from depot_download.ps1. Those
     # are the game as Steam ships it, with no BepInEx in them at all, and what
@@ -505,16 +516,16 @@ function Resolve-ReferenceGameDir {
         Save-ReferenceGameDir -GameDir $env:DISCO_ELYSIUM_DIR
         return $env:DISCO_ELYSIUM_DIR
     }
-    $steamDir = Find-SteamGameDir
-    if ($steamDir -and (Test-ReferenceGameDir -Path $steamDir)) {
-        Save-ReferenceGameDir -GameDir $steamDir
-        return $steamDir
-    }
-
     $cachedGameDir = $null
     if (Test-Path -LiteralPath $RefDirCacheFile) {
         $cachedGameDir = (Get-Content -LiteralPath $RefDirCacheFile -Raw).Trim()
         if (Test-ReferenceGameDir -Path $cachedGameDir) { return $cachedGameDir }
+    }
+
+    $steamDir = Find-SteamGameDir
+    if ($steamDir -and (Test-ReferenceGameDir -Path $steamDir)) {
+        Save-ReferenceGameDir -GameDir $steamDir
+        return $steamDir
     }
 
     if (Test-ReferenceGameDir -Path $RepoDefaultGameDir) {
@@ -539,8 +550,8 @@ Could not find a Disco Elysium install to build against.
 Tried, in order:
   1. -DiscoElysiumDir                      (not given)
   2. `$env:DISCO_ELYSIUM_DIR               (not set)
-  3. Steam auto-discovery
-  4. $cacheNote
+  3. $cacheNote
+  4. Steam auto-discovery
   5. $RepoDefaultGameDir
 $steamNote
 What this needs is an install with BOTH $BepInExCoreRelDir and

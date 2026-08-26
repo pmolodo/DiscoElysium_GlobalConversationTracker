@@ -56,8 +56,7 @@
     can legitimately come from a copy you would never deploy to, such as the
     repo's read-only reference copy. A path without BepInEx\core and
     BepInEx\interop is an error rather than a reason to fall back; leaving it off
-    is what asks for the usual resolution order (see provision-refs.ps1), ending
-    in the auto-discovered Steam copy.
+    is what asks for the usual resolution order (see provision-refs.ps1).
 
 .PARAMETER AllowReferenceCopy
     Deploy even when the target turns out to be one of the repo's read-only

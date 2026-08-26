@@ -24,8 +24,8 @@
 
       1. -p:DiscoElysiumDir=<path>   (a command-line property beats anything set here)
       2. the DISCO_ELYSIUM_DIR environment variable
-      3. a modded copy kept in <repo>\.game_reference_copies
-      4. the machine-level cache the PowerShell scripts write
+      3. the machine-level cache the PowerShell scripts write
+      4. a modded copy kept in <repo>\.game_reference_copies
 
     EVERY candidate is checked for BepInEx\core rather than merely for
     existing, and both halves of that matter:
@@ -41,13 +41,14 @@
         projects reference. Checking for BepInEx\core is what tells the two
         kinds of copy apart.
 
-    Step 4 is what makes git worktrees work: the cache is per-user and lives
+    Step 3 is what makes git worktrees work: the cache is per-user and lives
     outside the repo (see $RefDirCacheFile in build-support.psm1), so one
     .\provision-refs.ps1 or .\build.ps1 anywhere on the machine answers the
-    question for every checkout on it. It is also the only step that can find
-    the Steam install, since MSBuild cannot read Steam's library folders -
-    which makes the PowerShell scripts the way to recover when nothing here
-    resolves.
+    question for every checkout on it. It sits where the PowerShell order puts
+    Steam discovery, and stands in for it: MSBuild cannot read Steam's library
+    folders, so a cached answer is the only way a build from here ever reaches
+    the Steam copy - which makes the PowerShell scripts the way to recover when
+    nothing here resolves.
 
     None of these values may be wrapped across lines: MSBuild trims only the
     ends of a property value, so a line break inside one lands in the middle of
@@ -62,8 +63,8 @@
   <PropertyGroup>
     <_CachedGameDir Condition="'$(RefGameDirCacheFile)' != '' and Exists('$(RefGameDirCacheFile)')">$([System.IO.File]::ReadAllText('$(RefGameDirCacheFile)').Trim())</_CachedGameDir>
     <DiscoElysiumDir Condition="'$(DiscoElysiumDir)' == '' and '$(DISCO_ELYSIUM_DIR)' != ''">$(DISCO_ELYSIUM_DIR)</DiscoElysiumDir>
-    <DiscoElysiumDir Condition="'$(DiscoElysiumDir)' == '' and Exists('$(RepoDefaultGameDir)\BepInEx\core')">$(RepoDefaultGameDir)</DiscoElysiumDir>
     <DiscoElysiumDir Condition="'$(DiscoElysiumDir)' == '' and '$(_CachedGameDir)' != '' and Exists('$(_CachedGameDir)\BepInEx\core')">$(_CachedGameDir)</DiscoElysiumDir>
+    <DiscoElysiumDir Condition="'$(DiscoElysiumDir)' == '' and Exists('$(RepoDefaultGameDir)\BepInEx\core')">$(RepoDefaultGameDir)</DiscoElysiumDir>
   </PropertyGroup>
 
   <!--
