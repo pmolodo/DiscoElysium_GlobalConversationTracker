@@ -57,8 +57,9 @@ including resetting a save to Untouched - can lose recorded history.
 
 ## Target environment
 
-Values observed in the BepInEx installation under
-`Steam Install - Unaltered/Disco Elysium/BepInEx`:
+Values observed in the BepInEx 6 installation this plugin was first developed against - a
+modded `Steam Install - Unaltered` copy that used to be kept in the repo and has since been
+removed:
 
 | Item | Value |
 | --- | --- |
@@ -132,20 +133,19 @@ working. It is the plugin alone: extract it into the game folder and the DLL lan
 `deploy.ps1` at the repo root does steps 1-3 below in one command; see
 [DEVELOPING.md](../../DEVELOPING.md). The manual equivalent:
 
-No BepInEx installation is needed: a working 6.0.0-be.688 loader is already present in
-`Steam Install - Unaltered\Disco Elysium\BepInEx`, and its `LogOutput.log` shows a third-party
-IL2CPP plugin (`plugins\FuriousTare`) loading and Harmony-patching the game successfully. So
-plugin loading in this build is already proven; only this plugin is unproven.
+Pick the game copy to install into (`<game>` below). It needs BepInEx 6 installed and run
+once already, so that both `BepInEx\core` and `BepInEx\interop` exist: the plugin cannot load
+without a loader, and the all-in-one archive above is how a copy that has none gets one.
 
-Pick the game copy to install into (`<game>` below):
+The everyday target is the playable Steam copy, usually
+`steamapps\common\Disco Elysium`, which is what `deploy.ps1` resolves to on its own when
+neither `-GameDir` nor `DISCO_ELYSIUM_DEPLOY_DIR` names one.
 
-- `D:\Downloads\Apps\Games\Disco Elysium\DiscoElysium_GlobalConversationTracker\.game_reference_copies\Steam Install - Unaltered\Disco Elysium`
-  - has the working BepInEx loader, so nothing else to set up
-  - despite the name it is not actually pristine: it already carries BepInEx and a third-party
-    plugin
-  - installing here means writing into that directory, which is otherwise treated as read-only
-- `C:\Apps (x86)\Games\Steam\steamapps\common\Disco Elysium` - the playable Steam copy the
-  existing `LogOutput.log` was produced from; use this if the directory above must stay untouched
+The read-only reference copies under `.game_reference_copies` are not deploy targets.
+`deploy.ps1` refuses any path under that folder, and any path carrying a
+`Steam Install - *` segment, unless `-AllowReferenceCopy` is given. A copy to build
+*against* is a separate question from a copy to install *into* - see `-DiscoElysiumDir`
+versus `-GameDir` in [DEVELOPING.md](../../DEVELOPING.md).
 
 Steps:
 
