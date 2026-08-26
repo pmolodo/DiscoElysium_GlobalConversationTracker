@@ -248,6 +248,27 @@ namespace GlobalConversationTracker.Session
         }
 
         /// <summary>
+        /// What the save currently being played is worth: an entry that was only ever
+        /// offered counts half, one that was displayed counts whole. This is what the
+        /// display shows, rather than <see cref="CurrentSaveEntryCount"/>, which
+        /// flattens the two together.
+        /// </summary>
+        /// <remarks>
+        /// Everything said about <see cref="CurrentSaveEntryCount"/> applies here too:
+        /// zero is a real answer, and this can go down.
+        /// </remarks>
+        public double CurrentSaveScore
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _currentSave.Score;
+                }
+            }
+        }
+
+        /// <summary>
         /// How many resyncs actually read the save this session. Calls that were
         /// skipped - because the save bytes were not readable, because a previous
         /// resync threw, or because saving is disabled - are not counted.
@@ -1203,7 +1224,9 @@ namespace GlobalConversationTracker.Session
             string outcome =
                 $"Resynced the global state after a savegame load: ";
             string currentSave =
-                $" The loaded save itself has {_currentSave.Count} of {rowCount} entries above Untouched.";
+                $" The loaded save itself has {_currentSave.DisplayedCount} displayed and "
+                + $"{_currentSave.OfferedCount} offered of {rowCount} entries, scoring "
+                + $"{DialogueScore.Format(_currentSave.Score)}.";
             _log.Info(
                 (raisedCount == 0
                     ? outcome

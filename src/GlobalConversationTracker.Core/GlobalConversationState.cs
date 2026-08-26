@@ -45,7 +45,14 @@ namespace GlobalConversationTracker
         private readonly Dictionary<int, Dictionary<int, SimStatus>> _conversations =
             new Dictionary<int, Dictionary<int, SimStatus>>();
 
-        private int _entryCount;
+        /// <summary>
+        /// How many recorded entries sit at each of the two statuses that are stored.
+        /// Kept as the merge goes rather than counted on demand, because the display
+        /// asks for the total on every mark and the state runs to six figures.
+        /// </summary>
+        private int _offeredCount;
+
+        private int _displayedCount;
 
         /// <summary>Creates an empty state.</summary>
         public GlobalConversationState()
@@ -60,20 +67,37 @@ namespace GlobalConversationTracker
         /// </summary>
         private GlobalConversationState(
             Dictionary<int, Dictionary<int, SimStatus>> conversations,
-            int entryCount)
+            int offeredCount,
+            int displayedCount)
         {
             _conversations = conversations;
-            _entryCount = entryCount;
+            _offeredCount = offeredCount;
+            _displayedCount = displayedCount;
         }
 
         /// <summary>Number of conversations that have at least one recorded entry.</summary>
         public int ConversationCount => _conversations.Count;
 
         /// <summary>Total number of recorded dialogue entries across all conversations.</summary>
-        public int EntryCount => _entryCount;
+        public int EntryCount => _offeredCount + _displayedCount;
+
+        /// <summary>
+        /// How many recorded entries were offered somewhere but never displayed
+        /// anywhere.
+        /// </summary>
+        public int OfferedCount => _offeredCount;
+
+        /// <summary>How many recorded entries were displayed in some save.</summary>
+        public int DisplayedCount => _displayedCount;
+
+        /// <summary>
+        /// What everything recorded is worth: offered entries count half, displayed
+        /// ones whole. This is the number the player is shown.
+        /// </summary>
+        public double Score => DialogueScore.Total(_offeredCount, _displayedCount);
 
         /// <summary>True when nothing has been recorded yet.</summary>
-        public bool IsEmpty => _entryCount == 0;
+        public bool IsEmpty => EntryCount == 0;
 
         // -------------------------------------------------------------------
         // Mutation: merge is the only path in.
@@ -129,11 +153,25 @@ namespace GlobalConversationTracker
                 }
 
                 entries[dialogueEntryId] = status;
+
+                // There are only two storable statuses, so the one raise that reaches
+                // here is WasOffered -> WasDisplayed: the entry stops being half a line
+                // and becomes a whole one.
+                _offeredCount--;
+                _displayedCount++;
                 return true;
             }
 
             entries.Add(dialogueEntryId, status);
-            _entryCount++;
+            if (status == SimStatus.WasOffered)
+            {
+                _offeredCount++;
+            }
+            else
+            {
+                _displayedCount++;
+            }
+
             return true;
         }
 
@@ -352,7 +390,7 @@ namespace GlobalConversationTracker
         /// source, since it holds exactly the same entries.</para>
         /// </remarks>
         public GlobalConversationState Snapshot() =>
-            new GlobalConversationState(ToNestedDictionary(), _entryCount);
+            new GlobalConversationState(ToNestedDictionary(), _offeredCount, _displayedCount);
 
         /// <summary>
         /// A deep copy of the state as plain nested dictionaries. Prefer

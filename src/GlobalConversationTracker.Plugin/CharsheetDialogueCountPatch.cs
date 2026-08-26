@@ -1,5 +1,4 @@
 using System;
-using System.Globalization;
 using HarmonyLib;
 using TMPro;
 using GlobalConversationTracker.Session;
@@ -34,9 +33,10 @@ namespace GlobalConversationTracker
     /// swap the font per language, not the text.</para>
     ///
     /// <para><b>Read-only, and cheap.</b> The number is
-    /// <see cref="GlobalConversationState.EntryCount"/>, which already is the count
-    /// of entries above Untouched across all saves - Untouched is never stored - so
-    /// there is nothing to count and nothing to enumerate. As with every other hook,
+    /// <see cref="GlobalConversationState.Score"/>, which is the entries above
+    /// Untouched across all saves - Untouched is never stored - weighted by
+    /// <see cref="DialogueScore"/>, so there is nothing to count and nothing to
+    /// enumerate. As with every other hook,
     /// a failure here costs the line and never the playthrough.</para>
     /// </remarks>
     internal static class CharsheetDialogueCountPatch
@@ -143,8 +143,8 @@ namespace GlobalConversationTracker
                     return;
                 }
 
-                string line = LinePrefix + session.EnsureInitialized().EntryCount
-                    .ToString("N0", CultureInfo.InvariantCulture);
+                string line = LinePrefix
+                    + DialogueScore.Format(session.EnsureInitialized().Score);
                 extraText.text = existing.Length == 0 ? line : existing + "\n" + line;
             }
             catch (Exception ex)

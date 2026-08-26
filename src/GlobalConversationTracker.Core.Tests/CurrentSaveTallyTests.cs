@@ -1,3 +1,4 @@
+using System;
 using GlobalConversationTracker;
 using Xunit;
 
@@ -42,12 +43,86 @@ namespace GlobalConversationTracker.Tests
             var tally = new CurrentSaveTally();
             tally.Set(3, 7, SimStatus.WasOffered);
 
-            // The game offers the same line over and over; every one of these is a
-            // no-op for the total.
+            // The game offers the same line over and over; every re-mark at a status
+            // the entry already holds or has passed is a no-op for the total.
             Assert.False(tally.Set(3, 7, SimStatus.WasOffered));
+
+            // ... but reaching WasDisplayed is a real change, worth the other half.
+            Assert.True(tally.Set(3, 7, SimStatus.WasDisplayed));
             Assert.False(tally.Set(3, 7, SimStatus.WasDisplayed));
+
+            // Being offered again afterwards is not the player unseeing it.
             Assert.False(tally.Set(3, 7, SimStatus.WasOffered));
             Assert.Equal(1, tally.Count);
+            Assert.Equal(1d, tally.Score);
+            Assert.Equal(SimStatus.WasDisplayed, tally.GetStatus(3, 7));
+        }
+
+        [Fact]
+        public void Score_WeighsOfferedAtAHalfAndDisplayedAtOne()
+        {
+            var tally = new CurrentSaveTally();
+
+            tally.Set(1, 1, SimStatus.WasOffered);
+            Assert.Equal(0.5d, tally.Score);
+
+            tally.Set(1, 2, SimStatus.WasDisplayed);
+            Assert.Equal(1.5d, tally.Score);
+
+            tally.Set(1, 3, SimStatus.WasOffered);
+            Assert.Equal(2d, tally.Score);
+
+            Assert.Equal(2, tally.OfferedCount);
+            Assert.Equal(1, tally.DisplayedCount);
+            Assert.Equal(3, tally.Count);
+        }
+
+        [Fact]
+        public void Set_Displayed_MovesTheEntryOutOfTheOfferedSet()
+        {
+            var tally = new CurrentSaveTally();
+            tally.Set(3, 7, SimStatus.WasOffered);
+
+            tally.Set(3, 7, SimStatus.WasDisplayed);
+
+            // Counted once, at its higher value, rather than once in each set.
+            Assert.Equal(0, tally.OfferedCount);
+            Assert.Equal(1, tally.DisplayedCount);
+            Assert.Equal(1d, tally.Score);
+        }
+
+        [Fact]
+        public void Set_Untouched_ClearsAnEntryFromEitherSet()
+        {
+            var tally = new CurrentSaveTally();
+            tally.Set(1, 1, SimStatus.WasOffered);
+            tally.Set(2, 2, SimStatus.WasDisplayed);
+
+            Assert.True(tally.Set(1, 1, SimStatus.Untouched));
+            Assert.True(tally.Set(2, 2, SimStatus.Untouched));
+            Assert.Equal(0d, tally.Score);
+            Assert.True(tally.IsEmpty);
+        }
+
+        [Fact]
+        public void GetStatus_ReportsWhichSetAnEntryIsIn()
+        {
+            var tally = new CurrentSaveTally();
+            tally.Set(1, 1, SimStatus.WasOffered);
+            tally.Set(2, 2, SimStatus.WasDisplayed);
+
+            Assert.Equal(SimStatus.WasOffered, tally.GetStatus(1, 1));
+            Assert.Equal(SimStatus.WasDisplayed, tally.GetStatus(2, 2));
+            Assert.Equal(SimStatus.Untouched, tally.GetStatus(3, 3));
+        }
+
+        [Fact]
+        public void Set_UndefinedStatus_Throws()
+        {
+            var tally = new CurrentSaveTally();
+
+            Assert.Throws<ArgumentOutOfRangeException>(
+                () => tally.Set(1, 1, (SimStatus)99));
         }
 
         [Fact]
@@ -150,12 +225,14 @@ namespace GlobalConversationTracker.Tests
         }
 
         [Fact]
-        public void ToString_SaysHowManyEntriesAreCounted()
+        public void ToString_SaysTheScoreAndWhatItIsMadeOf()
         {
             var tally = new CurrentSaveTally();
             tally.Set(1, 1, SimStatus.WasDisplayed);
+            tally.Set(1, 2, SimStatus.WasOffered);
 
-            Assert.Equal("CurrentSaveTally(1 entries above Untouched)", tally.ToString());
+            Assert.Equal(
+                "CurrentSaveTally(1.5 from 1 displayed and 1 offered)", tally.ToString());
         }
     }
 }

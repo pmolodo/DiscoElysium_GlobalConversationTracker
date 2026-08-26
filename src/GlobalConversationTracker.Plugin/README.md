@@ -30,6 +30,12 @@ a playthrough:
   HUD: each HUD element fades itself, and the panel they share never does. `HudCountOffsetX`
   and `HudCountOffsetY` in the plugin's config file nudge the pair from there.
 
+Both numbers are scores rather than plain counts. An entry the game only ever marked
+`WasOffered` - listed as a response option, never actually shown - is worth 0.5, and one marked
+`WasDisplayed` is worth 1.0; reaching a line that was already offered is the other half of the
+same entry and not a second one. The decimal place is shown only when the total ends in .5,
+which is the only fraction a total can end in, so a whole score reads as the plain count it is.
+
 The layout is one number per line, this save above and all saves below, the two numbers right
 aligned with each other and the two icons in a column left of whichever number is wider - a
 speech bubble for this save, a globe for all saves. Both are white PNGs embedded in the plugin

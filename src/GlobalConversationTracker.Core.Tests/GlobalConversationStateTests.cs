@@ -63,6 +63,74 @@ namespace GlobalConversationTracker.Tests
         }
 
         // -------------------------------------------------------------------
+        // Scoring
+        // -------------------------------------------------------------------
+
+        [Fact]
+        public void Score_WeighsOfferedAtAHalfAndDisplayedAtOne()
+        {
+            var state = new GlobalConversationState();
+
+            state.Merge(1, 1, SimStatus.WasOffered);
+            Assert.Equal(0.5d, state.Score);
+
+            state.Merge(1, 2, SimStatus.WasDisplayed);
+            Assert.Equal(1.5d, state.Score);
+
+            Assert.Equal(1, state.OfferedCount);
+            Assert.Equal(1, state.DisplayedCount);
+            Assert.Equal(2, state.EntryCount);
+        }
+
+        [Fact]
+        public void Score_RaisingAnEntryMovesItFromOfferedToDisplayed()
+        {
+            var state = new GlobalConversationState();
+            state.Merge(ConversationId, EntryId, SimStatus.WasOffered);
+
+            state.Merge(ConversationId, EntryId, SimStatus.WasDisplayed);
+
+            Assert.Equal(0, state.OfferedCount);
+            Assert.Equal(1, state.DisplayedCount);
+            Assert.Equal(1d, state.Score);
+        }
+
+        [Fact]
+        public void Score_IgnoredMergesLeaveItAlone()
+        {
+            var state = new GlobalConversationState();
+            state.Merge(ConversationId, EntryId, SimStatus.WasDisplayed);
+
+            // A downgrade, an unchanged status, and an Untouched that is never stored.
+            state.Merge(ConversationId, EntryId, SimStatus.WasOffered);
+            state.Merge(ConversationId, EntryId, SimStatus.WasDisplayed);
+            state.Merge(ConversationId, EntryId + 1, SimStatus.Untouched);
+
+            Assert.Equal(0, state.OfferedCount);
+            Assert.Equal(1, state.DisplayedCount);
+            Assert.Equal(1d, state.Score);
+        }
+
+        [Fact]
+        public void Score_SurvivesASnapshot()
+        {
+            var state = new GlobalConversationState();
+            state.Merge(1, 1, SimStatus.WasOffered);
+            state.Merge(1, 2, SimStatus.WasDisplayed);
+
+            GlobalConversationState snapshot = state.Snapshot();
+
+            Assert.Equal(state.Score, snapshot.Score);
+            Assert.Equal(state.OfferedCount, snapshot.OfferedCount);
+            Assert.Equal(state.DisplayedCount, snapshot.DisplayedCount);
+
+            // ... and the copy keeps its own books from there.
+            snapshot.Merge(1, 1, SimStatus.WasDisplayed);
+            Assert.Equal(2d, snapshot.Score);
+            Assert.Equal(1.5d, state.Score);
+        }
+
+        // -------------------------------------------------------------------
         // Downgrades: every one of them is a silent no-op
         // -------------------------------------------------------------------
 

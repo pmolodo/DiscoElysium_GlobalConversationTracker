@@ -45,6 +45,33 @@ namespace GlobalConversationTracker.Session.Tests
         }
 
         [Fact]
+        public void Record_ScoresOfferedAtAHalfInBothTheSaveAndTheGlobalState()
+        {
+            using var dir = new TempDirectory();
+            using var session = new GlobalStateSession(dir.CreateStore(), new RecordingLog());
+
+            session.Record(3, 17, "WasOffered");
+            Assert.Equal(0.5d, session.CurrentSaveScore);
+            Assert.Equal(0.5d, session.State.Score);
+
+            // Displaying the line it offered is the other half, not a second entry.
+            session.Record(3, 17, "WasDisplayed");
+            Assert.Equal(1d, session.CurrentSaveScore);
+            Assert.Equal(1d, session.State.Score);
+            Assert.Equal(1, session.CurrentSaveEntryCount);
+
+            session.Record(4, 1, "WasOffered");
+            Assert.Equal(1.5d, session.CurrentSaveScore);
+            Assert.Equal(1.5d, session.State.Score);
+
+            // Marking that entry Untouched takes its half off this save's score and
+            // leaves the global one alone, the same as it does for the count.
+            session.Record(4, 1, "Untouched");
+            Assert.Equal(1d, session.CurrentSaveScore);
+            Assert.Equal(1.5d, session.State.Score);
+        }
+
+        [Fact]
         public void Record_Untouched_LowersTheCurrentSaveCountButNotTheGlobalOne()
         {
             // The whole reason the two counts are separate objects. History cannot go

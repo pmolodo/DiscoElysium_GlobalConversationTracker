@@ -72,11 +72,12 @@ namespace GlobalConversationTracker
     /// <see cref="Image"/>s and tinted to the counts' own colour.</para>
     ///
     /// <para><b>Read-only, and cheap.</b> The two numbers are
-    /// <see cref="GlobalConversationState.EntryCount"/> and
-    /// <see cref="GlobalStateSession.CurrentSaveEntryCount"/>, both of which are a
-    /// collection's own size rather than anything that has to be counted. Nothing
-    /// polls: the counts can only change when a mark is recorded, a savegame is
-    /// loaded, or a new game resets the current save, and all three of those hooks
+    /// <see cref="GlobalConversationState.Score"/> and
+    /// <see cref="GlobalStateSession.CurrentSaveScore"/>, both of which are collection
+    /// sizes weighted by <see cref="DialogueScore"/> rather than anything that has to
+    /// be counted. Nothing polls: the counts can only change when a mark is recorded,
+    /// a savegame is loaded, or a new game resets the current save, and all three of
+    /// those hooks
     /// call <see cref="RefreshDisplayedCounts"/> on their way out. As with every other
     /// hook, a failure here costs the display and never the playthrough.</para>
     /// </remarks>
@@ -119,12 +120,6 @@ namespace GlobalConversationTracker
 
         /// <summary>Suffix given to a row's icon object, appended to the row's name.</summary>
         private const string IconNameSuffix = " Icon";
-
-        /// <summary>
-        /// Group separators, no decimals: the all-saves count runs into five figures,
-        /// and the money display beside it is grouped the same way.
-        /// </summary>
-        private const string CountFormat = "N0";
 
         /// <summary>
         /// How wide a row's own rect is, in canvas units. The text is right aligned
@@ -261,9 +256,9 @@ namespace GlobalConversationTracker
             try
             {
                 bool changed = currentSave is not null
-                    && currentSave.Write(session.CurrentSaveEntryCount);
+                    && currentSave.Write(session.CurrentSaveScore);
                 changed |= allSaves is not null
-                    && allSaves.Write(session.EnsureInitialized().EntryCount);
+                    && allSaves.Write(session.EnsureInitialized().Score);
                 if (changed)
                 {
                     AlignIcons(currentSave, allSaves);
@@ -372,8 +367,8 @@ namespace GlobalConversationTracker
                 _currentSaveRow = currentSave;
                 _allSavesRow = allSaves;
 
-                currentSave?.Write(session.CurrentSaveEntryCount);
-                allSaves?.Write(session.EnsureInitialized().EntryCount);
+                currentSave?.Write(session.CurrentSaveScore);
+                allSaves?.Write(session.EnsureInitialized().Score);
                 AlignIcons(currentSave, allSaves);
 
                 log.Info(
@@ -643,10 +638,10 @@ namespace GlobalConversationTracker
         {
             /// <summary>
             /// What is currently drawn, so a refresh that changes nothing does nothing.
-            /// Starts at -1 rather than 0, because 0 is a real count that must still be
+            /// Starts at -1 rather than 0, because 0 is a real score that must still be
             /// written the first time.
             /// </summary>
-            private int _shown = -1;
+            private double _shown = -1d;
 
             internal CountRow(TextMeshProUGUI text, RectTransform? icon)
             {
@@ -660,17 +655,19 @@ namespace GlobalConversationTracker
             /// <summary>The icon left of it, or null if the artwork could not be loaded.</summary>
             private RectTransform? Icon { get; }
 
-            /// <summary>Writes the count if it is not already what is on screen.</summary>
+            /// <summary>Writes the score if it is not already what is on screen.</summary>
             /// <returns>True if the text changed, so the icons need re-aligning.</returns>
-            internal bool Write(int count)
+            internal bool Write(double score)
             {
-                if (count == _shown)
+                // Exact comparison, on purpose: a score is a whole number of halves,
+                // which a double carries exactly, so two equal scores compare equal.
+                if (score == _shown)
                 {
                     return false;
                 }
 
-                Text.text = count.ToString(CountFormat, CultureInfo.InvariantCulture);
-                _shown = count;
+                Text.text = DialogueScore.Format(score);
+                _shown = score;
                 return true;
             }
 
