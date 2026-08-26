@@ -166,10 +166,11 @@ What it does:
    compiled into it. The `.pdb` is **not** installed - debugging symbols describe the
    machine that built them and do nothing in a player's game folder - so a stack trace in
    a deployed build carries no line numbers, and the commit stamped inside the DLL is what
-   ties one back to its source. What is *deleted* first is wider than what is written:
-   `GlobalConversationTracker*` `.dll` **and** `.pdb`, so a `.pdb` left by an older build
-   is cleaned up rather than stranded. Anything else in that folder - the optional
-   hand-placed `articy_ids_final_cut.json` above all - survives a redeploy.
+   ties one back to its source. Written and deleted are the same set,
+   `GlobalConversationTracker*.dll`, which is what makes it safe to delete files rather
+   than the folder; the price is that a `.pdb` an older build installed stays where it is,
+   on the few development installs that have one. Anything else in that folder - the
+   optional hand-placed `articy_ids_final_cut.json` above all - survives a redeploy.
 5. prints the log path and the line to look for
 
 **Target resolution:** `-GameDir`, else `DISCO_ELYSIUM_DEPLOY_DIR`, else the
@@ -218,8 +219,12 @@ Four things about it are worth knowing:
   cached per machine under `%LOCALAPPDATA%\GlobalConversationTrackerepinex`. The pin, the
   URL and the hash are at the top of `build-support.psm1`; changing them means re-running
   the end-to-end install check, not just editing three lines.
-- **BepInEx's own `changelog.txt` is left out**, because it sits at the root of its archive
-  under a name the *game* already uses at the root of its folder. Everything else ships.
+- **BepInEx's archive ships whole.** Its `changelog.txt` was left out until 2026-08-26, on
+  the belief that the game ships one of its own at the root of its folder. It does not: a
+  pristine depot download has no `changelog.txt`, and the one in both modded copies here is
+  byte-identical to BepInEx's. `winhttp.dll`, `doorstop_config.ini`, `.doorstop_version` and
+  `dotnet\` are BepInEx's too, for the same reason - none of them appear in a copy straight
+  from Steam.
 - **`BepInEx\interop` cannot be shipped.** Those assemblies are generated from the player's
   own game build on first launch, which is why that launch is slow.
 - **The uninstaller is hash-checked.** `GlobalConversationTracker-install-manifest.json`
