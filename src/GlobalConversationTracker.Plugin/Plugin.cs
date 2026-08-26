@@ -59,8 +59,20 @@ namespace GlobalConversationTracker
     [BepInPlugin(PluginGuid, PluginName, PluginVersion)]
     public class GlobalConversationTrackerPlugin : BasePlugin
     {
+        /// <summary>
+        /// The plugin's unique ID, as BepInEx logs it and as it keys the config file
+        /// under BepInEx\config. Changing it orphans a player's existing settings.
+        /// </summary>
         public const string PluginGuid = "com.molodowitch.globalconversationtracker";
+
+        /// <summary>The plugin's display name, used in the log and in the config header.</summary>
         public const string PluginName = "GlobalConversationTracker";
+
+        /// <summary>
+        /// The plugin's version as BepInEx reports it. Kept in step with the csproj's
+        /// own Version by hand: this one is what the log line says, that one is what
+        /// the release zip is named after.
+        /// </summary>
         public const string PluginVersion = "0.1.0";
 
         /// <summary>Unity's own "the player is quitting" event, as it reads in the log.</summary>
@@ -87,6 +99,12 @@ namespace GlobalConversationTracker
 
         private Harmony? _harmony;
 
+        /// <summary>
+        /// BepInEx's entry point, called once during chainload. Builds the session,
+        /// installs each hook independently, and returns; nothing here reads the disk
+        /// or the game, so a failure to hook costs tracking rather than the
+        /// playthrough.
+        /// </summary>
         public override void Load()
         {
             Log.LogMessage($"{PluginName} v{PluginVersion} loaded.");
@@ -358,6 +376,11 @@ namespace GlobalConversationTracker
             }
         }
 
+        /// <summary>
+        /// BepInEx's unload, if a host ever calls it. Unpatches first so nothing new
+        /// can be recorded, then flushes what is pending.
+        /// </summary>
+        /// <returns>True, since unloading is always allowed.</returns>
         public override bool Unload()
         {
             _harmony?.UnpatchSelf();

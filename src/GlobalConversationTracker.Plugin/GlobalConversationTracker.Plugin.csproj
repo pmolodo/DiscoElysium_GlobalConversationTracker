@@ -13,6 +13,15 @@
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <Deterministic>true</Deterministic>
         <DebugType>portable</DebugType>
+        <!--
+          Both on, matching every other project in the repo. Doc generation is what
+          makes the compiler check <see cref="..."/> targets at all: without it a cref
+          pointing at a deleted type compiles clean, which is how a dangling one here
+          once survived its class's deletion through a 0-warning build. The generated
+          .xml is a by-product nobody ships - only the DLL is deployed.
+        -->
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
         <!-- BepInEx resolves plugin dependencies itself; a deps.json only confuses it. -->
         <GenerateDependencyFile>false</GenerateDependencyFile>
     </PropertyGroup>
