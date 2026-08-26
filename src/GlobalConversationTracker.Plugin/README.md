@@ -74,7 +74,7 @@ where the game lives. Resolution order:
 
 1. `-p:DiscoElysiumDir=<path>` on the command line
 2. the `DISCO_ELYSIUM_DIR` environment variable
-3. default: `<repo root>\Steam Install - Unaltered\Disco Elysium`
+3. default: `<repo root>\.game_reference_copies\Steam Install - Unaltered\Disco Elysium`
 
 The default is read-only reference use; nothing is ever written into that directory.
 
@@ -139,7 +139,7 @@ plugin loading in this build is already proven; only this plugin is unproven.
 
 Pick the game copy to install into (`<game>` below):
 
-- `D:\Downloads\Apps\Games\Disco Elysium\Decompilation\Steam Install - Unaltered\Disco Elysium`
+- `D:\Downloads\Apps\Games\Disco Elysium\DiscoElysium_GlobalConversationTracker\.game_reference_copies\Steam Install - Unaltered\Disco Elysium`
   - has the working BepInEx loader, so nothing else to set up
   - despite the name it is not actually pristine: it already carries BepInEx and a third-party
     plugin
