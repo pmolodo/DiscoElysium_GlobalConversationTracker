@@ -1,6 +1,6 @@
 using System.Text;
 using NtwtfDecode;
-using UnifiedConversationTracker.Persistence;
+using GlobalConversationTracker.Persistence;
 
 const string AllTables = "all";
 const int DefaultIndent = 2;

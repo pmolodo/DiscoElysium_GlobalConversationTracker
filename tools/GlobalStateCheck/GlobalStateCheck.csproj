@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>GlobalStateCheck</RootNamespace>
+    <AssemblyName>GlobalStateCheck</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Persistence owns both the global-state file format - so the checker reads
+      exactly what the plugin writes - and the save-blob parser (RawDataParser).
+      NtwtfDecode owns finding and unpacking a save on disk (SaveBlob), and
+      brings with it the LuaTable / LuaTableVisitor decode layer this tool reads
+      the Conversation table through; referenced rather than shelled out to so
+      the table is read once, in process, with no JSON round trip.
+    -->
+    <ProjectReference Include="..\NtwtfDecode\NtwtfDecode.csproj" />
+    <ProjectReference
+      Include="..\..\src\GlobalConversationTracker.Persistence\GlobalConversationTracker.Persistence.csproj" />
+  </ItemGroup>
+
+</Project>

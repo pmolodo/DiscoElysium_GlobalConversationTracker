@@ -1,8 +1,8 @@
 # Developing
 
-Build, deploy and packaging for **UnifiedConversationTracker**, the BepInEx plugin for
+Build, deploy and packaging for **GlobalConversationTracker**, the BepInEx plugin for
 Disco Elysium - The Final Cut. The plugin's own notes live in
-[src/UnifiedConversationTracker.Plugin/README.md](src/UnifiedConversationTracker.Plugin/README.md).
+[src/GlobalConversationTracker.Plugin/README.md](src/GlobalConversationTracker.Plugin/README.md).
 
 ## TL;DR
 
@@ -23,7 +23,7 @@ Then launch the game. That is the whole iterate loop: edit -> `.\deploy.ps1` -> 
 
 ## The solution
 
-`UnifiedConversationTracker.slnx` at the repo root is the single entry point for the
+`GlobalConversationTracker.slnx` at the repo root is the single entry point for the
 libraries, the offline tools and their tests. `dotnet build` and `dotnet test` with no
 arguments pick it up, so there is no need to `cd` into one project at a time:
 
@@ -45,9 +45,9 @@ Two things about its contents are deliberate:
   a standalone console app; run one with `dotnet run --project tools\<name> -- --help`.
   - `NtwtfDecode` - dumps the Lua tables inside a `{save}.ntwtf` save (zip, folder or
     `.lua` file) as JSON.
-  - `UnifiedStateCheck` - verifies `unified-conversation-state.json` is the union of two or
+  - `GlobalStateCheck` - verifies `global-conversation-state.json` is the union of two or
     more saves, with no dialogue status lower than the highest save that mentions it.
-  - `UnifiedStateBenchmark` - times `UnifiedStateStore.Save` broken out by phase, and what
+  - `GlobalStateBenchmark` - times `GlobalStateStore.Save` broken out by phase, and what
     a caller pays now that the write runs on a background thread, over a sweep of state
     sizes.
 
@@ -135,10 +135,10 @@ What it does:
 1. resolves and vets the target (before building, so a bad target fails in a second)
 2. builds
 3. prints the exact directory it is about to write to
-4. replaces the previous build in `<game>\BepInEx\plugins\UnifiedConversationTracker`:
+4. replaces the previous build in `<game>\BepInEx\plugins\GlobalConversationTracker`:
    the plugin DLL plus the mod's own `Core`, `Persistence` and `Session` assemblies, each
    with its `.pdb`. BepInEx resolves a plugin's dependencies out of the plugin's own
-   folder, so the DLL alone would load and then fail. Only `UnifiedConversationTracker*`
+   folder, so the DLL alone would load and then fail. Only `GlobalConversationTracker*`
    `.dll`/`.pdb` are deleted first, so anything else in that folder - the optional
    hand-placed `articy_ids_final_cut.json` above all - survives a redeploy.
 5. prints the log path and the line to look for
@@ -151,20 +151,20 @@ What actually keeps a stray deploy from doing damage is the guards, not the abse
 default: the resolved target is printed before anything is written, the repo's
 `Steam Install - *` reference copy is refused outright (`-AllowReferenceCopy` overrides),
 a copy without BepInEx is rejected because the plugin could never load there, and the only
-directory created or deleted is `<game>\BepInEx\plugins\UnifiedConversationTracker`.
+directory created or deleted is `<game>\BepInEx\plugins\GlobalConversationTracker`.
 Uninstalling is deleting that one folder, so there is no uninstaller script to run.
 
 ### `make-release.ps1`
 
-Builds and packages `.build\dist\UnifiedConversationTracker-v<version>.zip`, laid out to
+Builds and packages `.build\dist\GlobalConversationTracker-v<version>.zip`, laid out to
 extract straight into a game folder:
 
 ```
-BepInEx\plugins\UnifiedConversationTracker\UnifiedConversationTracker.dll
-BepInEx\plugins\UnifiedConversationTracker\UnifiedConversationTracker.Core.dll
-BepInEx\plugins\UnifiedConversationTracker\UnifiedConversationTracker.Persistence.dll
-BepInEx\plugins\UnifiedConversationTracker\UnifiedConversationTracker.Session.dll
-UnifiedConversationTracker-README.md
+BepInEx\plugins\GlobalConversationTracker\GlobalConversationTracker.dll
+BepInEx\plugins\GlobalConversationTracker\GlobalConversationTracker.Core.dll
+BepInEx\plugins\GlobalConversationTracker\GlobalConversationTracker.Persistence.dll
+BepInEx\plugins\GlobalConversationTracker\GlobalConversationTracker.Session.dll
+GlobalConversationTracker-README.md
 ```
 
 Each `.dll` ships with its `.pdb`; it is the same payload `deploy.ps1` installs, from the
@@ -177,7 +177,7 @@ run it is meant to document.
 
 ```powershell
 .\capture-log.ps1 -Label smoke-test       # while the game is still running
-$state = "$env:USERPROFILE\AppData\LocalLow\ZAUM Studio\Disco Elysium\SaveGames\unified-conversation-state.json"
+$state = "$env:USERPROFILE\AppData\LocalLow\ZAUM Studio\Disco Elysium\SaveGames\global-conversation-state.json"
 .\capture-log.ps1 -Label session-c -RunArtifact $state
 ```
 
@@ -196,7 +196,7 @@ patches in `Load()`:
 
 That stamp identifies the process that wrote the log, so:
 
-- every `-RunArtifact` - a file that run wrote (the unified state file, a save, ...) - must
+- every `-RunArtifact` - a file that run wrote (the global state file, a save, ...) - must
   have been written at or after it. An artefact *older* than the stamp proves the log is a
   later process's.
 - if the game is still running, the stamp must fall inside the running process's lifetime.
@@ -211,9 +211,9 @@ The manifest also records what the run *was*, not just that the log belongs to i
 
 | Field | What it is |
 | --- | --- |
-| `pluginCommit`, `pluginTreeDirty`, `pluginBuildVersion` | read out of the installed `UnifiedConversationTracker.dll`'s own `ProductVersion` (see `build.ps1` above) |
-| `pluginDir`, `pluginFiles` | every file installed in `<game>\BepInEx\plugins\UnifiedConversationTracker` with size, write time and md5 - which covers the optional `articy_ids_final_cut.json` without naming it |
-| `route` | the source named in the log's `Resynced the unified state from the running game (...)` line |
+| `pluginCommit`, `pluginTreeDirty`, `pluginBuildVersion` | read out of the installed `GlobalConversationTracker.dll`'s own `ProductVersion` (see `build.ps1` above) |
+| `pluginDir`, `pluginFiles` | every file installed in `<game>\BepInEx\plugins\GlobalConversationTracker` with size, write time and md5 - which covers the optional `articy_ids_final_cut.json` without naming it |
+| `route` | the source named in the log's `Resynced the global state from the running game (...)` line |
 | `envelopeOperation`, `averageEnvelopeMs`, `envelopeCallCount` | the run's final `Average envelope for <op>` figure, so runs can be compared without re-parsing logs |
 
 Each is recorded when present and left `null` when not; a log from a build that stamped
@@ -245,8 +245,8 @@ Only the game itself can confirm the plugin loads.
 2. Watch the BepInEx console, or read `<game>\BepInEx\LogOutput.log` afterwards, for:
 
    ```
-   [Info   :   BepInEx] Loading [UnifiedConversationTracker 0.1.0]
-   [Message:UnifiedConversationTracker] UnifiedConversationTracker v0.1.0 loaded.
+   [Info   :   BepInEx] Loading [GlobalConversationTracker 0.1.0]
+   [Message:GlobalConversationTracker] GlobalConversationTracker v0.1.0 loaded.
    ```
 
    The second line is the one that proves the plugin's entry point ran. To keep that log,
@@ -289,7 +289,7 @@ install instructions.
 The knock-on effect on `deploy.ps1`: with no bundle to extract, it installs the payload
 files directly, and there is deliberately no dormant extract-an-archive path waiting for
 one. It still starts from a known state, clearing the previous build's
-`UnifiedConversationTracker*` files out of `<game>\BepInEx\plugins\UnifiedConversationTracker\`
+`GlobalConversationTracker*` files out of `<game>\BepInEx\plugins\GlobalConversationTracker\`
 before copying, and it never touches anything above that folder.
 
 ### Build output layout
@@ -302,12 +302,12 @@ everything generated, so `src\` stays clean.
 
 | What | Where |
 | --- | --- |
-| Solution | `UnifiedConversationTracker.slnx` |
-| Plugin project | `src\UnifiedConversationTracker.Plugin\` |
-| Built DLL | `.build\bin\UnifiedConversationTracker.Plugin\<Configuration>\net6.0\UnifiedConversationTracker.dll` |
-| Release zip | `.build\dist\UnifiedConversationTracker-v<version>.zip` |
+| Solution | `GlobalConversationTracker.slnx` |
+| Plugin project | `src\GlobalConversationTracker.Plugin\` |
+| Built DLL | `.build\bin\GlobalConversationTracker.Plugin\<Configuration>\net6.0\GlobalConversationTracker.dll` |
+| Release zip | `.build\dist\GlobalConversationTracker-v<version>.zip` |
 | Captured logs | `.build\logs\<label>-<timestamp>.log` (+ `.capture.json`) |
-| Installed plugin | `<game>\BepInEx\plugins\UnifiedConversationTracker\` |
+| Installed plugin | `<game>\BepInEx\plugins\GlobalConversationTracker\` |
 | BepInEx log | `<game>\BepInEx\LogOutput.log` |
 | BepInEx config | `<game>\BepInEx\config\BepInEx.cfg` |
 | Playable Steam copy | `C:\Apps (x86)\Games\Steam\steamapps\common\Disco Elysium` |

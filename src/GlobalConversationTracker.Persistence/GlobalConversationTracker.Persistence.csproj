@@ -1,0 +1,73 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      net6.0, deliberately, and NOT netstandard2.0 like the Core project.
+
+      Core is netstandard2.0 with zero package references so it stays loadable
+      from anywhere and testable without the game. This project needs a JSON
+      serializer. System.Text.Json is in-box on net6.0 and a NuGet package (plus
+      its System.Memory / System.Buffers dependency chain) on netstandard2.0.
+      BepInEx v6 IL2CPP runs the plugin on net6.0 / CoreCLR, so targeting net6.0
+      gets the serializer for free and ships no extra DLLs next to the plugin,
+      while leaving Core's zero-dependency property intact.
+    -->
+    <TargetFramework>net6.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- net6.0 is chosen to match the game's runtime, not for support status. -->
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <RootNamespace>GlobalConversationTracker.Persistence</RootNamespace>
+    <AssemblyName>GlobalConversationTracker.Persistence</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    Location of the Disco Elysium - Final Cut install whose BepInEx installation
+    supplies the reference assemblies. Override with either the DISCO_ELYSIUM_DIR
+    environment variable or -p:DiscoElysiumDir=<path>.
+  -->
+  <PropertyGroup>
+    <DiscoElysiumDir Condition="'$(DiscoElysiumDir)' == '' and '$(DISCO_ELYSIUM_DIR)' != ''">
+      $(DISCO_ELYSIUM_DIR)</DiscoElysiumDir>
+    <DiscoElysiumDir Condition="'$(DiscoElysiumDir)' == ''">$(MSBuildThisFileDirectory)..\..\Steam
+      Install - Unaltered\Disco Elysium</DiscoElysiumDir>
+    <BepInExCoreDir>$(DiscoElysiumDir)\BepInEx\core\</BepInExCoreDir>
+  </PropertyGroup>
+
+  <Target Name="ValidateBepInExReferenceDirs" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('$(BepInExCoreDir)')"
+      Text="BepInEx core directory not found: $(BepInExCoreDir). Set DISCO_ELYSIUM_DIR or pass -p:DiscoElysiumDir=&lt;game dir&gt;." />
+  </Target>
+
+  <ItemGroup>
+    <Reference Include="Il2CppInterop.Runtime" HintPath="$(BepInExCoreDir)Il2CppInterop.Runtime.dll"
+      Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference
+      Include="..\GlobalConversationTracker.Core\GlobalConversationTracker.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      The crash-point test seams (GlobalStateStore.SaveStepHook and
+      WriteChunkSize) are internal so they stay out of the public API, but the
+      unit tests, the out-of-process crash harness and the session tests all
+      have to reach them.
+    -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>GlobalConversationTracker.Persistence.Tests</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>GlobalConversationTracker.Session.Tests</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>GlobalConversationTracker.CrashHarness</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>

@@ -7,12 +7,12 @@
 .DESCRIPTION
     The everyday iterate command: edit -> .\deploy.ps1 -> relaunch the game.
 
-      1. Builds UnifiedConversationTracker.dll (via build.ps1).
+      1. Builds GlobalConversationTracker.dll (via build.ps1).
       2. Works out which game folder to install into, and says so out loud
          before touching anything.
       3. Clears the previous build out of
-         <game>\BepInEx\plugins\UnifiedConversationTracker and copies the fresh
-         one in. Only the plugin's own UnifiedConversationTracker*.dll/.pdb are
+         <game>\BepInEx\plugins\GlobalConversationTracker and copies the fresh
+         one in. Only the plugin's own GlobalConversationTracker*.dll/.pdb are
          removed, so anything else kept in that folder - notably the optional
          articy_ids_final_cut.json - survives a redeploy.
       4. Prints where to look for the plugin's log line.
@@ -31,8 +31,8 @@
     "Steam Install - *" reference copy is refused outright (-AllowReferenceCopy
     overrides), a copy without BepInEx is rejected because the plugin could
     never load there, the only directory ever created is
-    <game>\BepInEx\plugins\UnifiedConversationTracker, and the only files ever
-    deleted are that folder's own UnifiedConversationTracker*.dll/.pdb.
+    <game>\BepInEx\plugins\GlobalConversationTracker, and the only files ever
+    deleted are that folder's own GlobalConversationTracker*.dll/.pdb.
 
 .PARAMETER GameDir
     The playable game folder to install into, taking priority over

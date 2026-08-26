@@ -6,7 +6,7 @@
     reference assemblies.
 
 .DESCRIPTION
-    UnifiedConversationTracker.Plugin.csproj references DLLs in place, out of a
+    GlobalConversationTracker.Plugin.csproj references DLLs in place, out of a
     Disco Elysium install that already has BepInEx 6 (IL2CPP) set up:
 
       * <game>\BepInEx\core     - BepInEx / Il2CppInterop / Harmony assemblies

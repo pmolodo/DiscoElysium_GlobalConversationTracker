@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      Investigatory console app: how long does one whole-file rewrite of the
+      global state actually take, broken out by phase? net6.0 to match the
+      runtime BepInEx v6 IL2CPP gives the plugin, so the
+      System.Text.Json writer and the FileStream flush path are the same ones
+      that run in the game.
+    -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net6.0</TargetFramework>
+    <!-- net6.0 is chosen to match the game's runtime, not for support status. -->
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>GlobalStateBenchmark</RootNamespace>
+    <AssemblyName>GlobalStateBenchmark</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference
+      Include="..\..\src\GlobalConversationTracker.Persistence\GlobalConversationTracker.Persistence.csproj" />
+    <ProjectReference
+      Include="..\..\src\GlobalConversationTracker.Session\GlobalConversationTracker.Session.csproj" />
+  </ItemGroup>
+
+</Project>

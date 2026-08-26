@@ -7,13 +7,13 @@
 .DESCRIPTION
     Runs the Release build, reads the version out of the csproj, and writes
 
-        .build\dist\UnifiedConversationTracker-v<version>.zip
+        .build\dist\GlobalConversationTracker-v<version>.zip
 
     laid out so that extracting it into a Disco Elysium game folder installs the
     plugin:
 
-        BepInEx\plugins\UnifiedConversationTracker\UnifiedConversationTracker*.dll
-        UnifiedConversationTracker-README.md
+        BepInEx\plugins\GlobalConversationTracker\GlobalConversationTracker*.dll
+        GlobalConversationTracker-README.md
 
     That is the plugin plus the mod's own library assemblies (Core, Persistence,
     Session), which BepInEx resolves out of the plugin's own folder.

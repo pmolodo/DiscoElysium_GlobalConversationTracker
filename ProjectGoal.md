@@ -1,7 +1,7 @@
 # Overall Goal
 
 The goal is to develop a mod for Disco Elysium that tracks seen conversations
-across all games/saves - a "Unified Conversation Tracker".  The system's save
+across all games/saves - a "Global Conversation Tracker".  The system's save
 game system already tracks seen conversation per save - I want to extend that
 so that we track it across all games played / all saves.
 
@@ -78,7 +78,7 @@ locations:
     assemblies cannot be downloaded - BepInEx generates them, which is why a
     modded install is required to build at all.
   - Deploy target: deploy.ps1 installs the mod into
-    BepInEx\plugins\UnifiedConversationTracker here.
+    BepInEx\plugins\GlobalConversationTracker here.
   Both scripts locate it automatically via Steam AppID 632470, so the path
   above is not hardcoded anywhere - it is recorded here for orientation only.
 
@@ -138,8 +138,8 @@ Details here may change, but my inital thoughts on implementation are:
   state of dialogue entries - a likely candidate is
   `PixelCrushers.DialogueSystem.DialogueLua.MarkDialogueEntry`, in
   `pre-final-cut-assetripper-export\ExportedProject\Assets\Plugins\PixelCrushers.DialogueSystem\DialogueLua.cs`.
-  We modify it to keep track of a seperate "unified" / "global" dialogue state.
-- This "unified" dialogue state is persisted on disk... somewhere. Ideally in
+  We modify it to keep track of a seperate "global" / "global" dialogue state.
+- This "global" dialogue state is persisted on disk... somewhere. Ideally in
   the same directory in which save files are normally saved - on windows,
   %UserProfile%\AppData\LocalLow\ZAUM Studio\Disco Elysium\SaveGames, but
   ideally, we use unity (or Disco Elysium) functionality to query the
@@ -149,16 +149,16 @@ Details here may change, but my inital thoughts on implementation are:
   from this serialized file location. If it does not exist, we initialize by
   copying the current game's dialogue's simstatuses.
 - Anytime we make a change to a dialgue simstatus, in addition to updating the
-  "current-game" dialogue state, we update the "unified" dialogue state, using
+  "current-game" dialogue state, we update the "global" dialogue state, using
   logic that a given dialgue entry's state can only be increased, where
-  "Untouched" < "WasOffered" < "WasDisplayed". Any time we alter the unified
+  "Untouched" < "WasOffered" < "WasDisplayed". Any time we alter the global
   state, we alter the in-memory copy, as well as overwriting the on-disk
   serialized copy.  We assume that this disk rewrite is reasonably fast - if
   not, we can revisit the design.
 - We are not concerning ourselves with the possibility of concurrent writes - we
   assume there is only a single copy of Disco Elysium running at a time.  For
   speed, we never bother reading the copy on disk before overwriting.  The only
-  time it is read is on the first access, when the unified dialog state has not
+  time it is read is on the first access, when the global dialog state has not
   been initialized.
 
 # Related Tools / Repos

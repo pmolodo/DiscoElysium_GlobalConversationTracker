@@ -27,7 +27,8 @@
   <ItemGroup>
     <!-- The blob writer the persistence tests use, shared as source: it builds the
          fixtures these tests decode. -->
-    <Compile Include="..\..\src\UnifiedConversationTracker.Persistence.Tests\LuaBlob.cs" Link="LuaBlob.cs" />
+    <Compile Include="..\..\src\GlobalConversationTracker.Persistence.Tests\LuaBlob.cs"
+      Link="LuaBlob.cs" />
   </ItemGroup>
 
 

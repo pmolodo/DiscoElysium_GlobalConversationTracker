@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      netstandard2.0 so the same assembly can be consumed by the BepInEx v6
+      IL2CPP plugin (net6.0) and by the net10.0 unit test project.
+      This library is deliberately free of Unity, BepInEx and file IO
+      dependencies so the merge logic can be tested without the game.
+    -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <RootNamespace>GlobalConversationTracker</RootNamespace>
+    <AssemblyName>GlobalConversationTracker.Core</AssemblyName>
+  </PropertyGroup>
+
+</Project>

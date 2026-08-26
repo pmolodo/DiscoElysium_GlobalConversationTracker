@@ -1,7 +1,7 @@
 using System.Text;
 using Xunit;
-using UnifiedConversationTracker.Persistence;
-using UnifiedConversationTracker.Persistence.Tests;
+using GlobalConversationTracker.Persistence;
+using GlobalConversationTracker.Persistence.Tests;
 
 namespace NtwtfDecode.Tests;
 

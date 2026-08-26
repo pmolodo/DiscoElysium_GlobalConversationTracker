@@ -28,7 +28,7 @@
     log, which makes it a fingerprint of the run:
 
       * Every -RunArtifact - a file that run is claimed to have written, e.g.
-        the unified state file or a save - must have been written at or after
+        the global state file or a save - must have been written at or after
         the stamp. An artefact OLDER than the stamp proves the log came from a
         later process.
       * If the game is still running, the stamp must fall inside the running
@@ -46,7 +46,7 @@
       * the commit the installed plugin was built from, and whether that tree was
         dirty, read out of the assembly's own informational version - the build
         stamps it there, so the commit travels inside the DLL it describes.
-      * every file in <game>\BepInEx\plugins\UnifiedConversationTracker with its
+      * every file in <game>\BepInEx\plugins\GlobalConversationTracker with its
         size and md5, which covers the optional articy id map without naming it.
       * the resync route the log reports and its final average envelope, promoted
         into fields so runs can be compared without re-parsing logs.
@@ -62,7 +62,7 @@
     game folder.
 
 .PARAMETER RunArtifact
-    Files the run being captured is claimed to have written - the unified state
+    Files the run being captured is claimed to have written - the global state
     file, a save - each of which is evidence of when that run was still going.
     Every one of them must have been written at or after the log's Harmony
     plugin-load stamp; one that is older proves the log belongs to a later
@@ -87,7 +87,7 @@
     identifiable as one that could not be tied to its run.
 
 .EXAMPLE
-    .\capture-log.ps1 -Label session-c -RunArtifact "$env:USERPROFILE\AppData\LocalLow\ZAUM Studio\Disco Elysium\SaveGames\unified-conversation-state.json"
+    .\capture-log.ps1 -Label session-c -RunArtifact "$env:USERPROFILE\AppData\LocalLow\ZAUM Studio\Disco Elysium\SaveGames\global-conversation-state.json"
 
 .EXAMPLE
     .\capture-log.ps1 -Label smoke-test    # while the game is still running
@@ -119,7 +119,7 @@ $HarmonyStampFormat = "yyyy-MM-dd HH.mm.ss"
 $ReportStampFormat = "yyyy-MM-dd HH:mm:ss.fff"
 # The resync line names, in parentheses, the route the run took to read the
 # save. Builds that do not name a route simply do not match.
-$RouteLinePattern = "(?m)^\[\w+\s*:$AssemblyName\] Resynced the unified state from the running game \(([^)]+)\)"
+$RouteLinePattern = "(?m)^\[\w+\s*:$AssemblyName\] Resynced the global state from the running game \(([^)]+)\)"
 # The running average a measured run logs after each hooked call. The last one
 # in a log is that run's final figure.
 $EnvelopeLinePattern = "(?m)^\[\w+\s*:$AssemblyName\]\s+Average envelope for (\S+)\s*:\s*([\d,]+(?:\.\d+)?) ms \((\d+) calls?\)"
@@ -148,7 +148,7 @@ function Format-Stamp {
 function Get-LogProvenance {
     # Everything the log says about the process that wrote it: when this plugin
     # loaded in it (the Harmony banner), whether the plugin's own load line is
-    # there at all, which unified state file it reported writing, and the two
+    # there at all, which global state file it reported writing, and the two
     # figures a comparison between runs is actually made of - the route taken
     # and the final average envelope.
     param([Parameter(Mandatory = $true)][string]$LogPath)
@@ -179,7 +179,7 @@ function Get-LogProvenance {
     if ($m.Success) { $version = $m.Groups[1].Value }
 
     $statePath = $null
-    $m = [regex]::Match($LogText, "(?m)^\[Message:$AssemblyName\] Unified state file: (.+?)\s*$")
+    $m = [regex]::Match($LogText, "(?m)^\[Message:$AssemblyName\] Global state file: (.+?)\s*$")
     if ($m.Success) { $statePath = $m.Groups[1].Value }
 
     # Distinct, in order of appearance: one run takes one route, so more than
@@ -414,7 +414,7 @@ and there would be no way to tell. Pass -RunArtifact <a file the run wrote>, or
     if ($provenance.StatePath -and -not ($RunArtifact -contains $provenance.StatePath)) {
         $checked = Test-ArtifactWrittenByRun -Path $provenance.StatePath -LoadStamp $loadStamp
         if (-not $checked.ok) {
-            $warnings.Add("The unified state file this log names ($($provenance.StatePath)) was $($checked.note). That run wrote no state, or this is not that run's log.")
+            $warnings.Add("The global state file this log names ($($provenance.StatePath)) was $($checked.note). That run wrote no state, or this is not that run's log.")
         }
         $checked.note = "named by the log itself$(if ($checked.note) { "; $($checked.note)" })"
         $artifacts.Add($checked)
@@ -442,7 +442,7 @@ $manifest = [ordered]@{
     envelopeOperation    = $provenance.EnvelopeOperation
     averageEnvelopeMs    = $provenance.AverageEnvelopeMs
     envelopeCallCount    = $provenance.EnvelopeCallCount
-    unifiedStatePath     = $provenance.StatePath
+    globalStatePath     = $provenance.StatePath
     gameProcessId        = if ($game) { $game.Id } else { $null }
     gameProcessStartTime = if ($game) { Format-Stamp $game.StartTime } else { $null }
     runArtifacts         = @($artifacts | ForEach-Object {

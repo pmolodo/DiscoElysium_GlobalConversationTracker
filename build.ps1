@@ -2,12 +2,12 @@
 
 <#
 .SYNOPSIS
-    Builds UnifiedConversationTracker.dll, the BepInEx plugin.
+    Builds GlobalConversationTracker.dll, the BepInEx plugin.
 
 .DESCRIPTION
     Resolves and verifies the reference assemblies (the same resolution
     provision-refs.ps1 runs), then runs `dotnet build` on
-    src\UnifiedConversationTracker.Plugin, handing the resolved game directory
+    src\GlobalConversationTracker.Plugin, handing the resolved game directory
     to the csproj as -p:DiscoElysiumDir so the project's own
     reference-resolution mechanism is what actually runs.
 

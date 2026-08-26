@@ -32,7 +32,7 @@ $PreConfigVariableNames = @((Get-Variable -Scope Script).Name) + "PreConfigVaria
 # $PSScriptRoot is this module's folder, i.e. the repo root, which is also where
 # every script that imports it lives.
 $RepoRoot = $PSScriptRoot
-$AssemblyName = "UnifiedConversationTracker"
+$AssemblyName = "GlobalConversationTracker"
 $TargetFramework = "net6.0"
 $ProjectDir = Join-Path $RepoRoot "src\$AssemblyName.Plugin"
 $ProjectFile = Join-Path $ProjectDir "$AssemblyName.Plugin.csproj"
@@ -543,7 +543,7 @@ function Copy-PluginPayload {
     # (Core, Persistence, Session), each with its .pdb if one was produced so
     # exception stack traces carry line numbers. BepInEx resolves a plugin's
     # dependencies out of the plugin's own folder, so shipping the DLL alone would
-    # load and then fail the moment it touched the unified state.
+    # load and then fail the moment it touched the global state.
     #
     # Only $AssemblyName* is copied: the game and BepInEx reference assemblies are
     # referenced with Private="false" and are not in the build output at all, so

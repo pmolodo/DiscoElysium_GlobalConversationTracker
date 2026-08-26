@@ -17,9 +17,9 @@
       Persistence owns the save-blob format reader (RawDataReader / LuaTable).
     -->
     <ProjectReference
-      Include="..\..\src\UnifiedConversationTracker.Persistence\UnifiedConversationTracker.Persistence.csproj" />
+      Include="..\..\src\GlobalConversationTracker.Persistence\GlobalConversationTracker.Persistence.csproj" />
     <ProjectReference
-      Include="..\..\src\UnifiedConversationTracker.Persistence.Tests\UnifiedConversationTracker.Persistence.Tests.csproj" />
+      Include="..\..\src\GlobalConversationTracker.Persistence.Tests\GlobalConversationTracker.Persistence.Tests.csproj" />
   </ItemGroup>
 
 </Project>
