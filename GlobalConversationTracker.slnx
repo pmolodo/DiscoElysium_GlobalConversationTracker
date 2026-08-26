@@ -24,18 +24,27 @@
         <Project
             Path="src/GlobalConversationTracker.Persistence/GlobalConversationTracker.Persistence.csproj" />
         <!--
-      Listed so the plugin loads in an IDE, but deliberately NOT built by this
-      solution: it references BepInEx and the IL2CPP interop assemblies out of a
-      Disco Elysium install, so it cannot build on a machine without one. The
-      Persistence and Session projects reference that install too (for
-      Il2CppInterop.Runtime alone) and ARE built here; all three resolve it the
-      same way, through Directory.Build.props. Build the plugin with
-      `.\build.ps1`, which also covers the one resolution step MSBuild cannot do
-      for itself - Steam auto-discovery.
+      Built by this solution like everything else, which it was not until
+      2026-08-26: it used to carry `<Build Project="false" />` on the grounds
+      that it alone needed a game install to compile against. That stopped being
+      true once Persistence and Session gained their own Il2CppInterop.Runtime
+      reference - a root build already failed on those two in a checkout with no
+      install, so excluding the plugin protected nothing and only hid plugin
+      breakage from `dotnet build` and `dotnet test`.
+
+      All three resolve the install the same way, through
+      Directory.Build.props. `.\build.ps1` is still the packaging entry point,
+      and still the way to cover the one resolution step MSBuild cannot do for
+      itself - Steam auto-discovery - but it is no longer the only way to
+      compile the plugin.
+
+      One gap remains, and it is dotnet's, not this file's: `dotnet test`
+      builds only the test projects and what they reference, and nothing
+      references the plugin, so a compile error here still passes `dotnet test`
+      alone. `dotnet build` catches it. Run both.
     -->
-        <Project Path="src/GlobalConversationTracker.Plugin/GlobalConversationTracker.Plugin.csproj">
-            <Build Project="false" />
-        </Project>
+        <Project
+            Path="src/GlobalConversationTracker.Plugin/GlobalConversationTracker.Plugin.csproj" />
         <Project
             Path="src/GlobalConversationTracker.Session.Tests/GlobalConversationTracker.Session.Tests.csproj" />
         <Project
