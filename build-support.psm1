@@ -82,6 +82,12 @@ $PluginPayloadExtensions = @(".dll", ".pdb")
 # why it lives here and not in either of them.
 $PluginCommitDirtySuffix = ".dirty"
 
+# The two Win32 error codes that mean "another process has this file open", as
+# they arrive in the low word of an IOException's HResult. See
+# Invoke-WithFileRetry, which retries these and nothing else.
+$SharingViolation = 32
+$LockViolation = 33
+
 # Read-only reference copies of the game kept in this repo. Builds must never
 # write into them, and deploy refuses to target them unless explicitly forced.
 # "Unaltered" means unaltered since the copy was taken, not unmodded: it carries
@@ -516,6 +522,101 @@ function Get-SourceRevisionId {
     $revision = $Status.Commit
     if ($Status.Dirty) { $revision += $PluginCommitDirtySuffix }
     return $revision
+}
+
+
+function Get-FileLockHolder {
+    # Who has this file open, as "name (pid N)", or $null if that cannot be
+    # answered. Best effort and quiet: this only ever decorates an error
+    # message, so nothing here may throw or slow a failure down.
+    #
+    # Sysinternals handle.exe is the only thing on Windows that answers the
+    # question without writing a kernel driver, and it is not something this
+    # repo can require. When it is absent - or refuses without elevation - the
+    # caller says "something else has it open" and lists the usual suspects,
+    # which is what it would have said anyway.
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $handle = Get-Command handle64.exe, handle.exe -ErrorAction SilentlyContinue |
+        Select-Object -First 1 -ExpandProperty Source
+    if (-not $handle) { return $null }
+
+    try {
+        $name = [System.IO.Path]::GetFileName($Path)
+        $output = & $handle -nobanner -a $name 2>$null
+        # Lines read: "7zFM.exe   pid: 32520  type: File   2EC: D:\...\thing.zip"
+        foreach ($line in @($output)) {
+            if ($line -match "^(?<proc>\S+)\s+pid:\s*(?<pid>\d+).*\s(?<path>\S:\\.*)$" -and
+                $Matches.path -like "*$name") {
+                return "$($Matches.proc) (pid $($Matches.pid))"
+            }
+        }
+    }
+    catch {
+        # Not installed, not permitted, output in a shape we do not know: all of
+        # them mean the same thing here, which is that we cannot name the holder.
+    }
+    return $null
+}
+
+
+function Invoke-WithFileRetry {
+    # Run a file operation that can fail only because something else has the
+    # file open, retrying a few times before giving up with a message a human
+    # can act on.
+    #
+    # The case this exists for: a just-written .zip is exactly what an on-access
+    # virus scanner or an Explorer preview handler opens, and it holds the file
+    # for a second or two. Left alone that surfaces as .NET's "The process
+    # cannot access the file ... because it is being used by another process",
+    # which says nothing about what to do and looks like a bug in the packaging.
+    #
+    # Only locking failures are retried. Anything else - a bad path, a full
+    # disk, a permissions problem - is thrown straight away, since retrying it
+    # would only delay the same error. "IOException" is not a good enough test
+    # for that: DirectoryNotFoundException and FileNotFoundException both derive
+    # from it, so the check is on the Win32 code in the low word of HResult -
+    # 32 ERROR_SHARING_VIOLATION, 33 ERROR_LOCK_VIOLATION - which is what a file
+    # held open by another process actually raises.
+    param(
+        [Parameter(Mandatory = $true)][scriptblock]$Operation,
+        [Parameter(Mandatory = $true)][string]$Path,
+        [string]$What = "write",
+        [int]$Attempts = 4,
+        [double]$DelaySeconds = 1.5
+    )
+
+    for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+        try {
+            & $Operation
+            return
+        }
+        catch [System.IO.IOException] {
+            $win32 = $_.Exception.HResult -band 0xFFFF
+            if ($win32 -ne $SharingViolation -and $win32 -ne $LockViolation) {
+                # Not a lock, so nothing here will change on a second attempt.
+                throw
+            }
+            if ($attempt -eq $Attempts) {
+                $holder = Get-FileLockHolder -Path $Path
+                $who = if ($holder) {
+                    "$holder has it open."
+                }
+                else {
+                    "Something else has it open - an archive viewer browsing the file (7-Zip's File Manager holds one open the whole time it is listed), an Explorer preview, or a virus scanner."
+                }
+                throw @"
+Could not $What '$Path'.
+$who
+Tried $Attempts times over $([math]::Round(($Attempts - 1) * $DelaySeconds, 1)) s. A scanner or a preview lets go
+on its own; a window someone left open does not. Close it and run this again.
+Underlying error: $($_.Exception.Message)
+"@
+            }
+            Write-Host "  $Path is in use; retrying in $DelaySeconds s ($attempt of $($Attempts - 1))..."
+            Start-Sleep -Seconds $DelaySeconds
+        }
+    }
 }
 
 

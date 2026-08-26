@@ -91,14 +91,28 @@ Copy-Item -LiteralPath $ReadmeSource -Destination (Join-Path $stageDir $ReadmeRe
 Write-Host "  $ReadmeReleaseName"
 
 # --- Zip ----------------------------------------------------------------------
+# Both file operations go through Invoke-WithFileRetry: replacing an archive
+# that was written moments ago is exactly when a virus scanner or an Explorer
+# preview still has it open, and that is worth a retry and a sentence rather
+# than a raw .NET lock error at the end of an otherwise successful run.
 New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
 $zipPath = Join-Path $DistDir "$AssemblyName-v$version.zip"
-if (Test-Path -LiteralPath $zipPath) {
-    Remove-Item -LiteralPath $zipPath -Force
+try {
+    if (Test-Path -LiteralPath $zipPath) {
+        Invoke-WithFileRetry -Path $zipPath -What "replace" -Operation {
+            Remove-Item -LiteralPath $zipPath -Force -ErrorAction Stop
+        }
+    }
+    $contents = Get-ChildItem -Force -LiteralPath $stageDir | ForEach-Object { $_.FullName }
+    Invoke-WithFileRetry -Path $zipPath -What "write" -Operation {
+        Compress-Archive -Path $contents -DestinationPath $zipPath -ErrorAction Stop
+    }
 }
-$contents = Get-ChildItem -Force -LiteralPath $stageDir | ForEach-Object { $_.FullName }
-Compress-Archive -Path $contents -DestinationPath $zipPath
-Remove-Item -LiteralPath $stageDir -Recurse -Force
+finally {
+    # Cleared even when the zip could not be written, so a failed run leaves no
+    # half-finished staging folder for the next one to trip over.
+    Remove-Item -LiteralPath $stageDir -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 Write-Host ""
 Write-Host "Created release: $zipPath" -ForegroundColor Green
