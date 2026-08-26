@@ -24,59 +24,71 @@ locations:
 
 ## This repo
 
-- Steam Install - Unaltered
-  A point-in-time copy of my Steam install of the "Final Cut" game (the game
-  files themselves are one level down, in a nested "Disco Elysium"
-  subdirectory).  "Unaltered" means unaltered *since the copy was taken* - it
-  is NOT a vendor-fresh install, and was never intended to be one.  By the
-  time the copy was made I had already installed BepInEx 6.0.0-be.688 and the
-  FuriousTare plugin via the Vortex mod manager, so the copy carries that
-  whole BepInEx tree along with it, plus the usual companions - winhttp.dll,
-  doorstop_config.ini, vortex.deployment.bepinex-injector.json, and some
-  preloader_*.log files.  This is expected, and is not a problem: no game code
-  differs anywhere (GameAssembly.dll is md5-identical to the playable Steam
-  copy below), and BepInEx\interop is precisely what the mod builds against,
-  so a modded copy is an asset here rather than a liability.
-  There is no pristine/unmodded copy of the game on disk, and none is wanted.
-  Should be left as-is; nothing in this project writes to it.
-- AssetRipperExport
-  The destination of the AssetRipper export of "Steam Install - Unaltered".
-  The export was actually run against a second, throwaway copy of that install,
-  in case AssetRipper altered its source; that copy was afterwards verified to
-  be binary identical to "Steam Install - Unaltered" and deleted, so
-  "Steam Install - Unaltered" is now the only reference copy in this repo.
-  Contains exported assets, but since this is an export of an IL2CPP game,
-  the scripts are mostly either missing or placeholders.
-- Cpp2IL
-  Outputs of running Cpp2IL tool, with various options, on the Final Cut version.
-  Largely unsuccessful in terms of recreating C# source.
-- pre-final-cut
-  A copy of Disco Elysium, before the Final Cut version.  Uses Mono, not IL2CPP.
-  Obtained by using the "DepotDownloader" tool - invoked via "depot_download_pre-final-cut.bat",
-  then the resulting folder moved / renamed.
-  Should be unaltered, but used as an AssetRipper export source.
-- pre-final-cut-assetripper-export
-  The destination of the AssetRipper export of "pre-final-cut".  Since the source
-  is a Mono unity game, most script sources are recovered.  Though the possibility
-  exists that the scripts in the Final Cut version may differ, I'm guessing
-  most functionality that we care about is largely the same.
-  - ExportedProject\Assets\Plugins
-    Subdirectory holding Unity Plugins. Also used as the destianton for a run of
-    ILSpy on DialogSystem.dll, resulting in the various PixelCrushers.DialogueSystem*
-    subfolders, containing the decompiled source for DialogueSystem.dll
+Everything the project reads but does not author - copies of the game, exports of
+its assets, decompiler output - lives in one gitignored folder:
+
+- .game_reference_copies
+  Read-only reference material, tens of gigabytes of it, none of it ours to
+  redistribute and all of it reproducible. Gitignored as a folder rather than by
+  listing each copy, so a copy added tomorrow is out of git and refused as a
+  deploy target without anyone updating a list.
+
+  - steam_<build date>_<edition>_<manifest id>
+    A copy of the game straight from Steam's content servers, fetched by
+    depot_download.ps1 and named after the version it is. PRISTINE: no BepInEx,
+    no Vortex, none of the files the Steam client writes into an install. That
+    is what makes it useful - a modded install cannot tell you which files the
+    game actually ships, and this one has already settled that question twice
+    (changelog.txt, winhttp.dll, doorstop_config.ini and dotnet\ are BepInEx's,
+    not the game's). Each carries a steam-download.json saying what it is and
+    how to fetch it again.
+    - "latest" is the current public build.
+    - "pre-final-cut" is manifest 3499130543868275315, built 2021-02-11, the
+      last content before The Final Cut. It uses Mono rather than IL2CPP, which
+      is why its AssetRipper export recovers real script sources.
+
+  - AssetRipperExport
+    An AssetRipper export of the Final Cut game. Contains exported assets, but
+    since this is an export of an IL2CPP game, the scripts are mostly either
+    missing or placeholders.
+
+  - pre-final-cut-assetripper-export
+    An AssetRipper export of the pre-Final-Cut game. Since that source is a Mono
+    Unity game, most script sources are recovered. The Final Cut version's
+    scripts may differ, but most functionality we care about is likely the same.
+    - ExportedProject\Assets\Plugins
+      Unity Plugins, and the destination of a run of ILSpy on DialogueSystem.dll -
+      the PixelCrushers.DialogueSystem* subfolders hold that decompiled source.
+
+  - Cpp2IL
+    Output of running the Cpp2IL tool, with various options, on the Final Cut
+    version. Largely unsuccessful at recreating C# source.
+
+Two copies that used to sit at the repo root were removed on 2026-08-26, and
+neither is missed:
+
+- "Steam Install - Unaltered", a point-in-time copy of the modded Steam install.
+  Its build role is covered by the playable Steam install below, which is the
+  copy that actually gets patched and re-run; its reference role is covered by a
+  pristine steam_* download, which is the better answer for "what does the game
+  ship" precisely because it is not modded.
+- "pre-final-cut", fetched by a depot_download_pre-final-cut.bat that has since
+  been folded into depot_download.ps1. Re-fetch it with
+  `.\depot_download.ps1 pre-final-cut -Username <steam account>`.
 
 ## Playable Steam install
 
 - C:\Apps (x86)\Games\Steam\steamapps\common\Disco Elysium
   My actual, playable Steam install of "Final Cut" - the copy Steam updates,
-  and the one the game is launched from.  It is modded in the same way as
-  "Steam Install - Unaltered" above (BepInEx 6.0.0-be.688 + FuriousTare,
-  deployed by Vortex), which is unsurprising, since that copy was taken from
-  this install.  It has two roles in this project:
-  - Build reference assemblies: provision-refs.ps1 sources BepInEx\core and
-    the generated BepInEx\interop assemblies from here.  The interop
-    assemblies cannot be downloaded - BepInEx generates them, which is why a
-    modded install is required to build at all.
+  and the one the game is launched from.  It is modded with BepInEx
+  6.0.0-be.688 + FuriousTare, deployed by Vortex.  It has two roles in this
+  project:
+  - Build reference assemblies: it is where the generated BepInEx\interop
+    assemblies come from.  Those cannot be downloaded - BepInEx generates them
+    from the game's own GameAssembly.dll - which is why a modded install is
+    required to build THE PLUGIN.  BepInEx\core is a different matter: it is a
+    published archive, so the build fetches the pinned one itself (see
+    BepInEx.props), and every other project builds with no game install at all.
   - Deploy target: deploy.ps1 installs the mod into
     BepInEx\plugins\GlobalConversationTracker here.
   Both scripts locate it automatically via Steam AppID 632470, so the path

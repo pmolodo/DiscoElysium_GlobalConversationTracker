@@ -26,9 +26,11 @@ plugin, which would need BepInEx, the IL2CPP interop assemblies and a running ga
 
 - Windows PowerShell 5.1 (what ships with Windows) or newer
 - the .NET SDK (`dotnet`) - 10.0.400 was used; the plugin targets `net6.0`
-- a Disco Elysium install with **BepInEx 6.0.0-be.688 (IL2CPP / CoreCLR)** already set up
-  **and run at least once**, so `<game>\BepInEx\interop` holds the generated interop
-  assemblies
+- **for the plugin only**, a Disco Elysium install with **BepInEx 6.0.0-be.688 (IL2CPP /
+  CoreCLR)** already set up **and run at least once**, so `<game>\BepInEx\interop` holds
+  the generated interop assemblies. Nothing else needs a game: `BepInEx\core` is downloaded
+  automatically against the pin in `BepInEx.props`, so the libraries, the tests and the
+  offline tools build on a machine that has never had Disco Elysium on it
 
 ## The solution
 
@@ -96,20 +98,28 @@ Resolution order:
 
 1. `-DiscoElysiumDir <path>`
 2. the `DISCO_ELYSIUM_DIR` environment variable
-3. `<repo>\Steam Install - Unaltered\Disco Elysium` - untracked, so present in a clone
-   and absent in a git worktree
+3. **Steam auto-discovery**: registry `Valve\Steam` + `libraryfolders.vdf`, AppID **632470**
 4. the last resolved install, cached per-machine in
    `%LOCALAPPDATA%\GlobalConversationTracker\reference-game-dir.txt`
-5. Steam auto-discovery: registry `Valve\Steam` + `libraryfolders.vdf`, AppID **632470**
+5. a modded copy under `<repo>\.game_reference_copies`
 
-Every route that resolves writes step 4's cache, not just discovery, and the cache lives
-outside the repo on purpose: a worktree has neither the untracked copy from step 3 nor a
-`.build\` of its own, so a cache kept in the repo could never answer the question there.
-One `.\provision-refs.ps1` anywhere on the machine answers it for every checkout on it.
+The live Steam install comes before either stored answer deliberately: it is the copy that
+gets patched and re-run as the game updates, so its interop assemblies match the game you
+are actually playing.
 
-`Directory.Build.props` applies steps 1 to 4 itself, so a bare `dotnet build` resolves the
-same install without going through PowerShell; only step 5 needs these scripts. This
-install is only ever **read** from.
+**Every candidate must contain BepInEx.** A pristine copy from `depot_download.ps1` is the
+game as Steam ships it and carries none of these assemblies, so a folder full of reference
+copies can still leave resolution failing - correctly.
+
+Every route that resolves writes step 4's cache, and the cache lives outside the repo on
+purpose: a git worktree has no reference copy of its own, so a cache kept in the tree could
+never answer the question there. One `.\provision-refs.ps1` anywhere on the machine answers
+it for every checkout on it.
+
+`Directory.Build.props` applies steps 1, 2, 4 and 5 itself, so a bare `dotnet build`
+resolves the same install without going through PowerShell. Step 3 is the one MSBuild
+cannot do, which is why a machine with no cache yet needs one script run. The install is
+only ever **read** from.
 
 Normally you do not run this directly - `build.ps1` does it for you.
 
@@ -315,10 +325,11 @@ its log can still be matched back to it by `md5` and `bytes`.
 
 ## Safety rules baked into the scripts
 
-- **The repo's reference copy of the game is never written to.** `deploy.ps1` refuses any
-  target path containing a `Steam Install - Unaltered` segment. (`-AllowReferenceCopy`
-  overrides it with a warning.) Building only ever reads from a game install, never
-  writes.
+- **The repo's reference material is never written to.** `deploy.ps1` refuses any target
+  path under `.game_reference_copies` - the folder is the rule, so a copy added tomorrow is
+  covered without anyone updating a list - or containing a `Steam Install - Unaltered`
+  segment, for a checkout that still keeps one at the root. (`-AllowReferenceCopy` overrides
+  it with a warning.) Building only ever reads from a game install, never writes.
 - **No silent deploy default** - see `deploy.ps1` above.
 - **The BepInEx config is never edited.** If `[Logging.Console] Enabled` is not `true`,
   deploy just says so and moves on; likewise `capture-log.ps1` only points out that
@@ -399,4 +410,5 @@ everything generated, so `src\` stays clean.
 | BepInEx log | `<game>\BepInEx\LogOutput.log` |
 | BepInEx config | `<game>\BepInEx\config\BepInEx.cfg` |
 | Playable Steam copy | `C:\Apps (x86)\Games\Steam\steamapps\common\Disco Elysium` |
-| Reference copy (read-only) | `Steam Install - Unaltered\` |
+| Reference copies (read-only) | `.game_reference_copies\` - Steam downloads, AssetRipper exports, decompiler output; gitignored |
+| BepInEx cache (per machine) | `%LOCALAPPDATA%\GlobalConversationTracker\bepinex\` |
