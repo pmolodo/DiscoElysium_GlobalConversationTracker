@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
 
-namespace GlobalConversationTracker.Persistence;
+namespace NtwtfDecode;
 
 /// <summary>
 /// A Lua table read out of the raw save blob.

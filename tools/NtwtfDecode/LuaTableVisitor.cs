@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 using System;
 using System.Collections.Generic;
+using GlobalConversationTracker.Persistence;
 
-namespace GlobalConversationTracker.Persistence;
+namespace NtwtfDecode;
 
 /// <summary>
 /// Builds the whole blob as nested <see cref="LuaTable"/>s - the decode

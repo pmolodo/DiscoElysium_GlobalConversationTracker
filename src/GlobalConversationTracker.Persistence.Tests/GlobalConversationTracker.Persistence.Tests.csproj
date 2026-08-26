@@ -25,6 +25,13 @@
     -->
     <ProjectReference
       Include="..\GlobalConversationTracker.CrashHarness\GlobalConversationTracker.CrashHarness.csproj" />
+    <!--
+      LuaTable / LuaTableVisitor, the IRawDataVisitor that builds every table the
+      blob holds. Only the offline tools want that, so it lives with them; these
+      parser tests read it back from there rather than keeping a second copy.
+    -->
+    <ProjectReference
+      Include="..\..\tools\NtwtfDecode\NtwtfDecode.csproj" />
   </ItemGroup>
 
 </Project>
