@@ -56,6 +56,41 @@ $BinDir = Join-Path $BuildDir "bin\$AssemblyName.Plugin"
 $CacheDir = Join-Path $env:LOCALAPPDATA $AssemblyName
 $RefDirCacheFile = Join-Path $CacheDir "reference-game-dir.txt"
 
+# --- The BepInEx build the all-in-one bundle ships -----------------------------
+# Pinned to the exact build the reference install runs and DEVELOPING.md names,
+# because IL2CPP interop is generated against a specific BepInEx AND a specific
+# game build: "whatever is newest" is not a thing this mod can be tested against.
+# Bumping it means re-running the whole end-to-end check, not just editing these
+# lines.
+$BepInExBuild = 688
+$BepInExVersion = "6.0.0-be.$BepInExBuild"
+$BepInExCommit = "49015217f3becf052d33fa4658ac19229f5daa3a"
+$BepInExShortCommit = $BepInExCommit.Substring(0, 7)
+$BepInExZipName = "BepInEx-Unity.IL2CPP-win-x64-$BepInExVersion+$BepInExShortCommit.zip"
+# builds.bepinex.dev is where the bleeding-edge IL2CPP builds live; the GitHub
+# releases page carries the -pre line, which is not what this game needs.
+$BepInExZipUrl = "https://builds.bepinex.dev/projects/bepinex_be/$BepInExBuild/BepInEx-Unity.IL2CPP-win-x64-$BepInExVersion%2B$BepInExShortCommit.zip"
+# Verified on download, so a redirected or replaced artifact fails loudly rather
+# than being packaged into a release.
+$BepInExZipSha256 = "f68b83d58d3107a219343188137808ca66b5fd214b9051e385d86eb39b2eb65c"
+# LGPL-2.1. Fetched at the pinned commit so the licence shipped always matches
+# the binaries shipped.
+$BepInExLicenseUrl = "https://raw.githubusercontent.com/BepInEx/BepInEx/$BepInExCommit/LICENSE"
+$BepInExCacheDir = Join-Path $CacheDir "bepinex"
+
+# BepInEx's own build changelog sits at the root of its archive, under a name
+# the GAME already uses at the root of its folder. Shipping it would overwrite
+# the game's changelog.txt, and it is not needed to run anything.
+$BepInExZipExcludes = @("changelog.txt")
+
+# What the bundle is called, and the two files it adds beside the game exe so an
+# install can be undone.
+$BundleSuffix = "AllInOne"
+$UninstallerName = "Uninstall-$AssemblyName.ps1"
+$InstallManifestName = "$AssemblyName-install-manifest.json"
+$ThirdPartyNoticeName = "$AssemblyName-THIRD-PARTY.txt"
+$UninstallerSource = Join-Path $RepoRoot "packaging\$UninstallerName"
+
 # Steam AppID for Disco Elysium / The Final Cut (from appmanifest_632470.acf).
 $DiscoElysiumAppId = 632470
 # Conventional steamapps\common folder name, used if the manifest is unreadable.
@@ -525,6 +560,74 @@ function Get-SourceRevisionId {
 }
 
 
+function Get-CachedDownload {
+    # A file fetched once per machine and kept, verified by SHA256 when a hash
+    # is given. Cached beside the reference-game-dir answer, and for the same
+    # reason: a 34 MB download per release build, per checkout, is a tax nobody
+    # should pay twice.
+    param(
+        [Parameter(Mandatory = $true)][string]$Url,
+        [Parameter(Mandatory = $true)][string]$FileName,
+        [string]$Sha256,
+        [string]$What = "file"
+    )
+
+    New-Item -ItemType Directory -Force -Path $BepInExCacheDir | Out-Null
+    $path = Join-Path $BepInExCacheDir $FileName
+
+    if (Test-Path -LiteralPath $path) {
+        if (-not $Sha256) { return $path }
+        $have = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($have -eq $Sha256.ToLowerInvariant()) { return $path }
+        Write-Warning "Cached $What at $path does not match its expected hash; downloading it again."
+        Remove-Item -LiteralPath $path -Force
+    }
+
+    Write-Host "Downloading $What"
+    Write-Host "  from $Url"
+    $temp = "$path.partial"
+    try {
+        # Written to a .partial and moved into place, so an interrupted download
+        # cannot leave a truncated file that the next run trusts.
+        Invoke-WebRequest -Uri $Url -OutFile $temp -UseBasicParsing
+        if ($Sha256) {
+            $have = (Get-FileHash -LiteralPath $temp -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($have -ne $Sha256.ToLowerInvariant()) {
+                throw @"
+Downloaded $What does not match its pinned hash.
+  url      $Url
+  expected $Sha256
+  got      $have
+Refusing to package it. Either the artifact was replaced upstream or something
+is rewriting the download; check before changing the pinned hash.
+"@
+            }
+        }
+        Move-Item -LiteralPath $temp -Destination $path -Force
+    }
+    finally {
+        Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
+    }
+    Write-Host "  cached at $path"
+    return $path
+}
+
+
+function Get-BepInExBundleZip {
+    # The pinned BepInEx archive the all-in-one bundle is built from.
+    return Get-CachedDownload -Url $BepInExZipUrl -FileName $BepInExZipName `
+        -Sha256 $BepInExZipSha256 -What "BepInEx $BepInExVersion"
+}
+
+
+function Get-BepInExLicense {
+    # BepInEx's LICENSE at the pinned commit. No hash: the URL names an immutable
+    # commit, so the content cannot change under it.
+    return Get-CachedDownload -Url $BepInExLicenseUrl -FileName "BepInEx-LICENSE-$BepInExShortCommit.txt" `
+        -What "the BepInEx licence"
+}
+
+
 function Get-FileLockHolder {
     # Who has this file open, as "name (pid N)", or $null if that cannot be
     # answered. Best effort and quiet: this only ever decorates an error
@@ -617,6 +720,208 @@ Underlying error: $($_.Exception.Message)
             Start-Sleep -Seconds $DelaySeconds
         }
     }
+}
+
+
+function Expand-BepInExInto {
+    # Extract the pinned BepInEx archive into a staging folder, minus the
+    # entries that would collide with the game's own files.
+    param(
+        [Parameter(Mandatory = $true)][string]$StageDir,
+        [Parameter(Mandatory = $true)][string]$ZipPath
+    )
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+    try {
+        $skipped = 0
+        foreach ($entry in $zip.Entries) {
+            $relative = $entry.FullName -replace "/", "\"
+            if ($BepInExZipExcludes -contains $relative) {
+                $skipped++
+                continue
+            }
+            $target = Join-Path $StageDir $relative
+            if (-not $entry.Name) {
+                # A directory entry: BepInEx ships empty plugins\ and patchers\,
+                # and an install wants them there rather than created on demand.
+                New-Item -ItemType Directory -Force -Path $target | Out-Null
+                continue
+            }
+            New-Item -ItemType Directory -Force -Path ([System.IO.Path]::GetDirectoryName($target)) | Out-Null
+            [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $target, $true)
+        }
+        Write-Host "  BepInEx $BepInExVersion ($($zip.Entries.Count - $skipped) files, $skipped skipped: $($BepInExZipExcludes -join ', '))"
+    }
+    finally {
+        $zip.Dispose()
+    }
+}
+
+
+function New-InstallManifest {
+    # A record of exactly what a staged bundle contains, hashed, so the shipped
+    # uninstaller can remove those files and only those files - and only while
+    # they still hold the bytes that were shipped.
+    #
+    # The directory list is what the uninstaller may prune once it has emptied
+    # them, deepest first. Directories are recorded rather than derived so that
+    # an install into a folder that already had, say, a BepInEx\plugins can
+    # never see it removed: the list holds only what this bundle created.
+    param(
+        [Parameter(Mandatory = $true)][string]$StageDir,
+        [Parameter(Mandatory = $true)][string]$Version,
+        [Parameter(Mandatory = $true)][string]$ZipSha256
+    )
+
+    $prefix = (Get-Item -LiteralPath $StageDir).FullName.TrimEnd("\") + "\"
+    $files = foreach ($file in (Get-ChildItem -LiteralPath $StageDir -Recurse -File -Force)) {
+        $relative = $file.FullName.Substring($prefix.Length)
+        # The manifest names itself and cannot hash itself; the uninstaller
+        # deletes it explicitly at the end instead.
+        if ($relative -eq $InstallManifestName) { continue }
+        [ordered]@{
+            path   = $relative -replace "\\", "/"
+            sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            bytes  = $file.Length
+        }
+    }
+
+    $directories = foreach ($dir in (Get-ChildItem -LiteralPath $StageDir -Recurse -Directory -Force)) {
+        ($dir.FullName.Substring($prefix.Length)) -replace "\\", "/"
+    }
+
+    return [ordered]@{
+        bundle        = $AssemblyName
+        bundleVersion = $Version
+        createdAt     = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+        pluginCommit  = Get-SourceRevisionId
+        bepInEx       = [ordered]@{
+            version = $BepInExVersion
+            commit  = $BepInExCommit
+            source  = $BepInExZipUrl
+            sha256  = $ZipSha256
+        }
+        files         = @($files)
+        directories   = @($directories)
+    }
+}
+
+
+function New-ThirdPartyNotice {
+    # What is in the bundle that this repo did not write, and under what terms.
+    # LGPL-2.1 asks for the licence text, for the recipient to know what they
+    # have, and for the source to be available; BepInEx is redistributed here
+    # unmodified, so naming the exact build, its commit and where it came from
+    # covers all three.
+    param(
+        [Parameter(Mandatory = $true)][string]$LicensePath,
+        [Parameter(Mandatory = $true)][string]$Destination
+    )
+
+    $header = @"
+Third-party software in this bundle
+===================================
+
+BepInEx $BepInExVersion (IL2CPP, win-x64)
+
+  Redistributed unmodified, exactly as published at:
+    $BepInExZipUrl
+
+  SHA256 of that archive:
+    $BepInExZipSha256
+
+  Built from commit $BepInExCommit
+  Source: https://github.com/BepInEx/BepInEx/tree/$BepInExCommit
+
+  BepInEx is licensed under the GNU Lesser General Public License v2.1, whose
+  full text follows. $AssemblyName itself is a separate work that uses BepInEx
+  as a plugin host; bundling the two here is for the convenience of anyone who
+  does not already have BepInEx installed.
+
+  The one file left out of the archive is its own changelog.txt, which would
+  have overwritten the game's file of the same name at the root of the game
+  folder.
+
+  The `dotnet` folder at the root of the game directory belongs to BepInEx too -
+  it is the CoreCLR runtime its IL2CPP loader needs - and the uninstaller
+  removes it along with everything else this bundle wrote.
+
+----------------------------------------------------------------------------
+
+"@
+    $license = Get-Content -LiteralPath $LicensePath -Raw
+    [System.IO.File]::WriteAllText($Destination, $header + $license)
+}
+
+
+function New-AllInOneBundle {
+    # Build the archive a player with a stock, unmodded install can extract over
+    # their game folder: BepInEx, this plugin, the licence that comes with
+    # redistributing BepInEx, and an uninstaller that can undo all of it.
+    #
+    # Kept here rather than in make-release.ps1 so it can be built to any
+    # destination - which is what lets it be tested against a scratch game
+    # folder instead of only as part of a release.
+    #
+    # Returns the path to the archive.
+    param(
+        [Parameter(Mandatory = $true)][string]$DllPath,
+        [Parameter(Mandatory = $true)][string]$Version,
+        [Parameter(Mandatory = $true)][string]$ZipPath,
+        [Parameter(Mandatory = $true)][string]$StageDir,
+        [Parameter(Mandatory = $true)][string]$ReadmeSource,
+        [Parameter(Mandatory = $true)][string]$ReadmeName
+    )
+
+    if (-not (Test-Path -LiteralPath $UninstallerSource)) {
+        throw "Missing the uninstaller this bundle ships: $UninstallerSource"
+    }
+    if (-not (Test-Path -LiteralPath $ReadmeSource)) {
+        throw "Missing plugin README: $ReadmeSource"
+    }
+
+    $bepInExZip = Get-BepInExBundleZip
+    $license = Get-BepInExLicense
+
+    if (Test-Path -LiteralPath $StageDir) {
+        Remove-Item -LiteralPath $StageDir -Recurse -Force
+    }
+    New-Item -ItemType Directory -Force -Path $StageDir | Out-Null
+
+    Write-Host "Staging all-in-one contents:"
+    Expand-BepInExInto -StageDir $StageDir -ZipPath $bepInExZip
+    Copy-PluginPayload -DllPath $DllPath -DestDir (Get-PluginInstallDir -GameDir $StageDir)
+    Copy-Item -LiteralPath $ReadmeSource -Destination (Join-Path $StageDir $ReadmeName)
+    Write-Host "  $ReadmeName"
+    Copy-Item -LiteralPath $UninstallerSource -Destination (Join-Path $StageDir $UninstallerName)
+    Write-Host "  $UninstallerName"
+    New-ThirdPartyNotice -LicensePath $license -Destination (Join-Path $StageDir $ThirdPartyNoticeName)
+    Write-Host "  $ThirdPartyNoticeName"
+
+    # Last, so it can hash everything else that is going in.
+    $zipSha = (Get-FileHash -LiteralPath $bepInExZip -Algorithm SHA256).Hash.ToLowerInvariant()
+    $manifest = New-InstallManifest -StageDir $StageDir -Version $Version -ZipSha256 $zipSha
+    $manifestPath = Join-Path $StageDir $InstallManifestName
+    [System.IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 5))
+    Write-Host "  $InstallManifestName ($($manifest.files.Count) files listed)"
+
+    New-Item -ItemType Directory -Force -Path ([System.IO.Path]::GetDirectoryName($ZipPath)) | Out-Null
+    try {
+        if (Test-Path -LiteralPath $ZipPath) {
+            Invoke-WithFileRetry -Path $ZipPath -What "replace" -Operation {
+                Remove-Item -LiteralPath $ZipPath -Force -ErrorAction Stop
+            }
+        }
+        $contents = Get-ChildItem -Force -LiteralPath $StageDir | ForEach-Object { $_.FullName }
+        Invoke-WithFileRetry -Path $ZipPath -What "write" -Operation {
+            Compress-Archive -Path $contents -DestinationPath $ZipPath -ErrorAction Stop
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $StageDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    return $ZipPath
 }
 
 

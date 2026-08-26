@@ -195,6 +195,42 @@ assembly rather than referenced, so nothing installs beside it. It is the same p
 `deploy.ps1` installs, from the same helper. The version comes from `<Version>` in the
 csproj.
 
+It also writes a second archive, `GlobalConversationTracker-v<version>-AllInOne.zip`, for
+players who do not already run mods:
+
+```
+winhttp.dll, doorstop_config.ini, .doorstop_version, dotnet\      <- BepInEx 6.0.0-be.688
+BepInEx\core\, BepInEx\patchers\, BepInEx\plugins\               <- ...
+BepInEx\plugins\GlobalConversationTracker\GlobalConversationTracker.dll
+GlobalConversationTracker-README.md
+GlobalConversationTracker-THIRD-PARTY.txt
+Uninstall-GlobalConversationTracker.ps1
+GlobalConversationTracker-install-manifest.json
+```
+
+Four things about it are worth knowing:
+
+- **The BepInEx build is pinned**, to the same 6.0.0-be.688 the reference install runs, and
+  the archive is downloaded from `builds.bepinex.dev`, checked against a pinned SHA256 and
+  cached per machine under `%LOCALAPPDATA%\GlobalConversationTrackerepinex`. The pin, the
+  URL and the hash are at the top of `build-support.psm1`; changing them means re-running
+  the end-to-end install check, not just editing three lines.
+- **BepInEx's own `changelog.txt` is left out**, because it sits at the root of its archive
+  under a name the *game* already uses at the root of its folder. Everything else ships.
+- **`BepInEx\interop` cannot be shipped.** Those assemblies are generated from the player's
+  own game build on first launch, which is why that launch is slow.
+- **The uninstaller is hash-checked.** `GlobalConversationTracker-install-manifest.json`
+  lists every shipped file with its SHA256, and `Uninstall-GlobalConversationTracker.ps1`
+  deletes a file only if it is still byte-for-byte what was installed. A BepInEx updated in
+  place, an edited config, another mod's file at the same path: all left alone and reported.
+  It supports `-WhatIf`, keeps the global state file unless `-RemoveGlobalState`, and keeps
+  BepInEx's generated data unless `-RemoveBepInExData`.
+
+`-PluginOnly` skips the bundle (and its download); `-BundleOnly` emits only the bundle.
+Redistributing BepInEx is what `GlobalConversationTracker-THIRD-PARTY.txt` covers: it names
+the build, its commit, the URL and the hash, and carries the LGPL-2.1 text fetched from that
+same commit.
+
 ### `capture-log.ps1`
 
 Copies a session's BepInEx log out of the game folder and proves the copy belongs to the

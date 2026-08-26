@@ -17,13 +17,25 @@
 
     That is one DLL and its .pdb: the mod's own layers (Core, Persistence,
     Session) are compiled into the plugin assembly, so nothing has to be
-    installed beside it.
+    installed beside it. This archive assumes the player already has a working
+    BepInEx 6 IL2CPP install - which is every developer, and almost no player.
 
-    BepInEx itself is deliberately NOT bundled. This plugin needs BepInEx 6
-    (IL2CPP / CoreCLR) bleeding-edge builds, whose interop assemblies have to be
-    generated on the player's own machine from their copy of the game, so an
-    "all in one" archive could not work the way a Mono game's would. The README
-    points at the BepInEx install instructions instead.
+    Then, unless -PluginOnly says otherwise, a second archive for the players who
+    do not:
+
+        .build\dist\GlobalConversationTracker-v<version>-AllInOne.zip
+
+    which carries a pinned BepInEx 6 IL2CPP build alongside the plugin, the
+    licence that redistributing BepInEx requires, and an uninstaller that
+    reverses the whole install. The BepInEx archive is downloaded once per
+    machine, verified against a pinned SHA256, and cached; see the BepInEx
+    section at the top of build-support.psm1 for what is pinned and why.
+
+    What the bundle cannot ship is the IL2CPP interop assemblies under
+    BepInEx\interop: they are generated from the player's own copy of the game
+    on first launch and are specific to that build. That is not a gap - BepInEx
+    writes them the first time the game runs, which is why the first launch
+    after installing is a slow one.
 
 .PARAMETER Configuration
     The MSBuild configuration that gets built and then packaged; "Release"
@@ -42,11 +54,21 @@
     build compiles against and never appears in the archive: the game and
     BepInEx assemblies are referenced with Private="false", so nothing from that
     install is packaged.
+.PARAMETER PluginOnly
+    Skip the all-in-one archive and emit only the plugin zip. Useful when
+    iterating on packaging, or on a machine that cannot reach
+    builds.bepinex.dev; the BepInEx download is cached per machine, so the cost
+    it avoids is a one-off 34 MB rather than a per-release one.
+
+.PARAMETER BundleOnly
+    The other way round: emit only the all-in-one archive.
 #>
 [CmdletBinding()]
 param(
     [string]$Configuration = "Release",
-    [string]$DiscoElysiumDir
+    [string]$DiscoElysiumDir,
+    [switch]$PluginOnly,
+    [switch]$BundleOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -72,9 +94,16 @@ Invoke-ScriptMain {
 $dllPath = Invoke-PluginBuild -Configuration $Configuration -DiscoElysiumDir $DiscoElysiumDir
 $version = Get-PluginVersion
 
-# --- Stage --------------------------------------------------------------------
+if ($PluginOnly -and $BundleOnly) {
+    throw "-PluginOnly and -BundleOnly are opposites; give one or neither."
+}
+
+$made = [System.Collections.Generic.List[string]]::new()
+
+# --- The plugin-only archive ---------------------------------------------------
 # Staged as the exact tree the zip should contain, so the archive extracts
 # straight into a game folder.
+if (-not $BundleOnly) {
 $stageDir = Join-Path $BuildDir "stage"
 if (Test-Path -LiteralPath $stageDir) {
     Remove-Item -LiteralPath $stageDir -Recurse -Force
@@ -113,9 +142,29 @@ finally {
     # half-finished staging folder for the next one to trip over.
     Remove-Item -LiteralPath $stageDir -Recurse -Force -ErrorAction SilentlyContinue
 }
+$made.Add($zipPath)
+}
+
+# --- The all-in-one bundle ----------------------------------------------------
+if (-not $PluginOnly) {
+    Write-Host ""
+    $bundlePath = New-AllInOneBundle `
+        -DllPath $dllPath `
+        -Version $version `
+        -ZipPath (Join-Path $DistDir "$AssemblyName-v$version-$BundleSuffix.zip") `
+        -StageDir (Join-Path $BuildDir "stage-$BundleSuffix") `
+        -ReadmeSource $ReadmeSource `
+        -ReadmeName $ReadmeReleaseName
+    $made.Add($bundlePath)
+}
 
 Write-Host ""
-Write-Host "Created release: $zipPath" -ForegroundColor Green
-Write-Host "Install by extracting it into the game folder (the one with $GameExeName)."
+foreach ($path in $made) {
+    Write-Host "Created release: $path" -ForegroundColor Green
+}
+Write-Host "Install by extracting into the game folder (the one with $GameExeName)."
+if (-not $PluginOnly) {
+    Write-Host "The $BundleSuffix archive brings BepInEx $BepInExVersion with it and can be undone with the $UninstallerName it installs."
+}
 
 }

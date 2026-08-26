@@ -94,7 +94,39 @@ and there is nothing for BepInEx to resolve out of the plugin folder. The three 
 still build and are tested on their own; the plugin csproj says why it takes them as
 source.
 
-## Installing and verifying
+## Installing
+
+Two archives are published per release, and which one you want depends on whether you
+already run mods in this game.
+
+**`GlobalConversationTracker-v<version>-AllInOne.zip`** - if you do not. It carries
+BepInEx 6.0.0-be.688 (IL2CPP) along with the plugin, so it is the whole install:
+
+1. Extract it into the game folder, the one with `disco.exe` in it. On Steam that is
+   usually `steamapps\common\Disco Elysium`; right-click the game, Manage, Browse local
+   files.
+2. Launch the game. **The first launch is slow** - a minute or more on a black screen -
+   because BepInEx generates the IL2CPP interop assemblies from your copy of the game
+   before anything loads. That happens once. Later launches are normal.
+3. The dialogue counts appear at the bottom of the screen, to the left of the money,
+   once you are in the game world.
+
+To remove it again, run `Uninstall-GlobalConversationTracker.ps1` from that same folder
+(right-click, Run with PowerShell). It deletes only the files the archive wrote, and only
+while they still hold the bytes the archive wrote, so a BepInEx that has since been updated
+or a file you edited is left alone and reported rather than removed. Your dialogue history -
+`global-conversation-state.json`, in the SaveGames folder - is kept unless you pass
+`-RemoveGlobalState`. `-WhatIf` shows you the whole run without changing anything.
+
+Neither archive can ship the `BepInEx\interop` assemblies, and none of this is a
+workaround: those are generated from your own game build on first launch, which is the
+slow start-up above.
+
+**`GlobalConversationTracker-v<version>.zip`** - if you already have BepInEx 6 IL2CPP
+working. It is the plugin alone: extract it into the game folder and the DLL lands in
+`BepInEx\plugins\GlobalConversationTracker\`.
+
+## Installing from a build, and verifying
 
 `deploy.ps1` at the repo root does steps 1-3 below in one command; see
 [DEVELOPING.md](../../DEVELOPING.md). The manual equivalent:
