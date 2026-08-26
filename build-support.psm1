@@ -993,7 +993,7 @@ $("=" * ($AssemblyName.Length + 6))
 
   Copyright (c) 2026 Paul Molodowitch
   License: MIT - see $LicenseReleaseName in this archive
-  Source:  https://github.com/pmolodo/disco_elysium_hacking
+  Source:  https://github.com/pmolodo/DiscoElysium_GlobalConversationTracker
 
   The plugin is the one file under BepInEx\plugins\$AssemblyName\; every other
   file in this archive belongs to BepInEx.
