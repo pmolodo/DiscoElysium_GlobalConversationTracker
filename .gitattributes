@@ -2,3 +2,10 @@
 # saved in the repo. Modern text editors can deal with either LF or CRLF on any
 # platform.
 * -text
+
+# So the bytes in a commit are the bytes on disk, and .editorconfig alone decides
+# what those bytes are: LF everywhere except .bat, .cmd and .ps1, which are CRLF.
+# The root .ps1 scripts drifted to LF against that rule and were converted back on
+# 2026-08-26; nothing here would have stopped that, since the rule above pins
+# whatever is committed rather than enforcing a convention. .editorconfig is where
+# the convention lives.
