@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 using GlobalConversationTracker;
 using GlobalConversationTracker.Persistence;
 using GlobalStateCheck;

@@ -1,4 +1,5 @@
 #!/usr/bin/env -S powershell -NoProfile -ExecutionPolicy Bypass -File
+# SPDX-License-Identifier: MIT
 
 <#
 .SYNOPSIS
@@ -119,6 +120,10 @@ if (-not (Test-Path -LiteralPath $ReadmeSource)) {
 }
 Copy-Item -LiteralPath $ReadmeSource -Destination (Join-Path $stageDir $ReadmeReleaseName)
 Write-Host "  $ReadmeReleaseName"
+
+# The licence travels with the DLL. This archive bundles nothing of anyone
+# else's, so it needs no third-party notice - only our own terms.
+Copy-PluginLicense -StageDir $stageDir
 
 # --- Zip ----------------------------------------------------------------------
 # Both file operations go through Invoke-WithFileRetry: replacing an archive

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 using System.Linq;
 using GlobalConversationTracker.Persistence;
 using GlobalConversationTracker.Session;

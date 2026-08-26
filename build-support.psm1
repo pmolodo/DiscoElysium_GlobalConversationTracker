@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 <#
     Shared configuration and helpers for the five .ps1 scripts at the repo root.
 
@@ -133,13 +134,38 @@ $BepInExUnpackedDir = $BepInExPin["BepInExUnpackedDir"].TrimEnd("\")
 # left out, add it here and say what it would have collided with.
 $BepInExZipExcludes = @()
 
-# What the bundle is called, and the two files it adds beside the game exe so an
-# install can be undone.
+# Entries RENAMED on the way into the bundle.
+#
+# changelog.txt is BepInEx's own build changelog, and at the root of a game
+# folder that bare name says nothing about whose it is - which is the same
+# confusion that nearly had it excluded outright. Prefixing it is what the
+# ViewSelected mod does with the same file, and it lets a player see at a glance
+# which files arrived with this bundle.
+$BepInExZipRenames = @{
+    "changelog.txt" = "BepInEx-changelog.txt"
+}
+
+# What the bundle is called, and the files it adds beside the game exe so an
+# install can be undone and its terms read.
 $BundleSuffix = "AllInOne"
 $UninstallerName = "Uninstall-$AssemblyName.ps1"
 $InstallManifestName = "$AssemblyName-install-manifest.json"
-$ThirdPartyNoticeName = "$AssemblyName-THIRD-PARTY.txt"
+$ThirdPartyNoticeName = "$AssemblyName-THIRD-PARTY-NOTICES.txt"
 $UninstallerSource = Join-Path $RepoRoot "packaging\$UninstallerName"
+
+# This project's own licence, and the name it takes inside a release archive.
+#
+# Shipped in BOTH archives, not just kept in the repository. MIT asks that the
+# notice travel with the software, and a DLL sitting in somebody's game folder
+# is a distribution: whoever holds it should be able to read the terms without
+# going to find the source. The plugin-only zip carries it for exactly the same
+# reason the all-in-one does.
+$LicenseSource = Join-Path $RepoRoot "LICENSE"
+$LicenseReleaseName = "$AssemblyName-LICENSE.txt"
+
+# BepInEx's licence, shipped as a file of its own at the archive root rather
+# than pasted into the notice, so it reads as a licence rather than as prose.
+$BepInExLicenseReleaseName = "BepInEx-LICENSE.txt"
 
 # Steam AppID for Disco Elysium / The Final Cut (from appmanifest_632470.acf).
 $DiscoElysiumAppId = 632470
@@ -826,6 +852,9 @@ function Expand-BepInExInto {
                 $skipped++
                 continue
             }
+            if ($BepInExZipRenames.ContainsKey($relative)) {
+                $relative = $BepInExZipRenames[$relative]
+            }
             $target = Join-Path $StageDir $relative
             if (-not $entry.Name) {
                 # A directory entry: BepInEx ships empty plugins\ and patchers\,
@@ -837,7 +866,11 @@ function Expand-BepInExInto {
             [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $target, $true)
         }
         $skippedNote = if ($skipped -gt 0) { ", $skipped skipped: $($BepInExZipExcludes -join ', ')" } else { "" }
-        Write-Host "  BepInEx $BepInExVersion ($($zip.Entries.Count - $skipped) files$skippedNote)"
+        $renamedNote = if ($BepInExZipRenames.Count -gt 0) {
+            ", renamed: $(($BepInExZipRenames.GetEnumerator() | ForEach-Object { "$($_.Key) -> $($_.Value)" }) -join ', ')"
+        }
+        else { "" }
+        Write-Host "  BepInEx $BepInExVersion ($($zip.Entries.Count - $skipped) files$skippedNote$renamedNote)"
     }
     finally {
         $zip.Dispose()
@@ -894,20 +927,38 @@ function New-InstallManifest {
 }
 
 
+function Copy-PluginLicense {
+    # This project's MIT licence, into a staged archive. Shared by both archives
+    # so neither can quietly ship a binary with no terms attached, and a missing
+    # LICENSE is an error rather than a silently licence-less release.
+    param([Parameter(Mandatory = $true)][string]$StageDir)
+
+    if (-not (Test-Path -LiteralPath $LicenseSource)) {
+        throw "Missing $LicenseSource, so a release would ship without its licence. Restore it before packaging."
+    }
+    Copy-Item -LiteralPath $LicenseSource -Destination (Join-Path $StageDir $LicenseReleaseName)
+    Write-Host "  $LicenseReleaseName"
+}
+
+
 function New-ThirdPartyNotice {
     # What is in the bundle that this repo did not write, and under what terms.
     # LGPL-2.1 asks for the licence text, for the recipient to know what they
     # have, and for the source to be available; BepInEx is redistributed here
     # unmodified, so naming the exact build, its commit and where it came from
     # covers all three.
+    #
+    # The licence text itself is a separate file at the archive root - see
+    # $BepInExLicenseReleaseName - and this notice points at it. Attribution and
+    # licence are two different jobs, and a reader looking for the terms should
+    # find a licence file rather than a licence quoted inside an essay.
     param(
-        [Parameter(Mandatory = $true)][string]$LicensePath,
         [Parameter(Mandatory = $true)][string]$Destination
     )
 
-    $header = @"
-Third-party software in this bundle
-===================================
+    $notice = @"
+THIRD-PARTY NOTICES
+===================
 
 BepInEx $BepInExVersion (IL2CPP, win-x64)
 
@@ -920,27 +971,34 @@ BepInEx $BepInExVersion (IL2CPP, win-x64)
   Built from commit $BepInExCommit
   Source: https://github.com/BepInEx/BepInEx/tree/$BepInExCommit
 
-  BepInEx is licensed under the GNU Lesser General Public License v2.1, whose
-  full text follows. $AssemblyName itself is a separate work that uses BepInEx
-  as a plugin host; bundling the two here is for the convenience of anyone who
-  does not already have BepInEx installed.
+  License: GNU Lesser General Public License v2.1
+           see $BepInExLicenseReleaseName in this archive for the full text
 
   BepInEx's archive is shipped whole - every file it publishes, nothing added
-  and nothing left out.
+  and nothing left out - with one file renamed for clarity at the game root:
+  changelog.txt, BepInEx's own build changelog, ships as BepInEx-changelog.txt.
 
-  Several things this puts at the root of the game folder are BepInEx's rather
-  than the game's, which is easy to get backwards: winhttp.dll,
-  doorstop_config.ini, .doorstop_version, changelog.txt (BepInEx's own build
-  changelog) and the `dotnet` folder, which is the CoreCLR runtime its IL2CPP
-  loader needs. A pristine copy of the game straight from Steam has none of
-  them. The uninstaller removes them along with everything else this bundle
-  wrote.
+  Several things this bundle puts at the root of the game folder are BepInEx's
+  rather than the game's, which is easy to get backwards: winhttp.dll,
+  doorstop_config.ini, .doorstop_version, BepInEx-changelog.txt and the
+  ``dotnet`` folder, which is the CoreCLR runtime its IL2CPP loader needs. A
+  pristine copy of the game straight from Steam has none of them. The
+  uninstaller removes them along with everything else this bundle wrote.
 
-----------------------------------------------------------------------------
+$AssemblyName itself
+$("=" * ($AssemblyName.Length + 6))
 
+  A separate work that uses BepInEx as a plugin host; bundling the two here is
+  for the convenience of anyone who does not already have BepInEx installed.
+
+  Copyright (c) 2026 Paul Molodowitch
+  License: MIT - see $LicenseReleaseName in this archive
+  Source:  https://github.com/pmolodo/disco_elysium_hacking
+
+  The plugin is the one file under BepInEx\plugins\$AssemblyName\; every other
+  file in this archive belongs to BepInEx.
 "@
-    $license = Get-Content -LiteralPath $LicensePath -Raw
-    [System.IO.File]::WriteAllText($Destination, $header + $license)
+    [System.IO.File]::WriteAllText($Destination, $notice)
 }
 
 
@@ -985,7 +1043,15 @@ function New-AllInOneBundle {
     Write-Host "  $ReadmeName"
     Copy-Item -LiteralPath $UninstallerSource -Destination (Join-Path $StageDir $UninstallerName)
     Write-Host "  $UninstallerName"
-    New-ThirdPartyNotice -LicensePath $license -Destination (Join-Path $StageDir $ThirdPartyNoticeName)
+
+    # The licences, each as its own file at the archive root: ours because MIT
+    # asks the notice to travel with the software, BepInEx's because LGPL-2.1
+    # asks the same of a redistribution. The notice beside them says who wrote
+    # what and points at both.
+    Copy-PluginLicense -StageDir $StageDir
+    Copy-Item -LiteralPath $license -Destination (Join-Path $StageDir $BepInExLicenseReleaseName)
+    Write-Host "  $BepInExLicenseReleaseName"
+    New-ThirdPartyNotice -Destination (Join-Path $StageDir $ThirdPartyNoticeName)
     Write-Host "  $ThirdPartyNoticeName"
 
     # Last, so it can hash everything else that is going in.

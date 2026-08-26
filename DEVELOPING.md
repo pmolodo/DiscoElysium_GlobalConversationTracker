@@ -202,6 +202,7 @@ extract straight into a game folder:
 ```
 BepInEx\plugins\GlobalConversationTracker\GlobalConversationTracker.dll
 GlobalConversationTracker-README.md
+GlobalConversationTracker-LICENSE.txt
 ```
 
 One DLL, and only the DLL: the mod's own layers are compiled into the plugin assembly
@@ -217,7 +218,9 @@ winhttp.dll, doorstop_config.ini, .doorstop_version, dotnet\      <- BepInEx 6.0
 BepInEx\core\, BepInEx\patchers\, BepInEx\plugins\               <- ...
 BepInEx\plugins\GlobalConversationTracker\GlobalConversationTracker.dll
 GlobalConversationTracker-README.md
-GlobalConversationTracker-THIRD-PARTY.txt
+GlobalConversationTracker-LICENSE.txt              <- ours, MIT
+BepInEx-LICENSE.txt                                <- BepInEx's, LGPL-2.1
+GlobalConversationTracker-THIRD-PARTY-NOTICES.txt  <- who wrote what
 Uninstall-GlobalConversationTracker.ps1
 GlobalConversationTracker-install-manifest.json
 ```
@@ -229,12 +232,21 @@ Four things about it are worth knowing:
   cached per machine under `%LOCALAPPDATA%\GlobalConversationTrackerepinex`. The pin, the
   URL and the hash are at the top of `build-support.psm1`; changing them means re-running
   the end-to-end install check, not just editing three lines.
-- **BepInEx's archive ships whole.** Its `changelog.txt` was left out until 2026-08-26, on
-  the belief that the game ships one of its own at the root of its folder. It does not: a
-  pristine depot download has no `changelog.txt`, and the one in both modded copies here is
-  byte-identical to BepInEx's. `winhttp.dll`, `doorstop_config.ini`, `.doorstop_version` and
-  `dotnet\` are BepInEx's too, for the same reason - none of them appear in a copy straight
-  from Steam.
+- **BepInEx's archive ships whole**, with one file renamed: `changelog.txt` goes in as
+  `BepInEx-changelog.txt`, because at the root of a game folder the bare name says nothing
+  about whose it is. It was left out entirely until 2026-08-26, on the belief that the game
+  ships one of its own there. It does not: a pristine depot download has no `changelog.txt`,
+  and the one in both modded copies here was byte-identical to BepInEx's. `winhttp.dll`,
+  `doorstop_config.ini`, `.doorstop_version` and `dotnet\` are BepInEx's too, for the same
+  reason - none of them appear in a copy straight from Steam.
+- **Both archives carry a licence, and the bundle carries three files about licensing.**
+  Ours (`GlobalConversationTracker-LICENSE.txt`, MIT) ships in both, because a DLL in
+  somebody's game folder is a distribution and MIT asks the notice to travel with it.
+  BepInEx's (`BepInEx-LICENSE.txt`, LGPL-2.1) ships in the bundle, as its own file rather
+  than quoted inside prose. `GlobalConversationTracker-THIRD-PARTY-NOTICES.txt` is the
+  attribution: what BepInEx build is in here, its commit, the URL it came from, that SHA256,
+  and which single file in the archive is ours. Packaging fails rather than shipping without
+  a licence.
 - **`BepInEx\interop` cannot be shipped.** Those assemblies are generated from the player's
   own game build on first launch, which is why that launch is slow.
 - **The uninstaller is hash-checked.** `GlobalConversationTracker-install-manifest.json`

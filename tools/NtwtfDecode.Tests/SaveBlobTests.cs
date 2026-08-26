@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 using System.Text;
 using Xunit;
 using GlobalConversationTracker.Persistence;
