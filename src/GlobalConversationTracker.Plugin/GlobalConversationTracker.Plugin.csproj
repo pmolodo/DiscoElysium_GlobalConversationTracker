@@ -33,12 +33,14 @@
     Location of the Disco Elysium - Final Cut install whose BepInEx installation
     supplies the reference assemblies. Override with either the DISCO_ELYSIUM_DIR
     environment variable or -p:DiscoElysiumDir=<path>.
+
+    Neither value below may be wrapped across lines: MSBuild trims only the ends of a
+    property value, so a line break inside one lands in the middle of the path and every
+    Exists() check on it then fails.
   -->
     <PropertyGroup>
-        <DiscoElysiumDir Condition="'$(DiscoElysiumDir)' == '' and '$(DISCO_ELYSIUM_DIR)' != ''">
-            $(DISCO_ELYSIUM_DIR)</DiscoElysiumDir>
-        <DiscoElysiumDir Condition="'$(DiscoElysiumDir)' == ''">$(MSBuildThisFileDirectory)..\..\Steam
-            Install - Unaltered\Disco Elysium</DiscoElysiumDir>
+        <DiscoElysiumDir Condition="'$(DiscoElysiumDir)' == '' and '$(DISCO_ELYSIUM_DIR)' != ''">$(DISCO_ELYSIUM_DIR)</DiscoElysiumDir>
+        <DiscoElysiumDir Condition="'$(DiscoElysiumDir)' == ''">$(MSBuildThisFileDirectory)..\..\Steam Install - Unaltered\Disco Elysium</DiscoElysiumDir>
         <BepInExCoreDir>$(DiscoElysiumDir)\BepInEx\core\</BepInExCoreDir>
         <BepInExInteropDir>$(DiscoElysiumDir)\BepInEx\interop\</BepInExInteropDir>
     </PropertyGroup>
