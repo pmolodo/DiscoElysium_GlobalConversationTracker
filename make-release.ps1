@@ -15,8 +15,9 @@
         BepInEx\plugins\GlobalConversationTracker\GlobalConversationTracker*.dll
         GlobalConversationTracker-README.md
 
-    That is the plugin plus the mod's own library assemblies (Core, Persistence,
-    Session), which BepInEx resolves out of the plugin's own folder.
+    That is one DLL and its .pdb: the mod's own layers (Core, Persistence,
+    Session) are compiled into the plugin assembly, so nothing has to be
+    installed beside it.
 
     BepInEx itself is deliberately NOT bundled. This plugin needs BepInEx 6
     (IL2CPP / CoreCLR) bleeding-edge builds, whose interop assemblies have to be

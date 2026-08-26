@@ -86,12 +86,13 @@ equivalent is:
 dotnet build src\GlobalConversationTracker.Plugin -c Release
 ```
 
-Output: `.build\bin\GlobalConversationTracker.Plugin\Release\net6.0\`, holding
-`GlobalConversationTracker.dll` and the mod's own libraries next to it
-(`GlobalConversationTracker.Core/.Persistence/.Session.dll`), each with a `.pdb`;
-`Directory.Build.props` redirects `bin`/`obj` under `.build`. An installed plugin is all four
-DLLs: BepInEx resolves a plugin's dependencies out of the plugin's own folder, so the entry
-point DLL alone would load and then fail on the first line of dialogue.
+Output: `.build\bin\GlobalConversationTracker.Plugin\Release\net6.0\`, holding one
+`GlobalConversationTracker.dll` and its `.pdb`; `Directory.Build.props` redirects `bin`/`obj`
+under `.build`. That DLL is the whole plugin: the mod's own layers (Core, Persistence,
+Session) are compiled into it rather than referenced as projects, so an install is one file
+and there is nothing for BepInEx to resolve out of the plugin folder. The three projects
+still build and are tested on their own; the plugin csproj says why it takes them as
+source.
 
 ## Installing and verifying
 
@@ -118,7 +119,9 @@ Steps:
 1. Build as above.
 2. Create the plugin folder:
    `<game>\BepInEx\plugins\GlobalConversationTracker\`
-3. Copy every built `GlobalConversationTracker*.dll` into that folder (see Building above).
+3. Copy the built `GlobalConversationTracker.dll` into that folder (see Building above).
+   Delete any `GlobalConversationTracker.Core/.Persistence/.Session.dll` an older install
+   left behind; they are no longer part of the payload.
 4. Confirm the BepInEx console is on: in
    `<game>\BepInEx\config\BepInEx.cfg`, section `[Logging.Console]`, `Enabled = true`.
 5. Launch the game (Steam, or `disco.exe` directly).

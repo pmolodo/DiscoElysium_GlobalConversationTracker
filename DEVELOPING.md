@@ -161,14 +161,13 @@ extract straight into a game folder:
 
 ```
 BepInEx\plugins\GlobalConversationTracker\GlobalConversationTracker.dll
-BepInEx\plugins\GlobalConversationTracker\GlobalConversationTracker.Core.dll
-BepInEx\plugins\GlobalConversationTracker\GlobalConversationTracker.Persistence.dll
-BepInEx\plugins\GlobalConversationTracker\GlobalConversationTracker.Session.dll
 GlobalConversationTracker-README.md
 ```
 
-Each `.dll` ships with its `.pdb`; it is the same payload `deploy.ps1` installs, from the
-same helper. The version comes from `<Version>` in the csproj.
+One DLL, shipping with its `.pdb`: the mod's own layers are compiled into the plugin
+assembly rather than referenced, so nothing installs beside it. It is the same payload
+`deploy.ps1` installs, from the same helper. The version comes from `<Version>` in the
+csproj.
 
 ### `capture-log.ps1`
 

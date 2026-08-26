@@ -539,11 +539,12 @@ function Copy-PluginPayload {
     # if needed. Shared by deploy.ps1 and make-release.ps1 so an installed copy and
     # a packaged copy always hold the same files.
     #
-    # That is the plugin DLL plus the mod's own library assemblies next to it
-    # (Core, Persistence, Session), each with its .pdb if one was produced so
-    # exception stack traces carry line numbers. BepInEx resolves a plugin's
-    # dependencies out of the plugin's own folder, so shipping the DLL alone would
-    # load and then fail the moment it touched the global state.
+    # That is the plugin DLL, with its .pdb if one was produced so exception stack
+    # traces carry line numbers. It is the only assembly there is: the mod's own
+    # layers are compiled into it (see the plugin csproj), so nothing has to be
+    # installed beside it. The wildcard predicate below still matches the separate
+    # Core/Persistence/Session DLLs older builds produced, which is what clears one
+    # of those installs out on the next deploy.
     #
     # Only $AssemblyName* is copied: the game and BepInEx reference assemblies are
     # referenced with Private="false" and are not in the build output at all, so

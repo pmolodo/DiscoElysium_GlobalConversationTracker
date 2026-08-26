@@ -9,6 +9,8 @@
         <LangVersion>latest</LangVersion>
         <Nullable>enable</Nullable>
         <ImplicitUsings>disable</ImplicitUsings>
+        <!-- For the Persistence layer's Il2CppArrayExtensions, compiled in below. -->
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <Deterministic>true</Deterministic>
         <DebugType>portable</DebugType>
         <!-- BepInEx resolves plugin dependencies itself; a deps.json only confuses it. -->
@@ -16,17 +18,32 @@
     </PropertyGroup>
 
     <!--
-    The mod's own layers. Private (the default) so their DLLs land next to the
-    plugin in the build output and get deployed with it; BepInEx resolves plugin
-    dependencies out of the plugin's own folder.
+    The mod's own layers, compiled INTO this assembly rather than referenced as
+    projects, so the build output is one DLL and an install is one file.
+
+    Why source and not a ProjectReference: a reference would put
+    GlobalConversationTracker.Core/.Persistence/.Session.dll next to the plugin and
+    all four would have to be installed together, since BepInEx resolves a plugin's
+    dependencies out of the plugin's own folder - three extra files to lose, to ship
+    a stale copy of, or to leave behind on an uninstall. Merging them after the fact
+    (ILRepack and friends) would need a NuGet tool in a build that otherwise has zero
+    package references; compiling the sources in needs nothing, and the layering it
+    would enforce is enforced by the projects themselves anyway.
+
+    The three projects still exist, still build on their own and are still what the
+    test projects reference; this only changes what ships. Their namespaces already
+    nest under this assembly's own, so nothing about the code changes by moving in.
   -->
     <ItemGroup>
-        <ProjectReference
-            Include="..\GlobalConversationTracker.Core\GlobalConversationTracker.Core.csproj" />
-        <ProjectReference
-            Include="..\GlobalConversationTracker.Persistence\GlobalConversationTracker.Persistence.csproj" />
-        <ProjectReference
-            Include="..\GlobalConversationTracker.Session\GlobalConversationTracker.Session.csproj" />
+        <Compile Include="..\GlobalConversationTracker.Core\**\*.cs"
+            Exclude="..\GlobalConversationTracker.Core\bin\**;..\GlobalConversationTracker.Core\obj\**"
+            LinkBase="GlobalConversationTracker.Core" />
+        <Compile Include="..\GlobalConversationTracker.Persistence\**\*.cs"
+            Exclude="..\GlobalConversationTracker.Persistence\bin\**;..\GlobalConversationTracker.Persistence\obj\**"
+            LinkBase="GlobalConversationTracker.Persistence" />
+        <Compile Include="..\GlobalConversationTracker.Session\**\*.cs"
+            Exclude="..\GlobalConversationTracker.Session\bin\**;..\GlobalConversationTracker.Session\obj\**"
+            LinkBase="GlobalConversationTracker.Session" />
     </ItemGroup>
 
     <!--
