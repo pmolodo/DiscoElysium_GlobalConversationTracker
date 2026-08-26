@@ -22,7 +22,10 @@ namespace GlobalConversationTracker
     /// gated behind two pieces of early-game progression - picking up the ledger, and
     /// reading it under halogen lights - so a count shown there is invisible for the
     /// first stretch of a playthrough. The main HUD is up from the first frame of
-    /// gameplay, which is what this display needs.</para>
+    /// gameplay, which is what this display needs. An earlier build appended the
+    /// all-saves figure to the character sheet's bonus block instead; that idea was
+    /// abandoned and its hook deleted, so the HUD is the only place these numbers
+    /// appear.</para>
     ///
     /// <para><b>What the HUD actually is.</b> Not the <c>HUD Page</c> prefab, whose
     /// money subtree has no controller on it at all and is inert; the live HUD is the
