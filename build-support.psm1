@@ -106,11 +106,18 @@ $BepInExLogRelPath = "BepInEx\LogOutput.log"
 $BepInExConfigRelPath = "BepInEx\config\BepInEx.cfg"
 # One folder per plugin under BepInEx\plugins; this is ours.
 $PluginFolderName = $AssemblyName
-# What an installed payload is made of: $AssemblyName*.dll and its .pdb. Both
-# the copy in and the clear out of a previous install go through this, so the
-# files deploy.ps1 removes are exactly the files it writes (see
-# Get-PluginPayloadFile).
-$PluginPayloadExtensions = @(".dll", ".pdb")
+# What an installed payload is made of: $AssemblyName*.dll, and nothing else.
+# The .pdb is deliberately not shipped - it is a debugging artefact of the
+# machine that built it, and a player has nothing to do with it. The cost is
+# that a stack trace in a player's log carries no line numbers; the commit
+# stamped inside the DLL says which source those traces belong to, and a local
+# build has the .pdb beside it for anyone actually debugging.
+$PluginInstallExtensions = @(".dll")
+# What a deploy CLEARS OUT of a previous install, which is deliberately wider
+# than what it writes. Older builds installed a .pdb, and dropping it from the
+# install set without keeping it here would strand one in every game folder that
+# has ever had this mod deployed to it.
+$PluginRemovableExtensions = @(".dll", ".pdb")
 # Appended to the commit hash the build stamps into the plugin assembly when the
 # tree it was built from differed from that commit in a way the build could see.
 # Written by Get-SourceRevisionId and read back by Get-PluginBuildStamp, which is
@@ -1096,20 +1103,25 @@ function Invoke-PluginBuild {
 
 
 function Get-PluginPayloadFile {
-    # The plugin payload files present in $Directory - $AssemblyName*.dll/.pdb
-    # and nothing else - sorted by name, as FileInfo objects. Empty if the
-    # directory does not exist.
+    # The $AssemblyName* files in $Directory with one of $Extensions, sorted by
+    # name, as FileInfo objects. Empty if the directory does not exist.
     #
     # One predicate, used against both ends of an install: the build output
     # Copy-PluginPayload reads from, and the previous install Remove-PluginPayload
-    # clears out. Keeping those the same set is what makes it safe for deploy.ps1
-    # to delete files instead of the whole folder.
-    param([Parameter(Mandatory = $true)][string]$Directory)
+    # clears out. The two pass different extension sets on purpose - what is
+    # installed is narrower than what is cleaned up, so a file this mod used to
+    # ship still gets removed - and everything else about the match is shared, so
+    # nothing outside $AssemblyName* can be touched at either end. That is what
+    # makes it safe for deploy.ps1 to delete files rather than the whole folder.
+    param(
+        [Parameter(Mandatory = $true)][string]$Directory,
+        [string[]]$Extensions = $PluginInstallExtensions
+    )
     if (-not (Test-Path -LiteralPath $Directory)) {
         return @()
     }
     return @(Get-ChildItem -LiteralPath $Directory -File |
-        Where-Object { $_.Name -like "$AssemblyName*" -and $_.Extension -in $PluginPayloadExtensions } |
+        Where-Object { $_.Name -like "$AssemblyName*" -and $_.Extension -in $Extensions } |
         Sort-Object Name)
 }
 
@@ -1123,11 +1135,13 @@ function Remove-PluginPayload {
     # by hand, next to the plugin's own DLL. Only the files deploy.ps1 itself
     # wrote are its to delete.
     #
-    # Selecting by the same predicate Copy-PluginPayload copies by, rather than by
-    # the new build's file list, means an assembly a previous build produced and
-    # this one no longer does is still cleared out; nothing stale survives.
+    # Selecting by a predicate rather than by the new build's file list means a
+    # file a previous build produced and this one no longer does is still cleared
+    # out; nothing stale survives. That is why the removal set is wider than the
+    # install set - it still names .pdb, which older builds deployed and this one
+    # does not, and which would otherwise sit in the plugin folder for ever.
     param([Parameter(Mandatory = $true)][string]$DestDir)
-    $files = @(Get-PluginPayloadFile -Directory $DestDir)
+    $files = @(Get-PluginPayloadFile -Directory $DestDir -Extensions $PluginRemovableExtensions)
     foreach ($file in $files) {
         Remove-Item -LiteralPath $file.FullName -Force
     }
@@ -1140,12 +1154,13 @@ function Copy-PluginPayload {
     # if needed. Shared by deploy.ps1 and make-release.ps1 so an installed copy and
     # a packaged copy always hold the same files.
     #
-    # That is the plugin DLL, with its .pdb if one was produced so exception stack
-    # traces carry line numbers. It is the only assembly there is: the mod's own
-    # layers are compiled into it (see the plugin csproj), so nothing has to be
-    # installed beside it. The wildcard predicate below still matches the separate
-    # Core/Persistence/Session DLLs older builds produced, which is what clears one
-    # of those installs out on the next deploy.
+    # That is the plugin DLL and nothing else. It is the only assembly there is -
+    # the mod's own layers are compiled into it (see the plugin csproj) - and the
+    # .pdb beside it in the build output is deliberately left there: debugging
+    # symbols describe the machine that built them and are of no use in a player's
+    # install. Anything an older build did put in that folder, .pdb and the
+    # separate Core/Persistence/Session DLLs alike, is cleared out by
+    # Remove-PluginPayload on the next deploy.
     #
     # Only $AssemblyName* is copied: the game and BepInEx reference assemblies are
     # referenced with Private="false" and are not in the build output at all, so

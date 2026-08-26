@@ -12,9 +12,12 @@
          before touching anything.
       3. Clears the previous build out of
          <game>\BepInEx\plugins\GlobalConversationTracker and copies the fresh
-         one in. Only the plugin's own GlobalConversationTracker*.dll/.pdb are
-         removed, so anything else kept in that folder - notably the optional
-         articy_ids_final_cut.json - survives a redeploy.
+         one in. What goes in is GlobalConversationTracker.dll alone; the .pdb
+         is not deployed, since debugging symbols do nothing in a player's game
+         folder. What comes out is wider - GlobalConversationTracker*.dll AND
+         .pdb - so a .pdb an older build installed is cleaned up rather than
+         left behind. Anything else kept in that folder, notably the optional
+         articy_ids_final_cut.json, survives a redeploy.
       4. Prints where to look for the plugin's log line.
 
     The install target comes from, in order:
@@ -32,7 +35,7 @@
     overrides), a copy without BepInEx is rejected because the plugin could
     never load there, the only directory ever created is
     <game>\BepInEx\plugins\GlobalConversationTracker, and the only files ever
-    deleted are that folder's own GlobalConversationTracker*.dll/.pdb.
+    deleted are that folder's own GlobalConversationTracker*.dll and .pdb.
 
 .PARAMETER GameDir
     The playable game folder to install into, taking priority over

@@ -15,9 +15,10 @@
         BepInEx\plugins\GlobalConversationTracker\GlobalConversationTracker*.dll
         GlobalConversationTracker-README.md
 
-    That is one DLL and its .pdb: the mod's own layers (Core, Persistence,
-    Session) are compiled into the plugin assembly, so nothing has to be
-    installed beside it. This archive assumes the player already has a working
+    That is one DLL: the mod's own layers (Core, Persistence, Session) are
+    compiled into the plugin assembly, so nothing has to be installed beside it,
+    and the .pdb is left out of the archive because debugging symbols are of no
+    use in a player's install. This archive assumes the player already has a working
     BepInEx 6 IL2CPP install - which is every developer, and almost no player.
 
     Then, unless -PluginOnly says otherwise, a second archive for the players who

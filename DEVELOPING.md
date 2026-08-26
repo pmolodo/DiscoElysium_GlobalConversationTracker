@@ -162,10 +162,13 @@ What it does:
 2. builds
 3. prints the exact directory it is about to write to
 4. replaces the previous build in `<game>\BepInEx\plugins\GlobalConversationTracker`:
-   the plugin DLL plus the mod's own `Core`, `Persistence` and `Session` assemblies, each
-   with its `.pdb`. BepInEx resolves a plugin's dependencies out of the plugin's own
-   folder, so the DLL alone would load and then fail. Only `GlobalConversationTracker*`
-   `.dll`/`.pdb` are deleted first, so anything else in that folder - the optional
+   one `GlobalConversationTracker.dll` and nothing else, the mod's own layers being
+   compiled into it. The `.pdb` is **not** installed - debugging symbols describe the
+   machine that built them and do nothing in a player's game folder - so a stack trace in
+   a deployed build carries no line numbers, and the commit stamped inside the DLL is what
+   ties one back to its source. What is *deleted* first is wider than what is written:
+   `GlobalConversationTracker*` `.dll` **and** `.pdb`, so a `.pdb` left by an older build
+   is cleaned up rather than stranded. Anything else in that folder - the optional
    hand-placed `articy_ids_final_cut.json` above all - survives a redeploy.
 5. prints the log path and the line to look for
 
@@ -190,10 +193,10 @@ BepInEx\plugins\GlobalConversationTracker\GlobalConversationTracker.dll
 GlobalConversationTracker-README.md
 ```
 
-One DLL, shipping with its `.pdb`: the mod's own layers are compiled into the plugin
-assembly rather than referenced, so nothing installs beside it. It is the same payload
-`deploy.ps1` installs, from the same helper. The version comes from `<Version>` in the
-csproj.
+One DLL, and only the DLL: the mod's own layers are compiled into the plugin assembly
+rather than referenced, and the `.pdb` stays behind in the build output rather than being
+packaged. It is the same payload `deploy.ps1` installs, from the same helper. The version
+comes from `<Version>` in the csproj.
 
 It also writes a second archive, `GlobalConversationTracker-v<version>-AllInOne.zip`, for
 players who do not already run mods:

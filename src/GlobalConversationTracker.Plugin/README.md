@@ -88,7 +88,8 @@ dotnet build src\GlobalConversationTracker.Plugin -c Release
 
 Output: `.build\bin\GlobalConversationTracker.Plugin\Release\net6.0\`, holding one
 `GlobalConversationTracker.dll` and its `.pdb`; `Directory.Build.props` redirects `bin`/`obj`
-under `.build`. That DLL is the whole plugin: the mod's own layers (Core, Persistence,
+under `.build`. Only the DLL is ever installed or packaged - the `.pdb` stays here, for
+debugging the build you just made. That DLL is the whole plugin: the mod's own layers (Core, Persistence,
 Session) are compiled into it rather than referenced as projects, so an install is one file
 and there is nothing for BepInEx to resolve out of the plugin folder. The three projects
 still build and are tested on their own; the plugin csproj says why it takes them as
