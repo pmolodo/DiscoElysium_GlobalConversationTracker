@@ -55,6 +55,14 @@
     All of these are recorded when present and left null when not; a log from a
     build that stamped nothing is a fact worth recording, not a failure.
 
+    A capture and its manifest are paired by name - <log> with <log>.capture.json
+    beside it - but a log is worth renaming once it is known what the run showed,
+    and a rename leaves the manifest behind under the old name with a 'copy'
+    field naming a path that is no longer there. The manifest's md5 and byte
+    count describe the log's contents rather than its path, so they are the
+    pairing that survives a rename: -Audit pairs by name first and by content
+    second, and -Repair re-files a renamed log's manifest beside it.
+
 .PARAMETER GameDir
     The game folder to capture the log out of. Resolved exactly as deploy.ps1
     resolves its target (this parameter, then DISCO_ELYSIUM_DEPLOY_DIR, then the
@@ -102,6 +110,42 @@
     verified = false and lists every problem, so a forced capture stays
     identifiable as one that could not be tied to its run.
 
+.PARAMETER Audit
+    Re-check the captures already on disk instead of taking a new one: pair every
+    <log>.capture.json in -LogDir with the log it describes, re-hash that log and
+    compare it against what the manifest recorded, and report every manifest
+    whose 'copy' field names a path that is not where its log is now. Exits
+    non-zero when a manifest cannot be paired with any log, or when a paired
+    log's bytes no longer hash to what was recorded.
+
+    A manifest is paired with its log three ways, in order. By name, which is
+    exact: a capture writes the two side by side. By recorded md5 and byte
+    count, among logs no manifest of their own has claimed, which survives a
+    rename. By shared name tail last - captures are named
+    <label>-<yyyyMMdd-HHmmss>.log, so relabelling one rewrites the front and
+    leaves the rest, and that tail still finds it. The tail has to start at a
+    '-' and carry more than the extension, the longest one wins, and a tie
+    between two logs is reported rather than guessed at.
+
+    The tail is what reaches the two cases content cannot: a log edited or
+    truncated since capture, whose md5 no longer matches anything, and several
+    logs that share one md5 because their contents are identical.
+
+.PARAMETER LogDir
+    The folder -Audit reads, .build\logs by default. Logs and manifests are
+    paired within this folder; a manifest's 'copy' field is reported on, never
+    followed.
+
+.PARAMETER Repair
+    Fix what the audit can fix: move a manifest that was tracked down by content
+    or by name back beside the log it describes, and rewrite its 'copy' field to
+    that log's current path. Only the manifest's file name and that one field
+    change; the recorded md5, byte count, checks and verdict are left exactly as
+    the capture wrote them, so a repaired manifest still says what its run said.
+
+    Implies -Audit, since it repairs that audit's findings, so -Repair on its
+    own is the whole job. Pass -Audit alone to look without touching anything.
+
 .EXAMPLE
     .\capture-log.ps1 -Label session-c -RunArtifact "$env:USERPROFILE\AppData\LocalLow\ZAUM Studio\Disco Elysium\SaveGames\global-conversation-state.json"
 
@@ -112,16 +156,25 @@
     # Rename a capture and take its manifest with it
     .\capture-log.ps1 -Rename .build\logs\capture-20260819-162547.log `
                       -NewName ApplyRawBytes-Hook-06-skip4tables.log
+
+.EXAMPLE
+    .\capture-log.ps1 -Audit               # re-check every capture on disk
+
+.EXAMPLE
+    .\capture-log.ps1 -Repair              # and re-file the manifests of renamed logs
 #>
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = "Capture")]
 param(
-    [string]$GameDir,
-    [string[]]$RunArtifact = @(),
-    [string]$Label = "capture",
-    [string]$Destination,
-    [string]$Rename,
-    [string]$NewName,
-    [switch]$Force
+    [Parameter(ParameterSetName = "Capture")][string]$GameDir,
+    [Parameter(ParameterSetName = "Capture")][string[]]$RunArtifact = @(),
+    [Parameter(ParameterSetName = "Capture")][string]$Label = "capture",
+    [Parameter(ParameterSetName = "Capture")][string]$Destination,
+    [Parameter(ParameterSetName = "Capture")][switch]$Force,
+    [Parameter(ParameterSetName = "Rename")][string]$Rename,
+    [Parameter(ParameterSetName = "Rename")][string]$NewName,
+    [Parameter(ParameterSetName = "Audit")][switch]$Audit,
+    [Parameter(ParameterSetName = "Audit")][string]$LogDir,
+    [Parameter(ParameterSetName = "Audit")][switch]$Repair
 )
 
 $ErrorActionPreference = "Stop"
@@ -134,6 +187,16 @@ $ErrorActionPreference = "Stop"
 # have on its approved list, and the name says what it does better than any
 # approved verb would.
 Import-Module (Join-Path $PSScriptRoot "build-support.psm1") -Force -DisableNameChecking
+
+# Where captures live, and what the two halves of one are called.
+$DefaultLogDir = Join-Path $BuildDir "logs"
+$LogExtension = ".log"
+$ManifestSuffix = ".capture.json"
+# The manifest's 'copy' field, as the whole of the line that holds it: a repair
+# rewrites that one value and leaves every other byte of the file alone, rather
+# than reserialising JSON that records evidence. Line-anchored, and a repair
+# refuses to touch a manifest where this matches other than exactly once.
+$CopyFieldPattern = '(?m)^(\s*"copy"\s*:\s*)"(?:[^"\\]|\\.)*"'
 
 # The Harmony banner's own stamp format, e.g. "### At 2026-08-15 09.34.31".
 $HarmonyStampPattern = '(?m)^### At (\d{4}-\d{2}-\d{2} \d{2}\.\d{2}\.\d{2})\s*$'
@@ -165,6 +228,274 @@ function Format-Stamp {
     param($Value)
     if ($null -eq $Value) { return $null }
     return ([datetime]$Value).ToString($ReportStampFormat)
+}
+
+
+function Get-FileMd5 {
+    # One spelling of a file hash everywhere: lower-case hex, as the manifest
+    # records it, so a recorded hash and a fresh one compare as plain strings.
+    param([Parameter(Mandatory = $true)][string]$Path)
+    return (Get-FileHash -LiteralPath $Path -Algorithm MD5).Hash.ToLowerInvariant()
+}
+
+
+function Set-ManifestCopyPath {
+    # Point a manifest's 'copy' field at where its log actually is, by replacing
+    # that one value in the file's text. Everything else the capture recorded -
+    # the hash, the checks, the verdict - is left byte for byte as it was.
+    param(
+        [Parameter(Mandatory = $true)][string]$ManifestPath,
+        [Parameter(Mandatory = $true)][string]$LogPath
+    )
+
+    $text = [System.IO.File]::ReadAllText($ManifestPath)
+    $matched = [regex]::Matches($text, $CopyFieldPattern)
+    if ($matched.Count -ne 1) {
+        throw "$ManifestPath has $($matched.Count) 'copy' fields, expected exactly 1; not touching it."
+    }
+
+    # ConvertTo-Json escapes the path into a JSON string literal, quotes and all.
+    $m = $matched[0]
+    $valueStart = $m.Groups[1].Index + $m.Groups[1].Length
+    $newText = $text.Substring(0, $valueStart) + ($LogPath | ConvertTo-Json) + $text.Substring($m.Index + $m.Length)
+    [System.IO.File]::WriteAllText($ManifestPath, $newText)
+}
+
+
+function Get-CommonNameTail {
+    # The shared end of two file names, cut back to a whole segment, or $null
+    # when what they share is no more than the extension.
+    param([string]$A, [string]$B)
+
+    $shared = 0
+    while ($shared -lt $A.Length -and $shared -lt $B.Length -and
+        [char]::ToLowerInvariant($A[$A.Length - 1 - $shared]) -eq
+        [char]::ToLowerInvariant($B[$B.Length - 1 - $shared])) {
+        $shared++
+    }
+    if ($shared -eq 0) { return $null }
+
+    # Cut forward to the first separator inside the shared part, so that half of
+    # a segment never counts: capture-20260819-162547.log and
+    # other-20260820-162547.log share '0-162547.log', and the '0' is a
+    # coincidence of two different dates, not a common name.
+    $tail = $A.Substring($A.Length - $shared)
+    $cut = $tail.IndexOf("-")
+    if ($cut -lt 0) { return $null }
+    $tail = $tail.Substring($cut)
+
+    # More than the extension has to survive that cut, or every .log in the
+    # folder is a match for every other.
+    if ($tail.Length -le $LogExtension.Length) { return $null }
+    return $tail
+}
+
+
+function Get-NameTailMatch {
+    # The one log whose name differs from the one a manifest expects only by a
+    # leading segment, or $null if that is not exactly one log.
+    #
+    # Captures are named <label>-<yyyyMMdd-HHmmss>.log, so relabelling one -
+    # capture-20260819-162547.log becoming skip4tables-20260819-162547.log -
+    # rewrites the front and leaves the tail alone. That tail is still enough to
+    # find the log by, and it keeps working where md5 pairing cannot: after the
+    # log itself has been edited or truncated, and between several logs that
+    # share one md5 because their contents are identical.
+    #
+    # The longest tail wins, and only if one log alone holds it. Two logs tying
+    # for longest is the ambiguity this is meant to resolve, not a coin to flip,
+    # so a tie returns nothing and the audit reports it.
+    param(
+        [Parameter(Mandatory = $true)][string]$ExpectedName,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Candidates
+    )
+
+    $best = $null
+    $bestLength = 0
+    $tied = $false
+    foreach ($candidate in $Candidates) {
+        $tail = Get-CommonNameTail -A $ExpectedName -B $candidate.Name
+        if (-not $tail) { continue }
+        if ($tail.Length -gt $bestLength) {
+            $best = $candidate
+            $bestLength = $tail.Length
+            $tied = $false
+        }
+        elseif ($tail.Length -eq $bestLength) {
+            $tied = $true
+        }
+    }
+    if ($tied) { return $null }
+    return $best
+}
+
+
+function Get-CapturePairing {
+    # Every manifest in a folder, matched to the log it describes.
+    #
+    # By name first: a capture writes <log> and <log>.capture.json side by side,
+    # and that pairing is exact even where two runs produced identical logs.
+    # By recorded md5 and byte count second, among the logs no manifest of their
+    # own has already claimed: that is what a renamed log is still findable by.
+    # By shared name tail last, which reaches the two cases content cannot - a
+    # log edited since it was captured, and several logs whose content is
+    # identical - because a relabelled capture keeps the tail of its name.
+    # Anything still left over is reported rather than guessed at.
+    param([Parameter(Mandatory = $true)][string]$LogDir)
+
+    $entries = @(Get-ChildItem -LiteralPath $LogDir -File | Sort-Object Name)
+    $logs = @($entries | Where-Object { $_.Extension -eq $LogExtension })
+    # Case-insensitively, because the file system these land on is.
+    $manifests = @($entries | Where-Object { $_.Name.EndsWith($ManifestSuffix, [System.StringComparison]::OrdinalIgnoreCase) })
+
+    $byName = @{}
+    foreach ($log in $logs) { $byName[$log.Name + $ManifestSuffix] = $log }
+
+    # A log with its own manifest beside it is spoken for, and cannot be what
+    # some other manifest is looking for.
+    $unclaimed = @($logs | Where-Object { -not (Test-Path -LiteralPath (Join-Path $LogDir ($_.Name + $ManifestSuffix))) })
+
+    $results = [System.Collections.Generic.List[object]]::new()
+    foreach ($manifest in $manifests) {
+        $data = [System.IO.File]::ReadAllText($manifest.FullName) | ConvertFrom-Json
+        $md5 = if ($data.md5) { ([string]$data.md5).ToLowerInvariant() } else { $null }
+
+        $log = $byName[$manifest.Name]
+        $pairedBy = if ($log) { "name" } else { $null }
+        $note = $null
+
+        if (-not $log) {
+            $expectedName = $manifest.Name.Substring(0, $manifest.Name.Length - $ManifestSuffix.Length)
+            $candidates = @($unclaimed | Where-Object {
+                    $_.Length -eq $data.bytes -and (Get-FileMd5 -Path $_.FullName) -eq $md5
+                })
+            if ($candidates.Count -eq 1) {
+                $log = $candidates[0]
+                $pairedBy = "md5"
+            }
+            else {
+                # Content could not settle it: either nothing carries the
+                # recorded md5, or too much does. Narrow to the md5 matches when
+                # there were several - they are already known to be the right
+                # content - and otherwise let the name search the whole folder.
+                # @() around the whole thing: an empty branch comes back out of
+                # an if-expression as $null rather than an empty array, and a
+                # folder where every log is already claimed hits exactly that.
+                $pool = @(if ($candidates.Count -gt 1) { $candidates } else { $unclaimed })
+                $byTail = Get-NameTailMatch -ExpectedName $expectedName -Candidates $pool
+                if ($byTail) {
+                    $log = $byTail
+                    $pairedBy = "name tail"
+                }
+                elseif ($candidates.Count -eq 0) {
+                    $note = "no log in this folder has its recorded md5 $md5, and none is named like $expectedName; the log it describes is not here"
+                }
+                else {
+                    $note = "$($candidates.Count) logs share its recorded md5 $md5 ($($candidates.Name -join ', ')), and no name tail tells them apart"
+                }
+            }
+        }
+
+        $result = [ordered]@{
+            manifest = $manifest
+            log      = $log
+            copy     = $data.copy
+            pairedBy = $pairedBy
+            note     = $note
+            md5Ok    = $null
+            bytesOk  = $null
+            copyOk   = $null
+        }
+        if ($log) {
+            # Re-hashing on every audit is the point: a manifest that still names
+            # its log proves nothing about whether the log still is that log.
+            $result.md5Ok = (Get-FileMd5 -Path $log.FullName) -eq $md5
+            $result.bytesOk = $log.Length -eq $data.bytes
+            $result.copyOk = $data.copy -eq $log.FullName
+        }
+        $results.Add([pscustomobject]$result)
+    }
+    return $results
+}
+
+
+function Invoke-CaptureAudit {
+    # Re-check every capture in a folder, and optionally put the manifests of
+    # renamed logs back where they belong.
+    param(
+        [Parameter(Mandatory = $true)][string]$LogDir,
+        [switch]$Repair
+    )
+
+    if (-not (Test-Path -LiteralPath $LogDir)) {
+        throw "No captured logs to audit: $LogDir does not exist."
+    }
+    $LogDir = (Get-Item -LiteralPath $LogDir).FullName
+
+    $pairs = Get-CapturePairing -LogDir $LogDir
+    Write-Host "Auditing $($pairs.Count) manifest(s) in $LogDir" -ForegroundColor Cyan
+
+    if ($Repair) {
+        # Anything not paired by name is a manifest sitting under the wrong
+        # file name, whichever way it was tracked down.
+        foreach ($pair in ($pairs | Where-Object { $_.log -and ($_.pairedBy -ne "name" -or -not $_.copyOk) })) {
+            Set-ManifestCopyPath -ManifestPath $pair.manifest.FullName -LogPath $pair.log.FullName
+            if ($pair.pairedBy -ne "name") {
+                $wanted = Join-Path $LogDir ($pair.log.Name + $ManifestSuffix)
+                if (Test-Path -LiteralPath $wanted) {
+                    throw "Cannot re-file $($pair.manifest.Name) as $($pair.log.Name + $ManifestSuffix): that name is already taken."
+                }
+                Move-Item -LiteralPath $pair.manifest.FullName -Destination $wanted
+                Write-Host "  re-filed $($pair.manifest.Name)" -ForegroundColor Green
+                Write-Host "        -> $($pair.log.Name + $ManifestSuffix)"
+            }
+            else {
+                Write-Host "  repointed $($pair.manifest.Name) at $($pair.log.Name)" -ForegroundColor Green
+            }
+        }
+        # Everything below reports on the folder as it now stands.
+        $pairs = Get-CapturePairing -LogDir $LogDir
+    }
+
+    $unresolved = @($pairs | Where-Object { -not $_.log })
+    $corrupt = @($pairs | Where-Object { $_.log -and (-not $_.md5Ok -or -not $_.bytesOk) })
+    $renamed = @($pairs | Where-Object { $_.pairedBy -and $_.pairedBy -ne "name" })
+    $stale = @($pairs | Where-Object { $_.log -and -not $_.copyOk })
+
+    Write-Host "  paired by name      : $(@($pairs | Where-Object { $_.pairedBy -eq 'name' }).Count)"
+    Write-Host "  paired by md5       : $(@($pairs | Where-Object { $_.pairedBy -eq 'md5' }).Count)"
+    Write-Host "  paired by name tail : $(@($pairs | Where-Object { $_.pairedBy -eq 'name tail' }).Count)"
+    Write-Host "  unresolved          : $($unresolved.Count)"
+    Write-Host "  md5 or byte mismatches : $($corrupt.Count)"
+    Write-Host "  'copy' fields naming somewhere else : $($stale.Count)"
+
+    $unmanifested = @(Get-ChildItem -LiteralPath $LogDir -File |
+            Where-Object { $_.Extension -eq $LogExtension } |
+            Where-Object { -not (Test-Path -LiteralPath (Join-Path $LogDir ($_.Name + $ManifestSuffix))) })
+    if ($unmanifested.Count -gt 0) {
+        Write-Host "  logs with no manifest beside them : $($unmanifested.Count)"
+        foreach ($log in $unmanifested) { Write-Host "    $($log.Name)" }
+    }
+
+    foreach ($pair in $renamed) {
+        Write-Warning "$($pair.manifest.Name) describes $($pair.log.Name) (paired by $($pair.pairedBy)), which was renamed after it was captured. Re-run with -Repair to file it beside that log."
+    }
+    foreach ($pair in $stale) {
+        Write-Warning "$($pair.manifest.Name) records copy = '$($pair.copy)', but its log is at $($pair.log.FullName). Re-run with -Repair to point it there."
+    }
+
+    $problems = [System.Collections.Generic.List[string]]::new()
+    foreach ($pair in $unresolved) {
+        $problems.Add("$($pair.manifest.Name): $($pair.note)")
+    }
+    foreach ($pair in $corrupt) {
+        $problems.Add("$($pair.manifest.Name): $($pair.log.Name) no longer matches what was captured (md5 ok: $($pair.md5Ok), bytes ok: $($pair.bytesOk)).")
+    }
+    if ($problems.Count -gt 0) {
+        throw ("This folder's captures do not all check out:`n" + (($problems | ForEach-Object { "  - $_" }) -join "`n"))
+    }
+
+    Write-Host "Every manifest here is paired with a log that still hashes to what was captured." -ForegroundColor Green
 }
 
 
@@ -259,7 +590,7 @@ function Get-PluginFolderState {
                 name          = $_.Name
                 bytes         = $_.Length
                 lastWriteTime = Format-Stamp $_.LastWriteTime
-                md5           = (Get-FileHash -LiteralPath $_.FullName -Algorithm MD5).Hash.ToLowerInvariant()
+                md5           = Get-FileMd5 -Path $_.FullName
             }
         })
 }
@@ -314,9 +645,14 @@ function Test-ArtifactWrittenByRun {
 
 Invoke-ScriptMain {
 
-# --- 0. The rename mode, which captures nothing --------------------------------
-# Handled before anything looks at the game: renaming an existing capture needs
-# no game folder, no log and no process, and doing it here keeps that true.
+# --- 0. The two modes that capture nothing -------------------------------------
+# Both run before anything looks at the game: neither renaming a capture nor
+# auditing the ones already on disk needs a game folder, a log or a process, and
+# handling them here keeps that true.
+#
+# Renaming is the tidy way to relabel a capture and auditing is the untidy one -
+# -Rename moves the manifest with the log, -Repair goes and finds the manifests
+# of logs renamed some other way.
 if ($Rename -or $NewName) {
     if (-not ($Rename -and $NewName)) {
         throw "-Rename and -NewName go together: -Rename names the captured log, -NewName what to call it."
@@ -324,6 +660,13 @@ if ($Rename -or $NewName) {
     Write-Host "Renaming capture:"
     $renamed = Rename-Capture -Path $Rename -NewName $NewName
     Write-Host "Renamed. The manifest travels with the log; anything reading captures should pair them by name."
+    return
+}
+
+# -Repair implies the audit it fixes the findings of, so it stands on its own.
+if ($Audit -or $Repair) {
+    if (-not $LogDir) { $LogDir = $DefaultLogDir }
+    Invoke-CaptureAudit -LogDir $LogDir -Repair:$Repair
     return
 }
 
@@ -337,7 +680,7 @@ if (-not (Test-Path -LiteralPath $logPath)) {
 }
 
 if (-not $Destination) {
-    $Destination = Join-Path $BuildDir "logs\$Label-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
+    $Destination = Join-Path $DefaultLogDir "$Label-$(Get-Date -Format 'yyyyMMdd-HHmmss')$LogExtension"
 }
 $destDir = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($Destination))
 New-Item -ItemType Directory -Force -Path $destDir | Out-Null
@@ -346,7 +689,7 @@ $Destination = (Get-Item -LiteralPath $Destination).FullName
 
 $copy = Get-Item -LiteralPath $Destination
 $source = Get-Item -LiteralPath $logPath
-$md5 = (Get-FileHash -LiteralPath $Destination -Algorithm MD5).Hash.ToLowerInvariant()
+$md5 = Get-FileMd5 -Path $Destination
 Write-Host "Captured $logPath" -ForegroundColor Cyan
 Write-Host "      -> $Destination"
 Write-Host "  md5 $md5  ($($copy.Length) bytes)"
@@ -498,7 +841,7 @@ $manifest = [ordered]@{
     problems             = @($problems)
     verified             = $verified
 }
-$manifestPath = "$Destination.capture.json"
+$manifestPath = "$Destination$ManifestSuffix"
 # WriteAllText rather than Set-Content: no BOM, so anything can read the JSON.
 [System.IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 5))
 Write-Host "  manifest $manifestPath"
