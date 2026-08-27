@@ -15,7 +15,7 @@ BinaryReader. Relevant .NET BinaryReader semantics reproduced here:
     used by this format ('T', 'S', 'N', 'B', 'X').
 
 A Lua table has an array part (List) and a hash part (Dict); the C# LuaTable
-keeps them separate. This method combined them into a single dict, using
+keeps them separate. This module combines them into a single dict, using
 1-indexed indices as the keys for the list part. ie, if we have:
 
     list_part = ["a", "b"]
