@@ -20,10 +20,10 @@ namespace GlobalConversationTracker.Persistence;
 /// Location, Variable, Conversation - optionally followed by "extra data"
 /// (length-prefixed Lua source strings) that this tool does not interpret.
 ///
-/// The parser decides where every value ends and the visitor decides what any of
-/// it means, which is what makes a caller that wants one field out of one table
-/// cheap: see <see cref="SimStatusVisitor"/>, which reads the SimStatus strings
-/// without building an all-inclusive in-memory representation
+/// The parser decides where every value ends; the visitor decides what any of it
+/// means. That is what makes a caller wanting one field out of one table cheap - see
+/// <see cref="SimStatusVisitor"/>, which reads the SimStatus strings without building
+/// an in-memory representation of everything around them.
 ///
 /// Binary format notes (.NET BinaryReader semantics):
 ///   - Int32 / Double are little-endian.
@@ -109,9 +109,8 @@ public ref struct RawDataParser
     public void Parse()
     {
         _visitor.BeginParse(ref this);
-        // There are 5 top-level tables - though we don't assume they are tables, and
-        // treat them like any value; they are marked as tables by DataType.Table like
-        // any nested one is.
+        // Read as plain values rather than assumed to be tables; the blob marks them
+        // DataType.Table like any nested one.
         for (int i = 0; i < TableNames.Length; i++)
         {
             _visitor.BeginTopLevelValue(ref this, i, TableNames[i]);
@@ -132,9 +131,8 @@ public ref struct RawDataParser
     /// </summary>
     /// <param name="data">The blob, as stored in a {save}.ntwtf.lua file.</param>
     /// <param name="counts">
-    /// What the parse stepped over. A caller that times this call needs these to say
-    /// what the time was spent on; one that does not can use the overload without
-    /// them and pay nothing, since the counting happens either way.
+    /// What the parse stepped over, for a caller timing this call. The counting happens
+    /// either way, so the overload without them costs nothing extra.
     /// </param>
     public static List<SimStatusRow> GetSimStatuses(
         ReadOnlySpan<byte> data,
@@ -306,7 +304,7 @@ public ref struct RawDataParser
     //
     // Every fixed-size read is one of these two shapes over the same decoding: Peek
     // leaves the cursor alone, Consume advances it. Both bounds-check first, so the
-    // decoding itself does not have to - and the decoding is what an Interpreter is.
+    // Interpreter that does the decoding does not have to.
     // ---------------------------------------------------------------------------
 
     /// <summary>
@@ -317,9 +315,8 @@ public ref struct RawDataParser
     /// <see cref="Size"/> and <see cref="Interpret"/> away.
     /// </summary>
     /// <remarks>
-    /// Size lives here, next to Interpret, rather than on an attribute over it: an
-    /// attribute would only be readable by reflection, which is the one thing this
-    /// path cannot afford. As an interface member it is a constant to the JIT.
+    /// Size is an interface member rather than an attribute so it is a constant to the
+    /// JIT; an attribute would only be readable by reflection.
     /// </remarks>
     private interface IInterpreter<T>
     {
