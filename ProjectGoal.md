@@ -38,10 +38,9 @@ its assets, decompiler output - lives in one gitignored folder:
     depot_download.ps1 and named after the version it is. PRISTINE: no BepInEx,
     no Vortex, none of the files the Steam client writes into an install. That
     is what makes it useful - a modded install cannot tell you which files the
-    game actually ships, and this one has already settled that question twice
-    (changelog.txt, winhttp.dll, doorstop_config.ini and dotnet\ are BepInEx's,
-    not the game's). Each carries a steam-download.json saying what it is and
-    how to fetch it again.
+    game actually ships. (It is how we know changelog.txt, winhttp.dll,
+    doorstop_config.ini and dotnet\ are BepInEx's, not the game's.) Each carries
+    a steam-download.json saying what it is and how to fetch it again.
     - "latest" is the current public build.
     - "pre-final-cut" is manifest 3499130543868275315, built 2021-02-11, the
       last content before The Final Cut. It uses Mono rather than IL2CPP, which
@@ -129,9 +128,8 @@ In that folder, the .ntwtf.json is a "decoded" version of the binary content in 
 
 # Existing Tooling / Python vs C#
 
-In my initial exploration, I wrote some initial tooling using python - ie, read_ntwtf_lua_data.py.  This was written
-in python because that is the language I am more familiar with - going forward, code + tools should be written in
-C# (making use of `dotnet run somescript.cs` where necessary).
+Some exploratory tooling is in python - ie, read_ntwtf_lua_data.py.  Going forward, code +
+tools should be written in C# (making use of `dotnet run somescript.cs` where necessary).
 
 # Implementation - Rough Initial Plan
 
