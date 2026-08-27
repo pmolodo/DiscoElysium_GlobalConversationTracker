@@ -69,15 +69,15 @@ Nothing polls: the hooks above tell the display when a count has moved, which is
 only time one can have.
 
 Each hook is installed independently, so one failing to patch costs only what that hook
-covered. Nothing is ever fed back into the game's own state: the global state is read only to
-draw that one number, never to change what the game records. The state
-file is read from disk once per session, on the first mark or savegame load, and rewritten
-whenever a mark raises a status. A status can only ever go up, so nothing the game does -
-including resetting a save to Untouched - can lose recorded history.
+covered. Nothing is fed back into the game's own state: the global state is read only to draw
+the numbers, never to change what the game records. The state file is read from disk once per
+session, on the first mark or savegame load, and rewritten whenever a mark raises a status. A
+status can only ever go up, so nothing the game does - including resetting a save to Untouched
+- can lose recorded history.
 
 ## Target environment
 
-Values observed in the BepInEx 6 installation this plugin was first developed against:
+The BepInEx 6 installation this plugin targets:
 
 | Item | Value |
 | --- | --- |
@@ -110,12 +110,11 @@ dotnet build src\GlobalConversationTracker.Plugin -c Release
 
 Output: `.build\bin\GlobalConversationTracker.Plugin\Release\net6.0\`, holding one
 `GlobalConversationTracker.dll` and its `.pdb`; `Directory.Build.props` redirects `bin`/`obj`
-under `.build`. Only the DLL is ever installed or packaged - the `.pdb` stays here, for
-debugging the build you just made. That DLL is the whole plugin: the mod's own layers (Core, Persistence,
-Session) are compiled into it rather than referenced as projects, so an install is one file
-and there is nothing for BepInEx to resolve out of the plugin folder. The three projects
-still build and are tested on their own; the plugin csproj says why it takes them as
-source.
+under `.build`. Only the DLL is installed or packaged - the `.pdb` stays here, for debugging
+the build you just made. That DLL is the whole plugin: the mod's own layers (Core,
+Persistence, Session) are compiled into it rather than referenced as projects, so an install
+is one file. The three projects still build and are tested on their own; the plugin csproj
+says why it takes them as source.
 
 ## Installing
 
@@ -141,9 +140,8 @@ or a file you edited is left alone and reported rather than removed. Your dialog
 `global-conversation-state.json`, in the SaveGames folder - is kept unless you pass
 `-RemoveGlobalState`. `-WhatIf` shows you the whole run without changing anything.
 
-Neither archive can ship the `BepInEx\interop` assemblies, and none of this is a
-workaround: those are generated from your own game build on first launch, which is the
-slow start-up above.
+Neither archive can ship the `BepInEx\interop` assemblies: those are generated from your
+own game build on first launch, which is the slow start-up above.
 
 **`GlobalConversationTracker-v<version>.zip`** - if you already have BepInEx 6 IL2CPP
 working. It is the plugin alone: extract it into the game folder and the DLL lands in
@@ -174,8 +172,7 @@ Steps:
 2. Create the plugin folder:
    `<game>\BepInEx\plugins\GlobalConversationTracker\`
 3. Copy the built `GlobalConversationTracker.dll` into that folder (see Building above).
-   Delete any `GlobalConversationTracker.Core/.Persistence/.Session.dll` an older install
-   left behind; they are no longer part of the payload.
+   The payload is that one DLL; delete any other `GlobalConversationTracker*.dll` in there.
 4. Confirm the BepInEx console is on: in
    `<game>\BepInEx\config\BepInEx.cfg`, section `[Logging.Console]`, `Enabled = true`.
 5. Launch the game (Steam, or `disco.exe` directly).
@@ -197,10 +194,9 @@ Steps:
    the hooks are on. A hook that could not be installed logs `Failed to hook <method>` instead,
    and the others carry on without it. The counts themselves show up once a game is in play, to
    the left of the money at the bottom of the screen, and log a `Dialogue counts added to the
-   main HUD` line saying where they put themselves. With HarmonyX logging enabled there is also an
-   `[Info :HarmonyX] Patching ...` line per patched method. Nothing touches the state file
-   until the first line of dialogue is marked, or a savegame is loaded, whichever comes first:
-   that is when the file is read and the first write happens.
+   main HUD` line. With HarmonyX logging enabled there is also an `[Info :HarmonyX] Patching ...`
+   line per patched method. Nothing touches the state file until the first line of dialogue is
+   marked, or a savegame is loaded, whichever comes first.
 7. To uninstall, delete the `GlobalConversationTracker` folder from `BepInEx\plugins`.
 
 If the plugin does not appear at all, check `BepInEx\LogOutput.log` for a load error and confirm
