@@ -48,9 +48,9 @@ $BinDir = Join-Path $BuildDir "bin\$AssemblyName.Plugin"
 
 # Caches the resolved reference install, so repeat builds skip Steam discovery.
 #
-# Per-user and OUTSIDE the repo, which is the point: a git worktree does not
-# contain the untracked 'Steam Install - Unaltered' copy, and its own .build\ is
-# empty, so a cache kept in the repo could never answer the question there. One
+# Per-user and OUTSIDE the repo, which is the point: a git worktree contains
+# none of the untracked reference material, and its own .build\ is empty, so a
+# cache kept in the repo could never answer the question there. One
 # cache per machine answers it for every checkout on that machine, and
 # Directory.Build.props reads this same file, so a bare 'dotnet build' resolves
 # an install without going through these scripts at all.
@@ -213,22 +213,11 @@ $LockViolation = 33
 # Steam, AssetRipper exports, decompiler output. Builds must never write into
 # any of it, and deploy refuses to target it unless explicitly forced.
 #
-# The FOLDER is the rule, not a list of names. Everything reference-ish moved
-# under .game_reference_copies on 2026-08-26, so a copy added tomorrow is
-# protected without anyone remembering to add it here. The old individual name
-# stays beside it, for a checkout that still has one at the repo root.
+# The FOLDER is the rule, not a list of names: everything reference-ish lives
+# under .game_reference_copies, so a copy added tomorrow is protected without
+# anyone remembering to add it here.
 $GameRefCopiesDirName = ".game_reference_copies"
-$ReferenceCopyDirNames = @(
-    $GameRefCopiesDirName,
-    "Steam Install - Unaltered"
-)
-$GameRefCopiesDir = Join-Path $RepoRoot $GameRefCopiesDirName
-
-# Mirrors step 3 of the MSBuild resolution in Directory.Build.props. A copy in
-# there only counts if it has BepInEx in it - Test-ReferenceGameDir decides -
-# because most of what lives in that folder now is PRISTINE game content, which
-# carries none of the assemblies this build references.
-$RepoDefaultGameDir = Join-Path $GameRefCopiesDir "Steam Install - Unaltered\Disco Elysium"
+$ReferenceCopyDirNames = @($GameRefCopiesDirName)
 
 # Maps the csproj's HintPath properties onto directories under a game install,
 # so Get-RequiredReferenceDll can read the reference list out of the csproj
@@ -472,12 +461,11 @@ function Save-ReferenceGameDir {
 function Resolve-ReferenceGameDir {
     # The game install the build reads its reference assemblies from.
     #
-    # Sources, in order: explicit parameter, DISCO_ELYSIUM_DIR, the LIVE STEAM
-    # INSTALL, then a copy kept in .game_reference_copies. The live install
-    # beats the repo copy on purpose - it is the one that is patched, re-run and
+    # Sources, in order: explicit parameter, DISCO_ELYSIUM_DIR, then the LIVE
+    # STEAM INSTALL. The live install is the one that is patched, re-run and
     # regenerated as the game updates, so it is the one whose interop assemblies
-    # match the game a developer is actually playing. Read-only use, so
-    # preferring it is safe.
+    # match the game a developer is actually playing. Read-only use, so relying
+    # on it is safe.
     #
     # The cache is NOT one of those sources. It is an optimization over them, so
     # it goes exactly where the expense begins: after the two free lookups,
@@ -495,7 +483,7 @@ function Resolve-ReferenceGameDir {
     # the build needs is BepInEx\core plus the BepInEx\interop assemblies that
     # only exist once BepInEx has been installed into a copy and the game run
     # once. Test-ReferenceGameDir is what enforces that, and it is why a folder
-    # full of reference copies can still leave this throwing.
+    # full of reference copies is no help here: point this at a playable install.
     #
     # Whatever it resolves to is written to the machine-level cache on the way
     # out, which is what lets a git worktree build at all: Directory.Build.props
@@ -528,11 +516,6 @@ function Resolve-ReferenceGameDir {
         return $steamDir
     }
 
-    if (Test-ReferenceGameDir -Path $RepoDefaultGameDir) {
-        Save-ReferenceGameDir -GameDir $RepoDefaultGameDir
-        return $RepoDefaultGameDir
-    }
-
     $cacheNote = if (-not $cachedGameDir) {
         "(no cache file at $RefDirCacheFile)"
     }
@@ -552,7 +535,6 @@ Tried, in order:
   2. `$env:DISCO_ELYSIUM_DIR               (not set)
   3. $cacheNote
   4. Steam auto-discovery
-  5. $RepoDefaultGameDir
 $steamNote
 What this needs is an install with BOTH $BepInExCoreRelDir and
 $BepInExInteropRelDir - a copy with BepInEx 6 installed that has been RUN once,

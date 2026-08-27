@@ -59,9 +59,9 @@
     is what asks for the usual resolution order (see provision-refs.ps1).
 
 .PARAMETER AllowReferenceCopy
-    Deploy even when the target turns out to be one of the repo's read-only
-    reference copies of the game ("Steam Install - Unaltered"), which is
-    otherwise refused outright. The deploy then goes ahead with a warning, so
+    Deploy even when the target turns out to be inside the repo's read-only
+    reference material under .game_reference_copies, which is otherwise refused
+    outright. The deploy then goes ahead with a warning, so
     testing against a reference copy stays possible but never happens by
     accident.
 

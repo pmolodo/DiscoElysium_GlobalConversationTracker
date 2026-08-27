@@ -10,9 +10,8 @@
     A reference copy, straight from Steam's content servers and touched by
     nothing else: no BepInEx, no Vortex, no mod, no plugin folder, none of the
     files the Steam client itself writes into an installed game. That is what
-    makes it worth having - the repo's other copies are all modded, and
-    "unaltered" in "Steam Install - Unaltered" means unaltered since it was
-    copied, not unmodded.
+    makes it worth having: a modded install cannot tell you which files the
+    game actually ships, and this one can.
 
     Which version to fetch is the first argument, and there is no default:
 

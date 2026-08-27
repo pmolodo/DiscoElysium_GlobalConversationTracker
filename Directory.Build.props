@@ -25,21 +25,13 @@
       1. -p:DiscoElysiumDir=<path>   (a command-line property beats anything set here)
       2. the DISCO_ELYSIUM_DIR environment variable
       3. the machine-level cache the PowerShell scripts write
-      4. a modded copy kept in <repo>\.game_reference_copies
 
     EVERY candidate is checked for BepInEx\core rather than merely for
-    existing, and both halves of that matter:
-
-      * A path that is simply gone must not win. The cache is a file naming a
-        directory, and the directory can be deleted without the file noticing -
-        which is exactly what happened when the repo's old reference install was
-        removed, leaving a bare 'dotnet build' failing on a path that no longer
-        existed while a perfectly good install sat elsewhere on the machine.
-      * A PRISTINE copy must not win either. The reference copies in
-        .game_reference_copies are mostly straight from Steam, and a game
-        without BepInEx cannot supply a single one of the assemblies these
-        projects reference. Checking for BepInEx\core is what tells the two
-        kinds of copy apart.
+    existing. The cache is a file naming a directory, and the directory can be
+    deleted without the file noticing; without the check a bare 'dotnet build'
+    fails on a path that no longer exists while a perfectly good install sits
+    elsewhere on the machine. A game without BepInEx cannot supply a single one
+    of the assemblies these projects reference, so existing is not enough.
 
     Step 3 is what makes git worktrees work: the cache is per-user and lives
     outside the repo (see $RefDirCacheFile in build-support.psm1), so one
@@ -55,8 +47,6 @@
     the path and every Exists() check on it then fails.
   -->
   <PropertyGroup>
-    <GameRefCopiesDir>$(MSBuildThisFileDirectory).game_reference_copies\</GameRefCopiesDir>
-    <RepoDefaultGameDir>$(GameRefCopiesDir)Steam Install - Unaltered\Disco Elysium</RepoDefaultGameDir>
     <RefGameDirCacheFile Condition="'$(LOCALAPPDATA)' != ''">$(LOCALAPPDATA)\GlobalConversationTracker\reference-game-dir.txt</RefGameDirCacheFile>
   </PropertyGroup>
 
@@ -64,7 +54,6 @@
     <_CachedGameDir Condition="'$(RefGameDirCacheFile)' != '' and Exists('$(RefGameDirCacheFile)')">$([System.IO.File]::ReadAllText('$(RefGameDirCacheFile)').Trim())</_CachedGameDir>
     <DiscoElysiumDir Condition="'$(DiscoElysiumDir)' == '' and '$(DISCO_ELYSIUM_DIR)' != ''">$(DISCO_ELYSIUM_DIR)</DiscoElysiumDir>
     <DiscoElysiumDir Condition="'$(DiscoElysiumDir)' == '' and '$(_CachedGameDir)' != '' and Exists('$(_CachedGameDir)\BepInEx\core')">$(_CachedGameDir)</DiscoElysiumDir>
-    <DiscoElysiumDir Condition="'$(DiscoElysiumDir)' == '' and Exists('$(RepoDefaultGameDir)\BepInEx\core')">$(RepoDefaultGameDir)</DiscoElysiumDir>
   </PropertyGroup>
 
   <!--

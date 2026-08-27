@@ -64,17 +64,10 @@ its assets, decompiler output - lives in one gitignored folder:
     Output of running the Cpp2IL tool, with various options, on the Final Cut
     version. Largely unsuccessful at recreating C# source.
 
-Two copies that used to sit at the repo root were removed on 2026-08-26, and
-neither is missed:
-
-- "Steam Install - Unaltered", a point-in-time copy of the modded Steam install.
-  Its build role is covered by the playable Steam install below, which is the
-  copy that actually gets patched and re-run; its reference role is covered by a
-  pristine steam_* download, which is the better answer for "what does the game
-  ship" precisely because it is not modded.
-- "pre-final-cut", fetched by a depot_download_pre-final-cut.bat that has since
-  been folded into depot_download.ps1. Re-fetch it with
-  `.\depot_download.ps1 pre-final-cut -Username <steam account>`.
+Reference material lives only under .game_reference_copies. Nothing the build
+or the scripts need is kept at the repo root, and the assemblies a build
+references come from the playable Steam install below - the copy that actually
+gets patched and re-run - rather than from any copy in this repo.
 
 ## Playable Steam install
 

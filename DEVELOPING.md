@@ -346,9 +346,8 @@ its log can still be matched back to it by `md5` and `bytes`.
 
 - **The repo's reference material is never written to.** `deploy.ps1` refuses any target
   path under `.game_reference_copies` - the folder is the rule, so a copy added tomorrow is
-  covered without anyone updating a list - or containing a `Steam Install - Unaltered`
-  segment, for a checkout that still keeps one at the root. (`-AllowReferenceCopy` overrides
-  it with a warning.) Building only ever reads from a game install, never writes.
+  covered without anyone updating a list. (`-AllowReferenceCopy` overrides it with a
+  warning.) Building only ever reads from a game install, never writes.
 - **No silent deploy default** - see `deploy.ps1` above.
 - **The BepInEx config is never edited.** If `[Logging.Console] Enabled` is not `true`,
   deploy just says so and moves on; likewise `capture-log.ps1` only points out that

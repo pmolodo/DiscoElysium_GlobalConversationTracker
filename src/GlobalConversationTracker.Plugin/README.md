@@ -77,9 +77,7 @@ including resetting a save to Untouched - can lose recorded history.
 
 ## Target environment
 
-Values observed in the BepInEx 6 installation this plugin was first developed against - a
-modded `Steam Install - Unaltered` copy that used to be kept in the repo and has since been
-removed:
+Values observed in the BepInEx 6 installation this plugin was first developed against:
 
 | Item | Value |
 | --- | --- |
@@ -95,9 +93,12 @@ where the game lives. Resolution order:
 
 1. `-p:DiscoElysiumDir=<path>` on the command line
 2. the `DISCO_ELYSIUM_DIR` environment variable
-3. default: `<repo root>\.game_reference_copies\Steam Install - Unaltered\Disco Elysium`
+3. the machine-level cache `.\provision-refs.ps1` writes, which is also the only step that
+   can find your Steam copy
 
-The default is read-only reference use; nothing is ever written into that directory.
+Every candidate must actually contain `BepInEx\core` and `BepInEx\interop`; a game install
+without BepInEx cannot supply the assemblies this project references. Whatever resolves is
+read from and never written to.
 
 Normally you do not run `dotnet` by hand: `build.ps1` at the repo root resolves the game
 directory for you and passes it in. See [DEVELOPING.md](../../DEVELOPING.md). The direct
