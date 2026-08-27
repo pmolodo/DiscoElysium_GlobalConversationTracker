@@ -8,15 +8,15 @@ namespace GlobalConversationTracker.Persistence;
 
 /// <summary>
 /// Pulls the SimStatus of every dialogue entry out of the blob, and nothing else.
-///
-/// The rows live at Conversation[convID].Dialog[dialogueID].SimStatus. That is one
-/// string per entry out of a table that is most of the file, so this visitor only
-/// ever decodes a conversation ID, a dialogue entry ID and a status string; every
-/// other key is compared as raw UTF-8 bytes and every other value is stepped over
-/// without being decoded, boxed or stored. The first four top-level tables are not
-/// looked at at all - they still have to be walked, since a value's length is only
-/// knowable from its own encoding, but nothing in them is read.
 /// </summary>
+/// <remarks>
+/// The rows live at Conversation[convID].Dialog[dialogueID].SimStatus - one string per
+/// entry out of a table that is most of the file. So this visitor decodes only a
+/// conversation ID, a dialogue entry ID and a status string; every other key is
+/// compared as raw UTF-8 bytes and every other value is stepped over without being
+/// decoded, boxed or stored. The first four top-level tables are walked but never read,
+/// since a value's length is only knowable from its own encoding.
+/// </remarks>
 public sealed class SimStatusVisitor : IRawDataVisitor
 {
     private static ReadOnlySpan<byte> DialogKey => "Dialog"u8;
@@ -71,8 +71,8 @@ public sealed class SimStatusVisitor : IRawDataVisitor
     private int _dialogueEntryId;
 
     // How much was walked to find the rows. One increment each on paths that already
-    // run for every value and every table, so that a caller timing the parse can say
-    // what the time was spent on rather than only how long it was.
+    // run for every value and every table, so a caller timing the parse can say what
+    // the time went on.
     private long _conversationCount;
     private long _tableCount;
     private long _valueCount;
@@ -86,10 +86,7 @@ public sealed class SimStatusVisitor : IRawDataVisitor
     /// <summary>Tables opened, at every depth, across all five top-level tables.</summary>
     public long TableCount => _tableCount;
 
-    /// <summary>
-    /// Values stepped over. Table keys are values too and are counted here, since
-    /// stepping over one costs the same as stepping over anything else.
-    /// </summary>
+    /// <summary>Values stepped over, table keys included.</summary>
     public long ValueCount => _valueCount;
 
     private Scope CurrentScope =>
