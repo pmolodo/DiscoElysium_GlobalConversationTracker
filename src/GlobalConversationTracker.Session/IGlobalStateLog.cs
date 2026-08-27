@@ -7,11 +7,9 @@ namespace GlobalConversationTracker.Session
     /// The minimal logging surface the initialization path needs.
     /// </summary>
     /// <remarks>
-    /// This exists so <see cref="GlobalStateSession"/> can be loud about recovery
-    /// without referencing BepInEx. The plugin adapts a
-    /// <c>BepInEx.Logging.ManualLogSource</c> onto it; tests capture the lines and
-    /// assert on them, which is the only way a "log loudly" requirement can be
-    /// tested at all.
+    /// So <see cref="GlobalStateSession"/> can be loud about recovery without
+    /// referencing BepInEx. The plugin adapts a <c>BepInEx.Logging.ManualLogSource</c>
+    /// onto it; tests capture the lines and assert on them.
     /// </remarks>
     public interface IGlobalStateLog
     {
