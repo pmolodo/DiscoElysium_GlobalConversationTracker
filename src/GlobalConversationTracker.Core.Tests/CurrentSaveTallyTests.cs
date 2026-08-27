@@ -231,9 +231,116 @@ namespace GlobalConversationTracker.Tests
             var tally = new CurrentSaveTally();
             tally.Set(1, 1, SimStatus.WasDisplayed);
             tally.Set(1, 2, SimStatus.WasOffered);
+            tally.SetOrb("WHIRLING F1 ORB / spilled rum");
 
             Assert.Equal(
-                "CurrentSaveTally(1.5 from 1 displayed and 1 offered)", tally.ToString());
+                "CurrentSaveTally(2.5 from 1 displayed, 1 offered and 1 orbs)",
+                tally.ToString());
+        }
+
+        // ---- Orbs ----
+
+        [Fact]
+        public void SetOrb_CountsOnceHoweverOftenTheOrbIsOpened()
+        {
+            var tally = new CurrentSaveTally();
+
+            Assert.True(tally.SetOrb("LANDS END / DEPOT DOOR"));
+            Assert.False(tally.SetOrb("LANDS END / DEPOT DOOR"));
+            Assert.False(tally.SetOrb("LANDS END / DEPOT DOOR"));
+
+            Assert.Equal(1, tally.OrbCount);
+            Assert.Equal(DialogueScore.Orb, tally.Score);
+        }
+
+        [Fact]
+        public void SetOrb_TitlesAreCaseSensitive()
+        {
+            var tally = new CurrentSaveTally();
+
+            Assert.True(tally.SetOrb("PLAZA ORB / seagull"));
+            Assert.True(tally.SetOrb("PLAZA ORB / SEAGULL"));
+
+            Assert.Equal(2, tally.OrbCount);
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        public void SetOrb_WithoutATitle_Throws(string? title)
+        {
+            var tally = new CurrentSaveTally();
+
+            Assert.Throws<ArgumentException>(() => tally.SetOrb(title!));
+        }
+
+        [Fact]
+        public void Score_AddsOrbsToEntriesWithoutDisturbingTheHalves()
+        {
+            var tally = new CurrentSaveTally();
+            tally.Set(1, 1, SimStatus.WasOffered);
+            tally.SetOrb("COAST ORB / seagull");
+            tally.SetOrb("COAST ORB / floatice");
+
+            Assert.Equal(0.5 + DialogueScore.Orb + DialogueScore.Orb, tally.Score);
+            Assert.True(DialogueScore.HasHalf(tally.Score));
+        }
+
+        [Fact]
+        public void CountAndIsEmpty_TreatOrbsAsTheirOwnPopulation()
+        {
+            var tally = new CurrentSaveTally();
+            tally.SetOrb("COAST ORB / seagull");
+
+            // Count is dialogue entries only, but an orb still makes the tally non-empty.
+            Assert.Equal(0, tally.Count);
+            Assert.Equal(1, tally.OrbCount);
+            Assert.False(tally.IsEmpty);
+        }
+
+        [Fact]
+        public void ClearEntries_LeavesOrbsAlone()
+        {
+            // The savegame-load case: the raw save bytes carry dialogue entries and no
+            // orbs, so clearing for the replacement must not take the orbs with it.
+            var tally = new CurrentSaveTally();
+            tally.Set(1, 1, SimStatus.WasDisplayed);
+            tally.SetOrb("LANDS END / DEPOT DOOR");
+
+            Assert.Equal(1, tally.ClearEntries());
+
+            Assert.Equal(0, tally.Count);
+            Assert.Equal(1, tally.OrbCount);
+            Assert.True(tally.ContainsOrb("LANDS END / DEPOT DOOR"));
+        }
+
+        [Fact]
+        public void ClearOrbs_LeavesEntriesAlone()
+        {
+            var tally = new CurrentSaveTally();
+            tally.Set(1, 1, SimStatus.WasDisplayed);
+            tally.SetOrb("LANDS END / DEPOT DOOR");
+
+            Assert.Equal(1, tally.ClearOrbs());
+
+            Assert.Equal(1, tally.Count);
+            Assert.Equal(0, tally.OrbCount);
+        }
+
+        [Fact]
+        public void Clear_TakesBothAndCountsBoth()
+        {
+            // The new-game case: the game resets ShownOrbs along with everything else.
+            var tally = new CurrentSaveTally();
+            tally.Set(1, 1, SimStatus.WasDisplayed);
+            tally.Set(1, 2, SimStatus.WasOffered);
+            tally.SetOrb("LANDS END / DEPOT DOOR");
+
+            Assert.Equal(3, tally.Clear());
+
+            Assert.True(tally.IsEmpty);
+            Assert.Equal(0, tally.OrbCount);
+            Assert.Equal(0.0, tally.Score);
         }
     }
 }

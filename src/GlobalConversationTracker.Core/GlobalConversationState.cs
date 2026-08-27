@@ -47,6 +47,14 @@ namespace GlobalConversationTracker
             new Dictionary<int, Dictionary<int, SimStatus>>();
 
         /// <summary>
+        /// Conversation titles whose orb has been opened in any save. The merge rule
+        /// degenerates to set insertion here: an orb has one state, the game never
+        /// unsets <c>OrbSeen</c>, and so "keep the higher value" and "add to the set"
+        /// are the same operation.
+        /// </summary>
+        private readonly HashSet<string> _orbs = new HashSet<string>(StringComparer.Ordinal);
+
+        /// <summary>
         /// How many recorded entries sit at each of the two statuses that are stored.
         /// Kept as the merge goes rather than counted on demand, because the display
         /// asks for the total on every mark and the state runs to six figures.
@@ -69,11 +77,13 @@ namespace GlobalConversationTracker
         private GlobalConversationState(
             Dictionary<int, Dictionary<int, SimStatus>> conversations,
             int offeredCount,
-            int displayedCount)
+            int displayedCount,
+            HashSet<string> orbs)
         {
             _conversations = conversations;
             _offeredCount = offeredCount;
             _displayedCount = displayedCount;
+            _orbs = orbs;
         }
 
         /// <summary>Number of conversations that have at least one recorded entry.</summary>
@@ -91,14 +101,17 @@ namespace GlobalConversationTracker
         /// <summary>How many recorded entries were displayed in some save.</summary>
         public int DisplayedCount => _displayedCount;
 
+        /// <summary>How many distinct orbs have been opened across all saves.</summary>
+        public int OrbCount => _orbs.Count;
+
         /// <summary>
         /// What everything recorded is worth: offered entries count half, displayed
-        /// ones whole. This is the number the player is shown.
+        /// ones and orbs whole. This is the number the player is shown.
         /// </summary>
-        public double Score => DialogueScore.Total(_offeredCount, _displayedCount);
+        public double Score => DialogueScore.Total(_offeredCount, _displayedCount, _orbs.Count);
 
-        /// <summary>True when nothing has been recorded yet.</summary>
-        public bool IsEmpty => EntryCount == 0;
+        /// <summary>True when nothing has been recorded yet, neither entry nor orb.</summary>
+        public bool IsEmpty => EntryCount == 0 && _orbs.Count == 0;
 
         // -------------------------------------------------------------------
         // Mutation: merge is the only path in.
@@ -249,9 +262,63 @@ namespace GlobalConversationTracker
         }
 
         /// <summary>
-        /// Merges every entry of another state into this one.
+        /// Records that an orb has been opened. Idempotent: an orb already recorded is
+        /// a no-op, because <c>OrbSeen</c> has no state above 1 to be raised to.
         /// </summary>
-        /// <returns>The number of entries that actually changed the stored state.</returns>
+        /// <param name="conversationTitle">
+        /// The orb's conversation title, the key the game itself uses in
+        /// <c>ShownOrbs</c>. See <see cref="CurrentSaveTally.SetOrb"/> for why a title
+        /// and not a conversation ID.
+        /// </param>
+        /// <returns><c>true</c> if this orb was not already recorded.</returns>
+        /// <exception cref="ArgumentException">
+        /// <paramref name="conversationTitle"/> is null or empty; the game never writes
+        /// such a key.
+        /// </exception>
+        public bool MergeOrb(string conversationTitle)
+        {
+            if (string.IsNullOrEmpty(conversationTitle))
+            {
+                throw new ArgumentException(
+                    "An orb's conversation title must not be null or empty.",
+                    nameof(conversationTitle));
+            }
+
+            return _orbs.Add(conversationTitle);
+        }
+
+        /// <summary>
+        /// Merges many orbs at once, for a file load or a resync.
+        /// </summary>
+        /// <returns>How many of them were not already recorded.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="conversationTitles"/> is null.</exception>
+        /// <exception cref="ArgumentException">Any title is null or empty.</exception>
+        public int MergeAllOrbs(IEnumerable<string> conversationTitles)
+        {
+            if (conversationTitles == null)
+            {
+                throw new ArgumentNullException(nameof(conversationTitles));
+            }
+
+            int changedCount = 0;
+            foreach (string title in conversationTitles)
+            {
+                if (MergeOrb(title))
+                {
+                    changedCount++;
+                }
+            }
+
+            return changedCount;
+        }
+
+        /// <summary>
+        /// Merges every entry and orb of another state into this one.
+        /// </summary>
+        /// <returns>
+        /// The number of entries and orbs together that actually changed the stored
+        /// state.
+        /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="other"/> is null.</exception>
         public int MergeAll(GlobalConversationState other)
         {
@@ -265,7 +332,7 @@ namespace GlobalConversationTracker
                 return 0;
             }
 
-            return MergeAll(other.EnumerateEntries());
+            return MergeAll(other.EnumerateEntries()) + MergeAllOrbs(other.EnumerateOrbs());
         }
 
         // -------------------------------------------------------------------
@@ -375,6 +442,16 @@ namespace GlobalConversationTracker
         }
 
         /// <summary>
+        /// Every recorded orb's conversation title, sorted, so the on-disk file is
+        /// deterministic. Ordinal order, matching the set's own comparer.
+        /// </summary>
+        public IEnumerable<string> EnumerateOrbs() => _orbs.OrderBy(t => t, StringComparer.Ordinal);
+
+        /// <summary>Whether this orb has been recorded in any save.</summary>
+        public bool ContainsOrb(string conversationTitle) =>
+            conversationTitle != null && _orbs.Contains(conversationTitle);
+
+        /// <summary>
         /// A deep copy of this state, sharing nothing with it: neither object can be
         /// changed by anything done to the other.
         /// </summary>
@@ -391,7 +468,11 @@ namespace GlobalConversationTracker
         /// source, since it holds exactly the same entries.</para>
         /// </remarks>
         public GlobalConversationState Snapshot() =>
-            new GlobalConversationState(ToNestedDictionary(), _offeredCount, _displayedCount);
+            new GlobalConversationState(
+                ToNestedDictionary(),
+                _offeredCount,
+                _displayedCount,
+                new HashSet<string>(_orbs, StringComparer.Ordinal));
 
         /// <summary>
         /// A deep copy of the state as plain nested dictionaries. Prefer
@@ -412,7 +493,8 @@ namespace GlobalConversationTracker
         /// <inheritdoc />
         public override string ToString()
         {
-            return $"GlobalConversationState({ConversationCount} conversations, {EntryCount} entries)";
+            return $"GlobalConversationState({ConversationCount} conversations, {EntryCount} entries, "
+                + $"{OrbCount} orbs)";
         }
     }
 }

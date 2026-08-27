@@ -1,8 +1,8 @@
 # GlobalConversationTracker plugin
 
 BepInEx plugin for Disco Elysium - The Final Cut. It Harmony-patches the game's two SimStatus
-writers and records every status it sees into a global across-all-saves state file in the
-SaveGames directory (`global-conversation-state.json`):
+writers and its orb writer, and records everything it sees into a global across-all-saves state
+file in the SaveGames directory (`global-conversation-state.json`):
 
 - `DialogueLua.MarkDialogueEntry` - the game's single write funnel for dialogue SimStatus
   while playing. The patch is a postfix, so the game's own per-save behavior runs first and
@@ -11,7 +11,15 @@ SaveGames directory (`global-conversation-state.json`):
   without going through `MarkDialogueEntry`. The patch is a prefix that reads the raw save
   bytes the game is about to apply and resyncs the global state from them.
 
-A third hook covers the one event neither writer above can see:
+- `SenseOrb.SetShown` - the single funnel through which the game records an opened orb, by
+  writing `ShownOrbs[conversation] = {OrbSeen=1}`. Every click path reaches it, and it is not
+  virtual, so one patch covers `SenseOrb`, `ConditionalSenseOrb` and `VisCalOrb` alike. The
+  patch is a postfix. An orb with no conversation is skipped rather than reported: `SetShown`
+  itself declines to write one, which is why a thought orb - instantiated from the orb template
+  by `GlobalOrbManager.AddThought`, which never sets its conversation - leaves no trace in
+  `ShownOrbs` and is not counted here either.
+
+A third hook covers the one event neither dialogue writer above can see:
 
 - `World.ResetStates` - a new game rebuilds the whole SimStatus table at once rather than
   marking entries, so nothing else tells the mod that the save being played has started over.
@@ -33,7 +41,9 @@ a playthrough:
 Both numbers are scores rather than plain counts. An entry the game only ever marked
 `WasOffered` - listed as a response option, never actually shown - is worth 0.5, and one marked
 `WasDisplayed` is worth 1.0; reaching a line that was already offered is the other half of the
-same entry and not a second one. The decimal place is shown only when the total ends in .5,
+same entry and not a second one. An opened orb is worth 1.0, for the same reason a displayed
+entry is: it is text actually reached. There is no half for an orb, because the game records a
+bare `OrbSeen=1` and nothing between. The decimal place is shown only when the total ends in .5,
 which is the only fraction a total can end in, so a whole score reads as the plain count it is.
 
 The layout is one number per line, this save above and all saves below, the two numbers right
@@ -45,7 +55,7 @@ static atlas whose highest codepoint is U+FF70, emoji start at U+1F300, and the 
 sprite asset is TextMesh Pro's fourteen-smiley EmojiOne sample. An emoji character would draw
 as nothing. If an icon cannot be decoded its count is shown without it.
 
-Nothing polls: the three hooks above tell the display when a count has moved, which is the
+Nothing polls: the hooks above tell the display when a count has moved, which is the
 only time one can have.
 
 Each hook is installed independently, so one failing to patch costs only what that hook

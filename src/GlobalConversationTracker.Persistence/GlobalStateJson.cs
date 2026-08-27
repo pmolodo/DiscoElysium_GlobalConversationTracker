@@ -45,14 +45,28 @@ namespace GlobalConversationTracker.Persistence
     /// </remarks>
     public static class GlobalStateJson
     {
-        /// <summary>The format version this build writes and is able to read.</summary>
-        public const int FormatVersion = 1;
+        /// <summary>
+        /// The format version this build writes. It reads this version and every older
+        /// one; see the version gate in <see cref="Deserialize(string, string)"/>.
+        /// </summary>
+        /// <remarks>
+        /// Version 2 added <see cref="OrbsPropertyName"/>. A version 1 file is a version
+        /// 2 file with no orbs, which is why reading one needs no conversion beyond
+        /// letting the property be absent.
+        /// </remarks>
+        public const int FormatVersion = 2;
 
         /// <summary>Name of the root version property.</summary>
         public const string VersionPropertyName = "version";
 
         /// <summary>Name of the root conversation-map property.</summary>
         public const string ConversationsPropertyName = "conversations";
+
+        /// <summary>
+        /// Name of the root orb-list property: the conversation titles whose orb has
+        /// been opened, as the game's own <c>ShownOrbs</c> keys.
+        /// </summary>
+        public const string OrbsPropertyName = "orbs";
 
         /// <summary>
         /// Upper bound on how many skipped-row descriptions a load result carries.
@@ -106,6 +120,19 @@ namespace GlobalConversationTracker.Persistence
                 }
 
                 writer.WriteEndObject();
+
+                // Always written, even when empty, so a file's own shape says which
+                // version wrote it rather than leaving "no orbs" and "orbs not supported"
+                // looking identical.
+                writer.WritePropertyName(OrbsPropertyName);
+                writer.WriteStartArray();
+                foreach (string title in state.EnumerateOrbs())
+                {
+                    writer.WriteStringValue(title);
+                }
+
+                writer.WriteEndArray();
+
                 writer.WriteEndObject();
             }
 
@@ -190,15 +217,23 @@ namespace GlobalConversationTracker.Persistence
                     sourcePath, $"'{VersionPropertyName}' is not an integer.");
             }
 
-            if (version != FormatVersion)
+            if (version > FormatVersion)
             {
                 // Deliberately not Corrupt: a newer version's file is presumably full of
                 // real history, so the caller must refuse to overwrite it rather than
                 // fall back to a stale backup.
                 return GlobalStateLoadResult.UnsupportedVersion(
                     sourcePath,
-                    $"File format version {version} is not supported by this build, which reads version {FormatVersion}.");
+                    $"File format version {version} is newer than this build, which writes version {FormatVersion}.");
             }
+
+            // Older versions are read, not rejected. Every version so far has only ever
+            // ADDED an optional root property, so an old file is a new file with those
+            // properties absent, and the readers below already treat absent as empty.
+            // Rejecting them instead would be the worse failure by far: the caller turns
+            // UnsupportedVersion into "refuse to save", so treating a user's own older
+            // file as unreadable would silently stop tracking on every existing install
+            // the first time this constant was bumped.
 
             if (!root.TryGetProperty(ConversationsPropertyName, out JsonElement conversations))
             {
@@ -273,7 +308,57 @@ namespace GlobalConversationTracker.Persistence
                 }
             }
 
+            ReadOrbs(root, state, warnings, ref skippedRowCount);
+
             return GlobalStateLoadResult.Loaded(sourcePath, state, skippedRowCount, warnings);
+        }
+
+        /// <summary>
+        /// Reads the orb list into the state. An absent property is not a fault - that
+        /// is exactly what a version 1 file looks like - but a present one of the wrong
+        /// shape is, and so is a bad element inside a good array.
+        /// </summary>
+        private static void ReadOrbs(
+            JsonElement root,
+            GlobalConversationState state,
+            List<string> warnings,
+            ref int skippedRowCount)
+        {
+            if (!root.TryGetProperty(OrbsPropertyName, out JsonElement orbs))
+            {
+                return;
+            }
+
+            if (orbs.ValueKind != JsonValueKind.Array)
+            {
+                skippedRowCount++;
+                AddWarning(
+                    warnings,
+                    $"'{OrbsPropertyName}' is {orbs.ValueKind}, expected an array; skipped.");
+                return;
+            }
+
+            foreach (JsonElement orb in orbs.EnumerateArray())
+            {
+                if (orb.ValueKind != JsonValueKind.String)
+                {
+                    skippedRowCount++;
+                    AddWarning(
+                        warnings,
+                        $"Orb entry is {orb.ValueKind}, expected a string; skipped.");
+                    continue;
+                }
+
+                string? title = orb.GetString();
+                if (string.IsNullOrEmpty(title))
+                {
+                    skippedRowCount++;
+                    AddWarning(warnings, "Orb entry is an empty conversation title; skipped.");
+                    continue;
+                }
+
+                state.MergeOrb(title);
+            }
         }
 
         private static void AddWarning(List<string> warnings, string warning)

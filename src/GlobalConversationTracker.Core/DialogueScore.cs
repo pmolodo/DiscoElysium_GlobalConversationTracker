@@ -35,6 +35,14 @@ namespace GlobalConversationTracker
         public const double Displayed = 1.0;
 
         /// <summary>
+        /// What one seen orb is worth. The same as <see cref="Displayed"/>, and for the
+        /// same reason: clicking an orb is text actually reached, not text merely
+        /// offered. There is no half-measure for an orb - the game records a single
+        /// <c>OrbSeen=1</c> and nothing between.
+        /// </summary>
+        public const double Orb = 1.0;
+
+        /// <summary>
         /// Group separators, no decimals: the all-saves total runs into five figures,
         /// and the game's own money display beside it is grouped the same way.
         /// </summary>
@@ -74,7 +82,15 @@ namespace GlobalConversationTracker
         /// actually displayed.
         /// </summary>
         public static double Total(int offeredCount, int displayedCount) =>
-            (offeredCount * Offered) + (displayedCount * Displayed);
+            Total(offeredCount, displayedCount, 0);
+
+        /// <summary>
+        /// The same, plus seen orbs. Orbs are whole numbers, so they cannot introduce a
+        /// fraction that <see cref="HasHalf"/> and <see cref="Format"/> do not already
+        /// handle.
+        /// </summary>
+        public static double Total(int offeredCount, int displayedCount, int orbCount) =>
+            (offeredCount * Offered) + (displayedCount * Displayed) + (orbCount * Orb);
 
         /// <summary>
         /// True when the total ends in .5, which is the only case where a total is

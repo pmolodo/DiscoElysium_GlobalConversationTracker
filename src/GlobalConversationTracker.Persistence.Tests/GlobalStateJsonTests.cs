@@ -41,7 +41,7 @@ namespace GlobalConversationTracker.Persistence.Tests
                 (3, 18, SimStatus.WasOffered));
 
             Assert.Equal(
-                "{\"version\":1,\"conversations\":{\"3\":{\"17\":\"WasDisplayed\",\"18\":\"WasOffered\"}}}",
+                "{\"version\":2,\"conversations\":{\"3\":{\"17\":\"WasDisplayed\",\"18\":\"WasOffered\"}},\"orbs\":[]}",
                 GlobalStateJson.Serialize(state));
         }
 
@@ -49,7 +49,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         public void Serialize_EmptyState_WritesAnEmptyConversationMap()
         {
             Assert.Equal(
-                "{\"version\":1,\"conversations\":{}}",
+                "{\"version\":2,\"conversations\":{},\"orbs\":[]}",
                 GlobalStateJson.Serialize(new GlobalConversationState()));
         }
 
@@ -74,7 +74,7 @@ namespace GlobalConversationTracker.Persistence.Tests
             string json = GlobalStateJson.Serialize(state);
 
             Assert.DoesNotContain(SimStatusNames.Untouched, json, StringComparison.Ordinal);
-            Assert.Equal("{\"version\":1,\"conversations\":{\"1\":{\"2\":\"WasOffered\"}}}", json);
+            Assert.Equal("{\"version\":2,\"conversations\":{\"1\":{\"2\":\"WasOffered\"}},\"orbs\":[]}", json);
         }
 
         [Fact]
@@ -106,8 +106,8 @@ namespace GlobalConversationTracker.Persistence.Tests
             string json = GlobalStateJson.Serialize(state);
 
             Assert.Equal(
-                "{\"version\":1,\"conversations\":{\"2\":{\"9\":\"WasOffered\",\"100\":\"WasOffered\"},"
-                + "\"10\":{\"1\":\"WasOffered\"}}}",
+                "{\"version\":2,\"conversations\":{\"2\":{\"9\":\"WasOffered\",\"100\":\"WasOffered\"},"
+                + "\"10\":{\"1\":\"WasOffered\"}},\"orbs\":[]}",
                 json);
         }
 
@@ -251,15 +251,13 @@ namespace GlobalConversationTracker.Persistence.Tests
         }
 
         // -------------------------------------------------------------------
-        // Unknown version: distinct from Corrupt
+        // Versions: newer is refused, older is read
         // -------------------------------------------------------------------
 
         [Theory]
-        [InlineData(0)]
-        [InlineData(2)]
+        [InlineData(GlobalStateJson.FormatVersion + 1)]
         [InlineData(99)]
-        [InlineData(-1)]
-        public void Deserialize_UnknownFormatVersion_IsUnsupportedVersion(int version)
+        public void Deserialize_NewerFormatVersion_IsUnsupportedVersion(int version)
         {
             GlobalStateLoadResult result = Parse(
                 $"{{\"version\":{version},\"conversations\":{{\"1\":{{\"2\":\"WasOffered\"}}}}}}");
@@ -267,6 +265,114 @@ namespace GlobalConversationTracker.Persistence.Tests
             Assert.Equal(GlobalStateLoadOutcome.UnsupportedVersion, result.Outcome);
             Assert.Null(result.State);
             Assert.Contains(version.ToString(), result.ErrorMessage!);
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(-1)]
+        [InlineData(1)]
+        public void Deserialize_OlderFormatVersion_IsReadRatherThanRefused(int version)
+        {
+            // A version this build has outgrown is still this build's own data. Refusing
+            // it would make the caller treat the user's file as unwritable and stop
+            // tracking, which is far worse than reading a document whose only difference
+            // is a property that is not there yet.
+            GlobalStateLoadResult result = Parse(
+                $"{{\"version\":{version},\"conversations\":{{\"1\":{{\"2\":\"WasOffered\"}}}}}}");
+
+            Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
+            Assert.Equal(SimStatus.WasOffered, result.State!.GetStatus(1, 2));
+            Assert.Equal(0, result.State.OrbCount);
+        }
+
+        [Fact]
+        public void Deserialize_VersionOneFile_LoadsWithNoOrbsAndNoWarnings()
+        {
+            // The exact shape every file on disk had before orbs existed.
+            GlobalStateLoadResult result = Parse(
+                "{\"version\":1,\"conversations\":{\"3\":{\"17\":\"WasDisplayed\"}}}");
+
+            Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
+            Assert.Equal(0, result.SkippedRowCount);
+            Assert.Empty(result.Warnings);
+            Assert.Equal(0, result.State!.OrbCount);
+            Assert.Equal(SimStatus.WasDisplayed, result.State.GetStatus(3, 17));
+        }
+
+        // -------------------------------------------------------------------
+        // Orbs
+        // -------------------------------------------------------------------
+
+        [Fact]
+        public void Serialize_WritesOrbsSortedOrdinally()
+        {
+            var state = new GlobalConversationState();
+            state.MergeOrb("PLAZA ORB / seagull");
+            state.MergeOrb("COAST ORB / floatice");
+            state.MergeOrb("COAST ORB / drawbridge");
+
+            Assert.Equal(
+                "{\"version\":2,\"conversations\":{},\"orbs\":["
+                + "\"COAST ORB / drawbridge\",\"COAST ORB / floatice\",\"PLAZA ORB / seagull\"]}",
+                GlobalStateJson.Serialize(state));
+        }
+
+        [Fact]
+        public void Orbs_SurviveARoundTrip()
+        {
+            var state = new GlobalConversationState();
+            state.Merge(3, 17, SimStatus.WasDisplayed);
+            state.MergeOrb("LANDS END / DEPOT DOOR");
+            state.MergeOrb("WHIRLING F1 ORB / spilled rum");
+
+            GlobalStateLoadResult result = Parse(GlobalStateJson.Serialize(state));
+
+            Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
+            Assert.Equal(2, result.State!.OrbCount);
+            Assert.True(result.State.ContainsOrb("LANDS END / DEPOT DOOR"));
+            Assert.True(result.State.ContainsOrb("WHIRLING F1 ORB / spilled rum"));
+            Assert.Equal(state.Score, result.State.Score);
+        }
+
+        [Fact]
+        public void Deserialize_OrbsNotAnArray_SkipsThemAndLoadsTheRest()
+        {
+            GlobalStateLoadResult result = Parse(
+                "{\"version\":2,\"conversations\":{\"1\":{\"2\":\"WasOffered\"}},\"orbs\":\"nope\"}");
+
+            Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
+            Assert.Equal(1, result.SkippedRowCount);
+            Assert.Equal(0, result.State!.OrbCount);
+            Assert.Equal(SimStatus.WasOffered, result.State.GetStatus(1, 2));
+        }
+
+        [Theory]
+        [InlineData("17")]
+        [InlineData("null")]
+        [InlineData("[]")]
+        [InlineData("\"\"")]
+        public void Deserialize_BadOrbElement_SkipsThatElementOnly(string element)
+        {
+            GlobalStateLoadResult result = Parse(
+                "{\"version\":2,\"conversations\":{},\"orbs\":[\"COAST ORB / seagull\","
+                + element + "]}");
+
+            Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
+            Assert.Equal(1, result.SkippedRowCount);
+            Assert.Equal(1, result.State!.OrbCount);
+            Assert.True(result.State.ContainsOrb("COAST ORB / seagull"));
+        }
+
+        [Fact]
+        public void Deserialize_DuplicateOrbs_AreCountedOnce()
+        {
+            GlobalStateLoadResult result = Parse(
+                "{\"version\":2,\"conversations\":{},\"orbs\":["
+                + "\"COAST ORB / seagull\",\"COAST ORB / seagull\"]}");
+
+            Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
+            Assert.Equal(0, result.SkippedRowCount);
+            Assert.Equal(1, result.State!.OrbCount);
         }
 
         // -------------------------------------------------------------------

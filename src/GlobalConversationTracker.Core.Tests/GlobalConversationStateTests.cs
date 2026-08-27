@@ -584,6 +584,101 @@ namespace GlobalConversationTracker.Tests
                 state.GetConversationEntries(ConversationId));
             Assert.IsNotAssignableFrom<ICollection>(state.EnumerateEntries());
             Assert.IsNotAssignableFrom<ICollection<GlobalStatusEntry>>(state.EnumerateEntries());
+            Assert.IsNotAssignableFrom<ICollection>(state.EnumerateOrbs());
+            Assert.IsNotAssignableFrom<ICollection<string>>(state.EnumerateOrbs());
+        }
+
+        // -------------------------------------------------------------------
+        // Orbs
+        // -------------------------------------------------------------------
+
+        [Fact]
+        public void MergeOrb_IsIdempotent()
+        {
+            var state = new GlobalConversationState();
+
+            Assert.True(state.MergeOrb("LANDS END / DEPOT DOOR"));
+            Assert.False(state.MergeOrb("LANDS END / DEPOT DOOR"));
+
+            Assert.Equal(1, state.OrbCount);
+            Assert.True(state.ContainsOrb("LANDS END / DEPOT DOOR"));
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        public void MergeOrb_WithoutATitle_Throws(string? title)
+        {
+            var state = new GlobalConversationState();
+
+            Assert.Throws<ArgumentException>(() => state.MergeOrb(title!));
+        }
+
+        [Fact]
+        public void OrbsAndEntries_AreCountedApartButScoredTogether()
+        {
+            var state = new GlobalConversationState();
+            state.Merge(1, 1, SimStatus.WasOffered);
+            state.MergeOrb("COAST ORB / seagull");
+
+            Assert.Equal(1, state.EntryCount);
+            Assert.Equal(1, state.OrbCount);
+            Assert.Equal(DialogueScore.Offered + DialogueScore.Orb, state.Score);
+        }
+
+        [Fact]
+        public void IsEmpty_IsFalseWithOnlyAnOrb()
+        {
+            var state = new GlobalConversationState();
+            state.MergeOrb("COAST ORB / seagull");
+
+            Assert.Equal(0, state.EntryCount);
+            Assert.False(state.IsEmpty);
+        }
+
+        [Fact]
+        public void EnumerateOrbs_IsSortedOrdinally()
+        {
+            var state = new GlobalConversationState();
+            state.MergeOrb("PLAZA ORB / seagull");
+            state.MergeOrb("COAST ORB / floatice");
+            state.MergeOrb("coast orb / lowercase");
+
+            Assert.Equal(
+                new[] { "COAST ORB / floatice", "PLAZA ORB / seagull", "coast orb / lowercase" },
+                state.EnumerateOrbs());
+        }
+
+        [Fact]
+        public void Snapshot_CopiesOrbsAndSharesNothing()
+        {
+            var state = new GlobalConversationState();
+            state.MergeOrb("COAST ORB / seagull");
+
+            GlobalConversationState snapshot = state.Snapshot();
+            state.MergeOrb("COAST ORB / floatice");
+
+            Assert.Equal(1, snapshot.OrbCount);
+            Assert.True(snapshot.ContainsOrb("COAST ORB / seagull"));
+            Assert.False(snapshot.ContainsOrb("COAST ORB / floatice"));
+            Assert.Equal(2, state.OrbCount);
+        }
+
+        [Fact]
+        public void MergeAll_OfAnotherState_BringsItsOrbsTooAndCountsThem()
+        {
+            var target = new GlobalConversationState();
+            target.Merge(1, 1, SimStatus.WasOffered);
+            target.MergeOrb("COAST ORB / seagull");
+
+            var source = new GlobalConversationState();
+            source.Merge(1, 1, SimStatus.WasDisplayed);
+            source.MergeOrb("COAST ORB / seagull");
+            source.MergeOrb("COAST ORB / floatice");
+
+            // One raised status and one new orb; the orb both already had is not counted.
+            Assert.Equal(2, target.MergeAll(source));
+            Assert.Equal(2, target.OrbCount);
         }
     }
 }

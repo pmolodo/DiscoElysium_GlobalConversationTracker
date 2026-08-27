@@ -181,6 +181,12 @@ namespace GlobalConversationTracker
                 "Dialogue seen during play will not be recorded this session",
                 () => MarkDialogueEntryPatch.Install(harmony, session, log));
 
+            bool recordingOrbs = TryInstall(
+                "SenseOrb.SetShown",
+                "opened orbs are being tracked",
+                "Orbs opened during play will not be recorded this session",
+                () => SenseOrbSetShownPatch.Install(harmony, session, log));
+
             bool resyncing = TryInstall(
                 "PersistentDataManager.ApplyRawData",
                 "the global state is resynced whenever a savegame is loaded (using raw file bytes)",
@@ -232,8 +238,8 @@ namespace GlobalConversationTracker
                     + "with MarkNovelOptions.");
             }
 
-            if (!recording && !resyncing && !resettingCurrentSave && !showingCount
-                && !colouringNovelOptions)
+            if (!recording && !recordingOrbs && !resyncing && !resettingCurrentSave
+                && !showingCount && !colouringNovelOptions)
             {
                 _harmony = null;
             }

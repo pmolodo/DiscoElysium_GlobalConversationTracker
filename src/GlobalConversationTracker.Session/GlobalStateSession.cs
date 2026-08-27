@@ -192,6 +192,14 @@ namespace GlobalConversationTracker.Session
         /// </summary>
         private long _statusesRecorded;
 
+        /// <summary>
+        /// How many orbs <see cref="RecordOrb"/> has added to the global state this
+        /// session. Reported at shutdown beside <see cref="_statusesRecorded"/>, and for
+        /// the same reason: a zero separates "the orb hook fired and every orb was
+        /// already known" from "the orb hook never fired".
+        /// </summary>
+        private long _orbsRecorded;
+
         /// <summary>Creates a session.</summary>
         /// <param name="store">The store over the SaveGames directory.</param>
         /// <param name="log">Where recovery and resyncing are reported.</param>
@@ -265,6 +273,18 @@ namespace GlobalConversationTracker.Session
                 lock (_gate)
                 {
                     return _currentSave.Score;
+                }
+            }
+        }
+
+        /// <summary>How many distinct orbs have been opened in the save being played.</summary>
+        public int CurrentSaveOrbCount
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _currentSave.OrbCount;
                 }
             }
         }
@@ -405,6 +425,66 @@ namespace GlobalConversationTracker.Session
                 }
 
                 _statusesRecorded++;
+                MarkDirty();
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Records that an orb has been opened, in both the global state and the current
+        /// save's tally.
+        /// </summary>
+        /// <remarks>
+        /// <para><b>The orb counterpart of <see cref="Record"/>.</b> Driven by the hook
+        /// on <c>SenseOrb.SetShown</c>, the single funnel through which the game writes
+        /// <c>ShownOrbs[title].OrbSeen=1</c>.</para>
+        ///
+        /// <para><b>There is no merge rule to apply.</b> An orb has one state and the
+        /// game never unsets it, so recording is set insertion in both directions. That
+        /// also means the current save cannot lose an orb the way it loses an entry
+        /// marked Untouched, so unlike <see cref="Record"/> nothing here has to happen
+        /// before the early return.</para>
+        ///
+        /// <para><b>Called far more often than it changes anything.</b> The game calls
+        /// <c>SetShown</c> on every click, not only the first - only the Lua write
+        /// inside it is guarded - so re-opening an orb arrives here again and is
+        /// absorbed by the sets.</para>
+        /// </remarks>
+        /// <param name="conversationTitle">
+        /// The orb's conversation title, exactly as the game keys <c>ShownOrbs</c>.
+        /// </param>
+        /// <returns>
+        /// True if this call added an orb the global state had never seen. As with
+        /// <see cref="Record"/>, the write that follows is deferred, so a true return
+        /// means the file will be updated rather than that it has been.
+        /// </returns>
+        /// <exception cref="ArgumentException">
+        /// <paramref name="conversationTitle"/> is null or empty. Callers must filter
+        /// those out rather than pass them on: an orb with no conversation - a thought
+        /// orb, instantiated from the template - is one the game itself declines to
+        /// record, not an error worth reporting.
+        /// </exception>
+        public bool RecordOrb(string conversationTitle)
+        {
+            if (string.IsNullOrEmpty(conversationTitle))
+            {
+                throw new ArgumentException(
+                    "An orb's conversation title must not be null or empty.",
+                    nameof(conversationTitle));
+            }
+
+            lock (_gate)
+            {
+                EnsureInitialized();
+
+                _currentSave.SetOrb(conversationTitle);
+
+                if (!_state.MergeOrb(conversationTitle))
+                {
+                    return false;
+                }
+
+                _orbsRecorded++;
                 MarkDirty();
                 return true;
             }
@@ -558,6 +638,7 @@ namespace GlobalConversationTracker.Session
             long pending = 0;
             long writesLanded = 0;
             long recorded = 0;
+            long orbsRecorded = 0;
 
             lock (_gate)
             {
@@ -578,6 +659,7 @@ namespace GlobalConversationTracker.Session
                     flushed = WaitForWrite(_dirtyVersion);
                     writesLanded = _writesLanded;
                     recorded = _statusesRecorded;
+                    orbsRecorded = _orbsRecorded;
 
                     _writerStopping = true;
                     writer = _writer;
@@ -599,7 +681,7 @@ namespace GlobalConversationTracker.Session
             string outcome =
                 $"{ShutdownLinePrefix} finished on {triggerName} in {elapsed.ElapsedMilliseconds} ms: "
                 + $"{DescribeShutdownFlush(origin, canSave, writerExisted, pending, flushed)}. "
-                + $"{recorded} status(es) recorded during play and "
+                + $"{recorded} status(es) and {orbsRecorded} orb(s) recorded during play and "
                 + $"{writesLanded} write(s) reached disk this session; "
                 + $"{DescribeWriterExit(writerExisted, writerStopped)}.";
 
@@ -1144,6 +1226,12 @@ namespace GlobalConversationTracker.Session
         {
             lock (_gate)
             {
+                // Counted before clearing so the two halves can be reported apart; a new
+                // game does reset ShownOrbs (GenericLuaFunctions.InitTables assigns it a
+                // fresh empty table), so unlike a savegame load this really does drop
+                // both.
+                int droppedEntries = _currentSave.Count;
+                int droppedOrbs = _currentSave.OrbCount;
                 int dropped = _currentSave.Clear();
                 string sinceResync = _lastResyncUtc is null
                     ? "no savegame has been resynced this session"
@@ -1151,8 +1239,10 @@ namespace GlobalConversationTracker.Session
 
                 _log.Info(
                     $"Current-save dialogue count reset by {trigger ?? "an unnamed trigger"}: "
-                    + $"dropped {dropped} entries ({sinceResync}). The across-all-saves state is "
-                    + $"untouched and still has {(_diskLoadDone ? _state.EntryCount : 0)} entries.");
+                    + $"dropped {droppedEntries} entries and {droppedOrbs} orbs ({sinceResync}). "
+                    + "The across-all-saves state is untouched and still has "
+                    + $"{(_diskLoadDone ? _state.EntryCount : 0)} entries and "
+                    + $"{(_diskLoadDone ? _state.OrbCount : 0)} orbs.");
                 return dropped;
             }
         }
@@ -1202,7 +1292,12 @@ namespace GlobalConversationTracker.Session
             // previous save's entries from surviving into this one: this is a
             // replacement, not a merge, and it is the only difference between the two
             // states either side of this loop.
-            _currentSave.Clear();
+            //
+            // ClearEntries and not Clear: these bytes are the ntwtf.lua dialogue data
+            // and carry no orbs at all - ShownOrbs lives in the save's states.lua - so
+            // clearing the orbs here would drop them with nothing in this method able to
+            // put them back.
+            _currentSave.ClearEntries();
             _lastResyncUtc = DateTime.UtcNow;
 
             try

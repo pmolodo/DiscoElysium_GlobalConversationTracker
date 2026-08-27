@@ -44,6 +44,14 @@ namespace GlobalConversationTracker
     /// conversation ID into the high half and the entry ID into the low half. Entries
     /// at Untouched are absent rather than stored, exactly as in the global state.</para>
     ///
+    /// <para><b>Orbs are a third set, and a different kind of thing.</b> An orb has no
+    /// entry ID and no ordering: the game records a bare <c>ShownOrbs[title].OrbSeen=1</c>
+    /// and never unsets it, so a set of titles is the whole model. They are kept beside
+    /// the entries rather than folded in among them because they are keyed differently
+    /// (title, not ID pair), arrive from a different file on load, and would otherwise
+    /// have to masquerade as dialogue entries at some invented entry ID. They do count
+    /// towards <see cref="Score"/>, at <see cref="DialogueScore.Orb"/> each.</para>
+    ///
     /// <para>Not thread safe, and it does not synchronize itself; the session that
     /// owns it holds the lock, the same as for the global state.</para>
     /// </remarks>
@@ -51,6 +59,13 @@ namespace GlobalConversationTracker
     {
         private readonly HashSet<long> _offered = new HashSet<long>();
         private readonly HashSet<long> _displayed = new HashSet<long>();
+
+        /// <summary>
+        /// Conversation titles whose orb has been opened in this save - the keys of the
+        /// game's own <c>ShownOrbs</c> table. See <see cref="SetOrb"/> for why the key
+        /// is a title rather than an ID.
+        /// </summary>
+        private readonly HashSet<string> _orbs = new HashSet<string>(StringComparer.Ordinal);
 
         /// <summary>
         /// How many entries in the current save were offered but never displayed.
@@ -61,16 +76,22 @@ namespace GlobalConversationTracker
         public int DisplayedCount => _displayed.Count;
 
         /// <summary>How many entries in the current save are above Untouched.</summary>
+        /// <remarks>Dialogue entries only; orbs are <see cref="OrbCount"/>.</remarks>
         public int Count => _offered.Count + _displayed.Count;
+
+        /// <summary>How many distinct orbs have been opened in the current save.</summary>
+        public int OrbCount => _orbs.Count;
 
         /// <summary>
         /// What the current save is worth: offered entries count half, displayed ones
-        /// whole. This is the number the player is shown.
+        /// and orbs whole. This is the number the player is shown.
         /// </summary>
-        public double Score => DialogueScore.Total(_offered.Count, _displayed.Count);
+        public double Score => DialogueScore.Total(_offered.Count, _displayed.Count, _orbs.Count);
 
-        /// <summary>True when the current save has no entry above Untouched.</summary>
-        public bool IsEmpty => Count == 0;
+        /// <summary>
+        /// True when the current save has neither an entry above Untouched nor an orb.
+        /// </summary>
+        public bool IsEmpty => Count == 0 && _orbs.Count == 0;
 
         /// <summary>
         /// Records one entry's status in the current save.
@@ -143,6 +164,44 @@ namespace GlobalConversationTracker
         }
 
         /// <summary>
+        /// Records that an orb has been opened in the current save.
+        /// </summary>
+        /// <param name="conversationTitle">
+        /// The orb's conversation title - the <c>conversation</c> string on the
+        /// <c>SenseOrb</c>, which is exactly the key the game writes into its own
+        /// <c>ShownOrbs</c> table. A title rather than a conversation ID because that is
+        /// what both sources of orb data hand over without a database lookup: the
+        /// component at click time, and the save's <c>states.lua</c> at load time.
+        /// </param>
+        /// <returns>
+        /// <c>true</c> if <see cref="Score"/> changed - that is, if this orb was not
+        /// already counted. Re-opening an orb returns <c>false</c>.
+        /// </returns>
+        /// <exception cref="ArgumentException">
+        /// <paramref name="conversationTitle"/> is null or empty. The game never writes
+        /// an empty key: <c>SenseOrb.SetShown</c> guards on
+        /// <c>conversation.Length != 0</c>, which is why a thought orb - instantiated
+        /// from the template with no conversation - never reaches <c>ShownOrbs</c> at
+        /// all. An empty title here means the caller has lost the key, not that there
+        /// is an orb worth counting.
+        /// </exception>
+        public bool SetOrb(string conversationTitle)
+        {
+            if (string.IsNullOrEmpty(conversationTitle))
+            {
+                throw new ArgumentException(
+                    "An orb's conversation title must not be null or empty.",
+                    nameof(conversationTitle));
+            }
+
+            return _orbs.Add(conversationTitle);
+        }
+
+        /// <summary>Whether this orb counts towards <see cref="Score"/> in the current save.</summary>
+        public bool ContainsOrb(string conversationTitle) =>
+            conversationTitle != null && _orbs.Contains(conversationTitle);
+
+        /// <summary>
         /// Whether this entry counts towards <see cref="Score"/> in the current save,
         /// at either status.
         /// </summary>
@@ -168,11 +227,24 @@ namespace GlobalConversationTracker
         }
 
         /// <summary>
-        /// Empties the tally, for a savegame load about to refill it or a new game
-        /// that has thrown the old save's statuses away.
+        /// Empties the tally completely - entries and orbs - for a new game that has
+        /// thrown the old save's whole record away.
         /// </summary>
+        /// <returns>How many entries and orbs together were dropped.</returns>
+        public int Clear() => ClearEntries() + ClearOrbs();
+
+        /// <summary>
+        /// Empties the dialogue entries, leaving the orbs alone.
+        /// </summary>
+        /// <remarks>
+        /// This is the savegame-load case, and the split exists because the two halves
+        /// arrive from different files. A load hands the mod the save's whole SimStatus
+        /// table at once, so entries are replaced wholesale; orbs live in the save's
+        /// <c>states.lua</c> instead and are not in those bytes, so clearing them here
+        /// would drop them with nothing to refill them.
+        /// </remarks>
         /// <returns>How many entries were dropped, so the caller can say so.</returns>
-        public int Clear()
+        public int ClearEntries()
         {
             int dropped = Count;
             _offered.Clear();
@@ -180,10 +252,22 @@ namespace GlobalConversationTracker
             return dropped;
         }
 
+        /// <summary>
+        /// Empties the orbs, leaving the dialogue entries alone, for an orb resync about
+        /// to refill them.
+        /// </summary>
+        /// <returns>How many orbs were dropped.</returns>
+        public int ClearOrbs()
+        {
+            int dropped = _orbs.Count;
+            _orbs.Clear();
+            return dropped;
+        }
+
         /// <inheritdoc />
         public override string ToString() =>
-            $"CurrentSaveTally({DialogueScore.Format(Score)} from {DisplayedCount} displayed "
-            + $"and {OfferedCount} offered)";
+            $"CurrentSaveTally({DialogueScore.Format(Score)} from {DisplayedCount} displayed, "
+            + $"{OfferedCount} offered and {OrbCount} orbs)";
 
         /// <summary>
         /// Packs the two IDs into one key: conversation in the high 32 bits, entry in

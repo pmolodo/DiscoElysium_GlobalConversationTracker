@@ -324,7 +324,7 @@ namespace GlobalConversationTracker.Session.Tests
             string finished = FinishedLine(log, QuittingTrigger);
             Assert.Contains("nothing was pending", finished, StringComparison.Ordinal);
             Assert.Contains(
-                "1 status(es) recorded during play and 1 write(s) reached disk this session",
+                "1 status(es) and 0 orb(s) recorded during play and 1 write(s) reached disk this session",
                 finished,
                 StringComparison.Ordinal);
             Assert.Contains("the writer thread stopped", finished, StringComparison.Ordinal);
@@ -351,7 +351,7 @@ namespace GlobalConversationTracker.Session.Tests
             string finished = FinishedLine(log, ProcessExitTrigger);
             Assert.Contains("nothing was ever recorded this session", finished, StringComparison.Ordinal);
             Assert.Contains(
-                "0 status(es) recorded during play and 0 write(s) reached disk this session",
+                "0 status(es) and 0 orb(s) recorded during play and 0 write(s) reached disk this session",
                 finished,
                 StringComparison.Ordinal);
             Assert.Contains("no writer thread was ever started", finished, StringComparison.Ordinal);

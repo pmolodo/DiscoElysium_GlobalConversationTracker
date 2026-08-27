@@ -166,7 +166,8 @@ int Run(string[] argv)
 }
 
 static string Describe(GlobalConversationState state) =>
-    $"{state.EntryCount} entries above Untouched in {state.ConversationCount} conversations";
+    $"{state.EntryCount} entries above Untouched in {state.ConversationCount} conversations, "
+    + $"and {state.OrbCount} orbs";
 
 static string DefaultSaveDirectory() =>
     Path.Combine(

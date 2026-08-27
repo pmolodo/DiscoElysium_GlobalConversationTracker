@@ -365,7 +365,9 @@ namespace GlobalConversationTracker.Persistence.Tests
             GlobalStateStore store = temp.CreateStore();
             store.Save(OldGeneration());
             store.Save(NewGeneration());
-            File.WriteAllText(store.LivePath, "{\"version\":2,\"conversations\":{}}");
+            File.WriteAllText(
+                store.LivePath,
+                $"{{\"version\":{GlobalStateJson.FormatVersion + 1},\"conversations\":{{}}}}");
 
             GlobalStateRecovery recovery = store.LoadWithBackupFallback();
 
