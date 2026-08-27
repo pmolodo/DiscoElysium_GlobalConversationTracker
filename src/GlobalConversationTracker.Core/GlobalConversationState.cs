@@ -10,36 +10,24 @@ namespace GlobalConversationTracker
     /// to dialogue entry ID to <see cref="SimStatus"/>.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// This mirrors the shape of the <c>Conversation</c> table in the game's
-    /// <c>{save}.ntwtf.lua</c> data, flattened to drop everything except SimStatus.
-    /// </para>
-    /// <para>
-    /// <b>The merge rule is the only way this object is ever mutated.</b> There is no
-    /// setter, no indexer, and no exposed mutable collection anywhere on this type;
-    /// every mutating method routes through
-    /// <see cref="Merge(int, int, SimStatus)"/>. A status may only increase, ordered
-    /// <c>Untouched &lt; WasOffered &lt; WasDisplayed</c>. An attempt to lower a
-    /// status is a silent no-op, not an error. This matters because the game itself
-    /// downgrades entries: <c>DialogueLua.MarkDialogueEntryUntouched</c> writes
-    /// "Untouched" over an existing status, and a newly started save resets every
-    /// entry. The global state must absorb those calls without losing history.
-    /// </para>
-    /// <para>
-    /// <see cref="SimStatus.Untouched"/> is the bottom of the ordering and is also the
-    /// value reported for anything not present, so it is never stored: merging
-    /// <see cref="SimStatus.Untouched"/> into an absent entry records nothing and
-    /// reports no change. Only entries that have advanced past Untouched occupy space
-    /// in memory or on disk.
-    /// </para>
-    /// <para>
-    /// Not thread safe, and it does not synchronize itself. Marks arrive from the
-    /// Unity main thread, and a background writer reads the state too - but only long
-    /// enough to take a <see cref="Snapshot"/> and then work on that, so the window
-    /// the two have to be kept apart for is a copy rather than a whole serialize.
-    /// <c>GlobalStateSession</c> owns the lock that keeps them apart, and is the only
-    /// thing that should be reaching this object once a session exists.
-    /// </para>
+    /// <para>Mirrors the shape of the <c>Conversation</c> table in the game's
+    /// <c>{save}.ntwtf.lua</c> data, flattened to drop everything except SimStatus.</para>
+    ///
+    /// <para>The merge rule is the only way this object is mutated - no setter, no
+    /// indexer, no exposed mutable collection. A status may only increase, ordered
+    /// <c>Untouched &lt; WasOffered &lt; WasDisplayed</c>; lowering one is a silent
+    /// no-op. That matters because the game downgrades entries:
+    /// <c>DialogueLua.MarkDialogueEntryUntouched</c> writes "Untouched" over an existing
+    /// status, and a new save resets every entry. The global state absorbs those without
+    /// losing history.</para>
+    ///
+    /// <para><see cref="SimStatus.Untouched"/> is the bottom of the ordering and the
+    /// value reported for anything absent, so it is never stored.</para>
+    ///
+    /// <para>Not thread safe. Marks arrive on the Unity main thread and the background
+    /// writer reads too, but only long enough to take a <see cref="Snapshot"/>, so the
+    /// window to guard is a copy rather than a whole serialize.
+    /// <c>GlobalStateSession</c> owns that lock.</para>
     /// </remarks>
     public sealed class GlobalConversationState
     {
@@ -55,9 +43,9 @@ namespace GlobalConversationTracker
         private readonly HashSet<string> _orbs = new HashSet<string>(StringComparer.Ordinal);
 
         /// <summary>
-        /// How many recorded entries sit at each of the two statuses that are stored.
-        /// Kept as the merge goes rather than counted on demand, because the display
-        /// asks for the total on every mark and the state runs to six figures.
+        /// How many recorded entries sit at each of the two stored statuses. Kept as the
+        /// merge goes rather than counted on demand: the display asks for the total on
+        /// every mark, and the state runs to six figures.
         /// </summary>
         private int _offeredCount;
 
@@ -70,9 +58,8 @@ namespace GlobalConversationTracker
 
         /// <summary>
         /// Adopts an already-built store of entries, for <see cref="Snapshot"/>. Private
-        /// because it is the one way into this type that does not go through the merge
-        /// rule, and it is only safe because the caller is this class handing over
-        /// dictionaries it has just copied out of itself.
+        /// because it is the one way in that bypasses the merge rule, and it is safe
+        /// only because the caller hands over dictionaries just copied out of this type.
         /// </summary>
         private GlobalConversationState(
             Dictionary<int, Dictionary<int, SimStatus>> conversations,
@@ -125,14 +112,13 @@ namespace GlobalConversationTracker
         /// <param name="dialogueEntryId">The dialogue entry's integer ID.</param>
         /// <param name="status">The incoming status.</param>
         /// <returns>
-        /// <c>true</c> if the stored state actually changed (a new entry was recorded
-        /// or an existing one was raised); <c>false</c> if the incoming status was
-        /// equal to or lower than what was already recorded. Callers can use this to
-        /// decide whether a rewrite to disk is needed.
+        /// <c>true</c> if the stored state changed (a new entry was recorded or an
+        /// existing one raised); <c>false</c> if the incoming status was equal to or
+        /// lower than what was recorded. Callers use this to decide whether a rewrite to
+        /// disk is needed.
         /// </returns>
         /// <exception cref="ArgumentOutOfRangeException">
-        /// <paramref name="status"/> is not one of the three defined
-        /// <see cref="SimStatus"/> values.
+        /// <paramref name="status"/> is not a defined <see cref="SimStatus"/> value.
         /// </exception>
         public bool Merge(int conversationId, int dialogueEntryId, SimStatus status)
         {
@@ -189,17 +175,15 @@ namespace GlobalConversationTracker
             return true;
         }
 
-        /// <summary>
-        /// Merges a status supplied as one of the game's status strings.
-        /// </summary>
+        /// <summary>Merges a status supplied as one of the game's status strings.</summary>
         /// <returns>
-        /// <c>true</c> if the stored state actually changed; see
+        /// <c>true</c> if the stored state changed; see
         /// <see cref="Merge(int, int, SimStatus)"/>.
         /// </returns>
         /// <exception cref="ArgumentException">
-        /// <paramref name="statusName"/> is not one of the three strings the game uses.
-        /// Use <see cref="TryMerge"/> at call sites (such as the game hook) that must
-        /// not throw.
+        /// <paramref name="statusName"/> is not one of the game's status strings. Use
+        /// <see cref="TryMerge"/> at call sites (such as the game hook) that must not
+        /// throw.
         /// </exception>
         public bool Merge(int conversationId, int dialogueEntryId, string? statusName)
         {
@@ -214,13 +198,13 @@ namespace GlobalConversationTracker
         /// <param name="dialogueEntryId">The dialogue entry's integer ID.</param>
         /// <param name="statusName">The incoming status string from the game.</param>
         /// <param name="changed">
-        /// Set to <c>true</c> if the stored state actually changed. Always <c>false</c>
-        /// when the return value is <c>false</c>.
+        /// Set to <c>true</c> if the stored state changed. Always <c>false</c> when the
+        /// return value is <c>false</c>.
         /// </param>
         /// <returns>
-        /// <c>true</c> if <paramref name="statusName"/> was recognized (and therefore
-        /// merged); <c>false</c> if it was not, in which case the state is left
-        /// completely untouched so the caller can log and carry on.
+        /// <c>true</c> if <paramref name="statusName"/> was recognized and merged;
+        /// <c>false</c> if not, leaving the state untouched so the caller can log and
+        /// carry on.
         /// </returns>
         public bool TryMerge(int conversationId, int dialogueEntryId, string? statusName, out bool changed)
         {
@@ -234,10 +218,8 @@ namespace GlobalConversationTracker
             return true;
         }
 
-        /// <summary>
-        /// Merges a batch of entries.
-        /// </summary>
-        /// <returns>The number of entries that actually changed the stored state.</returns>
+        /// <summary>Merges a batch of entries.</summary>
+        /// <returns>The number of entries that changed the stored state.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="entries"/> is null.</exception>
         /// <exception cref="ArgumentOutOfRangeException">
         /// An entry carries a status that is not a defined <see cref="SimStatus"/> value.
@@ -287,9 +269,7 @@ namespace GlobalConversationTracker
             return _orbs.Add(conversationTitle);
         }
 
-        /// <summary>
-        /// Merges many orbs at once, for a file load or a resync.
-        /// </summary>
+        /// <summary>Merges many orbs at once, for a file load or a resync.</summary>
         /// <returns>How many of them were not already recorded.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="conversationTitles"/> is null.</exception>
         /// <exception cref="ArgumentException">Any title is null or empty.</exception>
@@ -312,12 +292,9 @@ namespace GlobalConversationTracker
             return changedCount;
         }
 
-        /// <summary>
-        /// Merges every entry and orb of another state into this one.
-        /// </summary>
+        /// <summary>Merges every entry and orb of another state into this one.</summary>
         /// <returns>
-        /// The number of entries and orbs together that actually changed the stored
-        /// state.
+        /// The number of entries and orbs together that changed the stored state.
         /// </returns>
         /// <exception cref="ArgumentNullException"><paramref name="other"/> is null.</exception>
         public int MergeAll(GlobalConversationState other)
@@ -456,16 +433,12 @@ namespace GlobalConversationTracker
         /// changed by anything done to the other.
         /// </summary>
         /// <remarks>
-        /// <para>This exists so the background writer never serializes the live state.
-        /// Serializing reads every entry, so it has to be kept apart from the merges
-        /// arriving on the Unity main thread; copying under the session lock and
-        /// serializing the copy holds that lock only for the copy, which the benchmark
-        /// measures at 24-25x cheaper than the serialize at every size it sweeps.</para>
-        /// <para>The copy is deep in the only sense that matters here: the outer
-        /// dictionary and every inner one are new, and <see cref="SimStatus"/> is an enum,
-        /// so there is nothing left that could still be shared. The result is an ordinary
-        /// state - it can be merged into, and it serializes byte-identically to its
-        /// source, since it holds exactly the same entries.</para>
+        /// So the background writer never serializes the live state. Serializing reads
+        /// every entry, so it has to be kept apart from the merges arriving on the Unity
+        /// main thread; copying under the session lock and serializing the copy holds
+        /// that lock only for the copy - the benchmark measures that at 24-25x cheaper
+        /// than the serialize at every size it sweeps. The result is an ordinary state:
+        /// it can be merged into, and it serializes byte-identically to its source.
         /// </remarks>
         public GlobalConversationState Snapshot() =>
             new GlobalConversationState(
