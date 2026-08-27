@@ -17,17 +17,15 @@ namespace GlobalConversationTracker.Session.Tests
     /// </summary>
     /// <remarks>
     /// <para>These tests drive the writer through
-    /// <see cref="GlobalStateStore.SaveStepHook"/>, which exists for the crash-point
-    /// tests but works just as well as a way to hold a write open at a known point.
-    /// Holding it open is what makes "the hook thread is not the thread writing"
-    /// something that can be asserted rather than timed: with a write stuck
-    /// mid-flight, anything that still returns promptly demonstrably did not do that
-    /// write.</para>
+    /// <see cref="GlobalStateStore.SaveStepHook"/> to hold a write open at a known
+    /// point. That is what makes "the hook thread is not the thread writing" assertable
+    /// rather than timed: with a write stuck mid-flight, anything that still returns
+    /// promptly did not do that write.</para>
     ///
-    /// <para>Nothing here waits without a bound. Every wait has
-    /// <see cref="WaitTimeoutMilliseconds"/> on it and every "this should not block"
-    /// check runs on a task that is joined with a timeout, so a regression that
-    /// reintroduces the synchronous write fails the suite instead of hanging it.</para>
+    /// <para>Nothing waits without a bound. Every wait carries
+    /// <see cref="WaitTimeoutMilliseconds"/> and every "should not block" check runs on
+    /// a task joined with a timeout, so a regression that reintroduces the synchronous
+    /// write fails the suite instead of hanging it.</para>
     /// </remarks>
     public class DeferredWriteTests
     {
@@ -362,9 +360,8 @@ namespace GlobalConversationTracker.Session.Tests
         [Fact]
         public void Shutdown_FiringTwice_SaysWhichTriggerAlreadyDidTheWork()
         {
-            // Both events are registered because neither is confirmed to fire under
-            // BepInEx's IL2CPP chainloader. If both fire, the log has to say so - that
-            // is the answer to "which shutdown event does this game actually raise".
+            // Both events are registered because neither is guaranteed under BepInEx's
+            // IL2CPP chainloader, so if both fire the log has to say so.
             using var dir = new TempDirectory();
             GlobalStateStore store = dir.CreateStore();
 
@@ -415,12 +412,11 @@ namespace GlobalConversationTracker.Session.Tests
         [Fact]
         public void Record_FromManyThreadsWhileTheWriterRuns_LosesNothing()
         {
-            // A soak rather than a scenario: a green run of the tests above says the
-            // design is right, not that the interleavings are. Every writer the design
-            // has runs at once here - the marking path, the synchronous save and the
-            // flush - against one session and one file, and the invariant checked at
-            // the end is total: every status recorded is in memory, and the file
-            // matches memory exactly.
+            // A soak rather than a scenario: the tests above say the design is right,
+            // not that the interleavings are. Every writer runs at once - the marking
+            // path, the synchronous save and the flush - against one session and one
+            // file, and the end invariant is total: memory holds every status recorded,
+            // and the file matches memory.
             const int recorderCount = 4;
             const int marksPerRecorder = 250;
             const int flushCount = 50;
@@ -489,11 +485,10 @@ namespace GlobalConversationTracker.Session.Tests
         [Fact]
         public void Dispose_WhileMarksAreStillArriving_StillLeavesAReadableFile()
         {
-            // Quitting mid-conversation. Whatever the race between the shutdown flush
-            // and the marks still coming in, the file has to be complete and readable
-            // and hold everything written before the flush started - the store's
-            // rotation guarantees the first part, and Dispose draining the queue
-            // guarantees the second.
+            // Quitting mid-conversation. However the race between the shutdown flush and
+            // the marks still arriving falls out, the file must be complete and readable
+            // (the store's rotation) and hold everything written before the flush
+            // started (Dispose draining the queue).
             const int markCount = 2000;
 
             using var dir = new TempDirectory();
