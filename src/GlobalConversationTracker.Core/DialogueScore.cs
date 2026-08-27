@@ -9,19 +9,15 @@ namespace GlobalConversationTracker
     /// count is written out.
     /// </summary>
     /// <remarks>
-    /// <para><b>Why a score and not a count.</b> The two statuses above Untouched are
-    /// not the same achievement. <see cref="SimStatus.WasDisplayed"/> means the line
-    /// was actually shown; <see cref="SimStatus.WasOffered"/> means it was only ever
-    /// listed as a response option, which is a line half reached. Counting both as
-    /// one flattened that difference away, so an entry that was merely offered is
-    /// worth <see cref="Offered"/> and one that was displayed is worth
-    /// <see cref="Displayed"/>.</para>
+    /// <para>A score rather than a count because the two statuses above Untouched are
+    /// not the same achievement: <see cref="SimStatus.WasDisplayed"/> means the line
+    /// was shown, <see cref="SimStatus.WasOffered"/> only that it was listed as a
+    /// response option - a line half reached.</para>
     ///
-    /// <para><b>Why the total is exact.</b> Every score is a whole number of halves,
-    /// and halves are exactly representable in binary floating point, so totals add
-    /// up without drift and <see cref="HasHalf"/> needs no tolerance. That holds far
-    /// past any total the game can produce - a playthrough reaches five figures, and
-    /// a double carries halves exactly up to 2^52.</para>
+    /// <para>Every score is a whole number of halves, which are exactly representable
+    /// in binary floating point, so totals add up without drift and
+    /// <see cref="HasHalf"/> needs no tolerance. A double carries halves exactly up
+    /// to 2^52; a playthrough reaches five figures.</para>
     /// </remarks>
     public static class DialogueScore
     {
@@ -35,10 +31,9 @@ namespace GlobalConversationTracker
         public const double Displayed = 1.0;
 
         /// <summary>
-        /// What one seen orb is worth. The same as <see cref="Displayed"/>, and for the
-        /// same reason: clicking an orb is text actually reached, not text merely
-        /// offered. There is no half-measure for an orb - the game records a single
-        /// <c>OrbSeen=1</c> and nothing between.
+        /// What one seen orb is worth. Same as <see cref="Displayed"/>: clicking an orb
+        /// is text actually reached. The game records a single <c>OrbSeen=1</c>, so
+        /// there is no half-measure for an orb.
         /// </summary>
         public const double Orb = 1.0;
 
@@ -48,16 +43,12 @@ namespace GlobalConversationTracker
         /// </summary>
         private const string WholeFormat = "N0";
 
-        /// <summary>
-        /// The same, plus the one decimal place a half needs. One place and not more:
-        /// ".5" is the only fraction a total can ever end in.
-        /// </summary>
+        /// <summary>The same, plus the one decimal place a half needs.</summary>
         private const string HalfFormat = "N1";
 
         /// <summary>What one entry at this status is worth.</summary>
         /// <exception cref="ArgumentOutOfRangeException">
-        /// <paramref name="status"/> is not one of the three defined
-        /// <see cref="SimStatus"/> values.
+        /// <paramref name="status"/> is not a defined <see cref="SimStatus"/> value.
         /// </exception>
         public static double Of(SimStatus status)
         {
@@ -84,23 +75,16 @@ namespace GlobalConversationTracker
         public static double Total(int offeredCount, int displayedCount) =>
             Total(offeredCount, displayedCount, 0);
 
-        /// <summary>
-        /// The same, plus seen orbs. Orbs are whole numbers, so they cannot introduce a
-        /// fraction that <see cref="HasHalf"/> and <see cref="Format"/> do not already
-        /// handle.
-        /// </summary>
+        /// <summary>The same, plus seen orbs.</summary>
         public static double Total(int offeredCount, int displayedCount, int orbCount) =>
             (offeredCount * Offered) + (displayedCount * Displayed) + (orbCount * Orb);
 
-        /// <summary>
-        /// True when the total ends in .5, which is the only case where a total is
-        /// not a whole number.
-        /// </summary>
+        /// <summary>True when the total ends in .5 - the only fraction a total can have.</summary>
         public static bool HasHalf(double score) => score != Math.Floor(score);
 
         /// <summary>
-        /// The total as it is shown to the player: the decimal place appears only when
-        /// there is a half to show, so a whole total reads as the plain count it is.
+        /// The total as shown to the player: the decimal place appears only when there
+        /// is a half to show.
         /// </summary>
         public static string Format(double score) =>
             score.ToString(HasHalf(score) ? HalfFormat : WholeFormat, CultureInfo.InvariantCulture);
