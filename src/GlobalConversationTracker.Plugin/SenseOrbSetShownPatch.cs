@@ -10,38 +10,30 @@ namespace GlobalConversationTracker
     /// the global state on its way past.
     /// </summary>
     /// <remarks>
-    /// <para><b>Why this method.</b> <c>SenseOrb.SetShown()</c> is the single funnel
-    /// through which the running game records an opened orb - it is what writes
+    /// <para><c>SenseOrb.SetShown()</c> is the single funnel through which the running
+    /// game records an opened orb - it is what writes
     /// <c>ShownOrbs[conversation] = {OrbSeen=1}</c>. Every click path reaches it:
-    /// <c>OrbUiElement.Open</c> calls it directly for a plain orb and for a thought
-    /// orb, and reaches it through <c>OrbUiElement.SetShown</c> and
-    /// <c>SenseOrb.StartConversation</c> for the rest. It is public and non-virtual,
-    /// and neither <c>ConditionalSenseOrb</c> nor <c>VisCalOrb</c> shadows it, so one
-    /// patch covers the whole orb family.</para>
+    /// <c>OrbUiElement.Open</c> calls it directly for plain and thought orbs, and
+    /// through <c>OrbUiElement.SetShown</c> and <c>SenseOrb.StartConversation</c> for
+    /// the rest. It is public and non-virtual, and neither <c>ConditionalSenseOrb</c>
+    /// nor <c>VisCalOrb</c> shadows it, so one patch covers the whole orb family.</para>
     ///
-    /// <para><b>Postfix, not prefix</b>, for the same reason as
-    /// <see cref="MarkDialogueEntryPatch"/>: the stock behavior runs first and
-    /// unmodified, and this only watches.</para>
+    /// <para>Postfix, not prefix, as in <see cref="MarkDialogueEntryPatch"/>: the stock
+    /// behavior runs first and unmodified, and this only watches.</para>
     ///
-    /// <para><b>An orb with no conversation is skipped, and that is not a failure.</b>
-    /// <c>SetShown</c> itself only writes to Lua when
-    /// <c>conversation != null &amp;&amp; conversation.Length != 0</c>, so an orb with
-    /// no conversation never reaches <c>ShownOrbs</c> and there is nothing to count.
-    /// That is not a rare edge: a thought orb is instantiated from the orb template by
-    /// <c>GlobalOrbManager.AddThought</c>, which sets its type and its name but never
-    /// its conversation, so every thought orb the player clicks arrives here with an
-    /// empty title. Skipping silently rather than reporting keeps the hook's failure
-    /// budget for actual faults.</para>
+    /// <para>An orb with no conversation is skipped, not reported. <c>SetShown</c> only
+    /// writes to Lua when <c>conversation != null &amp;&amp; conversation.Length != 0</c>,
+    /// so such an orb never reaches <c>ShownOrbs</c> and there is nothing to count - and
+    /// it is not a rare edge, since <c>GlobalOrbManager.AddThought</c> instantiates
+    /// thought orbs without a conversation, so every thought orb arrives here with an
+    /// empty title.</para>
     ///
-    /// <para><b>Fires on every click, not only the first.</b> Only the Lua write inside
-    /// <c>SetShown</c> is guarded by the current value, so re-opening an orb calls this
-    /// again. Recording is idempotent - both the global state and the current-save
-    /// tally hold orbs in sets - so the repeat costs a set probe and changes
-    /// nothing.</para>
+    /// <para>Fires on every click, not only the first: only the Lua write inside
+    /// <c>SetShown</c> is guarded by the current value. Recording is idempotent - orbs
+    /// live in sets on both sides - so the repeat costs a set probe.</para>
     ///
-    /// <para><b>Nothing escapes into game code</b>, exactly as for the dialogue hook:
-    /// the recording runs under this hook's own catch-all and failure budget, and the
-    /// HUD refresh that follows under the display hook's.</para>
+    /// <para>Nothing escapes into game code: the recording runs under this hook's
+    /// catch-all and failure budget, the HUD refresh under the display hook's.</para>
     /// </remarks>
     [HarmonyPatch(typeof(SenseOrb), nameof(SenseOrb.SetShown))]
     internal static class SenseOrbSetShownPatch
@@ -108,9 +100,8 @@ namespace GlobalConversationTracker
                 return;
             }
 
-            // Outside the catch on purpose, matching MarkDialogueEntryPatch: the display
-            // has its own failure budget and must not spend the one that keeps tracking
-            // alive. This call reports its own failures and never throws.
+            // Outside the catch on purpose: the display has its own failure budget, and
+            // this call reports its own failures and never throws.
             MainHudDialogueCountPatch.RefreshDisplayedCounts();
         }
     }
