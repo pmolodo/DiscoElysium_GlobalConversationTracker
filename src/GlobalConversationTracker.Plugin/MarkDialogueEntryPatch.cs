@@ -11,29 +11,22 @@ namespace GlobalConversationTracker
     /// goes into the global state on its way past.
     /// </summary>
     /// <remarks>
-    /// <para><b>Why this method.</b>
-    /// <c>DialogueLua.MarkDialogueEntry(DialogueEntry, string)</c> is the single
+    /// <para><c>DialogueLua.MarkDialogueEntry(DialogueEntry, string)</c> is the single
     /// funnel through which the running game writes SimStatus:
     /// <c>MarkDialogueEntryDisplayed</c>, <c>MarkDialogueEntryOffered</c> and
     /// <c>MarkDialogueEntryUntouched</c> all call it, it survives Final Cut with an
-    /// unchanged signature, and it is not inlined (verified against the shipping
-    /// IL2CPP binary). The one writer that does not come through here is
-    /// <c>PersistentDataManager</c> rebuilding the table on savegame load; that one is
-    /// covered by <see cref="ApplyRawDataPatch"/>, which hands the raw save bytes to
-    /// <see cref="GlobalStateSession.ResyncFromSaveRawBytes"/>.</para>
+    /// unchanged signature, and it is not inlined. The one writer that does not come
+    /// through here is <c>PersistentDataManager</c> rebuilding the table on savegame
+    /// load, covered by <see cref="ApplyRawDataPatch"/>.</para>
     ///
-    /// <para><b>Postfix, not prefix.</b> The stock per-save behavior runs first and
-    /// completely unmodified; the global state is a passive observer of what the
-    /// game already did. Nothing here changes what the game sees, which is the whole
-    /// point of the design: the global state is write-only.</para>
+    /// <para>Postfix, not prefix: the stock per-save behavior runs first and unmodified,
+    /// and the global state is a passive observer of what the game already did.</para>
     ///
-    /// <para><b>Nothing escapes into game code.</b> Everything the postfix does is
-    /// inside a catch-all - the recording under this hook's own, and the HUD refresh
-    /// that follows under the display hook's. A mod that corrupts a playthrough is
-    /// worse than a mod that stops tracking, so a failure here costs tracking and
-    /// nothing else. Repeated failures stop being logged, and then stop being
-    /// attempted, rather than producing one log line per line of dialogue for the rest
-    /// of the session.</para>
+    /// <para>Nothing escapes into game code. Everything the postfix does sits inside a
+    /// catch-all - the recording under this hook's failure budget, the HUD refresh under
+    /// the display hook's. A failure costs tracking and nothing else, and repeated ones
+    /// stop being logged and then stop being attempted, rather than producing a log line
+    /// per line of dialogue.</para>
     /// </remarks>
     [HarmonyPatch(typeof(DialogueLua), nameof(DialogueLua.MarkDialogueEntry))]
     internal static class MarkDialogueEntryPatch
@@ -98,10 +91,9 @@ namespace GlobalConversationTracker
                 return;
             }
 
-            // Outside the catch on purpose: the display has its own failure budget,
-            // and a HUD that cannot draw itself must not be able to spend the one
-            // that keeps tracking alive. This call reports its own failures and
-            // never throws.
+            // Outside the catch on purpose: the display has its own failure budget, so
+            // a HUD that cannot draw itself must not spend the one that keeps tracking
+            // alive. This call reports its own failures and never throws.
             MainHudDialogueCountPatch.RefreshDisplayedCounts();
         }
     }
