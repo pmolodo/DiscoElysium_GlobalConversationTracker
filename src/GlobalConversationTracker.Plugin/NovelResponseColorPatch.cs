@@ -12,73 +12,48 @@ namespace GlobalConversationTracker
     /// playthrough, are drawn in their own colour.
     /// </summary>
     /// <remarks>
-    /// <para><b>The three states, and which one this adds.</b> The game already
-    /// distinguishes two: an option picked in <i>this</i> save is drawn in
-    /// <c>ColorExhausted</c>, and everything else in <c>ColorOption</c>. The global
-    /// state knows a third thing the game does not - whether the option was ever
-    /// picked in some <i>other</i> save - so this hook splits the second group. What
-    /// was picked before, in any save, keeps the stock <c>ColorOption</c>; what has
-    /// never been picked anywhere gets the novel colour. The two states the game
-    /// already draws are left exactly as they were.
-    /// </para>
+    /// <para>The game distinguishes two states: an option picked in <i>this</i> save is
+    /// drawn in <c>ColorExhausted</c>, everything else in <c>ColorOption</c>. The global
+    /// state knows a third thing - whether the option was ever picked in some
+    /// <i>other</i> save - so this hook splits the second group. Picked before in any
+    /// save keeps the stock <c>ColorOption</c>; never picked anywhere gets the novel
+    /// colour. The two states the game already draws are untouched.</para>
     ///
-    /// <para><b>Why "picked" means WasDisplayed and not "not Untouched".</b> Two
-    /// reasons, and the second one is fatal to the alternative. First, WasDisplayed
-    /// is the game's own definition: <c>SunshineNode.IsSeen</c> is
-    /// <c>simStatus.Equals("WasDisplayed")</c> and nothing else, and that single
-    /// predicate drives the greyed-out option colour, the check nodes, the log
-    /// renderer and the Kim switch - a mod that called WasOffered "seen" would
-    /// disagree with all of them. Second, WasOffered is already set on everything on
-    /// screen by the time this runs: <c>ConversationModel.EvaluateLinksAtPriority</c>
-    /// marks every option WasOffered as it builds the response list, which happens
-    /// before a single button is styled. A "not Untouched" test would therefore never
-    /// fire. (See de-7zv.3 for the full write-up, including that WasOffered really is
-    /// promoted to WasDisplayed when the player picks the option.)
-    /// </para>
+    /// <para>"Picked" means WasDisplayed, not "not Untouched". WasDisplayed is the
+    /// game's own definition - <c>SunshineNode.IsSeen</c> is
+    /// <c>simStatus.Equals("WasDisplayed")</c>, and that one predicate drives the
+    /// greyed-out option colour, the check nodes, the log renderer and the Kim switch.
+    /// And WasOffered is already set on everything on screen by the time this runs:
+    /// <c>ConversationModel.EvaluateLinksAtPriority</c> marks every option WasOffered as
+    /// it builds the response list, before a single button is styled, so a "not
+    /// Untouched" test would never fire.</para>
     ///
-    /// <para><b>Why <c>GetData</c> is the hook.</b> It is the one place that decides a
-    /// response button's colours, it is handed the dialogue entry, and - unlike
-    /// <c>StyleRegular</c> and <c>StyleSeen</c>, which IL2CPP inlined into it - it
-    /// survives Final Cut as a real, callable method. A postfix lands after the game
-    /// has chosen a colour and before the <c>ShowNormal</c>/<c>ShowHighlight</c> that
-    /// applies it, which is exactly the seam needed. All three of its callers -
-    /// <c>InitialState</c>, <c>Update</c>'s selection-changed path and
-    /// <c>OnPointerEnter</c> - go through it, so there is no path that styles a button
-    /// without passing here.
-    /// </para>
+    /// <para><c>GetData</c> is the hook: the one place that decides a response button's
+    /// colours, handed the dialogue entry, and - unlike <c>StyleRegular</c> and
+    /// <c>StyleSeen</c>, which IL2CPP inlined into it - a real callable method. A
+    /// postfix lands after the game has chosen a colour and before the
+    /// <c>ShowNormal</c>/<c>ShowHighlight</c> that applies it. All three callers
+    /// (<c>InitialState</c>, <c>Update</c>'s selection-changed path and
+    /// <c>OnPointerEnter</c>) go through it.</para>
     ///
-    /// <para><b>Only the plain options.</b> Skill checks, cost options, fake checks and
-    /// hidden test nodes get their colours from their own branches of
-    /// <c>GetData</c>, where colour carries meaning the player relies on - red for a
-    /// red check, the money colour for a paid line. This hook re-tests the same
-    /// predicates the game just tested and leaves every one of those branches alone,
-    /// so it can only ever repaint an option the game had drawn in flat
-    /// <c>ColorOption</c>.
-    /// </para>
+    /// <para>Plain options only. Skill checks, cost options, fake checks and hidden test
+    /// nodes get their colours from their own branches of <c>GetData</c>, where colour
+    /// carries meaning - red for a red check, the money colour for a paid line. This
+    /// hook re-tests the same predicates and leaves those branches alone, so it can only
+    /// repaint an option the game drew in flat <c>ColorOption</c>.</para>
     ///
-    /// <para><b>Two button classes.</b> Final Cut ships two, with the same shape:
-    /// <c>SunshineResponseButton</c> for the mouse UI and
-    /// <c>SunshineResponseButtonPageSystem</c> for the page-system one. They share a
-    /// base that has none of the relevant members, so each gets its own postfix over
-    /// the same shared decision.
-    /// </para>
+    /// <para>Two button classes with the same shape - <c>SunshineResponseButton</c> for
+    /// the mouse UI, <c>SunshineResponseButtonPageSystem</c> for the page-system one -
+    /// sharing a base that has none of the relevant members, so each gets its own
+    /// postfix over the same shared decision.</para>
     ///
-    /// <para><b>Read-only, like the HUD count.</b> Nothing here writes to the global
-    /// state or to the game's Lua tables; it reads one dictionary entry and assigns a
-    /// colour. As with every other hook, a failure costs the display and never the
-    /// playthrough.
-    /// </para>
+    /// <para>Read-only: one dictionary read and a colour assignment. A failure costs the
+    /// display, never the playthrough.</para>
     ///
-    /// <para><b>Switching it off is switching it off.</b> A player who wants to go
-    /// into a run blind sets <c>MarkNovelOptions</c> to false, and this hook is never
-    /// installed - not installed and inert, but absent, so the game's own
-    /// <c>GetData</c> runs undetoured. Tracking is unaffected either way: the global
-    /// state is written by hooks that have nothing to do with this one, so a run
-    /// played blind still contributes everything it sees to every later run. The
+    /// <para>With <c>MarkNovelOptions</c> false the hook is not installed at all, so the
+    /// game's own <c>GetData</c> runs undetoured. Tracking is unaffected either way. The
     /// switch is global rather than per save, because the mod has no notion of which
-    /// save is loaded - the current-save tally is an anonymous in-memory counter with
-    /// no name or id behind it.
-    /// </para>
+    /// save is loaded - the current-save tally is an anonymous in-memory counter.</para>
     /// </remarks>
     internal static class NovelResponseColorPatch
     {
@@ -139,10 +114,9 @@ namespace GlobalConversationTracker
         /// read rather than quietly falling back.
         /// </summary>
         /// <remarks>
-        /// A silent fallback here would be indistinguishable from the hook not working:
-        /// the player would see the stock colour and have no way to tell whether the
-        /// typo was in the config or the mod was broken. Failing the install says
-        /// which, in the log, once.
+        /// A silent fallback would be indistinguishable from the hook not working: the
+        /// player would see the stock colour with no way to tell whether the typo was in
+        /// the config or the mod was broken.
         /// </remarks>
         private static Color ParseColor(string html)
         {
@@ -166,10 +140,9 @@ namespace GlobalConversationTracker
         /// Decides whether this entry's button should be repainted, and with what.
         /// </summary>
         /// <remarks>
-        /// Written as a single try/catch around the whole decision because every step
-        /// of it reaches into game code - the node predicates and
-        /// <c>SunshineNode.IsSeen</c> all run Lua - and there is nothing useful to do
-        /// with a failure in any of them except stop colouring.
+        /// One try/catch around the whole decision: every step reaches into game code -
+        /// the node predicates and <c>SunshineNode.IsSeen</c> all run Lua - and there is
+        /// nothing useful to do with a failure except stop colouring.
         /// </remarks>
         /// <param name="entry">The response's destination entry, as GetData got it.</param>
         /// <param name="color">The colour to paint, when the result is true.</param>
