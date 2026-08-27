@@ -127,6 +127,7 @@ namespace GlobalConversationTracker.Session
 
         private bool _diskLoadDone;
         private bool _resyncGivenUp;
+        private bool _orbResyncGivenUp;
 
         /// <summary>
         /// When the last resync refilled the current save's tally, or null if none
@@ -1199,6 +1200,106 @@ namespace GlobalConversationTracker.Session
         }
 
         /// <summary>
+        /// Refills the orb half of the current save from a loaded savegame, and merges
+        /// what it finds into the global state.
+        /// </summary>
+        /// <remarks>
+        /// <para><b>Why this is a second resync and not part of the first.</b> The two
+        /// halves of a save live in different files. Dialogue SimStatus is in
+        /// <c>{save}.ntwtf.lua</c>, which <see cref="ResyncFromSaveRawBytes"/> reads as
+        /// raw bytes on their way into <c>PersistentDataManager.ApplyRawData</c>. Orbs
+        /// are in <c>{save}.states.lua</c>, a plain Lua script the game simply executes,
+        /// so there are no bytes to intercept - the readable form is the
+        /// <c>ShownOrbs</c> table afterwards.</para>
+        ///
+        /// <para><b>Replacement, not merge, for the current save</b> - the same rule as
+        /// the entry resync, and for the same reason: these titles are the loaded save's
+        /// <c>ShownOrbs</c> in full, so the previous save's orbs must not survive into
+        /// it. The global state is merged into as always and never loses anything.</para>
+        ///
+        /// <para><b>An empty table is a real answer.</b> A save from the start of a
+        /// playthrough genuinely has no orbs. That is also what a caller would see if it
+        /// read the table too early, before the game had run the save's
+        /// <c>states.lua</c> - which is why the count goes in the log every time rather
+        /// than only when it is interesting. A run of loads that all report zero orbs on
+        /// saves that should have them is what a wrongly ordered hook looks like.</para>
+        /// </remarks>
+        /// <param name="conversationTitles">
+        /// The keys of the loaded save's <c>ShownOrbs</c> table. Null or empty titles are
+        /// skipped and counted rather than throwing: this is data read back out of the
+        /// game, and one bad key should cost that key alone.
+        /// </param>
+        /// <returns>How many orbs the global state had never seen before.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="conversationTitles"/> is null.</exception>
+        public int ResyncOrbs(IEnumerable<string?> conversationTitles)
+        {
+            if (conversationTitles == null)
+            {
+                throw new ArgumentNullException(nameof(conversationTitles));
+            }
+
+            lock (_gate)
+            {
+                if (!CanResyncOrbs())
+                {
+                    return 0;
+                }
+
+                int dropped = _currentSave.ClearOrbs();
+                int seen = 0;
+                int skipped = 0;
+                int raised = 0;
+
+                try
+                {
+                    foreach (string? title in conversationTitles)
+                    {
+                        if (string.IsNullOrEmpty(title))
+                        {
+                            skipped++;
+                            continue;
+                        }
+
+                        seen++;
+                        _currentSave.SetOrb(title);
+                        if (_state.MergeOrb(title))
+                        {
+                            raised++;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Not retried, matching the entry resync: whatever broke reading the
+                    // table would break the next load the same way, once per load, for
+                    // the rest of the session. The orbs already taken from this table
+                    // stay - they were real - and the tally is left holding them rather
+                    // than being emptied on the way out.
+                    _orbResyncGivenUp = true;
+                    _log.Error(
+                        $"Failed to resync orbs from the loaded save game after {seen} title(s): {ex}. "
+                        + "No further orb resync will be attempted this session, so orbs already in a "
+                        + "loaded save will only be counted if they are opened again.");
+                    return 0;
+                }
+
+                _log.Info(
+                    $"Resynced orbs after a savegame load: the save has {seen} orb(s) "
+                    + $"(was showing {dropped}), of which {raised} were new to the global state, "
+                    + $"which now has {_state.OrbCount}."
+                    + (skipped == 0 ? string.Empty : $" {skipped} empty title(s) skipped."));
+
+                if (raised == 0)
+                {
+                    return 0;
+                }
+
+                MarkDirty();
+                return raised;
+            }
+        }
+
+        /// <summary>
         /// Throws away the current save's tally, for a new game that has reset the
         /// game's own SimStatus table behind the mod's back.
         /// </summary>
@@ -1251,9 +1352,18 @@ namespace GlobalConversationTracker.Session
         /// Whether a resync may run at all, logging the reason when it may not. Caller
         /// must hold <see cref="_gate"/>.
         /// </summary>
-        private bool CanResync()
+        private bool CanResync() => CanResyncCore(_resyncGivenUp, "the loaded save data");
+
+        /// <summary>
+        /// The same gate for the orb half of a load. Separate given-up flag on purpose:
+        /// the two resyncs read different files through different code, so one failing
+        /// permanently says nothing about the other.
+        /// </summary>
+        private bool CanResyncOrbs() => CanResyncCore(_orbResyncGivenUp, "the loaded save's orbs");
+
+        private bool CanResyncCore(bool givenUp, string what)
         {
-            if (_resyncGivenUp)
+            if (givenUp)
             {
                 return false;
             }
@@ -1263,7 +1373,7 @@ namespace GlobalConversationTracker.Session
             if (!CanSave)
             {
                 _log.Warning(
-                    $"Not resyncing the global state from the loaded save data: "
+                    $"Not resyncing the global state from {what}: "
                     + $"saving is disabled for this session ({Origin}), so what it read could not be "
                     + $"kept. See the earlier log lines about '{_store.LivePath}'.");
                 return false;

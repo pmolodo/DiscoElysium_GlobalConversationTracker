@@ -144,5 +144,131 @@ namespace GlobalConversationTracker.Session.Tests
             Assert.Equal(1, session.State.OrbCount);
             Assert.Equal(1, session.State.EntryCount);
         }
+
+        // -------------------------------------------------------------------
+        // Savegame load
+        // -------------------------------------------------------------------
+
+        [Fact]
+        public void ResyncOrbs_CountsTheLoadedSavesOrbsForBothStates()
+        {
+            using var dir = new TempDirectory();
+            using var session = new GlobalStateSession(dir.CreateStore(), new RecordingLog());
+
+            Assert.Equal(2, session.ResyncOrbs(new[] { DepotDoor, SpilledRum }));
+
+            Assert.Equal(2, session.CurrentSaveOrbCount);
+            Assert.Equal(2, session.State.OrbCount);
+        }
+
+        [Fact]
+        public void ResyncOrbs_ReplacesTheCurrentSaveButOnlyAddsToTheGlobalState()
+        {
+            // Loading save B must not leave save A's orbs on screen, while the history
+            // the mod exists to keep must survive the switch.
+            using var dir = new TempDirectory();
+            using var session = new GlobalStateSession(dir.CreateStore(), new RecordingLog());
+
+            session.ResyncOrbs(new[] { DepotDoor });
+            session.ResyncOrbs(new[] { SpilledRum });
+
+            // The save on screen is B only...
+            Assert.Equal(1, session.CurrentSaveOrbCount);
+            Assert.True(session.CurrentSaveOrbCount == 1 && session.State.OrbCount == 2);
+
+            // ...while the global state has kept A as well.
+            Assert.True(session.State.ContainsOrb(DepotDoor));
+            Assert.True(session.State.ContainsOrb(SpilledRum));
+        }
+
+        [Fact]
+        public void ResyncOrbs_LeavesDialogueEntriesAlone()
+        {
+            using var dir = new TempDirectory();
+            using var session = new GlobalStateSession(dir.CreateStore(), new RecordingLog());
+
+            session.Record(3, 17, "WasDisplayed");
+            session.ResyncOrbs(new[] { DepotDoor });
+
+            Assert.Equal(1, session.CurrentSaveEntryCount);
+            Assert.Equal(DialogueScore.Displayed + DialogueScore.Orb, session.CurrentSaveScore);
+        }
+
+        [Fact]
+        public void ResyncOrbs_OfASaveWithNoOrbs_EmptiesTheCurrentSaveCount()
+        {
+            // A genuinely fresh save has no orbs, and loading one has to be able to say
+            // so rather than inheriting the previous save's figure.
+            using var dir = new TempDirectory();
+            using var session = new GlobalStateSession(dir.CreateStore(), new RecordingLog());
+
+            session.RecordOrb(DepotDoor);
+            Assert.Equal(0, session.ResyncOrbs(Array.Empty<string>()));
+
+            Assert.Equal(0, session.CurrentSaveOrbCount);
+            Assert.Equal(1, session.State.OrbCount);
+        }
+
+        [Fact]
+        public void ResyncOrbs_SkipsEmptyTitlesRatherThanThrowing()
+        {
+            using var dir = new TempDirectory();
+            using var session = new GlobalStateSession(dir.CreateStore(), new RecordingLog());
+
+            Assert.Equal(1, session.ResyncOrbs(new string?[] { null, "", DepotDoor }));
+
+            Assert.Equal(1, session.CurrentSaveOrbCount);
+        }
+
+        [Fact]
+        public void ResyncOrbs_DuplicateTitles_AreCountedOnce()
+        {
+            using var dir = new TempDirectory();
+            using var session = new GlobalStateSession(dir.CreateStore(), new RecordingLog());
+
+            Assert.Equal(1, session.ResyncOrbs(new[] { DepotDoor, DepotDoor }));
+
+            Assert.Equal(1, session.CurrentSaveOrbCount);
+        }
+
+        [Fact]
+        public void ResyncOrbs_Null_Throws()
+        {
+            using var dir = new TempDirectory();
+            using var session = new GlobalStateSession(dir.CreateStore(), new RecordingLog());
+
+            Assert.Throws<ArgumentNullException>(() => session.ResyncOrbs(null!));
+        }
+
+        [Fact]
+        public void ResyncOrbs_ReachesTheFile()
+        {
+            using var dir = new TempDirectory();
+            GlobalStateStore store = dir.CreateStore();
+
+            using (var session = new GlobalStateSession(store, new RecordingLog()))
+            {
+                session.ResyncOrbs(new[] { DepotDoor });
+                Assert.True(session.Flush());
+            }
+
+            Assert.True(store.Load().State!.ContainsOrb(DepotDoor));
+        }
+
+        [Fact]
+        public void ResyncOrbs_WhenNothingIsNew_WritesNothingButStillFixesTheSaveCount()
+        {
+            using var dir = new TempDirectory();
+            using var session = new GlobalStateSession(dir.CreateStore(), new RecordingLog());
+
+            session.RecordOrb(DepotDoor);
+            session.RecordOrb(SpilledRum);
+
+            // The loaded save holds only one of the two the global state knows.
+            Assert.Equal(0, session.ResyncOrbs(new[] { DepotDoor }));
+
+            Assert.Equal(1, session.CurrentSaveOrbCount);
+            Assert.Equal(2, session.State.OrbCount);
+        }
     }
 }

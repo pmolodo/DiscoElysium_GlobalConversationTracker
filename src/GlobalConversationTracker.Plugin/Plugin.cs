@@ -193,6 +193,12 @@ namespace GlobalConversationTracker
                 "Statuses restored by loading a savegame will be missed this session",
                 () => ApplyRawDataPatch.Install(harmony, session, log));
 
+            bool resyncingOrbs = TryInstall(
+                "SaveGameLoadedData.GetString",
+                "orbs already in a loaded savegame are counted when it is loaded",
+                "Orbs recorded in a loaded savegame will only be counted if they are opened again",
+                () => LoadedOrbsPatch.Install(harmony, session, log));
+
             bool resettingCurrentSave = TryInstall(
                 "World.ResetStates",
                 "the current save's dialogue count is reset when a new game starts",
@@ -238,8 +244,8 @@ namespace GlobalConversationTracker
                     + "with MarkNovelOptions.");
             }
 
-            if (!recording && !recordingOrbs && !resyncing && !resettingCurrentSave
-                && !showingCount && !colouringNovelOptions)
+            if (!recording && !recordingOrbs && !resyncing && !resyncingOrbs
+                && !resettingCurrentSave && !showingCount && !colouringNovelOptions)
             {
                 _harmony = null;
             }

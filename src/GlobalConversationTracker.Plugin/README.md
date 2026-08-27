@@ -19,7 +19,17 @@ file in the SaveGames directory (`global-conversation-state.json`):
   by `GlobalOrbManager.AddThought`, which never sets its conversation - leaves no trace in
   `ShownOrbs` and is not counted here either.
 
-A third hook covers the one event neither dialogue writer above can see:
+- `SunshinePersistence.SaveGameLoadedData.GetString` - loading a savegame restores its orbs
+  by executing the save's `{save}.states.lua`, a Lua script rather than data, so there is no
+  parsed form to intercept the way `ApplyRawData` offers one for dialogue. The postfix reads
+  that file's text as it is pulled out of the in-memory save, parses the
+  `ShownOrbs["title"]={OrbSeen=1};` rows, and resyncs from them - replacing the current save's
+  orbs and merging into the across-all-saves state. Calls for the save's other files are
+  ignored by name. Reading the text rather than the live `ShownOrbs` table keeps the parsing
+  testable against real save files and avoids depending on whether the game has executed the
+  script yet.
+
+A further hook covers the one event none of the writers above can see:
 
 - `World.ResetStates` - a new game rebuilds the whole SimStatus table at once rather than
   marking entries, so nothing else tells the mod that the save being played has started over.
