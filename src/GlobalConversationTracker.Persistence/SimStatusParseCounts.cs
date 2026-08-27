@@ -6,16 +6,11 @@ namespace GlobalConversationTracker.Persistence;
 /// itself. Produced by <see cref="RawDataParser.GetSimStatuses(System.ReadOnlySpan{byte}, out SimStatusParseCounts)"/>.
 /// </summary>
 /// <remarks>
-/// <para>These are the numbers that make a parse time interpretable: the rows it
-/// produced say what the parse was for, and these say how much it had to walk to
-/// find them. Every one of them is either already known when the parse ends or is a
-/// single increment on a path the parse already runs, so counting them costs
-/// nothing measurable - which matters, because this runs inside a savegame load
-/// that is itself being timed.</para>
-///
-/// <para>It carries counts only, never times: the parse is one straight-line walk
-/// with no sections to attribute, so the clock belongs to whoever chose to start
-/// one around it.</para>
+/// What makes a parse time interpretable: the rows say what the parse was for, these
+/// say how much it had to walk to find them. Each is either already known when the
+/// parse ends or one increment on a path it already runs, so counting costs nothing
+/// measurable. Counts only, never times - the parse is one straight-line walk with no
+/// sections to attribute.
 /// </remarks>
 public readonly struct SimStatusParseCounts
 {
