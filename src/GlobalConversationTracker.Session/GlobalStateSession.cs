@@ -19,46 +19,35 @@ namespace GlobalConversationTracker.Session
     /// allowed.
     /// </summary>
     /// <remarks>
-    /// <para><b>The trigger is explicit and idempotent.</b> Nothing happens in the
-    /// constructor, so building a session during BepInEx chainload touches neither
-    /// the disk nor the game. Every access goes through
-    /// <see cref="EnsureInitialized"/>, which does the disk read once per session
-    /// and returns the same state object every time afterwards. The state object
-    /// exists and is valid from construction (empty, never null), so a hook that
-    /// fires while initialization is in flight sees an empty state rather than a
-    /// half-built one, and anything it merges survives: the merge rule only ever
-    /// raises a status, so a later load or resync cannot undo it.</para>
+    /// <para>The trigger is explicit and idempotent. Nothing happens in the constructor,
+    /// so building a session during BepInEx chainload touches neither the disk nor the
+    /// game. Every access goes through <see cref="EnsureInitialized"/>, which reads the
+    /// disk once per session and returns the same state object thereafter. That object
+    /// is valid from construction (empty, never null), so a hook firing while
+    /// initialization is in flight sees an empty state rather than a half-built one, and
+    /// anything it merges survives - the merge rule only raises a status.</para>
     ///
-    /// <para><b>Two ways in, and they cover different writers.</b>
-    /// <see cref="Record"/> is the write-through path, driven by the hook on
-    /// <c>DialogueLua.MarkDialogueEntry</c>: everything the game marks while it is
-    /// being played. The load-time path covers the writer that never goes through it -
-    /// a savegame load rebuilding the whole SimStatus table at once, without ever
-    /// calling <c>MarkDialogueEntry</c>. Between them they see every SimStatus the
-    /// game ever holds; there is no third writer.</para>
+    /// <para>Two ways in, covering different writers. <see cref="Record"/> is
+    /// write-through, driven by the hook on <c>DialogueLua.MarkDialogueEntry</c>:
+    /// everything the game marks while being played.
+    /// <see cref="ResyncFromSaveRawBytes"/> covers the writer that never goes through it
+    /// - a savegame load rebuilding the whole SimStatus table at once. Between them they
+    /// see every SimStatus the game holds.</para>
     ///
-    /// <para><b>The load-time path is <see cref="ResyncFromSaveRawBytes"/>, which
-    /// reads the dialogue data straight from the save bytes.</b></para>
+    /// <para>Nothing writes the file on the caller's thread. Both paths merge and mark
+    /// the state dirty; a single background thread does the writing. A save costs
+    /// 6.7-7.4 ms for a realistic Day-1 save and ~40 ms at the ceiling, of which ~85% is
+    /// the flush and the two renames - a dropped frame or more, inside a dialogue hook.
+    /// <see cref="TrySave"/> is the synchronous path that remains;
+    /// <see cref="Shutdown"/> is the flush that stops a clean exit losing the
+    /// tail.</para>
     ///
-    /// <para><b>Nothing writes the file on the caller's thread.</b>
-    /// <see cref="Record"/> and <see cref="ResyncFromSaveRawBytes"/> merge and then mark the
-    /// state dirty; a single background thread does the writing. A save costs
-    /// 6.7-7.4 ms for a realistic Day-1 save and ~40 ms at the ceiling, of which ~85%
-    /// is the flush and the two renames - a whole dropped frame or more, inside a
-    /// dialogue hook, mid-conversation. See <see cref="TrySave"/> for the
-    /// synchronous path that remains, and <see cref="Shutdown"/> for the shutdown
-    /// flush that stops a clean exit losing the tail - which says in the log what it
-    /// did, including when it did nothing, because a silent success is
-    /// indistinguishable from a handler that never fired at all.</para>
-    ///
-    /// <para>Not thread safe in the sense of being lock-free, but every public
-    /// method takes the same lock and C# locks are reentrant, so a hook that
-    /// re-enters during initialization gets the current state back instead of
-    /// deadlocking or recursing. That one lock is also the writer thread's condition
-    /// variable, so there is exactly one lock in the whole design and therefore no
-    /// lock ordering to get wrong. The writer holds it only long enough to copy the
-    /// state, and serializes and writes the copy outside it, so the longest
-    /// anything can make a mark wait is that copy.</para>
+    /// <para>Not lock-free, but every public method takes the same lock, and C# locks
+    /// are reentrant, so a hook that re-enters during initialization gets the current
+    /// state back instead of deadlocking. That one lock is also the writer thread's
+    /// condition variable, so there is no lock ordering to get wrong. The writer holds
+    /// it only long enough to copy the state, and serializes and writes the copy outside
+    /// it.</para>
     /// </remarks>
     public sealed class GlobalStateSession : IDisposable
     {
@@ -76,11 +65,10 @@ namespace GlobalConversationTracker.Session
         /// <summary>
         /// How long a caller waiting for a write to land - <see cref="TrySave"/>,
         /// <see cref="Flush"/>, the flush inside <see cref="Dispose"/> - waits before
-        /// giving up and saying so. Generous by two orders of magnitude against the
-        /// 40 ms a save costs at the largest file that can be constructed, because
-        /// the only thing a shorter one buys is giving up on a write that was about
-        /// to succeed. It exists so a writer wedged on a locked file cannot hang the
-        /// game's shutdown for ever.
+        /// giving up and saying so. Generous by two orders of magnitude against the 40 ms
+        /// a save costs at the largest constructible file: a shorter one only buys giving
+        /// up on a write that was about to succeed. It exists so a writer wedged on a
+        /// locked file cannot hang the game's shutdown for ever.
         /// </summary>
         private const int WriteWaitTimeoutMilliseconds = 30_000;
 
@@ -185,19 +173,14 @@ namespace GlobalConversationTracker.Session
 
         /// <summary>
         /// How many statuses <see cref="Record"/> has raised this session. Reported at
-        /// shutdown for the same reason as everything else on that line: a zero here
-        /// separates "the marking hook fired and the game marked nothing new" from
-        /// "the marking hook never fired", which no other line in the log distinguishes
-        /// (the resync reports its own raises separately, and a write can come from
-        /// either path).
+        /// shutdown, where a zero separates "the marking hook fired and the game marked
+        /// nothing new" from "the marking hook never fired".
         /// </summary>
         private long _statusesRecorded;
 
         /// <summary>
-        /// How many orbs <see cref="RecordOrb"/> has added to the global state this
-        /// session. Reported at shutdown beside <see cref="_statusesRecorded"/>, and for
-        /// the same reason: a zero separates "the orb hook fired and every orb was
-        /// already known" from "the orb hook never fired".
+        /// How many orbs <see cref="RecordOrb"/> has added this session. Reported at
+        /// shutdown beside <see cref="_statusesRecorded"/>, for the same reason.
         /// </summary>
         private long _orbsRecorded;
 
@@ -236,15 +219,14 @@ namespace GlobalConversationTracker.Session
         /// played.
         /// </summary>
         /// <remarks>
-        /// <para>Zero is a real answer, not a missing one: a new game has reached
-        /// nothing yet, and reads zero from the moment the mod is asked. What it is
+        /// <para>Zero is a real answer: a new game has reached nothing yet. What it is
         /// never allowed to be is the previous save's figure, which is why both the
         /// resync and <see cref="ResetCurrentSave"/> empty the tally before anything
         /// refills it.</para>
         ///
         /// <para>Unlike <see cref="GlobalConversationState.EntryCount"/> this can go
-        /// down. The game marks entries Untouched, and in this save that is a real
-        /// loss rather than history to be preserved.</para>
+        /// down: the game marks entries Untouched, which in this save is a real loss
+        /// rather than history to preserve.</para>
         /// </remarks>
         public int CurrentSaveEntryCount
         {
@@ -375,25 +357,16 @@ namespace GlobalConversationTracker.Session
         /// "WasDisplayed". Anything else is warned about once and dropped.
         /// </param>
         /// <remarks>
-        /// <para><b>Nothing is written unless something changed.</b> The game marks
-        /// the same entry repeatedly - every time a line is offered again, and
-        /// "Untouched" over entries that already have history - and the merge rule
-        /// turns all of those into no-ops. Rewriting the whole file for a no-op would
-        /// put the file's entire cost on the common case, so the write is driven by
-        /// the merge's own changed flag.</para>
+        /// <para>Nothing is written unless something changed. The game marks the same
+        /// entry repeatedly - every time a line is offered again, and "Untouched" over
+        /// entries that already have history - and the merge rule turns all of those into
+        /// no-ops, so the write is driven by the merge's own changed flag.</para>
         ///
-        /// <para><b>This never writes the file.</b> It merges, marks the state dirty
-        /// and returns; the background writer does the rest. This is the
-        /// <c>DialogueLua.MarkDialogueEntry</c> postfix, so it runs on the Unity main
-        /// thread mid-conversation, where the 6.7-40 ms a save costs is a dropped
-        /// frame. Deferring it is safe for the same reason the whole design is: the
-        /// global state is write-only, so nothing reads back what has not landed yet,
-        /// and a mark lost to a hard crash is re-marked the next time the line is
-        /// reached.</para>
-        ///
-        /// <para>This is the write-through half of a write-only design: the global
-        /// state never flows back into the game, so a failure here loses tracking and
-        /// nothing else.</para>
+        /// <para>This never writes the file: it merges, marks the state dirty and
+        /// returns. It runs on the Unity main thread mid-conversation, where the 6.7-40
+        /// ms a save costs is a dropped frame. Deferring is safe because the global state
+        /// is write-only - nothing reads back what has not landed, and a mark lost to a
+        /// hard crash is re-marked the next time the line is reached.</para>
         /// </remarks>
         /// <returns>
         /// True if this call raised a status in the global state. The write that
@@ -436,20 +409,17 @@ namespace GlobalConversationTracker.Session
         /// save's tally.
         /// </summary>
         /// <remarks>
-        /// <para><b>The orb counterpart of <see cref="Record"/>.</b> Driven by the hook
-        /// on <c>SenseOrb.SetShown</c>, the single funnel through which the game writes
-        /// <c>ShownOrbs[title].OrbSeen=1</c>.</para>
+        /// <para>The orb counterpart of <see cref="Record"/>, driven by the hook on
+        /// <c>SenseOrb.SetShown</c>.</para>
         ///
-        /// <para><b>There is no merge rule to apply.</b> An orb has one state and the
-        /// game never unsets it, so recording is set insertion in both directions. That
-        /// also means the current save cannot lose an orb the way it loses an entry
-        /// marked Untouched, so unlike <see cref="Record"/> nothing here has to happen
-        /// before the early return.</para>
+        /// <para>No merge rule to apply: an orb has one state and the game never unsets
+        /// it, so recording is set insertion in both directions. The current save cannot
+        /// lose an orb the way it loses an entry marked Untouched, so unlike
+        /// <see cref="Record"/> nothing has to happen before the early return.</para>
         ///
-        /// <para><b>Called far more often than it changes anything.</b> The game calls
-        /// <c>SetShown</c> on every click, not only the first - only the Lua write
-        /// inside it is guarded - so re-opening an orb arrives here again and is
-        /// absorbed by the sets.</para>
+        /// <para>Called far more often than it changes anything - the game calls
+        /// <c>SetShown</c> on every click, not only the first - and the sets absorb the
+        /// repeats.</para>
         /// </remarks>
         /// <param name="conversationTitle">
         /// The orb's conversation title, exactly as the game keys <c>ShownOrbs</c>.
@@ -515,18 +485,17 @@ namespace GlobalConversationTracker.Session
         /// <see cref="CanSave"/> says the file on disk must not be touched.
         /// </summary>
         /// <remarks>
-        /// <para><b>Synchronous, and deliberately the exception.</b> Everything the
-        /// game drives goes through the dirty flag instead; this is for the callers
-        /// that genuinely need the bytes on disk before they carry on -
-        /// shutdown, and tests. It still writes on the background thread, because that
-        /// thread is the only thing allowed to touch the three files, and simply waits
+        /// <para>Synchronous, and deliberately the exception - everything the game drives
+        /// goes through the dirty flag instead. This is for callers that need the bytes
+        /// on disk before carrying on: shutdown, and tests. It still writes on the
+        /// background thread, the only one allowed to touch the three files, and waits
         /// for it. Nothing is skipped when the state is clean: an explicit "save now"
         /// means save now.</para>
         ///
-        /// <para>IO failures are logged and swallowed rather than thrown: a save file
-        /// being locked must cost tracking and nothing else. The next write attempt
-        /// retries from scratch, and <see cref="GlobalStateStore.Save"/> never leaves
-        /// a partial file behind.</para>
+        /// <para>IO failures are logged and swallowed rather than thrown: a locked save
+        /// file must cost tracking and nothing else. The next attempt retries from
+        /// scratch, and <see cref="GlobalStateStore.Save"/> never leaves a partial file
+        /// behind.</para>
         /// </remarks>
         /// <returns>True if the state reached disk.</returns>
         public bool TrySave()
@@ -569,15 +538,14 @@ namespace GlobalConversationTracker.Session
         /// Flushes anything still pending and shuts the background writer down.
         /// </summary>
         /// <remarks>
-        /// <para>This is the "never lose the tail on a clean exit" half of the
-        /// deferred write, and the reason that write needs no durability machinery of
-        /// its own. It is idempotent; after it, the session still merges but no longer
-        /// writes, which is the right behaviour for a mark that arrives while the game
-        /// is tearing down.</para>
-        /// <para>BepInEx does not call plugin <c>Unload</c> on game exit, so the
-        /// plugin drives this from process- and application-level shutdown events
-        /// instead. Use <see cref="Shutdown"/> to say which one; this overload exists
-        /// for <c>using</c> blocks, tests and tools, which have only one.</para>
+        /// <para>The "never lose the tail on a clean exit" half of the deferred write,
+        /// and the reason that write needs no durability machinery of its own.
+        /// Idempotent; afterwards the session still merges but no longer writes, which is
+        /// right for a mark arriving while the game tears down.</para>
+        /// <para>BepInEx does not call plugin <c>Unload</c> on game exit, so the plugin
+        /// drives this from process- and application-level shutdown events. Use
+        /// <see cref="Shutdown"/> to say which one; this overload is for <c>using</c>
+        /// blocks, tests and tools, which have only one.</para>
         /// </remarks>
         public void Dispose() => Shutdown(DefaultShutdownTrigger);
 
@@ -591,35 +559,23 @@ namespace GlobalConversationTracker.Session
         /// Null or empty is reported as "Dispose".
         /// </param>
         /// <remarks>
-        /// <para><b>Same work as <see cref="Dispose"/>; the difference is the log.</b>
-        /// A shutdown that said nothing on success would make "the handler fired and
-        /// there was nothing to flush" and "the handler never fired at all" identical
-        /// in a session log - and since BepInEx's IL2CPP chainloader calls neither
-        /// <c>Unload</c> nor anything else on the way out, which of the two registered
-        /// events actually fires is exactly the open question. So the shutdown logs
-        /// two lines: one when the trigger arrives, before the gate is taken, so a
-        /// shutdown that then blocks behind a resync still proves it fired; one when
-        /// the drain is over, carrying the trigger, what was pending, whether it
-        /// landed, how long it took, how much the session recorded and wrote in total,
-        /// and whether the writer thread stopped.</para>
+        /// <para>Same work as <see cref="Dispose"/>; the difference is the log. Two
+        /// lines: one when the trigger arrives, before the gate is taken, so a shutdown
+        /// that then blocks behind a resync still proves it fired; one when the drain is
+        /// over, carrying the trigger, what was pending, whether it landed, how long it
+        /// took, what the session recorded and wrote, and whether the writer
+        /// stopped.</para>
         ///
-        /// <para><b>Why the closing line is logged outside the gate.</b> The gate is
-        /// the writer's condition variable, and the writer logs its own failures from
-        /// its own thread, so a log sink with a lock of its own is reachable from two
-        /// threads. Nothing in the writer ever holds a log's lock while it wants the
-        /// gate - <see cref="TryWritePayload"/> logs after releasing it and before
-        /// re-taking it, and <see cref="WriterLoop"/>'s catch logs after its lock
-        /// block - so there is no cycle either way round. The closing line is logged
-        /// after the gate is released anyway, which leaves the one line that has to be
-        /// early (the trigger line, logged before the gate is taken at all) touching no
-        /// session state whatsoever.</para>
+        /// <para>The closing line is logged outside the gate. The gate is the writer's
+        /// condition variable and the writer logs from its own thread, so a log sink
+        /// with a lock of its own is reachable from two threads. Nothing in the writer
+        /// holds a log's lock while it wants the gate - <see cref="TryWritePayload"/>
+        /// logs after releasing it, <see cref="WriterLoop"/>'s catch logs after its lock
+        /// block - so there is no cycle either way.</para>
         ///
-        /// <para><b>Nothing here can hang.</b> The drain is
-        /// <see cref="WaitForWrite"/>, already bounded by
-        /// <see cref="WriteWaitTimeoutMilliseconds"/> and already loud when it expires;
-        /// the join is bounded by <see cref="WriterExitTimeoutMilliseconds"/>; the two
-        /// log calls are the same sink the rest of the class already writes to under
-        /// the gate.</para>
+        /// <para>Nothing here can hang: the drain is bounded by
+        /// <see cref="WriteWaitTimeoutMilliseconds"/> and the join by
+        /// <see cref="WriterExitTimeoutMilliseconds"/>.</para>
         /// </remarks>
         public void Shutdown(string? trigger)
         {
@@ -697,8 +653,7 @@ namespace GlobalConversationTracker.Session
         }
 
         /// <summary>
-        /// Says what the shutdown flush actually did, including when the answer is
-        /// "nothing" - which is a result, not a reason to stay quiet.
+        /// Says what the shutdown flush did, including when the answer is "nothing".
         /// </summary>
         private string DescribeShutdownFlush(
             GlobalStateOrigin origin, bool canSave, bool writerExisted, long pending, bool flushed)
@@ -816,37 +771,29 @@ namespace GlobalConversationTracker.Session
         /// outside it.
         /// </summary>
         /// <remarks>
-        /// <para><b>Why the lock is held for the copy and nothing else.</b> Reading the
-        /// live state cannot happen concurrently with a merge, so something has to be
-        /// under the lock; everything after the copy touches only the copy and the
-        /// filesystem, so nothing else has to be. Holding the lock for the whole
-        /// serialize instead would make a mark arriving mid-serialize wait for it on
-        /// the Unity main thread - up to 16 ms at 30,000 entries and 39 ms at the
-        /// 112,940-entry ceiling, a dropped frame either way.
-        /// Copying first shrinks what is under the lock by 24-25x at every size the
-        /// benchmark sweeps (0.008 ms against 0.21 ms at a realistic 1,473 entries,
-        /// 0.9 ms against 22 ms at the ceiling), at the price of one transient copy of
-        /// the state per write.</para>
+        /// <para>The lock covers the copy and nothing else. Reading the live state cannot
+        /// happen concurrently with a merge, so the copy has to be under the lock;
+        /// everything after it touches only the copy and the filesystem. Holding the lock
+        /// for the whole serialize would make a mark arriving mid-serialize wait on the
+        /// Unity main thread - up to 16 ms at 30,000 entries and 39 ms at the
+        /// 112,940-entry ceiling. Copying first shrinks the locked region by 24-25x at
+        /// every size the benchmark sweeps, at the price of one transient copy per
+        /// write.</para>
         ///
-        /// <para><b>It is still one lock.</b> The copy is taken under the same gate
-        /// everything else uses, so there is still no second lock and no ordering to get
-        /// wrong; the gate is simply held for less time. And it is still one writer: this
-        /// thread is the only thing that ever calls
+        /// <para>Still one lock, and still one writer: this thread is the only caller of
         /// <see cref="GlobalStateStore.SavePayload"/>.</para>
         ///
-        /// <para><b>Bursts coalesce for free.</b> A response menu marks every offered
-        /// response, so several raises land in one frame. Each of those bumps
-        /// <see cref="_dirtyVersion"/> while this thread is busy with the previous
-        /// snapshot, and one further pass then covers all of them - so a burst of any
-        /// size costs at most two writes rather than one per mark. That is why there
-        /// is no debounce delay here: the delay would buy the difference between two
-        /// writes and one, at the price of a tunable and a wider window in which a
-        /// hard crash loses something.</para>
+        /// <para>Bursts coalesce for free. A response menu marks every offered response,
+        /// so several raises land in one frame; each bumps <see cref="_dirtyVersion"/>
+        /// while this thread is busy with the previous snapshot, and one further pass
+        /// covers all of them. Hence no debounce delay: it would buy the difference
+        /// between two writes and one, at the price of a tunable and a wider window for a
+        /// hard crash to lose something.</para>
         ///
-        /// <para><b>It never touches the game.</b> Only the global state and the
-        /// filesystem, never the Dialogue System, <c>DialogueLua</c>, the Lua
-        /// environment or any IL2CPP object. Reading the game off the Unity thread is
-        /// not established as safe and this design does not need it.</para>
+        /// <para>It never touches the game - only the global state and the filesystem,
+        /// never the Dialogue System, <c>DialogueLua</c>, the Lua environment or any
+        /// IL2CPP object. Reading the game off the Unity thread is not established as
+        /// safe, and this design does not need it.</para>
         /// </remarks>
         private void WriterLoop()
         {
@@ -1166,11 +1113,8 @@ namespace GlobalConversationTracker.Session
         /// </summary>
         public int ResyncFromSaveRawBytes(Il2CppStructArray<byte> bytes)
         {
-            string byteInfo = bytes.Length == 0 ? "<empty> bytes" : $"{bytes.Length} bytes, first byte: {bytes[0]}";
-            _log.Info($"ResyncFromSaveRawBytes callback fired - {byteInfo}");
             // Aliases the IL2CPP array's elements in place rather than copying them.
             Span<byte> data = bytes.AsSpan();
-            _log.Info($"raw data ready? {data.Length > 0}");
 
             lock (_gate)
             {
@@ -1182,8 +1126,7 @@ namespace GlobalConversationTracker.Session
                 if (data.Length == 0)
                 {
                     _log.Warning(
-                        "Not resyncing the global state: received a null or empty byte string for raw save bytes"
-                    );
+                        "Not resyncing the global state: the raw save bytes were null or empty.");
                     return 0;
                 }
 
@@ -1204,24 +1147,20 @@ namespace GlobalConversationTracker.Session
         /// what it finds into the global state.
         /// </summary>
         /// <remarks>
-        /// <para><b>Why this is a second resync and not part of the first.</b> The two
-        /// halves of a save live in different files. Dialogue SimStatus is in
+        /// <para>A second resync rather than part of the first, because the two halves of
+        /// a save live in different files. Dialogue SimStatus is in
         /// <c>{save}.ntwtf.lua</c>, which <see cref="ResyncFromSaveRawBytes"/> reads as
         /// raw bytes on their way into <c>PersistentDataManager.ApplyRawData</c>. Orbs
-        /// are in <c>{save}.states.lua</c>, a plain Lua script the game simply executes,
-        /// so there are no bytes to intercept - the readable form is the
-        /// <c>ShownOrbs</c> table afterwards.</para>
+        /// are in <c>{save}.states.lua</c>, a plain Lua script the game executes, so
+        /// there are no bytes to intercept.</para>
         ///
-        /// <para><b>Replacement, not merge, for the current save</b> - the same rule as
-        /// the entry resync, and for the same reason: these titles are the loaded save's
-        /// <c>ShownOrbs</c> in full, so the previous save's orbs must not survive into
-        /// it. The global state is merged into as always and never loses anything.</para>
+        /// <para>Replacement, not merge, for the current save: these titles are the
+        /// loaded save's <c>ShownOrbs</c> in full, so the previous save's orbs must not
+        /// survive into it. The global state is merged into as always.</para>
         ///
-        /// <para><b>An empty table is a real answer.</b> A save from the start of a
-        /// playthrough genuinely has no orbs. That is also what a caller would see if it
-        /// read the table too early, before the game had run the save's
-        /// <c>states.lua</c> - which is why the count goes in the log every time rather
-        /// than only when it is interesting. A run of loads that all report zero orbs on
+        /// <para>An empty table is a real answer - a save from the start of a playthrough
+        /// genuinely has no orbs - but it is also what reading the table too early would
+        /// give, so the count is logged every time. Loads that all report zero orbs on
         /// saves that should have them is what a wrongly ordered hook looks like.</para>
         /// </remarks>
         /// <param name="conversationTitles">
@@ -1304,22 +1243,19 @@ namespace GlobalConversationTracker.Session
         /// game's own SimStatus table behind the mod's back.
         /// </summary>
         /// <remarks>
-        /// <para><b>Only the current save's tally.</b> The global state is not
-        /// touched and must never be: a new game is precisely the event the
-        /// across-all-saves history exists to survive.</para>
+        /// <para>Only the current save's tally. The global state is not touched and must
+        /// never be: a new game is precisely the event the across-all-saves history
+        /// exists to survive.</para>
         ///
-        /// <para><b>Why the mod cannot see this any other way.</b> A new game rebuilds
-        /// the whole Lua Conversation table rather than marking entries one at a time,
-        /// so <c>MarkDialogueEntry</c> never fires and there is no savegame load to
-        /// resync from. Without an explicit signal the previous save's count would
-        /// simply stay on screen while the player starts over.</para>
+        /// <para>There is no other way for the mod to see this. A new game rebuilds the
+        /// whole Lua Conversation table rather than marking entries one at a time, so
+        /// <c>MarkDialogueEntry</c> never fires and there is no savegame load to resync
+        /// from.</para>
         ///
-        /// <para><b>The log line is the instrument for an open question.</b> If the
-        /// game also resets world state <em>during</em> a savegame load, and does it
-        /// after the load's resync rather than before, this would empty a tally that
-        /// was just filled correctly. Reporting how long it has been since the last
-        /// resync is what makes that visible in a log instead of showing up as a
-        /// number that is quietly wrong.</para>
+        /// <para>The log line reports how long it has been since the last resync: were
+        /// the game to reset world state <em>during</em> a load, after that load's
+        /// resync, this would empty a tally that was just filled, and the timing is what
+        /// makes that visible instead of quietly wrong.</para>
         /// </remarks>
         /// <param name="trigger">What detected the new game, for the log.</param>
         /// <returns>How many entries the tally was holding.</returns>
@@ -1427,21 +1363,15 @@ namespace GlobalConversationTracker.Session
                 return 0;
             }
 
-            string outcome =
-                $"Resynced the global state after a savegame load: ";
-            string currentSave =
-                $" The loaded save itself has {_currentSave.DisplayedCount} displayed and "
-                + $"{_currentSave.OfferedCount} offered of {rowCount} entries, scoring "
-                + $"{DialogueScore.Format(_currentSave.Score)}.";
+            string raised = raisedCount == 0
+                ? $"nothing new in {rowCount} rows, so no file was written."
+                : $"{raisedCount} statuses raised from {rowCount} rows; now "
+                    + $"{_state.ConversationCount} conversations, {_state.EntryCount} entries.";
             _log.Info(
-                (raisedCount == 0
-                    ? outcome
-                        + $"nothing new in {rowCount} rows, so no file was written."
-                    : outcome
-                        + $"{raisedCount} statuses raised from {rowCount} rows; "
-                        + $"now {_state.ConversationCount} "
-                        + $"conversations, {_state.EntryCount} entries.")
-                + currentSave);
+                $"Resynced the global state after a savegame load: {raised} The loaded save itself "
+                + $"has {_currentSave.DisplayedCount} displayed and {_currentSave.OfferedCount} "
+                + $"offered of {rowCount} entries, scoring "
+                + $"{DialogueScore.Format(_currentSave.Score)}.");
 
             if (raisedCount == 0)
             {
