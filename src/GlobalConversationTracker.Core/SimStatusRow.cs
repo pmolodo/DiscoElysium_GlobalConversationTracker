@@ -6,11 +6,10 @@ namespace GlobalConversationTracker.Core
     /// which dialogue entry, and the game's own status string.
     /// </summary>
     /// <remarks>
-    /// The status is carried as the raw string rather than a <see cref="SimStatus"/>
-    /// on purpose. The game's value is a Lua string, and an unrecognized one has to
-    /// be skippable and countable exactly the way the file loader skips a damaged
-    /// row, instead of throwing part way through a parse and losing every row
-    /// after it.
+    /// The status stays a raw string rather than a <see cref="SimStatus"/> so an
+    /// unrecognized value can be skipped and counted the way the file loader skips
+    /// a damaged row, instead of throwing part way through a parse and losing every
+    /// row after it.
     /// </remarks>
     public readonly struct SimStatusRow
     {
@@ -29,8 +28,8 @@ namespace GlobalConversationTracker.Core
         public int DialogueEntryId { get; }
 
         /// <summary>
-        /// The game's status string, expected to be one of Untouched / WasOffered /
-        /// WasDisplayed. Anything else is skipped and counted by the caller.
+        /// The game's status string: Untouched / WasOffered / WasDisplayed. Anything
+        /// else is skipped and counted by the caller.
         /// </summary>
         public string? StatusName { get; }
 
