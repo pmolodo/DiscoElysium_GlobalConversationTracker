@@ -45,23 +45,20 @@
     The manifest also records what the run was, not just that the log is its:
 
       * the commit the installed plugin was built from, and whether that tree was
-        dirty, read out of the assembly's own informational version - the build
-        stamps it there, so the commit travels inside the DLL it describes.
+        dirty, read out of the assembly's own informational version.
       * every file in <game>\BepInEx\plugins\GlobalConversationTracker with its
         size and md5, which covers the optional articy id map without naming it.
       * the resync route the log reports and its final average envelope, promoted
         into fields so runs can be compared without re-parsing logs.
 
-    All of these are recorded when present and left null when not; a log from a
-    build that stamped nothing is a fact worth recording, not a failure.
+    Each is recorded when present and left null when not; a log from a build that
+    stamped nothing is a fact worth recording, not a failure.
 
     A capture and its manifest are paired by name - <log> with <log>.capture.json
-    beside it - but a log is worth renaming once it is known what the run showed,
-    and a rename leaves the manifest behind under the old name with a 'copy'
-    field naming a path that is no longer there. The manifest's md5 and byte
-    count describe the log's contents rather than its path, so they are the
-    pairing that survives a rename: -Audit pairs by name first and by content
-    second, and -Repair re-files a renamed log's manifest beside it.
+    beside it - but renaming a log leaves the manifest behind under the old name.
+    The manifest's md5 and byte count describe contents rather than a path, so
+    they are the pairing that survives a rename: -Audit pairs by name first and by
+    content second, and -Repair re-files a renamed log's manifest beside it.
 
 .PARAMETER GameDir
     The game folder to capture the log out of. Resolved exactly as deploy.ps1
@@ -92,11 +89,9 @@
 .PARAMETER Rename
     Rename an already-captured log instead of capturing a new one, moving its
     manifest with it: the manifest is renamed to match, its 'copy' field is
-    rewritten to the new path, and the old path is kept in 'renamedFrom'. Give
-    the log's path here and the new name in -NewName. This exists because
-    renaming a capture by hand - which is the natural thing to do, since
-    capture-20260819-162547.log says nothing about the run it documents - leaves
-    the manifest behind under the old name, pointing at a path that no longer
+    rewritten to the new path, and the old path is kept in 'renamedFrom'. Give the
+    log's path here and the new name in -NewName. Renaming by hand leaves the
+    manifest behind under the old name, pointing at a path that no longer
     resolves.
 
 .PARAMETER NewName
@@ -119,17 +114,16 @@
     log's bytes no longer hash to what was recorded.
 
     A manifest is paired with its log three ways, in order. By name, which is
-    exact: a capture writes the two side by side. By recorded md5 and byte
-    count, among logs no manifest of their own has claimed, which survives a
-    rename. By shared name tail last - captures are named
-    <label>-<yyyyMMdd-HHmmss>.log, so relabelling one rewrites the front and
-    leaves the rest, and that tail still finds it. The tail has to start at a
-    '-' and carry more than the extension, the longest one wins, and a tie
-    between two logs is reported rather than guessed at.
+    exact: a capture writes the two side by side. By recorded md5 and byte count,
+    among logs no manifest of their own has claimed, which survives a rename. By
+    shared name tail last - captures are named <label>-<yyyyMMdd-HHmmss>.log, so
+    relabelling rewrites the front and leaves the rest. The tail has to start at a
+    '-' and carry more than the extension, the longest one wins, and a tie is
+    reported rather than guessed at.
 
-    The tail is what reaches the two cases content cannot: a log edited or
-    truncated since capture, whose md5 no longer matches anything, and several
-    logs that share one md5 because their contents are identical.
+    The tail reaches the two cases content cannot: a log edited or truncated since
+    capture, whose md5 matches nothing, and several logs sharing one md5 because
+    their contents are identical.
 
 .PARAMETER LogDir
     The folder -Audit reads, .build\logs by default. Logs and manifests are
@@ -179,13 +173,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Shared project config: $BepInExLogRelPath, $BuildDir, Resolve-TargetGameDir,
-# Invoke-ScriptMain, ... A module, not a dot-sourced script, so that its own
-# names cannot land in this script's scope and overwrite the parameters above -
-# see the header of build-support.psm1.
-# -DisableNameChecking: Assert-NotReferenceCopy uses a verb PowerShell does not
-# have on its approved list, and the name says what it does better than any
-# approved verb would.
+# A module, not a dot-sourced script, so its names cannot land in this scope and
+# overwrite the parameters above. -DisableNameChecking: Assert-NotReferenceCopy
+# uses a verb that is not on PowerShell's approved list.
 Import-Module (Join-Path $PSScriptRoot "build-support.psm1") -Force -DisableNameChecking
 
 # Where captures live, and what the two halves of one are called.
@@ -220,11 +210,10 @@ $MaxPluginLoadDelay = [TimeSpan]::FromMinutes(15)
 
 function Format-Stamp {
     # One spelling of a timestamp everywhere: console, manifest, messages.
-    # PowerShell 5.1's ConvertTo-Json renders DateTime with its own culture
-    # rules, so dates go into the manifest already formatted.
-    # Untyped, because the checks below legitimately have nothing to format
-    # (no banner in the log, no artefact on disk) and a [datetime] parameter
-    # cannot hold that.
+    # PowerShell 5.1's ConvertTo-Json renders DateTime with its own culture rules,
+    # so dates go into the manifest already formatted. Untyped, because the checks
+    # below legitimately have nothing to format (no banner, no artefact) and a
+    # [datetime] parameter cannot hold that.
     param($Value)
     if ($null -eq $Value) { return $null }
     return ([datetime]$Value).ToString($ReportStampFormat)
@@ -293,18 +282,11 @@ function Get-CommonNameTail {
 
 function Get-NameTailMatch {
     # The one log whose name differs from the one a manifest expects only by a
-    # leading segment, or $null if that is not exactly one log.
-    #
-    # Captures are named <label>-<yyyyMMdd-HHmmss>.log, so relabelling one -
-    # capture-20260819-162547.log becoming skip4tables-20260819-162547.log -
-    # rewrites the front and leaves the tail alone. That tail is still enough to
-    # find the log by, and it keeps working where md5 pairing cannot: after the
-    # log itself has been edited or truncated, and between several logs that
-    # share one md5 because their contents are identical.
-    #
-    # The longest tail wins, and only if one log alone holds it. Two logs tying
-    # for longest is the ambiguity this is meant to resolve, not a coin to flip,
-    # so a tie returns nothing and the audit reports it.
+    # leading segment, or $null if that is not exactly one log. Captures are named
+    # <label>-<yyyyMMdd-HHmmss>.log, so relabelling rewrites the front and leaves
+    # the tail alone. The longest tail wins, and only if one log alone holds it: a
+    # tie is the ambiguity this resolves, not a coin to flip, so it returns
+    # nothing and the audit reports it.
     param(
         [Parameter(Mandatory = $true)][string]$ExpectedName,
         [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Candidates
@@ -331,16 +313,10 @@ function Get-NameTailMatch {
 
 
 function Get-CapturePairing {
-    # Every manifest in a folder, matched to the log it describes.
-    #
-    # By name first: a capture writes <log> and <log>.capture.json side by side,
-    # and that pairing is exact even where two runs produced identical logs.
-    # By recorded md5 and byte count second, among the logs no manifest of their
-    # own has already claimed: that is what a renamed log is still findable by.
-    # By shared name tail last, which reaches the two cases content cannot - a
-    # log edited since it was captured, and several logs whose content is
-    # identical - because a relabelled capture keeps the tail of its name.
-    # Anything still left over is reported rather than guessed at.
+    # Every manifest in a folder, matched to the log it describes: by name, then
+    # by recorded md5 and byte count among unclaimed logs, then by shared name
+    # tail. See the -Audit help above for why that order. Anything left over is
+    # reported rather than guessed at.
     param([Parameter(Mandatory = $true)][string]$LogDir)
 
     $entries = @(Get-ChildItem -LiteralPath $LogDir -File | Sort-Object Name)
@@ -374,13 +350,12 @@ function Get-CapturePairing {
                 $pairedBy = "md5"
             }
             else {
-                # Content could not settle it: either nothing carries the
-                # recorded md5, or too much does. Narrow to the md5 matches when
-                # there were several - they are already known to be the right
-                # content - and otherwise let the name search the whole folder.
-                # @() around the whole thing: an empty branch comes back out of
-                # an if-expression as $null rather than an empty array, and a
-                # folder where every log is already claimed hits exactly that.
+                # Content could not settle it: nothing carries the recorded md5,
+                # or too much does. Narrow to the md5 matches when there were
+                # several, otherwise let the name search the whole folder. @()
+                # around the whole thing: an empty branch comes out of an
+                # if-expression as $null rather than an empty array, which is
+                # exactly what a folder of already-claimed logs produces.
                 $pool = @(if ($candidates.Count -gt 1) { $candidates } else { $unclaimed })
                 $byTail = Get-NameTailMatch -ExpectedName $expectedName -Candidates $pool
                 if ($byTail) {
@@ -826,7 +801,7 @@ $manifest = [ordered]@{
     envelopeOperation    = $provenance.EnvelopeOperation
     averageEnvelopeMs    = $provenance.AverageEnvelopeMs
     envelopeCallCount    = $provenance.EnvelopeCallCount
-    globalStatePath     = $provenance.StatePath
+    globalStatePath      = $provenance.StatePath
     gameProcessId        = if ($game) { $game.Id } else { $null }
     gameProcessStartTime = if ($game) { Format-Stamp $game.StartTime } else { $null }
     runArtifacts         = @($artifacts | ForEach-Object {
