@@ -14,11 +14,9 @@
       3. Clears the previous build out of
          <game>\BepInEx\plugins\GlobalConversationTracker and copies the fresh
          one in. Only GlobalConversationTracker*.dll is written, and only
-         GlobalConversationTracker*.dll is removed - the same set at both ends.
-         The .pdb is not deployed, since debugging symbols do nothing in a
-         player's game folder; one left by an older build is left where it is
-         rather than cleaned up. Anything else kept in that folder, notably the
-         optional articy_ids_final_cut.json, survives a redeploy.
+         GlobalConversationTracker*.dll is removed. The .pdb is not deployed;
+         one left by an older build is left alone. Anything else kept in that
+         folder, notably the optional articy_ids_final_cut.json, survives.
       4. Prints where to look for the plugin's log line.
 
     The install target comes from, in order:
@@ -27,48 +25,41 @@
       2. the DISCO_ELYSIUM_DEPLOY_DIR environment variable
       3. the auto-discovered Steam copy (the everyday case, no flag needed)
 
-    Only when all three come up empty - no override given and no Steam install
-    found - does the script stop and ask you to name a target.
+    Only when all three come up empty does the script stop and ask for a target.
 
-    Defaulting to the Steam copy is not the thing keeping you safe; the guards
-    are. The resolved target is printed before anything is written, the repo's
-    "Steam Install - *" reference copy is refused outright (-AllowReferenceCopy
-    overrides), a copy without BepInEx is rejected because the plugin could
-    never load there, the only directory ever created is
-    <game>\BepInEx\plugins\GlobalConversationTracker, and the only files ever
-    deleted are that folder's own GlobalConversationTracker*.dll.
+    The guards, not the default, are what keep this safe: the resolved target is
+    printed before anything is written, a repo reference copy is refused outright
+    (-AllowReferenceCopy overrides), a copy without BepInEx is rejected, the only
+    directory ever created is <game>\BepInEx\plugins\GlobalConversationTracker,
+    and the only files ever deleted are that folder's own
+    GlobalConversationTracker*.dll.
 
 .PARAMETER GameDir
     The playable game folder to install into, taking priority over
-    DISCO_ELYSIUM_DEPLOY_DIR and over Steam auto-discovery. It has to contain
-    disco.exe and a BepInEx\core, and it must not be one of the repo's reference
-    copies unless -AllowReferenceCopy says otherwise. Whatever it resolves to is
-    printed before anything is written.
+    DISCO_ELYSIUM_DEPLOY_DIR and Steam auto-discovery. Must contain disco.exe and
+    a BepInEx\core, and must not be one of the repo's reference copies unless
+    -AllowReferenceCopy says otherwise.
 
 .PARAMETER Configuration
     The configuration built before installing; "Release" unless given. The
-    installed files are that build's output, so this decides which build ends up
-    in the game folder as well as which one is compiled.
+    installed files are that build's output.
 
 .PARAMETER DiscoElysiumDir
-    Game install to compile against - unrelated to -GameDir, which is the
-    install written into. The two are separate because the reference assemblies
-    can legitimately come from a copy you would never deploy to, such as the
-    repo's read-only reference copy. A path without BepInEx\core and
+    Game install to compile against - unrelated to -GameDir, which is the install
+    written into. They are separate because the reference assemblies can come
+    from a copy you would never deploy to. A path without BepInEx\core and
     BepInEx\interop is an error rather than a reason to fall back; leaving it off
-    is what asks for the usual resolution order (see provision-refs.ps1).
+    asks for the usual resolution order (see provision-refs.ps1).
 
 .PARAMETER AllowReferenceCopy
-    Deploy even when the target turns out to be inside the repo's read-only
-    reference material under .game_reference_copies, which is otherwise refused
-    outright. The deploy then goes ahead with a warning, so
-    testing against a reference copy stays possible but never happens by
-    accident.
+    Deploy even when the target is inside the repo's read-only reference material
+    under .game_reference_copies, which is otherwise refused. The deploy goes
+    ahead with a warning.
 
 .PARAMETER DryRun
     Stop after resolving the target and building, printing the plugin folder
-    whose payload would have been replaced without deleting or copying anything.
-    The build still runs, so this checks the whole path up to the write.
+    whose payload would have been replaced. The build still runs, so this checks
+    the whole path up to the write.
 #>
 [CmdletBinding()]
 param(
@@ -81,13 +72,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Build helpers + shared project config (Invoke-PluginBuild, Find-SteamGameDir,
-# Get-PluginInstallDir, ...). A module, not a dot-sourced script, so that its
-# own names cannot land in this script's scope and overwrite the parameters
-# above - see the header of build-support.psm1.
-# -DisableNameChecking: Assert-NotReferenceCopy uses a verb PowerShell does not
-# have on its approved list, and the name says what it does better than any
-# approved verb would.
+# A module, not a dot-sourced script, so its names cannot land in this scope and
+# overwrite the parameters above. -DisableNameChecking: Assert-NotReferenceCopy
+# uses a verb that is not on PowerShell's approved list.
 Import-Module (Join-Path $PSScriptRoot "build-support.psm1") -Force -DisableNameChecking
 
 
@@ -121,9 +108,9 @@ Write-Host "== Building ==" -ForegroundColor Cyan
 $dllPath = Invoke-PluginBuild -Configuration $Configuration -DiscoElysiumDir $DiscoElysiumDir
 
 # --- 3. Replace the previous install -----------------------------------------
-# Say plainly what is about to be written, before writing it. Only this plugin's
-# own files are replaced; anything else in the folder is left where it is,
-# which is what lets a hand-placed articy_ids_final_cut.json stay put.
+# Say what is about to be written, before writing it. Only this plugin's own
+# files are replaced, which is what lets a hand-placed
+# articy_ids_final_cut.json stay put.
 Write-Host ""
 Write-Host "== Installing ==" -ForegroundColor Cyan
 Write-Host "About to write into:" -ForegroundColor Yellow
