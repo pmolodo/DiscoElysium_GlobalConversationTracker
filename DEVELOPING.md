@@ -13,14 +13,13 @@ dotnet test      # compile every project, the plugin included, and run every tes
 
 Then launch the game. That is the whole iterate loop: edit -> `.\deploy.ps1` -> relaunch.
 
-`dotnet test` alone is enough as the end-of-change check, and that took arranging.
-`dotnet test` builds only the test projects and what they reference, so the plugin - which
-no test references, and none can meaningfully test - used to sit outside it, and a compile
-error in it passed. `GlobalConversationTracker.Session.Tests` therefore carries a project
-reference to the plugin marked `ReferenceOutputAssembly="false"`: a build-order dependency
-and nothing else, adding no assembly reference and copying no DLL. It is a build trigger,
-not coverage, and the comment at the reference says so at length. Nothing tests the
-plugin, which would need BepInEx, the IL2CPP interop assemblies and a running game.
+`dotnet test` alone is enough as the end-of-change check. It builds only the test projects
+and what they reference, and no test references the plugin - none can meaningfully test it,
+which would need BepInEx, the IL2CPP interop assemblies and a running game. So
+`GlobalConversationTracker.Session.Tests` carries a project reference to the plugin marked
+`ReferenceOutputAssembly="false"`: a build-order dependency and nothing else, adding no
+assembly reference and copying no DLL. It is a build trigger, not coverage, so a compile
+error in the plugin fails `dotnet test`.
 
 ## Requirements
 
@@ -46,17 +45,13 @@ dotnet build -c Release      # what the .ps1 scripts build by default
 
 Two things about its contents are deliberate:
 
-- **The plugin is built by `dotnet build` and by `dotnet test`**, as of 2026-08-26. It used to be listed with
-  `<Build Project="false" />`, on the grounds that it alone needed a game install to
-  compile against; that stopped being true when Persistence and Session gained their own
-  `Il2CppInterop.Runtime` reference. The exclusion then protected nothing - a root build
-  in a checkout without an install failed on those two projects first - while quietly
-  costing coverage: a compile error in the plugin passed `dotnet build` and `dotnet test`
-  and only appeared when someone built the csproj by hand. All three projects resolve the
-  install through `Directory.Build.props` (see `provision-refs.ps1` below for the order),
-  and `dotnet test` reaches the plugin through the deliberate build-order reference
-  described in the TL;DR. `.\build.ps1` remains the way to *package* the plugin - it stamps
-  the commit and prints the DLL path - but it is no longer the only way to compile it.
+- **The plugin is built by `dotnet build` and by `dotnet test`.** It is not the only
+  project needing a game install - Persistence and Session carry their own
+  `Il2CppInterop.Runtime` reference - and all three resolve the install through
+  `Directory.Build.props` (see `provision-refs.ps1` below for the order). `dotnet test`
+  reaches the plugin through the build-order reference described in the TL;DR.
+  `.\build.ps1` is the way to *package* the plugin - it stamps the commit and prints the
+  DLL path - not the only way to compile it.
 - **The `tools\` projects are included**, even though none of them is part of the plugin,
   so that a repo-root build keeps the whole repo compiling rather than most of it. Each is
   a standalone console app; run one with `dotnet run --project tools\<name> -- --help`.
@@ -105,8 +100,7 @@ Resolution order:
 
 **Step 3 is not a source, it is an optimization over the ones around it.** Steps 1 and 2
 cost nothing to read, discovery does, so the cache goes between them: consulted after
-discovery it would save nothing, and discovery rewrites it on the way out, which is what
-used to make an install named once stick for zero later builds.
+discovery it would save nothing, since discovery rewrites it on the way out.
 
 Among the sources, the live Steam install beats the repo copy - it is the one that gets
 patched and re-run as the game updates, so its interop assemblies match the game you are
@@ -156,11 +150,10 @@ source it was built from, and cannot be paired with the wrong commit by copying 
 around. `.dirty` means the tree differed from that commit **in a way the build could
 see**: any change to a tracked file, or an untracked file under `src\`, `tools\`, or one
 of the root build inputs (`*.slnx`, `Directory.Build.*`). An untracked `.cs` under `src\`
-is compiled like any other, so a tree holding one is not the commit it claims - but a
-stray `debug.log` at the root is not, and used to set the flag on every build of an
-otherwise clean checkout, which is worth nothing to read. The build prints what made it
-dirty, and names untracked files it deliberately did not count. A build with no `git`
-available is stamped with nothing and says so.
+is compiled like any other, so a tree holding one is not the commit it claims - but a stray
+`debug.log` at the root is not, and must not flag every otherwise clean checkout. The build
+prints what made it dirty, and names untracked files it deliberately did not count. A build
+with no `git` available is stamped with nothing and says so.
 
 ### `deploy.ps1`
 
@@ -180,13 +173,11 @@ What it does:
 3. prints the exact directory it is about to write to
 4. replaces the previous build in `<game>\BepInEx\plugins\GlobalConversationTracker`:
    one `GlobalConversationTracker.dll` and nothing else, the mod's own layers being
-   compiled into it. The `.pdb` is **not** installed - debugging symbols describe the
-   machine that built them and do nothing in a player's game folder - so a stack trace in
-   a deployed build carries no line numbers, and the commit stamped inside the DLL is what
-   ties one back to its source. Written and deleted are the same set,
-   `GlobalConversationTracker*.dll`, which is what makes it safe to delete files rather
-   than the folder; the price is that a `.pdb` an older build installed stays where it is,
-   on the few development installs that have one. Anything else in that folder - the
+   compiled into it. The `.pdb` is **not** installed, so a stack trace in a deployed build
+   carries no line numbers and the commit stamped inside the DLL is what ties one back to
+   its source. Written and deleted are the same set, `GlobalConversationTracker*.dll`,
+   which is what makes it safe to delete files rather than the folder; the price is that a
+   `.pdb` an older build installed stays where it is. Anything else in that folder - the
    optional hand-placed `articy_ids_final_cut.json` above all - survives a redeploy.
 5. prints the log path and the line to look for
 
@@ -195,9 +186,9 @@ auto-discovered Steam copy. It only stops and asks when all three come up empty,
 no override was given *and* no Steam install was found.
 
 What actually keeps a stray deploy from doing damage is the guards, not the absence of a
-default: the resolved target is printed before anything is written, the repo's
-`Steam Install - *` reference copy is refused outright (`-AllowReferenceCopy` overrides),
-a copy without BepInEx is rejected because the plugin could never load there, and the only
+default: the resolved target is printed before anything is written, any path under
+`.game_reference_copies` is refused outright (`-AllowReferenceCopy` overrides), a copy
+without BepInEx is rejected because the plugin could never load there, and the only
 directory created or deleted is `<game>\BepInEx\plugins\GlobalConversationTracker`.
 Uninstalling is deleting that one folder, so there is no uninstaller script to run.
 
@@ -241,11 +232,9 @@ Four things about it are worth knowing:
   the end-to-end install check, not just editing three lines.
 - **BepInEx's archive ships whole**, with one file renamed: `changelog.txt` goes in as
   `BepInEx-changelog.txt`, because at the root of a game folder the bare name says nothing
-  about whose it is. It was left out entirely until 2026-08-26, on the belief that the game
-  ships one of its own there. It does not: a pristine depot download has no `changelog.txt`,
-  and the one in both modded copies here was byte-identical to BepInEx's. `winhttp.dll`,
-  `doorstop_config.ini`, `.doorstop_version` and `dotnet\` are BepInEx's too, for the same
-  reason - none of them appear in a copy straight from Steam.
+  about whose it is. Nothing collides with a file the game ships - `changelog.txt`,
+  `winhttp.dll`, `doorstop_config.ini`, `.doorstop_version` and `dotnet\` are all BepInEx's,
+  and none of them appear in a copy straight from Steam.
 - **Both archives carry a licence, and the bundle carries three files about licensing.**
   Ours (`GlobalConversationTracker-LICENSE.txt`, MIT) ships in both, because a DLL in
   somebody's game folder is a distribution and MIT asks the notice to travel with it.
@@ -264,9 +253,6 @@ Four things about it are worth knowing:
   BepInEx's generated data unless `-RemoveBepInExData`.
 
 `-PluginOnly` skips the bundle (and its download); `-BundleOnly` emits only the bundle.
-Redistributing BepInEx is what `GlobalConversationTracker-THIRD-PARTY.txt` covers: it names
-the build, its commit, the URL and the hash, and carries the LGPL-2.1 text fetched from that
-same commit.
 
 ### `capture-log.ps1`
 
@@ -330,11 +316,11 @@ auto-discovered Steam copy - the same playable copy `deploy.ps1` writes to.
                   -NewName ApplyRawBytes-Hook-06-skip4tables.log
 ```
 
-A generated name says nothing about the run it documents, so renaming one is the natural
-thing to do - and renaming the `.log` by hand leaves `<old name>.log.capture.json` behind,
-describing a file that is no longer there. `-Rename` moves both, rewrites the manifest's
-`copy` to where the copy now is, and keeps the old path in `renamedFrom`. It refuses to
-overwrite an existing name, and it needs no game folder, no log and no running process.
+A generated name says nothing about the run it documents, and renaming the `.log` by hand
+leaves `<old name>.log.capture.json` behind, describing a file that is no longer there.
+`-Rename` moves both, rewrites the manifest's `copy` to where the copy now is, and keeps
+the old path in `renamedFrom`. It refuses to overwrite an existing name, and needs no game
+folder, no log and no running process.
 
 A capture is paired with its manifest **by name** - `<log>.capture.json` beside `<log>` -
 and that is the pairing to rely on. `copy` is where the copy was when the manifest was
@@ -394,20 +380,13 @@ So the csproj keeps resolving `DiscoElysiumDir` itself (see its `PropertyGroup` 
 competing with it: it decides *which* install, checks the DLLs are there, and hands the
 path to MSBuild.
 
-### No all-in-one archive bundling BepInEx
+### `deploy.ps1` installs files, it does not extract an archive
 
-For a Mono game it is friendly to ship "BepInEx + plugin + uninstaller, extract and go".
-For BepInEx 6 IL2CPP it is not: the archive would be far heavier, architecture-specific,
-and still useless until the player runs the game once to generate their own interop
-assemblies. Both game copies on this machine already have a working BepInEx (deployed by
-Vortex). So the release is a plugin-only zip, and the README points at BepInEx's own
-install instructions.
-
-The knock-on effect on `deploy.ps1`: with no bundle to extract, it installs the payload
-files directly, and there is deliberately no dormant extract-an-archive path waiting for
-one. It still starts from a known state, clearing the previous build's
-`GlobalConversationTracker*` files out of `<game>\BepInEx\plugins\GlobalConversationTracker\`
-before copying, and it never touches anything above that folder.
+The all-in-one bundle is a release artefact only; `deploy.ps1` copies the payload files
+straight in, with no dormant extract-an-archive path. It starts from a known state,
+clearing the previous build's `GlobalConversationTracker*` files out of
+`<game>\BepInEx\plugins\GlobalConversationTracker\` before copying, and never touches
+anything above that folder.
 
 ### Build output layout
 
