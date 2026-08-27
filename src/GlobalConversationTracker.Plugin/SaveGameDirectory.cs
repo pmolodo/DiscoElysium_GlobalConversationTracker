@@ -11,14 +11,11 @@ namespace GlobalConversationTracker
     /// global state file lives.
     /// </summary>
     /// <remarks>
-    /// Both calls were verified callable from a BepInEx 6 IL2CPP plugin against
-    /// this game build's own interop assemblies.
-    /// <c>SunshinePersistenceFileManager.GetSaveGameDirectoryPath()</c> is literally
-    /// what the game runs (<c>Application.persistentDataPath + "/SaveGames/"</c>),
-    /// so it is preferred; it is also coupled to the Assembly-CSharp interop shape,
-    /// which is regenerated per game build and would break on a rename, hence the
-    /// fallback. Nothing here is Windows-only: Unity maps persistentDataPath to the
-    /// platform's own location.
+    /// <c>SunshinePersistenceFileManager.GetSaveGameDirectoryPath()</c> is what the
+    /// game itself runs (<c>Application.persistentDataPath + "/SaveGames/"</c>), so it
+    /// is preferred - but it is coupled to the Assembly-CSharp interop shape, which is
+    /// regenerated per game build and would break on a rename, hence the fallback. Not
+    /// Windows-only: Unity maps persistentDataPath to the platform's own location.
     /// </remarks>
     internal static class SaveGameDirectory
     {
