@@ -9,34 +9,29 @@ namespace GlobalConversationTracker.Persistence
     /// Reads the conversation titles out of a savegame's <c>{save}.states.lua</c>.
     /// </summary>
     /// <remarks>
-    /// <para><b>Why a text parser and not the game's own table.</b> Unlike dialogue
-    /// SimStatus, which arrives as bytes for <c>PersistentDataManager.ApplyRawData</c>
-    /// and can be intercepted there, orbs are saved as a Lua <em>script</em> the game
-    /// simply executes. The text is what the mod can get hold of safely: a plain
-    /// <c>string</c> crossing the IL2CPP boundary, parsed here in ordinary C# that can
-    /// be tested against real save files, rather than an interop enumeration of a live
-    /// Lua table that could only ever be tested by running the game. It also removes an
-    /// ordering hazard: the text is the whole answer whether or not the game has
-    /// executed it yet, so there is no "was the table populated by now" question to get
-    /// wrong.</para>
+    /// <para>A text parser, not the game's own table. Orbs are saved as a Lua
+    /// <em>script</em> the game executes, so unlike dialogue SimStatus there are no
+    /// bytes to intercept. The text crosses the IL2CPP boundary as a plain
+    /// <c>string</c> and is parsed here in ordinary C# testable against real save
+    /// files. It also removes an ordering hazard: the text is the whole answer whether
+    /// or not the game has executed it yet.</para>
     ///
-    /// <para><b>The format is generated, not authored.</b> Every row is written by
-    /// <c>SunshinePersistenceLua.AppendPropertiesToLuaTable</c> as
+    /// <para>The format is generated, not authored.
+    /// <c>SunshinePersistenceLua.AppendPropertiesToLuaTable</c> writes every row as
     /// <c>{table}[{key}]={fields};\n</c>, with the key run through
     /// <c>LuaHelper.FormatLuaValue</c>, which wraps a string in plain double quotes and
-    /// escapes nothing. So a row looks exactly like:</para>
+    /// escapes nothing:</para>
     /// <code>ShownOrbs["WHIRLING F2 ORB / locked door"]={OrbSeen=1};</code>
-    /// <para>No conversation title used by an orb contains a double quote - which is
-    /// just as well, since the game's own writer would produce broken Lua if one did -
-    /// so the closing <c>"]=</c> is an unambiguous terminator.</para>
+    /// <para>No orb's conversation title contains a double quote - the game's own writer
+    /// would produce broken Lua if one did - so the closing <c>"]=</c> is an unambiguous
+    /// terminator.</para>
     ///
-    /// <para><b>Only <c>OrbSeen=1</c> counts.</b> Nothing in the game writes any other
-    /// value - <c>SenseOrb.SetShown</c> writes the literal 1 and there is no unsetter -
-    /// so requiring it costs nothing today and means a row that ever did say otherwise
-    /// would be ignored rather than counted.</para>
+    /// <para>Only <c>OrbSeen=1</c> counts: <c>SenseOrb.SetShown</c> writes the literal 1
+    /// and there is no unsetter, so requiring it costs nothing and means a row saying
+    /// anything else would be ignored rather than counted.</para>
     ///
-    /// <para>Rows of other tables in the same file - <c>AreaState</c> is the other one -
-    /// are ignored, and so is anything that does not match.</para>
+    /// <para>Rows of other tables in the same file (<c>AreaState</c>) are ignored, as is
+    /// anything that does not match.</para>
     /// </remarks>
     public static class ShownOrbsParser
     {
