@@ -161,10 +161,9 @@ The everyday target is the playable Steam copy, usually
 neither `-GameDir` nor `DISCO_ELYSIUM_DEPLOY_DIR` names one.
 
 The read-only reference copies under `.game_reference_copies` are not deploy targets.
-`deploy.ps1` refuses any path under that folder, and any path carrying a
-`Steam Install - *` segment, unless `-AllowReferenceCopy` is given. A copy to build
-*against* is a separate question from a copy to install *into* - see `-DiscoElysiumDir`
-versus `-GameDir` in [DEVELOPING.md](../../DEVELOPING.md).
+`deploy.ps1` refuses any path under that folder unless `-AllowReferenceCopy` is given. A
+copy to build *against* is a separate question from a copy to install *into* - see
+`-DiscoElysiumDir` versus `-GameDir` in [DEVELOPING.md](../../DEVELOPING.md).
 
 Steps:
 
