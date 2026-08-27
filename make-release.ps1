@@ -17,10 +17,9 @@
         GlobalConversationTracker-README.md
 
     That is one DLL: the mod's own layers (Core, Persistence, Session) are
-    compiled into the plugin assembly, so nothing has to be installed beside it,
-    and the .pdb is left out of the archive because debugging symbols are of no
-    use in a player's install. This archive assumes the player already has a working
-    BepInEx 6 IL2CPP install - which is every developer, and almost no player.
+    compiled into the plugin assembly, and the .pdb is left out. This archive
+    assumes a working BepInEx 6 IL2CPP install already exists - which is every
+    developer, and almost no player.
 
     Then, unless -PluginOnly says otherwise, a second archive for the players who
     do not:
@@ -34,33 +33,28 @@
     section at the top of build-support.psm1 for what is pinned and why.
 
     What the bundle cannot ship is the IL2CPP interop assemblies under
-    BepInEx\interop: they are generated from the player's own copy of the game
-    on first launch and are specific to that build. That is not a gap - BepInEx
-    writes them the first time the game runs, which is why the first launch
-    after installing is a slow one.
+    BepInEx\interop: they are generated from the player's own copy of the game on
+    first launch. That is why the first launch after installing is a slow one.
 
 .PARAMETER Configuration
-    The MSBuild configuration that gets built and then packaged; "Release"
-    unless given, and there is rarely a reason to ship anything else. Note that
-    the archive is named from the csproj's <Version> alone, so a zip built from
+    The MSBuild configuration built and then packaged; "Release" unless given.
+    The archive is named from the csproj's <Version> alone, so a zip built from
     another configuration is indistinguishable by its file name.
 
 .PARAMETER DiscoElysiumDir
     Game install to read the build's reference assemblies from, overriding
     provision-refs.ps1's usual resolution order (DISCO_ELYSIUM_DIR, the
     repo-local reference copy, the cached previous answer, Steam discovery). It
-    must already have BepInEx\core and BepInEx\interop, and a path that does not
-    is an error rather than a reason to fall back. Leaving it off is what asks
-    for that resolution order, ending in the auto-discovered Steam copy. It
-    affects only what the
-    build compiles against and never appears in the archive: the game and
-    BepInEx assemblies are referenced with Private="false", so nothing from that
-    install is packaged.
+    must already have BepInEx\core and BepInEx\interop; a path that does not is
+    an error rather than a reason to fall back. Nothing from that install is
+    packaged: the game and BepInEx assemblies are referenced with
+    Private="false".
+
 .PARAMETER PluginOnly
     Skip the all-in-one archive and emit only the plugin zip. Useful when
     iterating on packaging, or on a machine that cannot reach
-    builds.bepinex.dev; the BepInEx download is cached per machine, so the cost
-    it avoids is a one-off 34 MB rather than a per-release one.
+    builds.bepinex.dev; the BepInEx download is cached per machine, so this
+    avoids a one-off 34 MB rather than a per-release cost.
 
 .PARAMETER BundleOnly
     The other way round: emit only the all-in-one archive.
@@ -75,13 +69,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Build helpers + shared project config (Invoke-PluginBuild, Copy-PluginPayload,
-# Get-PluginVersion, ...). A module, not a dot-sourced script, so that its own
-# names cannot land in this script's scope and overwrite the parameters above -
-# see the header of build-support.psm1.
-# -DisableNameChecking: Assert-NotReferenceCopy uses a verb PowerShell does not
-# have on its approved list, and the name says what it does better than any
-# approved verb would.
+# A module, not a dot-sourced script, so its names cannot land in this scope and
+# overwrite the parameters above. -DisableNameChecking: Assert-NotReferenceCopy
+# uses a verb that is not on PowerShell's approved list.
 Import-Module (Join-Path $PSScriptRoot "build-support.psm1") -Force -DisableNameChecking
 
 # Shipped alongside the DLL, renamed so it is obvious which mod it documents
@@ -127,9 +117,8 @@ Copy-PluginLicense -StageDir $stageDir
 
 # --- Zip ----------------------------------------------------------------------
 # Both file operations go through Invoke-WithFileRetry: replacing an archive
-# that was written moments ago is exactly when a virus scanner or an Explorer
-# preview still has it open, and that is worth a retry and a sentence rather
-# than a raw .NET lock error at the end of an otherwise successful run.
+# written moments ago is exactly when a virus scanner or Explorer preview still
+# has it open.
 New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
 $zipPath = Join-Path $DistDir "$AssemblyName-v$version.zip"
 try {
