@@ -16,8 +16,7 @@
     Which version to fetch is the first argument, and there is no default:
 
         latest          the current public build, whatever it is today
-        pre-final-cut   the last build before The Final Cut, pinned to the
-                        manifest depot_download_pre-final-cut.bat used to fetch
+        pre-final-cut   the last build before The Final Cut, at a pinned manifest
 
     It lands in a folder named after the version it is:
 
@@ -42,23 +41,18 @@
 
 .PARAMETER Username
     The Steam account to download as. Required - PowerShell prompts for it if it
-    is left off, including on a -DryRun, because a run that names no account
-    cannot do the one thing this script is for. Steam will not serve depot
-    content to an account without a licence for the game, and an anonymous login
-    is refused outright, so there is no useful default to fall back to.
+    is left off, including on a -DryRun. Steam will not serve depot content to an
+    account without a licence for the game, and an anonymous login is refused, so
+    there is no useful default.
 
-    With -QrLogin the account is really chosen by whichever account scans the
-    code; give the same one here so the run says who it fetched as.
+    With -QrLogin the account is chosen by whichever account scans the code; give
+    the same one here so the run says who it fetched as.
 
-    The first run is interactive - Steam asks for the password and, if the
-    account has Steam Guard, a code. -remember-password is passed for you, so
-    DepotDownloader caches the credentials and later runs need no typing. If you
-    would rather not cache anything, run the depotdownloader command this script
-    prints by hand.
-
-    Interactive means interactive: it reads from the terminal, so it cannot be
-    run from something that has no keyboard attached to it. -QrLogin is the
-    gentler version if you have the Steam mobile app.
+    The first run is interactive - Steam asks for the password and, with Steam
+    Guard, a code. -remember-password is passed for you, so DepotDownloader
+    caches the credentials and later runs need no typing; to cache nothing, run
+    the depotdownloader command this script prints by hand. Interactive means it
+    reads from the terminal, so it needs a keyboard attached.
 
 .PARAMETER QrLogin
     Log in by scanning a QR code with the Steam mobile app instead of typing a
@@ -84,14 +78,12 @@
     latest` reads the way it sounds.
 
         latest         - the branch's current build, resolved fresh every run.
-        pre-final-cut  - manifest 3499130543868275315, built 2021-02-11: the
-                         last content before The Final Cut landed on 2021-03-30.
-                         This is what depot_download_pre-final-cut.bat fetched
-                         before it was folded into this script.
+        pre-final-cut  - manifest 3499130543868275315, built 2021-02-11: the last
+                         content before The Final Cut landed on 2021-03-30.
 
     A version worth keeping gets an entry in $Editions rather than a manifest id
-    typed on a command line, so that the next person to want it finds a name, a
-    date and a reason instead of a number in someone's shell history.
+    typed on a command line, so the next person finds a name, a date and a reason
+    instead of a number in someone's shell history.
 
 .PARAMETER OutputRoot
     Where the version folder is created. Defaults to .game_reference_copies
@@ -144,25 +136,22 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Where the version metadata comes from. This is a public mirror of what
-# `steamcmd +app_info_print` returns, and the reason to use it is that it needs
-# no login: the folder can be named before anyone types a password, and -DryRun
-# works on a machine with no Steam account at all. If it is ever unreachable,
-# the same three values - buildid, timeupdated and the depot's public manifest
-# gid - are on SteamDB's page for the app, and can be passed to -Manifest by
-# hand.
+# A public mirror of what `steamcmd +app_info_print` returns, used because it
+# needs no login: the folder can be named before anyone types a password, and
+# -DryRun works on a machine with no Steam account. If it is unreachable, the
+# same three values - buildid, timeupdated and the depot's public manifest gid -
+# are on SteamDB's page for the app.
 $AppInfoUrlFormat = "https://api.steamcmd.net/v1/info/{0}"
 
 # The versions worth naming. A pinned entry carries its own date, because the
 # branch metadata describes the branch's CURRENT build and says nothing about an
 # older manifest.
 #
-# pre-final-cut is what depot_download_pre-final-cut.bat fetched before it was
-# folded into this script, manifest and all. Its date is the manifest's own
-# creation time, read with `depotdownloader -manifest-only`, which reports
-# "Manifest 3499130543868275315 (02/11/2021 14:16:38)" - 2021-02-11, seven weeks
-# before The Final Cut released on 2021-03-30, which is the sanity check that
-# says the American date order was read the right way round.
+# pre-final-cut's date is the manifest's own creation time, read with
+# `depotdownloader -manifest-only`: "Manifest 3499130543868275315 (02/11/2021
+# 14:16:38)" - 2021-02-11, seven weeks before The Final Cut released on
+# 2021-03-30, which is the check that the American date order was read the right
+# way round.
 $Editions = @{
     "latest"        = @{
         Manifest = $null
@@ -251,12 +240,10 @@ Install it with:
     $wentPublic = ConvertFrom-UnixSeconds $branchInfo.timeupdated
     $buildMade = ConvertFrom-UnixSeconds $branchInfo.timebuildupdated
 
-    # Dated by when the build was MADE rather than when it went public, because
-    # that is the one definition both editions can answer: it is baked into the
-    # manifest itself, where a pinned edition's date comes from. Verified to
-    # agree - the manifest reports 06/30/2026 09:25:22 and the branch reports
-    # timebuildupdated 09:25:53, half a minute apart. When it went public is in
-    # steam-download.json, not lost.
+    # Dated by when the build was MADE rather than when it went public: that is
+    # the one definition both editions can answer, since it is baked into the
+    # manifest a pinned edition's date comes from. When it went public is
+    # recorded in steam-download.json.
     $versionDate = if ($pinned.Date) { $pinned.Date }
     elseif ($isCurrent -and $buildMade) { $buildMade.ToString("yyyy-MM-dd") }
     else { "unknown-date" }
