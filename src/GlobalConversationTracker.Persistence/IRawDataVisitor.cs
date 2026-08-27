@@ -3,23 +3,20 @@ namespace GlobalConversationTracker.Persistence;
 
 /// <summary>
 /// Receives the structure of a .ntwtf.lua raw-data blob as
-/// <see cref="RawDataParser"/> walks it, and decides how much of it to actually
-/// decode.
-///
-/// The parser owns the cursor: it consumes every marker, count and length prefix
-/// itself, because that is the only thing that says where a value ends. A visitor
-/// never advances the cursor. It reads what it wants through the parser's Peek
-/// methods and ignores the rest, so a visitor that cares about one table pays only
-/// the walk for the other four.
-///
-/// Every method has a do-nothing default, so a visitor implements only the
-/// callbacks it needs. That also means calls must be made through this interface
-/// rather than through a concrete visitor type, which is how the parser holds it.
+/// <see cref="RawDataParser"/> walks it, and decides how much of it to decode.
 /// </summary>
 /// <remarks>
-/// The parser is passed by reference to every callback. It is a ref struct, so a
-/// visitor cannot keep one in a field; taking it as a parameter is what lets the
-/// visitor peek at the value it is being told about.
+/// <para>The parser owns the cursor - it consumes every marker, count and length
+/// prefix, since that is the only thing that says where a value ends. A visitor never
+/// advances it, reading what it wants through the Peek methods and ignoring the rest,
+/// so a visitor that cares about one table pays only the walk for the other four.</para>
+///
+/// <para>Every method has a do-nothing default, so a visitor implements only the
+/// callbacks it needs - which also means calls must go through this interface rather
+/// than a concrete visitor type, and is how the parser holds it.</para>
+///
+/// <para>The parser is passed by reference to every callback: it is a ref struct, so a
+/// visitor cannot keep one in a field.</para>
 /// </remarks>
 public interface IRawDataVisitor
 {
