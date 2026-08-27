@@ -28,11 +28,10 @@ namespace GlobalConversationTracker.Session
         BackupFile = 2,
 
         /// <summary>
-        /// Nothing usable was on disk, so the state started empty. A first run, or a
-        /// run after both generations were lost. Not a failure and not transient:
-        /// the state fills up from the write-through hook as the game is played and
-        /// from <see cref="GlobalStateSession.ResyncFromSaveRawBytes"/> on every savegame
-        /// load, which is what recovers history the lost file used to hold.
+        /// Nothing usable was on disk, so the state started empty: a first run, or a run
+        /// after both generations were lost. Not a failure - the state fills from the
+        /// write-through hook as the game is played, and from
+        /// <see cref="GlobalStateSession.ResyncFromSaveRawBytes"/> on every savegame load.
         /// </summary>
         NoStateOnDisk = 3,
 
