@@ -4,18 +4,16 @@
 
     A MODULE, deliberately, and not a dot-sourced .ps1. PowerShell runs a
     dot-sourced script's param() block in the CALLER's scope, so a shared script
-    declaring -DiscoElysiumDir or -Configuration silently resets its caller's
-    copy of that parameter to the default before the caller ever reads it.
-    Import-Module has no such scope leak - a module's contents are never
-    executed in the importer's scope - so keeping every shared name in here
-    makes that whole class of bug impossible.
+    declaring -DiscoElysiumDir or -Configuration would silently reset its
+    caller's copy of that parameter to the default. A module's contents are never
+    executed in the importer's scope, so keeping every shared name here makes
+    that class of bug impossible.
 
     Each root script therefore stays a self-contained entry point: its own
-    param() block, this module imported, its own main flow. None of them
-    dot-source another, and nothing that a script imports declares parameters.
+    param() block, this module imported, its own main flow.
 
     Exports every function below plus every constant defined in the
-    configuration section (see the Export-ModuleMember call at the bottom).
+    configuration section (see Export-ModuleMember at the bottom).
 #>
 
 $ErrorActionPreference = "Stop"
@@ -48,12 +46,11 @@ $BinDir = Join-Path $BuildDir "bin\$AssemblyName.Plugin"
 
 # Caches the resolved reference install, so repeat builds skip Steam discovery.
 #
-# Per-user and OUTSIDE the repo, which is the point: a git worktree contains
-# none of the untracked reference material, and its own .build\ is empty, so a
-# cache kept in the repo could never answer the question there. One
-# cache per machine answers it for every checkout on that machine, and
-# Directory.Build.props reads this same file, so a bare 'dotnet build' resolves
-# an install without going through these scripts at all.
+# Per-user and OUTSIDE the repo, which is the point: a git worktree contains none
+# of the untracked reference material and its own .build\ is empty, so a cache
+# kept in the repo could never answer the question there. One cache per machine
+# answers it for every checkout, and Directory.Build.props reads the same file,
+# so a bare 'dotnet build' resolves an install without these scripts.
 $CacheDir = Join-Path $env:LOCALAPPDATA $AssemblyName
 $RefDirCacheFile = Join-Path $CacheDir "reference-game-dir.txt"
 
@@ -118,27 +115,17 @@ $BepInExLicenseUrl = $BepInExPin["BepInExLicenseUrl"]
 $BepInExCacheDir = $BepInExPin["BepInExCacheDir"].TrimEnd("\")
 $BepInExUnpackedDir = $BepInExPin["BepInExUnpackedDir"].TrimEnd("\")
 
-# Entries of the BepInEx archive that must not be shipped. Empty, and kept
-# because the question is worth answering once in writing rather than twice by
-# guess.
-#
-# changelog.txt was excluded here until 2026-08-26 on the belief that the game
-# ships one at the root of its folder and BepInEx's would overwrite it. It does
-# not. A pristine depot download of build 23980936 has no changelog.txt at all,
-# and the changelog.txt in both modded copies on this machine is byte-identical
-# to the one in BepInEx's archive - same SHA256, same 7558 bytes - so that file
-# was BepInEx's the whole time. Same story for winhttp.dll, doorstop_config.ini
-# and the dotnet\ folder: absent from the pristine copy, all three BepInEx's.
-#
-# So the bundle ships BepInEx's archive whole. If something ever does have to be
-# left out, add it here and say what it would have collided with.
+# Entries of the BepInEx archive that must not be shipped. Empty: nothing in the
+# archive collides with a file the game ships - a pristine depot download has no
+# changelog.txt, winhttp.dll, doorstop_config.ini or dotnet\ folder, so all four
+# are BepInEx's. The bundle therefore ships the archive whole. If something ever
+# does have to be left out, add it here and say what it would have collided with.
 $BepInExZipExcludes = @()
 
 # Entries RENAMED on the way into the bundle.
 #
 # changelog.txt is BepInEx's own build changelog, and at the root of a game
-# folder that bare name says nothing about whose it is - which is the same
-# confusion that nearly had it excluded outright. Prefixing it is what the
+# folder that bare name says nothing about whose it is. Prefixing it is what the
 # ViewSelected mod does with the same file, and it lets a player see at a glance
 # which files arrived with this bundle.
 $BepInExZipRenames = @{
@@ -154,12 +141,8 @@ $ThirdPartyNoticeName = "$AssemblyName-THIRD-PARTY-NOTICES.txt"
 $UninstallerSource = Join-Path $RepoRoot "packaging\$UninstallerName"
 
 # This project's own licence, and the name it takes inside a release archive.
-#
-# Shipped in BOTH archives, not just kept in the repository. MIT asks that the
-# notice travel with the software, and a DLL sitting in somebody's game folder
-# is a distribution: whoever holds it should be able to read the terms without
-# going to find the source. The plugin-only zip carries it for exactly the same
-# reason the all-in-one does.
+# Shipped in BOTH archives: MIT asks that the notice travel with the software,
+# and a DLL in somebody's game folder is a distribution.
 $LicenseSource = Join-Path $RepoRoot "LICENSE"
 $LicenseReleaseName = "$AssemblyName-LICENSE.txt"
 
@@ -183,19 +166,13 @@ $BepInExConfigRelPath = "BepInEx\config\BepInEx.cfg"
 # One folder per plugin under BepInEx\plugins; this is ours.
 $PluginFolderName = $AssemblyName
 # What an installed payload is made of: $AssemblyName*.dll, and nothing else.
-# The .pdb is not shipped - it is a debugging artefact of the machine that built
-# it, and a player has nothing to do with it. The cost is that a stack trace in
-# a player's log carries no line numbers; the commit stamped inside the DLL says
-# which source those traces belong to, and a local build keeps its .pdb beside
-# it for anyone actually debugging.
+# The .pdb is not shipped; the cost is a player's stack traces carry no line
+# numbers, and the commit stamped inside the DLL says which source they belong to.
 #
-# ONE set, used at both ends: the copy in and the clear out of a previous
-# install (see Get-PluginPayloadFile). That symmetry is the property worth
-# keeping - the files a deploy removes are exactly the files it writes, so
-# neither end can surprise the other. It does mean a .pdb an older build
-# installed is left where it is rather than cleaned up, on the machines that
-# have one. That is accepted: it is a stray file on a handful of development
-# installs, not something a player will ever see.
+# ONE set, used at both ends - the copy in and the clear out of a previous
+# install (see Get-PluginPayloadFile) - so the files a deploy removes are exactly
+# the files it writes. It does mean a .pdb an older build installed is left where
+# it is, on the handful of development installs that have one.
 $PluginPayloadExtensions = @(".dll")
 # Appended to the commit hash the build stamps into the plugin assembly when the
 # tree it was built from differed from that commit in a way the build could see.
@@ -210,11 +187,9 @@ $SharingViolation = 32
 $LockViolation = 33
 
 # Read-only reference material kept in this repo: game copies straight from
-# Steam, AssetRipper exports, decompiler output. Builds must never write into
-# any of it, and deploy refuses to target it unless explicitly forced.
-#
-# The FOLDER is the rule, not a list of names: everything reference-ish lives
-# under .game_reference_copies, so a copy added tomorrow is protected without
+# Steam, AssetRipper exports, decompiler output. Builds must never write into any
+# of it, and deploy refuses to target it unless explicitly forced. The FOLDER is
+# the rule, not a list of names, so a copy added tomorrow is protected without
 # anyone remembering to add it here.
 $GameRefCopiesDirName = ".game_reference_copies"
 $ReferenceCopyDirNames = @($GameRefCopiesDirName)
@@ -467,27 +442,24 @@ function Resolve-ReferenceGameDir {
     # match the game a developer is actually playing. Read-only use, so relying
     # on it is safe.
     #
-    # The cache is NOT one of those sources. It is an optimization over them, so
-    # it goes exactly where the expense begins: after the two free lookups,
-    # ahead of discovery. A memo consulted only once the work it memoizes has
-    # been redone saves nothing - and discovery rewrites the cache on its way
-    # out, so reading it later made -DiscoElysiumDir stick for zero later runs.
+    # The cache is NOT one of those sources but an optimization over them, so it
+    # sits where the expense begins: after the two free lookups, ahead of
+    # discovery. A memo consulted only after the work it memoizes has been redone
+    # saves nothing, and discovery rewrites the cache on its way out.
     #
     # The price is that an install named by hand keeps winning after the game
     # updates, with its interop assemblies quietly ageing: Test-ReferenceGameDir
     # checks the two directories are there, not how old they are. Naming another
     # install, or deleting the cache file, is the way out.
     #
-    # What CANNOT satisfy this is a pristine copy from depot_download.ps1. Those
-    # are the game as Steam ships it, with no BepInEx in them at all, and what
-    # the build needs is BepInEx\core plus the BepInEx\interop assemblies that
-    # only exist once BepInEx has been installed into a copy and the game run
-    # once. Test-ReferenceGameDir is what enforces that, and it is why a folder
-    # full of reference copies is no help here: point this at a playable install.
+    # A pristine copy from depot_download.ps1 CANNOT satisfy this: it is the game
+    # as Steam ships it, with no BepInEx in it, and the build needs BepInEx\core
+    # plus the BepInEx\interop assemblies that only exist once BepInEx has been
+    # installed and the game run once. Point this at a playable install.
     #
-    # Whatever it resolves to is written to the machine-level cache on the way
-    # out, which is what lets a git worktree build at all: Directory.Build.props
-    # reads that same file, and MSBuild cannot discover Steam for itself.
+    # Whatever resolves is written to the machine-level cache on the way out,
+    # which is what lets a git worktree build at all: Directory.Build.props reads
+    # that same file, and MSBuild cannot discover Steam for itself.
     param([string]$DiscoElysiumDir)
 
     if ($DiscoElysiumDir) {
@@ -599,11 +571,10 @@ function Get-SourceRevisionStatus {
     # cannot name its origin.
     #
     # Tracked changes always count. Untracked files count only if they could be
-    # compiled (see Test-BuildAffectingUntracked): an untracked .cs under src\
-    # is compiled like any other, so a tree holding one is not the commit it
-    # would otherwise claim - but a stray file the build never reads is not a
-    # reason to call every build of a clean checkout ".dirty", which is what
-    # used to happen and what made the flag worth nothing.
+    # compiled (see Test-BuildAffectingUntracked): an untracked .cs under src\ is
+    # compiled like any other, so a tree holding one is not the commit it would
+    # otherwise claim - but a stray file the build never reads must not mark every
+    # clean checkout ".dirty", which would make the flag worth nothing.
     try {
         $commit = (& git -C $RepoRoot rev-parse HEAD 2>$null)
         if ($LASTEXITCODE -ne 0 -or -not $commit) { return $null }
@@ -772,19 +743,16 @@ function Invoke-WithFileRetry {
     # file open, retrying a few times before giving up with a message a human
     # can act on.
     #
-    # The case this exists for: a just-written .zip is exactly what an on-access
-    # virus scanner or an Explorer preview handler opens, and it holds the file
-    # for a second or two. Left alone that surfaces as .NET's "The process
-    # cannot access the file ... because it is being used by another process",
-    # which says nothing about what to do and looks like a bug in the packaging.
+    # The case this exists for: a just-written .zip is what an on-access virus
+    # scanner or an Explorer preview handler opens, holding it for a second or
+    # two. Left alone that surfaces as .NET's "being used by another process",
+    # which says nothing about what to do.
     #
-    # Only locking failures are retried. Anything else - a bad path, a full
-    # disk, a permissions problem - is thrown straight away, since retrying it
-    # would only delay the same error. "IOException" is not a good enough test
-    # for that: DirectoryNotFoundException and FileNotFoundException both derive
-    # from it, so the check is on the Win32 code in the low word of HResult -
-    # 32 ERROR_SHARING_VIOLATION, 33 ERROR_LOCK_VIOLATION - which is what a file
-    # held open by another process actually raises.
+    # Only locking failures are retried; anything else is thrown straight away.
+    # "IOException" is not a good enough test - DirectoryNotFoundException and
+    # FileNotFoundException both derive from it - so the check is on the Win32
+    # code in the low word of HResult: 32 ERROR_SHARING_VIOLATION, 33
+    # ERROR_LOCK_VIOLATION.
     param(
         [Parameter(Mandatory = $true)][scriptblock]$Operation,
         [Parameter(Mandatory = $true)][string]$Path,
@@ -1092,11 +1060,10 @@ function Rename-Capture {
     # match the new name, its 'copy' field is rewritten to where the copy now
     # is, and the old name is remembered in 'renamedFrom'.
     #
-    # This exists because renaming a capture by hand is the obvious thing to do
-    # - a log called capture-20260819-162547.log says nothing about the run it
-    # documents - and doing it by hand leaves the manifest behind under the old
-    # name, describing a path that no longer exists. Eight manifests in one
-    # .build\logs folder had already been orphaned that way.
+    # Renaming a capture by hand is the obvious thing to do - a log called
+    # capture-20260819-162547.log says nothing about the run it documents - and
+    # leaves the manifest behind under the old name, describing a path that no
+    # longer exists.
     #
     # Returns the new log path.
     param(
@@ -1215,9 +1182,8 @@ function Invoke-PluginBuild {
     if ($revision) {
         $buildArgs += "-p:SourceRevisionId=$revision"
         Write-Host "Source revision: $revision"
-        # Say WHAT made it dirty, and what was deliberately not counted. A flag
-        # with no explanation behind it is the thing this reporting exists to
-        # stop: nobody can act on ".dirty" alone.
+        # Say WHAT made it dirty, and what was deliberately not counted; nobody
+        # can act on ".dirty" alone.
         foreach ($reason in $status.Reasons) {
             Write-Host "  dirty: $reason"
         }
@@ -1273,10 +1239,8 @@ function Remove-PluginPayload {
     #
     # Selecting by the same predicate Copy-PluginPayload copies by, rather than by
     # the new build's file list, means an assembly a previous build produced and
-    # this one no longer does is still cleared out - the separate
-    # Core/Persistence/Session DLLs, for one. A .pdb from before the payload
-    # narrowed to the DLL alone is the deliberate exception, and stays where it
-    # is.
+    # this one no longer does is still cleared out. A .pdb is the deliberate
+    # exception - see $PluginPayloadExtensions.
     param([Parameter(Mandatory = $true)][string]$DestDir)
     $files = @(Get-PluginPayloadFile -Directory $DestDir)
     foreach ($file in $files) {
@@ -1291,17 +1255,14 @@ function Copy-PluginPayload {
     # if needed. Shared by deploy.ps1 and make-release.ps1 so an installed copy and
     # a packaged copy always hold the same files.
     #
-    # That is the plugin DLL and nothing else. It is the only assembly there is -
-    # the mod's own layers are compiled into it (see the plugin csproj) - and the
-    # .pdb beside it in the build output is deliberately left there: debugging
-    # symbols describe the machine that built them and are of no use in a player's
-    # install. The separate Core/Persistence/Session DLLs an older build put in
-    # that folder still match the predicate and are cleared out on the next
-    # deploy; a .pdb from one no longer does, and is left alone.
+    # That is the plugin DLL and nothing else: it is the only assembly there is,
+    # since the mod's own layers are compiled into it (see the plugin csproj), and
+    # the .pdb beside it in the build output is left there - see
+    # $PluginPayloadExtensions.
     #
-    # Only $AssemblyName* is copied: the game and BepInEx reference assemblies are
-    # referenced with Private="false" and are not in the build output at all, so
-    # there is nothing here that could drag a copy of the game's own DLLs along.
+    # Only $AssemblyName* is copied, though the game and BepInEx reference
+    # assemblies are referenced with Private="false" and are not in the build
+    # output at all, so nothing here could drag the game's own DLLs along.
     param(
         [Parameter(Mandatory = $true)][string]$DllPath,
         [Parameter(Mandatory = $true)][string]$DestDir
