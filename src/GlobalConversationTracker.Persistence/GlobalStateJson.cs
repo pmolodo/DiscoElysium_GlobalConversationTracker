@@ -17,31 +17,23 @@ namespace GlobalConversationTracker.Persistence
     /// <code>
     /// {"version":1,"conversations":{"3":{"17":"WasDisplayed","18":"WasOffered"}}}
     /// </code>
-    /// <para>
-    /// JSON object keys must be strings, so the integer conversation and dialogue
-    /// entry IDs are written as invariant decimal strings. Statuses are written as
-    /// the game's own strings rather than enum integers, so the file is
-    /// self-describing and immune to the enum being renumbered.
-    /// </para>
-    /// <para>
-    /// <see cref="SimStatus.Untouched"/> is never written: the state never stores it,
-    /// and an absent conversation or entry already reads back as Untouched. A real
-    /// save therefore holds roughly a thousand entries, not the ~113,000 the game
-    /// tracks (in one real save: 111,467 Untouched, 142 WasOffered, 1,331
-    /// WasDisplayed).
-    /// </para>
-    /// <para>
-    /// Output is UTF-8 with no BOM, unindented, and deterministic: entries are
-    /// written in conversation-ID then entry-ID order, so two saves of equal states
-    /// produce byte-identical files.
-    /// </para>
-    /// <para>
-    /// On load, every row goes back through
-    /// <see cref="GlobalConversationState.TryMerge"/>. Nothing here ever assigns a
-    /// status, so a hand-edited or partly damaged file cannot lower a status, and an
-    /// unrecognized status string is skipped and reported rather than taking the
-    /// whole load down.
-    /// </para>
+    /// <para>JSON object keys must be strings, so the integer IDs are written as
+    /// invariant decimal strings. Statuses are written as the game's own strings rather
+    /// than enum integers, so the file is self-describing and immune to the enum being
+    /// renumbered.</para>
+    ///
+    /// <para><see cref="SimStatus.Untouched"/> is never written: the state never stores
+    /// it, and an absent conversation or entry reads back as Untouched. A real save
+    /// therefore holds roughly a thousand entries, not the ~113,000 the game tracks.</para>
+    ///
+    /// <para>Output is UTF-8 with no BOM, unindented, and deterministic: entries in
+    /// conversation-ID then entry-ID order, so two saves of equal states produce
+    /// byte-identical files.</para>
+    ///
+    /// <para>On load, every row goes back through
+    /// <see cref="GlobalConversationState.TryMerge"/>. Nothing here assigns a status, so
+    /// a hand-edited or partly damaged file cannot lower one, and an unrecognized status
+    /// string is skipped and reported rather than taking the load down.</para>
     /// </remarks>
     public static class GlobalStateJson
     {
@@ -121,9 +113,8 @@ namespace GlobalConversationTracker.Persistence
 
                 writer.WriteEndObject();
 
-                // Always written, even when empty, so a file's own shape says which
-                // version wrote it rather than leaving "no orbs" and "orbs not supported"
-                // looking identical.
+                // Always written, even when empty, so "no orbs" and "orbs not supported"
+                // do not look identical.
                 writer.WritePropertyName(OrbsPropertyName);
                 writer.WriteStartArray();
                 foreach (string title in state.EnumerateOrbs())
@@ -227,13 +218,11 @@ namespace GlobalConversationTracker.Persistence
                     $"File format version {version} is newer than this build, which writes version {FormatVersion}.");
             }
 
-            // Older versions are read, not rejected. Every version so far has only ever
-            // ADDED an optional root property, so an old file is a new file with those
-            // properties absent, and the readers below already treat absent as empty.
-            // Rejecting them instead would be the worse failure by far: the caller turns
-            // UnsupportedVersion into "refuse to save", so treating a user's own older
-            // file as unreadable would silently stop tracking on every existing install
-            // the first time this constant was bumped.
+            // Older versions are read, not rejected. Each version so far has only ADDED
+            // an optional root property, so an old file is a new file with those absent,
+            // and the readers below treat absent as empty. Rejecting them would turn into
+            // "refuse to save" at the caller, silently stopping tracking on every
+            // existing install the first time this constant was bumped.
 
             if (!root.TryGetProperty(ConversationsPropertyName, out JsonElement conversations))
             {
