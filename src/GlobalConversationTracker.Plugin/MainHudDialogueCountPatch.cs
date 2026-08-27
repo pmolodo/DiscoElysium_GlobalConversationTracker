@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 using System;
-using System.Globalization;
 using System.IO;
 using System.Reflection;
 using HarmonyLib;
@@ -19,71 +18,52 @@ namespace GlobalConversationTracker
     /// below - each prefixed by its own icon.
     /// </summary>
     /// <remarks>
-    /// <para><b>Why the HUD and not the character sheet.</b> The character sheet is
-    /// gated behind two pieces of early-game progression - picking up the ledger, and
-    /// reading it under halogen lights - so a count shown there is invisible for the
-    /// first stretch of a playthrough. The main HUD is up from the first frame of
-    /// gameplay, which is what this display needs. An earlier build appended the
-    /// all-saves figure to the character sheet's bonus block instead; that idea was
-    /// abandoned and its hook deleted, so the HUD is the only place these numbers
-    /// appear.</para>
+    /// <para>The HUD rather than the character sheet, which is gated behind two pieces
+    /// of early-game progression - picking up the ledger, and reading it under halogen
+    /// lights - so a count shown there is invisible for the first stretch of a
+    /// playthrough.</para>
     ///
-    /// <para><b>What the HUD actually is.</b> Not the <c>HUD Page</c> prefab, whose
-    /// money subtree has no controller on it at all and is inert; the live HUD is the
-    /// one built into the <c>Init</c> scene, under
-    /// <c>Global UI Canvas/Global UI Fitter</c>. The relevant object there is
-    /// <c>HUD Money Time</c>: a 316.53 x 123.7 panel pinned to the bottom-right corner
-    /// of the fitter, holding the money display, the clock, the day counter and the
-    /// hand-equip slots. Everything this patch measures is measured off that panel at
-    /// runtime rather than assumed, because the fitter's size depends on the screen's
-    /// aspect ratio and none of these numbers are fixed in screen pixels.</para>
+    /// <para>The live HUD is the one built into the <c>Init</c> scene, under
+    /// <c>Global UI Canvas/Global UI Fitter</c> - not the <c>HUD Page</c> prefab, whose
+    /// money subtree has no controller on it and is inert. The object of interest is
+    /// <c>HUD Money Time</c>, the panel pinned to the fitter's bottom-right corner
+    /// holding the money display, clock, day counter and hand-equip slots. Every
+    /// measurement here is taken off that panel at runtime: the fitter's size follows
+    /// the screen's aspect ratio, so none of it is fixed in screen pixels.</para>
     ///
-    /// <para><b>Why <c>HudMoneyController.Start</c> is the trigger.</b> It is a Unity
-    /// message, so IL2CPP cannot inline it away - the engine invokes it by name - and
-    /// it hands over the money display itself as <c>__instance</c>, whose parent is
-    /// the panel and whose own children carry the exact font, size and colour the HUD
-    /// uses for a number. One call, one attach, everything needed in hand. The
-    /// alternatives were all worse: <c>ClockToggler</c> keeps its instance in a
-    /// private static, and <c>HudController</c> belongs to a HUD hierarchy that is
-    /// not the one on screen.</para>
+    /// <para><c>HudMoneyController.Start</c> is the trigger because it is a Unity
+    /// message - IL2CPP cannot inline it away - and it hands over the money display as
+    /// <c>__instance</c>, whose parent is the panel and whose children carry the exact
+    /// font, size and colour the HUD uses for a number. <c>ClockToggler</c> keeps its
+    /// instance in a private static, and <c>HudController</c> belongs to the HUD
+    /// hierarchy that is not on screen.</para>
     ///
-    /// <para><b>Where the text goes.</b> The panel's own left edge is the right-hand
-    /// wall of the gap this display sits in, so the rows are placed against that edge
-    /// with a right-hand pivot and grow leftwards, towards the thought cabinet button,
-    /// straddling the money's centre line. The two numbers share a right edge, and the
-    /// two icons share a left one: the icon column is measured off whichever number is
-    /// wider, so the icons stay in a column instead of stepping in and out with the
-    /// digits beside them.</para>
+    /// <para>The panel's left edge is the right-hand wall of the gap the display sits
+    /// in, so the rows are placed against it with a right-hand pivot and grow leftwards
+    /// towards the thought cabinet button. The two numbers share a right edge; the icon
+    /// column is measured off whichever number is wider, so the icons do not step in
+    /// and out with the digits beside them.</para>
     ///
-    /// <para><b>Why the rows are children of the money display and not of the panel.</b>
-    /// Because that is what makes them disappear at the right times. The HUD does not
-    /// hide itself as a panel: each element - the money, the clock, the held items -
-    /// carries its own <c>CanvasGroup</c> and its own alpha tween, and the panel they
-    /// share is left alone. A child of the panel would therefore stay on screen
-    /// through every dialogue, cutscene and menu that fades the rest of the HUD out.
-    /// A child of the money display inherits its group, so the counts fade exactly
-    /// when the number beside them does.</para>
+    /// <para>The rows are children of the money display, not of the panel, so they fade
+    /// with it. The HUD does not hide itself as a panel: each element carries its own
+    /// <c>CanvasGroup</c> and alpha tween while the shared panel is left alone, so a
+    /// child of the panel would stay on screen through every dialogue and cutscene that
+    /// fades the rest of the HUD out.</para>
     ///
-    /// <para><b>Why the icons are textures and not characters.</b> Because there are no
-    /// characters to use. Every font asset the game ships is a static SDF atlas with
-    /// no source font behind it, so nothing can be added at runtime, and the highest
-    /// codepoint in any of them is U+FF70 - emoji start at U+1F300. The project's TMP
-    /// sprite asset, which is what would otherwise stand in, is TextMesh Pro's own
-    /// EmojiOne sample: fourteen smileys, no speech bubble and no globe. With
+    /// <para>The icons are textures because there are no characters to use. Every font
+    /// asset the game ships is a static SDF atlas with no source font behind it, so
+    /// nothing can be added at runtime, and the highest codepoint in any of them is
+    /// U+FF70 - emoji start at U+1F300. The project's TMP sprite asset is TextMesh Pro's
+    /// own EmojiOne sample: fourteen smileys, no speech bubble and no globe. With
     /// <c>m_missingGlyphCharacter: 0</c> and warnings off in TMP Settings, an emoji
-    /// character would therefore draw as nothing at all and say nothing about it. So
-    /// the icons are flat white PNGs embedded in the plugin, drawn through
-    /// <see cref="Image"/>s and tinted to the counts' own colour.</para>
+    /// would draw as nothing and say nothing about it. So: flat white PNGs embedded in
+    /// the plugin, drawn through <see cref="Image"/>s and tinted.</para>
     ///
-    /// <para><b>Read-only, and cheap.</b> The two numbers are
-    /// <see cref="GlobalConversationState.Score"/> and
-    /// <see cref="GlobalStateSession.CurrentSaveScore"/>, both of which are collection
-    /// sizes weighted by <see cref="DialogueScore"/> rather than anything that has to
-    /// be counted. Nothing polls: the counts can only change when a mark is recorded,
-    /// a savegame is loaded, or a new game resets the current save, and all three of
-    /// those hooks
-    /// call <see cref="RefreshDisplayedCounts"/> on their way out. As with every other
-    /// hook, a failure here costs the display and never the playthrough.</para>
+    /// <para>Read-only and cheap. Both numbers are collection sizes weighted by
+    /// <see cref="DialogueScore"/>. Nothing polls: the counts change only when a mark is
+    /// recorded, a savegame is loaded, or a new game resets the current save, and all
+    /// three hooks call <see cref="RefreshDisplayedCounts"/> on their way out. A failure
+    /// here costs the display, never the playthrough.</para>
     /// </remarks>
     internal static class MainHudDialogueCountPatch
     {
@@ -145,12 +125,10 @@ namespace GlobalConversationTracker
         /// beside it - the same proportion an emoji would have.
         /// </summary>
         /// <remarks>
-        /// Sized off legibility rather than taste. The canvas scales by
-        /// screenHeight/1080, so at 1080p one font size is 22 screen pixels and the
-        /// globe inside it would draw about 18 across - not enough for its meridians
-        /// to survive the downsample. At 1.1 it draws about 21 at 1080p and 23 at
-        /// 1200p, which is where the grid stops turning to mush. It cannot go much
-        /// past this: the box is centred on its row and the rows are only
+        /// Sized off legibility. The canvas scales by screenHeight/1080, so at 1.0 the
+        /// globe draws about 18 pixels across at 1080p - not enough for its meridians to
+        /// survive the downsample. 1.1 gives about 21 at 1080p and 23 at 1200p. It
+        /// cannot go much higher: the box is centred on its row, and the rows are only
         /// <see cref="LineSpacingInFontSizes"/> apart.
         /// </remarks>
         private const float IconHeightInFontSizes = 1.1f;
@@ -235,15 +213,9 @@ namespace GlobalConversationTracker
         /// are out of date and if there is anything on screen to update.
         /// </summary>
         /// <remarks>
-        /// <para><b>This never throws.</b> It is called from inside the tracking
-        /// hooks, which have their own failure budgets to spend on tracking; a display
-        /// that cannot draw itself must not be able to spend theirs, so this reports
-        /// through its own limiter and returns.</para>
-        ///
-        /// <para><b>And it is called rather than polled.</b> The counts change exactly
-        /// when a mark is recorded, a savegame is resynced, or a new game clears the
-        /// current save, so those callers see every change there is. Between them the
-        /// display costs nothing per frame.</para>
+        /// Never throws. It is called from inside the tracking hooks, which have their
+        /// own failure budgets to spend on tracking; a display that cannot draw itself
+        /// must not spend theirs, so this reports through its own limiter and returns.
         /// </remarks>
         internal static void RefreshDisplayedCounts()
         {
@@ -376,14 +348,10 @@ namespace GlobalConversationTracker
                 AlignIcons(currentSave, allSaves);
 
                 log.Info(
-                    $"Dialogue counts added to the main HUD, under '{panel.name}/{moneyRect.name}': "
-                    + $"{DescribeRow("this save", currentSave)}, {DescribeRow("all saves", allSaves)}. "
-                    + $"{(-_offsetX).ToString(CultureInfo.InvariantCulture)} units left of a "
-                    + $"{panel.rect.width.ToString(CultureInfo.InvariantCulture)} x "
-                    + $"{panel.rect.height.ToString(CultureInfo.InvariantCulture)} panel, at font size "
-                    + $"{donor.fontSize.ToString(CultureInfo.InvariantCulture)}. Nudge them with "
-                    + "HudCountOffsetX / HudCountOffsetY in the plugin's config file, or switch "
-                    + "either off with ShowCurrentSaveCount / ShowAllSavesCount.");
+                    $"Dialogue counts added to the main HUD: this save {OnOff(currentSave)}, "
+                    + $"all saves {OnOff(allSaves)}. Nudge them with HudCountOffsetX / "
+                    + "HudCountOffsetY in the plugin's config file, or switch either off with "
+                    + "ShowCurrentSaveCount / ShowAllSavesCount.");
             }
             catch (Exception ex)
             {
@@ -391,13 +359,7 @@ namespace GlobalConversationTracker
             }
         }
 
-        /// <summary>
-        /// Says where one row landed, or that it was switched off, for the attach log.
-        /// </summary>
-        private static string DescribeRow(string what, CountRow? row) =>
-            row is null
-                ? $"{what} off"
-                : $"{what} at {row.Text.rectTransform.anchoredPosition.ToString()}";
+        private static string OnOff(CountRow? row) => row is null ? "off" : "on";
 
         /// <summary>Removes a row left over from an earlier attach, if there is one.</summary>
         private static void DestroyStale(RectTransform parent, string name)
@@ -415,22 +377,17 @@ namespace GlobalConversationTracker
         /// the money display's centre line.
         /// </summary>
         /// <remarks>
-        /// <para><b>Why the placement is computed and not written down.</b> The whole
-        /// HUD lives inside <c>Global UI Fitter</c>, whose size follows the screen's
-        /// aspect ratio, and the panel is pinned to its bottom-right corner. Reading
-        /// the panel's rect and the money display's rect at attach time is therefore
-        /// the only way to land in the same place on an ultrawide monitor as on a
-        /// 16:9 one.</para>
-        ///
-        /// <para><b>Two coordinate systems, because the parent is not the reference.</b>
-        /// The rows hang off the money display so that they inherit its fading, but
-        /// what they are positioned against is the panel's left edge, and the money's
-        /// own rect is far wider than the number drawn in it - the digits are right
-        /// aligned inside it, and its left edge is off past the other side of the
-        /// screen. So the panel's left edge is converted into the money's coordinates
-        /// and the rows are placed there, with a right-hand pivot so a negative x
-        /// offset moves them into the gap and the numbers grow leftwards, away from
-        /// the panel.</para>
+        /// The placement is computed, not written down: the HUD lives inside
+        /// <c>Global UI Fitter</c>, whose size follows the screen's aspect ratio, so
+        /// reading both rects at attach time is the only way to land in the same place
+        /// on an ultrawide monitor as on a 16:9 one.
+        /// <para>Two coordinate systems, because the parent is not the reference. The
+        /// rows hang off the money display to inherit its fading, but are positioned
+        /// against the panel's left edge - and the money's own rect is far wider than
+        /// the number drawn in it, with its left edge off past the other side of the
+        /// screen. So the panel's left edge is converted into the money's coordinates,
+        /// with a right-hand pivot so a negative x offset moves the rows into the gap.
+        /// </para>
         /// </remarks>
         private static CountRow Build(
             RectTransform panel,
@@ -536,13 +493,10 @@ namespace GlobalConversationTracker
         }
 
         /// <summary>
-        /// Puts both icons in one column, left of whichever number is wider.
+        /// Puts both icons in one column, left of whichever number is wider - aligned
+        /// with each other, so the pair reads as one block rather than two stacked
+        /// labels.
         /// </summary>
-        /// <remarks>
-        /// Measured off the wider row rather than each row separately, which is the
-        /// whole point: aligned with each other is what makes them read as one block
-        /// rather than two labels that happen to be stacked.
-        /// </remarks>
         private static void AlignIcons(CountRow? currentSave, CountRow? allSaves)
         {
             // preferredWidth is the width of the digits themselves, not of the rect
