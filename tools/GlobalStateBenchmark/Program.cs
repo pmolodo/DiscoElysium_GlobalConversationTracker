@@ -92,9 +92,9 @@ namespace GlobalStateBenchmark
         private const int ContentionWarmupProbes = 200;
 
         /// <summary>
-        /// Conversation ID the contention measurement uses for its no-op probes and, once
-        /// the pool of raisable entries runs out, for fresh ones. Above every ID
-        /// <see cref="BuildState"/> produces.
+        /// Conversation ID for entries the measurements invent: no-op probes, and fresh
+        /// entries once the raisable pool runs out. Above every ID
+        /// <see cref="BuildState"/> produces, so a mark against it genuinely raises.
         /// </summary>
         private const int ScratchConversationId = 1_000_000;
 
@@ -356,23 +356,16 @@ namespace GlobalStateBenchmark
         /// lock while it copies the state.
         /// </summary>
         /// <remarks>
-        /// <para>The writer is deliberately left running throughout, writing the file
-        /// over and over, because a measurement taken with it idle would flatter the
-        /// design by leaving out the only cost it added.</para>
-        /// <para>This is an average over a tight loop, which is the right shape for "what
-        /// does a mark cost on the common path" and the wrong shape for "how bad can one
-        /// mark get": the loop finishes in a few ms of wall time, so almost none of the
-        /// calls overlap the writer at all. <see cref="MeasureRecordUnderContention"/>
-        /// is the one that answers the second question.</para>
+        /// The writer is left running throughout; a measurement taken with it idle would
+        /// leave out the only cost it added. This is an average over a tight loop, which
+        /// answers "what does a mark cost on the common path" and not "how bad can one
+        /// mark get" - the loop finishes in a few ms, so almost nothing overlaps the
+        /// writer. <see cref="MeasureRecordUnderContention"/> answers the latter.
         /// </remarks>
         private static void MeasureRaisingRecord(string directory)
         {
             const int raisingCalls = 20_000;
             const int warmupCalls = 1_000;
-
-            // Above every conversation ID BuildState uses, so each call is a new entry
-            // and therefore genuinely raises something.
-            const int freshConversationId = 1_000_000;
 
             string sizeDirectory = Path.Combine(directory, "raising");
             ResetDirectory(sizeDirectory);
@@ -386,13 +379,13 @@ namespace GlobalStateBenchmark
 
             for (int i = 0; i < warmupCalls; i++)
             {
-                session.Record(freshConversationId, i, SimStatusNames.WasDisplayed);
+                session.Record(ScratchConversationId, i, SimStatusNames.WasDisplayed);
             }
 
             long start = Stopwatch.GetTimestamp();
             for (int i = 0; i < raisingCalls; i++)
             {
-                if (!session.Record(freshConversationId, warmupCalls + i, SimStatusNames.WasDisplayed))
+                if (!session.Record(ScratchConversationId, warmupCalls + i, SimStatusNames.WasDisplayed))
                 {
                     throw new InvalidOperationException("A raising record reported no change.");
                 }
@@ -423,32 +416,29 @@ namespace GlobalStateBenchmark
         /// and the high percentiles.
         /// </summary>
         /// <remarks>
-        /// <para><b>The question.</b> <c>Record</c> and the background writer take the
-        /// same session lock, so a mark arriving while the writer holds it waits for it
-        /// on the Unity main thread. The average cannot see that - the collision is
-        /// rare, so it disappears into hundreds of thousands of ~100 ns calls - which is
-        /// why this reports percentiles and a maximum instead. Keeping the writer's hold
-        /// down to a state copy, with <see cref="GlobalStateJson.SerializeToUtf8Bytes"/>
-        /// outside the lock, is what keeps that tail below a frame.</para>
+        /// <para><c>Record</c> and the background writer take the same session lock, so a
+        /// mark arriving while the writer holds it waits on the Unity main thread. The
+        /// average cannot see that - the collision disappears into hundreds of thousands
+        /// of ~100 ns calls - hence percentiles and a maximum. Keeping the writer's hold
+        /// down to a state copy, with the serialize outside the lock, is what keeps that
+        /// tail below a frame.</para>
         ///
-        /// <para><b>Why the probes are paced.</b> A tight loop of <c>Record</c> calls
-        /// runs 20,000 of them in about 2 ms of wall time, during which the writer
-        /// completes at most one pass: almost nothing overlaps a serialize, and the tail
-        /// is empty for the wrong reason. Pacing at
-        /// <see cref="ContentionProbeIntervalMs"/> spreads the same number of calls over
-        /// seconds of writer activity, so overlaps happen at their natural rate.</para>
+        /// <para>The probes are paced because a tight loop runs 20,000 calls in about 2
+        /// ms, during which the writer completes at most one pass: almost nothing
+        /// overlaps a serialize, and the tail comes out empty for the wrong reason.
+        /// Pacing at <see cref="ContentionProbeIntervalMs"/> spreads the same calls over
+        /// seconds of writer activity.</para>
         ///
-        /// <para><b>Why most probes are no-ops.</b> <c>Record</c> takes the lock before
-        /// it knows whether the mark changes anything, so a no-op mark blocks on the
-        /// writer exactly as a raising one does - and the no-op is the overwhelming
-        /// majority of real calls. Every
-        /// <see cref="ContentionRaiseEveryNth"/>th probe raises instead, which is what
-        /// keeps the writer with something to write.</para>
+        /// <para>Most probes are no-ops because <c>Record</c> takes the lock before it
+        /// knows whether the mark changes anything, so a no-op blocks exactly as a
+        /// raising one does - and it is the overwhelming majority of real calls. Every
+        /// <see cref="ContentionRaiseEveryNth"/>th probe raises, to keep the writer
+        /// busy.</para>
         ///
-        /// <para>The raising probes come from the state's existing WasOffered entries, so
-        /// raising them to WasDisplayed leaves the entry count - and therefore the
-        /// serialize cost being measured - unchanged. Only the smallest size has too few
-        /// of them, and the run reports how many fresh entries it had to add.</para>
+        /// <para>Raising probes come from the state's existing WasOffered entries, so
+        /// promoting them leaves the entry count - and the serialize cost being measured
+        /// - unchanged. Only the smallest size runs out, and the run reports how many
+        /// fresh entries it had to add.</para>
         /// </remarks>
         private static void MeasureRecordUnderContention(string directory, int entryCount)
         {
