@@ -63,11 +63,10 @@ def _keep_tagged_value(tag, value):
 
 
 def load_asset(input_path):
-    # yamlrocks parses and builds the object graph in native code (~25x faster
-    # than PyYAML's libyaml loader on this ~140 MB file), and honors the file's
-    # "%YAML 1.1" directive. It does the parse in a single native call, so there
-    # is no Python-level hook for a determinate bar here; the progress bar is on
-    # the mapping build below instead.
+    # yamlrocks builds the object graph in native code (~25x faster than PyYAML's
+    # libyaml loader on this ~140 MB file) and honors the "%YAML 1.1" directive.
+    # One native call, so there is no hook for a determinate progress bar here;
+    # the bar is on the mapping build instead.
     size_mb = os.path.getsize(input_path) / 1e6
     tqdm.write(f"Parsing {os.path.basename(input_path)} ({size_mb:.0f} MB) with yamlrocks...")
     return yamlrocks.load(input_path, tag_handler=_keep_tagged_value)
