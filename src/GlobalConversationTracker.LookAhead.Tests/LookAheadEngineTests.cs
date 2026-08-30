@@ -302,6 +302,85 @@ namespace GlobalConversationTracker.LookAhead.Tests
             Assert.False(stranded.BudgetExhausted);
         }
 
+        // ---- the clock ----------------------------------------------------------
+
+        /// <summary>
+        /// The case that makes time worth modelling: a path advances the clock past
+        /// noon, and a guard downstream asks whether it is the afternoon. Evaluated
+        /// against the pre-crawl clock the answer is no, and content is hidden.
+        /// </summary>
+        [Fact]
+        public void PassTime_MovesGuardsPastTheHour()
+        {
+            LookAheadGraph graph = new GraphBuilder()
+                .Add(0, links: new[] { 1 })
+                .Add(1, script: "PassTime()", links: new[] { 2 })
+                .Add(2, script: "PassTime()", links: new[] { 3 })
+                .Add(3, guard: "IsAfternoon()")
+                .Build();
+
+            // 11:40 plus two quarter-hours is 12:10 - noon, which IsAfternoon includes.
+            var justBefore = new FakeWorld().AtTime(11, 40);
+            Assert.Equal(Novelty.UnseenAnyGame, Run(graph, justBefore, Novel(3)).Best);
+
+            // 11:00 plus two is 11:30, still the morning.
+            var tooEarly = new FakeWorld().AtTime(11, 0);
+            Assert.Equal(Novelty.SeenThisGame, Run(graph, tooEarly, Novel(3)).Best);
+        }
+
+        /// <summary>
+        /// The mirror, and the reason this is not merely cosmetic: without the clock the
+        /// engine would report the morning guard as still open.
+        /// </summary>
+        [Fact]
+        public void PassTime_ClosesGuardsItMovesPast()
+        {
+            LookAheadGraph graph = new GraphBuilder()
+                .Add(0, links: new[] { 1 })
+                .Add(1, script: "PassTime()", links: new[] { 2 })
+                .Add(2, script: "PassTime()", links: new[] { 3 })
+                .Add(3, guard: "IsMorning()")
+                .Build();
+
+            var justBefore = new FakeWorld().AtTime(11, 40);
+            Assert.Equal(Novelty.SeenThisGame, Run(graph, justBefore, Novel(3)).Best);
+        }
+
+        /// <summary>NormalTimeForward refuses to move a locked clock.</summary>
+        [Fact]
+        public void PassTime_DoesNothingWhileTheClockIsLocked()
+        {
+            LookAheadGraph graph = new GraphBuilder()
+                .Add(0, links: new[] { 1 })
+                .Add(1, script: "PassTime()", links: new[] { 2 })
+                .Add(2, script: "PassTime()", links: new[] { 3 })
+                .Add(3, guard: "IsAfternoon()")
+                .Build();
+
+            var locked = new FakeWorld().AtTime(11, 40).WithLockedClock();
+            Assert.Equal(Novelty.SeenThisGame, Run(graph, locked, Novel(3)).Best);
+        }
+
+        /// <summary>
+        /// DayCount is the story's counter, which PassTime does not touch, so it stays
+        /// the host's answer however much time a path burns.
+        /// </summary>
+        [Fact]
+        public void PassTime_DoesNotAdvanceTheDay()
+        {
+            LookAheadGraph graph = new GraphBuilder()
+                .Add(0, links: new[] { 1 })
+                .Add(1, script: "PassTime()", links: new[] { 2 })
+                .Add(2, guard: "DayCount() == 2")
+                .Build();
+
+            var dayOne = new FakeWorld().AtTime(23, 55).WithDay(1).WithQuery("DayCount", 1d);
+            Assert.Equal(Novelty.SeenThisGame, Run(graph, dayOne, Novel(2)).Best);
+
+            var dayTwo = new FakeWorld().AtTime(23, 55).WithDay(2).WithQuery("DayCount", 2d);
+            Assert.Equal(Novelty.UnseenAnyGame, Run(graph, dayTwo, Novel(2)).Best);
+        }
+
         // ---- skill checks -------------------------------------------------------
 
         /// <summary>

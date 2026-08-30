@@ -25,13 +25,14 @@ namespace GlobalConversationTracker.LookAhead
         private readonly int[] _slots;
         private readonly int _hash;
 
-        private LookAheadState(int[] slots, int money)
+        private LookAheadState(int[] slots, int money, int dayMinutes)
         {
             _slots = slots;
             Money = money;
+            DayMinutes = dayMinutes;
             unchecked
             {
-                int hash = money * 486187739;
+                int hash = (money * 486187739) ^ (dayMinutes * 43112609);
                 for (int i = 0; i < slots.Length; i++)
                 {
                     if (slots[i] != 0)
@@ -47,8 +48,9 @@ namespace GlobalConversationTracker.LookAhead
         /// <summary>An all-zero state with the given balance.</summary>
         /// <param name="slotCount">How many slots the symbol table has.</param>
         /// <param name="money">The starting balance, in centimes.</param>
+        /// <param name="dayMinutes">The clock, in minutes since midnight.</param>
         /// <exception cref="ArgumentOutOfRangeException">A count or balance is negative.</exception>
-        public static LookAheadState Empty(int slotCount, int money)
+        public static LookAheadState Empty(int slotCount, int money, int dayMinutes = 0)
         {
             if (slotCount < 0)
             {
@@ -61,11 +63,18 @@ namespace GlobalConversationTracker.LookAhead
                     nameof(money), "The player's balance cannot be negative.");
             }
 
-            return new LookAheadState(new int[slotCount], money);
+            return new LookAheadState(new int[slotCount], money, dayMinutes);
         }
 
         /// <summary>The player's balance, in centimes.</summary>
         public int Money { get; }
+
+        /// <summary>
+        /// The clock, in minutes since midnight. Advanced only by <c>PassTime()</c>, and
+        /// only ever within the day - the story's day counter is not something a
+        /// conversation can move.
+        /// </summary>
+        public int DayMinutes { get; }
 
         /// <summary>How many slots this state holds.</summary>
         public int SlotCount => _slots.Length;
@@ -96,7 +105,7 @@ namespace GlobalConversationTracker.LookAhead
 
             int[] slots = Resize(index);
             slots[index] = value;
-            return new LookAheadState(slots, Money);
+            return new LookAheadState(slots, Money, DayMinutes);
         }
 
         /// <summary>This state with the balance changed.</summary>
@@ -104,13 +113,26 @@ namespace GlobalConversationTracker.LookAhead
         public LookAheadState WithMoney(int money)
         {
             int clamped = money < 0 ? 0 : money;
-            return clamped == Money ? this : new LookAheadState(Copy(), clamped);
+            return clamped == Money ? this : new LookAheadState(Copy(), clamped, DayMinutes);
+        }
+
+        /// <summary>This state with the clock moved.</summary>
+        /// <param name="dayMinutes">The new minute count, wrapped into the day.</param>
+        public LookAheadState WithDayMinutes(int dayMinutes)
+        {
+            int wrapped = ((dayMinutes % ClockTime.MinutesInADay) + ClockTime.MinutesInADay)
+                % ClockTime.MinutesInADay;
+            return wrapped == DayMinutes
+                ? this
+                : new LookAheadState(Copy(), Money, wrapped);
         }
 
         /// <summary>This state with several slots changed at once.</summary>
         /// <param name="changes">Slot index to new value.</param>
         /// <param name="money">The new balance, clamped at zero.</param>
-        public LookAheadState With(IReadOnlyList<KeyValuePair<int, int>> changes, int money)
+        /// <param name="dayMinutes">The new minute count.</param>
+        public LookAheadState With(
+            IReadOnlyList<KeyValuePair<int, int>> changes, int money, int dayMinutes)
         {
             if (changes == null)
             {
@@ -132,7 +154,9 @@ namespace GlobalConversationTracker.LookAhead
                 slots[changes[i].Key] = changes[i].Value;
             }
 
-            return new LookAheadState(slots, money < 0 ? 0 : money);
+            int wrapped = ((dayMinutes % ClockTime.MinutesInADay) + ClockTime.MinutesInADay)
+                % ClockTime.MinutesInADay;
+            return new LookAheadState(slots, money < 0 ? 0 : money, wrapped);
         }
 
         private int[] Copy()
@@ -163,7 +187,8 @@ namespace GlobalConversationTracker.LookAhead
                 return true;
             }
 
-            if (other is null || other._hash != _hash || other.Money != Money)
+            if (other is null || other._hash != _hash || other.Money != Money
+                || other.DayMinutes != DayMinutes)
             {
                 return false;
             }
@@ -217,7 +242,9 @@ namespace GlobalConversationTracker.LookAhead
             }
 
             var builder = new StringBuilder();
-            builder.Append("money=").Append(Money);
+            builder.Append("money=").Append(Money)
+                .Append(", clock=").Append(ClockTime.HoursOf(DayMinutes))
+                .Append(':').Append((DayMinutes % 60).ToString("00"));
             for (int i = 0; i < _slots.Length; i++)
             {
                 if (_slots[i] != 0)
@@ -232,7 +259,8 @@ namespace GlobalConversationTracker.LookAhead
         /// <inheritdoc/>
         public override string ToString()
         {
-            return "money=" + Money + ", slots=" + _slots.Length;
+            return "money=" + Money + ", dayMinutes=" + DayMinutes
+                + ", slots=" + _slots.Length;
         }
     }
 }

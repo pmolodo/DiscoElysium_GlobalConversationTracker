@@ -148,15 +148,47 @@ namespace GlobalConversationTracker.LookAhead.Tests
         {
             var symbols = new StateSymbols();
             IReadOnlyList<DialogueAction> actions = ActionParser.Parse(
-                "ReputationGrows(\"honour\");\nPassTime(2)", symbols);
+                "ReputationGrows(\"honour\");\nShowDialogueImage(\"darkness\")", symbols);
 
             Assert.Equal(2, actions.Count);
             Assert.All(actions, a => Assert.Equal(DialogueActionKind.Unmodelled, a.Kind));
-            Assert.Contains(actions, a => a.Name == "PassTime");
+            Assert.Contains(actions, a => a.Name == "ShowDialogueImage");
 
-            LookAheadState before = LookAheadState.Empty(symbols.Count, 250);
+            LookAheadState before = LookAheadState.Empty(symbols.Count, 250, 8 * 60);
             LookAheadState after = DialogueAction.Apply(actions, before, 0, CounterCap);
             Assert.Equal(250, after.Money);
+            Assert.Equal(8 * 60, after.DayMinutes);
+        }
+
+        /// <summary>
+        /// All 207 uses in the database are the bare call, which moves the clock a
+        /// quarter of an hour.
+        /// </summary>
+        [Fact]
+        public void PassTime_AdvancesTheClock()
+        {
+            var symbols = new StateSymbols();
+            IReadOnlyList<DialogueAction> actions = ActionParser.Parse("PassTime()", symbols);
+
+            DialogueAction action = Assert.Single(actions);
+            Assert.Equal(DialogueActionKind.PassTime, action.Kind);
+
+            LookAheadState before = LookAheadState.Empty(symbols.Count, 0, 11 * 60);
+            LookAheadState after = DialogueAction.Apply(actions, before, 0, CounterCap);
+            Assert.Equal((11 * 60) + 15, after.DayMinutes);
+        }
+
+        /// <summary>A locked clock does not move, so the action becomes a no-op.</summary>
+        [Fact]
+        public void PassTime_IsIgnoredWhenTheClockIsLocked()
+        {
+            var symbols = new StateSymbols();
+            IReadOnlyList<DialogueAction> actions = ActionParser.Parse("PassTime()", symbols);
+
+            LookAheadState before = LookAheadState.Empty(symbols.Count, 0, 11 * 60);
+            LookAheadState after = DialogueAction.Apply(
+                actions, before, 0, CounterCap, clockLocked: true);
+            Assert.Equal(11 * 60, after.DayMinutes);
         }
 
         [Fact]

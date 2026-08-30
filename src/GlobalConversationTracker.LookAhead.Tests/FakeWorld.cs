@@ -19,12 +19,37 @@ namespace GlobalConversationTracker.LookAhead.Tests
 
         public int Money { get; set; }
 
+        public int DayMinutes { get; set; }
+
+        public int DayCounter { get; set; } = 1;
+
+        public bool IsClockLocked { get; set; }
+
         /// <summary>What an unlisted check does. Unknown makes the engine try both.</summary>
         public Ternary DefaultCheck { get; set; } = Ternary.Unknown;
 
         public FakeWorld WithMoney(int centimes)
         {
             Money = centimes;
+            return this;
+        }
+
+        /// <summary>Sets the clock, as an hour and minute of the day.</summary>
+        public FakeWorld AtTime(int hour, int minute = 0)
+        {
+            DayMinutes = (hour * 60) + minute;
+            return this;
+        }
+
+        public FakeWorld WithDay(int day)
+        {
+            DayCounter = day;
+            return this;
+        }
+
+        public FakeWorld WithLockedClock()
+        {
+            IsClockLocked = true;
             return this;
         }
 

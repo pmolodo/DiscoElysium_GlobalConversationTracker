@@ -23,6 +23,24 @@ namespace GlobalConversationTracker.LookAhead
         /// <summary>The player's balance, in centimes, before the crawl.</summary>
         int Money { get; }
 
+        /// <summary>The clock as the crawl begins, in minutes since midnight.</summary>
+        int DayMinutes { get; }
+
+        /// <summary>
+        /// The story's day number. A conversation cannot move it: <c>PassTime()</c>
+        /// advances <c>RealDayCounter</c>, while <c>DayCount()</c> reads
+        /// <c>dayCounter</c>, which only the story assigns. It is therefore constant for
+        /// a crawl, and <c>DayCount</c> / <c>IsDayFrom</c> / <c>IsDayUntil</c> guards stay
+        /// the host's to answer.
+        /// </summary>
+        int DayCounter { get; }
+
+        /// <summary>
+        /// Whether the clock is locked, which makes <c>PassTime()</c> a no-op -
+        /// <c>NormalTimeForward</c> refuses to move a locked clock.
+        /// </summary>
+        bool IsClockLocked { get; }
+
         /// <summary>The current value of a dialogue variable.</summary>
         /// <param name="name">The variable's name.</param>
         /// <returns>Its value, or <see cref="GuardValue.Unknown"/> if unset.</returns>

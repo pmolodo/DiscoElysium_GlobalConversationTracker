@@ -242,6 +242,7 @@ namespace GlobalConversationTracker.LookAhead
             StateSymbols symbols)
         {
             context.Bind(state);
+            bool clockLocked = context.World.IsClockLocked;
             if (!TernaryLogic.CanPass(node.Guard.Test(context)))
             {
                 yield break;
@@ -263,7 +264,7 @@ namespace GlobalConversationTracker.LookAhead
                     // rolled, so there is only one way through it.
                     if (!context.World.IsSeen(node.Id))
                     {
-                        yield return Charge(node, state, symbols);
+                        yield return Charge(node, state, symbols, clockLocked);
                     }
 
                     yield break;
@@ -271,14 +272,15 @@ namespace GlobalConversationTracker.LookAhead
                 case DialogueCheckKind.KimSwitch:
                     if (node.BooleanOnly || !context.World.IsSeen(node.Id))
                     {
-                        yield return Charge(node, state, symbols);
+                        yield return Charge(node, state, symbols, clockLocked);
                     }
 
                     yield break;
 
                 case DialogueCheckKind.Red:
                 case DialogueCheckKind.White:
-                    foreach (LookAheadState next in EnterRolled(node, state, symbols))
+                    foreach (LookAheadState next in EnterRolled(
+                        node, state, symbols, clockLocked))
                     {
                         yield return next;
                     }
@@ -290,7 +292,7 @@ namespace GlobalConversationTracker.LookAhead
                     Ternary passes = context.World.CheckPasses(node.Id);
                     if (passes != Ternary.False)
                     {
-                        yield return Charge(node, state, symbols);
+                        yield return Charge(node, state, symbols, clockLocked);
                     }
 
                     if (passes != Ternary.True && _options.FailedChecksPassThrough)
@@ -306,7 +308,7 @@ namespace GlobalConversationTracker.LookAhead
                 }
 
                 default:
-                    yield return Charge(node, state, symbols);
+                    yield return Charge(node, state, symbols, clockLocked);
                     yield break;
             }
         }
@@ -322,7 +324,7 @@ namespace GlobalConversationTracker.LookAhead
         /// untouched rather than setting a failure flag.
         /// </remarks>
         private IEnumerable<LookAheadState> EnterRolled(
-            LookAheadNode node, LookAheadState state, StateSymbols symbols)
+            LookAheadNode node, LookAheadState state, StateSymbols symbols, bool clockLocked)
         {
             bool passed = node.FlagSlot >= 0 && state.IsSet(node.FlagSlot);
             bool failed = node.FailedFlagSlot >= 0 && state.IsSet(node.FailedFlagSlot);
@@ -331,7 +333,7 @@ namespace GlobalConversationTracker.LookAhead
                 yield break;
             }
 
-            LookAheadState entered = Charge(node, state, symbols);
+            LookAheadState entered = Charge(node, state, symbols, clockLocked);
 
             LookAheadState success = node.FlagSlot >= 0
                 ? entered.With(node.FlagSlot, 1)
@@ -388,7 +390,7 @@ namespace GlobalConversationTracker.LookAhead
 
         /// <summary>Pays for the node, then applies its actions.</summary>
         private LookAheadState Charge(
-            LookAheadNode node, LookAheadState state, StateSymbols symbols)
+            LookAheadNode node, LookAheadState state, StateSymbols symbols, bool clockLocked)
         {
             LookAheadState paid = state;
             if (node.IsCostOption)
@@ -406,7 +408,8 @@ namespace GlobalConversationTracker.LookAhead
             }
 
             return DialogueAction.Apply(
-                node.Actions, paid, symbols.Once(node.Id), _options.CounterCap);
+                node.Actions, paid, symbols.Once(node.Id), _options.CounterCap,
+                clockLocked);
         }
 
         /// <summary>
@@ -416,7 +419,8 @@ namespace GlobalConversationTracker.LookAhead
         private static LookAheadState Seed(LookAheadGraph graph, ILookAheadWorld world)
         {
             StateSymbols symbols = graph.Symbols;
-            LookAheadState state = LookAheadState.Empty(symbols.Count, world.Money);
+            LookAheadState state = LookAheadState.Empty(
+                symbols.Count, world.Money, world.DayMinutes);
             for (int slot = 0; slot < symbols.Count; slot++)
             {
                 string name = symbols.NameOf(slot);
@@ -545,6 +549,14 @@ namespace GlobalConversationTracker.LookAhead
 
             public GuardValue Query(string name, IReadOnlyList<GuardValue> arguments)
             {
+                if (_state != null && ClockTime.Owns(name))
+                {
+                    // Answered from the crawl's clock, not the world's: a path that ran
+                    // PassTime is standing at a later hour than the player is.
+                    return ClockTime.Answer(
+                        name, arguments, _state.DayMinutes, World.DayCounter);
+                }
+
                 switch (name)
                 {
                     case "MoneyAmount":

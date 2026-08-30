@@ -21,6 +21,9 @@ namespace GlobalConversationTracker.LookAhead
 
         /// <summary>Subtracts from the balance.</summary>
         LoseMoney = 4,
+
+        /// <summary>Advances the clock by one <c>PassTime()</c>.</summary>
+        PassTime = 5,
     }
 
     /// <summary>One state change a dialogue entry's <c>userScript</c> makes.</summary>
@@ -31,11 +34,12 @@ namespace GlobalConversationTracker.LookAhead
     /// dropped, so that a later pass can find them without re-parsing, and so a reader
     /// can see they were considered rather than missed.</para>
     ///
-    /// <para><c>PassTime</c> is the known gap: it moves the clock, and
-    /// <c>DayCount()</c> / <c>IsHourBetween()</c> guards read the clock. Those queries
-    /// are answered once per crawl by the host, so a path that passes time is evaluated
-    /// against the pre-crawl clock. 207 nodes call it. It is recorded as unmodelled and
-    /// documented rather than silently wrong.</para>
+    /// <para><c>PassTime</c> IS modelled, because it can change an answer in the
+    /// direction that matters. All 207 uses are the bare call, which moves the clock
+    /// fifteen minutes, and 14 of the nodes carrying it can reach a guard that reads the
+    /// hour. Left unmodelled, a path that runs past noon would still report
+    /// <c>IsMorning()</c> true and <c>IsAfternoon()</c> false - and the second of those
+    /// hides content.</para>
     /// </remarks>
     public sealed class DialogueAction
     {
@@ -103,6 +107,14 @@ namespace GlobalConversationTracker.LookAhead
                 -1, amount, once, name);
         }
 
+        /// <summary>Advances the clock.</summary>
+        /// <param name="name">The originating call's name.</param>
+        public static DialogueAction PassTime(string name)
+        {
+            return new DialogueAction(
+                DialogueActionKind.PassTime, -1, ClockTime.PassTimeMinutes, false, name);
+        }
+
         /// <summary>Records a call this model does not track.</summary>
         /// <param name="name">The call's name.</param>
         public static DialogueAction Unmodelled(string name)
@@ -123,6 +135,8 @@ namespace GlobalConversationTracker.LookAhead
                     return $"{Name}: money += {Value}{(Once ? " (once)" : string.Empty)}";
                 case DialogueActionKind.LoseMoney:
                     return $"{Name}: money -= {Value}{(Once ? " (once)" : string.Empty)}";
+                case DialogueActionKind.PassTime:
+                    return $"{Name}: clock += {Value}m";
                 default:
                     return $"{Name}: not modelled";
             }
@@ -142,13 +156,19 @@ namespace GlobalConversationTracker.LookAhead
         /// a guard compares against is indistinguishable from it, so capping keeps a
         /// counter's domain finite without changing a single guard's answer.
         /// </param>
+        /// <param name="clockLocked">
+        /// Whether the game's clock is locked, which makes <c>PassTime()</c> do nothing -
+        /// <c>NormalTimeForward</c> refuses to move a locked clock, and the story locks it
+        /// around scripted sequences.
+        /// </param>
         /// <returns>The resulting state.</returns>
         /// <exception cref="ArgumentNullException">An argument is null.</exception>
         public static LookAheadState Apply(
             IReadOnlyList<DialogueAction> actions,
             LookAheadState state,
             int onceSlot,
-            int counterCap)
+            int counterCap,
+            bool clockLocked = false)
         {
             if (actions == null)
             {
@@ -169,6 +189,7 @@ namespace GlobalConversationTracker.LookAhead
             bool firedSomethingOnce = false;
             var changes = new List<KeyValuePair<int, int>>(actions.Count + 1);
             int money = state.Money;
+            int dayMinutes = state.DayMinutes;
 
             for (int i = 0; i < actions.Count; i++)
             {
@@ -206,6 +227,14 @@ namespace GlobalConversationTracker.LookAhead
                         money -= action.Value;
                         break;
 
+                    case DialogueActionKind.PassTime:
+                        if (!clockLocked)
+                        {
+                            dayMinutes = ClockTime.Advance(dayMinutes);
+                        }
+
+                        break;
+
                     default:
                         break;
                 }
@@ -217,8 +246,9 @@ namespace GlobalConversationTracker.LookAhead
             }
 
             return changes.Count == 0 && money == state.Money
+                && dayMinutes == state.DayMinutes
                 ? state
-                : state.With(changes, money);
+                : state.With(changes, money, dayMinutes);
         }
 
         /// <summary>

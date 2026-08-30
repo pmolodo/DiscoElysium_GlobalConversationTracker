@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using GlobalConversationTracker.LookAhead;
 using PixelCrushers.DialogueSystem;
+using Voidforge;
 
 namespace GlobalConversationTracker
 {
@@ -43,10 +44,28 @@ namespace GlobalConversationTracker
         internal GameLookAheadWorld()
         {
             Money = ReadMoney();
+
+            SunshineClockTime? time = ReadClock();
+            DayMinutes = time == null ? 0 : time.DayMinutes;
+            DayCounter = time == null ? 1 : time.DayCounter;
+            IsClockLocked = time == null || time.IsTimeLocked;
         }
 
         /// <inheritdoc/>
         public int Money { get; }
+
+        /// <inheritdoc/>
+        public int DayMinutes { get; }
+
+        /// <inheritdoc/>
+        public int DayCounter { get; }
+
+        /// <summary>
+        /// Whether the clock is locked. True when it could not be read at all, so a
+        /// crawl that cannot see the clock leaves it where it is rather than inventing
+        /// movement.
+        /// </summary>
+        public bool IsClockLocked { get; }
 
         /// <inheritdoc/>
         public GuardValue GetVariable(string name)
@@ -202,6 +221,20 @@ namespace GlobalConversationTracker
             }
 
             return GuardValue.Unknown;
+        }
+
+        /// <summary>The game's clock, or null before it exists.</summary>
+        private static SunshineClockTime? ReadClock()
+        {
+            try
+            {
+                SunshineClock clock = SingletonClass<SunshineClock>.Singleton;
+                return clock == null ? null : clock.Time;
+            }
+            catch (System.Exception)
+            {
+                return null;
+            }
         }
 
         private static int ReadMoney()

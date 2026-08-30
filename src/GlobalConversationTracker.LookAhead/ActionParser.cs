@@ -25,6 +25,8 @@ namespace GlobalConversationTracker.LookAhead
     ///   <item><description><c>GainMoneyOnce</c> / <c>GainMoneyAlways</c> /
     ///   <c>LoseMoneyOnce</c> / <c>LoseMoneyAlways</c> - the balance, which
     ///   <c>MoneyAmount</c> reads and every cost option spends.</description></item>
+    ///   <item><description><c>PassTime</c> - the clock, which the hour predicates
+    ///   read.</description></item>
     /// </list>
     ///
     /// <para>Anything else is recorded as unmodelled rather than dropped.</para>
@@ -127,6 +129,10 @@ namespace GlobalConversationTracker.LookAhead
                     actions.Add(DialogueAction.Money(gain, amount, once, call.Name));
                     return;
                 }
+
+                case "PassTime":
+                    actions.Add(DialogueAction.PassTime(call.Name));
+                    return;
 
                 default:
                     actions.Add(DialogueAction.Unmodelled(call.Name));
