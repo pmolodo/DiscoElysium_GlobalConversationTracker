@@ -166,9 +166,10 @@ namespace GlobalConversationTracker
                 + "showing no asterisk. Lower it if response menus feel slow.");
 
             // Both off by default and both write into the SaveGames folder, beside the
-            // global state. Diagnostics for deciding whether the budget is set right,
-            // not something to run with: the first makes every crawl keep a per-entry
-            // tally, which is the search's inner loop.
+            // global state. Diagnostics for deciding whether the budget is set right.
+            // Neither slows a crawl that stays within budget: the overflow report is
+            // produced by walking the offending option a second time, and the statistics
+            // cost one stopwatch read.
             var logLookAheadBudgetExceeded = Config.Bind(
                 "Diagnostics",
                 "LogLookAheadBudgetExceeded",
@@ -176,7 +177,9 @@ namespace GlobalConversationTracker
                 "Append a report to " + LookAheadDiagnosticsWriter.OverflowLogName + " in the "
                 + "SaveGames folder whenever an option's look-ahead runs out of budget, naming "
                 + "the option, the state it started from, and the entries reached in the most "
-                + "distinct states - which is where a blow-up lives. Slows every crawl.");
+                + "distinct states - which is where a blow-up lives. Only an option that "
+                + "already overflowed is walked a second time to work this out, so menus that "
+                + "stay within budget cost the same as with it off.");
             var keepLookAheadStates = Config.Bind(
                 "Diagnostics",
                 "KeepLookAheadStates",

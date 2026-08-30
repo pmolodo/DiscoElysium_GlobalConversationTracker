@@ -82,18 +82,32 @@ namespace GlobalConversationTracker
         internal bool Enabled => LogOverflows || KeepStatistics;
 
         /// <summary>
-        /// Whether a crawl needs to keep a trace, which is what makes an overflow
-        /// explainable and what makes the crawl slower.
+        /// Whether a crawl that overflowed should be walked a second time to find out
+        /// why.
         /// </summary>
-        internal bool NeedsTrace => LogOverflows;
+        /// <remarks>
+        /// The tally that explains an overflow costs a dictionary write per state, in the
+        /// loop that decides what the feature costs. Rather than make every crawl pay for
+        /// a report almost none of them will produce, the normal walk keeps no tally and
+        /// an overflow is reproduced by walking again with one. The second walk sees the
+        /// same answer because the world it reads is a snapshot taken before the first.
+        /// </remarks>
+        internal bool RetriesOverflowsWithTrace => LogOverflows;
 
         /// <summary>Records one finished crawl.</summary>
         /// <param name="start">The option it began at.</param>
         /// <param name="result">What it found.</param>
         /// <param name="milliseconds">How long it took.</param>
         /// <param name="budget">The state budget it was given.</param>
+        /// <param name="trace">
+        /// Why it overflowed, from a second traced walk, or null if none was made.
+        /// </param>
         internal void Record(
-            DialogueNodeId start, LookAheadResult result, double milliseconds, int budget)
+            DialogueNodeId start,
+            LookAheadResult result,
+            double milliseconds,
+            int budget,
+            LookAheadTrace? trace = null)
         {
             if (result == null)
             {
@@ -112,7 +126,7 @@ namespace GlobalConversationTracker
 
             if (LogOverflows && result.BudgetExhausted)
             {
-                AppendOverflow(result, milliseconds, budget);
+                AppendOverflow(result, milliseconds, budget, trace);
             }
         }
 
@@ -126,7 +140,8 @@ namespace GlobalConversationTracker
             }
         }
 
-        private void AppendOverflow(LookAheadResult result, double milliseconds, int budget)
+        private void AppendOverflow(
+            LookAheadResult result, double milliseconds, int budget, LookAheadTrace? trace)
         {
             if (_overflowLogFailed)
             {
@@ -135,7 +150,8 @@ namespace GlobalConversationTracker
 
             try
             {
-                File.AppendAllText(OverflowLogPath, DescribeOverflow(result, milliseconds, budget));
+                File.AppendAllText(
+                    OverflowLogPath, DescribeOverflow(result, milliseconds, budget, trace));
             }
             catch (Exception ex)
             {
@@ -152,9 +168,8 @@ namespace GlobalConversationTracker
         /// by a person hunting a slow menu, not by a program.
         /// </summary>
         private static string DescribeOverflow(
-            LookAheadResult result, double milliseconds, int budget)
+            LookAheadResult result, double milliseconds, int budget, LookAheadTrace? trace)
         {
-            LookAheadTrace? trace = result.Trace;
             var text = new StringBuilder();
             text.Append("=== ")
                 .Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture))
@@ -162,7 +177,7 @@ namespace GlobalConversationTracker
 
             if (trace == null)
             {
-                text.AppendLine("  (no trace was collected)");
+                text.AppendLine("  (the traced re-walk produced nothing)");
                 text.AppendLine();
                 return text.ToString();
             }
@@ -176,7 +191,7 @@ namespace GlobalConversationTracker
             text.Append("  state slots    ").Append(trace.TrackedSlots).AppendLine();
             text.Append("  elapsed        ")
                 .Append(milliseconds.ToString("F1", CultureInfo.InvariantCulture))
-                .AppendLine(" ms");
+                .AppendLine(" ms (the untraced walk; the re-walk is not counted)");
             text.Append("  best found     ").Append(result.Best).AppendLine();
             text.Append("  money          ").Append(trace.Money).AppendLine();
             text.Append("  clock          ")

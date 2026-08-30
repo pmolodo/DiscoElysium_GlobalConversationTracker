@@ -34,6 +34,7 @@ namespace GlobalConversationTracker
         private static string _unseenAnyGameHtml = NovelResponseColorPatch.DefaultNovelColorHtml;
         private static string _unseenThisGameHtml = DefaultUnseenThisGameColorHtml;
         private static LookAheadEngine _engine = new LookAheadEngine();
+        private static LookAheadEngine? _tracingEngine;
         private static LookAheadDiagnosticsWriter? _diagnostics;
         private static int _budget = new LookAheadOptions().StateBudget;
 
@@ -83,13 +84,18 @@ namespace GlobalConversationTracker
             _unseenThisGameHtml = Validate(unseenThisGameHtml, nameof(unseenThisGameHtml));
             _budget = stateBudget;
             _diagnostics = diagnostics != null && diagnostics.Enabled ? diagnostics : null;
-            _engine = new LookAheadEngine(new LookAheadOptions
-            {
-                StateBudget = stateBudget,
 
-                // Only pay for the per-entry tally when something is going to read it.
-                CollectTrace = _diagnostics != null && _diagnostics.NeedsTrace,
-            });
+            // The walk every menu pays for keeps no tally, whatever the diagnostics say.
+            _engine = new LookAheadEngine(new LookAheadOptions { StateBudget = stateBudget });
+
+            // A second engine, used only to reproduce a crawl that already overflowed.
+            _tracingEngine = _diagnostics != null && _diagnostics.RetriesOverflowsWithTrace
+                ? new LookAheadEngine(new LookAheadOptions
+                {
+                    StateBudget = stateBudget,
+                    CollectTrace = true,
+                })
+                : null;
 
             harmony.PatchAll(typeof(ChooseResponseTextPatch));
         }
@@ -158,7 +164,12 @@ namespace GlobalConversationTracker
                 world,
                 node => NoveltyOf(session, node.ConversationId, node.EntryId));
 
-            _diagnostics?.Record(start, result, Milliseconds(ticks), _budget);
+            if (_diagnostics != null)
+            {
+                _diagnostics.Record(
+                    start, result, Milliseconds(ticks), _budget,
+                    TraceOverflow(graph, start, world, session, result));
+            }
 
             if (result.Best <= own)
             {
@@ -169,6 +180,37 @@ namespace GlobalConversationTracker
                 ? _unseenAnyGameHtml
                 : _unseenThisGameHtml;
             return "<color=" + colour + ">*</color>";
+        }
+
+        /// <summary>
+        /// Walks an overflowed crawl a second time, keeping the tally that says where it
+        /// blew up.
+        /// </summary>
+        /// <remarks>
+        /// Only overflows are walked twice, and only when the overflow log is on. The
+        /// alternative - keeping the tally on every crawl - would make the common case
+        /// pay for a report it will never produce. The re-walk reaches the same place
+        /// because <see cref="GameLookAheadWorld"/> caches every read it makes, so the
+        /// second pass is answered from the snapshot the first one took.
+        /// </remarks>
+        private static LookAheadTrace? TraceOverflow(
+            LookAheadGraph graph,
+            DialogueNodeId start,
+            GameLookAheadWorld world,
+            GlobalStateSession session,
+            LookAheadResult result)
+        {
+            LookAheadEngine? tracing = _tracingEngine;
+            if (tracing == null || !result.BudgetExhausted)
+            {
+                return null;
+            }
+
+            return tracing.Evaluate(
+                graph,
+                start,
+                world,
+                node => NoveltyOf(session, node.ConversationId, node.EntryId)).Trace;
         }
 
         /// <summary>Wall time since a stopwatch timestamp, in milliseconds.</summary>
