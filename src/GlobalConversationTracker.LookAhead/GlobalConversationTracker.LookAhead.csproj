@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      netstandard2.0 for the same reason as Core: the BepInEx v6 IL2CPP plugin
+      (net6.0) and the net10.0 test project both consume this assembly.
+      Deliberately free of Unity, BepInEx and PixelCrushers dependencies - the
+      graph is handed in as plain data, so the reachability search can be tested
+      without the game.
+    -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <RootNamespace>GlobalConversationTracker.LookAhead</RootNamespace>
+    <AssemblyName>GlobalConversationTracker.LookAhead</AssemblyName>
+  </PropertyGroup>
+
+</Project>
