@@ -165,6 +165,26 @@ namespace GlobalConversationTracker
                 "The most search states one option's look-ahead may explore before giving up and "
                 + "showing no asterisk. Lower it if response menus feel slow.");
 
+            // Both off by default and both write into the SaveGames folder, beside the
+            // global state. Diagnostics for deciding whether the budget is set right,
+            // not something to run with: the first makes every crawl keep a per-entry
+            // tally, which is the search's inner loop.
+            var logLookAheadBudgetExceeded = Config.Bind(
+                "Diagnostics",
+                "LogLookAheadBudgetExceeded",
+                false,
+                "Append a report to " + LookAheadDiagnosticsWriter.OverflowLogName + " in the "
+                + "SaveGames folder whenever an option's look-ahead runs out of budget, naming "
+                + "the option, the state it started from, and the entries reached in the most "
+                + "distinct states - which is where a blow-up lives. Slows every crawl.");
+            var keepLookAheadStates = Config.Bind(
+                "Diagnostics",
+                "KeepLookAheadStates",
+                false,
+                "Maintain " + LookAheadDiagnosticsWriter.StatisticsFileName + " in the SaveGames "
+                + "folder: how many states and how long each look-ahead takes, as totals, "
+                + "extremes, a histogram, and a per-conversation breakdown.");
+
             var harmony = new Harmony(PluginGuid);
             _harmony = harmony;
 
@@ -250,7 +270,12 @@ namespace GlobalConversationTracker
                         log,
                         novelOptionColor.Value,
                         ResponseLookAheadPatch.DefaultUnseenThisGameColorHtml,
-                        lookAheadBudget.Value));
+                        lookAheadBudget.Value,
+                        new LookAheadDiagnosticsWriter(
+                            saveGameDirectory,
+                            log,
+                            logLookAheadBudgetExceeded.Value,
+                            keepLookAheadStates.Value)));
             }
 
             if (!recording && !recordingOrbs && !resyncing && !resyncingOrbs
@@ -318,6 +343,18 @@ namespace GlobalConversationTracker
         /// </remarks>
         private void FlushOnShutdown(GlobalStateSession session, string trigger)
         {
+            try
+            {
+                // Before the session, because the look-ahead statistics are a summary the
+                // session's own shutdown knows nothing about, and a crash in one should
+                // not cost the other.
+                ResponseLookAheadPatch.Flush();
+            }
+            catch (Exception)
+            {
+                // Diagnostics are optional by definition; the process is going away.
+            }
+
             try
             {
                 session.Shutdown(trigger);

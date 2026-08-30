@@ -438,6 +438,93 @@ namespace GlobalConversationTracker.LookAhead.Tests
             Assert.Equal(Novelty.UnseenAnyGame, Run(graph, world, Novel(189)).Best);
         }
 
+        // ---- diagnostics --------------------------------------------------------
+
+        [Fact]
+        public void NoTraceIsKeptUnlessAsked()
+        {
+            LookAheadGraph graph = new GraphBuilder()
+                .Add(0, links: new[] { 1 })
+                .Add(1)
+                .Build();
+
+            Assert.Null(Run(graph, new FakeWorld(), Novel()).Trace);
+        }
+
+        /// <summary>
+        /// A trace has to name the entries reached in the most distinct states, because
+        /// that is what identifies a blow-up; a count alone is not diagnosable.
+        /// </summary>
+        [Fact]
+        public void Trace_NamesTheHottestEntriesWorstFirst()
+        {
+            // 1 is reached in several states because 2 keeps changing a counter it reads.
+            LookAheadGraph graph = new GraphBuilder()
+                .Add(0, links: new[] { 1 })
+                .Add(1, guard: "Variable[\"q.count\"] < 4", links: new[] { 2 })
+                .Add(
+                    2,
+                    script: "SetVariableValue(\"q.count\", Variable[\"q.count\"] + 1)",
+                    links: new[] { 1 })
+                .Build();
+
+            var options = new LookAheadOptions { CollectTrace = true };
+            LookAheadResult result = Run(graph, new FakeWorld(), Novel(), options: options);
+
+            LookAheadTrace trace = Assert.IsType<LookAheadTrace>(result.Trace);
+            Assert.Equal(GraphBuilder.Node(0), trace.Start);
+            Assert.Equal(graph.Count, trace.GraphNodeCount);
+            Assert.NotEmpty(trace.HottestNodes);
+
+            for (int i = 1; i < trace.HottestNodes.Count; i++)
+            {
+                Assert.True(
+                    trace.HottestNodes[i - 1].States >= trace.HottestNodes[i].States,
+                    "hottest entries must be ordered worst first");
+            }
+        }
+
+        [Fact]
+        public void Trace_RecordsTheStateTheCrawlStartedFrom()
+        {
+            LookAheadGraph graph = new GraphBuilder()
+                .Add(0, links: new[] { 1 })
+                .Add(1)
+                .Build();
+
+            var world = new FakeWorld().WithMoney(4200).AtTime(17, 30).WithDay(3);
+            var options = new LookAheadOptions { CollectTrace = true };
+
+            LookAheadTrace trace = Assert.IsType<LookAheadTrace>(
+                Run(graph, world, Novel(), options: options).Trace);
+
+            Assert.Equal(4200, trace.Money);
+            Assert.Equal((17 * 60) + 30, trace.DayMinutes);
+            Assert.Equal(3, trace.DayCounter);
+            Assert.False(trace.ClockLocked);
+        }
+
+        [Fact]
+        public void Trace_IsCappedSoAReportStaysReadable()
+        {
+            var builder = new GraphBuilder();
+            var links = new int[20];
+            for (int i = 0; i < 20; i++)
+            {
+                links[i] = i + 1;
+                builder.Add(i + 1);
+            }
+
+            builder.Add(0, links: links);
+            LookAheadGraph graph = builder.Build();
+
+            var options = new LookAheadOptions { CollectTrace = true, TraceNodeLimit = 5 };
+            LookAheadTrace trace = Assert.IsType<LookAheadTrace>(
+                Run(graph, new FakeWorld(), Novel(), options: options).Trace);
+
+            Assert.Equal(5, trace.HottestNodes.Count);
+        }
+
         // ---- cross-conversation, budget, ordering -------------------------------
 
         [Fact]

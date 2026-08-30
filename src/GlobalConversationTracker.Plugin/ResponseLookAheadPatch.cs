@@ -34,6 +34,8 @@ namespace GlobalConversationTracker
         private static string _unseenAnyGameHtml = NovelResponseColorPatch.DefaultNovelColorHtml;
         private static string _unseenThisGameHtml = DefaultUnseenThisGameColorHtml;
         private static LookAheadEngine _engine = new LookAheadEngine();
+        private static LookAheadDiagnosticsWriter? _diagnostics;
+        private static int _budget = new LookAheadOptions().StateBudget;
 
         /// <summary>
         /// The colour for "leads to something no save has reached", matching the option
@@ -50,6 +52,10 @@ namespace GlobalConversationTracker
         /// <param name="unseenAnyGameHtml">Colour for reaching never-seen-anywhere text.</param>
         /// <param name="unseenThisGameHtml">Colour for reaching unseen-this-save text.</param>
         /// <param name="stateBudget">The most search states one option may cost.</param>
+        /// <param name="diagnostics">
+        /// Where budget overflows and cost statistics are recorded, or null to record
+        /// neither.
+        /// </param>
         /// <exception cref="ArgumentNullException">An argument is null.</exception>
         internal static void Install(
             Harmony harmony,
@@ -57,7 +63,8 @@ namespace GlobalConversationTracker
             IGlobalStateLog log,
             string unseenAnyGameHtml,
             string unseenThisGameHtml,
-            int stateBudget)
+            int stateBudget,
+            LookAheadDiagnosticsWriter? diagnostics = null)
         {
             if (harmony == null)
             {
@@ -74,7 +81,15 @@ namespace GlobalConversationTracker
                 "marking options that still lead somewhere unread", log);
             _unseenAnyGameHtml = Validate(unseenAnyGameHtml, nameof(unseenAnyGameHtml));
             _unseenThisGameHtml = Validate(unseenThisGameHtml, nameof(unseenThisGameHtml));
-            _engine = new LookAheadEngine(new LookAheadOptions { StateBudget = stateBudget });
+            _budget = stateBudget;
+            _diagnostics = diagnostics != null && diagnostics.Enabled ? diagnostics : null;
+            _engine = new LookAheadEngine(new LookAheadOptions
+            {
+                StateBudget = stateBudget,
+
+                // Only pay for the per-entry tally when something is going to read it.
+                CollectTrace = _diagnostics != null && _diagnostics.NeedsTrace,
+            });
 
             harmony.PatchAll(typeof(ChooseResponseTextPatch));
         }
@@ -134,11 +149,16 @@ namespace GlobalConversationTracker
             }
 
             var world = new GameLookAheadWorld();
+            var start = new DialogueNodeId(entry.conversationID, entry.id);
+
+            long ticks = System.Diagnostics.Stopwatch.GetTimestamp();
             LookAheadResult result = _engine.Evaluate(
                 graph,
-                new DialogueNodeId(entry.conversationID, entry.id),
+                start,
                 world,
                 node => NoveltyOf(session, node.ConversationId, node.EntryId));
+
+            _diagnostics?.Record(start, result, Milliseconds(ticks), _budget);
 
             if (result.Best <= own)
             {
@@ -149,6 +169,19 @@ namespace GlobalConversationTracker
                 ? _unseenAnyGameHtml
                 : _unseenThisGameHtml;
             return "<color=" + colour + ">*</color>";
+        }
+
+        /// <summary>Wall time since a stopwatch timestamp, in milliseconds.</summary>
+        private static double Milliseconds(long since)
+        {
+            return (System.Diagnostics.Stopwatch.GetTimestamp() - since) * 1000d
+                / System.Diagnostics.Stopwatch.Frequency;
+        }
+
+        /// <summary>Writes out anything still buffered. Call at shutdown.</summary>
+        internal static void Flush()
+        {
+            _diagnostics?.Flush();
         }
 
         /// <summary>

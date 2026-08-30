@@ -17,13 +17,22 @@ namespace GlobalConversationTracker.LookAhead
         /// <param name="statesExplored">How many (entry, state) pairs were visited.</param>
         /// <param name="nodesReached">How many distinct entries were reached.</param>
         /// <param name="budgetExhausted">Whether the search stopped early.</param>
+        /// <param name="trace">
+        /// What the crawl did, when <see cref="LookAheadOptions.CollectTrace"/> asked for
+        /// it; null otherwise.
+        /// </param>
         public LookAheadResult(
-            Novelty best, int statesExplored, int nodesReached, bool budgetExhausted)
+            Novelty best,
+            int statesExplored,
+            int nodesReached,
+            bool budgetExhausted,
+            LookAheadTrace? trace = null)
         {
             Best = best;
             StatesExplored = statesExplored;
             NodesReached = nodesReached;
             BudgetExhausted = budgetExhausted;
+            Trace = trace;
         }
 
         /// <summary>
@@ -46,6 +55,11 @@ namespace GlobalConversationTracker.LookAhead
         /// <see cref="Best"/> is a lower bound rather than an answer.
         /// </summary>
         public bool BudgetExhausted { get; }
+
+        /// <summary>
+        /// What the crawl did, when it was asked to keep track; null otherwise.
+        /// </summary>
+        public LookAheadTrace? Trace { get; }
 
         /// <inheritdoc/>
         public override string ToString()
@@ -85,6 +99,22 @@ namespace GlobalConversationTracker.LookAhead
         /// reading. Confirm against the game before turning this off.
         /// </remarks>
         public bool FailedChecksPassThrough { get; set; } = true;
+
+        /// <summary>
+        /// Whether to keep a per-entry tally so a crawl can explain itself afterwards.
+        /// </summary>
+        /// <remarks>
+        /// Off by default. It adds a dictionary write per state, in the loop that decides
+        /// what the feature costs, so it is for diagnosing a budget overflow rather than
+        /// for running with.
+        /// </remarks>
+        public bool CollectTrace { get; set; }
+
+        /// <summary>
+        /// How many entries a trace names. Only the worst matter - a blow-up is one or
+        /// two entries reached in hundreds of states, not a long flat list.
+        /// </summary>
+        public int TraceNodeLimit { get; set; } = 15;
     }
 
     /// <summary>
@@ -157,16 +187,22 @@ namespace GlobalConversationTracker.LookAhead
             // have run before anything downstream is considered.
             if (!TryEnter(startNode, initial, context, graph.Symbols, out LookAheadState entered))
             {
-                return new LookAheadResult(Novelty.SeenThisGame, 0, 0, false);
+                return new LookAheadResult(
+                    Novelty.SeenThisGame, 0, 0, false,
+                    BuildTrace(graph, start, world,
+                        _options.CollectTrace ? new Dictionary<DialogueNodeId, int>() : null));
             }
 
             var seen = new HashSet<StateKey>();
             var queue = new Queue<StateKey>();
             var reached = new HashSet<DialogueNodeId>();
+            Dictionary<DialogueNodeId, int>? tally =
+                _options.CollectTrace ? new Dictionary<DialogueNodeId, int>() : null;
             var first = new StateKey(start, entered);
             seen.Add(first);
             queue.Enqueue(first);
             reached.Add(start);
+            Count(tally, start);
 
             Novelty best = Novelty.SeenThisGame;
             bool exhausted = false;
@@ -208,7 +244,11 @@ namespace GlobalConversationTracker.LookAhead
                                 {
                                     reached.Add(childId);
                                     return new LookAheadResult(
-                                        best, seen.Count, reached.Count, false);
+                                        best,
+                                        seen.Count,
+                                        reached.Count,
+                                        false,
+                                        BuildTrace(graph, start, world, tally));
                                 }
                             }
                         }
@@ -217,13 +257,65 @@ namespace GlobalConversationTracker.LookAhead
                         if (seen.Add(key))
                         {
                             reached.Add(childId);
+                            Count(tally, childId);
                             queue.Enqueue(key);
                         }
                     }
                 }
             }
 
-            return new LookAheadResult(best, seen.Count, reached.Count, exhausted);
+            return new LookAheadResult(
+                best, seen.Count, reached.Count, exhausted,
+                BuildTrace(graph, start, world, tally));
+        }
+
+        /// <summary>Notes that an entry was reached in one more distinct state.</summary>
+        private static void Count(
+            Dictionary<DialogueNodeId, int>? tally, DialogueNodeId node)
+        {
+            if (tally == null)
+            {
+                return;
+            }
+
+            tally.TryGetValue(node, out int count);
+            tally[node] = count + 1;
+        }
+
+        /// <summary>Turns the tally into a trace, worst entries first.</summary>
+        private LookAheadTrace? BuildTrace(
+            LookAheadGraph graph,
+            DialogueNodeId start,
+            ILookAheadWorld world,
+            Dictionary<DialogueNodeId, int>? tally)
+        {
+            if (tally == null)
+            {
+                return null;
+            }
+
+            var hottest = new List<NodeStateCount>(tally.Count);
+            foreach (KeyValuePair<DialogueNodeId, int> pair in tally)
+            {
+                hottest.Add(new NodeStateCount(pair.Key, pair.Value));
+            }
+
+            hottest.Sort((left, right) => right.States.CompareTo(left.States));
+            if (hottest.Count > _options.TraceNodeLimit)
+            {
+                hottest.RemoveRange(
+                    _options.TraceNodeLimit, hottest.Count - _options.TraceNodeLimit);
+            }
+
+            return new LookAheadTrace(
+                start,
+                graph.Count,
+                graph.Symbols.Count,
+                world.Money,
+                world.DayMinutes,
+                world.DayCounter,
+                world.IsClockLocked,
+                hottest);
         }
 
         /// <summary>
