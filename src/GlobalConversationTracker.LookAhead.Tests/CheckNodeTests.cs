@@ -87,6 +87,80 @@ namespace GlobalConversationTracker.LookAhead.Tests
             Assert.Equal(Novelty.UnseenAnyGame, Run(graph, seen, Novel(2)).Best);
         }
 
+        /// <summary>
+        /// Walking a fake check displays it, so a path that loops back finds it closed -
+        /// the game would not offer it twice, and neither should the crawl.
+        /// </summary>
+        [Fact]
+        public void FakeCheck_ClosesAfterThePathWalksThroughIt()
+        {
+            // 1 is the fake check; 2 loops back to it and also leads to 3.
+            LookAheadGraph graph = new GraphBuilder()
+                .Add(0, links: new[] { 1 })
+                .Add(1, kind: DialogueCheckKind.Fake, links: new[] { 2 })
+                .Add(2, links: new[] { 1, 3 })
+                .Add(3)
+                .Build();
+
+            // Node 3 is still found: the loop is not needed to reach it.
+            Assert.Equal(Novelty.UnseenAnyGame, Run(graph, new FakeWorld(), Novel(3)).Best);
+
+            // And the crawl terminates rather than cycling through the check forever.
+            LookAheadResult result = Run(graph, new FakeWorld(), Novel());
+            Assert.False(result.BudgetExhausted);
+        }
+
+        /// <summary>
+        /// The speculative marker is seeded from the save, so an entry the player has
+        /// really seen is closed from the first step - the two notions start equal.
+        /// </summary>
+        [Fact]
+        public void SpeculativeSeen_StartsFromTheSave()
+        {
+            LookAheadGraph graph = Gated(DialogueCheckKind.Fake);
+
+            Assert.Equal(
+                Novelty.UnseenAnyGame, Run(graph, new FakeWorld(), Novel(2)).Best);
+            Assert.Equal(
+                Novelty.SeenThisGame,
+                Run(graph, new FakeWorld().WithSeen(GraphBuilder.Node(1)), Novel(2)).Best);
+        }
+
+        /// <summary>
+        /// Walking an entry does NOT make it count as read. Novelty is what the player
+        /// has actually seen and decides the marker; the speculative flag only decides
+        /// whether an option is still offered. Conflating them would silently erase the
+        /// novelty of everything a path touches.
+        /// </summary>
+        [Fact]
+        public void WalkingAnEntry_DoesNotChangeItsNovelty()
+        {
+            LookAheadGraph graph = new GraphBuilder()
+                .Add(0, links: new[] { 1 })
+                .Add(1, kind: DialogueCheckKind.Fake, links: new[] { 2 })
+                .Add(2)
+                .Build();
+
+            // The fake check itself is the unseen content, and the crawl walks it.
+            Assert.Equal(Novelty.UnseenAnyGame, Run(graph, new FakeWorld(), Novel(1)).Best);
+        }
+
+        /// <summary>A boolean_only Kim switch is exempt, so a loop does not close it.</summary>
+        [Fact]
+        public void BooleanOnlyKimSwitch_StaysOpenAfterBeingWalked()
+        {
+            LookAheadGraph graph = new GraphBuilder()
+                .Add(0, links: new[] { 1 })
+                .Add(1, kind: DialogueCheckKind.KimSwitch, booleanOnly: true, links: new[] { 2 })
+                .Add(2, links: new[] { 1, 3 })
+                .Add(3)
+                .Build();
+
+            LookAheadResult result = Run(graph, new FakeWorld(), Novel(3));
+            Assert.Equal(Novelty.UnseenAnyGame, result.Best);
+            Assert.False(result.BudgetExhausted);
+        }
+
         // ---- red checks ---------------------------------------------------------
 
         /// <summary>

@@ -46,6 +46,9 @@ namespace GlobalConversationTracker.LookAhead.Tests
                 }
             }
 
+            bool closesOnceSeen = kind == DialogueCheckKind.Fake
+                || (kind == DialogueCheckKind.KimSwitch && !booleanOnly);
+
             _nodes.Add(new LookAheadNode(
                 Node(id, conversation),
                 isGroup,
@@ -58,7 +61,8 @@ namespace GlobalConversationTracker.LookAhead.Tests
                 hiddenWhenUnaffordable: false,
                 flagSlot: flag == null ? -1 : Symbols.Variable(flag),
                 failedFlagSlot: flag == null ? -1 : Symbols.Variable(flag + "_failed"),
-                booleanOnly: booleanOnly));
+                booleanOnly: booleanOnly,
+                seenSlot: closesOnceSeen ? Symbols.Seen(Node(id, conversation)) : -1));
             return this;
         }
 

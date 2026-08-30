@@ -36,6 +36,12 @@ namespace GlobalConversationTracker.LookAhead
         /// <summary>Prefix for a "this node already fired" marker slot.</summary>
         public const string OncePrefix = "once:";
 
+        /// <summary>
+        /// Prefix for a "this node has been displayed" slot, seeded from the save and
+        /// then advanced speculatively as a path walks through it.
+        /// </summary>
+        public const string SeenPrefix = "seen:";
+
         /// <summary>How many slots exist.</summary>
         public int Count => _names.Count;
 
@@ -65,6 +71,13 @@ namespace GlobalConversationTracker.LookAhead
         public int Once(DialogueNodeId node)
         {
             return Intern(OncePrefix + node.ConversationId + ":" + node.EntryId);
+        }
+
+        /// <summary>The slot for a node's displayed marker, creating it if new.</summary>
+        /// <param name="node">The node the marker belongs to.</param>
+        public int Seen(DialogueNodeId node)
+        {
+            return Intern(SeenPrefix + node.ConversationId + ":" + node.EntryId);
         }
 
         /// <summary>The slot for a name already interned, or -1.</summary>

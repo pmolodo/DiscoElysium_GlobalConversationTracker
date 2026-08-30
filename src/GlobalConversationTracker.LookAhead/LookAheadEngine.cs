@@ -262,7 +262,7 @@ namespace GlobalConversationTracker.LookAhead
                 case DialogueCheckKind.Fake:
                     // Offered until it has been seen; its result is forced rather than
                     // rolled, so there is only one way through it.
-                    if (!context.World.IsSeen(node.Id))
+                    if (!HasBeenSeen(node, state))
                     {
                         yield return Charge(node, state, symbols, clockLocked);
                     }
@@ -270,7 +270,7 @@ namespace GlobalConversationTracker.LookAhead
                     yield break;
 
                 case DialogueCheckKind.KimSwitch:
-                    if (node.BooleanOnly || !context.World.IsSeen(node.Id))
+                    if (node.BooleanOnly || !HasBeenSeen(node, state))
                     {
                         yield return Charge(node, state, symbols, clockLocked);
                     }
@@ -388,6 +388,22 @@ namespace GlobalConversationTracker.LookAhead
             return node.Cost <= state.Money;
         }
 
+        /// <summary>
+        /// Whether this entry counts as displayed at this point on the path.
+        /// </summary>
+        /// <remarks>
+        /// Speculative, and deliberately NOT the same question as
+        /// <see cref="Novelty.SeenThisGame"/>. Novelty is what the player has really
+        /// read, and decides the marker; this is what a hypothetical path would have
+        /// displayed by the time it stands here, and decides whether an option is still
+        /// offered. They start equal - the slot is seeded from the save - and diverge as
+        /// the crawl walks.
+        /// </remarks>
+        private static bool HasBeenSeen(LookAheadNode node, LookAheadState state)
+        {
+            return node.SeenSlot >= 0 && state.IsSet(node.SeenSlot);
+        }
+
         /// <summary>Pays for the node, then applies its actions.</summary>
         private LookAheadState Charge(
             LookAheadNode node, LookAheadState state, StateSymbols symbols, bool clockLocked)
@@ -405,6 +421,13 @@ namespace GlobalConversationTracker.LookAhead
                         paid = paid.With(onceSlot, 1);
                     }
                 }
+            }
+
+            if (node.SeenSlot >= 0)
+            {
+                // Walking through an entry displays it, which is what closes a fake
+                // check or a Kim switch the second time a path comes round to it.
+                paid = paid.With(node.SeenSlot, 1);
             }
 
             return DialogueAction.Apply(
@@ -458,6 +481,17 @@ namespace GlobalConversationTracker.LookAhead
                 else if (value.Kind == GuardValueKind.Number && value.Number != 0)
                 {
                     state = state.With(slot, (int)value.Number);
+                }
+            }
+
+            // Seeded from the save, so the crawl starts believing exactly what the
+            // player has actually read, and only diverges where a path displays
+            // something.
+            foreach (LookAheadNode node in graph.Nodes)
+            {
+                if (node.SeenSlot >= 0 && world.IsSeen(node.Id))
+                {
+                    state = state.With(node.SeenSlot, 1);
                 }
             }
 

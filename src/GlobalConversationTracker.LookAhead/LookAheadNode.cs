@@ -57,6 +57,10 @@ namespace GlobalConversationTracker.LookAhead
         /// <param name="booleanOnly">
         /// For a Kim switch, whether it stays available after being seen.
         /// </param>
+        /// <param name="seenSlot">
+        /// The slot tracking whether this entry has been displayed, for the node types
+        /// that close once seen, or -1 for everything else.
+        /// </param>
         /// <exception cref="ArgumentNullException">An argument is null.</exception>
         /// <exception cref="ArgumentOutOfRangeException"><paramref name="cost"/> is negative.</exception>
         public LookAheadNode(
@@ -71,7 +75,8 @@ namespace GlobalConversationTracker.LookAhead
             bool hiddenWhenUnaffordable = false,
             int flagSlot = -1,
             int failedFlagSlot = -1,
-            bool booleanOnly = false)
+            bool booleanOnly = false,
+            int seenSlot = -1)
         {
             if (cost < 0)
             {
@@ -90,6 +95,7 @@ namespace GlobalConversationTracker.LookAhead
             FlagSlot = flagSlot;
             FailedFlagSlot = failedFlagSlot;
             BooleanOnly = booleanOnly;
+            SeenSlot = seenSlot;
         }
 
         /// <summary>Which entry this is.</summary>
@@ -135,6 +141,23 @@ namespace GlobalConversationTracker.LookAhead
 
         /// <summary>For a Kim switch, whether being seen leaves it available.</summary>
         public bool BooleanOnly { get; }
+
+        /// <summary>
+        /// The slot tracking whether this entry has been displayed, or -1.
+        /// </summary>
+        /// <remarks>
+        /// Only the two kinds that close once seen get one - a fake check and a Kim
+        /// switch that is not <c>boolean_only</c> - which is 23 entries in the whole
+        /// database. Giving every node a slot would put a bit per node into a state
+        /// vector that the search copies and hashes millions of times, to answer a
+        /// question nothing else asks.
+        /// </remarks>
+        public int SeenSlot { get; }
+
+        /// <summary>Whether this entry stops being offered once it has been displayed.</summary>
+        public bool ClosesOnceSeen =>
+            Kind == DialogueCheckKind.Fake
+            || (Kind == DialogueCheckKind.KimSwitch && !BooleanOnly);
 
         /// <summary>Whether this entry charges anything.</summary>
         public bool IsCostOption => Cost > 0;

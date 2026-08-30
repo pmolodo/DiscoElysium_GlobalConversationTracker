@@ -173,8 +173,17 @@ namespace GlobalConversationTracker
                 ? Field.LookupInt(entry.fields, ClickCostField)
                 : 0;
 
+            var id = new DialogueNodeId(entry.conversationID, entry.id);
+            bool booleanOnly = kind == DialogueCheckKind.KimSwitch
+                && Field.LookupBool(entry.fields, BooleanOnlyField);
+
+            // Only the kinds that close once displayed carry a slot; 23 entries in the
+            // whole database qualify.
+            bool closesOnceSeen = kind == DialogueCheckKind.Fake
+                || (kind == DialogueCheckKind.KimSwitch && !booleanOnly);
+
             return new LookAheadNode(
-                new DialogueNodeId(entry.conversationID, entry.id),
+                id,
                 entry.isGroup,
                 kind,
                 guard,
@@ -185,8 +194,8 @@ namespace GlobalConversationTracker
                 cost > 0 && Field.LookupBool(entry.fields, HiddenNotEnoughField),
                 flagSlot,
                 failedSlot,
-                kind == DialogueCheckKind.KimSwitch
-                    && Field.LookupBool(entry.fields, BooleanOnlyField));
+                booleanOnly,
+                closesOnceSeen ? symbols.Seen(id) : -1);
         }
 
         /// <summary>
