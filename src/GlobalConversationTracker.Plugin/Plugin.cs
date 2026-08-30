@@ -92,8 +92,24 @@ namespace GlobalConversationTracker
             Log.LogMessage($"{PluginName} v{PluginVersion} loaded.");
 
             string saveGameDirectory = SaveGameDirectory.Resolve(Log);
-            var store = new GlobalStateStore(saveGameDirectory);
-            Log.LogMessage($"Global state file: {store.LivePath}");
+
+            // A redirected global state is the sort of thing that must never happen
+            // quietly: a run that silently wrote somewhere else would look like a run
+            // that lost its history.
+            string? overridePath = GlobalStatePath.FromEnvironment();
+            var store = GlobalStateStore.AtPath(
+                GlobalStatePath.Resolve(saveGameDirectory, overridePath));
+            if (overridePath == null)
+            {
+                Log.LogMessage($"Global state file: {store.LivePath}");
+            }
+            else
+            {
+                Log.LogWarning(
+                    $"Global state file: {store.LivePath} - REDIRECTED by "
+                    + $"{GlobalStatePath.OverrideVariable}={overridePath}. The real global "
+                    + "state is not being read or written this session.");
+            }
 
             var log = new BepInExGlobalStateLog(Log);
             var session = new GlobalStateSession(store, log);
@@ -275,7 +291,7 @@ namespace GlobalConversationTracker
                         ResponseLookAheadPatch.DefaultUnseenThisGameColorHtml,
                         lookAheadBudget.Value,
                         new LookAheadDiagnosticsWriter(
-                            saveGameDirectory,
+                            store.DirectoryPath,
                             log,
                             logLookAheadBudgetExceeded.Value,
                             keepLookAheadStates.Value)));

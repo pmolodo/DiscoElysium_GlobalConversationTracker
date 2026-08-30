@@ -32,9 +32,17 @@ namespace GlobalConversationTracker.Persistence
     public sealed class GlobalStateStore
     {
         /// <summary>
-        /// The fixed, non-configurable file name, per ProjectGoal.md ("the name of
-        /// the save file should be constant / unalterable").
+        /// The file name a player always gets, per ProjectGoal.md ("for initial
+        /// implementation, the name of the save file should be constant /
+        /// unalterable").
         /// </summary>
+        /// <remarks>
+        /// Constant in every case the mod is played in. The one exception is
+        /// <see cref="GlobalStatePath.OverrideVariable"/>, an environment variable that
+        /// exists so a build under test can be pointed away from the real global state -
+        /// the only file here that cannot be regenerated, being the record of every
+        /// playthrough. It is not reachable from the config a player edits.
+        /// </remarks>
         public const string FileName = "global-conversation-state.json";
 
         /// <summary>Suffix of the previous generation kept beside the live file.</summary>
@@ -77,6 +85,52 @@ namespace GlobalConversationTracker.Persistence
             LivePath = Path.Combine(DirectoryPath, FileName);
             BackupPath = LivePath + BackupSuffix;
             TempPath = LivePath + TempSuffix;
+        }
+
+        /// <summary>
+        /// Creates a store over a specific file, whose directory need not be the
+        /// SaveGames one. For <see cref="GlobalStatePath.OverrideVariable"/>.
+        /// </summary>
+        /// <param name="filePath">Full path of the live file.</param>
+        /// <param name="ignored">
+        /// Distinguishes this from the directory constructor, which would otherwise have
+        /// the same signature. Its value is never read.
+        /// </param>
+        /// <exception cref="ArgumentException">
+        /// <paramref name="filePath"/> is null, empty, whitespace, or names no directory.
+        /// </exception>
+        private GlobalStateStore(string filePath, bool ignored)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                throw new ArgumentException(
+                    "The global state path must not be empty.", nameof(filePath));
+            }
+
+            string? directory = Path.GetDirectoryName(filePath);
+            if (string.IsNullOrWhiteSpace(directory))
+            {
+                throw new ArgumentException(
+                    $"'{filePath}' names no directory to write into.", nameof(filePath));
+            }
+
+            DirectoryPath = NormalizeDirectory(directory!);
+            LivePath = filePath;
+            BackupPath = LivePath + BackupSuffix;
+            TempPath = LivePath + TempSuffix;
+        }
+
+        /// <summary>Creates a store over a specific file path.</summary>
+        /// <param name="filePath">
+        /// Full path of the live file. Its directory carries the backup and temp files
+        /// too, exactly as the SaveGames directory does by default.
+        /// </param>
+        /// <exception cref="ArgumentException">
+        /// <paramref name="filePath"/> is null, empty, whitespace, or names no directory.
+        /// </exception>
+        public static GlobalStateStore AtPath(string filePath)
+        {
+            return new GlobalStateStore(filePath, ignored: true);
         }
 
         /// <summary>The directory holding all three files, without a trailing separator.</summary>
