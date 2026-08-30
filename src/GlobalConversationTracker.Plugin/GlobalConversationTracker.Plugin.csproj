@@ -47,6 +47,9 @@
         <Compile Include="..\GlobalConversationTracker.Core\**\*.cs"
             Exclude="..\GlobalConversationTracker.Core\bin\**;..\GlobalConversationTracker.Core\obj\**"
             LinkBase="GlobalConversationTracker.Core" />
+        <Compile Include="..\GlobalConversationTracker.LookAhead\**\*.cs"
+            Exclude="..\GlobalConversationTracker.LookAhead\bin\**;..\GlobalConversationTracker.LookAhead\obj\**"
+            LinkBase="GlobalConversationTracker.LookAhead" />
         <Compile Include="..\GlobalConversationTracker.Persistence\**\*.cs"
             Exclude="..\GlobalConversationTracker.Persistence\bin\**;..\GlobalConversationTracker.Persistence\obj\**"
             LinkBase="GlobalConversationTracker.Persistence" />

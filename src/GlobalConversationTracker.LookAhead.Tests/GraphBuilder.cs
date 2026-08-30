@@ -30,7 +30,9 @@ namespace GlobalConversationTracker.LookAhead.Tests
             string? script = null,
             int[]? links = null,
             bool isGroup = false,
-            bool isCheck = false,
+            DialogueCheckKind kind = DialogueCheckKind.None,
+            string? flag = null,
+            bool booleanOnly = false,
             int cost = 0,
             bool costOnce = false,
             int conversation = DefaultConversation)
@@ -47,12 +49,16 @@ namespace GlobalConversationTracker.LookAhead.Tests
             _nodes.Add(new LookAheadNode(
                 Node(id, conversation),
                 isGroup,
-                isCheck,
+                kind,
                 GuardParser.Parse(guard),
                 ActionParser.Parse(script, Symbols),
                 targets,
                 cost,
-                costOnce));
+                costOnce,
+                hiddenWhenUnaffordable: false,
+                flagSlot: flag == null ? -1 : Symbols.Variable(flag),
+                failedFlagSlot: flag == null ? -1 : Symbols.Variable(flag + "_failed"),
+                booleanOnly: booleanOnly));
             return this;
         }
 
@@ -62,7 +68,6 @@ namespace GlobalConversationTracker.LookAhead.Tests
         {
             _nodes.Add(new LookAheadNode(
                 Node(id, conversation),
-                false,
                 false,
                 GuardExpression.AlwaysTrue,
                 ActionParser.Parse(null, Symbols),

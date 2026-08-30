@@ -15,6 +15,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
             new Dictionary<string, GuardValue>();
         private readonly Dictionary<DialogueNodeId, Ternary> _checks =
             new Dictionary<DialogueNodeId, Ternary>();
+        private readonly HashSet<DialogueNodeId> _seen = new HashSet<DialogueNodeId>();
 
         public int Money { get; set; }
 
@@ -93,6 +94,17 @@ namespace GlobalConversationTracker.LookAhead.Tests
             return _queries.TryGetValue(name, out GuardValue value)
                 ? value
                 : GuardValue.Unknown;
+        }
+
+        public FakeWorld WithSeen(DialogueNodeId node)
+        {
+            _seen.Add(node);
+            return this;
+        }
+
+        public bool IsSeen(DialogueNodeId node)
+        {
+            return _seen.Contains(node);
         }
 
         public Ternary CheckPasses(DialogueNodeId node)

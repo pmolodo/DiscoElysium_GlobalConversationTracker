@@ -147,6 +147,23 @@ namespace GlobalConversationTracker
                 + "exhausted colour; options picked only in other saves keep the game's normal "
                 + "option colour.");
 
+            // Off by default: it is the one feature that spends real time per response
+            // menu, and unlike the others it can be wrong in a way the player would have
+            // to verify by hand. Let it be opted into until it has been played with.
+            var markLookAhead = Config.Bind(
+                "Display",
+                "MarkLookAhead",
+                false,
+                "Append a coloured asterisk to a dialogue option that can still lead to text you have "
+                + "not read, even when the option itself is spent. Orange means it can reach a line no "
+                + "save has seen; red means a line this save has not seen.");
+            var lookAheadBudget = Config.Bind(
+                "Display",
+                "LookAheadStateBudget",
+                200_000,
+                "The most search states one option's look-ahead may explore before giving up and "
+                + "showing no asterisk. Lower it if response menus feel slow.");
+
             var harmony = new Harmony(PluginGuid);
             _harmony = harmony;
 
@@ -218,8 +235,26 @@ namespace GlobalConversationTracker
                     + "draws them. Tracking is unaffected. Turn it back on with MarkNovelOptions.");
             }
 
+            bool markingLookAhead = markLookAhead.Value;
+            if (markingLookAhead)
+            {
+                markingLookAhead = TryInstall(
+                    "Sunshine.ConversationLogger.ChooseResponseText",
+                    "options that can still lead to unread text are marked with an asterisk",
+                    "Dialogue options will carry no look-ahead marker this session; their own colours "
+                        + "are unaffected",
+                    () => ResponseLookAheadPatch.Install(
+                        harmony,
+                        session,
+                        log,
+                        novelOptionColor.Value,
+                        ResponseLookAheadPatch.DefaultUnseenThisGameColorHtml,
+                        lookAheadBudget.Value));
+            }
+
             if (!recording && !recordingOrbs && !resyncing && !resyncingOrbs
-                && !resettingCurrentSave && !showingCount && !colouringNovelOptions)
+                && !resettingCurrentSave && !showingCount && !colouringNovelOptions
+                && !markingLookAhead)
             {
                 _harmony = null;
             }

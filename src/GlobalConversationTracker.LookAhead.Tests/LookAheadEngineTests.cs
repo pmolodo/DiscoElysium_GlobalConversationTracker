@@ -316,7 +316,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
                 .Add(387, links: new[] { 415 })
                 .Add(
                     415,
-                    isCheck: true,
+                    kind: DialogueCheckKind.Passive,
                     script: "SetVariableValue(\"whirling.lena_intro_encyc_paraplegic\", true)",
                     links: new[] { 286 })
                 .Add(286, isGroup: true, links: new[] { 189 })

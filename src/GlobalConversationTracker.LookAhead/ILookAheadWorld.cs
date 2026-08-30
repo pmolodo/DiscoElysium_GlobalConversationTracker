@@ -60,5 +60,19 @@ namespace GlobalConversationTracker.LookAhead
         /// </remarks>
         /// <param name="node">The entry carrying the check.</param>
         Ternary CheckPasses(DialogueNodeId node);
+
+        /// <summary>
+        /// Whether this entry has already been displayed in the current save -
+        /// <c>SunshineNode.IsSeen</c>, which is <c>SimStatus == "WasDisplayed"</c>.
+        /// </summary>
+        /// <remarks>
+        /// Read once per crawl and held constant, so an entry the hypothetical path
+        /// itself would display is still reported as unseen. That understates how quickly
+        /// fake checks and Kim switches close, which errs toward reporting more
+        /// reachable, not less. Tracking it properly would need a bit per node in the
+        /// state vector, and the state vector is what the search's cost is made of.
+        /// </remarks>
+        /// <param name="node">The entry to test.</param>
+        bool IsSeen(DialogueNodeId node);
     }
 }

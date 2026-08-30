@@ -227,9 +227,14 @@ namespace GlobalConversationTracker.LookAhead
         }
 
         /// <summary>
-        /// The states a node can be entered in: normally one, but two when a skill
-        /// check's outcome is unknown and both possibilities have to be carried.
+        /// The states a node can be entered in: usually one, but two when an outcome is
+        /// undetermined and both possibilities have to be carried forward.
         /// </summary>
+        /// <remarks>
+        /// This is where the game's two gates are applied in order - the entry's
+        /// condition, then the <c>isDialogueEntryValid</c> dispatch that
+        /// <see cref="DialogueCheckKind"/> mirrors.
+        /// </remarks>
         private IEnumerable<LookAheadState> Enter(
             LookAheadNode node,
             LookAheadState state,
@@ -247,23 +252,100 @@ namespace GlobalConversationTracker.LookAhead
                 yield break;
             }
 
-            if (!node.IsCheck)
+            switch (node.Kind)
             {
-                yield return Charge(node, state, symbols);
+                case DialogueCheckKind.Test:
+                    // Hidden outside developer mode, so never reachable in play.
+                    yield break;
+
+                case DialogueCheckKind.Fake:
+                    // Offered until it has been seen; its result is forced rather than
+                    // rolled, so there is only one way through it.
+                    if (!context.World.IsSeen(node.Id))
+                    {
+                        yield return Charge(node, state, symbols);
+                    }
+
+                    yield break;
+
+                case DialogueCheckKind.KimSwitch:
+                    if (node.BooleanOnly || !context.World.IsSeen(node.Id))
+                    {
+                        yield return Charge(node, state, symbols);
+                    }
+
+                    yield break;
+
+                case DialogueCheckKind.Red:
+                case DialogueCheckKind.White:
+                    foreach (LookAheadState next in EnterRolled(node, state, symbols))
+                    {
+                        yield return next;
+                    }
+
+                    yield break;
+
+                case DialogueCheckKind.Passive:
+                {
+                    Ternary passes = context.World.CheckPasses(node.Id);
+                    if (passes != Ternary.False)
+                    {
+                        yield return Charge(node, state, symbols);
+                    }
+
+                    if (passes != Ternary.True && _options.FailedChecksPassThrough)
+                    {
+                        // PassiveNode.CheckSuccess sets falseConditionAction to
+                        // "Passthrough" on the entry as it evaluates it, so a failure
+                        // does not end the branch: the line is not shown and its actions
+                        // do not run, but the conversation walks on to the children.
+                        yield return state;
+                    }
+
+                    yield break;
+                }
+
+                default:
+                    yield return Charge(node, state, symbols);
+                    yield break;
+            }
+        }
+
+        /// <summary>
+        /// A red or white check. Its outcome comes off the dice, so both results stay
+        /// possible - but whether it is OFFERED at all is settled by its flags, and those
+        /// are ordinary variables the crawl tracks.
+        /// </summary>
+        /// <remarks>
+        /// A red check is one shot: either flag closes it. A white check is retryable, so
+        /// only success closes it, which is why a failed white check leaves the state
+        /// untouched rather than setting a failure flag.
+        /// </remarks>
+        private IEnumerable<LookAheadState> EnterRolled(
+            LookAheadNode node, LookAheadState state, StateSymbols symbols)
+        {
+            bool passed = node.FlagSlot >= 0 && state.IsSet(node.FlagSlot);
+            bool failed = node.FailedFlagSlot >= 0 && state.IsSet(node.FailedFlagSlot);
+            if (passed || (node.Kind == DialogueCheckKind.Red && failed))
+            {
                 yield break;
             }
 
-            Ternary passes = context.World.CheckPasses(node.Id);
-            if (passes != Ternary.False)
-            {
-                yield return Charge(node, state, symbols);
-            }
+            LookAheadState entered = Charge(node, state, symbols);
 
-            if (passes != Ternary.True && _options.FailedChecksPassThrough)
+            LookAheadState success = node.FlagSlot >= 0
+                ? entered.With(node.FlagSlot, 1)
+                : entered;
+            yield return success;
+
+            if (node.Kind == DialogueCheckKind.Red && node.FailedFlagSlot >= 0)
             {
-                // The check did not fire: the line is not shown, so its actions did not
-                // run, but the conversation carries on past it.
-                yield return state;
+                yield return entered.With(node.FailedFlagSlot, 1);
+            }
+            else if (node.Kind == DialogueCheckKind.White)
+            {
+                // A failed white check changes nothing and can be tried again.
+                yield return entered;
             }
         }
 
