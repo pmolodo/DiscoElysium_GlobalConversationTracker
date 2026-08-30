@@ -32,7 +32,7 @@ namespace GlobalConversationTracker.Persistence
         /// the game happened to be launched from. A value ending in a directory
         /// separator names a directory, and the default file name is used inside it.
         /// </remarks>
-        public const string OverrideVariable = "GCT_GLOBAL_STATE_PATH";
+        public const string OverrideVariable = "DISCO_ELYSIUM_GCT_GLOBAL_STATE_PATH";
 
         /// <summary>
         /// The full path of the global state file.
