@@ -147,13 +147,14 @@ namespace GlobalConversationTracker
                 + "exhausted colour; options picked only in other saves keep the game's normal "
                 + "option colour.");
 
-            // Off by default: it is the one feature that spends real time per response
-            // menu, and unlike the others it can be wrong in a way the player would have
-            // to verify by hand. Let it be opted into until it has been played with.
+            // On, like the other display features. It is the one that spends real time
+            // per response menu, so LookAheadStateBudget is the dial to turn if a menu
+            // ever feels slow, and this switch is how to leave the look-ahead out
+            // entirely - tracking is unaffected either way.
             var markLookAhead = Config.Bind(
                 "Display",
                 "MarkLookAhead",
-                false,
+                true,
                 "Append a coloured asterisk to a dialogue option that can still lead to text you have "
                 + "not read, even when the option itself is spent. Orange means it can reach a line no "
                 + "save has seen; red means a line this save has not seen.");
