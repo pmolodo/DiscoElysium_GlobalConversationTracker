@@ -36,6 +36,8 @@ namespace GlobalConversationTracker
             new Dictionary<string, GuardValue>();
         private readonly Dictionary<string, GuardValue> _variables =
             new Dictionary<string, GuardValue>();
+        private readonly Dictionary<DialogueNodeId, Ternary> _checks =
+            new Dictionary<DialogueNodeId, Ternary>();
 
         /// <summary>Creates a snapshot.</summary>
         internal GameLookAheadWorld()
@@ -79,19 +81,37 @@ namespace GlobalConversationTracker
         }
 
         /// <summary>
-        /// Whether a passive check on this entry fires.
+        /// Whether a passive check on this entry fires, per <see cref="PassiveCheckRule"/>.
         /// </summary>
         /// <remarks>
-        /// Not yet implemented, so every check comes back Unknown and the engine explores
-        /// both outcomes. That is correct and conservative, and it costs branching at the
-        /// 10,500 entries in the database that carry a <c>DifficultyPass</c>. The rule
-        /// itself is simple - <c>PassiveNode.CheckSuccess</c> is skill plus six against
-        /// the difficulty threshold, no dice - and wiring it up is what turns this from
-        /// "never wrong" into "usually exact".
+        /// Cached for the crawl. The same entry is asked about repeatedly as the search
+        /// fans out, and the answer cannot change while a single response menu is drawn.
         /// </remarks>
         public Ternary CheckPasses(DialogueNodeId node)
         {
-            return Ternary.Unknown;
+            if (_checks.TryGetValue(node, out Ternary cached))
+            {
+                return cached;
+            }
+
+            Ternary outcome;
+            try
+            {
+                DialogueDatabase database = DialogueManager.masterDatabase;
+                DialogueEntry? entry = database == null
+                    ? null
+                    : database.GetDialogueEntry(node.ConversationId, node.EntryId);
+                outcome = PassiveCheckRule.Evaluate(entry);
+            }
+            catch (System.Exception)
+            {
+                // Reaching into the character sheet from a UI callback: if anything is
+                // half-built, Unknown keeps the crawl correct rather than guessing.
+                outcome = Ternary.Unknown;
+            }
+
+            _checks[node] = outcome;
+            return outcome;
         }
 
         /// <inheritdoc/>
