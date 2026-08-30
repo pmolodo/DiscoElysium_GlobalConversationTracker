@@ -33,7 +33,7 @@ New-ItemProperty -LiteralPath $scratch -Name 'Screenmanager Resolution Width_h18
 New-ItemProperty -LiteralPath $scratch -Name 'BindingsDefault_h1511096668' `
     -Value ([byte[]](1, 2, 3, 250, 255, 0)) -PropertyType Binary | Out-Null
 
-Import-Module (Join-Path $PSScriptRoot '..\..\game-settings.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'game-settings.psm1') -Force
 
 Write-Host "`nkey in use: $(Get-GameSettingsKeyPath -ForRegExe)"
 Check 'module targets the scratch key' $scratchForReg (Get-GameSettingsKeyPath -ForRegExe)
