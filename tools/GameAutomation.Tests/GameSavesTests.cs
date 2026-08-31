@@ -6,35 +6,26 @@ using Xunit;
 namespace GlobalConversationTracker.Automation.Tests
 {
     /// <summary>
-    /// Moving the player's saves aside and putting them back.
+    /// Recognising save files and copying one.
     /// </summary>
     /// <remarks>
-    /// Every test runs against a scratch folder through DISCO_ELYSIUM_GCT_SAVES_DIR, never
-    /// a real installation. This is the most destructive thing the harness does - the
-    /// folder is gigabytes of somebody's playthroughs and is Steam-Cloud-synced - so the
-    /// tests care mostly about what happens when something goes wrong partway.
+    /// Only what GameSaves still owns: recognising a save file and copying one with its
+    /// thumbnail. Moving folders around is GameProfile's job and is tested there.
     /// </remarks>
     public class GameSavesTests : IDisposable
     {
-        private const string RedirectVariable = "DISCO_ELYSIUM_GCT_SAVES_DIR";
-
         private readonly string _root;
         private readonly string _saves;
-        private readonly string? _previous;
-
         public GameSavesTests()
         {
             _root = Path.Combine(Path.GetTempPath(), "gct-saves-" + Guid.NewGuid().ToString("N"));
             _saves = Path.Combine(_root, "SaveGames");
             Directory.CreateDirectory(_saves);
 
-            _previous = Environment.GetEnvironmentVariable(RedirectVariable);
-            Environment.SetEnvironmentVariable(RedirectVariable, _saves);
         }
 
         public void Dispose()
         {
-            Environment.SetEnvironmentVariable(RedirectVariable, _previous);
             if (Directory.Exists(_root))
             {
                 Directory.Delete(_root, recursive: true);
@@ -51,12 +42,6 @@ namespace GlobalConversationTracker.Automation.Tests
         }
 
         [Fact]
-        public void TheRedirectIsHonoured()
-        {
-            Assert.Equal(_saves, GameSaves.SavesPath);
-        }
-
-        [Fact]
         public void ListingIgnoresThumbnails()
         {
             WriteSave(_saves, "one");
@@ -69,112 +54,21 @@ namespace GlobalConversationTracker.Automation.Tests
         }
 
         [Fact]
-        public void BackupMovesThePlayersSavesAndLeavesAnEmptyFolder()
-        {
-            WriteSave(_saves, "playthrough");
-            string movedTo = Path.Combine(_root, "moved");
-
-            SavesBackup backup = GameSaves.Backup(movedTo);
-
-            Assert.Equal(2, backup.FileCount);
-            Assert.True(Directory.Exists(_saves), "the game still needs a folder to exist");
-            Assert.Empty(Directory.GetFiles(_saves));
-            Assert.Single(GameSaves.ListSaves(movedTo));
-        }
-
-        /// <summary>The whole point: one save, so Continue cannot load the wrong one.</summary>
-        [Fact]
-        public void StagingLeavesExactlyOneSave()
-        {
-            WriteSave(_saves, "real one");
-            WriteSave(_saves, "real two");
-            string chosen = WriteSave(Path.Combine(_root, "fixtures"), "chosen");
-
-            GameSaves.Backup(Path.Combine(_root, "moved"));
-            GameSaves.Install(chosen);
-
-            string[] staged = GameSaves.ListSaves(_saves);
-            Assert.Single(staged);
-            Assert.Contains("chosen", staged[0]);
-        }
-
-        [Fact]
-        public void StagingBringsTheThumbnailWithIt()
+        public void CopyingBringsTheThumbnailWithIt()
         {
             string chosen = WriteSave(Path.Combine(_root, "fixtures"), "chosen");
-            GameSaves.Backup(Path.Combine(_root, "moved"));
+            string destination = Path.Combine(_root, "staged");
 
-            GameSaves.Install(chosen);
+            GameSaves.CopyInto(chosen, destination);
 
-            Assert.True(File.Exists(Path.Combine(_saves, "chosen.jpg")));
+            Assert.Single(GameSaves.ListSaves(destination));
+            Assert.True(File.Exists(Path.Combine(destination, "chosen.jpg")));
         }
 
         [Fact]
-        public void RestorePutsEverythingBackAndRemovesTheStagedSave()
+        public void ListingAFolderThatIsNotThereIsEmptyRatherThanAnError()
         {
-            WriteSave(_saves, "real one");
-            WriteSave(_saves, "real two");
-            string chosen = WriteSave(Path.Combine(_root, "fixtures"), "chosen");
-
-            SavesBackup backup = GameSaves.Backup(Path.Combine(_root, "moved"));
-            GameSaves.Install(chosen);
-            GameSaves.Restore(backup);
-
-            string[] saves = GameSaves.ListSaves(_saves);
-            Assert.Equal(2, saves.Length);
-            Assert.DoesNotContain(saves, s => s.Contains("chosen"));
-            Assert.False(Directory.Exists(Path.Combine(_root, "moved")));
-        }
-
-        [Fact]
-        public void RestoreKeepsTheFileContents()
-        {
-            WriteSave(_saves, "precious", "the actual playthrough");
-            SavesBackup backup = GameSaves.Backup(Path.Combine(_root, "moved"));
-
-            GameSaves.Restore(backup);
-
-            Assert.Equal(
-                "the actual playthrough",
-                File.ReadAllText(Path.Combine(_saves, "precious" + GameSaves.SaveExtension)));
-        }
-
-        /// <summary>
-        /// Restoring when the backup has vanished must not quietly succeed and leave the
-        /// player with a folder holding one test save.
-        /// </summary>
-        [Fact]
-        public void ALostBackupIsReportedRatherThanIgnored()
-        {
-            WriteSave(_saves, "real");
-            SavesBackup backup = GameSaves.Backup(Path.Combine(_root, "moved"));
-            Directory.Delete(Path.Combine(_root, "moved"), recursive: true);
-
-            InvalidOperationException error = Assert.Throws<InvalidOperationException>(
-                () => GameSaves.Restore(backup));
-
-            Assert.Contains("do not launch the game", error.Message);
-        }
-
-        [Fact]
-        public void BackingUpOntoAnExistingFolderIsRefused()
-        {
-            WriteSave(_saves, "real");
-            string movedTo = Path.Combine(_root, "moved");
-            Directory.CreateDirectory(movedTo);
-
-            Assert.Throws<InvalidOperationException>(() => GameSaves.Backup(movedTo));
-        }
-
-        [Fact]
-        public void NoSavesFolderIsNotAnError()
-        {
-            Directory.Delete(_saves, recursive: true);
-
-            SavesBackup backup = GameSaves.Backup(Path.Combine(_root, "moved"));
-
-            Assert.Null(backup.MovedTo);
-            GameSaves.Restore(backup);
+            Assert.Empty(GameSaves.ListSaves(Path.Combine(_root, "nowhere")));
         }
 
         [Fact]
@@ -183,15 +77,12 @@ namespace GlobalConversationTracker.Automation.Tests
             string notASave = Path.Combine(_root, "notes.txt");
             File.WriteAllText(notASave, "hello");
 
-            Assert.Throws<ArgumentException>(() => GameSaves.Install(notASave));
+            Assert.Throws<ArgumentException>(
+                () => GameSaves.CopyInto(notASave, _root));
             Assert.Throws<FileNotFoundException>(
-                () => GameSaves.Install(Path.Combine(_root, "missing" + GameSaves.SaveExtension)));
+                () => GameSaves.CopyInto(
+                    Path.Combine(_root, "missing" + GameSaves.SaveExtension), _root));
         }
 
-        [Fact]
-        public void RestoringNullIsRefused()
-        {
-            Assert.Throws<ArgumentNullException>(() => GameSaves.Restore(null!));
-        }
     }
 }

@@ -72,10 +72,9 @@ namespace GlobalConversationTracker.Automation
     /// Swaps the game's settings for a fixed test set, and puts them back.
     /// </summary>
     /// <remarks>
-    /// <para>Disco Elysium keeps its settings in its own file, not in Unity's
-    /// PlayerPrefs: <c>persistentDataPath/Settings/Settings.json</c>, read and written by
-    /// SettingsPersister through JsonUtil. That file is what decides the game's
-    /// behaviour.</para>
+    /// <para>The settings FILE is staged with the rest of the profile, which moves as one
+    /// directory; see <see cref="GameProfile"/>. What is left here is the registry, which
+    /// no folder move can reach, and reading the display values a test asks for.</para>
     ///
     /// <para>The PlayerPrefs registry key is a downstream cache. Unity opens the window
     /// at the registry's resolution before any game code runs; then ResolutionSwitcher
@@ -92,83 +91,6 @@ namespace GlobalConversationTracker.Automation
     {
         /// <summary>The registry key holding Unity's PlayerPrefs for this game.</summary>
         public const string RegistryKey = @"HKCU\Software\ZAUM Studio\Disco Elysium";
-
-        /// <summary>The settings file the game reads and writes.</summary>
-        /// <remarks>
-        /// <c>DISCO_ELYSIUM_GCT_SETTINGS_FILE</c> redirects it, which is how the tests run
-        /// against a scratch copy instead of a real installation.
-        /// </remarks>
-        public static string SettingsPath
-        {
-            get
-            {
-                string? redirect = Environment.GetEnvironmentVariable(
-                    "DISCO_ELYSIUM_GCT_SETTINGS_FILE");
-                if (!string.IsNullOrWhiteSpace(redirect))
-                {
-                    return redirect!;
-                }
-
-                return Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                    @"AppData\LocalLow\ZAUM Studio\Disco Elysium\Settings\Settings.json");
-            }
-        }
-
-        /// <summary>Whether the game has written its settings at least once.</summary>
-        public static bool Exists => File.Exists(SettingsPath);
-
-        /// <summary>
-        /// Copies the settings file aside, and exports the PlayerPrefs key beside it.
-        /// </summary>
-        /// <param name="backupPath">Where to copy the settings file.</param>
-        /// <param name="includeRegistry">Whether to export PlayerPrefs as well.</param>
-        /// <exception cref="InvalidOperationException">There is nothing to back up.</exception>
-        public static SettingsBackup Backup(string backupPath, bool includeRegistry = true)
-        {
-            if (!Exists)
-            {
-                throw new InvalidOperationException(
-                    $"Nothing to back up: no settings file at {SettingsPath}.");
-            }
-
-            string? directory = Path.GetDirectoryName(backupPath);
-            if (!string.IsNullOrEmpty(directory))
-            {
-                Directory.CreateDirectory(directory!);
-            }
-
-            File.Copy(SettingsPath, backupPath, overwrite: true);
-
-            string? registryPath = null;
-            if (includeRegistry)
-            {
-                registryPath = backupPath + ".reg";
-                RunReg("export", RegistryKey, registryPath, "/y");
-            }
-
-            return new SettingsBackup(backupPath, registryPath);
-        }
-
-        /// <summary>Installs a settings file, replacing the player's.</summary>
-        /// <param name="testSettingsPath">The file to install.</param>
-        /// <exception cref="FileNotFoundException">There is no such file.</exception>
-        public static void Install(string testSettingsPath)
-        {
-            if (!File.Exists(testSettingsPath))
-            {
-                throw new FileNotFoundException(
-                    $"No test settings file at {testSettingsPath}.", testSettingsPath);
-            }
-
-            string? directory = Path.GetDirectoryName(SettingsPath);
-            if (!string.IsNullOrEmpty(directory))
-            {
-                Directory.CreateDirectory(directory!);
-            }
-
-            File.Copy(testSettingsPath, SettingsPath, overwrite: true);
-        }
 
         /// <summary>
         /// Writes Unity's own screen PlayerPrefs, which are what size the window.
@@ -198,6 +120,44 @@ namespace GlobalConversationTracker.Automation
                 display.IsWindowed ? UnityPlayerPrefs.Windowed : UnityPlayerPrefs.FullScreenWindow);
             SetInt(UnityPlayerPrefs.ResolutionWidth, display.Width);
             SetInt(UnityPlayerPrefs.ResolutionHeight, display.Height);
+        }
+
+        /// <summary>Exports Unity's PlayerPrefs key.</summary>
+        /// <remarks>
+        /// Kept separate from staging the profile folder, because this does not live in
+        /// it. The profile is one directory that can be moved aside whole; PlayerPrefs are
+        /// in the registry, so a run that changes them has to put them back by itself.
+        /// </remarks>
+        /// <param name="exportPath">Where to write the .reg export.</param>
+        public static void BackupRegistry(string exportPath)
+        {
+            string? directory = Path.GetDirectoryName(exportPath);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory!);
+            }
+
+            RunReg("export", RegistryKey, exportPath, "/y");
+        }
+
+        /// <summary>Puts Unity's PlayerPrefs key back from an export.</summary>
+        /// <remarks>
+        /// Deletes before importing, so values this run ADDED are gone rather than left
+        /// behind. An import alone merges, which would leave a "use native resolution" of
+        /// 0 in place for a player whose key never had one.
+        /// </remarks>
+        /// <param name="exportPath">The .reg export to restore.</param>
+        /// <exception cref="FileNotFoundException">There is no such export.</exception>
+        public static void RestoreRegistry(string exportPath)
+        {
+            if (!File.Exists(exportPath))
+            {
+                throw new FileNotFoundException(
+                    $"No PlayerPrefs backup at {exportPath}.", exportPath);
+            }
+
+            RunReg("delete", RegistryKey, "/f");
+            RunReg("import", exportPath);
         }
 
         private static void SetInt(string key, int value)
@@ -230,22 +190,21 @@ namespace GlobalConversationTracker.Automation
         /// Whether the live settings file is still byte-for-byte the one installed.
         /// </summary>
         /// <remarks>
-        /// Steam Auto-Cloud syncs this directory when the application launches and again
-        /// when it exits, and it downloads the cloud copy BEFORE the game starts. So a
-        /// file staged moments before launch can be replaced by the player's real
-        /// settings in the gap, and the game reads those instead. That looks exactly like
-        /// the staging having silently failed; comparing the bytes afterwards is what
-        /// tells the two apart.
+        /// The profile is Steam-Cloud-synced, and a sync can replace a staged file
+        /// between staging it and the game reading it - which looks exactly like the
+        /// staging having silently failed. Comparing the bytes afterwards tells the two
+        /// apart. Measured not to be happening on a direct launch with cloud off, but it
+        /// costs nothing to keep checking, and it is how that was established.
         /// </remarks>
         /// <param name="installedPath">The file that was installed.</param>
         public static bool StillMatches(string installedPath)
         {
-            if (!File.Exists(SettingsPath) || !File.Exists(installedPath))
+            if (!File.Exists(GameProfile.SettingsFile) || !File.Exists(installedPath))
             {
                 return false;
             }
 
-            byte[] live = File.ReadAllBytes(SettingsPath);
+            byte[] live = File.ReadAllBytes(GameProfile.SettingsFile);
             byte[] staged = File.ReadAllBytes(installedPath);
             if (live.Length != staged.Length)
             {
@@ -280,49 +239,6 @@ namespace GlobalConversationTracker.Automation
             return int.Parse(matches[0].Groups[1].Value, CultureInfo.InvariantCulture);
         }
 
-        /// <summary>Puts the settings file, and the PlayerPrefs cache, back.</summary>
-        /// <remarks>
-        /// The registry is deleted before importing, because an import alone merges: a
-        /// value the run added would survive and the restore would be a lie. That leaves
-        /// a window in which the key is gone, which is why a failed import throws loudly
-        /// rather than being swallowed.
-        /// </remarks>
-        /// <param name="backup">What <see cref="Backup"/> returned.</param>
-        /// <exception cref="ArgumentNullException"><paramref name="backup"/> is null.</exception>
-        /// <exception cref="FileNotFoundException">The backup is gone.</exception>
-        public static void Restore(SettingsBackup backup)
-        {
-            if (backup == null)
-            {
-                throw new ArgumentNullException(nameof(backup));
-            }
-
-            if (!File.Exists(backup.SettingsPath))
-            {
-                throw new FileNotFoundException(
-                    $"No settings backup at {backup.SettingsPath}.", backup.SettingsPath);
-            }
-
-            File.Copy(backup.SettingsPath, SettingsPath, overwrite: true);
-
-            if (backup.RegistryPath != null && File.Exists(backup.RegistryPath))
-            {
-                RunReg("delete", RegistryKey, "/f");
-                RunReg("import", backup.RegistryPath);
-            }
-        }
-
-        /// <summary>
-        /// Runs reg.exe, believing its exit code rather than its output.
-        /// </summary>
-        /// <remarks>
-        /// reg.exe writes "The operation completed successfully." to STDERR even when it
-        /// succeeds. A PowerShell version of this deleted the PlayerPrefs key and then
-        /// aborted before importing it back, because redirecting that success message
-        /// turned it into a terminating error. The exit code is the only thing worth
-        /// reading - and for delete, code 1 also means "it was not there", which is not a
-        /// failure worth stopping for.
-        /// </remarks>
         private static void RunReg(params string[] arguments)
         {
             var start = new ProcessStartInfo("reg.exe")

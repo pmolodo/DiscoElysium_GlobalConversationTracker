@@ -335,41 +335,39 @@ Options:
             }
 
             var checks = new Checks();
-            string backupPath = Path.Combine(
-                Path.GetTempPath(), $"disco-settings-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            string profileBackupPath = GameProfile.DefaultBackupPath(stamp);
+            string registryBackupPath = Path.Combine(Path.GetTempPath(), $"disco-prefs-{stamp}.reg");
 
-            SettingsBackup backup = GameSettings.Backup(backupPath);
-            Console.WriteLine($"backup:    {backup.SettingsPath}");
+            // The registry is backed up separately because the profile move cannot reach
+            // it: PlayerPrefs live under HKCU, not in the folder.
+            GameSettings.BackupRegistry(registryBackupPath);
+            Console.WriteLine($"prefs:     {registryBackupPath}");
 
-            // Saves are staged only when one is named. Moving somebody's playthroughs is
-            // the most destructive thing here, so it never happens by default.
-            SavesBackup? savesBackup = null;
-            if (options.SaveFile != null)
-            {
-                string movedTo = Path.Combine(
-                    Path.GetTempPath(), $"disco-saves-{DateTime.Now:yyyyMMdd-HHmmss}");
-                savesBackup = GameSaves.Backup(movedTo);
-                GameSaves.Install(options.SaveFile);
+            ProfileBackup profileBackup = GameProfile.Backup(profileBackupPath);
+            Console.WriteLine(
+                profileBackup.MovedTo == null
+                    ? "profile:   none found; a fresh one will be built"
+                    : $"profile:   {profileBackup.EntryCount} entries moved to {profileBackup.MovedTo}");
 
-                Console.WriteLine($"saves:     {savesBackup.FileCount} file(s) moved to {movedTo}");
-                Console.WriteLine(
-                    $"           staged {Path.GetFileName(options.SaveFile)} as the only save, "
-                    + "so Continue can only load that one");
-            }
+            DisplaySettings requested = GameSettings.ReadDisplay(testSettings);
 
             Process? process = null;
             try
             {
-                GameSettings.Install(testSettings);
+                GameProfile.Stage(testSettings, options.SaveFile);
+                Console.WriteLine($"staged:    {Path.GetFileName(testSettings)}");
+                if (options.SaveFile != null)
+                {
+                    Console.WriteLine(
+                        $"           {Path.GetFileName(options.SaveFile)} as the only save, so "
+                        + "Continue can only load that one");
+                }
 
-                // The file alone does not size the window - Unity does, from its own
-                // registry PlayerPrefs, before the game runs. Staging one without the
-                // other is what produced a 3840x1200 window that never switched.
-                DisplaySettings requested = GameSettings.ReadDisplay(testSettings);
+                // The file does not size the window on its own; Unity does, from the
+                // registry, before the game runs. See testing/SETTINGS-PRECEDENCE.md.
                 if (options.RegistryScreen != null)
                 {
-                    // Deliberately disagreeing with the settings file, to find out which
-                    // source actually decides.
                     GameSettings.InstallScreenPrefs(options.RegistryScreen);
                     Console.WriteLine(
                         $"screen:    asked Unity for {options.RegistryScreen} "
@@ -630,47 +628,47 @@ Options:
                     }
                 }
 
-                // Saves first, and outside the settings restore's try, because a folder
-                // holding one test save is the worst thing to leave behind: it is
-                // Steam-Cloud-synced, so the next launch can push it upward.
-                if (savesBackup != null)
+                if (options.KeepOpen)
                 {
-                    try
-                    {
-                        GameSaves.Restore(savesBackup);
-                        Console.WriteLine($"restored {savesBackup.FileCount} save file(s)");
-                    }
-                    catch (Exception error)
-                    {
-                        Console.Error.WriteLine();
-                        Console.Error.WriteLine($"SAVES NOT RESTORED: {error.Message}");
-                        Console.Error.WriteLine(
-                            "Put them back by hand before launching the game again.");
-                        throw;
-                    }
+                    Console.Error.WriteLine();
+                    Console.Error.WriteLine(
+                        "Left the game running, so NOTHING was restored. The player's profile is");
+                    Console.Error.WriteLine($"  at {profileBackup.MovedTo ?? "(there was none)"}");
+                    Console.Error.WriteLine($"  and their PlayerPrefs at {registryBackupPath}.");
+                    Console.Error.WriteLine(
+                        "Close the game and put both back before playing.");
+                }
+                else
+                {
+                // The profile first: a staged one is the worst thing to leave behind,
+                // because it is Steam-Cloud-synced and a later launch can push it upward.
+                // Each restore gets its own try, so a failure in one does not skip the
+                // other - they are independent, and leaving either is its own problem.
+                try
+                {
+                    GameProfile.Restore(profileBackup);
+                    Console.WriteLine($"restored the profile ({profileBackup.EntryCount} entries)");
+                }
+                catch (Exception error)
+                {
+                    Console.Error.WriteLine();
+                    Console.Error.WriteLine($"PROFILE NOT RESTORED: {error.Message}");
+                    Console.Error.WriteLine(
+                        "Put it back by hand before launching the game again; a staged profile");
+                    Console.Error.WriteLine(
+                        "left in place can be synced to Steam Cloud by the next launch.");
                 }
 
                 try
                 {
-                    if (options.KeepOpen)
-                    {
-                        Console.WriteLine(
-                            $"Left the game running; settings NOT restored. Backup: {backup.SettingsPath}");
-                    }
-                    else
-                    {
-                        GameSettings.Restore(backup);
-                        File.Delete(backup.SettingsPath);
-                        if (backup.RegistryPath != null)
-                        {
-                            File.Delete(backup.RegistryPath);
-                        }
-                    }
+                    GameSettings.RestoreRegistry(registryBackupPath);
+                    File.Delete(registryBackupPath);
                 }
                 catch (Exception error)
                 {
-                    Console.Error.WriteLine($"WARNING: could not restore settings: {error.Message}");
-                    Console.Error.WriteLine($"WARNING: the backup is at {backup.SettingsPath}");
+                    Console.Error.WriteLine($"WARNING: could not restore PlayerPrefs: {error.Message}");
+                    Console.Error.WriteLine($"WARNING: the export is at {registryBackupPath}");
+                }
                 }
             }
         }
