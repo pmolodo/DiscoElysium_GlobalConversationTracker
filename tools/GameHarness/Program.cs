@@ -98,9 +98,9 @@ Options:
   --process <name>    Process name without .exe (default: disco).
   --artifacts <dir>   Where screenshots go (default: .build/automation).
   --settings <file>   Test settings to install (default: testing/Settings.json).
-  --save <file>       Stage this .ntwtf.zip as the ONLY save, moving the
-                      player's aside and back. Continue then has exactly one
-                      thing to load, so no menu navigation is needed.
+  --save <file>       The .ntwtf.zip to stage as the ONLY save. Defaults to
+                      testing/save_template.ntwtf.zip, so Continue has exactly
+                      one thing it can load.
   --keys a,b,c        The key sequence for load-save (default: Enter, which is
                       Continue when a single save has been staged).
   --threshold <n>     How close the menu match must be (default: 0.05).
@@ -355,14 +355,13 @@ Options:
             Process? process = null;
             try
             {
-                GameProfile.Stage(testSettings, options.SaveFile);
+                string saveTemplate = options.SaveFile
+                    ?? Path.Combine(RepoRoot(), "testing", "save_template.ntwtf.zip");
+                GameProfile.Stage(testSettings, saveTemplate);
                 Console.WriteLine($"staged:    {Path.GetFileName(testSettings)}");
-                if (options.SaveFile != null)
-                {
-                    Console.WriteLine(
-                        $"           {Path.GetFileName(options.SaveFile)} as the only save, so "
-                        + "Continue can only load that one");
-                }
+                Console.WriteLine(
+                    $"           {Path.GetFileName(saveTemplate)} as the only save, so "
+                    + "Continue can only load that one");
 
                 // The file does not size the window on its own; Unity does, from the
                 // registry, before the game runs. See testing/SETTINGS-PRECEDENCE.md.
