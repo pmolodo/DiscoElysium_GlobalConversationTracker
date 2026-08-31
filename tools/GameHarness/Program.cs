@@ -100,6 +100,9 @@ Options:
   --settings <file>   Test settings to install (default: testing/Settings.json).
   --keys a,b,c        The key sequence for load-save (default: Down,Enter,Enter).
   --threshold <n>     How close the menu match must be (default: 0.05).
+  --whole-frame       Match the whole screen instead of just the menu options.
+                      The default region excludes the animated painting, which
+                      is 96% of the variation when the whole frame is used.
   --timeout <n>       Seconds to wait for loading, the slow part (default: 300).
   --window-timeout    Seconds to wait for the game window to appear (default: 30).
                       A window either shows up quickly or something is wrong.
@@ -175,12 +178,78 @@ Options:
             }
 
             TimelineStage last = stages[stages.Length - 1];
-            ReferenceQuality menu = TimelineAnalysis.BestReference(fingerprints, last);
+
+            // Whole-frame first, then candidate regions. The menu is a static list of
+            // options beside a painting that never stops moving, so the whole frame
+            // measures mostly the painting: the threshold has to tolerate the animation,
+            // and that same tolerance is what lets another screen match. Narrowing to the
+            // still part removes the problem instead of budgeting for it.
+            Console.WriteLine();
+            Console.WriteLine("matching the last screen, whole frame vs regions:");
+
+            var candidates = new List<KeyValuePair<string, Rectangle?>>
+            {
+                new KeyValuePair<string, Rectangle?>("whole frame", null),
+                new KeyValuePair<string, Rectangle?>(
+                    "menu text", new Rectangle(160, 100, 250, 320)),
+                new KeyValuePair<string, Rectangle?>(
+                    "left panel", new Rectangle(100, 0, 320, 720)),
+                new KeyValuePair<string, Rectangle?>(
+                    "options only", new Rectangle(170, 115, 230, 290)),
+            };
+
+            if (options.Region != null)
+            {
+                candidates.Add(new KeyValuePair<string, Rectangle?>("--region", options.Region));
+            }
+
+            ReferenceQuality? best = null;
+            Rectangle? bestRegion = null;
+            string bestName = "whole frame";
+
+            foreach (KeyValuePair<string, Rectangle?> candidate in candidates)
+            {
+                List<double[]> prints;
+                if (candidate.Value == null)
+                {
+                    prints = fingerprints;
+                }
+                else
+                {
+                    prints = new List<double[]>();
+                    foreach (string file in files)
+                    {
+                        prints.Add(GameScreen.FingerprintFileRegion(file, candidate.Value.Value));
+                    }
+                }
+
+                ReferenceQuality quality = TimelineAnalysis.BestReference(prints, last);
+                string verdict = quality.IsUsable
+                    ? $"varies {quality.WorstWithinStage:N4}, nearest other {quality.BestOutsideStage:N4}"
+                        + $", margin {quality.Margin:N4}, threshold {quality.SuggestedThreshold:N4}"
+                    : "UNUSABLE";
+                Console.WriteLine($"  {candidate.Key,-14} {verdict}");
+
+                if (quality.IsUsable && (best == null || quality.Margin > best.Margin))
+                {
+                    best = quality;
+                    bestRegion = candidate.Value;
+                    bestName = candidate.Key;
+                }
+            }
+
+            ReferenceQuality menu = best ?? TimelineAnalysis.BestReference(fingerprints, last);
             string chosen = files[menu.Frame];
 
             Console.WriteLine();
             Console.WriteLine("The last screen is normally the main menu.");
             Console.WriteLine($"  reference:  {Path.GetFileName(chosen)}");
+            Console.WriteLine(
+                $"  region:     {bestName}"
+                + (bestRegion == null
+                    ? string.Empty
+                    : $" ({bestRegion.Value.X},{bestRegion.Value.Y} "
+                        + $"{bestRegion.Value.Width}x{bestRegion.Value.Height})"));
             if (menu.IsUsable)
             {
                 Console.WriteLine($"  threshold:  {menu.SuggestedThreshold:N4}");
@@ -470,7 +539,8 @@ Options:
                 Console.WriteLine("checking we are at the main menu...");
                 WaitResult atMenu = GameSession.WaitUntilMatches(
                     window, referencePath, options.Threshold, TimeSpan.FromSeconds(30),
-                    options.Verbose ? Log : (Action<string>?)null);
+                    options.Verbose ? Log : (Action<string>?)null,
+                    options.MenuRegion);
                 checks.Check("the main menu is on screen", atMenu.Succeeded,
                     $"closest difference {atMenu.Difference:N4}, threshold {options.Threshold:N4}");
 
@@ -505,7 +575,8 @@ Options:
                 // Without this, a run where the keys did nothing looks exactly like a
                 // successful one: a menu sitting still is also "settled".
                 WaitResult stillMenu = GameSession.WaitUntilMatches(
-                    window, referencePath, options.Threshold, TimeSpan.FromSeconds(2));
+                    window, referencePath, options.Threshold, TimeSpan.FromSeconds(2),
+                    progress: null, region: options.MenuRegion);
                 checks.Check(
                     "the screen is no longer the main menu",
                     !stillMenu.Succeeded,
@@ -828,6 +899,26 @@ Options:
             /// <summary>Write the chosen frame out as the main-menu reference.</summary>
             public bool SaveReference { get; private set; }
 
+            /// <summary>An extra region to try, as x,y,width,height.</summary>
+            public Rectangle? Region { get; private set; }
+
+            /// <summary>
+            /// The part of the menu to match on: the option list, which does not animate.
+            /// </summary>
+            /// <remarks>
+            /// The menu is a static list of options beside a painting that never stops
+            /// moving. Measured over a recorded startup, the whole frame varies by 0.0503
+            /// as it animates against 0.1507 to the nearest other screen - three times
+            /// separation - while this region varies by 0.0030 against 0.1161, nearly
+            /// forty times.
+            ///
+            /// The left-hand panel as a whole scored better still, at sixty-five times,
+            /// and is deliberately not used: it contains a storefront advert and the save
+            /// slots with their dates, so it scores well today and breaks when the promo
+            /// changes or a game is saved. This region is only the six menu options.
+            /// </remarks>
+            public Rectangle? MenuRegion { get; private set; } = new Rectangle(170, 115, 230, 290);
+
             /// <summary>Screen prefs to write, when deliberately disagreeing with the file.</summary>
             public DisplaySettings? RegistryScreen { get; private set; }
 
@@ -888,6 +979,22 @@ Options:
                         case "--via-steam": options.ViaSteam = true; break;
                         case "--no-screen-prefs": options.SkipScreenPrefs = true; break;
                         case "--save-reference": options.SaveReference = true; break;
+                        case "--whole-frame": options.MenuRegion = null; break;
+                        case "--region":
+                        {
+                            string[] parts = (Next() ?? string.Empty).Split(',');
+                            if (parts.Length != 4)
+                            {
+                                throw new ArgumentException("--region wants x,y,width,height.");
+                            }
+
+                            options.Region = new Rectangle(
+                                int.Parse(parts[0], CultureInfo.InvariantCulture),
+                                int.Parse(parts[1], CultureInfo.InvariantCulture),
+                                int.Parse(parts[2], CultureInfo.InvariantCulture),
+                                int.Parse(parts[3], CultureInfo.InvariantCulture));
+                            break;
+                        }
                         case "--registry-screen":
                         {
                             string spec = Next() ?? string.Empty;

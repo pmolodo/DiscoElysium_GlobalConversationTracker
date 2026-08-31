@@ -116,6 +116,71 @@ namespace GlobalConversationTracker.Automation
             }
         }
 
+        /// <summary>
+        /// Reads an image from disk and fingerprints one region of it.
+        /// </summary>
+        /// <remarks>
+        /// For a screen that is partly animated. Disco Elysium's main menu is a static
+        /// list of options beside a moving painting, and fingerprinting the whole frame
+        /// measures mostly the painting - so the threshold has to be loose enough to
+        /// tolerate the animation, which is the same looseness that lets another screen
+        /// match. Fingerprinting only the still part removes the problem rather than
+        /// budgeting for it.
+        /// </remarks>
+        /// <param name="path">The image to read.</param>
+        /// <param name="region">The area to fingerprint.</param>
+        /// <param name="size">The fingerprint edge, in samples.</param>
+        public static double[] FingerprintFileRegion(
+            string path, Rectangle region, int size = DefaultFingerprintSize)
+        {
+            using (var bitmap = new Bitmap(path))
+            {
+                return FingerprintRegion(bitmap, region, size);
+            }
+        }
+
+        /// <summary>Fingerprints one region of an image.</summary>
+        /// <param name="bitmap">The image.</param>
+        /// <param name="region">The area to fingerprint.</param>
+        /// <param name="size">The fingerprint edge, in samples.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="bitmap"/> is null.</exception>
+        /// <exception cref="ArgumentException">The region is outside the image.</exception>
+        public static double[] FingerprintRegion(
+            Bitmap bitmap, Rectangle region, int size = DefaultFingerprintSize)
+        {
+            if (bitmap == null)
+            {
+                throw new ArgumentNullException(nameof(bitmap));
+            }
+
+            Rectangle area = Rectangle.Intersect(
+                region, new Rectangle(0, 0, bitmap.Width, bitmap.Height));
+            if (area.Width <= 0 || area.Height <= 0)
+            {
+                throw new ArgumentException(
+                    $"Region {region} lies outside the {bitmap.Width}x{bitmap.Height} image.",
+                    nameof(region));
+            }
+
+            using (var cropped = bitmap.Clone(area, bitmap.PixelFormat))
+            {
+                return FingerprintOf(cropped, size);
+            }
+        }
+
+        /// <summary>Captures a window and fingerprints one region of it.</summary>
+        /// <param name="window">The window to capture.</param>
+        /// <param name="region">The area to fingerprint.</param>
+        /// <param name="size">The fingerprint edge, in samples.</param>
+        public static double[] FingerprintRegion(
+            IntPtr window, Rectangle region, int size = DefaultFingerprintSize)
+        {
+            using (Bitmap bitmap = Capture(window))
+            {
+                return FingerprintRegion(bitmap, region, size);
+            }
+        }
+
         /// <summary>Reduces an image to a greyscale fingerprint.</summary>
         /// <param name="bitmap">The image.</param>
         /// <param name="size">The fingerprint edge, in samples.</param>

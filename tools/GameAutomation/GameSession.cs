@@ -345,12 +345,18 @@ namespace GlobalConversationTracker.Automation
         /// <param name="threshold">How close counts as a match.</param>
         /// <param name="timeout">How long to wait.</param>
         /// <param name="progress">Called with each sample, for verbose output.</param>
+        /// <param name="region">
+        /// The part of the screen to compare, or null for all of it. Worth setting when
+        /// the screen is partly animated: matching only the still part is what makes a
+        /// tight threshold possible.
+        /// </param>
         public static WaitResult WaitUntilMatches(
             GameWindow window,
             string referencePath,
             double threshold,
             TimeSpan timeout,
-            Action<string>? progress = null)
+            Action<string>? progress = null,
+            Rectangle? region = null)
         {
             // Before anything else: a reference of a different size still reduces to the
             // same fingerprint grid and compares without complaint, so a reference
@@ -366,7 +372,9 @@ namespace GlobalConversationTracker.Automation
                     + "number that means nothing. Recapture the reference.");
             }
 
-            double[] reference = GameScreen.FingerprintFile(referencePath);
+            double[] reference = region == null
+                ? GameScreen.FingerprintFile(referencePath)
+                : GameScreen.FingerprintFileRegion(referencePath, region.Value);
             var clock = Stopwatch.StartNew();
             DateTime deadline = DateTime.UtcNow + timeout;
 
@@ -376,7 +384,9 @@ namespace GlobalConversationTracker.Automation
 
             while (DateTime.UtcNow < deadline)
             {
-                double[] current = GameScreen.Fingerprint(window.Handle);
+                double[] current = region == null
+                    ? GameScreen.Fingerprint(window.Handle)
+                    : GameScreen.FingerprintRegion(window.Handle, region.Value);
                 detail = GameScreen.Detail(current);
                 difference = GameScreen.Difference(reference, current);
                 if (difference < best)
