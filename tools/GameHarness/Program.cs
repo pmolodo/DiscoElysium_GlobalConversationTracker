@@ -81,8 +81,52 @@ namespace GlobalConversationTracker.Harness
 
                         int moved = ExplorerWindows.NavigateAwayFrom(
                             target, message => Console.WriteLine($"  {message}"));
+                        Console.WriteLine($"moved {moved} Explorer window(s) off it");
+
+                        // Explorer first because it is free: the window survives, only
+                        // pointed elsewhere. Only what is still holding the folder after
+                        // that is worth asking to close.
                         Console.WriteLine();
-                        Console.WriteLine($"moved {moved} window(s) off it");
+                        LockHolder[]? stillHolding = SysinternalsHandle.WhoIsHolding(
+                            target, executable: null,
+                            message => Console.WriteLine($"  {message}"));
+
+                        if (stillHolding == null)
+                        {
+                            Console.WriteLine(SysinternalsHandle.InstallHint);
+                            return 0;
+                        }
+
+                        if (stillHolding.Length == 0)
+                        {
+                            Console.WriteLine("Nothing is holding it now.");
+                            return 0;
+                        }
+
+                        foreach (LockHolder holder in stillHolding)
+                        {
+                            Console.WriteLine($"  still held by {holder}");
+                        }
+
+                        Console.WriteLine();
+                        CloseAttempt[] attempts = PoliteClose.AskToClose(
+                            stillHolding,
+                            options.Askable,
+                            TimeSpan.FromSeconds(options.CloseDeadlineSeconds),
+                            message => Console.WriteLine($"  {message}"));
+
+                        foreach (CloseAttempt attempt in attempts)
+                        {
+                            Console.WriteLine($"  {attempt}");
+                        }
+
+                        if (attempts.Length == 0)
+                        {
+                            Console.WriteLine(
+                                "  Nothing holding it is on the list this may ask to close "
+                                + $"({string.Join(", ", options.Askable)}); close it yourself.");
+                        }
+
                         return 0;
                     }
 
@@ -123,6 +167,11 @@ Verbs:
   locks               Report what is holding the game's profile folder open,
                       which is what blocks staging. --artifacts asks about
                       another path instead.
+  unlock              Move any Explorer window off the profile folder, then ask
+                      whatever still holds it to close. Explorer windows are
+                      navigated to the parent, not closed. Nothing is ever
+                      killed: a process that answers with a save prompt is left
+                      running and reported.
   windows             List every window the game's process owns, with its class.
                       What to run when the wrong window is being captured.
   keys                List the key names the harness accepts.
@@ -151,6 +200,12 @@ Options:
                       exists that a direct launch skips, so which settings the
                       game honours may differ between the two.
   --app-id <id>       Steam app id for --via-steam (default: 632470).
+  --askable a,b       Process names unlock may ask to close (default: Code).
+                      Explorer is never on this list; its windows are moved off
+                      the folder instead, which costs nothing.
+  --close-deadline    Seconds to wait for an asked process before leaving it
+                      running (default: 30, long enough to answer a save
+                      prompt). It is never killed.
   --timeline          Capture every frame of startup instead of waiting for the
                       screen to settle. Startup runs through several animated
                       screens, so stopped-changing never becomes true - and a
@@ -940,6 +995,28 @@ Options:
             /// <summary>Leave Unity's registry screen prefs untouched.</summary>
             public bool SkipScreenPrefs { get; private set; }
 
+            /// <summary>
+            /// Process names that unlock may ask to close, matched as a prefix.
+            /// </summary>
+            /// <remarks>
+            /// Explorer is not here and must not be: its window is moved off the folder
+            /// instead, which costs nothing. This list is for things that hold a folder
+            /// with no way to let go short of closing - an editor with it open.
+            /// </remarks>
+            public string[] Askable { get; private set; } = { "Code" };
+
+            /// <summary>Seconds to wait for an asked process to go before leaving it.</summary>
+            /// <remarks>
+            /// It is asked, never killed. A process with unsaved work answers WM_CLOSE with
+            /// a save prompt and stays open, which is correct; when the deadline passes it
+            /// is left running and reported.
+            ///
+            /// 30 seconds because the prompt is for a PERSON: long enough to notice an
+            /// editor asking about unsaved work and answer it, rather than only long
+            /// enough for a process with nothing to save.
+            /// </remarks>
+            public int CloseDeadlineSeconds { get; private set; } = 30;
+
             /// <summary>Write the chosen frame out as the main-menu reference.</summary>
             public bool SaveReference { get; private set; }
 
@@ -1025,6 +1102,13 @@ Options:
                         case "--keep-open": options.KeepOpen = true; break;
                         case "--via-steam": options.ViaSteam = true; break;
                         case "--no-screen-prefs": options.SkipScreenPrefs = true; break;
+                        case "--askable":
+                            options.Askable = (Next() ?? "Code").Split(',');
+                            break;
+                        case "--close-deadline":
+                            options.CloseDeadlineSeconds = int.Parse(
+                                Next() ?? "10", CultureInfo.InvariantCulture);
+                            break;
                         case "--save-reference": options.SaveReference = true; break;
                         case "--whole-frame": options.MenuRegion = null; break;
                         case "--save": options.SaveFile = Next(); break;
