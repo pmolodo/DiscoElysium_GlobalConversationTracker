@@ -44,7 +44,7 @@ internal static class LuaBlob
     /// <summary>Builds a table whose entries are written as the 1-indexed list part.</summary>
     public static LuaTable List(params object?[] items)
     {
-        var table = new LuaTable();
+        var table = new LuaTable { NumListEntries = items.Length };
         for (int i = 0; i < items.Length; i++)
         {
             table.Add(i + 1, items[i]);

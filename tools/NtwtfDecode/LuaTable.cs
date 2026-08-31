@@ -35,6 +35,17 @@ public sealed class LuaTable
     /// <summary>Number of combined entries in the list and dict parts</summary>
     public int Count => _entries.Count;
 
+    /// <summary>Number of leading entries stored in the table's list part.</summary>
+    public int NumListEntries { get; set; }
+
+    /// <summary>
+    /// Bytes after the five top-level tables. Set only on the synthetic document root.
+    /// </summary>
+    public byte[] TrailingBytes { get; set; } = System.Array.Empty<byte>();
+
+    /// <summary>Whether this is the synthetic root containing the five tables.</summary>
+    public bool IsDocumentRoot { get; set; }
+
     /// <summary>Insert a new key/value pair</summary>
     public void Add(object key, object? value)
     {

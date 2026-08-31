@@ -2,16 +2,12 @@
 using System.Numerics;
 using System.Text;
 using System.Text.Json;
-using GlobalConversationTracker.Persistence;
 using GlobalConversationTracker.Persistence.Tests;
 using Xunit;
 
 namespace NtwtfDecode.Tests;
 
-/// <summary>
-/// What the tool's output looks like: the mapping from Lua's value model onto
-/// JSON's, which is the part the BCL writer does not decide.
-/// </summary>
+/// <summary>Tests for the reversible Lua/JSON representation.</summary>
 public class LuaJsonTests
 {
     private const int Indent = 2;
@@ -24,83 +20,28 @@ public class LuaJsonTests
     }
 
     [Fact]
-    public void Write_IndentsNestedTables()
+    public void Write_RecordsTheListBoundaryAndTypedDictionaryEntries()
     {
-        string json = Render(LuaBlob.Table(("Dialog", LuaBlob.Table(("10", "WasOffered")))));
+        LuaTable table = LuaBlob.List("a", "b");
+        table.Add(0.5, "number key");
+        table.Add("0.5", "string key");
 
-        Assert.Equal(
-            "{\n  \"Dialog\": {\n    \"10\": \"WasOffered\"\n  }\n}",
-            json,
-            ignoreLineEndingDifferences: false
-        );
+        using JsonDocument json = JsonDocument.Parse(Render(table));
+        JsonElement root = json.RootElement;
+
+        Assert.Equal(2, root.GetProperty("_num_list_entries").GetInt32());
+        Assert.Equal(2, root.GetProperty("_list").GetArrayLength());
+        JsonElement dict = root.GetProperty("_dict");
+        Assert.Equal(JsonValueKind.Number, dict[0].GetProperty("key").ValueKind);
+        Assert.Equal(JsonValueKind.String, dict[1].GetProperty("key").ValueKind);
     }
 
     [Fact]
     public void Write_WithoutAnIndentIsOneLine()
     {
-        string json = Render(LuaBlob.Table(("a", 1), ("b", 2)), indent: null);
+        string json = Render(LuaBlob.Table(("a", 1)), indent: null);
 
-        Assert.Equal("{\"a\":1,\"b\":2}", json);
-    }
-
-    [Fact]
-    public void Write_KeysThatAreNotStringsBecomeNames()
-    {
-        // Lua keys can be any scalar; JSON names can only be strings.
-        string json = Render(LuaBlob.Table((7, "a"), (0.5, "b"), (true, "c")), indent: null);
-
-        Assert.Equal("{\"7\":\"a\",\"0.5\":\"b\",\"true\":\"c\"}", json);
-    }
-
-    [Fact]
-    public void Write_RendersEveryLuaValueType()
-    {
-        string json = Render(
-            LuaBlob.Table(
-                ("nil", null),
-                ("flag", false),
-                ("count", 12),
-                ("big", new BigInteger(ulong.MaxValue) * 10),
-                ("fraction", 0.5),
-                ("text", "quote \" and newline \n")
-            ),
-            indent: null
-        );
-
-        Assert.Equal(
-            "{\"nil\":null,\"flag\":false,\"count\":12,\"big\":184467440737095516150,"
-                + "\"fraction\":0.5,\"text\":\"quote \\\" and newline \\n\"}",
-            json
-        );
-    }
-
-    [Fact]
-    public void Write_NonFiniteNumbersBecomeTheirNames()
-    {
-        // JSON has no literal for these. The names are the ones System.Text.Json
-        // itself reads back under AllowNamedFloatingPointLiterals.
-        string json = Render(
-            LuaBlob.Table(
-                ("nan", double.NaN),
-                ("inf", double.PositiveInfinity),
-                ("ninf", double.NegativeInfinity)
-            ),
-            indent: null
-        );
-
-        Assert.Equal("{\"nan\":\"NaN\",\"inf\":\"Infinity\",\"ninf\":\"-Infinity\"}", json);
-    }
-
-    [Fact]
-    public void Write_LeavesNonAsciiTextAlone()
-    {
-        // A save's text is full of it, and escaping it would only make the dump
-        // harder to read. Written as escapes here to keep this file ASCII.
-        const string Name = "Ren\u00e9 Arnoux, \u00fcbermensch";
-
-        string json = Render(LuaBlob.Table(("Name", Name)), indent: null);
-
-        Assert.Equal($"{{\"Name\":\"{Name}\"}}", json);
+        Assert.DoesNotContain('\n', json);
     }
 
     [Fact]
@@ -110,21 +51,61 @@ public class LuaJsonTests
     }
 
     [Fact]
-    public void Write_ProducesJsonThatParsesBack()
+    public void Write_StillSupportsArbitrarilyLargeNumbersForDiagnosticOutput()
     {
-        LuaTable tables = LuaTableVisitor.ReadAllTables(LuaBlob.SerializeSampleSave(), out _);
-
-        using JsonDocument parsed = JsonDocument.Parse(Render(tables));
-
-        Assert.Equal(
-            "WasDisplayed",
-            parsed
-                .RootElement.GetProperty("Conversation")
-                .GetProperty("7")
-                .GetProperty("Dialog")
-                .GetProperty("10")
-                .GetProperty("SimStatus")
-                .GetString()
+        string json = Render(
+            LuaBlob.Table(("big", new BigInteger(ulong.MaxValue) * 10)),
+            indent: null
         );
+
+        Assert.Contains("184467440737095516150", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ReadDocument_RejectsAMismatchedListCount()
+    {
+        const string Json = """
+            {
+              "Actor": {"_num_list_entries": 1, "_list": [], "_dict": []},
+              "Item": {"_num_list_entries": 0, "_list": [], "_dict": []},
+              "Location": {"_num_list_entries": 0, "_list": [], "_dict": []},
+              "Variable": {"_num_list_entries": 0, "_list": [], "_dict": []},
+              "Conversation": {"_num_list_entries": 0, "_list": [], "_dict": []}
+            }
+            """;
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(Json));
+
+        InvalidDataException error = Assert.Throws<InvalidDataException>(
+            () => LuaJson.ReadDocument(stream)
+        );
+
+        Assert.Contains("_num_list_entries", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LuaToJsonToLua_IsBitForBitIdentical()
+    {
+        LuaTable tables = LuaBlob.SampleSave();
+        var edgeCases = new LuaTable();
+        edgeCases.Add(1.0, "numeric key");
+        edgeCases.Add("1", "string key");
+        edgeCases.Add("negative zero", BitConverter.Int64BitsToDouble(unchecked((long)0x8000000000000000)));
+        edgeCases.Add("nan payload", BitConverter.Int64BitsToDouble(unchecked((long)0xFFF8000000000042)));
+        Assert.True(tables.TryGetValue("Variable", out object? variables));
+        ((LuaTable)variables!).Add("EdgeCases", edgeCases);
+
+        byte[] tablesBytes = LuaBlob.Serialize(tables);
+        byte[] original = tablesBytes.Concat(new byte[] { 0x03, 0x66, 0x6F, 0x6F }).ToArray();
+        LuaTable decoded = LuaTableVisitor.ReadAllTables(original, out int trailing);
+        Assert.Equal(4, trailing);
+
+        using var json = new MemoryStream();
+        LuaJson.Write(json, decoded, Indent);
+        json.Position = 0;
+        LuaTable reconstructed = LuaJson.ReadDocument(json);
+        using var lua = new MemoryStream();
+        LuaBinary.WriteDocument(lua, reconstructed);
+
+        Assert.Equal(original, lua.ToArray());
     }
 }

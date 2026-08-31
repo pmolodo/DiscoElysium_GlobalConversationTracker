@@ -8,10 +8,11 @@ const int DefaultIndent = 2;
 const int ExitFailure = 1;
 
 const string Usage = """
-    NtwtfDecode - dump Disco Elysium {save}.ntwtf.lua data as JSON.
+    NtwtfDecode - convert Disco Elysium .ntwtf.lua data to and from JSON.
 
     Usage:
       dotnet run --project tools/NtwtfDecode -- <input> [options]
+      dotnet run --project tools/NtwtfDecode -- --to-lua <input.json> -o <output.ntwtf.lua>
 
     <input> is any of:
       - a packed save archive, {save}.ntwtf.zip, as written to SaveGames
@@ -24,6 +25,7 @@ const string Usage = """
                           Conversation, or all. Default: Conversation.
           --indent N      JSON indent width. Default: 2.
           --compact       Single-line JSON (overrides --indent).
+          --to-lua        Convert reversible JSON back to a .ntwtf.lua blob.
       -h, --help          Show this message.
     """;
 
@@ -50,6 +52,7 @@ int Run(string[] argv)
     string? output = null;
     string table = "Conversation";
     int? indent = DefaultIndent;
+    bool toLua = false;
 
     for (int i = 0; i < argv.Length; i++)
     {
@@ -71,6 +74,9 @@ int Run(string[] argv)
             case "--compact":
                 indent = null;
                 break;
+            case "--to-lua":
+                toLua = true;
+                break;
             default:
                 if (arg.StartsWith('-'))
                 {
@@ -88,6 +94,16 @@ int Run(string[] argv)
     if (input is null)
     {
         throw new ArgumentException($"No input file given\n\n{Usage}");
+    }
+
+    if (toLua)
+    {
+        using FileStream json = File.OpenRead(input);
+        LuaTable document = LuaJson.ReadDocument(json);
+        using Stream lua = output is null ? Console.OpenStandardOutput() : File.Create(output);
+        LuaBinary.WriteDocument(lua, document);
+        lua.Flush();
+        return 0;
     }
 
     LuaTable allTables = ReadTables(SaveBlob.Read(input), input, out int trailing);

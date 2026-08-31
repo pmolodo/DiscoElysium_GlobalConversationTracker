@@ -22,6 +22,8 @@ public sealed class LuaTableVisitor : IRawDataVisitor
         RawDataParser parser = new(data, visitor);
         parser.Parse();
         trailingBytes = parser.Remaining;
+        visitor.Root.IsDocumentRoot = true;
+        visitor.Root.TrailingBytes = data[^trailingBytes..].ToArray();
         return visitor.Root;
     }
 
@@ -61,11 +63,17 @@ public sealed class LuaTableVisitor : IRawDataVisitor
     }
 
     /// <inheritdoc />
+    public void OpenList(ref RawDataParser parser, int count) => Current.NumListEntries = count;
+
+    /// <inheritdoc />
     public void VisitString(ref RawDataParser parser, int length) =>
         Take(parser.PeekString(length));
 
     /// <inheritdoc />
-    public void VisitNumber(ref RawDataParser parser) => Take(parser.PeekNumber());
+    // Keep the original double rather than normalising integral values to int.
+    // JSON's round-tripping numeric format can then preserve every finite bit
+    // pattern, including negative zero.
+    public void VisitNumber(ref RawDataParser parser) => Take(parser.PeekDouble());
 
     /// <inheritdoc />
     public void VisitBoolean(ref RawDataParser parser) => Take(parser.PeekBoolean());
