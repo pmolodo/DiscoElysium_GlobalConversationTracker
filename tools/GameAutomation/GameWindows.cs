@@ -77,6 +77,9 @@ namespace GlobalConversationTracker.Automation
 
         private delegate bool EnumWindowsProc(IntPtr window, IntPtr context);
 
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+        private static extern IntPtr GetWindowLongPtr(IntPtr window, int index);
+
         [DllImport("user32.dll")]
         private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr context);
 
@@ -88,6 +91,39 @@ namespace GlobalConversationTracker.Automation
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern int GetWindowTextW(IntPtr window, StringBuilder text, int capacity);
+
+        private const int GwlStyle = -16;
+        private const long WsCaption = 0x00C00000;
+        private const long WsThickFrame = 0x00040000;
+        private const long WsPopup = 0x80000000;
+
+        /// <summary>Describes how a window is dressed: a real window, or borderless.</summary>
+        /// <remarks>
+        /// The size alone cannot tell a borderless fullscreen window from a plain window
+        /// that happens to fill the screen, and the two come from different settings. A
+        /// caption and a resizing frame mean a normal window; a popup with neither is what
+        /// Unity's FullScreenWindow mode produces.
+        /// </remarks>
+        /// <param name="window">The window to inspect.</param>
+        public static string DescribeStyle(IntPtr window)
+        {
+            long style = GetWindowLongPtr(window, GwlStyle).ToInt64();
+            bool caption = (style & WsCaption) == WsCaption;
+            bool sizeable = (style & WsThickFrame) == WsThickFrame;
+            bool popup = (style & WsPopup) != 0;
+
+            if (caption && sizeable)
+            {
+                return "windowed";
+            }
+
+            if (popup && !caption)
+            {
+                return "borderless";
+            }
+
+            return caption ? "windowed (fixed)" : $"unknown (style 0x{style:X})";
+        }
 
         [DllImport("user32.dll")]
         private static extern bool IsWindowVisible(IntPtr window);

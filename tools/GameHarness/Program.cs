@@ -178,8 +178,25 @@ Options:
                 // registry PlayerPrefs, before the game runs. Staging one without the
                 // other is what produced a 3840x1200 window that never switched.
                 DisplaySettings requested = GameSettings.ReadDisplay(testSettings);
-                GameSettings.InstallScreenPrefs(requested);
-                Console.WriteLine($"screen:    asked Unity for {requested}");
+                if (options.RegistryScreen != null)
+                {
+                    // Deliberately disagreeing with the settings file, to find out which
+                    // source actually decides.
+                    GameSettings.InstallScreenPrefs(options.RegistryScreen);
+                    Console.WriteLine(
+                        $"screen:    asked Unity for {options.RegistryScreen} "
+                        + $"(settings file says {requested})");
+                }
+                else if (options.SkipScreenPrefs)
+                {
+                    Console.WriteLine(
+                        "screen:    left Unity's registry alone; only the settings file was staged");
+                }
+                else
+                {
+                    GameSettings.InstallScreenPrefs(requested);
+                    Console.WriteLine($"screen:    asked Unity for {requested}");
+                }
 
                 Console.WriteLine();
                 Console.WriteLine("launching...");
@@ -240,8 +257,8 @@ Options:
                 // settings file asks for once the game's startup code runs, during the
                 // legal notice. So this is a note, not a verdict.
                 Console.WriteLine(
-                    $"  opened at: {window.Width}x{window.Height} (the game applies its own "
-                    + "resolution during startup)");
+                    $"  opened at: {window.Width}x{window.Height} "
+                    + $"{GameWindows.DescribeStyle(window.Handle)}");
 
                 bool foreground = GameWindows.BringToFront(window.Handle);
                 checks.Check(
@@ -540,6 +557,7 @@ Options:
 
                     Console.WriteLine(
                         $"  {clock.Elapsed.TotalSeconds,6:N1}s  {name}  {bitmap.Width}x{bitmap.Height}"
+                        + $"  {GameWindows.DescribeStyle(current.Handle),-10}"
                         + $"  difference {change}  detail {detail:N3}");
 
                     previous = fingerprint;
@@ -705,6 +723,12 @@ Options:
             /// <summary>Launch through the Steam client rather than the executable.</summary>
             public bool ViaSteam { get; private set; }
 
+            /// <summary>Leave Unity's registry screen prefs untouched.</summary>
+            public bool SkipScreenPrefs { get; private set; }
+
+            /// <summary>Screen prefs to write, when deliberately disagreeing with the file.</summary>
+            public DisplaySettings? RegistryScreen { get; private set; }
+
             /// <summary>The Steam app id, for launching through Steam.</summary>
             public string AppId { get; private set; } = "632470";
 
@@ -760,6 +784,28 @@ Options:
                         case "--dry-run": options.DryRun = true; break;
                         case "--keep-open": options.KeepOpen = true; break;
                         case "--via-steam": options.ViaSteam = true; break;
+                        case "--no-screen-prefs": options.SkipScreenPrefs = true; break;
+                        case "--registry-screen":
+                        {
+                            string spec = Next() ?? string.Empty;
+                            string[] halves = spec.Split(':');
+                            string[] size = halves[0].Split('x');
+                            if (halves.Length != 2 || size.Length != 2)
+                            {
+                                throw new ArgumentException(
+                                    $"--registry-screen wants WIDTHxHEIGHT:UNITYMODE, got '{spec}'. "
+                                    + "Unity modes: 0 exclusive, 1 borderless, 2 maximised, 3 windowed.");
+                            }
+
+                            options.RegistryScreen = new DisplaySettings(
+                                int.Parse(size[0], CultureInfo.InvariantCulture),
+                                int.Parse(size[1], CultureInfo.InvariantCulture),
+                                int.Parse(halves[1], CultureInfo.InvariantCulture) == UnityPlayerPrefs.Windowed
+                                    ? DisplaySettings.WindowedMode
+                                    : 0);
+                            break;
+                        }
+
                         case "--app-id": options.AppId = Next() ?? "632470"; break;
                         case "--timeline": options.Timeline = true; break;
                         case "--timeline-seconds":
