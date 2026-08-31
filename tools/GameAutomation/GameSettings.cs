@@ -170,6 +170,50 @@ namespace GlobalConversationTracker.Automation
             File.Copy(testSettingsPath, SettingsPath, overwrite: true);
         }
 
+        /// <summary>
+        /// Writes Unity's own screen PlayerPrefs, which are what size the window.
+        /// </summary>
+        /// <remarks>
+        /// Installing the settings FILE is not enough, and this is the part that was
+        /// missing. Unity creates its window from these registry values before any game
+        /// code runs, and while "use native" is set it takes the display's resolution and
+        /// ignores the stored size - so a staged file asking for 1280x720 produced a
+        /// 3840x1200 window that never changed. All four values have to move together:
+        /// turning off native, choosing a real window, and giving it a size.
+        ///
+        /// Backup() already exports this whole key and Restore() re-imports it, so these
+        /// writes are undone with everything else.
+        /// </remarks>
+        /// <param name="display">The resolution and mode to ask Unity for.</param>
+        public static void InstallScreenPrefs(DisplaySettings display)
+        {
+            if (display == null)
+            {
+                throw new ArgumentNullException(nameof(display));
+            }
+
+            SetInt(UnityPlayerPrefs.UseNativeResolution, 0);
+            SetInt(
+                UnityPlayerPrefs.FullScreenMode,
+                display.IsWindowed ? UnityPlayerPrefs.Windowed : UnityPlayerPrefs.FullScreenWindow);
+            SetInt(UnityPlayerPrefs.ResolutionWidth, display.Width);
+            SetInt(UnityPlayerPrefs.ResolutionHeight, display.Height);
+        }
+
+        private static void SetInt(string key, int value)
+        {
+            RunReg(
+                "add",
+                RegistryKey,
+                "/v",
+                UnityPlayerPrefs.ValueName(key),
+                "/t",
+                "REG_DWORD",
+                "/d",
+                value.ToString(CultureInfo.InvariantCulture),
+                "/f");
+        }
+
         /// <summary>The display settings a settings file asks for.</summary>
         /// <param name="path">The settings file to read.</param>
         /// <exception cref="InvalidDataException">A value is missing or not unique.</exception>

@@ -100,6 +100,11 @@ Options:
                       A window either shows up quickly or something is wrong.
   --dry-run           Do everything except press keys.
   --keep-open         Leave the game running afterwards.
+  --via-steam         Launch through the Steam client (steam://run/<id>) rather
+                      than running disco.exe. Steam does work before the process
+                      exists that a direct launch skips, so which settings the
+                      game honours may differ between the two.
+  --app-id <id>       Steam app id for --via-steam (default: 632470).
   --timeline          Capture every frame of startup instead of waiting for the
                       screen to settle. Startup runs through several animated
                       screens, so stopped-changing never becomes true - and a
@@ -169,9 +174,36 @@ Options:
             {
                 GameSettings.Install(testSettings);
 
+                // The file alone does not size the window - Unity does, from its own
+                // registry PlayerPrefs, before the game runs. Staging one without the
+                // other is what produced a 3840x1200 window that never switched.
+                DisplaySettings requested = GameSettings.ReadDisplay(testSettings);
+                GameSettings.InstallScreenPrefs(requested);
+                Console.WriteLine($"screen:    asked Unity for {requested}");
+
                 Console.WriteLine();
                 Console.WriteLine("launching...");
-                process = Process.Start(game);
+                if (options.ViaSteam)
+                {
+                    // Through the Steam client, the way a player starts it. Worth being
+                    // able to choose: Steam does work before the process exists - the
+                    // cloud download among it - that launching the exe skips entirely, so
+                    // the two launch methods are not interchangeable when the question is
+                    // which settings the game honours.
+                    Console.WriteLine($"  via Steam: steam://run/{options.AppId}");
+                    Process.Start(new ProcessStartInfo($"steam://run/{options.AppId}")
+                    {
+                        UseShellExecute = true,
+                    });
+
+                    // Steam returns immediately and spawns the game itself, so there is no
+                    // process handle to hold; it gets found by name below.
+                    process = null;
+                }
+                else
+                {
+                    process = Process.Start(game);
+                }
 
                 GameWindow window = GameSession.WaitForWindow(
                     options.ProcessName, TimeSpan.FromSeconds(options.WindowTimeoutSeconds));
@@ -371,11 +403,24 @@ Options:
             {
                 // Before restoring, always: the game rewrites both the settings file and
                 // the PlayerPrefs key as it exits, straight over anything put back first.
-                if (process != null && !options.KeepOpen)
+                if (!options.KeepOpen)
                 {
                     Console.WriteLine();
                     Console.WriteLine("closing the game...");
-                    TryKill(process);
+                    if (process != null)
+                    {
+                        TryKill(process);
+                    }
+                    else
+                    {
+                        // Launched through Steam, which spawns the game itself and hands
+                        // back no handle. It still has to be closed before the settings go
+                        // back, or the game writes its own over them on the way out.
+                        foreach (Process running in Process.GetProcessesByName(options.ProcessName))
+                        {
+                            TryKill(running);
+                        }
+                    }
                 }
 
                 try
@@ -625,6 +670,12 @@ Options:
             /// <summary>Capture every frame of startup instead of waiting for a settle.</summary>
             public bool Timeline { get; private set; }
 
+            /// <summary>Launch through the Steam client rather than the executable.</summary>
+            public bool ViaSteam { get; private set; }
+
+            /// <summary>The Steam app id, for launching through Steam.</summary>
+            public string AppId { get; private set; } = "632470";
+
             /// <summary>How often to capture in timeline mode, in milliseconds.</summary>
             public int TimelineIntervalMs { get; private set; } = 1000;
 
@@ -676,6 +727,8 @@ Options:
                             break;
                         case "--dry-run": options.DryRun = true; break;
                         case "--keep-open": options.KeepOpen = true; break;
+                        case "--via-steam": options.ViaSteam = true; break;
+                        case "--app-id": options.AppId = Next() ?? "632470"; break;
                         case "--timeline": options.Timeline = true; break;
                         case "--timeline-seconds":
                             options.TimelineSeconds = int.Parse(
