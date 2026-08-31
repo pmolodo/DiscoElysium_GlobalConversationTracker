@@ -137,6 +137,15 @@ namespace GlobalConversationTracker.Automation
         [DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr window);
 
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool AttachThreadInput(uint attaching, uint attachTo, bool attach);
+
+        [DllImport("kernel32.dll")]
+        private static extern uint GetCurrentThreadId();
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool BringWindowToTop(IntPtr window);
+
         [DllImport("user32.dll")]
         private static extern bool ShowWindow(IntPtr window, int command);
 
@@ -256,7 +265,48 @@ namespace GlobalConversationTracker.Automation
         public static bool BringToFront(IntPtr window)
         {
             ShowWindow(window, SwRestore);
-            SetForegroundWindow(window);
+
+            if (SetForegroundWindow(window) && GetForegroundWindow() == window)
+            {
+                return true;
+            }
+
+            // SetForegroundWindow is restricted, and a harness watching a game meets none
+            // of the conditions: it is not the foreground process, was not started by it,
+            // and did not receive the last input event. The call then just returns zero.
+            //
+            // Attaching this thread's input to the foreground window's makes the two share
+            // an input state, and the request is granted. This is the long-standing way
+            // round it; the alternative is a window that can never be raised once anything
+            // else takes focus, which leaves nothing to read the screen for.
+            IntPtr foreground = GetForegroundWindow();
+            if (foreground == IntPtr.Zero)
+            {
+                return GetForegroundWindow() == window;
+            }
+
+            uint theirs = GetWindowThreadProcessId(foreground, out _);
+            uint ours = GetCurrentThreadId();
+            if (theirs == 0 || theirs == ours)
+            {
+                return GetForegroundWindow() == window;
+            }
+
+            if (!AttachThreadInput(ours, theirs, true))
+            {
+                return GetForegroundWindow() == window;
+            }
+
+            try
+            {
+                BringWindowToTop(window);
+                SetForegroundWindow(window);
+            }
+            finally
+            {
+                AttachThreadInput(ours, theirs, false);
+            }
+
             return GetForegroundWindow() == window;
         }
 

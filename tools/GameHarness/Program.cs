@@ -440,6 +440,13 @@ Options:
         /// </remarks>
         private const int MaxForegroundAttempts = 4;
 
+        /// <summary>How many unrecognised screens to save a picture of.</summary>
+        /// <remarks>
+        /// Enough to see what went wrong without filling the artifacts folder when a run
+        /// spends a minute unable to recognise anything.
+        /// </remarks>
+        private const int MaxUnknownCaptures = 6;
+
         /// <summary>
         /// Waits for the main menu, saying which startup screen is showing as it goes.
         /// </summary>
@@ -456,8 +463,9 @@ Options:
         /// looking for. Without the phase file at all, it just waits.</para>
         /// </remarks>
         private static WaitResult WaitForMenu(
-            GameWindow window, string referencePath, Options options)
+            GameWindow window, string referencePath, string artifacts, Options options)
         {
+            int unknowns = 0;
             StartupPhase[] phases = Array.Empty<StartupPhase>();
             string phasePath = Path.Combine(RepoRoot(), "testing", StartupPhases.DefaultFileName);
             try
@@ -609,6 +617,20 @@ Options:
 
                         // A new screen is a fresh chance to raise the window.
                         raises = 0;
+
+                        // Keep a picture of anything unrecognised. A distance says how far
+                        // off it was; only the image says WHY, and by the time a run has
+                        // finished the screen is long gone - the last one is captured after
+                        // the game has closed, which is how a terminal ended up in it.
+                        if (phase == null && unknowns < MaxUnknownCaptures)
+                        {
+                            unknowns++;
+                            string file = Path.Combine(
+                                artifacts,
+                                $"unknown-{clock.Elapsed.TotalSeconds:00}s.png");
+                            screen.Save(file, System.Drawing.Imaging.ImageFormat.Png);
+                            Console.WriteLine($"           saved {Path.GetFileName(file)}");
+                        }
                     }
 
                     // The logo is the one screen worth doing something about: a keypress
@@ -1086,9 +1108,11 @@ Options:
 
                 Console.WriteLine();
                 Console.WriteLine("waiting for the main menu, about 50 seconds...");
-                WaitResult atMenu = WaitForMenu(window, referencePath, options);
+                WaitResult atMenu = WaitForMenu(window, referencePath, artifacts, options);
                 checks.Check("the main menu is on screen", atMenu.Succeeded,
-                    $"closest difference {atMenu.Difference:N4}, threshold {options.Threshold:N4}");
+                    // The threshold is the menu phase's own, so quoting --threshold here
+                    // named a number the run never used.
+                    $"closest difference {atMenu.Difference:N4}");
 
                 if (!atMenu.Succeeded)
                 {
