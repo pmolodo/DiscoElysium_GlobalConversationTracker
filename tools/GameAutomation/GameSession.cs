@@ -243,6 +243,34 @@ namespace GlobalConversationTracker.Automation
             return new WaitResult(false, difference, detail, sawMotion, clock.Elapsed);
         }
 
+        /// <summary>
+        /// Whether a resolution switch could be seen at all, given where it started.
+        /// </summary>
+        /// <remarks>
+        /// False when the window already opened at the wanted size. Waiting then proves
+        /// only that the size is right, never that the game applied anything - the two are
+        /// indistinguishable from outside. Unlikely in practice, since the window opens at
+        /// the desktop resolution and the test asks for a small one, but a player already
+        /// running at the test resolution would hit it, and a check that quietly means
+        /// something weaker than it says is worse than one that admits it.
+        /// </remarks>
+        /// <param name="opened">The size the window first appeared at.</param>
+        /// <param name="wanted">The size the settings ask for.</param>
+        public static bool CanObserveResolutionSwitch(GameWindow opened, DisplaySettings wanted)
+        {
+            if (opened == null)
+            {
+                throw new ArgumentNullException(nameof(opened));
+            }
+
+            if (wanted == null)
+            {
+                throw new ArgumentNullException(nameof(wanted));
+            }
+
+            return opened.Width != wanted.Width || opened.Height != wanted.Height;
+        }
+
         /// <summary>Waits for the game to apply its own saved resolution.</summary>
         /// <remarks>
         /// <para>The size a window OPENS at and the size the game ends up running at are
@@ -254,9 +282,17 @@ namespace GlobalConversationTracker.Automation
         ///
         /// <para>So checking the size the moment a window appears measures the wrong
         /// thing, and measuring it too early is indistinguishable from the settings having
-        /// been ignored. Waiting for the switch is also useful in itself: it is an
-        /// observable startup milestone, and unlike a screenshot it cannot be faked by an
-        /// animation looping.</para>
+        /// been ignored.</para>
+        ///
+        /// <para>This is an ASSERTION about the final size, not a startup milestone. It
+        /// looks like one - a size change is observable and cannot be faked by an
+        /// animation looping the way a screenshot can - but it only works when the window
+        /// opens at a DIFFERENT size from the one wanted. A player whose own resolution
+        /// already matches the test resolution gets a window that opens correct, this
+        /// returns on its first poll, and "the game applied its settings" would be
+        /// claimed for a switch that never happened. Callers that care about the
+        /// difference must compare the opening size themselves; see
+        /// <see cref="CanObserveResolutionSwitch"/>.</para>
         /// </remarks>
         /// <param name="processName">The process name, without .exe.</param>
         /// <param name="width">The width to wait for.</param>

@@ -240,8 +240,26 @@ Options:
                     return checks.Report();
                 }
 
+                // Only meaningful when the window did NOT open at the wanted size. If it
+                // did, waiting returns on the first poll and proves nothing about whether
+                // the game applied its settings - the two look identical from out here.
+                bool canObserveSwitch = GameSession.CanObserveResolutionSwitch(window, wanted);
+
                 Console.WriteLine();
-                Console.WriteLine($"waiting for the game to switch to {wanted}...");
+                if (canObserveSwitch)
+                {
+                    Console.WriteLine($"waiting for the game to switch to {wanted}...");
+                }
+                else
+                {
+                    Console.WriteLine(
+                        $"the window already opened at {wanted}, so there is no switch to see.");
+                    Console.WriteLine(
+                        "  This run can only confirm the size is right, NOT that the settings");
+                    Console.WriteLine(
+                        "  file was applied - a game ignoring it entirely would look the same.");
+                }
+
                 GameWindow? resized = GameSession.WaitForResolution(
                     options.ProcessName,
                     wanted.Width,
@@ -250,7 +268,10 @@ Options:
                     options.Verbose ? Log : (Action<string>?)null);
 
                 checks.Check(
-                    $"the game switched to the requested {wanted}",
+                    canObserveSwitch
+                        ? $"the game switched to the requested {wanted}"
+                        : $"the game is running at the requested {wanted} (it opened there; "
+                            + "no switch was observable)",
                     resized != null,
                     $"still {window.Width}x{window.Height} at the deadline");
 
