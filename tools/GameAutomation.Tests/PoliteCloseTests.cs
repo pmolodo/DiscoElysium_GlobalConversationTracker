@@ -43,18 +43,26 @@ namespace GlobalConversationTracker.Automation.Tests
             Assert.False(PoliteClose.IsAskable("VSCodium", Askable));
         }
 
+        /// <summary>
+        /// A name no real process has. These tests must never reach the fallback that
+        /// asks every window of an application to close - on a developer's machine that
+        /// would be their actual editor.
+        /// </summary>
+        private static readonly string[] Imaginary = { "no-such-editor" };
+
         [Fact]
-        public void AProcessThatIsAlreadyGoneCountsAsClosed()
+        public void AProcessThatIsGoneIsNotAskedAnything()
         {
             // A pid that cannot exist, standing in for one that exited between being seen
             // holding the folder and being asked about it.
-            var holder = new LockHolder(int.MaxValue, "Code.exe", string.Empty);
+            var holder = new LockHolder(int.MaxValue, "no-such-editor.exe", string.Empty);
 
             CloseAttempt[] attempts = PoliteClose.AskToClose(
-                new[] { holder }, Askable, TimeSpan.FromSeconds(1));
+                new[] { holder }, Imaginary, TimeSpan.FromSeconds(1));
 
-            Assert.Single(attempts);
-            Assert.True(attempts[0].Closed);
+            // Nothing to ask: it has no window, no ancestor to walk to, and nothing of
+            // that name is running.
+            Assert.Empty(attempts);
         }
 
         [Fact]
@@ -70,10 +78,16 @@ namespace GlobalConversationTracker.Automation.Tests
         }
 
         /// <summary>
-        /// A process with no window cannot be asked, and must be left rather than killed.
+        /// A windowless process with nothing above it to ask is left running.
         /// </summary>
+        /// <remarks>
+        /// The holder of a folder is usually a windowless helper, and the walk up the
+        /// process tree is what finds something that can be asked. When there is nothing -
+        /// no window, no acceptable ancestor, nothing of that name running - the answer is
+        /// to do nothing, never to kill the process that was found.
+        /// </remarks>
         [Fact]
-        public void AProcessWithNoWindowIsLeftAlone()
+        public void AWindowlessProcessWithNoWindowedParentIsLeftRunning()
         {
             using Process helper = Process.Start(new ProcessStartInfo(
                 "cmd.exe", "/c ping -n 30 127.0.0.1 > nul")
@@ -84,14 +98,12 @@ namespace GlobalConversationTracker.Automation.Tests
 
             try
             {
-                var holder = new LockHolder(helper.Id, "Code.exe", string.Empty);
+                var holder = new LockHolder(helper.Id, "no-such-editor.exe", string.Empty);
 
                 CloseAttempt[] attempts = PoliteClose.AskToClose(
-                    new[] { holder }, Askable, TimeSpan.FromSeconds(2));
+                    new[] { holder }, Imaginary, TimeSpan.FromSeconds(2));
 
-                Assert.Single(attempts);
-                Assert.False(attempts[0].Closed);
-                Assert.Contains("left alone", attempts[0].Detail, StringComparison.Ordinal);
+                Assert.Empty(attempts);
 
                 // The point: it is still running.
                 Assert.False(helper.HasExited);

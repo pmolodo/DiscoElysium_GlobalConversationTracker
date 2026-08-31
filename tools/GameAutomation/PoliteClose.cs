@@ -99,6 +99,7 @@ namespace GlobalConversationTracker.Automation
             TimeSpan limit = deadline ?? DefaultDeadline;
             var attempts = new List<CloseAttempt>();
 
+            var asked = new HashSet<int>();
             foreach (LockHolder holder in holders)
             {
                 if (!IsAskable(holder.Name, names))
@@ -106,10 +107,65 @@ namespace GlobalConversationTracker.Automation
                     continue;
                 }
 
-                attempts.Add(Ask(holder, limit, announce));
+                foreach (int target in WindowsToAsk(holder, names, announce))
+                {
+                    if (asked.Add(target))
+                    {
+                        attempts.Add(Ask(holder, target, limit, announce));
+                    }
+                }
             }
 
             return attempts.ToArray();
+        }
+
+        /// <summary>
+        /// Which processes to actually ask, given the one that holds the folder.
+        /// </summary>
+        /// <remarks>
+        /// The holder is usually not the thing to ask. An editor is a tree of processes,
+        /// one owning the window and the rest doing the work, and the folder is held by a
+        /// windowless file watcher - measured here as a utility child among fifteen others
+        /// under one windowed parent. CloseMainWindow on that child does nothing, because
+        /// the request is a window message and there is no window.
+        ///
+        /// So: the holder itself if it has a window, otherwise the nearest ancestor that
+        /// does, otherwise every window of that application. The last is blunt - it closes
+        /// windows that were not holding anything - and it is only reached when the tree
+        /// cannot be walked.
+        /// </remarks>
+        private static int[] WindowsToAsk(
+            LockHolder holder, List<string> askable, Action<string>? announce)
+        {
+            int windowed = ProcessTree.NearestWithWindow(
+                holder.ProcessId, name => IsAskable(name, askable));
+
+            if (windowed == holder.ProcessId)
+            {
+                return new[] { windowed };
+            }
+
+            if (windowed != 0)
+            {
+                announce?.Invoke(
+                    $"{holder.Name} (pid {holder.ProcessId}) has no window; its parent "
+                    + $"pid {windowed} does");
+                return new[] { windowed };
+            }
+
+            string bare = holder.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                ? holder.Name.Substring(0, holder.Name.Length - 4)
+                : holder.Name;
+
+            int[] all = ProcessTree.WithWindowsNamed(bare);
+            if (all.Length > 0)
+            {
+                announce?.Invoke(
+                    $"{holder.Name} (pid {holder.ProcessId}) has no window and no windowed "
+                    + $"parent; asking all {all.Length} {bare} window(s) instead");
+            }
+
+            return all;
         }
 
         /// <summary>Whether a process name is one this is allowed to ask.</summary>
@@ -137,24 +193,26 @@ namespace GlobalConversationTracker.Automation
             return false;
         }
 
-        private static CloseAttempt Ask(LockHolder holder, TimeSpan deadline, Action<string>? announce)
+        private static CloseAttempt Ask(
+            LockHolder holder, int processId, TimeSpan deadline, Action<string>? announce)
         {
             Process process;
             try
             {
-                process = Process.GetProcessById(holder.ProcessId);
+                process = Process.GetProcessById(processId);
             }
             catch (Exception)
             {
-                return new CloseAttempt(
-                    holder.ProcessId, holder.Name, true, "already gone");
+                return new CloseAttempt(processId, holder.Name, true, "already gone");
             }
 
             using (process)
             {
+                string what = process.MainWindowTitle;
                 announce?.Invoke(
-                    $"asking {holder.Name} (pid {holder.ProcessId}) to close, waiting up to "
-                    + $"{deadline.TotalSeconds:N0}s...");
+                    $"asking {process.ProcessName} (pid {processId}) to close, waiting up to "
+                    + $"{deadline.TotalSeconds:N0}s"
+                    + (string.IsNullOrEmpty(what) ? "..." : $" - \"{what}\"..."));
 
                 bool asked;
                 try
@@ -166,13 +224,13 @@ namespace GlobalConversationTracker.Automation
                 catch (Exception error)
                 {
                     return new CloseAttempt(
-                        holder.ProcessId, holder.Name, false, $"could not be asked: {error.Message}");
+                        processId, holder.Name, false, $"could not be asked: {error.Message}");
                 }
 
                 if (!asked)
                 {
                     return new CloseAttempt(
-                        holder.ProcessId,
+                        processId,
                         holder.Name,
                         false,
                         "has no window to close - a background process, so it was left alone");
@@ -180,13 +238,13 @@ namespace GlobalConversationTracker.Automation
 
                 if (process.WaitForExit((int)deadline.TotalMilliseconds))
                 {
-                    return new CloseAttempt(holder.ProcessId, holder.Name, true, "closed");
+                    return new CloseAttempt(processId, holder.Name, true, "closed");
                 }
 
                 // Still running. Almost always a save prompt waiting for somebody. It is
                 // NOT killed: the folder staying locked is a smaller loss than the work.
                 return new CloseAttempt(
-                    holder.ProcessId,
+                    processId,
                     holder.Name,
                     false,
                     $"still open after {deadline.TotalSeconds:N0}s - probably asking about "
