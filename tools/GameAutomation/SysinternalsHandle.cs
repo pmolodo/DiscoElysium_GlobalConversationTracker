@@ -90,8 +90,14 @@ namespace GlobalConversationTracker.Automation
         /// <summary>Which processes hold a path, or anything beneath it.</summary>
         /// <param name="path">The file or folder to ask about.</param>
         /// <param name="executable">Where Handle is; found automatically when omitted.</param>
+        /// <param name="announce">
+        /// Called before the scan starts. It takes tens of seconds - Handle has to walk
+        /// every handle on the system to search them, whatever path it is given - and this
+        /// runs inside an error path, where an unexplained pause reads as a hang.
+        /// </param>
         /// <returns>What it reported, or null if Handle is not installed.</returns>
-        public static LockHolder[]? WhoIsHolding(string path, string? executable = null)
+        public static LockHolder[]? WhoIsHolding(
+            string path, string? executable = null, Action<string>? announce = null)
         {
             string? handle = executable ?? Find();
             if (handle == null || !File.Exists(handle))
@@ -104,6 +110,10 @@ namespace GlobalConversationTracker.Automation
 
             string full = Path.GetFullPath(path).TrimEnd(
                 Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+            announce?.Invoke(
+                $"asking {Path.GetFileName(handle)} what is holding it; this walks every "
+                + $"handle on the system and can take up to {Timeout.TotalSeconds:N0}s...");
 
             // -nobanner keeps the copyright header out of the output; -accepteula stops it
             // blocking on the licence dialog the first time it is ever run.

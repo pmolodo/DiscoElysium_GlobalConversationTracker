@@ -112,8 +112,20 @@ namespace GlobalConversationTracker.Automation
         /// every handle on the system, so it takes seconds - fine once, in an error path,
         /// and far too slow to leave switched on in a unit test.
         /// </param>
-        public static string Describe(string path, bool askHandleTool = true)
+        /// <param name="announce">
+        /// Called before the slow part, so a pause of tens of seconds is explained instead
+        /// of looking like a hang. Defaults to standard error, flushed, because what this
+        /// method returns is not printed until after the wait it is warning about.
+        /// </param>
+        public static string Describe(
+            string path, bool askHandleTool = true, Action<string>? announce = null)
         {
+            announce ??= message =>
+            {
+                Console.Error.WriteLine($"  {message}");
+                Console.Error.Flush();
+            };
+
             LockHolder[] holders;
             try
             {
@@ -132,7 +144,9 @@ namespace GlobalConversationTracker.Automation
                 LockHolder[]? viaHandle = null;
                 try
                 {
-                    viaHandle = askHandleTool ? SysinternalsHandle.WhoIsHolding(path) : null;
+                    viaHandle = askHandleTool
+                        ? SysinternalsHandle.WhoIsHolding(path, executable: null, announce)
+                        : null;
                 }
                 catch (Exception)
                 {
