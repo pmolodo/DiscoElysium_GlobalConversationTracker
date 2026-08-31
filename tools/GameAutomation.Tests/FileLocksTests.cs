@@ -79,7 +79,7 @@ namespace GlobalConversationTracker.Automation.Tests
         {
             string missing = Path.Combine(_root, "no-such-thing");
 
-            string description = FileLocks.Describe(missing);
+            string description = FileLocks.Describe(missing, askHandleTool: false);
 
             Assert.False(string.IsNullOrWhiteSpace(description));
         }
@@ -91,7 +91,9 @@ namespace GlobalConversationTracker.Automation.Tests
         [Fact]
         public void FindingNothingSaysWhatThatDoesAndDoesNotMean()
         {
-            string description = FileLocks.Describe(_root);
+            // askHandleTool off: it shells out to a system-wide handle scan that takes
+            // tens of seconds, which is right in an error path and wrong in a unit test.
+            string description = FileLocks.Describe(_root, askHandleTool: false);
 
             // The wording is free to change; what must not is that it says the folder
             // itself may be held and that finding no file handle is not an all-clear.

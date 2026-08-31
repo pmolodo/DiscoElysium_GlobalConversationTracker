@@ -107,7 +107,12 @@ namespace GlobalConversationTracker.Automation
 
         /// <summary>One line naming the holders, for an error message.</summary>
         /// <param name="path">The file or folder to ask about.</param>
-        public static string Describe(string path)
+        /// <param name="askHandleTool">
+        /// Whether to fall back to Sysinternals Handle when nothing holds a file. It walks
+        /// every handle on the system, so it takes seconds - fine once, in an error path,
+        /// and far too slow to leave switched on in a unit test.
+        /// </param>
+        public static string Describe(string path, bool askHandleTool = true)
         {
             LockHolder[] holders;
             try
@@ -122,8 +127,30 @@ namespace GlobalConversationTracker.Automation
             if (holders.Length == 0)
             {
                 // Nothing holds a FILE. Explorer showing the folder holds the directory
-                // instead, which blocks a rename and appears in no file-handle list, so
-                // fall back to looking for a window that is displaying it.
+                // instead, which blocks a rename and appears in no file-handle list. Ask
+                // Sysinternals Handle, which does answer that, before guessing.
+                LockHolder[]? viaHandle = null;
+                try
+                {
+                    viaHandle = askHandleTool ? SysinternalsHandle.WhoIsHolding(path) : null;
+                }
+                catch (Exception)
+                {
+                    // Not installed, not elevated, or it failed. Fall through to guessing.
+                }
+
+                if (viaHandle != null && viaHandle.Length > 0)
+                {
+                    var held = new List<string>();
+                    foreach (LockHolder holder in viaHandle)
+                    {
+                        held.Add(holder.ToString());
+                    }
+
+                    return "Holding the folder itself (via Sysinternals Handle): "
+                        + string.Join("; ", held);
+                }
+
                 LockHolder[] showing;
                 try
                 {
@@ -138,6 +165,17 @@ namespace GlobalConversationTracker.Automation
                     "No process holds a file handle inside it, so something has the FOLDER "
                     + "itself open - Explorer showing it, or an editor working in it - which "
                     + "blocks a move without holding any file.";
+
+                if (viaHandle == null)
+                {
+                    message += Environment.NewLine + SysinternalsHandle.InstallHint;
+                }
+                else
+                {
+                    message += Environment.NewLine
+                        + "Sysinternals Handle found nothing either; if it was not run as "
+                        + "administrator it cannot see other processes.";
+                }
 
                 if (showing.Length > 0)
                 {
