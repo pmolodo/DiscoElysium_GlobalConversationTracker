@@ -39,6 +39,31 @@ namespace GlobalConversationTracker.Automation
 
         private static readonly string[] Names = { "handle64.exe", "handle.exe" };
 
+        /// <summary>
+        /// Processes worth asking about before searching every one of them.
+        /// </summary>
+        /// <remarks>
+        /// Measured on a real machine: searching every process took 62 seconds, narrowing
+        /// to one took 2.4. These are the two that actually turned up holding the profile -
+        /// Explorer showing the folder, and an editor with it open - so trying them first
+        /// answers the common case in seconds and leaves the slow scan for the rest.
+        ///
+        /// The trade is deliberate and not free: when neither is the holder, their scans
+        /// are spent before the full one starts. Roughly five seconds added to the rare
+        /// case to take a minute off the common one.
+        ///
+        /// Matched as a prefix by Handle's -p, so "Code" also catches Code - Insiders,
+        /// and "exp" would be enough for Explorer.
+        ///
+        /// They have to be asked ONE AT A TIME, which is why this is a loop rather than a
+        /// single call. Handle's -p takes one prefix: passing it twice is refused with a
+        /// usage message, and - the part worth knowing - both "explorer,Code" and
+        /// "explorer|Code" are accepted and report "No matching handles found", which is
+        /// indistinguishable from the folder being free. Combining these into one call to
+        /// save a couple of seconds would quietly stop finding anything.
+        /// </remarks>
+        public static readonly string[] LikelyHolders = { "explorer", "Code" };
+
         private static readonly string[] CommonDirectories =
         {
             @"C:\Sysinternals",
@@ -111,14 +136,31 @@ namespace GlobalConversationTracker.Automation
             string full = Path.GetFullPath(path).TrimEnd(
                 Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
-            announce?.Invoke(
-                $"asking {Path.GetFileName(handle)} what is holding it; this walks every "
-                + $"handle on the system and can take up to {Timeout.TotalSeconds:N0}s...");
-
             // -nobanner keeps the copyright header out of the output; -accepteula stops it
             // blocking on the licence dialog the first time it is ever run.
-            string output = Run(handle, $"-nobanner -accepteula \"{full}\"");
-            return Parse(output, full);
+            const string Common = "-nobanner -accepteula";
+
+            // The usual suspects first. -p narrows the scan to processes whose name starts
+            // with what is given, and that is the whole cost here: searching every process
+            // takes about a minute, one process takes about a second. These two account
+            // for nearly every real case - a folder open in Explorer, or an editor working
+            // in it - so the slow scan is only reached when the answer is unusual.
+            foreach (string suspect in LikelyHolders)
+            {
+                announce?.Invoke($"checking {suspect}...");
+                LockHolder[] quick = Parse(
+                    Run(handle, $"{Common} -p {suspect} \"{full}\""), full);
+                if (quick.Length > 0)
+                {
+                    return quick;
+                }
+            }
+
+            announce?.Invoke(
+                $"not one of those; asking {Path.GetFileName(handle)} about every process, "
+                + $"which can take up to {Timeout.TotalSeconds:N0}s...");
+
+            return Parse(Run(handle, $"{Common} \"{full}\""), full);
         }
 
         /// <summary>Reads Handle's search output into holders.</summary>
@@ -185,8 +227,33 @@ namespace GlobalConversationTracker.Automation
                 return string.Empty;
             }
 
-            string output = process.StandardOutput.ReadToEnd();
-            if (!process.WaitForExit((int)Timeout.TotalMilliseconds))
+            // Collected as it arrives rather than with ReadToEnd, which blocks until the
+            // process closes its output and so runs BEFORE any timeout can apply. With
+            // ReadToEnd here a 30 second limit let a scan run for 62.
+            var output = new System.Text.StringBuilder();
+            process.OutputDataReceived += (_, e) =>
+            {
+                if (e.Data != null)
+                {
+                    lock (output)
+                    {
+                        output.AppendLine(e.Data);
+                    }
+                }
+            };
+
+            process.BeginOutputReadLine();
+
+            if (process.WaitForExit((int)Timeout.TotalMilliseconds))
+            {
+                // The overload that takes a timeout returns as soon as the process is
+                // gone, which can be BEFORE the asynchronous output handlers have run. The
+                // parameterless one waits for them too. Without it the output is whatever
+                // happened to have arrived - which silently lost explorer.exe from a scan
+                // that had really found it.
+                process.WaitForExit();
+            }
+            else
             {
                 try
                 {
@@ -196,11 +263,12 @@ namespace GlobalConversationTracker.Automation
                 {
                     // Already gone.
                 }
-
-                return output;
             }
 
-            return output;
+            lock (output)
+            {
+                return output.ToString();
+            }
         }
 
         private static string? FindOnPath(string name)
