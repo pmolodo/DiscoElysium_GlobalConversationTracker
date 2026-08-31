@@ -103,6 +103,8 @@ Options:
                       screens, so stopped-changing never becomes true - and a
                       looping animation can sample identically twice and fake it.
   --timeline-interval How often to capture in timeline mode, in ms (default 1000).
+  --timeline-seconds  How long to record in timeline mode (default 60). Separate
+                      from --timeout, which is the wait for the window to appear.
   --verbose           Report every sample the waits take.");
         }
 
@@ -227,7 +229,7 @@ Options:
                 {
                     Console.WriteLine();
                     Console.WriteLine(
-                        $"capturing every {options.TimelineIntervalMs}ms for {options.TimeoutSeconds}s...");
+                        $"capturing every {options.TimelineIntervalMs}ms for {options.TimelineSeconds}s...");
                     Console.WriteLine(
                         "Startup is a sequence of distinct screens, not a fade to a still image,");
                     Console.WriteLine(
@@ -395,7 +397,7 @@ Options:
             Directory.CreateDirectory(directory);
 
             var clock = Stopwatch.StartNew();
-            TimeSpan deadline = TimeSpan.FromSeconds(options.TimeoutSeconds);
+            TimeSpan deadline = TimeSpan.FromSeconds(options.TimelineSeconds);
             double[]? previous = null;
             int frame = 0;
 
@@ -559,6 +561,15 @@ Options:
             /// <summary>How often to capture in timeline mode, in milliseconds.</summary>
             public int TimelineIntervalMs { get; private set; } = 1000;
 
+            /// <summary>How long to record in timeline mode, in seconds.</summary>
+            /// <remarks>
+            /// Separate from --timeout, which is how long to wait for the window to appear
+            /// at all. Recording is bounded by how long startup takes, not by how patient
+            /// the launch wait is, and at one frame a second 60s is already 60 full-size
+            /// PNGs to look through.
+            /// </remarks>
+            public int TimelineSeconds { get; private set; } = 60;
+
             public static Options? Parse(string[] args)
             {
                 if (args.Length == 0)
@@ -595,6 +606,10 @@ Options:
                         case "--dry-run": options.DryRun = true; break;
                         case "--keep-open": options.KeepOpen = true; break;
                         case "--timeline": options.Timeline = true; break;
+                        case "--timeline-seconds":
+                            options.TimelineSeconds = int.Parse(
+                                Next() ?? "60", CultureInfo.InvariantCulture);
+                            break;
                         case "--timeline-interval":
                             options.TimelineIntervalMs = int.Parse(
                                 Next() ?? "1000", CultureInfo.InvariantCulture);
