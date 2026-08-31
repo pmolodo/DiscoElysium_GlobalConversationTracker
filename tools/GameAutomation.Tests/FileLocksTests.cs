@@ -93,7 +93,10 @@ namespace GlobalConversationTracker.Automation.Tests
         {
             string description = FileLocks.Describe(_root);
 
-            Assert.Contains("FOLDER open", description, StringComparison.Ordinal);
+            // The wording is free to change; what must not is that it says the folder
+            // itself may be held and that finding no file handle is not an all-clear.
+            Assert.Contains("FOLDER", description, StringComparison.Ordinal);
+            Assert.Contains("blocks a move", description, StringComparison.Ordinal);
         }
     }
 }
