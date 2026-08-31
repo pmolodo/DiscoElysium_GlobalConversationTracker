@@ -115,6 +115,21 @@ the registry's value was also the larger value, so the two explanations could
 not be told apart. Run 6 separates them, and the file wins when it asks for
 more.
 
+### The same confound caught an earlier manual test
+
+Before these runs, hand testing had concluded the opposite - that the settings
+file wins and the registry is only a backup. That test had the file asking for
+the larger resolution, so "the file wins" and "the larger wins" predicted the
+same outcome, exactly as runs 1 to 5 made "the registry wins" look right for the
+reverse reason. Two opposite conclusions, both from data that could not
+distinguish them.
+
+That earlier test also observed something these runs cannot: after launch, the
+registry had been updated to match the resolution the game settled on. Every run
+here restores the registry afterwards, so the write-back is invisible to them.
+It is consistent with everything measured, and it is the reason the registry has
+to be backed up at all - a run changes it as a side effect.
+
 ### The launch method makes no difference
 
 Runs 1 and 2 are the same configuration through `disco.exe` and through
