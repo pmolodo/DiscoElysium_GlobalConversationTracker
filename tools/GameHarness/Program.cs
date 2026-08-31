@@ -31,6 +31,15 @@ namespace GlobalConversationTracker.Harness
     {
         private const string DefaultProcessName = "disco";
 
+        /// <summary>The save staged when none is named.</summary>
+        /// <remarks>
+        /// The archive's entries are named to match it. Every entry in a save is prefixed
+        /// with the save's own name, and an archive whose entries disagree is ignored:
+        /// renaming the file alone produced a main menu with no Continue and Load Game
+        /// greyed out, the game having found no saves at all. A test checks they agree.
+        /// </remarks>
+        private const string TemplateSave = "save_template.ntwtf.zip";
+
         private static readonly string[] DefaultGamePaths =
         {
             @"C:\apps (x86)\games\steam\steamapps\common\Disco Elysium\disco.exe",
@@ -184,7 +193,7 @@ Options:
   --artifacts <dir>   Where screenshots go (default: .build/automation).
   --settings <file>   Test settings to install (default: testing/Settings.json).
   --save <file>       The .ntwtf.zip to stage as the ONLY save. Defaults to
-                      testing/save_template.ntwtf.zip, so Continue has exactly
+                      the save in testing/, so Continue has exactly
                       one thing it can load.
   --keys a,b,c        The key sequence for load-save (default: Enter, which is
                       Continue when a single save has been staged).
@@ -949,7 +958,7 @@ Options:
             try
             {
                 string saveTemplate = options.SaveFile
-                    ?? Path.Combine(RepoRoot(), "testing", "save_template.ntwtf.zip");
+                    ?? Path.Combine(RepoRoot(), "testing", TemplateSave);
                 GameProfile.Stage(testSettings, saveTemplate);
                 Console.WriteLine($"staged:    {Path.GetFileName(testSettings)}");
                 Console.WriteLine(
