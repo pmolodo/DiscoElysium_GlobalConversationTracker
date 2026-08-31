@@ -1455,9 +1455,9 @@ Options:
             /// forty times.
             ///
             /// The left-hand panel as a whole scored better still, at sixty-five times,
-            /// and is deliberately not used: it contains a storefront advert and the save
-            /// slots with their dates, so it scores well today and breaks when the promo
-            /// changes or a game is saved. This region is only the six menu options.
+            /// and is deliberately not used: most of it is a storefront advert, which
+            /// scores well today and changes when the promo does. This region is only the
+            /// six menu options.
             /// </remarks>
             public Rectangle? MenuRegion { get; private set; } = new Rectangle(170, 115, 230, 290);
 
