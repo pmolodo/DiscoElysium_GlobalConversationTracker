@@ -95,7 +95,9 @@ Options:
   --settings <file>   Test settings to install (default: testing/Settings.json).
   --keys a,b,c        The key sequence for load-save (default: Down,Enter,Enter).
   --threshold <n>     How close the menu match must be (default: 0.05).
-  --timeout <n>       Seconds to wait for launch and for loading (default: 300).
+  --timeout <n>       Seconds to wait for loading, the slow part (default: 300).
+  --window-timeout    Seconds to wait for the game window to appear (default: 30).
+                      A window either shows up quickly or something is wrong.
   --dry-run           Do everything except press keys.
   --keep-open         Leave the game running afterwards.
   --timeline          Capture every frame of startup instead of waiting for the
@@ -172,7 +174,7 @@ Options:
                 process = Process.Start(game);
 
                 GameWindow window = GameSession.WaitForWindow(
-                    options.ProcessName, TimeSpan.FromSeconds(options.TimeoutSeconds));
+                    options.ProcessName, TimeSpan.FromSeconds(options.WindowTimeoutSeconds));
                 Console.WriteLine($"  window: {window.ClassName} '{window.Title}'");
                 checks.Pass("the game window appeared");
 
@@ -547,7 +549,17 @@ Options:
 
             public double Threshold { get; private set; } = 0.05;
 
+            /// <summary>Seconds to wait for loading, which is the slow part.</summary>
             public int TimeoutSeconds { get; private set; } = 300;
+
+            /// <summary>Seconds to wait for the game window to appear at all.</summary>
+            /// <remarks>
+            /// Much shorter than the loading timeout, because it answers a different
+            /// question. A window either appears in the first few seconds or something is
+            /// wrong - the wrong executable, a Steam prompt, a crash on startup - and
+            /// waiting five minutes to be told so just makes the failure slow.
+            /// </remarks>
+            public int WindowTimeoutSeconds { get; private set; } = 30;
 
             public bool DryRun { get; private set; }
 
@@ -602,6 +614,10 @@ Options:
                         case "--timeout":
                             options.TimeoutSeconds = int.Parse(
                                 Next() ?? "300", System.Globalization.CultureInfo.InvariantCulture);
+                            break;
+                        case "--window-timeout":
+                            options.WindowTimeoutSeconds = int.Parse(
+                                Next() ?? "30", System.Globalization.CultureInfo.InvariantCulture);
                             break;
                         case "--dry-run": options.DryRun = true; break;
                         case "--keep-open": options.KeepOpen = true; break;
