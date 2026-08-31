@@ -437,13 +437,25 @@ Options:
 
                 checks.Check("the staged settings survived the launch", stagedSurvived);
 
-                // The window OPENS at whatever Unity's own PlayerPrefs say - for this game
-                // a native-resolution borderless window - and only switches to what the
-                // settings file asks for once the game's startup code runs, during the
-                // legal notice. So this is a note, not a verdict.
                 Console.WriteLine(
                     $"  opened at: {window.Width}x{window.Height} "
                     + $"{GameWindows.DescribeStyle(window.Handle)}");
+
+                bool rightSize =
+                    window.Width == requested.Width && window.Height == requested.Height;
+                checks.Check(
+                    $"the window is the requested {requested}",
+                    rightSize,
+                    $"got {window.Width}x{window.Height}");
+
+                if (!rightSize)
+                {
+                    throw new InvalidOperationException(
+                        $"The game opened at {window.Width}x{window.Height}, not the "
+                        + $"{requested.Width}x{requested.Height} asked for. The registry "
+                        + "PlayerPrefs did not take effect; see testing/SETTINGS-PRECEDENCE.md. "
+                        + "Everything downstream measures screen positions, so stopping here.");
+                }
 
                 bool foreground = GameWindows.BringToFront(window.Handle);
                 checks.Check(
@@ -474,65 +486,14 @@ Options:
                     return checks.Report();
                 }
 
-                // Only meaningful when the window did NOT open at the wanted size. If it
-                // did, waiting returns on the first poll and proves nothing about whether
-                // the game applied its settings - the two look identical from out here.
-                bool canObserveSwitch = GameSession.CanObserveResolutionSwitch(window, wanted);
 
-                Console.WriteLine();
-                if (canObserveSwitch)
-                {
-                    Console.WriteLine($"waiting for the game to switch to {wanted}...");
-                }
-                else
-                {
-                    Console.WriteLine(
-                        $"the window already opened at {wanted}, so there is no switch to see.");
-                    Console.WriteLine(
-                        "  This run can only confirm the size is right, NOT that the settings");
-                    Console.WriteLine(
-                        "  file was applied - a game ignoring it entirely would look the same.");
-                }
+                // No settle step. Startup is a sequence of screens, and the legal
+                // notice in the middle of it holds still for 25 seconds at a difference
+                // of 0.0002 with detail below the blank floor - so waiting for the screen
+                // to stop changing reports success there, less than halfway through, and
+                // the menu is another 40 seconds away. Waiting for the menu ITSELF is both
+                // simpler and the thing actually wanted.
 
-                GameWindow? resized = GameSession.WaitForResolution(
-                    options.ProcessName,
-                    wanted.Width,
-                    wanted.Height,
-                    TimeSpan.FromSeconds(options.TimeoutSeconds),
-                    options.Verbose ? Log : (Action<string>?)null);
-
-                checks.Check(
-                    canObserveSwitch
-                        ? $"the game switched to the requested {wanted}"
-                        : $"the game is running at the requested {wanted} (it opened there; "
-                            + "no switch was observable)",
-                    resized != null,
-                    $"still {window.Width}x{window.Height} at the deadline");
-
-                if (resized == null)
-                {
-                    throw new InvalidOperationException(
-                        $"The game never switched to {wanted.Width}x{wanted.Height}. It opens at "
-                        + "the size Unity's registry PlayerPrefs describe and then applies its own "
-                        + "settings file, so this means the settings file was not applied - not "
-                        + "merely that the window started large. Capturing now would save a "
-                        + "reference at the wrong resolution, so stopping instead.");
-                }
-
-                window = resized;
-
-                Console.WriteLine();
-                Console.WriteLine("waiting for the screen to render and settle...");
-                WaitResult settled = GameSession.WaitUntilStill(
-                    window,
-                    TimeSpan.FromSeconds(options.TimeoutSeconds),
-                    progress: options.Verbose ? Log : (Action<string>?)null);
-                checks.Check("the screen rendered and stopped changing", settled.Succeeded, settled.ToString());
-
-                if (!settled.SawMotion)
-                {
-                    Console.WriteLine("  (never saw it move - it may still have been loading)");
-                }
 
                 GameScreen.SaveCapture(window.Handle, Path.Combine(artifacts, "after-launch.png"));
 
@@ -553,9 +514,14 @@ Options:
                 }
 
                 Console.WriteLine();
-                Console.WriteLine("checking we are at the main menu...");
+                Console.WriteLine("waiting for the main menu...");
+                Console.WriteLine(
+                    "  Startup runs through several screens and takes about 50 seconds; the");
+                Console.WriteLine(
+                    "  difference falls as it goes and drops under the threshold at the menu.");
                 WaitResult atMenu = GameSession.WaitUntilMatches(
-                    window, referencePath, options.Threshold, TimeSpan.FromSeconds(30),
+                    window, referencePath, options.Threshold,
+                    TimeSpan.FromSeconds(options.TimeoutSeconds),
                     options.Verbose ? Log : (Action<string>?)null,
                     options.MenuRegion);
                 checks.Check("the main menu is on screen", atMenu.Succeeded,
@@ -579,25 +545,32 @@ Options:
                 GameSession.SendKeys(options.Keys, options.Verbose ? Log : (Action<string>?)null);
 
                 Console.WriteLine();
-                Console.WriteLine("waiting for the load to finish...");
-                WaitResult loaded = GameSession.WaitUntilStill(
+                Console.WriteLine("waiting for the screen to leave the menu...");
+                WaitResult left = GameSession.WaitUntilStopsMatching(
                     window,
+                    referencePath,
+                    options.Threshold,
                     TimeSpan.FromSeconds(options.TimeoutSeconds),
-                    stableSamples: 6,
-                    progress: options.Verbose ? Log : (Action<string>?)null);
-                checks.Check("the screen settled again after loading", loaded.Succeeded, loaded.ToString());
+                    options.Verbose ? Log : (Action<string>?)null,
+                    options.MenuRegion);
 
-                GameScreen.SaveCapture(window.Handle, Path.Combine(artifacts, "after-load.png"));
-
-                // Without this, a run where the keys did nothing looks exactly like a
-                // successful one: a menu sitting still is also "settled".
-                WaitResult stillMenu = GameSession.WaitUntilMatches(
-                    window, referencePath, options.Threshold, TimeSpan.FromSeconds(2),
-                    progress: null, region: options.MenuRegion);
+                // Leaving the menu is what can be checked. Whether the save then finished
+                // loading cannot be, without a reference for the loaded screen: the game
+                // world animates, so there is no settling to wait for, and the loading
+                // screens animate too.
                 checks.Check(
                     "the screen is no longer the main menu",
-                    !stillMenu.Succeeded,
-                    $"difference from the menu {stillMenu.Difference:N4}; too low means the keys did nothing");
+                    left.Succeeded,
+                    $"difference {left.Difference:N4}; too low means the keys did nothing");
+
+                GameScreen.SaveCapture(window.Handle, Path.Combine(artifacts, "after-keys.png"));
+
+                Console.WriteLine();
+                Console.WriteLine(
+                    "Look at after-keys.png. That the screen changed is checked; that the save");
+                Console.WriteLine(
+                    "LOADED is not, and cannot be until there is a reference for the loaded");
+                Console.WriteLine("screen to compare against.");
 
                 Console.WriteLine();
                 Console.WriteLine($"screenshots are in {artifacts}");

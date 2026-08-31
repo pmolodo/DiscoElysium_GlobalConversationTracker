@@ -57,13 +57,29 @@ namespace GlobalConversationTracker.Automation
     /// <summary>Driving a running game: waiting on its screen, pressing its keys.</summary>
     public static class GameSession
     {
-        /// <summary>A difference at or below this counts as "not changing".</summary>
+        /// <summary>
+        /// A difference small enough that nothing meaningful changed on screen.
+        /// </summary>
+        /// <remarks>
+        /// No longer used to decide anything - waiting for the screen to stop changing is
+        /// gone, because every screen in this game animates and the one that does hold
+        /// still is the legal notice, motionless for 25 seconds in the middle of startup.
+        /// It survives as a yardstick: a change this small is not something a person would
+        /// see, which is what makes it the right scale to say a look-ahead asterisk is
+        /// invisible to a mean.
+        /// </remarks>
         public const double StillThreshold = 0.005;
 
         /// <summary>
-        /// A fingerprint flatter than this is a window that has not painted, not a
-        /// screen that has settled.
+        /// A fingerprint flatter than this holds nothing worth looking at.
         /// </summary>
+        /// <remarks>
+        /// Reporting only. It was a gate once, on the theory that a flat screen is a
+        /// window that has not painted yet - but the legal notice measures 0.008, well
+        /// under this, while being a screen the game deliberately shows for 25 seconds.
+        /// So it distinguishes "almost nothing on screen" from "something", which is worth
+        /// saying in a timeline, and decides nothing.
+        /// </remarks>
         public const double BlankDetailFloor = 0.02;
 
         /// <summary>Waits for the game's rendering window to appear.</summary>
@@ -157,182 +173,67 @@ namespace GlobalConversationTracker.Automation
             return others.Count == 1 ? others[0] : null;
         }
 
-        /// <summary>
-        /// Waits until the screen has rendered, changed, and then stopped changing.
-        /// </summary>
+        /// <summary>Waits until the screen STOPS matching a reference image.</summary>
         /// <remarks>
-        /// Three conditions, because stillness alone proves nothing. The screen must show
-        /// detail, must have been seen to move at least once, and must then hold still
-        /// for <paramref name="stableSamples"/> consecutive samples.
+        /// The counterpart to WaitUntilMatches, and what stands in for "the game did
+        /// something". There is no wait for the screen to settle, because nothing in this
+        /// game settles: every screen animates, and the one that does hold still - the
+        /// legal notice, motionless for 25 seconds at a difference of 0.0002 - is the one
+        /// a settle would wrongly stop on.
+        ///
+        /// Leaving a known screen is observable without any of that. It says a keypress
+        /// was received, not that whatever followed has finished.
         /// </remarks>
         /// <param name="window">The window to watch.</param>
+        /// <param name="referencePath">The reference image being left behind.</param>
+        /// <param name="threshold">How close still counts as matching.</param>
         /// <param name="timeout">How long to wait.</param>
-        /// <param name="stableSamples">How many consecutive still samples are enough.</param>
-        /// <param name="interval">How often to sample.</param>
-        /// <param name="requireMotion">Whether the screen must be seen to change first.</param>
         /// <param name="progress">Called with each sample, for verbose output.</param>
-        public static WaitResult WaitUntilStill(
+        /// <param name="region">The part of the screen to compare, or null for all of it.</param>
+        public static WaitResult WaitUntilStopsMatching(
             GameWindow window,
+            string referencePath,
+            double threshold,
             TimeSpan timeout,
-            int stableSamples = 4,
-            TimeSpan? interval = null,
-            bool requireMotion = true,
-            Action<string>? progress = null)
+            Action<string>? progress = null,
+            Rectangle? region = null)
         {
-            TimeSpan step = interval ?? TimeSpan.FromMilliseconds(250);
+            Size referenceSize = GameScreen.SizeOfFile(referencePath);
+            if (referenceSize.Width != window.Width || referenceSize.Height != window.Height)
+            {
+                throw new InvalidOperationException(
+                    $"The reference image is {referenceSize.Width}x{referenceSize.Height} but the "
+                    + $"window is {window.Width}x{window.Height}.");
+            }
+
+            double[] reference = region == null
+                ? GameScreen.FingerprintFile(referencePath)
+                : GameScreen.FingerprintFileRegion(referencePath, region.Value);
+
             var clock = Stopwatch.StartNew();
             DateTime deadline = DateTime.UtcNow + timeout;
-
-            double[]? previous = null;
-            int stable = 0;
-            double difference = 1.0;
-            double detail = 0.0;
-            bool sawMotion = !requireMotion;
-            bool sawDetail = false;
+            double difference = 0;
+            double detail = 0;
 
             while (DateTime.UtcNow < deadline)
             {
-                double[] current = GameScreen.Fingerprint(window.Handle);
+                double[] current = region == null
+                    ? GameScreen.Fingerprint(window.Handle)
+                    : GameScreen.FingerprintRegion(window.Handle, region.Value);
                 detail = GameScreen.Detail(current);
-                if (detail >= BlankDetailFloor)
+                difference = GameScreen.Difference(reference, current);
+
+                progress?.Invoke($"difference from the old screen {difference:N4}");
+
+                if (difference > threshold)
                 {
-                    sawDetail = true;
-                }
-
-                if (previous != null)
-                {
-                    difference = GameScreen.Difference(previous, current);
-                    if (difference > StillThreshold)
-                    {
-                        sawMotion = true;
-                    }
-
-                    if (difference <= StillThreshold && sawDetail && sawMotion)
-                    {
-                        stable++;
-                        progress?.Invoke(
-                            $"still {stable}/{stableSamples} (difference {difference:N5}, detail {detail:N3})");
-                        if (stable >= stableSamples)
-                        {
-                            return new WaitResult(true, difference, detail, sawMotion, clock.Elapsed);
-                        }
-                    }
-                    else
-                    {
-                        if (stable > 0)
-                        {
-                            progress?.Invoke($"moved again (difference {difference:N5})");
-                        }
-                        else if (!sawDetail)
-                        {
-                            progress?.Invoke($"blank so far (detail {detail:N3})");
-                        }
-                        else if (!sawMotion)
-                        {
-                            progress?.Invoke("waiting for the screen to move at all");
-                        }
-
-                        stable = 0;
-                    }
-                }
-
-                previous = current;
-                Thread.Sleep(step);
-            }
-
-            return new WaitResult(false, difference, detail, sawMotion, clock.Elapsed);
-        }
-
-        /// <summary>
-        /// Whether a resolution switch could be seen at all, given where it started.
-        /// </summary>
-        /// <remarks>
-        /// False when the window already opened at the wanted size. Waiting then proves
-        /// only that the size is right, never that the game applied anything - the two are
-        /// indistinguishable from outside. Unlikely in practice, since the window opens at
-        /// the desktop resolution and the test asks for a small one, but a player already
-        /// running at the test resolution would hit it, and a check that quietly means
-        /// something weaker than it says is worse than one that admits it.
-        /// </remarks>
-        /// <param name="opened">The size the window first appeared at.</param>
-        /// <param name="wanted">The size the settings ask for.</param>
-        public static bool CanObserveResolutionSwitch(GameWindow opened, DisplaySettings wanted)
-        {
-            if (opened == null)
-            {
-                throw new ArgumentNullException(nameof(opened));
-            }
-
-            if (wanted == null)
-            {
-                throw new ArgumentNullException(nameof(wanted));
-            }
-
-            return opened.Width != wanted.Width || opened.Height != wanted.Height;
-        }
-
-        /// <summary>Waits for the game to apply its own saved resolution.</summary>
-        /// <remarks>
-        /// <para>The size a window OPENS at and the size the game ends up running at are
-        /// two different things. Unity creates the window from its own PlayerPrefs in the
-        /// registry, where "Screenmanager Resolution Use Native" and a Fullscreen mode of
-        /// FullScreenWindow together mean "the desktop resolution, whatever it is". Only
-        /// later, once the game is running its own startup code, does it read its
-        /// settings file and switch to what that asks for.</para>
-        ///
-        /// <para>So checking the size the moment a window appears measures the wrong
-        /// thing, and measuring it too early is indistinguishable from the settings having
-        /// been ignored.</para>
-        ///
-        /// <para>This is an ASSERTION about the final size, not a startup milestone. It
-        /// looks like one - a size change is observable and cannot be faked by an
-        /// animation looping the way a screenshot can - but it only works when the window
-        /// opens at a DIFFERENT size from the one wanted. A player whose own resolution
-        /// already matches the test resolution gets a window that opens correct, this
-        /// returns on its first poll, and "the game applied its settings" would be
-        /// claimed for a switch that never happened. Callers that care about the
-        /// difference must compare the opening size themselves; see
-        /// <see cref="CanObserveResolutionSwitch"/>.</para>
-        /// </remarks>
-        /// <param name="processName">The process name, without .exe.</param>
-        /// <param name="width">The width to wait for.</param>
-        /// <param name="height">The height to wait for.</param>
-        /// <param name="timeout">How long to wait.</param>
-        /// <param name="progress">Called with each sample, for verbose output.</param>
-        /// <returns>The window at the requested size, or null if it never got there.</returns>
-        public static GameWindow? WaitForResolution(
-            string processName,
-            int width,
-            int height,
-            TimeSpan timeout,
-            Action<string>? progress = null)
-        {
-            DateTime deadline = DateTime.UtcNow + timeout;
-            string last = string.Empty;
-
-            while (DateTime.UtcNow < deadline)
-            {
-                GameWindow? window = FindGameWindow(processName);
-                if (window != null)
-                {
-                    if (window.Width == width && window.Height == height)
-                    {
-                        progress?.Invoke($"resolution is now {width}x{height}");
-                        return window;
-                    }
-
-                    string current = $"{window.Width}x{window.Height}";
-                    if (current != last)
-                    {
-                        progress?.Invoke($"window is {current}, waiting for {width}x{height}");
-                        last = current;
-                    }
+                    return new WaitResult(true, difference, detail, true, clock.Elapsed);
                 }
 
                 Thread.Sleep(500);
             }
 
-            return null;
+            return new WaitResult(false, difference, detail, false, clock.Elapsed);
         }
 
         /// <summary>Waits until the screen matches a reference image.</summary>
