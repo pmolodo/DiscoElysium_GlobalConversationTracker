@@ -98,7 +98,11 @@ Options:
   --process <name>    Process name without .exe (default: disco).
   --artifacts <dir>   Where screenshots go (default: .build/automation).
   --settings <file>   Test settings to install (default: testing/Settings.json).
-  --keys a,b,c        The key sequence for load-save (default: Down,Enter,Enter).
+  --save <file>       Stage this .ntwtf.zip as the ONLY save, moving the
+                      player's aside and back. Continue then has exactly one
+                      thing to load, so no menu navigation is needed.
+  --keys a,b,c        The key sequence for load-save (default: Enter, which is
+                      Continue when a single save has been staged).
   --threshold <n>     How close the menu match must be (default: 0.05).
   --whole-frame       Match the whole screen instead of just the menu options.
                       The default region excludes the animated painting, which
@@ -336,6 +340,22 @@ Options:
 
             SettingsBackup backup = GameSettings.Backup(backupPath);
             Console.WriteLine($"backup:    {backup.SettingsPath}");
+
+            // Saves are staged only when one is named. Moving somebody's playthroughs is
+            // the most destructive thing here, so it never happens by default.
+            SavesBackup? savesBackup = null;
+            if (options.SaveFile != null)
+            {
+                string movedTo = Path.Combine(
+                    Path.GetTempPath(), $"disco-saves-{DateTime.Now:yyyyMMdd-HHmmss}");
+                savesBackup = GameSaves.Backup(movedTo);
+                GameSaves.Install(options.SaveFile);
+
+                Console.WriteLine($"saves:     {savesBackup.FileCount} file(s) moved to {movedTo}");
+                Console.WriteLine(
+                    $"           staged {Path.GetFileName(options.SaveFile)} as the only save, "
+                    + "so Continue can only load that one");
+            }
 
             Process? process = null;
             try
@@ -610,6 +630,26 @@ Options:
                     }
                 }
 
+                // Saves first, and outside the settings restore's try, because a folder
+                // holding one test save is the worst thing to leave behind: it is
+                // Steam-Cloud-synced, so the next launch can push it upward.
+                if (savesBackup != null)
+                {
+                    try
+                    {
+                        GameSaves.Restore(savesBackup);
+                        Console.WriteLine($"restored {savesBackup.FileCount} save file(s)");
+                    }
+                    catch (Exception error)
+                    {
+                        Console.Error.WriteLine();
+                        Console.Error.WriteLine($"SAVES NOT RESTORED: {error.Message}");
+                        Console.Error.WriteLine(
+                            "Put them back by hand before launching the game again.");
+                        throw;
+                    }
+                }
+
                 try
                 {
                     if (options.KeepOpen)
@@ -865,7 +905,7 @@ Options:
 
             public string? TestSettings { get; private set; }
 
-            public string[] Keys { get; private set; } = { "Down", "Enter", "Enter" };
+            public string[] Keys { get; private set; } = { "Enter" };
 
             public double Threshold { get; private set; } = 0.05;
 
@@ -901,6 +941,9 @@ Options:
 
             /// <summary>An extra region to try, as x,y,width,height.</summary>
             public Rectangle? Region { get; private set; }
+
+            /// <summary>A single save to stage, so Continue has only one thing to load.</summary>
+            public string? SaveFile { get; private set; }
 
             /// <summary>
             /// The part of the menu to match on: the option list, which does not animate.
@@ -980,6 +1023,7 @@ Options:
                         case "--no-screen-prefs": options.SkipScreenPrefs = true; break;
                         case "--save-reference": options.SaveReference = true; break;
                         case "--whole-frame": options.MenuRegion = null; break;
+                        case "--save": options.SaveFile = Next(); break;
                         case "--region":
                         {
                             string[] parts = (Next() ?? string.Empty).Split(',');
