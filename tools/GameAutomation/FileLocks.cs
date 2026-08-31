@@ -76,7 +76,9 @@ namespace GlobalConversationTracker.Automation
             var targets = new List<string>();
             if (Directory.Exists(path))
             {
-                targets.Add(path);
+                // Files only. RmRegisterResources takes file paths, and handing it a
+                // directory makes RmGetList fail with ERROR_ACCESS_DENIED rather than
+                // reporting anything.
                 try
                 {
                     foreach (string file in Directory.EnumerateFiles(
@@ -119,11 +121,38 @@ namespace GlobalConversationTracker.Automation
 
             if (holders.Length == 0)
             {
-                // Explorer sitting in the folder, or an editor with it as a working
-                // directory, holds no file handle and shows up in no list.
-                return "No process holds a file handle inside it. Something may still have "
-                    + "the FOLDER open - Explorer showing it, or an editor working in it - "
-                    + "which blocks a move without holding any file.";
+                // Nothing holds a FILE. Explorer showing the folder holds the directory
+                // instead, which blocks a rename and appears in no file-handle list, so
+                // fall back to looking for a window that is displaying it.
+                LockHolder[] showing;
+                try
+                {
+                    showing = WindowsShowing(path);
+                }
+                catch (Exception)
+                {
+                    showing = Array.Empty<LockHolder>();
+                }
+
+                string message =
+                    "No process holds a file handle inside it, so something has the FOLDER "
+                    + "itself open - Explorer showing it, or an editor working in it - which "
+                    + "blocks a move without holding any file.";
+
+                if (showing.Length > 0)
+                {
+                    var titles = new List<string>();
+                    foreach (LockHolder holder in showing)
+                    {
+                        titles.Add(holder.ToString());
+                    }
+
+                    message += Environment.NewLine
+                        + "Windows currently showing that name (a guess from the title, not "
+                        + "proof): " + string.Join("; ", titles);
+                }
+
+                return message;
             }
 
             var names = new List<string>();
@@ -133,6 +162,77 @@ namespace GlobalConversationTracker.Automation
             }
 
             return "Held by: " + string.Join("; ", names);
+        }
+
+        /// <summary>
+        /// Windows whose title matches a folder's name, which usually means something is
+        /// SHOWING that folder.
+        /// </summary>
+        /// <remarks>
+        /// A heuristic, and labelled as one wherever it is reported. It exists because the
+        /// Restart Manager cannot answer this case at all: Explorer showing a folder holds
+        /// a handle on the DIRECTORY, for change notifications, and no handle on any file
+        /// inside it. That blocks a rename while appearing in no list of file holders.
+        ///
+        /// Matching is deliberately narrow: Explorer with the folder's exact name as its
+        /// title, or any window whose title contains the full path. A looser rule - any
+        /// title containing the folder's name - reported a browser tab, a registry viewer
+        /// and a git client, none of which held anything, which is worse than saying
+        /// nothing at all.
+        /// </remarks>
+        /// <param name="path">The folder to look for.</param>
+        public static LockHolder[] WindowsShowing(string path)
+        {
+            string folder = Path.GetFileName(
+                path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            if (folder.Length == 0)
+            {
+                return Array.Empty<LockHolder>();
+            }
+
+            string full = Path.GetFullPath(path);
+            var found = new List<LockHolder>();
+            foreach (System.Diagnostics.Process process in System.Diagnostics.Process.GetProcesses())
+            {
+                try
+                {
+                    // Two cases, and matching any window whose title merely CONTAINS the
+                    // folder's name is not one of them - that turned up a browser tab, a
+                    // registry viewer and a git client, none of which held anything.
+                    //
+                    //   explorer, titled with the folder's name: how Explorer shows a
+                    //     folder, and it holds the directory for change notifications
+                    //   anything titled with the FULL path: editors usually show it, and
+                    //     a full path in a title is hard to hit by accident
+                    bool isExplorer = string.Equals(
+                        process.ProcessName, "explorer", StringComparison.OrdinalIgnoreCase);
+
+                    foreach (GameWindow window in GameWindows.OfProcess(process.Id))
+                    {
+                        bool named = window.Title.IndexOf(
+                            full, StringComparison.OrdinalIgnoreCase) >= 0;
+                        bool explorerShowingIt = isExplorer && string.Equals(
+                            window.Title, folder, StringComparison.OrdinalIgnoreCase);
+
+                        if (named || explorerShowingIt)
+                        {
+                            found.Add(new LockHolder(
+                                process.Id, process.ProcessName, window.Title));
+                            break;
+                        }
+                    }
+                }
+                catch (Exception)
+                {
+                    // Exited, or not ours to inspect.
+                }
+                finally
+                {
+                    process.Dispose();
+                }
+            }
+
+            return found.ToArray();
         }
 
         private static LockHolder[] Ask(string[] files)

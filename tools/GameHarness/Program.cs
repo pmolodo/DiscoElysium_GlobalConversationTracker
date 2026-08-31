@@ -55,6 +55,16 @@ namespace GlobalConversationTracker.Harness
                 {
                     case "analyse-timeline":
                         return AnalyseTimeline(options);
+                    case "locks":
+                    {
+                        string target = options.Artifacts
+                            ?? GlobalConversationTracker.Automation.GameProfile.ProfilePath;
+                        Console.WriteLine($"asking about {target}");
+                        Console.WriteLine();
+                        Console.WriteLine(FileLocks.Describe(target));
+                        return 0;
+                    }
+
                     case "windows":
                         return ListWindows(options);
                     case "keys":
@@ -89,6 +99,9 @@ Verbs:
   analyse-timeline    Read a recorded timeline back and report which frames
                       identify which screens, with a measured threshold. Add
                       --save-reference to write the chosen frame as main-menu.png.
+  locks               Report what is holding the game's profile folder open,
+                      which is what blocks staging. --artifacts asks about
+                      another path instead.
   windows             List every window the game's process owns, with its class.
                       What to run when the wrong window is being captured.
   keys                List the key names the harness accepts.
