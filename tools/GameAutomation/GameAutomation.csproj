@@ -24,6 +24,8 @@
     <RootNamespace>GlobalConversationTracker.Automation</RootNamespace>
     <AssemblyName>GameAutomation</AssemblyName>
     <IsPackable>false</IsPackable>
+    <!-- PixelDiff walks locked bitmap data; a per-pixel GetPixel is far too slow. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <!-- In the framework, so no package reference. -->
