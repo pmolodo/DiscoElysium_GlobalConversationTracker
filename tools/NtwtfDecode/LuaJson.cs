@@ -75,6 +75,13 @@ public static class LuaJson
         return root;
     }
 
+    /// <summary>Reads one table from its reversible JSON representation.</summary>
+    public static LuaTable ReadTable(Stream stream)
+    {
+        using JsonDocument json = JsonDocument.Parse(stream);
+        return ReadTable(json.RootElement, "table");
+    }
+
     private static void WriteDocument(Utf8JsonWriter writer, LuaTable root)
     {
         writer.WriteStartObject();

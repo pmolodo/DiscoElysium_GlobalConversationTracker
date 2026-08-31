@@ -13,6 +13,8 @@ const string Usage = """
     Usage:
       dotnet run --project tools/NtwtfDecode -- <input> [options]
       dotnet run --project tools/NtwtfDecode -- --to-lua <input.json> -o <output.ntwtf.lua>
+      dotnet run --project tools/NtwtfDecode -- <input> --split -o <directory>
+      dotnet run --project tools/NtwtfDecode -- --to-lua <directory> --split -o <output.ntwtf.lua>
 
     <input> is any of:
       - a packed save archive, {save}.ntwtf.zip, as written to SaveGames
@@ -20,12 +22,15 @@ const string Usage = """
       - an expanded .ntwtf save folder containing exactly one such file
 
     Options:
-      -o, --output PATH   Write JSON here instead of stdout.
+      -o, --output PATH   Write output here instead of stdout. With --split
+                          conversion to JSON, this is the output directory.
       -t, --table NAME    Table to dump: Actor, Item, Location, Variable,
                           Conversation, or all. Default: Conversation.
           --indent N      JSON indent width. Default: 2.
           --compact       Single-line JSON (overrides --indent).
           --to-lua        Convert reversible JSON back to a .ntwtf.lua blob.
+          --split         Use five table JSON files (Actor.json through
+                          Conversation.json) plus trailing.bin in one directory.
       -h, --help          Show this message.
     """;
 
@@ -53,6 +58,7 @@ int Run(string[] argv)
     string table = "Conversation";
     int? indent = DefaultIndent;
     bool toLua = false;
+    bool split = false;
 
     for (int i = 0; i < argv.Length; i++)
     {
@@ -77,6 +83,9 @@ int Run(string[] argv)
             case "--to-lua":
                 toLua = true;
                 break;
+            case "--split":
+                split = true;
+                break;
             default:
                 if (arg.StartsWith('-'))
                 {
@@ -98,8 +107,16 @@ int Run(string[] argv)
 
     if (toLua)
     {
-        using FileStream json = File.OpenRead(input);
-        LuaTable document = LuaJson.ReadDocument(json);
+        LuaTable document;
+        if (split)
+        {
+            document = LuaSplitFiles.Read(input);
+        }
+        else
+        {
+            using FileStream json = File.OpenRead(input);
+            document = LuaJson.ReadDocument(json);
+        }
         using Stream lua = output is null ? Console.OpenStandardOutput() : File.Create(output);
         LuaBinary.WriteDocument(lua, document);
         lua.Flush();
@@ -114,6 +131,16 @@ int Run(string[] argv)
         Console.Error.WriteLine(
             $"note: {trailing} trailing byte(s) of extra data after the five tables were not decoded"
         );
+    }
+
+    if (split)
+    {
+        if (output is null)
+        {
+            throw new ArgumentException("--split conversion to JSON requires --output <directory>");
+        }
+        LuaSplitFiles.Write(output, allTables, indent);
+        return 0;
     }
 
     object? selected;
