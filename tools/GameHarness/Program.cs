@@ -427,10 +427,39 @@ Options:
             TimeSpan deadline = TimeSpan.FromSeconds(options.TimelineSeconds);
             double[]? previous = null;
             int frame = 0;
+            IntPtr lastHandle = window.Handle;
 
             while (clock.Elapsed < deadline)
             {
-                using (Bitmap bitmap = GameScreen.Capture(window.Handle))
+                // Re-find the window every frame rather than holding the handle. Unity
+                // DESTROYS and recreates its window when the display mode changes, so a
+                // handle captured at launch dies partway through startup - and until it
+                // does, it reports the old window's size, which is how a switch to
+                // windowed 1280x720 looked like a game stuck at 3840x1200.
+                GameWindow? current = GameSession.FindGameWindow(options.ProcessName);
+                if (current == null)
+                {
+                    // Expected briefly: between the old window going and the new arriving.
+                    Console.WriteLine(
+                        $"  {clock.Elapsed.TotalSeconds,6:N1}s  (no window - being recreated?)");
+                    Thread.Sleep(options.TimelineIntervalMs);
+                    continue;
+                }
+
+                if (current.Handle != lastHandle && lastHandle != IntPtr.Zero)
+                {
+                    Console.WriteLine(
+                        $"  {clock.Elapsed.TotalSeconds,6:N1}s  *** the window was recreated "
+                        + $"({current.Width}x{current.Height}) ***");
+                    GameWindows.BringToFront(current.Handle);
+
+                    // A new window is a new screen, not a continuation of the old one.
+                    previous = null;
+                }
+
+                lastHandle = current.Handle;
+
+                using (Bitmap bitmap = GameScreen.Capture(current.Handle))
                 {
                     frame++;
                     string name = $"timeline-{frame:D4}.png";
