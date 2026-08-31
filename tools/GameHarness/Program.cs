@@ -130,6 +130,9 @@ namespace GlobalConversationTracker.Harness
                         return 0;
                     }
 
+                    case "capture-phases":
+                        return CapturePhases(options);
+
                     case "windows":
                         return ListWindows(options);
                     case "keys":
@@ -377,6 +380,189 @@ Options:
                 return 1;
             }
 
+            return 0;
+        }
+
+        /// <summary>
+        /// The startup screens, and which recorded frame identifies each.
+        /// </summary>
+        /// <remarks>
+        /// Frames and thresholds come from analyse-timeline over a clean recording. The
+        /// thresholds sit half way between how much each screen varies within itself and
+        /// how far it is from the nearest other screen, both measured.
+        /// </remarks>
+        private static readonly (string Name, int Frame, double Threshold, Rectangle? Region)[]
+            PhaseSources =
+        {
+            ("loading", 4, 0.1251, null),
+            ("legal-notice", 14, 0.0838, null),
+
+            // The logo animates in the middle of a still grey field, so it is recognised
+            // by the field: everything above the animation, which never changes.
+            ("logo", 20, 0.0746, new Rectangle(0, 0, 1280, 400)),
+
+            ("main-menu", 28, 0.1005, new Rectangle(170, 115, 230, 290)),
+        };
+
+        /// <summary>
+        /// Waits for the main menu, saying which startup screen is showing as it goes.
+        /// </summary>
+        /// <remarks>
+        /// <para>The menu itself is what is waited for; the phases are for reporting, and
+        /// for the one screen worth acting on. The logo can be skipped with a keypress, so
+        /// recognising it saves several seconds a run - and knowing where startup has got
+        /// to turns a silent fifty second wait into something that says what it is doing.
+        /// </para>
+        ///
+        /// <para>An unrecognised screen is not an error. Startup has two brief screens
+        /// before the loading one that are not worth naming, and a game update could add
+        /// more; the wait carries on regardless, because the menu is what it is really
+        /// looking for. Without the phase file at all, it just waits.</para>
+        /// </remarks>
+        private static WaitResult WaitForMenu(
+            GameWindow window, string referencePath, Options options)
+        {
+            StartupPhase[] phases = Array.Empty<StartupPhase>();
+            string phasePath = Path.Combine(RepoRoot(), "testing", StartupPhases.DefaultFileName);
+            try
+            {
+                phases = StartupPhases.Load(phasePath);
+            }
+            catch (Exception error)
+            {
+                Console.WriteLine(
+                    $"  (no startup phases, so just waiting: {error.Message})");
+            }
+
+            double[] menu = options.MenuRegion == null
+                ? GameScreen.FingerprintFile(referencePath)
+                : GameScreen.FingerprintFileRegion(referencePath, options.MenuRegion.Value);
+
+            var clock = Stopwatch.StartNew();
+            DateTime deadline = DateTime.UtcNow + TimeSpan.FromSeconds(options.TimeoutSeconds);
+
+            string reported = string.Empty;
+            bool skippedLogo = false;
+            double closest = 1.0;
+            double detail = 0;
+
+            while (DateTime.UtcNow < deadline)
+            {
+                using (System.Drawing.Bitmap screen = GameScreen.Capture(window.Handle))
+                {
+                    double[] current = options.MenuRegion == null
+                        ? GameScreen.FingerprintOf(screen)
+                        : GameScreen.FingerprintRegion(screen, options.MenuRegion.Value);
+
+                    detail = GameScreen.Detail(current);
+                    double difference = GameScreen.Difference(menu, current);
+                    if (difference < closest)
+                    {
+                        closest = difference;
+                    }
+
+                    if (difference <= options.Threshold)
+                    {
+                        Console.WriteLine(
+                            $"  {clock.Elapsed.TotalSeconds,5:N1}s  main menu ({difference:N4})");
+                        return new WaitResult(true, difference, detail, true, clock.Elapsed);
+                    }
+
+                    StartupPhase? phase = StartupPhases.Identify(
+                        screen, phases, out double distance);
+                    string name = phase?.Name ?? "unknown";
+
+                    if (name != reported)
+                    {
+                        Console.WriteLine(
+                            $"  {clock.Elapsed.TotalSeconds,5:N1}s  {name}"
+                            + (phase == null ? string.Empty : $" ({distance:N4})"));
+                        reported = name;
+                    }
+
+                    // The logo is the one screen worth doing something about: a keypress
+                    // skips it. Sent once - pressing again at the menu would choose
+                    // whatever is highlighted.
+                    if (!skippedLogo && phase != null && phase.Name == "logo")
+                    {
+                        Console.WriteLine("           skipping the logo with Enter");
+                        GameWindows.BringToFront(window.Handle);
+                        GameSession.SendKey("Enter");
+                        skippedLogo = true;
+                    }
+                }
+
+                Thread.Sleep(500);
+            }
+
+            return new WaitResult(false, closest, detail, true, clock.Elapsed);
+        }
+
+        /// <summary>Builds the startup phase file from a recorded timeline.</summary>
+        private static int CapturePhases(Options options)
+        {
+            string artifacts = options.Artifacts ?? Path.Combine(RepoRoot(), ".build", "automation");
+            string directory = Path.Combine(artifacts, "timeline");
+            if (!Directory.Exists(directory))
+            {
+                throw new DirectoryNotFoundException(
+                    $"No timeline at {directory}. Run capture-reference --timeline first.");
+            }
+
+            var phases = new List<StartupPhase>();
+            foreach ((string name, int frame, double threshold, Rectangle? region) in PhaseSources)
+            {
+                string file = Path.Combine(directory, $"timeline-{frame:D4}.png");
+                if (!File.Exists(file))
+                {
+                    throw new FileNotFoundException($"No frame {frame} at {file}.", file);
+                }
+
+                double[] fingerprint = region == null
+                    ? GameScreen.FingerprintFile(file)
+                    : GameScreen.FingerprintFileRegion(file, region.Value);
+
+                phases.Add(new StartupPhase(name, fingerprint, threshold, region));
+                Console.WriteLine($"  {name,-13} from timeline-{frame:D4}.png");
+            }
+
+            string path = Path.Combine(RepoRoot(), "testing", StartupPhases.DefaultFileName);
+            StartupPhases.Save(path, phases);
+
+            Console.WriteLine();
+            Console.WriteLine($"wrote {path} ({new FileInfo(path).Length:N0} bytes)");
+
+            // Every recorded frame, labelled. A frame that identifies as the wrong screen,
+            // or as nothing at all, is the thing to catch here rather than mid-launch.
+            Console.WriteLine();
+            Console.WriteLine("checking every recorded frame against them:");
+            string[] files = Directory.GetFiles(directory, "timeline-*.png");
+            Array.Sort(files, StringComparer.Ordinal);
+
+            string last = string.Empty;
+            int unknown = 0;
+            foreach (string file in files)
+            {
+                using var bitmap = new System.Drawing.Bitmap(file);
+                StartupPhase? phase = StartupPhases.Identify(bitmap, phases, out double difference);
+                string label = phase?.Name ?? "unknown";
+                if (phase == null)
+                {
+                    unknown++;
+                }
+
+                if (label != last)
+                {
+                    Console.WriteLine(
+                        $"  {Path.GetFileName(file)}  {label}"
+                        + (phase == null ? string.Empty : $" ({difference:N4})"));
+                    last = label;
+                }
+            }
+
+            Console.WriteLine();
+            Console.WriteLine(
+                $"{files.Length - unknown} of {files.Length} frames identified; {unknown} unknown.");
             return 0;
         }
 
@@ -713,16 +899,8 @@ Options:
                 }
 
                 Console.WriteLine();
-                Console.WriteLine("waiting for the main menu...");
-                Console.WriteLine(
-                    "  Startup runs through several screens and takes about 50 seconds; the");
-                Console.WriteLine(
-                    "  difference falls as it goes and drops under the threshold at the menu.");
-                WaitResult atMenu = GameSession.WaitUntilMatches(
-                    window, referencePath, options.Threshold,
-                    TimeSpan.FromSeconds(options.TimeoutSeconds),
-                    options.Verbose ? Log : (Action<string>?)null,
-                    options.MenuRegion);
+                Console.WriteLine("waiting for the main menu, about 50 seconds...");
+                WaitResult atMenu = WaitForMenu(window, referencePath, options);
                 checks.Check("the main menu is on screen", atMenu.Succeeded,
                     $"closest difference {atMenu.Difference:N4}, threshold {options.Threshold:N4}");
 
