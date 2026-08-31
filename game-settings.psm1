@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: MIT
 <#
 .SYNOPSIS
-    Backs up, overrides and restores the game's settings, for automated testing.
+    Swaps in a fixed test settings file for the duration of a script block, and
+    puts the player's own settings back afterwards.
 
 .DESCRIPTION
     Disco Elysium keeps its settings in its OWN file, not in Unity's PlayerPrefs:
@@ -9,48 +10,40 @@
         %USERPROFILE%\AppData\LocalLow\ZAUM Studio\Disco Elysium\Settings\Settings.json
 
     SettingsPersister reads and writes it through JsonUtil, which resolves
-    Application.persistentDataPath + "/Settings/Settings.json". That file is the
-    one that decides what the game does.
+    Application.persistentDataPath + "/Settings/Settings.json". That file decides
+    what the game does.
 
     The Unity PlayerPrefs registry key HKCU\Software\ZAUM Studio\Disco Elysium is
     a downstream CACHE, not a second source of truth. Unity opens the window at
-    the registry's resolution before any game code runs; then
-    ResolutionSwitcher.Start reads the saved resolution out of Settings.json,
-    Apply calls Screen.SetResolution, and Unity writes the result back into the
-    registry. Verified by observation: with the two disagreeing before launch, the
-    game used the JSON value and the registry afterwards matched it.
+    the registry's resolution before any game code runs; then ResolutionSwitcher
+    reads the saved resolution out of the JSON, applies it, and Unity writes the
+    result back into the registry. Verified by observation: with the two
+    disagreeing before launch, the game used the JSON and the registry afterwards
+    matched it.
 
-    So this module edits the JSON, and backs up the registry as well - a test run
-    changes it as a side effect, and leaving it holding the test's resolution
-    would make the next launch open its window at the wrong size before the game
-    corrected itself.
+    So a test run installs testing/Settings.json wholesale rather than editing the
+    player's file in place. A whole file is reproducible - every run starts from
+    exactly the same settings, whatever the player last chose - and it removes the
+    editing code and its failure modes entirely.
 
-    Resolution and full-screen state also have a documented override that touches
-    nothing on disk - the Unity player arguments -screen-width, -screen-height,
-    -screen-fullscreen and -monitor
-    (https://docs.unity3d.com/Manual/PlayerCommandLineArguments.html), built by
-    Get-GameLaunchArgument. There is no way to relocate either store: PlayerPrefs
-    is pinned to Company\Product
-    (https://docs.unity3d.com/2020.1/Documentation/ScriptReference/PlayerPrefs.html)
-    and Application.persistentDataPath is read-only
-    (https://docs.unity3d.com/ScriptReference/Application-persistentDataPath.html).
-
-    Hardcore mode is NOT a setting. GameModePersister serialises it into the save
-    file, so it is chosen at character creation and travels with the save.
+    The registry is backed up and restored too, because a run changes it as a side
+    effect: left holding 1280x720, the next launch would open its window at that
+    size before the game corrected itself.
 
 .NOTES
     A resolution the display does not offer is not an error. ResolutionSwitcher
     looks the saved one up among Screen.resolutions and, failing to find it, falls
-    through to the LARGEST compatible mode and writes that back - so an
-    unsupported value silently becomes the monitor's maximum. Ask for one the
-    display actually has.
+    through to the LARGEST compatible mode and writes that back. 1280x720 is the
+    smallest the game will ever offer - GetCompatibleResolutions filters to
+    width >= 1280 - and is near-universally supported, but a display that lacks it
+    will silently get its maximum instead.
 #>
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# DISCO_ELYSIUM_GCT_SETTINGS_FILE redirects the settings file, which is how this
-# module's own round-trip test runs against a scratch copy.
+# DISCO_ELYSIUM_GCT_SETTINGS_FILE redirects the live settings file, which is how
+# this module's own round-trip test runs against a scratch copy.
 $script:DefaultSettingsFile = Join-Path $env:USERPROFILE `
     'AppData\LocalLow\ZAUM Studio\Disco Elysium\Settings\Settings.json'
 $script:SettingsFile = if ($env:DISCO_ELYSIUM_GCT_SETTINGS_FILE) {
@@ -59,17 +52,13 @@ $script:SettingsFile = if ($env:DISCO_ELYSIUM_GCT_SETTINGS_FILE) {
     $script:DefaultSettingsFile
 }
 
+# The settings every test run uses: 1280x720, windowed, cheapest rendering,
+# silent, no tutorial. See testing/Settings.json for the values and why.
+$script:TestSettingsFile = Join-Path $PSScriptRoot 'testing\Settings.json'
+
 # The PlayerPrefs cache. Backed up, never treated as authoritative.
 $script:RegistryKeyForReg = 'HKCU\Software\ZAUM Studio\Disco Elysium'
 $script:RegistryKey = 'HKCU:\Software\ZAUM Studio\Disco Elysium'
-
-# SettingsValue.type to the field carrying the value.
-$script:FieldForType = @{
-    'INT'    = 'intValue'
-    'FLOAT'  = 'floatValue'
-    'BOOL'   = 'boolValue'
-    'STRING' = 'stringValue'
-}
 
 function Get-GameSettingsPath {
     <#
@@ -80,6 +69,17 @@ function Get-GameSettingsPath {
     param()
 
     return $script:SettingsFile
+}
+
+function Get-TestSettingsPath {
+    <#
+    .SYNOPSIS
+        The fixed settings file installed for a test run.
+    #>
+    [CmdletBinding()]
+    param()
+
+    return $script:TestSettingsFile
 }
 
 function Test-GameSettingsPresent {
@@ -93,144 +93,50 @@ function Test-GameSettingsPresent {
     return Test-Path -LiteralPath $script:SettingsFile
 }
 
-function Read-GameSettings {
-    <#
-    .SYNOPSIS
-        The settings file, parsed.
-    #>
-    [CmdletBinding()]
-    param()
-
-    if (-not (Test-GameSettingsPresent)) {
-        throw "No settings file at $script:SettingsFile. Launch the game once first."
-    }
-
-    return Get-Content -LiteralPath $script:SettingsFile -Raw -Encoding UTF8 |
-        ConvertFrom-Json
-}
-
-function Write-GameSettings {
-    <#
-    .SYNOPSIS
-        Writes the settings file back.
-
-    .DESCRIPTION
-        Reformats the whole document, which is fine because the game only needs to
-        parse it and because a restore is a byte-for-byte file copy rather than a
-        re-serialisation. Depth is set well past the three levels the structure
-        actually has: ConvertTo-Json defaults to 2 and would silently flatten the
-        settings into strings.
-    #>
-    [CmdletBinding(SupportsShouldProcess)]
-    param(
-        [Parameter(Mandatory)] $Settings
-    )
-
-    if ($PSCmdlet.ShouldProcess($script:SettingsFile, 'write settings')) {
-        $json = $Settings | ConvertTo-Json -Depth 20
-        Set-Content -LiteralPath $script:SettingsFile -Value $json -Encoding UTF8 -NoNewline
-    }
-}
-
-function Resolve-GameSettingEntry {
-    <#
-    .SYNOPSIS
-        Locates one setting, given "CATEGORY/name" or a bare name.
-
-    .DESCRIPTION
-        A bare name is searched across every category and refused if more than one
-        matches, because quietly writing a same-named setting in the wrong category
-        is worse than making the caller be specific.
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)] $Settings,
-        [Parameter(Mandatory)] [string] $Name
-    )
-
-    if ($Name.Contains('/')) {
-        $parts = $Name.Split('/', 2)
-        $category = $parts[0]
-        $leaf = $parts[1]
-
-        if (-not $Settings.PSObject.Properties.Name.Contains($category)) {
-            throw "No settings category '$category'. Categories: $($Settings.PSObject.Properties.Name -join ', ')."
-        }
-        if (-not $Settings.$category.PSObject.Properties.Name.Contains($leaf)) {
-            throw "No setting '$leaf' in category '$category'."
-        }
-
-        return [pscustomobject]@{ Category = $category; Name = $leaf }
-    }
-
-    $found = @()
-    foreach ($category in $Settings.PSObject.Properties.Name) {
-        if ($Settings.$category.PSObject.Properties.Name.Contains($Name)) {
-            $found += $category
-        }
-    }
-
-    if ($found.Count -eq 0) {
-        throw "No setting named '$Name' in any category."
-    }
-    if ($found.Count -gt 1) {
-        throw "'$Name' exists in $($found.Count) categories: $($found -join ', '). Qualify it as CATEGORY/$Name."
-    }
-
-    return [pscustomobject]@{ Category = $found[0]; Name = $Name }
-}
-
 function Get-GameSetting {
     <#
     .SYNOPSIS
-        One setting's current value, read from whichever field its type names.
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)] [string] $Name,
-        $Settings
-    )
-
-    if (-not $Settings) { $Settings = Read-GameSettings }
-    $at = Resolve-GameSettingEntry -Settings $Settings -Name $Name
-    $entry = $Settings.($at.Category).($at.Name)
-
-    $field = $script:FieldForType[$entry.type]
-    if (-not $field) {
-        throw "Setting '$Name' has unrecognised type '$($entry.type)'."
-    }
-
-    return $entry.$field
-}
-
-function Set-GameSetting {
-    <#
-    .SYNOPSIS
-        Overwrites one setting, in the field its declared type names.
+        One setting's value, read from whichever field its declared type names.
 
     .DESCRIPTION
-        Writes only the field the type points at, leaving the other three as the
-        game left them. It does not invent settings: a name that is not already
-        there is an error, because a setting the game has never written is one this
-        build may not read.
+        For inspecting and asserting. Nothing here writes settings - a test run
+        installs a whole file instead.
+
+    .PARAMETER Name
+        "CATEGORY/name", as in "GRAPHICS/resolutionWidth".
     #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)] [string] $Name,
-        [Parameter(Mandatory)] $Value,
-        [Parameter(Mandatory)] $Settings
+        [string] $Path
     )
 
-    $at = Resolve-GameSettingEntry -Settings $Settings -Name $Name
-    $entry = $Settings.($at.Category).($at.Name)
-
-    $field = $script:FieldForType[$entry.type]
-    if (-not $field) {
-        throw "Setting '$Name' has unrecognised type '$($entry.type)'."
+    if (-not $Path) { $Path = $script:SettingsFile }
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "No settings file at $Path."
     }
 
-    $entry.$field = $Value
-    return $Settings
+    $parts = $Name.Split('/', 2)
+    if ($parts.Count -ne 2) {
+        throw "Name a setting as CATEGORY/name, for example GRAPHICS/resolutionWidth."
+    }
+
+    $settings = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+    if (-not $settings.PSObject.Properties.Name.Contains($parts[0])) {
+        throw "No settings category '$($parts[0])' in $Path."
+    }
+    if (-not $settings.($parts[0]).PSObject.Properties.Name.Contains($parts[1])) {
+        throw "No setting '$($parts[1])' in category '$($parts[0])'."
+    }
+
+    $entry = $settings.($parts[0]).($parts[1])
+    switch ($entry.type) {
+        'INT'    { return $entry.intValue }
+        'FLOAT'  { return $entry.floatValue }
+        'BOOL'   { return $entry.boolValue }
+        'STRING' { return $entry.stringValue }
+        default  { throw "Setting '$Name' has unrecognised type '$($entry.type)'." }
+    }
 }
 
 function Backup-GameSettings {
@@ -240,8 +146,7 @@ function Backup-GameSettings {
 
     .DESCRIPTION
         A file copy, so the backup is byte-for-byte and a restore cannot lose
-        anything to a re-serialisation. The registry export is the cache, kept for
-        the same run so a restore can put both back together.
+        anything to re-serialisation.
     #>
     [CmdletBinding()]
     param(
@@ -312,71 +217,32 @@ function Restore-GameSettings {
     }
 }
 
-function Get-GameLaunchArgument {
+function Invoke-WithTestSettings {
     <#
     .SYNOPSIS
-        Unity player arguments for the display settings that have them.
+        Runs a script block with the fixed test settings installed.
 
     .DESCRIPTION
-        These override without writing anything, so prefer them where they
-        suffice. Note that the game applies its own saved resolution shortly after
-        startup, so an argument can be overridden by Settings.json a moment later -
-        set the JSON as well if the resolution has to stick.
-    #>
-    [CmdletBinding()]
-    param(
-        [int] $Width,
-        [int] $Height,
-        [switch] $Windowed,
-        [switch] $FullScreen,
-        [int] $Monitor = -1
-    )
-
-    if ($Windowed -and $FullScreen) {
-        throw 'Pass -Windowed or -FullScreen, not both.'
-    }
-
-    $arguments = @()
-    if ($Width -gt 0) { $arguments += @('-screen-width', $Width) }
-    if ($Height -gt 0) { $arguments += @('-screen-height', $Height) }
-    if ($Windowed) { $arguments += @('-screen-fullscreen', 0) }
-    if ($FullScreen) { $arguments += @('-screen-fullscreen', 1) }
-    if ($Monitor -ge 0) { $arguments += @('-monitor', $Monitor) }
-
-    return $arguments
-}
-
-function Invoke-WithGameSettings {
-    <#
-    .SYNOPSIS
-        Runs a script block with the game's settings temporarily overridden.
-
-    .DESCRIPTION
-        Backs up, applies, runs, and restores in a finally, so the settings come
-        back even if the block throws or the run kills the game. A failed restore
-        keeps the backup and says where it is, because the alternative is settings
-        nobody can put back.
-
-    .PARAMETER Settings
-        Setting name to value. Name a setting "CATEGORY/name" - "GRAPHICS/resolutionWidth" -
-        or by its bare name where that is unambiguous.
+        Backs up, installs testing/Settings.json, runs, and restores in a finally,
+        so the player's settings come back even if the block throws or the run
+        kills the game. A failed restore keeps the backup and says where it is,
+        because the alternative is settings nobody can put back.
 
     .EXAMPLE
-        Invoke-WithGameSettings -Settings @{
-            'GRAPHICS/resolutionWidth'  = 1280
-            'GRAPHICS/resolutionHeight' = 720
-            'GRAPHICS/DISPLAY MODE'     = 1
-        } -ScriptBlock {
-            Start-Process -Wait $gameExe
-        }
+        Invoke-WithTestSettings { Start-Process -Wait $gameExe }
     #>
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)] [hashtable] $Settings,
-        [Parameter(Mandatory)] [scriptblock] $ScriptBlock,
+        [Parameter(Mandatory, Position = 0)] [scriptblock] $ScriptBlock,
         [string] $BackupPath,
+        [string] $TestSettingsPath,
         [switch] $SkipRegistry
     )
+
+    if (-not $TestSettingsPath) { $TestSettingsPath = $script:TestSettingsFile }
+    if (-not (Test-Path -LiteralPath $TestSettingsPath)) {
+        throw "No test settings file at $TestSettingsPath."
+    }
 
     if (-not $BackupPath) {
         $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -388,13 +254,9 @@ function Invoke-WithGameSettings {
 
     $restored = $false
     try {
-        $document = Read-GameSettings
-        foreach ($name in $Settings.Keys) {
-            $document = Set-GameSetting -Settings $document -Name $name -Value $Settings[$name]
-            Write-Verbose "Set '$name' to $($Settings[$name])"
-        }
+        Copy-Item -LiteralPath $TestSettingsPath -Destination $script:SettingsFile -Force
+        Write-Verbose "Installed test settings from $TestSettingsPath"
 
-        Write-GameSettings -Settings $document
         & $ScriptBlock
     }
     finally {
@@ -419,13 +281,9 @@ function Invoke-WithGameSettings {
 
 Export-ModuleMember -Function `
     Get-GameSettingsPath, `
+    Get-TestSettingsPath, `
     Test-GameSettingsPresent, `
-    Read-GameSettings, `
-    Write-GameSettings, `
-    Resolve-GameSettingEntry, `
     Get-GameSetting, `
-    Set-GameSetting, `
     Backup-GameSettings, `
     Restore-GameSettings, `
-    Get-GameLaunchArgument, `
-    Invoke-WithGameSettings
+    Invoke-WithTestSettings

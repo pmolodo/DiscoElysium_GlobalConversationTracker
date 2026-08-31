@@ -21,23 +21,11 @@ $realFile = Join-Path $env:USERPROFILE `
 
 if (Test-Path -LiteralPath $realFile) {
     Copy-Item -LiteralPath $realFile -Destination $scratchFile
-    Write-Host "fixture: a copy of the real settings file"
+    Write-Host 'fixture: a copy of the real settings file'
 } else {
-    @'
-{
-  "GRAPHICS": {
-    "resolutionWidth":  { "intValue": 1920, "stringValue": null, "floatValue": 0.0, "boolValue": false, "type": "INT" },
-    "resolutionHeight": { "intValue": 1080, "stringValue": null, "floatValue": 0.0, "boolValue": false, "type": "INT" },
-    "DISPLAY MODE":     { "intValue": 1,    "stringValue": null, "floatValue": 0.0, "boolValue": false, "type": "INT" },
-    "BRIGHTNESS":       { "intValue": 0,    "stringValue": null, "floatValue": 400.0, "boolValue": false, "type": "FLOAT" },
-    "detectiveMode":    { "intValue": 0,    "stringValue": null, "floatValue": 0.0, "boolValue": true,  "type": "BOOL" }
-  },
-  "LANGUAGE": {
-    "CURRENT": { "intValue": 0, "stringValue": "English", "floatValue": 0.0, "boolValue": false, "type": "STRING" }
-  }
-}
-'@ | Set-Content -LiteralPath $scratchFile -Encoding UTF8
-    Write-Host "fixture: synthetic (no installation found)"
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'testing\Settings.json') `
+        -Destination $scratchFile
+    Write-Host 'fixture: the test settings file (no installation found)'
 }
 
 $env:DISCO_ELYSIUM_GCT_SETTINGS_FILE = $scratchFile
@@ -57,68 +45,63 @@ Write-Host "`ntargeting: $(Get-GameSettingsPath)"
 Check 'module targets the scratch file' $scratchFile (Get-GameSettingsPath)
 Check 'settings are present' $true (Test-GameSettingsPresent)
 
-$originalWidth = Get-GameSetting -Name 'GRAPHICS/resolutionWidth'
-$originalBrightness = Get-GameSetting -Name 'GRAPHICS/BRIGHTNESS'
-$originalDetective = Get-GameSetting -Name 'GRAPHICS/detectiveMode'
 $originalBytes = [System.IO.File]::ReadAllBytes($scratchFile)
+$originalWidth = Get-GameSetting -Name 'GRAPHICS/resolutionWidth'
+Write-Host "  the fixture's resolution is $originalWidth wide"
 
-Write-Host "`nreading, by type:"
-Write-Host "  width=$originalWidth brightness=$originalBrightness detectiveMode=$originalDetective"
-Check 'an INT reads from intValue' $true ($originalWidth -is [int])
-Check 'a FLOAT reads from floatValue' $true ($originalBrightness -is [double] -or $originalBrightness -is [decimal])
-Check 'a BOOL reads from boolValue' $true ($originalDetective -is [bool])
-
-Write-Host "`nbare names resolve, ambiguous ones are refused:"
-Check 'bare name finds its category' $originalWidth (Get-GameSetting -Name 'resolutionWidth')
-$threw = $false
-try { Get-GameSetting -Name 'NoSuchSettingAnywhere' } catch { $threw = $true }
-Check 'an unknown name throws' $true $threw
+Write-Host "`nthe test settings file says what it should:"
+$testFile = Get-TestSettingsPath
+Check 'width is the lowest the game offers' 1280 (Get-GameSetting -Path $testFile -Name 'GRAPHICS/resolutionWidth')
+Check 'height matches' 720 (Get-GameSetting -Path $testFile -Name 'GRAPHICS/resolutionHeight')
+Check 'windowed (DISPLAY MODE is non-zero)' 1 (Get-GameSetting -Path $testFile -Name 'GRAPHICS/DISPLAY MODE')
+Check 'anti-aliasing off' 0 (Get-GameSetting -Path $testFile -Name 'GRAPHICS/ANTI-ALIASING')
+Check 'shadows off' 0 (Get-GameSetting -Path $testFile -Name 'GRAPHICS/SHADOWS')
+Check 'shader quality low (higher means cheaper)' 1 (Get-GameSetting -Path $testFile -Name 'GRAPHICS/SHADER QUALITY')
+Check 'environment FX low (higher hides more)' 1 (Get-GameSetting -Path $testFile -Name 'GRAPHICS/ENVIRONMENT FX')
+Check 'tutorial off' $false (Get-GameSetting -Path $testFile -Name 'GRAPHICS/tutorialEnabled')
+Check 'music silent' 0 (Get-GameSetting -Path $testFile -Name 'AUDIO/volumeMusic')
 
 Write-Host "`nround trip (registry untouched):"
 $ran = $false
-Invoke-WithGameSettings -SkipRegistry -Settings @{
-    'GRAPHICS/resolutionWidth'  = 1280
-    'GRAPHICS/resolutionHeight' = 720
-} -ScriptBlock {
+Invoke-WithTestSettings -SkipRegistry {
     $script:ran = $true
-    Check 'override visible inside the block' 1280 (Get-GameSetting -Name 'GRAPHICS/resolutionWidth')
-    Check 'second override visible too' 720 (Get-GameSetting -Name 'GRAPHICS/resolutionHeight')
-    Check 'an untouched setting is unchanged' $originalBrightness `
-        (Get-GameSetting -Name 'GRAPHICS/BRIGHTNESS')
+    Check 'test settings are live inside the block' 1280 (Get-GameSetting -Name 'GRAPHICS/resolutionWidth')
+    Check 'and windowed' 1 (Get-GameSetting -Name 'GRAPHICS/DISPLAY MODE')
 }
 
 Check 'the script block ran' $true $ran
-Check 'width restored' $originalWidth (Get-GameSetting -Name 'GRAPHICS/resolutionWidth')
-
-$restoredBytes = [System.IO.File]::ReadAllBytes($scratchFile)
-Check 'the file is restored byte for byte' `
-    ([Convert]::ToBase64String($originalBytes)) ([Convert]::ToBase64String($restoredBytes))
-
-Write-Host "`nrestores even when the block throws:"
-try {
-    Invoke-WithGameSettings -SkipRegistry -Settings @{ 'GRAPHICS/resolutionWidth' = 640 } -ScriptBlock {
-        throw 'the game crashed'
-    }
-} catch {
-    Write-Host "  (caught: $($_.Exception.Message))"
-}
-Check 'width restored after a throw' $originalWidth (Get-GameSetting -Name 'GRAPHICS/resolutionWidth')
-Check 'still byte for byte after a throw' `
+Check 'the original resolution is back' $originalWidth (Get-GameSetting -Name 'GRAPHICS/resolutionWidth')
+Check 'restored byte for byte' `
     ([Convert]::ToBase64String($originalBytes)) `
     ([Convert]::ToBase64String([System.IO.File]::ReadAllBytes($scratchFile)))
 
-Write-Host "`nthe game can still parse what we write:"
-Invoke-WithGameSettings -SkipRegistry -Settings @{ 'GRAPHICS/resolutionWidth' = 1600 } -ScriptBlock {
-    $reparsed = Get-Content -LiteralPath $scratchFile -Raw -Encoding UTF8 | ConvertFrom-Json
-    Check 'the written file parses' 1600 $reparsed.GRAPHICS.resolutionWidth.intValue
-    Check 'every category survives the rewrite' `
-        (@((Get-Content -LiteralPath $scratchFile -Raw | ConvertFrom-Json).PSObject.Properties.Name).Count) `
-        (@($reparsed.PSObject.Properties.Name).Count)
+Write-Host "`nrestores even when the block throws:"
+try {
+    Invoke-WithTestSettings -SkipRegistry { throw 'the game crashed' }
+} catch {
+    Write-Host "  (caught: $($_.Exception.Message))"
+}
+Check 'restored after a throw' `
+    ([Convert]::ToBase64String($originalBytes)) `
+    ([Convert]::ToBase64String([System.IO.File]::ReadAllBytes($scratchFile)))
+
+Write-Host "`nthe installed file is the test file, byte for byte:"
+$testBytes = [System.IO.File]::ReadAllBytes($testFile)
+Invoke-WithTestSettings -SkipRegistry {
+    Check 'installed verbatim' `
+        ([Convert]::ToBase64String($testBytes)) `
+        ([Convert]::ToBase64String([System.IO.File]::ReadAllBytes($scratchFile)))
 }
 
-Write-Host "`nlaunch arguments:"
-Check 'windowed 1280x720' '-screen-width 1280 -screen-height 720 -screen-fullscreen 0' `
-    ((Get-GameLaunchArgument -Width 1280 -Height 720 -Windowed) -join ' ')
+Write-Host "`na missing test file is refused rather than silently skipped:"
+$threw = $false
+try {
+    Invoke-WithTestSettings -SkipRegistry -TestSettingsPath 'no-such-file.json' { }
+} catch { $threw = $true }
+Check 'missing test settings throws' $true $threw
+Check 'and left the settings alone' `
+    ([Convert]::ToBase64String($originalBytes)) `
+    ([Convert]::ToBase64String([System.IO.File]::ReadAllBytes($scratchFile)))
 
 Remove-Item -LiteralPath $scratchDir -Recurse -Force
 Remove-Item Env:\DISCO_ELYSIUM_GCT_SETTINGS_FILE
