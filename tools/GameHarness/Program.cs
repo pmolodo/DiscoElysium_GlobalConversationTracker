@@ -391,18 +391,43 @@ Options:
         /// thresholds sit half way between how much each screen varies within itself and
         /// how far it is from the nearest other screen, both measured.
         /// </remarks>
-        private static readonly (string Name, int Frame, double Threshold, Rectangle? Region)[]
-            PhaseSources =
+        private static readonly (string Name, int Frame, Rectangle? Region)[] PhaseSources =
         {
-            ("loading", 4, 0.1251, null),
-            ("legal-notice", 14, 0.0838, null),
+            ("loading", 4, null),
+            ("legal-notice", 14, null),
 
             // The logo animates in the middle of a still grey field, so it is recognised
             // by the field: everything above the animation, which never changes.
-            ("logo", 20, 0.0746, new Rectangle(0, 0, 1280, 400)),
+            ("logo", 20, new Rectangle(0, 0, 1280, 400)),
 
-            ("main-menu", 28, 0.1005, new Rectangle(170, 115, 230, 290)),
+            ("main-menu", 28, new Rectangle(170, 115, 230, 290)),
         };
+
+        /// <summary>
+        /// How much of the gap between a screen and the next-nearest one to allow.
+        /// </summary>
+        /// <remarks>
+        /// A quarter, not a half. Halfway is the widest a threshold can be while still
+        /// telling the four screens apart, and it is far too wide for the other job these
+        /// do: rejecting screens that are none of them. A shutting-down game was being
+        /// identified as the legal notice at 0.07, because that was inside a threshold set
+        /// by how far away the LOGO is rather than by how much the legal notice varies.
+        ///
+        /// Screens vary within themselves by 0.0002 to 0.0075, so a quarter of the gap is
+        /// still many times looser than they need.
+        /// </remarks>
+        private const double ThresholdShare = 0.25;
+
+        /// <summary>The smallest threshold to allow, whatever the measurement says.</summary>
+        /// <remarks>
+        /// Recorded frames are compared with each other; live ones are captured from a
+        /// screen and differ a little more. A floor keeps a screen that measured as
+        /// perfectly still from being rejected over that.
+        /// </remarks>
+        private const double MinimumThreshold = 0.01;
+
+        /// <summary>The phase whose arrival ends the wait.</summary>
+        private const string MenuPhase = "main-menu";
 
         /// <summary>
         /// Waits for the main menu, saying which startup screen is showing as it goes.
@@ -434,9 +459,25 @@ Options:
                     $"  (no startup phases, so just waiting: {error.Message})");
             }
 
-            double[] menu = options.MenuRegion == null
-                ? GameScreen.FingerprintFile(referencePath)
-                : GameScreen.FingerprintFileRegion(referencePath, options.MenuRegion.Value);
+            // The menu is one of the phases, so its own measured threshold decides when it
+            // has arrived. Comparing a reference image at a separate --threshold as well
+            // meant two numbers answering one question: a run identified the menu at
+            // 0.0735 and then kept waiting, because the other number was 0.05.
+            StartupPhase? menuPhase = Array.Find(phases, p => p.Name == MenuPhase);
+            if (menuPhase == null)
+            {
+                Console.WriteLine(
+                    $"  (no '{MenuPhase}' phase, so matching {Path.GetFileName(referencePath)} "
+                    + $"at --threshold {options.Threshold:N4} instead)");
+            }
+
+            double[] menu = menuPhase?.Fingerprint
+                ?? (options.MenuRegion == null
+                    ? GameScreen.FingerprintFile(referencePath)
+                    : GameScreen.FingerprintFileRegion(referencePath, options.MenuRegion.Value));
+
+            Rectangle? menuRegion = menuPhase?.Region ?? options.MenuRegion;
+            double menuThreshold = menuPhase?.Threshold ?? options.Threshold;
 
             var clock = Stopwatch.StartNew();
             DateTime deadline = DateTime.UtcNow + TimeSpan.FromSeconds(options.TimeoutSeconds);
@@ -448,11 +489,35 @@ Options:
 
             while (DateTime.UtcNow < deadline)
             {
+                // A capture reads the SCREEN, so anything in front of the game is what
+                // gets compared. Without this the phase numbers wander as soon as focus
+                // moves, and a terminal happens to look enough like the dark legal notice
+                // to be identified as it.
+                if (!GameWindows.IsForeground(window.Handle))
+                {
+                    GameWindows.BringToFront(window.Handle);
+                    Thread.Sleep(200);
+
+                    if (!GameWindows.IsForeground(window.Handle))
+                    {
+                        if (reported != "(not in front)")
+                        {
+                            Console.WriteLine(
+                                $"  {clock.Elapsed.TotalSeconds,5:N1}s  waiting - the game is not "
+                                + "in front, so nothing can be read from the screen");
+                            reported = "(not in front)";
+                        }
+
+                        Thread.Sleep(500);
+                        continue;
+                    }
+                }
+
                 using (System.Drawing.Bitmap screen = GameScreen.Capture(window.Handle))
                 {
-                    double[] current = options.MenuRegion == null
+                    double[] current = menuRegion == null
                         ? GameScreen.FingerprintOf(screen)
-                        : GameScreen.FingerprintRegion(screen, options.MenuRegion.Value);
+                        : GameScreen.FingerprintRegion(screen, menuRegion.Value);
 
                     detail = GameScreen.Detail(current);
                     double difference = GameScreen.Difference(menu, current);
@@ -461,7 +526,7 @@ Options:
                         closest = difference;
                     }
 
-                    if (difference <= options.Threshold)
+                    if (difference <= menuThreshold)
                     {
                         Console.WriteLine(
                             $"  {clock.Elapsed.TotalSeconds,5:N1}s  main menu ({difference:N4})");
@@ -509,8 +574,21 @@ Options:
                     $"No timeline at {directory}. Run capture-reference --timeline first.");
             }
 
+            string[] all = Directory.GetFiles(directory, "timeline-*.png");
+            Array.Sort(all, StringComparer.Ordinal);
+
+            // Which frames are the same screen, so a threshold can be measured against
+            // that rather than guessed from where a gap falls in a list of distances.
+            var whole = new List<double[]>();
+            foreach (string file in all)
+            {
+                whole.Add(GameScreen.FingerprintFile(file));
+            }
+
+            TimelineStage[] stages = TimelineAnalysis.FindStages(whole);
+
             var phases = new List<StartupPhase>();
-            foreach ((string name, int frame, double threshold, Rectangle? region) in PhaseSources)
+            foreach ((string name, int frame, Rectangle? region) in PhaseSources)
             {
                 string file = Path.Combine(directory, $"timeline-{frame:D4}.png");
                 if (!File.Exists(file))
@@ -522,8 +600,50 @@ Options:
                     ? GameScreen.FingerprintFile(file)
                     : GameScreen.FingerprintFileRegion(file, region.Value);
 
+                // Which frames are the same screen comes from the stage split, not from
+                // guessing where a gap falls in the distances. How far this frame is from
+                // them is then measured in its OWN region, which is the number a threshold
+                // has to sit above; the nearest frame of any other stage is what it has to
+                // stay below.
+                int index = Array.IndexOf(all, file);
+                TimelineStage stage = Array.Find(stages, s => index >= s.FirstFrame && index <= s.LastFrame)
+                    ?? throw new InvalidOperationException(
+                        $"Frame {frame} is not inside any stage; the recording may be truncated.");
+
+                double within = 0;
+                double nearest = 1.0;
+                for (int i = 0; i < all.Length; i++)
+                {
+                    if (i == index)
+                    {
+                        continue;
+                    }
+
+                    double[] print = region == null
+                        ? GameScreen.FingerprintFile(all[i])
+                        : GameScreen.FingerprintFileRegion(all[i], region.Value);
+                    double distance = GameScreen.Difference(fingerprint, print);
+
+                    if (i >= stage.FirstFrame && i <= stage.LastFrame)
+                    {
+                        if (distance > within)
+                        {
+                            within = distance;
+                        }
+                    }
+                    else if (distance < nearest)
+                    {
+                        nearest = distance;
+                    }
+                }
+
+                double threshold = Math.Max(
+                    MinimumThreshold, within + ((nearest - within) * ThresholdShare));
+
                 phases.Add(new StartupPhase(name, fingerprint, threshold, region));
-                Console.WriteLine($"  {name,-13} from timeline-{frame:D4}.png");
+                Console.WriteLine(
+                    $"  {name,-13} timeline-{frame:D4}.png  varies {within:N4}, "
+                    + $"nearest other {nearest:N4}, threshold {threshold:N4}");
             }
 
             string path = Path.Combine(RepoRoot(), "testing", StartupPhases.DefaultFileName);
