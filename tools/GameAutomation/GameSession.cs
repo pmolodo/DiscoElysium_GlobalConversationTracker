@@ -243,6 +243,62 @@ namespace GlobalConversationTracker.Automation
             return new WaitResult(false, difference, detail, sawMotion, clock.Elapsed);
         }
 
+        /// <summary>Waits for the game to apply its own saved resolution.</summary>
+        /// <remarks>
+        /// <para>The size a window OPENS at and the size the game ends up running at are
+        /// two different things. Unity creates the window from its own PlayerPrefs in the
+        /// registry, where "Screenmanager Resolution Use Native" and a Fullscreen mode of
+        /// FullScreenWindow together mean "the desktop resolution, whatever it is". Only
+        /// later, once the game is running its own startup code, does it read its
+        /// settings file and switch to what that asks for.</para>
+        ///
+        /// <para>So checking the size the moment a window appears measures the wrong
+        /// thing, and measuring it too early is indistinguishable from the settings having
+        /// been ignored. Waiting for the switch is also useful in itself: it is an
+        /// observable startup milestone, and unlike a screenshot it cannot be faked by an
+        /// animation looping.</para>
+        /// </remarks>
+        /// <param name="processName">The process name, without .exe.</param>
+        /// <param name="width">The width to wait for.</param>
+        /// <param name="height">The height to wait for.</param>
+        /// <param name="timeout">How long to wait.</param>
+        /// <param name="progress">Called with each sample, for verbose output.</param>
+        /// <returns>The window at the requested size, or null if it never got there.</returns>
+        public static GameWindow? WaitForResolution(
+            string processName,
+            int width,
+            int height,
+            TimeSpan timeout,
+            Action<string>? progress = null)
+        {
+            DateTime deadline = DateTime.UtcNow + timeout;
+            string last = string.Empty;
+
+            while (DateTime.UtcNow < deadline)
+            {
+                GameWindow? window = FindGameWindow(processName);
+                if (window != null)
+                {
+                    if (window.Width == width && window.Height == height)
+                    {
+                        progress?.Invoke($"resolution is now {width}x{height}");
+                        return window;
+                    }
+
+                    string current = $"{window.Width}x{window.Height}";
+                    if (current != last)
+                    {
+                        progress?.Invoke($"window is {current}, waiting for {width}x{height}");
+                        last = current;
+                    }
+                }
+
+                Thread.Sleep(500);
+            }
+
+            return null;
+        }
+
         /// <summary>Waits until the screen matches a reference image.</summary>
         /// <remarks>
         /// For "we are at the main menu", which stillness cannot establish: it cannot

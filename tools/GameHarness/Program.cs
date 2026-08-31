@@ -203,23 +203,13 @@ Options:
 
                 checks.Check("the staged settings survived the launch", stagedSurvived);
 
-                // And the decisive one: whatever the cause, a window that is not the size
-                // asked for means everything measured from here is measuring the wrong
-                // thing. Last time this produced a 3840x1200 reference that looked fine.
-                bool rightSize = window.Width == wanted.Width && window.Height == wanted.Height;
-                checks.Check(
-                    $"the window is the requested {wanted}",
-                    rightSize,
-                    $"got {window.Width}x{window.Height}");
-
-                if (!rightSize)
-                {
-                    throw new InvalidOperationException(
-                        $"The game is running at {window.Width}x{window.Height}, not the "
-                        + $"{wanted.Width}x{wanted.Height} the test settings asked for. Anything "
-                        + "captured now would be a reference at the wrong resolution, so stopping "
-                        + "rather than saving one.");
-                }
+                // The window OPENS at whatever Unity's own PlayerPrefs say - for this game
+                // a native-resolution borderless window - and only switches to what the
+                // settings file asks for once the game's startup code runs, during the
+                // legal notice. So this is a note, not a verdict.
+                Console.WriteLine(
+                    $"  opened at: {window.Width}x{window.Height} (the game applies its own "
+                    + "resolution during startup)");
 
                 bool foreground = GameWindows.BringToFront(window.Handle);
                 checks.Check(
@@ -251,6 +241,32 @@ Options:
                 }
 
                 Console.WriteLine();
+                Console.WriteLine($"waiting for the game to switch to {wanted}...");
+                GameWindow? resized = GameSession.WaitForResolution(
+                    options.ProcessName,
+                    wanted.Width,
+                    wanted.Height,
+                    TimeSpan.FromSeconds(options.TimeoutSeconds),
+                    options.Verbose ? Log : (Action<string>?)null);
+
+                checks.Check(
+                    $"the game switched to the requested {wanted}",
+                    resized != null,
+                    $"still {window.Width}x{window.Height} at the deadline");
+
+                if (resized == null)
+                {
+                    throw new InvalidOperationException(
+                        $"The game never switched to {wanted.Width}x{wanted.Height}. It opens at "
+                        + "the size Unity's registry PlayerPrefs describe and then applies its own "
+                        + "settings file, so this means the settings file was not applied - not "
+                        + "merely that the window started large. Capturing now would save a "
+                        + "reference at the wrong resolution, so stopping instead.");
+                }
+
+                window = resized;
+
+                Console.WriteLine();
                 Console.WriteLine("waiting for the screen to render and settle...");
                 WaitResult settled = GameSession.WaitUntilStill(
                     window,
@@ -261,18 +277,6 @@ Options:
                 if (!settled.SawMotion)
                 {
                     Console.WriteLine("  (never saw it move - it may still have been loading)");
-                }
-
-                // Only now. ResolutionSwitcher applies the saved resolution during
-                // startup, so measuring earlier reads whatever size the window opened at.
-                var rect = GameSession.FindGameWindow(options.ProcessName);
-                if (rect != null)
-                {
-                    Console.WriteLine($"  client area: {rect.Width}x{rect.Height}");
-                    checks.Check(
-                        "the test settings resolution took effect",
-                        rect.Width == wanted.Width && rect.Height == wanted.Height,
-                        $"got {rect.Width}x{rect.Height}; a display without {wanted.Width}x{wanted.Height} snaps to its maximum");
                 }
 
                 GameScreen.SaveCapture(window.Handle, Path.Combine(artifacts, "after-launch.png"));
@@ -418,7 +422,8 @@ Options:
                         : GameScreen.Difference(previous, fingerprint).ToString("N4");
 
                     Console.WriteLine(
-                        $"  {clock.Elapsed.TotalSeconds,6:N1}s  {name}  difference {change}  detail {detail:N3}");
+                        $"  {clock.Elapsed.TotalSeconds,6:N1}s  {name}  {bitmap.Width}x{bitmap.Height}"
+                        + $"  difference {change}  detail {detail:N3}");
 
                     previous = fingerprint;
                 }
