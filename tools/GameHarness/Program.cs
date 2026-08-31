@@ -200,10 +200,11 @@ Options:
                       exists that a direct launch skips, so which settings the
                       game honours may differ between the two.
   --app-id <id>       Steam app id for --via-steam (default: 632470).
-  --close-holders     When the profile cannot be moved, ask editors holding it
-                      to close. Off by default: it can lose unsaved work. An
-                      Explorer window is always moved off the folder regardless,
-                      since that costs nothing and the window survives.
+  --close-holders     When the profile cannot be moved, clear what is holding
+                      it: Explorer windows are navigated to the parent folder,
+                      and editors are asked to close. Off by default - a test run
+                      is no reason to move somebody's windows around. Without it
+                      a blocked move just reports what is holding the folder.
   --askable a,b       Process names unlock may ask to close (default: Code).
                       Explorer is never on this list; its windows are moved off
                       the folder instead, which costs nothing.
@@ -407,14 +408,26 @@ Options:
         /// Moves the profile aside, clearing what is holding it if the first try fails.
         /// </summary>
         /// <remarks>
-        /// The commonest reason staging fails is an Explorer window showing the folder,
-        /// which can be moved off it for nothing - the window survives, pointed at the
-        /// parent. That is only done when a move has ALREADY failed, so a run that would
-        /// have worked never disturbs anybody's windows.
+        /// Nothing is touched without --close-holders. Running a test is not a reason to
+        /// move somebody's Explorer window or take their editor away, even politely, and
+        /// even though moving a window costs nothing to undo. Without the flag a blocked
+        /// move reports what is holding the folder and stops.
         ///
-        /// Asking an editor to close is not done here unless --close-holders says so. It
-        /// can lose unsaved work, which is too high a price to pay silently for a test.
+        /// With it, and only after a move has ALREADY failed: Explorer windows showing the
+        /// folder are navigated to the parent, which releases the handle and leaves the
+        /// window open, and anything still holding it whose name is on the askable list is
+        /// asked to close.
         /// </remarks>
+        /// <summary>
+        /// How long to keep retrying the move after clearing what was holding it.
+        /// </summary>
+        /// <remarks>
+        /// Explorer releases a folder some time after a window leaves it, not at once, and
+        /// holds subfolders that window visited earlier. Fifteen seconds covers that
+        /// without turning a genuinely stuck folder into a long wait.
+        /// </remarks>
+        private static readonly TimeSpan ReleaseWait = TimeSpan.FromSeconds(15);
+
         private static ProfileBackup BackupProfile(string backupPath, Options options)
         {
             try
@@ -427,43 +440,74 @@ Options:
                 Console.WriteLine("could not move the profile; something is holding it.");
 
                 string profile = GameProfile.ProfilePath;
-                int moved = ExplorerWindows.NavigateAwayFrom(
-                    profile, message => Console.WriteLine($"  {message}"));
 
-                if (options.CloseHolders)
+                if (!options.CloseHolders)
                 {
-                    LockHolder[]? holders = SysinternalsHandle.WhoIsHolding(
-                        profile, executable: null, message => Console.WriteLine($"  {message}"));
-
-                    if (holders != null && holders.Length > 0)
-                    {
-                        foreach (CloseAttempt attempt in PoliteClose.AskToClose(
-                            holders,
-                            options.Askable,
-                            TimeSpan.FromSeconds(options.CloseDeadlineSeconds),
-                            message => Console.WriteLine($"  {message}")))
-                        {
-                            Console.WriteLine($"  {attempt}");
-                        }
-                    }
-                }
-
-                if (moved == 0 && !options.CloseHolders)
-                {
-                    // Nothing was changed, so retrying would fail the same way. Report what
-                    // is holding it - which is the slow part, and worth it here - rather
-                    // than failing twice for the same reason.
                     Console.WriteLine();
                     Console.WriteLine(FileLocks.Describe(profile));
                     Console.WriteLine();
                     Console.WriteLine(
-                        "Re-run with --close-holders to have this ask an editor to close, "
-                        + "or close it yourself.");
+                        "Close it yourself, or re-run with --close-holders to have this move "
+                        + "Explorer windows off the folder and ask editors to close.");
                     throw;
                 }
 
-                Console.WriteLine("  trying again...");
-                return GameProfile.Backup(backupPath);
+                int moved = ExplorerWindows.NavigateAwayFrom(
+                    profile, message => Console.WriteLine($"  {message}"));
+
+                int closed = 0;
+                LockHolder[]? holders = SysinternalsHandle.WhoIsHolding(
+                    profile, executable: null, message => Console.WriteLine($"  {message}"));
+
+                if (holders != null && holders.Length > 0)
+                {
+                    foreach (CloseAttempt attempt in PoliteClose.AskToClose(
+                        holders,
+                        options.Askable,
+                        TimeSpan.FromSeconds(options.CloseDeadlineSeconds),
+                        message => Console.WriteLine($"  {message}")))
+                    {
+                        Console.WriteLine($"  {attempt}");
+                        if (attempt.Closed)
+                        {
+                            closed++;
+                        }
+                    }
+                }
+
+                if (moved == 0 && closed == 0)
+                {
+                    // Nothing changed, so retrying would fail for exactly the same reason.
+                    Console.WriteLine();
+                    Console.WriteLine(FileLocks.Describe(profile));
+                    throw;
+                }
+
+                // Explorer does not release a folder the instant a window leaves it, and it
+                // keeps handles on subfolders that window visited earlier - the run that
+                // showed this had moved the window off SaveGames and was still held on
+                // Settings. So retry for a while rather than once: an immediate retry
+                // reports failure for something that clears itself a second later.
+                var deadline = DateTime.UtcNow + ReleaseWait;
+                Exception last = error;
+                while (DateTime.UtcNow < deadline)
+                {
+                    Thread.Sleep(1000);
+                    try
+                    {
+                        Console.WriteLine("  trying again...");
+                        return GameProfile.Backup(backupPath);
+                    }
+                    catch (Exception again)
+                        when (again is IOException || again is UnauthorizedAccessException)
+                    {
+                        last = again;
+                    }
+                }
+
+                Console.WriteLine();
+                Console.WriteLine(FileLocks.Describe(profile));
+                throw last;
             }
         }
 

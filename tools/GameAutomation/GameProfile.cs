@@ -128,26 +128,21 @@ namespace GlobalConversationTracker.Automation
             }
             catch (IOException error)
             {
-                // Two causes, and Windows names neither: the paths being on different
-                // volumes, where Move does not work at all, and something holding the
-                // folder open, where the message is a bare "used by another process" with
-                // no hint which one. Both are worth answering here rather than leaving to
-                // whoever reads the failure.
+                // Named, but not diagnosed. Working out WHAT is holding the folder takes
+                // seconds and this is retried, so doing it here ran the same slow scan
+                // three times for one failure. The caller asks once, when it has given up.
                 throw new IOException(
-                    $"Could not move {profile} to {movedTo}: {error.Message}"
-                    + Environment.NewLine
-                    + FileLocks.Describe(profile)
-                    + Environment.NewLine
-                    + "A backup also has to be on the same volume as the profile; see "
+                    $"Could not move {profile} to {movedTo}: {error.Message} "
+                    + "Something is holding it, or the two are on different volumes - a "
+                    + "backup has to be on the same volume as the profile; see "
                     + "DefaultBackupPath.",
                     error);
             }
             catch (UnauthorizedAccessException error)
             {
                 throw new UnauthorizedAccessException(
-                    $"Not allowed to move {profile} to {movedTo}: {error.Message}"
-                    + Environment.NewLine
-                    + FileLocks.Describe(profile),
+                    $"Not allowed to move {profile} to {movedTo}: {error.Message} "
+                    + "Something is probably holding it.",
                     error);
             }
 
