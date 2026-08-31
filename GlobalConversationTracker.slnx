@@ -73,6 +73,21 @@
     <Folder Name="/tools/">
         <Project Path="tools/NtwtfDecode.Tests/NtwtfDecode.Tests.csproj" />
         <Project Path="tools/NtwtfDecode/NtwtfDecode.csproj" />
+        <!--
+      Win32 interop for the PowerShell test harness - finding the game's window
+      and sending it keystrokes. Compiled rather than declared inside the
+      PowerShell module because Defender blocks a script containing SendInput
+      beside window enumeration: the pair reads as a keylogger. Interop belongs
+      in a reviewable assembly regardless.
+    -->
+        <Project Path="tools/GameAutomation/GameAutomation.csproj" />
+        <Project Path="tools/GameAutomation.Tests/GameAutomation.Tests.csproj" />
+        <!--
+      The console harness that drives the game. Its unit-testable logic lives
+      in GameAutomation; the parts that need a running game are behind a verb
+      you invoke deliberately, never in dotnet test.
+    -->
+        <Project Path="tools/GameHarness/GameHarness.csproj" />
         <Project Path="tools/GlobalStateBenchmark/GlobalStateBenchmark.csproj" />
         <Project Path="tools/GlobalStateCheck.Tests/GlobalStateCheck.Tests.csproj" />
         <Project Path="tools/GlobalStateCheck/GlobalStateCheck.csproj" />

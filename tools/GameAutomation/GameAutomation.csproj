@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      net48 rather than netstandard2.0: this assembly captures the screen, which
+      needs System.Drawing, and .NET Framework carries System.Drawing in the box
+      while netstandard2.0 would need a NuGet package - in a repo that otherwise
+      has none. Windows PowerShell 5.1 is .NET Framework, so it loads this
+      directly with Add-Type -Path.
+
+      This exists as a compiled assembly rather than an Add-Type block inside the
+      PowerShell module because Defender's AMSI blocks the module outright when
+      the SendInput and EnumWindows P/Invokes appear as script text: the pair is
+      indistinguishable from a keylogger by inspection. Compiling them is not a
+      workaround for a false positive so much as the honest shape - this is
+      interop, and interop belongs in a compiled, warned-on, reviewable assembly
+      rather than in a here-string.
+    -->
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <RootNamespace>GlobalConversationTracker.Automation</RootNamespace>
+    <AssemblyName>GameAutomation</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!-- In the framework, so no package reference. -->
+  <ItemGroup>
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+
+</Project>
