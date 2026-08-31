@@ -1,10 +1,54 @@
 // SPDX-License-Identifier: MIT
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
+using System.Text.RegularExpressions;
 
 namespace GlobalConversationTracker.Automation
 {
+    /// <summary>The resolution and display mode a settings file asks for.</summary>
+    public sealed class DisplaySettings
+    {
+        /// <summary>The display-mode index meaning windowed.</summary>
+        /// <remarks>
+        /// Measured from the game's own writeback, NOT from Unity's FullScreenMode enum,
+        /// which numbers its modes differently (there 1 is borderless fullscreen, which
+        /// would ignore the requested resolution entirely). Setting the game to windowed
+        /// 1280x720 through its own options menu produced DISPLAY MODE 1.
+        /// </remarks>
+        public const int WindowedMode = 1;
+
+        /// <summary>Creates a value.</summary>
+        /// <param name="width">Requested width.</param>
+        /// <param name="height">Requested height.</param>
+        /// <param name="displayMode">The game's display-mode index.</param>
+        public DisplaySettings(int width, int height, int displayMode)
+        {
+            Width = width;
+            Height = height;
+            DisplayMode = displayMode;
+        }
+
+        /// <summary>Requested width.</summary>
+        public int Width { get; }
+
+        /// <summary>Requested height.</summary>
+        public int Height { get; }
+
+        /// <summary>The game's display-mode index.</summary>
+        public int DisplayMode { get; }
+
+        /// <summary>Whether this asks for a window rather than a fullscreen surface.</summary>
+        public bool IsWindowed => DisplayMode == WindowedMode;
+
+        /// <inheritdoc/>
+        public override string ToString()
+        {
+            return $"{Width}x{Height} {(IsWindowed ? "windowed" : $"display mode {DisplayMode}")}";
+        }
+    }
+
     /// <summary>What a settings swap saved, so it can be put back.</summary>
     public sealed class SettingsBackup
     {
@@ -124,6 +168,72 @@ namespace GlobalConversationTracker.Automation
             }
 
             File.Copy(testSettingsPath, SettingsPath, overwrite: true);
+        }
+
+        /// <summary>The display settings a settings file asks for.</summary>
+        /// <param name="path">The settings file to read.</param>
+        /// <exception cref="InvalidDataException">A value is missing or not unique.</exception>
+        public static DisplaySettings ReadDisplay(string path)
+        {
+            string json = File.ReadAllText(path);
+            return new DisplaySettings(
+                ReadInt(json, "resolutionWidth", path),
+                ReadInt(json, "resolutionHeight", path),
+                ReadInt(json, "DISPLAY MODE", path));
+        }
+
+        /// <summary>
+        /// Whether the live settings file is still byte-for-byte the one installed.
+        /// </summary>
+        /// <remarks>
+        /// Steam Auto-Cloud syncs this directory when the application launches and again
+        /// when it exits, and it downloads the cloud copy BEFORE the game starts. So a
+        /// file staged moments before launch can be replaced by the player's real
+        /// settings in the gap, and the game reads those instead. That looks exactly like
+        /// the staging having silently failed; comparing the bytes afterwards is what
+        /// tells the two apart.
+        /// </remarks>
+        /// <param name="installedPath">The file that was installed.</param>
+        public static bool StillMatches(string installedPath)
+        {
+            if (!File.Exists(SettingsPath) || !File.Exists(installedPath))
+            {
+                return false;
+            }
+
+            byte[] live = File.ReadAllBytes(SettingsPath);
+            byte[] staged = File.ReadAllBytes(installedPath);
+            if (live.Length != staged.Length)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < live.Length; i++)
+            {
+                if (live[i] != staged[i])
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static int ReadInt(string json, string key, string path)
+        {
+            // Deliberately strict. The shape is "key": { "intValue": N, ... }, and
+            // anything else means the file is not what this was written against. Guessing
+            // would yield a plausible wrong number, which is the failure being hunted.
+            var pattern = new Regex(
+                "\"" + Regex.Escape(key) + @"""\s*:\s*\{\s*""intValue""\s*:\s*(-?\d+)");
+            MatchCollection matches = pattern.Matches(json);
+            if (matches.Count != 1)
+            {
+                throw new InvalidDataException(
+                    $"Expected exactly one '{key}' in {path}, found {matches.Count}.");
+            }
+
+            return int.Parse(matches[0].Groups[1].Value, CultureInfo.InvariantCulture);
         }
 
         /// <summary>Puts the settings file, and the PlayerPrefs cache, back.</summary>

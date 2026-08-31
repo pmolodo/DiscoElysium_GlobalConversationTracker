@@ -2,6 +2,10 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
+using System.Threading;
+using System.Drawing.Imaging;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using GlobalConversationTracker.Automation;
@@ -94,6 +98,11 @@ Options:
   --timeout <n>       Seconds to wait for launch and for loading (default: 300).
   --dry-run           Do everything except press keys.
   --keep-open         Leave the game running afterwards.
+  --timeline          Capture every frame of startup instead of waiting for the
+                      screen to settle. Startup runs through several animated
+                      screens, so stopped-changing never becomes true - and a
+                      looping animation can sample identically twice and fake it.
+  --timeline-interval How often to capture in timeline mode, in ms (default 1000).
   --verbose           Report every sample the waits take.");
         }
 
@@ -165,11 +174,77 @@ Options:
                 Console.WriteLine($"  window: {window.ClassName} '{window.Title}'");
                 checks.Pass("the game window appeared");
 
+                // Steam Auto-Cloud syncs this directory when the application launches,
+                // downloading the cloud copy BEFORE the game reads it. So settings staged
+                // moments ago can already be gone, and the game runs with the player's
+                // real ones - which is indistinguishable from the staging having failed
+                // unless the bytes are compared.
+                DisplaySettings wanted = GameSettings.ReadDisplay(testSettings);
+                bool stagedSurvived = GameSettings.StillMatches(testSettings);
+                if (!stagedSurvived)
+                {
+                    Console.WriteLine();
+                    Console.WriteLine(
+                        "  The staged settings file was REPLACED between installing it and the");
+                    Console.WriteLine(
+                        "  game starting. Steam Auto-Cloud syncs this folder on launch and will");
+                    Console.WriteLine(
+                        "  overwrite it with the cloud copy. Turn Steam Cloud off for this game:");
+                    Console.WriteLine(
+                        "  Library > right-click Disco Elysium > Properties > General (older");
+                    Console.WriteLine(
+                        "  clients: Updates) > uncheck the Steam Cloud option.");
+                    Console.WriteLine();
+                }
+
+                checks.Check("the staged settings survived the launch", stagedSurvived);
+
+                // And the decisive one: whatever the cause, a window that is not the size
+                // asked for means everything measured from here is measuring the wrong
+                // thing. Last time this produced a 3840x1200 reference that looked fine.
+                bool rightSize = window.Width == wanted.Width && window.Height == wanted.Height;
+                checks.Check(
+                    $"the window is the requested {wanted}",
+                    rightSize,
+                    $"got {window.Width}x{window.Height}");
+
+                if (!rightSize)
+                {
+                    throw new InvalidOperationException(
+                        $"The game is running at {window.Width}x{window.Height}, not the "
+                        + $"{wanted.Width}x{wanted.Height} the test settings asked for. Anything "
+                        + "captured now would be a reference at the wrong resolution, so stopping "
+                        + "rather than saving one.");
+                }
+
                 bool foreground = GameWindows.BringToFront(window.Handle);
                 checks.Check(
                     "the window came to the front",
                     foreground || GameWindows.IsForeground(window.Handle),
                     "capture and input both need it; is something stealing focus?");
+
+                if (options.Timeline)
+                {
+                    Console.WriteLine();
+                    Console.WriteLine(
+                        $"capturing every {options.TimelineIntervalMs}ms for {options.TimeoutSeconds}s...");
+                    Console.WriteLine(
+                        "Startup is a sequence of distinct screens, not a fade to a still image,");
+                    Console.WriteLine(
+                        "so this records the whole thing rather than guessing when it ended.");
+                    Console.WriteLine();
+
+                    int frames = CaptureTimeline(window, artifacts, options);
+
+                    Console.WriteLine();
+                    Console.WriteLine($"Wrote {frames} frames to {artifacts}");
+                    Console.WriteLine(
+                        "Look through them and pick one frame per stage; those become the stage");
+                    Console.WriteLine(
+                        "references. The difference column marks where one stage becomes another.");
+                    checks.Pass("captured a launch timeline");
+                    return checks.Report();
+                }
 
                 Console.WriteLine();
                 Console.WriteLine("waiting for the screen to render and settle...");
@@ -192,8 +267,8 @@ Options:
                     Console.WriteLine($"  client area: {rect.Width}x{rect.Height}");
                     checks.Check(
                         "the test settings resolution took effect",
-                        rect.Width == 1280 && rect.Height == 720,
-                        $"got {rect.Width}x{rect.Height}; a display without 1280x720 snaps to its maximum");
+                        rect.Width == wanted.Width && rect.Height == wanted.Height,
+                        $"got {rect.Width}x{rect.Height}; a display without {wanted.Width}x{wanted.Height} snaps to its maximum");
                 }
 
                 GameScreen.SaveCapture(window.Handle, Path.Combine(artifacts, "after-launch.png"));
@@ -297,6 +372,57 @@ Options:
                     Console.Error.WriteLine($"WARNING: the backup is at {backup.SettingsPath}");
                 }
             }
+        }
+
+        /// <summary>
+        /// Captures the whole of startup, frame by frame, rather than waiting for it.
+        /// </summary>
+        /// <remarks>
+        /// Waiting for the screen to stop changing cannot find the main menu here. Startup
+        /// runs through several distinct screens - a loading animation, a legal notice, an
+        /// animated logo - and the menu itself is animated too, so "still" is never true.
+        /// Worse, a LOOPING animation samples identically whenever two captures land at
+        /// the same phase, so a settle can be declared in the middle of one. That is what
+        /// produced a "settled" reference showing the loading screen.
+        ///
+        /// So this gathers evidence rather than judging it: every frame at full
+        /// resolution, with the difference from the previous frame, which is large at a
+        /// stage boundary and small within a stage.
+        /// </remarks>
+        private static int CaptureTimeline(GameWindow window, string artifacts, Options options)
+        {
+            string directory = Path.Combine(artifacts, "timeline");
+            Directory.CreateDirectory(directory);
+
+            var clock = Stopwatch.StartNew();
+            TimeSpan deadline = TimeSpan.FromSeconds(options.TimeoutSeconds);
+            double[]? previous = null;
+            int frame = 0;
+
+            while (clock.Elapsed < deadline)
+            {
+                using (Bitmap bitmap = GameScreen.Capture(window.Handle))
+                {
+                    frame++;
+                    string name = $"timeline-{frame:D4}.png";
+                    bitmap.Save(Path.Combine(directory, name), ImageFormat.Png);
+
+                    double[] fingerprint = GameScreen.FingerprintOf(bitmap);
+                    double detail = GameScreen.Detail(fingerprint);
+                    string change = previous == null
+                        ? "     -"
+                        : GameScreen.Difference(previous, fingerprint).ToString("N4");
+
+                    Console.WriteLine(
+                        $"  {clock.Elapsed.TotalSeconds,6:N1}s  {name}  difference {change}  detail {detail:N3}");
+
+                    previous = fingerprint;
+                }
+
+                Thread.Sleep(options.TimelineIntervalMs);
+            }
+
+            return frame;
         }
 
         private static void TryKill(Process process)
@@ -427,6 +553,12 @@ Options:
 
             public bool Verbose { get; private set; }
 
+            /// <summary>Capture every frame of startup instead of waiting for a settle.</summary>
+            public bool Timeline { get; private set; }
+
+            /// <summary>How often to capture in timeline mode, in milliseconds.</summary>
+            public int TimelineIntervalMs { get; private set; } = 1000;
+
             public static Options? Parse(string[] args)
             {
                 if (args.Length == 0)
@@ -462,6 +594,11 @@ Options:
                             break;
                         case "--dry-run": options.DryRun = true; break;
                         case "--keep-open": options.KeepOpen = true; break;
+                        case "--timeline": options.Timeline = true; break;
+                        case "--timeline-interval":
+                            options.TimelineIntervalMs = int.Parse(
+                                Next() ?? "1000", CultureInfo.InvariantCulture);
+                            break;
                         case "--verbose": options.Verbose = true; break;
                         default:
                             Console.Error.WriteLine($"Unknown option '{flag}'.");
