@@ -200,6 +200,10 @@ Options:
                       exists that a direct launch skips, so which settings the
                       game honours may differ between the two.
   --app-id <id>       Steam app id for --via-steam (default: 632470).
+  --close-holders     When the profile cannot be moved, ask editors holding it
+                      to close. Off by default: it can lose unsaved work. An
+                      Explorer window is always moved off the folder regardless,
+                      since that costs nothing and the window survives.
   --askable a,b       Process names unlock may ask to close (default: Code).
                       Explorer is never on this list; its windows are moved off
                       the folder instead, which costs nothing.
@@ -399,6 +403,70 @@ Options:
             return 0;
         }
 
+        /// <summary>
+        /// Moves the profile aside, clearing what is holding it if the first try fails.
+        /// </summary>
+        /// <remarks>
+        /// The commonest reason staging fails is an Explorer window showing the folder,
+        /// which can be moved off it for nothing - the window survives, pointed at the
+        /// parent. That is only done when a move has ALREADY failed, so a run that would
+        /// have worked never disturbs anybody's windows.
+        ///
+        /// Asking an editor to close is not done here unless --close-holders says so. It
+        /// can lose unsaved work, which is too high a price to pay silently for a test.
+        /// </remarks>
+        private static ProfileBackup BackupProfile(string backupPath, Options options)
+        {
+            try
+            {
+                return GameProfile.Backup(backupPath);
+            }
+            catch (Exception error) when (error is IOException || error is UnauthorizedAccessException)
+            {
+                Console.WriteLine();
+                Console.WriteLine("could not move the profile; something is holding it.");
+
+                string profile = GameProfile.ProfilePath;
+                int moved = ExplorerWindows.NavigateAwayFrom(
+                    profile, message => Console.WriteLine($"  {message}"));
+
+                if (options.CloseHolders)
+                {
+                    LockHolder[]? holders = SysinternalsHandle.WhoIsHolding(
+                        profile, executable: null, message => Console.WriteLine($"  {message}"));
+
+                    if (holders != null && holders.Length > 0)
+                    {
+                        foreach (CloseAttempt attempt in PoliteClose.AskToClose(
+                            holders,
+                            options.Askable,
+                            TimeSpan.FromSeconds(options.CloseDeadlineSeconds),
+                            message => Console.WriteLine($"  {message}")))
+                        {
+                            Console.WriteLine($"  {attempt}");
+                        }
+                    }
+                }
+
+                if (moved == 0 && !options.CloseHolders)
+                {
+                    // Nothing was changed, so retrying would fail the same way. Report what
+                    // is holding it - which is the slow part, and worth it here - rather
+                    // than failing twice for the same reason.
+                    Console.WriteLine();
+                    Console.WriteLine(FileLocks.Describe(profile));
+                    Console.WriteLine();
+                    Console.WriteLine(
+                        "Re-run with --close-holders to have this ask an editor to close, "
+                        + "or close it yourself.");
+                    throw;
+                }
+
+                Console.WriteLine("  trying again...");
+                return GameProfile.Backup(backupPath);
+            }
+        }
+
         private static int RunSession(Options options, bool captureReference)
         {
             string game = ResolveGame(options);
@@ -433,7 +501,7 @@ Options:
             GameSettings.BackupRegistry(registryBackupPath);
             Console.WriteLine($"prefs:     {registryBackupPath}");
 
-            ProfileBackup profileBackup = GameProfile.Backup(profileBackupPath);
+            ProfileBackup profileBackup = BackupProfile(profileBackupPath, options);
             Console.WriteLine(
                 profileBackup.MovedTo == null
                     ? "profile:   none found; a fresh one will be built"
@@ -1017,6 +1085,16 @@ Options:
             /// </remarks>
             public int CloseDeadlineSeconds { get; private set; } = 30;
 
+            /// <summary>
+            /// Ask editors holding the profile to close, when a move fails.
+            /// </summary>
+            /// <remarks>
+            /// Off by default because it can lose unsaved work. Moving an Explorer window
+            /// off the folder is free and always happens; closing somebody's editor is
+            /// not, and has to be asked for.
+            /// </remarks>
+            public bool CloseHolders { get; private set; }
+
             /// <summary>Write the chosen frame out as the main-menu reference.</summary>
             public bool SaveReference { get; private set; }
 
@@ -1102,6 +1180,7 @@ Options:
                         case "--keep-open": options.KeepOpen = true; break;
                         case "--via-steam": options.ViaSteam = true; break;
                         case "--no-screen-prefs": options.SkipScreenPrefs = true; break;
+                        case "--close-holders": options.CloseHolders = true; break;
                         case "--askable":
                             options.Askable = (Next() ?? "Code").Split(',');
                             break;
