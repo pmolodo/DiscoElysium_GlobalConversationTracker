@@ -32,7 +32,7 @@
       "intValue": 0,
       "stringValue": null,
       "floatValue": 0.0,
-      "boolValue": true,
+      "boolValue": false,
       "type": "BOOL"
     },
     "SHADER QUALITY": {

@@ -59,6 +59,7 @@ Check 'shadows off' 0 (Get-GameSetting -Path $testFile -Name 'GRAPHICS/SHADOWS')
 Check 'shader quality low (higher means cheaper)' 1 (Get-GameSetting -Path $testFile -Name 'GRAPHICS/SHADER QUALITY')
 Check 'environment FX low (higher hides more)' 1 (Get-GameSetting -Path $testFile -Name 'GRAPHICS/ENVIRONMENT FX')
 Check 'tutorial off' $false (Get-GameSetting -Path $testFile -Name 'GRAPHICS/tutorialEnabled')
+Check 'detective mode off' $false (Get-GameSetting -Path $testFile -Name 'GRAPHICS/detectiveMode')
 Check 'music silent' 0 (Get-GameSetting -Path $testFile -Name 'AUDIO/volumeMusic')
 
 Write-Host "`nround trip (registry untouched):"
