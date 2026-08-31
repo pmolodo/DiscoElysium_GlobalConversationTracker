@@ -473,6 +473,7 @@ Options:
             double[]? previous = null;
             int frame = 0;
             IntPtr lastHandle = window.Handle;
+            int skipped = 0;
 
             while (clock.Elapsed < deadline)
             {
@@ -504,6 +505,27 @@ Options:
 
                 lastHandle = current.Handle;
 
+                // CopyFromScreen reads SCREEN pixels, so anything covering the game is
+                // captured instead of it. A frame taken while the game is not in front is
+                // not a picture of the game, and saving it silently would put another
+                // window's contents into the stage references.
+                if (!GameWindows.IsForeground(current.Handle))
+                {
+                    GameWindows.BringToFront(current.Handle);
+                    Thread.Sleep(200);
+                }
+
+                if (!GameWindows.IsForeground(current.Handle))
+                {
+                    skipped++;
+                    Console.WriteLine(
+                        $"  {clock.Elapsed.TotalSeconds,6:N1}s  SKIPPED - the game is not in front; "
+                        + "this frame would show whatever is");
+                    previous = null;
+                    Thread.Sleep(options.TimelineIntervalMs);
+                    continue;
+                }
+
                 using (Bitmap bitmap = GameScreen.Capture(current.Handle))
                 {
                     frame++;
@@ -524,6 +546,16 @@ Options:
                 }
 
                 Thread.Sleep(options.TimelineIntervalMs);
+            }
+
+            if (skipped > 0)
+            {
+                Console.WriteLine();
+                Console.WriteLine(
+                    $"  {skipped} frame(s) skipped because the game was not in front. Leave the");
+                Console.WriteLine(
+                    "  game focused for the whole recording - a capture is of the screen, not");
+                Console.WriteLine("  of the window, so clicking elsewhere photographs that instead.");
             }
 
             return frame;
