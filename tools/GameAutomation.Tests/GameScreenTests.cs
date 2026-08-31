@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 using System;
 using System.Drawing;
+using System.IO;
 using Xunit;
 
 namespace GlobalConversationTracker.Automation.Tests
@@ -113,6 +114,67 @@ namespace GlobalConversationTracker.Automation.Tests
 
             Assert.Throws<ArgumentNullException>(() => GameScreen.Difference(fingerprint!, real));
             Assert.Throws<ArgumentNullException>(() => GameScreen.Difference(real, fingerprint!));
+        }
+
+        /// <summary>
+        /// Why a stored reference must be size-checked before it is compared.
+        /// </summary>
+        /// <remarks>
+        /// Both images reduce to the same grid whatever their size, so a reference
+        /// captured from a 960x480 console compares against a 1280x720 game window
+        /// without complaining. It reports a number, the number looks plausible, and it
+        /// means nothing. This is not a flaw in the fingerprint - the whole point of it
+        /// is to be insensitive to detail - which is why the check belongs at the call
+        /// site, in GameSession.WaitUntilMatches.
+        /// </remarks>
+        [Fact]
+        public void FingerprintsHappilyCompareAcrossMismatchedSizes()
+        {
+            using Bitmap consoleSized = Solid(Color.Black, 960, 480);
+            using Bitmap gameSized = Solid(Color.Black, 1280, 720);
+
+            double[] first = GameScreen.FingerprintOf(consoleSized);
+            double[] second = GameScreen.FingerprintOf(gameSized);
+
+            Assert.Equal(first.Length, second.Length);
+
+            // A perfect match between two images that share nothing but their fill.
+            Assert.Equal(0, GameScreen.Difference(first, second), 4);
+        }
+
+        /// <summary>A saved capture keeps its native size; only the fingerprint shrinks.</summary>
+        [Fact]
+        public void SavedImagesKeepTheirFullResolution()
+        {
+            string path = Path.Combine(
+                Path.GetTempPath(), "gct-fullres-" + Guid.NewGuid().ToString("N") + ".png");
+
+            try
+            {
+                using (Bitmap frame = Solid(Color.Black, 1280, 720))
+                using (Graphics graphics = Graphics.FromImage(frame))
+                {
+                    graphics.FillRectangle(Brushes.White, 10, 10, 40, 20);
+                    frame.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+                }
+
+                Size saved = GameScreen.SizeOfFile(path);
+
+                Assert.Equal(1280, saved.Width);
+                Assert.Equal(720, saved.Height);
+
+                // And the fingerprint of that same file is still the small grid.
+                Assert.Equal(
+                    GameScreen.DefaultFingerprintSize * GameScreen.DefaultFingerprintSize,
+                    GameScreen.FingerprintFile(path).Length);
+            }
+            finally
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
         }
 
         // ---- detail, which is what tells a blank window from a settled screen -------

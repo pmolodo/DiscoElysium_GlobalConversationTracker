@@ -25,6 +25,16 @@ namespace GlobalConversationTracker.Automation
     /// <para>A fingerprint is a small greyscale grid rather than the image. Downscaling
     /// first is what makes a difference threshold mean anything: a mouse cursor or one
     /// flickering pixel barely moves it, while a scene change moves it a lot.</para>
+    ///
+    /// <para>Saved captures are always written at the window's native size. Only the
+    /// fingerprint is reduced, and only on a copy - a PNG that has been downscaled is no
+    /// use for looking at afterwards, which is the whole reason for keeping it.</para>
+    ///
+    /// <para>That downscale also hides a mismatch: two images of different sizes, even
+    /// different aspect ratios, both reduce to the same grid and compare without
+    /// complaint. A reference captured from the wrong window compares perfectly happily
+    /// against the right one. Callers comparing against a stored reference should check
+    /// its size first - see <see cref="SizeOfFile"/>.</para>
     /// </remarks>
     public static class GameScreen
     {
@@ -82,6 +92,16 @@ namespace GlobalConversationTracker.Automation
             using (Bitmap bitmap = Capture(window))
             {
                 return FingerprintOf(bitmap, size);
+            }
+        }
+
+        /// <summary>The pixel size of an image on disk, without decoding all of it.</summary>
+        /// <param name="path">The image to measure.</param>
+        public static Size SizeOfFile(string path)
+        {
+            using (var image = Image.FromFile(path))
+            {
+                return new Size(image.Width, image.Height);
             }
         }
 

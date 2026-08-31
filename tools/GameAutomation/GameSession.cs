@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.Threading;
 
 namespace GlobalConversationTracker.Automation
@@ -259,6 +260,20 @@ namespace GlobalConversationTracker.Automation
             TimeSpan timeout,
             Action<string>? progress = null)
         {
+            // Before anything else: a reference of a different size still reduces to the
+            // same fingerprint grid and compares without complaint, so a reference
+            // captured from the wrong window - a console, say - would silently pass for
+            // the game. The downscale that makes comparison robust is exactly what hides
+            // this, so it has to be checked separately.
+            Size referenceSize = GameScreen.SizeOfFile(referencePath);
+            if (referenceSize.Width != window.Width || referenceSize.Height != window.Height)
+            {
+                throw new InvalidOperationException(
+                    $"The reference image is {referenceSize.Width}x{referenceSize.Height} but the "
+                    + $"window is {window.Width}x{window.Height}. Comparing them would produce a "
+                    + "number that means nothing. Recapture the reference.");
+            }
+
             double[] reference = GameScreen.FingerprintFile(referencePath);
             var clock = Stopwatch.StartNew();
             DateTime deadline = DateTime.UtcNow + timeout;
