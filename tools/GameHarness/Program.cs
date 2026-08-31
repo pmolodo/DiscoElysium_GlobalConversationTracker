@@ -53,6 +53,8 @@ namespace GlobalConversationTracker.Harness
             {
                 switch (options.Verb)
                 {
+                    case "analyse-timeline":
+                        return AnalyseTimeline(options);
                     case "windows":
                         return ListWindows(options);
                     case "keys":
@@ -84,6 +86,9 @@ Verbs:
                       main-menu reference. Look at the PNG before trusting it.
   load-save           Launch, confirm the main menu, send the load-save keys, and
                       check the screen changed to something else.
+  analyse-timeline    Read a recorded timeline back and report which frames
+                      identify which screens, with a measured threshold. Add
+                      --save-reference to write the chosen frame as main-menu.png.
   windows             List every window the game's process owns, with its class.
                       What to run when the wrong window is being captured.
   keys                List the key names the harness accepts.
@@ -113,6 +118,100 @@ Options:
   --timeline-seconds  How long to record in timeline mode (default 60). Separate
                       from --timeout, which is the wait for the window to appear.
   --verbose           Report every sample the waits take.");
+        }
+
+        /// <summary>
+        /// Reads a recorded startup back and works out which frames identify which
+        /// screens, and what threshold separates them.
+        /// </summary>
+        /// <remarks>
+        /// Runs on the saved PNGs, so it needs no game and can be re-run freely. That is
+        /// the point: a threshold chosen because it looked about right is how a check ends
+        /// up passing for the wrong reason, and this startup contains both a screen that
+        /// animates and a screen that holds perfectly still for twenty-five seconds.
+        /// </remarks>
+        private static int AnalyseTimeline(Options options)
+        {
+            string artifacts = options.Artifacts ?? Path.Combine(RepoRoot(), ".build", "automation");
+            string directory = Path.Combine(artifacts, "timeline");
+            if (!Directory.Exists(directory))
+            {
+                throw new DirectoryNotFoundException(
+                    $"No timeline at {directory}. Run capture-reference --timeline first.");
+            }
+
+            string[] files = Directory.GetFiles(directory, "timeline-*.png");
+            Array.Sort(files, StringComparer.Ordinal);
+            if (files.Length == 0)
+            {
+                throw new InvalidOperationException($"No timeline frames in {directory}.");
+            }
+
+            Console.WriteLine($"reading {files.Length} frames from {directory}");
+            var fingerprints = new List<double[]>();
+            foreach (string file in files)
+            {
+                fingerprints.Add(GameScreen.FingerprintFile(file));
+            }
+
+            TimelineStage[] stages = TimelineAnalysis.FindStages(fingerprints);
+
+            Console.WriteLine();
+            Console.WriteLine($"{stages.Length} distinct screens:");
+            foreach (TimelineStage stage in stages)
+            {
+                string blank = stage.MeanDetail < GameSession.BlankDetailFloor
+                    ? "   <- below the blank floor; a wait starting here reads it as unpainted"
+                    : string.Empty;
+                Console.WriteLine($"  {stage}{blank}");
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("best identifying frame per screen:");
+            foreach (TimelineStage stage in stages)
+            {
+                ReferenceQuality quality = TimelineAnalysis.BestReference(fingerprints, stage);
+                Console.WriteLine($"  {Path.GetFileName(files[quality.Frame])}  {quality}");
+            }
+
+            TimelineStage last = stages[stages.Length - 1];
+            ReferenceQuality menu = TimelineAnalysis.BestReference(fingerprints, last);
+            string chosen = files[menu.Frame];
+
+            Console.WriteLine();
+            Console.WriteLine("The last screen is normally the main menu.");
+            Console.WriteLine($"  reference:  {Path.GetFileName(chosen)}");
+            if (menu.IsUsable)
+            {
+                Console.WriteLine($"  threshold:  {menu.SuggestedThreshold:N4}");
+                Console.WriteLine();
+                Console.WriteLine(
+                    $"  Above the {menu.WorstWithinStage:N4} that screen varies by as it animates,");
+                Console.WriteLine(
+                    $"  and below the {menu.BestOutsideStage:N4} to the nearest other screen.");
+                Console.WriteLine("  Both measured here, not chosen.");
+
+                if (options.SaveReference)
+                {
+                    string referencePath = Path.Combine(artifacts, "main-menu.png");
+                    File.Copy(chosen, referencePath, overwrite: true);
+                    Console.WriteLine();
+                    Console.WriteLine($"Saved it as {referencePath}");
+                    Console.WriteLine("Look at it and confirm it is the main menu before relying on it.");
+                }
+            }
+            else
+            {
+                Console.WriteLine();
+                Console.WriteLine(
+                    "  NO usable threshold: this screen varies more than it differs from");
+                Console.WriteLine(
+                    "  another one, so matching it would match that one too. A longer");
+                Console.WriteLine("  recording, or a region rather than the whole frame, is needed.");
+                return 1;
+            }
+
+            return 0;
         }
 
         private static int ListWindows(Options options)
@@ -726,6 +825,9 @@ Options:
             /// <summary>Leave Unity's registry screen prefs untouched.</summary>
             public bool SkipScreenPrefs { get; private set; }
 
+            /// <summary>Write the chosen frame out as the main-menu reference.</summary>
+            public bool SaveReference { get; private set; }
+
             /// <summary>Screen prefs to write, when deliberately disagreeing with the file.</summary>
             public DisplaySettings? RegistryScreen { get; private set; }
 
@@ -785,6 +887,7 @@ Options:
                         case "--keep-open": options.KeepOpen = true; break;
                         case "--via-steam": options.ViaSteam = true; break;
                         case "--no-screen-prefs": options.SkipScreenPrefs = true; break;
+                        case "--save-reference": options.SaveReference = true; break;
                         case "--registry-screen":
                         {
                             string spec = Next() ?? string.Empty;
