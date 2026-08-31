@@ -430,6 +430,17 @@ Options:
         private const string MenuPhase = "main-menu";
 
         /// <summary>
+        /// How many times to try raising the game per screen, before leaving it alone.
+        /// </summary>
+        /// <remarks>
+        /// Windows can refuse a foreground change, and something may be deliberately
+        /// holding focus. Retrying without limit turns that into a fight nothing wins, and
+        /// makes the log a wall of the same line. The count resets when the screen changes,
+        /// so a later attempt still gets its chances.
+        /// </remarks>
+        private const int MaxForegroundAttempts = 4;
+
+        /// <summary>
         /// Waits for the main menu, saying which startup screen is showing as it goes.
         /// </summary>
         /// <remarks>
@@ -486,26 +497,61 @@ Options:
             bool skippedLogo = false;
             double closest = 1.0;
             double detail = 0;
+            int raises = 0;
 
             while (DateTime.UtcNow < deadline)
             {
+                // Re-found every time. The window is recreated during startup, and if the
+                // game has gone there is nothing to wait for - without this it waited for
+                // a dead handle to come to the front until the timeout ran out.
+                GameWindow? live = GameSession.FindGameWindow(options.ProcessName);
+                if (live == null)
+                {
+                    if (Process.GetProcessesByName(options.ProcessName).Length == 0)
+                    {
+                        Console.WriteLine(
+                            $"  {clock.Elapsed.TotalSeconds,5:N1}s  the game has exited");
+                        return new WaitResult(false, closest, detail, true, clock.Elapsed);
+                    }
+
+                    Thread.Sleep(500);
+                    continue;
+                }
+
+                window = live;
+
                 // A capture reads the SCREEN, so anything in front of the game is what
                 // gets compared. Without this the phase numbers wander as soon as focus
                 // moves, and a terminal happens to look enough like the dark legal notice
                 // to be identified as it.
                 if (!GameWindows.IsForeground(window.Handle))
                 {
-                    GameWindows.BringToFront(window.Handle);
-                    Thread.Sleep(200);
+                    // Bounded, and the count resets when the screen changes. Windows can
+                    // refuse a foreground change, and something else may be deliberately
+                    // holding focus - retrying without limit turns that into a fight
+                    // nothing wins.
+                    if (raises < MaxForegroundAttempts)
+                    {
+                        raises++;
+                        GameWindows.BringToFront(window.Handle);
+                        Thread.Sleep(200);
+                    }
 
                     if (!GameWindows.IsForeground(window.Handle))
                     {
-                        if (reported != "(not in front)")
+                        string state = raises < MaxForegroundAttempts
+                            ? $"(not in front, raise {raises} of {MaxForegroundAttempts})"
+                            : "(not in front, gave up raising)";
+
+                        if (reported != state)
                         {
                             Console.WriteLine(
-                                $"  {clock.Elapsed.TotalSeconds,5:N1}s  waiting - the game is not "
-                                + "in front, so nothing can be read from the screen");
-                            reported = "(not in front)";
+                                $"  {clock.Elapsed.TotalSeconds,5:N1}s  the game is not in front, "
+                                + "so nothing can be read from the screen"
+                                + (raises < MaxForegroundAttempts
+                                    ? $" - raising it ({raises} of {MaxForegroundAttempts})"
+                                    : " - stopped trying to raise it; bring it forward yourself"));
+                            reported = state;
                         }
 
                         Thread.Sleep(500);
@@ -539,10 +585,30 @@ Options:
 
                     if (name != reported)
                     {
+                        string detailText;
+                        if (phase != null)
+                        {
+                            detailText = $" ({distance:N4})";
+                        }
+                        else
+                        {
+                            // What "unknown" alone never says: whether a threshold is
+                            // slightly too tight or the screen is something else entirely.
+                            // Those need opposite fixes, so the number goes in the log.
+                            StartupPhase? near = StartupPhases.Nearest(
+                                screen, phases, out double nearDistance);
+                            detailText = near == null
+                                ? string.Empty
+                                : $" (nearest {near.Name} at {nearDistance:N4}, needs "
+                                    + $"{near.Threshold:N4})";
+                        }
+
                         Console.WriteLine(
-                            $"  {clock.Elapsed.TotalSeconds,5:N1}s  {name}"
-                            + (phase == null ? string.Empty : $" ({distance:N4})"));
+                            $"  {clock.Elapsed.TotalSeconds,5:N1}s  {name}{detailText}");
                         reported = name;
+
+                        // A new screen is a fresh chance to raise the window.
+                        raises = 0;
                     }
 
                     // The logo is the one screen worth doing something about: a keypress

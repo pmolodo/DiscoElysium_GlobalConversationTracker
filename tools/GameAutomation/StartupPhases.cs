@@ -210,6 +210,59 @@ namespace GlobalConversationTracker.Automation
             File.WriteAllText(path, text.ToString());
         }
 
+        /// <summary>The closest phase to a screen, whether or not it is close enough.</summary>
+        /// <remarks>
+        /// For saying something useful about a screen that matched nothing. "Unknown" on
+        /// its own cannot be acted on: it does not say whether a threshold is slightly too
+        /// tight or the screen is something else entirely, and those need opposite fixes.
+        /// </remarks>
+        /// <param name="screen">The screen to measure.</param>
+        /// <param name="phases">The phases to measure against.</param>
+        /// <param name="difference">How far the nearest was, or 1 if there are none.</param>
+        public static StartupPhase? Nearest(
+            Bitmap screen, IEnumerable<StartupPhase> phases, out double difference)
+        {
+            if (screen == null)
+            {
+                throw new ArgumentNullException(nameof(screen));
+            }
+
+            if (phases == null)
+            {
+                throw new ArgumentNullException(nameof(phases));
+            }
+
+            var byRegion = new Dictionary<string, double[]>();
+            StartupPhase? best = null;
+            difference = 1.0;
+
+            foreach (StartupPhase phase in phases)
+            {
+                string key = phase.Region == null ? "-" : phase.Region.Value.ToString();
+                if (!byRegion.TryGetValue(key, out double[]? current))
+                {
+                    current = phase.Region == null
+                        ? GameScreen.FingerprintOf(screen)
+                        : GameScreen.FingerprintRegion(screen, phase.Region.Value);
+                    byRegion[key] = current;
+                }
+
+                if (phase.Fingerprint.Length != current.Length)
+                {
+                    continue;
+                }
+
+                double distance = GameScreen.Difference(phase.Fingerprint, current);
+                if (distance < difference)
+                {
+                    best = phase;
+                    difference = distance;
+                }
+            }
+
+            return best;
+        }
+
         /// <summary>Which phase a screen is, if any.</summary>
         /// <remarks>
         /// The closest phase within its own threshold. Nothing close enough is null - an
