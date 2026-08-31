@@ -65,6 +65,27 @@ namespace GlobalConversationTracker.Harness
                         return 0;
                     }
 
+                    case "unlock":
+                    {
+                        string target = options.Artifacts
+                            ?? GlobalConversationTracker.Automation.GameProfile.ProfilePath;
+                        string[] showing = ExplorerWindows.Showing(target);
+                        Console.WriteLine(
+                            showing.Length == 0
+                                ? $"No Explorer window is showing {target}"
+                                : $"{showing.Length} Explorer window(s) showing it:");
+                        foreach (string location in showing)
+                        {
+                            Console.WriteLine($"  {location}");
+                        }
+
+                        int moved = ExplorerWindows.NavigateAwayFrom(
+                            target, message => Console.WriteLine($"  {message}"));
+                        Console.WriteLine();
+                        Console.WriteLine($"moved {moved} window(s) off it");
+                        return 0;
+                    }
+
                     case "windows":
                         return ListWindows(options);
                     case "keys":
