@@ -200,10 +200,12 @@ Options:
                       exists that a direct launch skips, so which settings the
                       game honours may differ between the two.
   --app-id <id>       Steam app id for --via-steam (default: 632470).
-  --close-holders     When the profile cannot be moved, ask editors holding it
-                      to close. Off by default: it can lose unsaved work. An
-                      Explorer window is always moved off the folder regardless,
-                      since that costs nothing and the window survives.
+  --no-close-holders  When the profile cannot be moved, do NOT ask editors
+                      holding it to close. Asking is on by default: it sends the
+                      same request the window's X does, so an editor with unsaved
+                      changes puts up a save prompt and stays open, and nothing
+                      is ever killed. Turn it off for an unattended run, where an
+                      unanswered prompt would be left on screen.
   --askable a,b       Process names unlock may ask to close (default: Code).
                       Explorer is never on this list; its windows are moved off
                       the folder instead, which costs nothing.
@@ -457,8 +459,8 @@ Options:
                     Console.WriteLine(FileLocks.Describe(profile));
                     Console.WriteLine();
                     Console.WriteLine(
-                        "Re-run with --close-holders to have this ask an editor to close, "
-                        + "or close it yourself.");
+                        "Nothing could be moved off it, and --no-close-holders means nothing "
+                        + "was asked to close. Close it yourself, or drop that flag.");
                     throw;
                 }
 
@@ -1089,11 +1091,17 @@ Options:
             /// Ask editors holding the profile to close, when a move fails.
             /// </summary>
             /// <remarks>
-            /// Off by default because it can lose unsaved work. Moving an Explorer window
-            /// off the folder is free and always happens; closing somebody's editor is
-            /// not, and has to be asked for.
+            /// On, because the ask is genuinely polite and the failure mode is mild: only
+            /// names on the askable list are asked, the request is the one the window's X
+            /// sends, an editor with unsaved changes answers with a save prompt and stays
+            /// open, and after the deadline it is left running. Nothing is ever killed, so
+            /// the worst outcome is a prompt appearing and a test run stopping - which is
+            /// what would have happened anyway.
+            ///
+            /// --no-close-holders turns it off, for an unattended run where an unanswered
+            /// save prompt would rather not be left on screen.
             /// </remarks>
-            public bool CloseHolders { get; private set; }
+            public bool CloseHolders { get; private set; } = true;
 
             /// <summary>Write the chosen frame out as the main-menu reference.</summary>
             public bool SaveReference { get; private set; }
@@ -1181,6 +1189,7 @@ Options:
                         case "--via-steam": options.ViaSteam = true; break;
                         case "--no-screen-prefs": options.SkipScreenPrefs = true; break;
                         case "--close-holders": options.CloseHolders = true; break;
+                        case "--no-close-holders": options.CloseHolders = false; break;
                         case "--askable":
                             options.Askable = (Next() ?? "Code").Split(',');
                             break;
