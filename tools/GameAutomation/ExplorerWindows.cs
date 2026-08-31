@@ -8,20 +8,18 @@ using System.Threading;
 namespace GlobalConversationTracker.Automation
 {
     /// <summary>
-    /// Moving Explorer windows off a folder so it can be renamed.
+    /// Closing Explorer windows that are holding a folder open.
     /// </summary>
     /// <remarks>
-    /// <para>An Explorer window showing a folder holds a handle on it, for change
-    /// notifications, and that is enough to stop the folder being moved. Killing
-    /// explorer.exe would release it and take the taskbar and desktop with it, which is
-    /// not a trade worth making to run a test.</para>
+    /// <para>An Explorer window showing a folder holds handles on it - and on its parent
+    /// and siblings, from the navigation pane - which is enough to stop the folder being
+    /// renamed. Killing explorer.exe would release them and take the taskbar and desktop
+    /// with it, which is not a trade worth making to run a test.</para>
     ///
-    /// <para>The shell exposes its open windows through IShellWindows, each one an
-    /// IWebBrowser2 with a location and the ability to go somewhere else. So the window is
-    /// NAVIGATED to the parent folder rather than closed: the handle is released, the
-    /// window stays open where the person left it, and Back undoes it. Quit is available
-    /// on the same interface and is deliberately not used - closing somebody's window is a
-    /// bigger liberty than moving it up one level.</para>
+    /// <para>The shell exposes its open windows through IShellWindows, so the windows on
+    /// one folder can be closed without touching anything else. Only closing releases the
+    /// handles; pointing a window somewhere else leaves them held. Closing loses the
+    /// window, which is why the caller keeps this behind an explicit opt-in.</para>
     ///
     /// <para>Through reflection rather than an interop assembly, to avoid taking a
     /// dependency on SHDocVw for three calls, and on a dedicated STA thread because the
@@ -38,61 +36,47 @@ namespace GlobalConversationTracker.Automation
         public static string[] Showing(string folder)
         {
             var found = new List<string>();
-            OnShellWindows(folder, (_, location) => found.Add(location), navigate: false);
+            OnShellWindows(folder, (_, location) => found.Add(location));
             return found.ToArray();
         }
 
         /// <summary>
-        /// Points any Explorer window showing a folder at that folder's parent.
+        /// Closes any Explorer window showing a folder, or anything inside it.
         /// </summary>
         /// <param name="folder">The folder to clear.</param>
-        /// <param name="announce">Called for each window moved.</param>
-        /// <returns>How many windows were moved.</returns>
-        public static int NavigateAwayFrom(string folder, Action<string>? announce = null)
+        /// <param name="announce">Called for each window closed.</param>
+        /// <returns>How many windows were closed.</returns>
+        public static int CloseShowing(string folder, Action<string>? announce = null)
         {
-            int moved = 0;
+            int closed = 0;
             OnShellWindows(
                 folder,
                 (window, location) =>
                 {
-                    string? parent = Path.GetDirectoryName(
-                        folder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                    if (string.IsNullOrEmpty(parent))
-                    {
-                        return;
-                    }
-
                     try
                     {
                         window.GetType().InvokeMember(
-                            "Navigate",
-                            BindingFlags.InvokeMethod,
-                            null,
-                            window,
-                            new object[] { parent! });
-                        moved++;
-                        announce?.Invoke(
-                            $"moved an Explorer window from {location} up to {parent}");
+                            "Quit", BindingFlags.InvokeMethod, null, window, null);
+                        closed++;
+                        announce?.Invoke($"closed an Explorer window showing {location}");
                     }
                     catch (Exception)
                     {
                         // The window went away, or refused. Nothing to do about it.
                     }
-                },
-                navigate: true);
+                });
 
-            if (moved > 0)
+            if (closed > 0)
             {
-                // Navigation is asynchronous; the handle is not released the instant the
-                // call returns.
+                // Closing is asynchronous; the handles are not gone the instant Quit
+                // returns.
                 Thread.Sleep(500);
             }
 
-            return moved;
+            return closed;
         }
 
-        private static void OnShellWindows(
-            string folder, Action<object, string> visit, bool navigate)
+        private static void OnShellWindows(string folder, Action<object, string> visit)
         {
             string target = Path.GetFullPath(folder).TrimEnd(
                 Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);

@@ -79,9 +79,9 @@ namespace GlobalConversationTracker.Harness
                             Console.WriteLine($"  {location}");
                         }
 
-                        int moved = ExplorerWindows.NavigateAwayFrom(
+                        int moved = ExplorerWindows.CloseShowing(
                             target, message => Console.WriteLine($"  {message}"));
-                        Console.WriteLine($"moved {moved} Explorer window(s) off it");
+                        Console.WriteLine($"closed {moved} Explorer window(s)");
 
                         // Explorer first because it is free: the window survives, only
                         // pointed elsewhere. Only what is still holding the folder after
@@ -167,9 +167,8 @@ Verbs:
   locks               Report what is holding the game's profile folder open,
                       which is what blocks staging. --artifacts asks about
                       another path instead.
-  unlock              Move any Explorer window off the profile folder, then ask
-                      whatever still holds it to close. Explorer windows are
-                      navigated to the parent, not closed. Nothing is ever
+  unlock              Close any Explorer window showing the profile folder, then
+                      ask whatever still holds it to close. Nothing is ever
                       killed: a process that answers with a save prompt is left
                       running and reported.
   windows             List every window the game's process owns, with its class.
@@ -201,13 +200,13 @@ Options:
                       game honours may differ between the two.
   --app-id <id>       Steam app id for --via-steam (default: 632470).
   --close-holders     When the profile cannot be moved, clear what is holding
-                      it: Explorer windows are navigated to the parent folder,
-                      and editors are asked to close. Off by default - a test run
-                      is no reason to move somebody's windows around. Without it
-                      a blocked move just reports what is holding the folder.
+                      it: Explorer windows showing it are closed, and editors are
+                      asked to close. Off by default - a test run is no reason to
+                      close somebody's windows. Without it a blocked move just
+                      reports what is holding the folder.
   --askable a,b       Process names unlock may ask to close (default: Code).
-                      Explorer is never on this list; its windows are moved off
-                      the folder instead, which costs nothing.
+                      Explorer is not on this list; its windows are closed
+                      directly rather than the process being asked anything.
   --close-deadline    Seconds to wait for an asked process before leaving it
                       running (default: 30, long enough to answer a save
                       prompt). It is never killed.
@@ -414,9 +413,8 @@ Options:
         /// move reports what is holding the folder and stops.
         ///
         /// With it, and only after a move has ALREADY failed: Explorer windows showing the
-        /// folder are navigated to the parent, which releases the handle and leaves the
-        /// window open, and anything still holding it whose name is on the askable list is
-        /// asked to close.
+        /// folder are closed, and anything still holding it whose name is on the askable
+        /// list is asked to close.
         /// </remarks>
         /// <summary>
         /// How long to keep retrying the move after clearing what was holding it.
@@ -452,7 +450,7 @@ Options:
                     throw;
                 }
 
-                int moved = ExplorerWindows.NavigateAwayFrom(
+                int moved = ExplorerWindows.CloseShowing(
                     profile, message => Console.WriteLine($"  {message}"));
 
                 int closed = 0;
