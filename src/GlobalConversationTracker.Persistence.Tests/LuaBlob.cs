@@ -82,9 +82,9 @@ internal static class LuaBlob
                             (
                                 "Dialog",
                                 Table(
-                                    ("10", Table(("SimStatus", "WasDisplayed"))),
-                                    ("11", Table(("SimStatus", "WasOffered"))),
-                                    ("12", Table(("SimStatus", "Untouched")))
+                                    (10, Table(("SimStatus", "WasDisplayed"))),
+                                    (11, Table(("SimStatus", "WasOffered"))),
+                                    (12, Table(("SimStatus", "Untouched")))
                                 )
                             )
                         )

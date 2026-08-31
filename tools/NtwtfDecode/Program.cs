@@ -161,7 +161,7 @@ int Run(string[] argv)
     }
 
     using Stream stream = output is null ? Console.OpenStandardOutput() : File.Create(output);
-    LuaJson.Write(stream, selected, indent);
+    LuaJson.Write(stream, selected, indent, table);
     stream.WriteByte((byte)'\n');
     stream.Flush();
     return 0;

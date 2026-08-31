@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
+using GlobalConversationTracker.Persistence;
 
 namespace NtwtfDecode;
 
@@ -29,7 +31,7 @@ public sealed class LuaTable
     private readonly Dictionary<object, int> _indexByKey = new();
 
     /// <summary>Entries in insertion order. Values are one of: null (nil),
-    /// string, long, BigInteger, double, bool, or LuaTable.</summary>
+    /// string, int, long, BigInteger, double, bool, or LuaTable.</summary>
     public IReadOnlyList<KeyValuePair<object, object?>> Entries => _entries;
 
     /// <summary>Number of combined entries in the list and dict parts</summary>
@@ -70,6 +72,28 @@ public sealed class LuaTable
         value = null;
         return false;
     }
+}
+
+/// <summary>How a decoded Lua number is stored in a table.</summary>
+public static class LuaNumber
+{
+    /// <summary>
+    /// An Int32-sized whole number as an int, so an id reads as 1 rather than 1.0
+    /// and the JSON stays compact; anything else stays the double it already is.
+    /// </summary>
+    public static object Normalize(double value)
+    {
+        // Negative zero is integral and it fits, but int 0 would be written back
+        // out as +0.0, so it is the one value that has to stay a double.
+        if (RawDataParser.TryNumberToInt32(value, out int whole) && !IsNegativeZero(value))
+        {
+            return whole;
+        }
+        return value;
+    }
+
+    /// <summary>True for -0.0, which ordinary comparison cannot tell from 0.0.</summary>
+    private static bool IsNegativeZero(double value) => value == 0 && double.IsNegative(value);
 }
 
 /// <summary>Rendering of Lua table keys as JSON object names.</summary>

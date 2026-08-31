@@ -21,7 +21,7 @@ public static class LuaSplitFiles
             }
 
             using FileStream stream = File.Create(TablePath(directory, name));
-            LuaJson.Write(stream, table, indent);
+            LuaJson.Write(stream, table, indent, name);
             stream.WriteByte((byte)'\n');
         }
         File.WriteAllBytes(Path.Combine(directory, TrailingFileName), root.TrailingBytes);
@@ -40,7 +40,7 @@ public static class LuaSplitFiles
         {
             string path = TablePath(directory, name);
             using FileStream stream = File.OpenRead(path);
-            root.Add(name, LuaJson.ReadTable(stream));
+            root.Add(name, LuaJson.ReadTable(stream, name));
         }
         root.TrailingBytes = File.ReadAllBytes(Path.Combine(directory, TrailingFileName));
         return root;

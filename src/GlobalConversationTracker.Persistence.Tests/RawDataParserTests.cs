@@ -106,9 +106,11 @@ public class RawDataParserTests
     {
         LuaTable tables = ReadSample(out _);
 
+        // A conversation is keyed by its id as a string, but a dialogue entry inside
+        // it is keyed by its id as a number.
         Assert.Equal(
             "WasDisplayed",
-            Lookup(tables, "Conversation", "7", "Dialog", "10", "SimStatus")
+            Lookup(tables, "Conversation", "7", "Dialog", 10, "SimStatus")
         );
         Assert.Equal("Kim Kitsuragi", Lookup(tables, "Conversation", "7", "Title"));
     }
@@ -135,6 +137,24 @@ public class RawDataParserTests
         Assert.Equal(0.5, Lookup(tables, "Variable", "Health"));
         Assert.Equal(false, Lookup(tables, "Actor", "Kim", "IsPlayer"));
         Assert.Null(Lookup(tables, "Variable", "Unset"));
+    }
+
+    [Fact]
+    public void ReadAllTables_KeepsNegativeZeroAsADouble()
+    {
+        // Negative zero is integral, so the usual narrowing would make it int 0 -
+        // which writes back out as +0.0. It has to stay a double to round trip.
+        LuaTable tables = LuaTableVisitor.ReadAllTables(
+            LuaBlob.SerializeConversations(LuaBlob.Table(("negative zero", -0.0))),
+            out _
+        );
+
+        Assert.Equal(
+            unchecked((long)0x8000000000000000),
+            BitConverter.DoubleToInt64Bits(
+                Assert.IsType<double>(Lookup(tables, "Conversation", "negative zero"))
+            )
+        );
     }
 
     [Fact]

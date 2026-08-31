@@ -70,10 +70,8 @@ public sealed class LuaTableVisitor : IRawDataVisitor
         Take(parser.PeekString(length));
 
     /// <inheritdoc />
-    // Keep the original double rather than normalising integral values to int.
-    // JSON's round-tripping numeric format can then preserve every finite bit
-    // pattern, including negative zero.
-    public void VisitNumber(ref RawDataParser parser) => Take(parser.PeekDouble());
+    public void VisitNumber(ref RawDataParser parser) =>
+        Take(LuaNumber.Normalize(parser.PeekDouble()));
 
     /// <inheritdoc />
     public void VisitBoolean(ref RawDataParser parser) => Take(parser.PeekBoolean());
