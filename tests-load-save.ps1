@@ -1,3 +1,4 @@
+#!/usr/bin/env -S powershell -NoProfile -ExecutionPolicy Bypass -File
 # SPDX-License-Identifier: MIT
 <#
 .SYNOPSIS
@@ -29,8 +30,10 @@ param(
     [string] $GamePath,
     [string] $ProcessName = 'disco',
 
-    # Where the reference image and this run's screenshots go.
-    [string] $ArtifactDirectory = (Join-Path $PSScriptRoot '.build\automation'),
+    # Where the reference image and this run's screenshots go. Defaulted in the
+    # body, not here: $PSScriptRoot is not populated while param() defaults are
+    # evaluated, so a default built from it silently comes out empty.
+    [string] $ArtifactDirectory,
 
     # Captures the main-menu reference instead of asserting against it.
     [switch] $CaptureReference,
@@ -54,6 +57,10 @@ $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path $PSScriptRoot 'game-automation.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'game-settings.psm1') -Force
+
+if (-not $ArtifactDirectory) {
+    $ArtifactDirectory = Join-Path $PSScriptRoot '.build\automation'
+}
 
 $referencePath = Join-Path $ArtifactDirectory 'main-menu.png'
 if (-not (Test-Path -LiteralPath $ArtifactDirectory)) {

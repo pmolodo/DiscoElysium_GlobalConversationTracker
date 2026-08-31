@@ -1,3 +1,4 @@
+#!/usr/bin/env -S powershell -NoProfile -ExecutionPolicy Bypass -File
 # SPDX-License-Identifier: MIT
 <#
     Exercises game-settings.psm1 against a scratch copy of a settings file, never

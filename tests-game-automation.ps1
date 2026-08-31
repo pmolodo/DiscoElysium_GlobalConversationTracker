@@ -1,3 +1,4 @@
+#!/usr/bin/env -S powershell -NoProfile -ExecutionPolicy Bypass -File
 # SPDX-License-Identifier: MIT
 <#
     Checks the parts of game-automation.psm1 that can be checked without the game
