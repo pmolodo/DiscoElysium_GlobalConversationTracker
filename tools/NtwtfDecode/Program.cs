@@ -31,6 +31,12 @@ const string Usage = """
           --to-lua        Convert reversible JSON back to a .ntwtf.lua blob.
           --split         Use five table JSON files (Actor.json through
                           Conversation.json) plus trailing.bin in one directory.
+          --sparse        With --split, restructure the tables whose shape is
+                          known - dialogue statuses become one key list per
+                          status - and leave out what can be derived. Still
+                          converts back byte for byte, but no longer mirrors
+                          the blob entry for entry. Reading detects the form,
+                          so --to-lua needs no flag.
       -h, --help          Show this message.
     """;
 
@@ -59,6 +65,7 @@ int Run(string[] argv)
     int? indent = DefaultIndent;
     bool toLua = false;
     bool split = false;
+    bool sparse = false;
 
     for (int i = 0; i < argv.Length; i++)
     {
@@ -86,6 +93,9 @@ int Run(string[] argv)
             case "--split":
                 split = true;
                 break;
+            case "--sparse":
+                sparse = true;
+                break;
             default:
                 if (arg.StartsWith('-'))
                 {
@@ -103,6 +113,11 @@ int Run(string[] argv)
     if (input is null)
     {
         throw new ArgumentException($"No input file given\n\n{Usage}");
+    }
+
+    if (sparse && !split)
+    {
+        throw new ArgumentException($"--sparse only applies to --split output\n\n{Usage}");
     }
 
     if (toLua)
@@ -139,7 +154,7 @@ int Run(string[] argv)
         {
             throw new ArgumentException("--split conversion to JSON requires --output <directory>");
         }
-        LuaSplitFiles.Write(output, allTables, indent);
+        LuaSplitFiles.Write(output, allTables, indent, sparse);
         return 0;
     }
 

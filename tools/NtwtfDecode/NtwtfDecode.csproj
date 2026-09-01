@@ -14,6 +14,16 @@
 
   <ItemGroup>
     <!--
+      The dialogue order the sparse form needs to rebuild Conversation_SimX_*
+      variables. Embedded so a conversion cannot half-work: without it the sparse
+      reader could not put those variables back. Regenerate with
+      generate_simx_order.py when articy_ids_final_cut.json changes.
+    -->
+    <EmbeddedResource Include="SimXOrder.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
       Persistence owns the save-blob format reader: RawDataParser and the
       IRawDataVisitor it drives. The LuaTable / LuaTableVisitor pair that turns
       a parse into nested tables lives HERE instead, because building a whole

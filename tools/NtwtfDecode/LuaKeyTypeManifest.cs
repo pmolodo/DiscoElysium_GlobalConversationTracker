@@ -44,7 +44,12 @@ public static class LuaKeyTypeManifest
         return LuaDictionaryKeyType.String;
     }
 
-    private static bool Matches(string pattern, string path)
+    /// <summary>
+    /// Whether a table path matches a path pattern, where an asterisk stands for
+    /// one segment. Shared with <see cref="LuaSparseManifest"/>, so both manifests
+    /// name the same tables the same way.
+    /// </summary>
+    public static bool Matches(string pattern, string path)
     {
         string[] expected = pattern.Split('/');
         string[] actual = path.Split('/');

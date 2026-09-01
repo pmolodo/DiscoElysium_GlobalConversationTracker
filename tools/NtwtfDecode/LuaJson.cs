@@ -275,7 +275,7 @@ public static class LuaJson
             }
             else
             {
-                key = ReadDictionaryKey(property.Name, keyType, context);
+                key = ParseDictionaryKey(property.Name, keyType, context);
             }
             ClaimName(used, property.Name, context);
             string childPath = AppendPath(context, property.Name);
@@ -306,7 +306,12 @@ public static class LuaJson
         return count;
     }
 
-    private static object ReadDictionaryKey(
+    /// <summary>
+    /// The Lua key a JSON property name stands for, given the type
+    /// <see cref="LuaKeyTypeManifest"/> expects there. Shared with
+    /// <see cref="LuaSparse"/> so both forms read a key the same way.
+    /// </summary>
+    public static object ParseDictionaryKey(
         string text,
         LuaDictionaryKeyType keyType,
         string context

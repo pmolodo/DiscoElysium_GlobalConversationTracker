@@ -61,6 +61,34 @@ public sealed class LuaTable
         _entries.Add(new KeyValuePair<object, object?>(key, value));
     }
 
+    /// <summary>Insert a new key/value pair at a position rather than at the end.</summary>
+    /// <remarks>
+    /// Only the sparse form needs this, to put back an entry it left out; the
+    /// decoders otherwise build a table in file order and only ever append.
+    /// </remarks>
+    public void Insert(int index, object key, object? value)
+    {
+        if (index < 0 || index > _entries.Count)
+        {
+            throw new InvalidDataException(
+                $"Cannot insert at {index} in a table of {_entries.Count}"
+            );
+        }
+        if (_indexByKey.ContainsKey(key))
+        {
+            throw new InvalidDataException(
+                $"Duplicate key {LuaKey.ToKeyString(key)} found in Lua table"
+            );
+        }
+        _entries.Insert(index, new KeyValuePair<object, object?>(key, value));
+        // Everything at or after the insertion point has shifted along.
+        _indexByKey.Clear();
+        for (int i = 0; i < _entries.Count; i++)
+        {
+            _indexByKey[_entries[i].Key] = i;
+        }
+    }
+
     /// <summary>Analogue of Dictionary.TryGetValue</summary>
     public bool TryGetValue(object key, out object? value)
     {
