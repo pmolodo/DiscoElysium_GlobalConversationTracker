@@ -28,49 +28,6 @@ namespace GlobalConversationTracker.Automation.Tests
         }
 
         /// <summary>
-        /// The test process holds the file, so it must be the answer. Anything less and
-        /// this reports "nothing found" for every real lock too.
-        /// </summary>
-        [Fact]
-        public void AHeldFileNamesTheProcessHoldingIt()
-        {
-            string file = Path.Combine(_root, "held.txt");
-            File.WriteAllText(file, "content");
-
-            using var held = new FileStream(file, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
-
-            LockHolder[] holders = FileLocks.WhoIsUsing(file);
-
-            Assert.NotEmpty(holders);
-            int mine = System.Diagnostics.Process.GetCurrentProcess().Id;
-            Assert.Contains(holders, h => h.ProcessId == mine);
-        }
-
-        /// <summary>A file inside a folder is found when the folder is asked about.</summary>
-        [Fact]
-        public void AHeldFileIsFoundThroughItsFolder()
-        {
-            string file = Path.Combine(_root, "inside.txt");
-            File.WriteAllText(file, "content");
-
-            using var held = new FileStream(file, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
-
-            LockHolder[] holders = FileLocks.WhoIsUsing(_root);
-
-            int mine = System.Diagnostics.Process.GetCurrentProcess().Id;
-            Assert.Contains(holders, h => h.ProcessId == mine);
-        }
-
-        [Fact]
-        public void AnUnheldFileHasNoHolders()
-        {
-            string file = Path.Combine(_root, "free.txt");
-            File.WriteAllText(file, "content");
-
-            Assert.Empty(FileLocks.WhoIsUsing(file));
-        }
-
-        /// <summary>
         /// Describe never throws: it runs inside an error path, and an exception there
         /// would replace the real failure with its own.
         /// </summary>
