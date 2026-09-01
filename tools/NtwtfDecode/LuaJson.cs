@@ -14,17 +14,28 @@ public static class LuaJson
     private const string TrailingBytesName = "_trailing_bytes_base64";
 
     /// <summary>
+    /// Names which representation a file is written in. A split file carries it so
+    /// that neither a reader nor a person has to infer the form from its contents.
+    /// </summary>
+    public const string FormatName = "_format";
+
+    /// <summary>
     /// The table path assumed when a caller does not name one: a lone table dumped
     /// for inspection is not at any known path, so it gets the manifest's default.
     /// </summary>
     private const string DefaultTablePath = "table";
 
     /// <summary>Writes a Lua value as UTF-8 JSON.</summary>
+    /// <param name="format">
+    /// When given, the representation to record as a leading <see cref="FormatName"/>
+    /// property. Only a whole table can carry one.
+    /// </param>
     public static void Write(
         Stream stream,
         object? value,
         int? indent,
-        string tablePath = DefaultTablePath
+        string tablePath = DefaultTablePath,
+        string? format = null
     )
     {
         var options = new JsonWriterOptions
@@ -43,9 +54,17 @@ public static class LuaJson
         {
             WriteDocument(writer, root);
         }
-        else
+        else if (format is null)
         {
             WriteValue(writer, value, tablePath);
+        }
+        else if (value is LuaTable table)
+        {
+            WriteTable(writer, table, tablePath, format);
+        }
+        else
+        {
+            throw new InvalidDataException($"Only a table can record a '{FormatName}'");
         }
         writer.Flush();
     }
@@ -86,6 +105,37 @@ public static class LuaJson
     {
         using JsonDocument json = JsonDocument.Parse(stream);
         return ReadTable(json.RootElement, tablePath);
+    }
+
+    /// <summary>
+    /// The representation a JSON object records for itself, or null when it records
+    /// none. Reads only the leading property, so it costs nothing on a large file.
+    /// </summary>
+    public static string? FormatOf(Stream stream)
+    {
+        var reader = new Utf8JsonReader(ReadLeadingBytes(stream));
+        if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
+        {
+            return null;
+        }
+        if (!reader.Read() || reader.TokenType != JsonTokenType.PropertyName)
+        {
+            return null;
+        }
+        if (reader.GetString() != FormatName || !reader.Read())
+        {
+            return null;
+        }
+        return reader.TokenType == JsonTokenType.String ? reader.GetString() : null;
+    }
+
+    private static byte[] ReadLeadingBytes(Stream stream)
+    {
+        // Enough for the opening brace, the property name and a short value.
+        var buffer = new byte[128];
+        int read = stream.Read(buffer, 0, buffer.Length);
+        stream.Position = 0;
+        return buffer[..read];
     }
 
     private static void WriteDocument(Utf8JsonWriter writer, LuaTable root)
@@ -139,7 +189,12 @@ public static class LuaJson
         }
     }
 
-    private static void WriteTable(Utf8JsonWriter writer, LuaTable table, string path)
+    private static void WriteTable(
+        Utf8JsonWriter writer,
+        LuaTable table,
+        string path,
+        string? format = null
+    )
     {
         if (table.NumListEntries < 0 || table.NumListEntries > table.Count)
         {
@@ -150,6 +205,10 @@ public static class LuaJson
 
         string[] names = PropertyNames(table, path);
         writer.WriteStartObject();
+        if (format is not null)
+        {
+            writer.WriteString(FormatName, format);
+        }
         if (table.NumListEntries > 0)
         {
             // Most tables are pure dictionaries; saying so on every one of them is
@@ -210,9 +269,9 @@ public static class LuaJson
     /// </summary>
     private static void ClaimName(HashSet<string> used, string name, string path)
     {
-        if (name == ListCountName)
+        if (name == ListCountName || name == FormatName)
         {
-            // It would be read back as the list boundary rather than as an entry.
+            // Either would be read back as this object's own bookkeeping.
             throw new InvalidDataException(
                 $"Table '{path}' cannot name an entry '{name}'; that name is reserved"
             );
@@ -242,9 +301,14 @@ public static class LuaJson
         RequireKind(element, JsonValueKind.Object, context);
         JsonElement.ObjectEnumerator properties = element.EnumerateObject();
 
+        bool more = properties.MoveNext();
+        if (more && properties.Current.Name == FormatName)
+        {
+            more = properties.MoveNext();
+        }
+
         // The list boundary leads the object when there is one; without it the
         // table is all dictionary, which most of them are.
-        bool more = properties.MoveNext();
         int listCount = 0;
         if (more && properties.Current.Name == ListCountName)
         {

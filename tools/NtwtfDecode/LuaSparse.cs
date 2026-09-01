@@ -9,16 +9,23 @@ namespace NtwtfDecode;
 /// <remarks>
 /// <para>
 /// The dense form in <see cref="LuaJson"/> mirrors the blob's layout entry for
-/// entry. The sparse form gives that up: it restructures whole tables where the
-/// data has a shape worth exploiting, and keeps only enough bookkeeping to put
-/// the original layout back. What it does not give up is exactness - every save
-/// still converts back byte for byte.
+/// entry, so a save converts back byte for byte. The sparse form keeps the data
+/// and drops the layout. It restructures whole tables where the shape is worth
+/// exploiting, and it does not record two things the dense form does: how a table
+/// was split between its Lua list and dictionary parts, and what order its entries
+/// came in. Reading back picks one canonical answer to both.
 /// </para>
 /// <para>
-/// Only tables named by <see cref="LuaSparseManifest"/> are restructured, and
-/// only when they really have the shape the manifest claims. Everything else is
-/// written exactly as the dense form writes it, so the two are the same format
-/// wherever no rule applies.
+/// So a sparse round trip is not byte for byte, and the blob it produces is not the
+/// blob it read. What it does preserve is every key and every value. The bet is that
+/// the game does not care where the boundary fell or what order a table's entries
+/// were stored in, which is what Lua semantics say and what an actual load has to
+/// confirm.
+/// </para>
+/// <para>
+/// Only tables named by <see cref="LuaSparseManifest"/> are restructured, and only
+/// when they really have the shape the manifest claims; everything else is written
+/// out entry by entry.
 /// </para>
 /// </remarks>
 public static class LuaSparse
@@ -26,14 +33,28 @@ public static class LuaSparse
     /// <summary>Marks a grouped table and lists the keys it stands for.</summary>
     public const string KeysName = "_keys";
 
-    /// <summary>Moves that restore a grouped table's original entry order.</summary>
-    public const string ReorderName = "_reorder";
-
-    /// <summary>The list boundary, spelled as the dense form spells it.</summary>
+    /// <summary>
+    /// The dense form's list boundary. The sparse writer never emits it - the
+    /// reader works the boundary out - but the reader still honours it, so that one
+    /// reader handles both forms and a hand-written file can pin the split if it
+    /// has a reason to.
+    /// </summary>
     public const string ListCountName = "_num_list_entries";
 
+    /// <summary>
+    /// A name an earlier version of this format wrote to pin a table's entry order.
+    /// Nothing writes it now, and it is refused rather than ignored so that a file
+    /// from then fails loudly instead of quietly losing the order it recorded.
+    /// </summary>
+    private const string RetiredReorderName = "_reorder";
+
     /// <summary>Property names that are bookkeeping rather than a table's own entry.</summary>
-    private static readonly string[] ReservedNames = { ListCountName, KeysName, ReorderName };
+    private static readonly string[] ReservedNames =
+    {
+        KeysName,
+        RetiredReorderName,
+        LuaJson.FormatName,
+    };
 
     /// <summary>The table whose variables mirror another table's data.</summary>
     public const string VariableTableName = "Variable";
@@ -113,10 +134,6 @@ public static class LuaSparse
         }
 
         var map = new SparseMap();
-        if (table.NumListEntries > 0)
-        {
-            map.Add(ListCountName, table.NumListEntries);
-        }
         map.Add(LuaSimX.HeaderName, LuaSimX.Header(derived, orders!));
         for (int i = 0; i < table.Count; i++)
         {
@@ -134,10 +151,6 @@ public static class LuaSparse
     private static SparseMap EncodeDense(LuaTable table, string path)
     {
         var map = new SparseMap();
-        if (table.NumListEntries > 0)
-        {
-            map.Add(ListCountName, table.NumListEntries);
-        }
         for (int i = 0; i < table.Count; i++)
         {
             string name = LuaKey.ToKeyString(table.Entries[i].Key);
@@ -152,19 +165,27 @@ public static class LuaSparse
 
     private static LuaTable DecodeDense(SparseMap map, string path)
     {
-        int listCount = 0;
         var table = new LuaTable();
         var used = new HashSet<string>(StringComparer.Ordinal);
+        int listCount = 0;
+        bool stillList = true;
+        bool boundaryGiven = false;
         foreach (KeyValuePair<string, object?> entry in map.Entries)
         {
-            if (entry.Key == ListCountName && table.Count == 0)
+            if (entry.Key == LuaJson.FormatName && table.Count == 0)
             {
-                listCount = AsCount(entry.Value, path);
+                // Which representation this is; the caller has already acted on it.
                 continue;
             }
             if (entry.Key == LuaSimX.HeaderName)
             {
                 // Put back by the caller, once the whole table has been read.
+                continue;
+            }
+            if (entry.Key == ListCountName && table.Count == 0)
+            {
+                listCount = AsCount(entry.Value, path);
+                boundaryGiven = true;
                 continue;
             }
             if (Array.IndexOf(ReservedNames, entry.Key) >= 0)
@@ -177,7 +198,23 @@ public static class LuaSparse
             {
                 throw new InvalidDataException($"Table '{path}' has two '{entry.Key}' properties");
             }
-            object key = LuaKeys.Parse(entry.Key, path, table.Count < listCount, table.Count + 1);
+
+            int index = table.Count + 1;
+            bool isListEntry = boundaryGiven
+                ? table.Count < listCount
+                : stillList && entry.Key == index.ToString(CultureInfo.InvariantCulture);
+            stillList = isListEntry;
+            object key = isListEntry
+                ? LuaKeys.ListIndex(entry.Key, path, index)
+                : LuaJson.ParseDictionaryKey(
+                    entry.Key,
+                    LuaKeyTypeManifest.ExpectedType(path),
+                    path
+                );
+            if (isListEntry && !boundaryGiven)
+            {
+                listCount = index;
+            }
             table.Add(
                 key,
                 entry.Value is SparseMap child ? Decode(child, path + "/" + entry.Key) : entry.Value
@@ -244,26 +281,10 @@ public static class LuaSparse
             bucket.Add(key);
         }
 
-        List<long> canonical = CanonicalOrder(keys, table.NumListEntries);
-        if (canonical.Count != keys.Count)
-        {
-            // Duplicate keys cannot happen in a LuaTable, so this would be a bug.
-            throw new InvalidDataException($"Table '{path}' has a key more than once");
-        }
-
         grouped = new SparseMap();
-        if (table.NumListEntries > 0)
-        {
-            grouped.Add(ListCountName, table.NumListEntries);
-        }
         var sorted = new List<long>(keys);
         sorted.Sort();
         grouped.Add(KeysName, SparseOrder.PackRange(sorted));
-        List<(int From, int To)> moves = SparseOrder.Moves(canonical, keys);
-        if (moves.Count > 0)
-        {
-            grouped.Add(ReorderName, SparseOrder.PackMoves(moves));
-        }
         foreach (KeyValuePair<string, List<long>> bucket in byValue)
         {
             bucket.Value.Sort();
@@ -274,23 +295,15 @@ public static class LuaSparse
 
     private static LuaTable DecodeGrouped(SparseMap map, string path, LuaValueGrouping grouping)
     {
-        int listCount = 0;
         string? range = null;
-        object? reorder = null;
         var byKey = new Dictionary<long, string>();
         foreach (KeyValuePair<string, object?> entry in map.Entries)
         {
             switch (entry.Key)
             {
-                case ListCountName:
-                    listCount = AsCount(entry.Value, path);
-                    break;
                 case KeysName:
                     range = entry.Value as string
                         ?? throw new InvalidDataException($"{path}.{KeysName} must be a string");
-                    break;
-                case ReorderName:
-                    reorder = entry.Value;
                     break;
                 default:
                     if (entry.Value is not string keyRange)
@@ -314,10 +327,7 @@ public static class LuaSparse
         }
 
         List<long> sorted = SparseOrder.UnpackRange(range!, path);
-        List<long> order = SparseOrder.ApplyMoves(
-            CanonicalOrder(sorted, listCount),
-            SparseOrder.UnpackMoves(reorder, path)
-        );
+        List<long> order = CanonicalOrder(sorted, out int listCount);
         foreach (long key in byKey.Keys)
         {
             if (!sorted.Contains(key))
@@ -339,31 +349,43 @@ public static class LuaSparse
         return table;
     }
 
+    private static int AsCount(object? value, string path) =>
+        value switch
+        {
+            int i when i >= 0 => i,
+            _ => throw new InvalidDataException(
+                $"{path}.{ListCountName} must be a non-negative whole number"
+            ),
+        };
+
     /// <summary>
-    /// The order a grouped table's keys are assumed to be in: the list part, which
-    /// is always 1..n, and then the rest ascending. Where the real order differs -
-    /// about a third of the template's dialogue maps - the difference is a move or
-    /// two, which is what makes recording it cheap.
+    /// The order a grouped table's keys are written back in: the run 1, 2, 3, ...
+    /// as the list part, then whatever is left, ascending.
     /// </summary>
-    private static List<long> CanonicalOrder(IReadOnlyList<long> keys, int listCount)
+    /// <remarks>
+    /// The save this came from may well have had them in some other order, and its
+    /// own split between the list and dictionary parts. Neither is recorded, and
+    /// neither is reproduced - see the note on the class.
+    /// </remarks>
+    private static List<long> CanonicalOrder(IReadOnlyList<long> ascending, out int listCount)
     {
-        var rest = new List<long>();
-        var order = new List<long>(keys.Count);
-        var inList = new HashSet<long>();
-        for (int i = 1; i <= listCount; i++)
+        listCount = 0;
+        while (listCount < ascending.Count && ascending[listCount] == listCount + 1)
         {
-            inList.Add(i);
-            order.Add(i);
+            listCount++;
         }
-        foreach (long key in keys)
+        var order = new List<long>(ascending.Count);
+        for (int i = 0; i < listCount; i++)
         {
-            if (!inList.Contains(key))
+            order.Add(ascending[i]);
+        }
+        foreach (long key in ascending)
+        {
+            if (key < 1 || key > listCount)
             {
-                rest.Add(key);
+                order.Add(key);
             }
         }
-        rest.Sort();
-        order.AddRange(rest);
         return order;
     }
 
@@ -382,38 +404,25 @@ public static class LuaSparse
         return key;
     }
 
-    private static int AsCount(object? value, string path) =>
-        value switch
-        {
-            int i when i >= 0 => i,
-            _ => throw new InvalidDataException(
-                $"{path}.{ListCountName} must be a non-negative whole number"
-            ),
-        };
-
 }
 
-/// <summary>Turning a sparse property name back into the Lua key it stands for.</summary>
+/// <summary>Reading a list entry's property name.</summary>
 internal static class LuaKeys
 {
     /// <summary>
-    /// The key a property name stands for. A list entry is its own 1-based index;
-    /// a dictionary key takes its type from <see cref="LuaKeyTypeManifest"/>, the
-    /// same way the dense form reads it.
+    /// The key a list entry's property name stands for, which is its own 1-based
+    /// index. A name that is not that index means the file disagrees with itself
+    /// about where the list part ends.
     /// </summary>
-    public static object Parse(string name, string path, bool inListPart, int index)
+    public static object ListIndex(string name, string path, int index)
     {
-        if (inListPart)
+        string expected = index.ToString(CultureInfo.InvariantCulture);
+        if (name != expected)
         {
-            string expected = index.ToString(CultureInfo.InvariantCulture);
-            if (name != expected)
-            {
-                throw new InvalidDataException(
-                    $"{path} list entry {index} must be named '{expected}', not '{name}'"
-                );
-            }
-            return index;
+            throw new InvalidDataException(
+                $"{path} list entry {index} must be named '{expected}', not '{name}'"
+            );
         }
-        return LuaJson.ParseDictionaryKey(name, LuaKeyTypeManifest.ExpectedType(path), path);
+        return index;
     }
 }

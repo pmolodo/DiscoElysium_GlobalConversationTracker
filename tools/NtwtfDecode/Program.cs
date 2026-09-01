@@ -32,11 +32,12 @@ const string Usage = """
           --split         Use five table JSON files (Actor.json through
                           Conversation.json) plus trailing.bin in one directory.
           --sparse        With --split, restructure the tables whose shape is
-                          known - dialogue statuses become one key list per
-                          status - and leave out what can be derived. Still
-                          converts back byte for byte, but no longer mirrors
-                          the blob entry for entry. Reading detects the form,
-                          so --to-lua needs no flag.
+                          known - dialogue statuses become one key range per
+                          status - and leave out what can be derived. Keeps
+                          every key and value, but not the entry order or the
+                          Lua list/dictionary split, so the blob it converts
+                          back to is not byte for byte the one it read.
+                          Reading detects the form, so --to-lua needs no flag.
       -h, --help          Show this message.
     """;
 

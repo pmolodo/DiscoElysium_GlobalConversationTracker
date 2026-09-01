@@ -4,16 +4,12 @@ using System.Text;
 
 namespace NtwtfDecode;
 
-/// <summary>
-/// The bookkeeping that lets a regrouped table be put back in its original order.
-/// </summary>
+/// <summary>Compact text for the runs of numbers the sparse form carries.</summary>
 /// <remarks>
-/// A grouped table names its entries by value rather than by key, which loses both
-/// which keys were present and what order they came in. Those two facts are stored
-/// back as a key range and a short list of moves. Neither is pleasant to read, but
-/// they exist only to make the round trip exact - the readable part of a grouped
-/// table is the grouping itself. Both are strings rather than arrays so that an
-/// indented writer cannot spread a few hundred numbers over a few hundred lines.
+/// A grouped table names its entries by value rather than by key, so it has to say
+/// separately which keys it stands for; that is a key range. The other user is the
+/// dialogue order inside a SimX string. Both are strings rather than arrays so that
+/// an indented writer cannot spread a few hundred numbers over a few hundred lines.
 /// </remarks>
 public static class SparseOrder
 {
@@ -88,56 +84,11 @@ public static class SparseOrder
     }
 
     /// <summary>
-    /// The fewest lift-and-reinsert moves that turn <paramref name="canonical"/> into
-    /// <paramref name="observed"/>. Each is (from, to): the item at index
-    /// <c>from</c> of the canonical order belongs at index <c>to</c> of the observed
-    /// one.
+    /// Replays a recorded list of lift-and-reinsert moves. Each is (from, to): the
+    /// item at index <c>from</c> of the canonical order belongs at index <c>to</c>.
+    /// Only <see cref="SimXOrders"/> uses this now, for the dialogue order inside a
+    /// SimX string; the moves themselves are computed by generate_simx_order.py.
     /// </summary>
-    /// <remarks>
-    /// Everything left alone has to stay in its canonical relative order, so the
-    /// items to leave alone are a longest increasing subsequence of where the
-    /// observed items sit in the canonical order, and the moves are the rest. Doing
-    /// it any more simply - walking left to right and swapping whatever is out of
-    /// place - turns one displaced entry into a move for every entry after it,
-    /// which is what a real dialogue map looks like: ascending, with key 0 sitting
-    /// somewhere in the middle.
-    /// </remarks>
-    public static List<(int From, int To)> Moves<T>(
-        IReadOnlyList<T> canonical,
-        IReadOnlyList<T> observed
-    )
-        where T : notnull
-    {
-        var canonicalIndex = new Dictionary<T, int>(canonical.Count);
-        for (int i = 0; i < canonical.Count; i++)
-        {
-            canonicalIndex[canonical[i]] = i;
-        }
-
-        var where = new int[observed.Count];
-        for (int i = 0; i < observed.Count; i++)
-        {
-            if (!canonicalIndex.TryGetValue(observed[i], out where[i]))
-            {
-                throw new InvalidDataException(
-                    "The observed order is not a rearrangement of the canonical one"
-                );
-            }
-        }
-
-        bool[] keep = LongestIncreasingRun(where);
-        var moves = new List<(int, int)>();
-        for (int to = 0; to < where.Length; to++)
-        {
-            if (!keep[to])
-            {
-                moves.Add((where[to], to));
-            }
-        }
-        return moves;
-    }
-
-    /// <summary>Replays what <see cref="Moves{T}"/> recorded.</summary>
     public static List<T> ApplyMoves<T>(
         IReadOnlyList<T> canonical,
         IReadOnlyList<(int From, int To)> moves
@@ -172,22 +123,7 @@ public static class SparseOrder
         return rest;
     }
 
-    /// <summary>Renders moves as "from:to" pairs, e.g. "30:1187,44:900".</summary>
-    public static string PackMoves(IReadOnlyList<(int From, int To)> moves)
-    {
-        var text = new StringBuilder();
-        foreach ((int from, int to) in moves)
-        {
-            if (text.Length > 0)
-            {
-                text.Append(GroupSeparator);
-            }
-            text.Append(Number(from)).Append(MoveSeparator).Append(Number(to));
-        }
-        return text.ToString();
-    }
-
-    /// <summary>Reads back what <see cref="PackMoves"/> wrote.</summary>
+    /// <summary>Reads "from:to" pairs, as generate_simx_order.py writes them.</summary>
     public static List<(int From, int To)> UnpackMoves(object? node, string context)
     {
         var moves = new List<(int, int)>();
@@ -216,54 +152,6 @@ public static class SparseOrder
             ));
         }
         return moves;
-    }
-
-    /// <summary>
-    /// Which positions belong to a longest run whose canonical indices only ever
-    /// increase - the entries that can stay where the canonical order put them.
-    /// </summary>
-    private static bool[] LongestIncreasingRun(int[] where)
-    {
-        // Patience sorting: tails[k] is the position ending the best run of k+1.
-        var tails = new List<int>();
-        var previous = new int[where.Length];
-        for (int i = 0; i < where.Length; i++)
-        {
-            previous[i] = -1;
-            int low = 0;
-            int high = tails.Count;
-            while (low < high)
-            {
-                int mid = (low + high) / 2;
-                if (where[tails[mid]] < where[i])
-                {
-                    low = mid + 1;
-                }
-                else
-                {
-                    high = mid;
-                }
-            }
-            if (low > 0)
-            {
-                previous[i] = tails[low - 1];
-            }
-            if (low == tails.Count)
-            {
-                tails.Add(i);
-            }
-            else
-            {
-                tails[low] = i;
-            }
-        }
-
-        var keep = new bool[where.Length];
-        for (int i = tails.Count > 0 ? tails[^1] : -1; i >= 0; i = previous[i])
-        {
-            keep[i] = true;
-        }
-        return keep;
     }
 
     private static string Number(long value) =>
