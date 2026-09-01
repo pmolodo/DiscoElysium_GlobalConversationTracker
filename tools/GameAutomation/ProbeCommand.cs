@@ -34,6 +34,12 @@ namespace GlobalConversationTracker.Automation
         /// <summary>Ask the probe to report the state a scenario cares about.</summary>
         public const string Report = "report";
 
+        /// <summary>Apply one look-ahead suite's state and runtime settings.</summary>
+        public const string PrepareLookAheadSuite = "prepare-look-ahead-suite";
+
+        /// <summary>Flush the current look-ahead suite's diagnostics.</summary>
+        public const string FinishLookAheadSuite = "finish-look-ahead-suite";
+
         /// <summary>Ask the game to close itself, so the mod can flush on the way out.</summary>
         public const string Quit = "quit";
 
@@ -76,6 +82,43 @@ namespace GlobalConversationTracker.Automation
         public static void SendReport(string saveGamesFolder)
         {
             Send(saveGamesFolder, Report);
+        }
+
+        /// <summary>Asks the mod to prepare one look-ahead suite.</summary>
+        /// <param name="saveGamesFolder">The profile's SaveGames folder.</param>
+        /// <param name="fileName">A file staged directly in that folder.</param>
+        /// <param name="enabled">Whether look-ahead markers are enabled.</param>
+        /// <param name="stateBudget">The maximum search states per option.</param>
+        /// <param name="logBudgetExceeded">Whether to log budget overflows.</param>
+        /// <param name="keepStatistics">Whether to retain crawl statistics.</param>
+        public static void SendPrepareLookAheadSuite(
+            string saveGamesFolder,
+            string fileName,
+            bool enabled,
+            int stateBudget,
+            bool logBudgetExceeded,
+            bool keepStatistics)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                throw new ArgumentException("A global state file is needed.", nameof(fileName));
+            }
+
+            Send(
+                saveGamesFolder,
+                PrepareLookAheadSuite,
+                "file", fileName,
+                "enabled", enabled,
+                "stateBudget", stateBudget,
+                "logBudgetExceeded", logBudgetExceeded,
+                "keepStatistics", keepStatistics);
+        }
+
+        /// <summary>Asks the mod to flush the current suite's diagnostics.</summary>
+        /// <param name="saveGamesFolder">The profile's SaveGames folder.</param>
+        public static void SendFinishLookAheadSuite(string saveGamesFolder)
+        {
+            Send(saveGamesFolder, FinishLookAheadSuite);
         }
 
         /// <summary>Asks the game to close itself.</summary>

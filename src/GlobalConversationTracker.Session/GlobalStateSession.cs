@@ -346,6 +346,69 @@ namespace GlobalConversationTracker.Session
         }
 
         /// <summary>
+        /// Replaces the running global state with a validated state file.
+        /// </summary>
+        /// <param name="sourcePath">The explicit JSON file to load.</param>
+        /// <remarks>
+        /// Intended for controlled hosts that reuse one game process across isolated
+        /// runs. The candidate is parsed before the running state is touched. Pending
+        /// writes from the old state are drained, the existing state object is replaced
+        /// in place, and the replacement is flushed to this session's ordinary live path
+        /// before the method returns. Current-save bookkeeping is deliberately untouched;
+        /// the next ordinary save load replaces it from that save.
+        /// </remarks>
+        /// <returns>The replacement state, using the same object identity as before.</returns>
+        /// <exception cref="ArgumentException">The path is empty.</exception>
+        /// <exception cref="InvalidDataException">The source cannot be loaded.</exception>
+        /// <exception cref="IOException">The old or replacement state cannot be flushed.</exception>
+        public GlobalConversationState ReloadFrom(string sourcePath)
+        {
+            if (string.IsNullOrWhiteSpace(sourcePath))
+            {
+                throw new ArgumentException("A global state file is needed.", nameof(sourcePath));
+            }
+
+            GlobalStateLoadResult loaded = GlobalStateStore.AtPath(sourcePath).Load();
+            if (!loaded.IsLoaded)
+            {
+                throw new InvalidDataException(
+                    $"Could not load replacement global state '{sourcePath}': "
+                        + $"{loaded.Outcome} ({loaded.ErrorMessage ?? "no detail"}).");
+            }
+
+            GlobalConversationState replacement = loaded.RequireState();
+            lock (_gate)
+            {
+                EnsureInitialized();
+                if (!Flush())
+                {
+                    throw new IOException(
+                        "Could not flush the previous global state before replacing it.");
+                }
+
+                _state.ReplaceWith(replacement);
+                _unrecognizedStatuses.Clear();
+                _resyncGivenUp = false;
+                _orbResyncGivenUp = false;
+                _lastResyncUtc = null;
+                Origin = GlobalStateOrigin.LiveFile;
+                CanSave = true;
+                MarkDirty();
+
+                if (!Flush())
+                {
+                    throw new IOException(
+                        "Could not persist the replacement global state.");
+                }
+
+                _log.Info(
+                    $"Reloaded the global state from '{sourcePath}': "
+                        + $"{_state.ConversationCount} conversations, {_state.EntryCount} entries.");
+                return _state;
+            }
+        }
+
+        /// <summary>
         /// Records one status change from the running game: initializes the state if
         /// this is the first access, merges the status, and marks the file out of date
         /// if that actually raised something.

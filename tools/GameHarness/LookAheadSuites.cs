@@ -284,11 +284,9 @@ namespace GlobalConversationTracker.Harness
         /// <para>The setting is documented as leaving tracking unaffected, and nothing
         /// checked either half of that.</para>
         ///
-        /// <para>Unmarked options are not enough on their own to show the switch worked:
-        /// the budget suite produces exactly the same menu by starving the crawl instead.
-        /// What separates them is whether the hook was installed at all, which the mod
-        /// says once at load - so this suite asserts the look-ahead hook line is absent
-        /// while the tracking hook line is still there.</para>
+        /// <para>Unmarked options are paired with the harness's suite-prepared
+        /// acknowledgement, which reports the runtime setting it applied. The tracking
+        /// hook line remains an independent check that tracking stayed active.</para>
         /// </remarks>
         public static LookAheadSuite SwitchedOff { get; } = new LookAheadSuite(
             "switched-off",
@@ -300,7 +298,7 @@ namespace GlobalConversationTracker.Harness
                     "afford-both",
                     SiilengConversation,
                     "the balance that marks three options, with the feature switched off",
-                    AllUnmarked("the look-ahead is not installed at all"),
+                    AllUnmarked("look-ahead marking is disabled"),
                     money: 5100),
             },
             pluginSettings: new Dictionary<string, string>
@@ -309,10 +307,6 @@ namespace GlobalConversationTracker.Harness
             },
             logExpectations: new[]
             {
-                new LogExpectation(
-                    "options that can still lead to unread text are marked with an asterisk",
-                    false,
-                    "the look-ahead hook was not installed"),
                 new LogExpectation(
                     "dialogue statuses are being tracked",
                     true,
@@ -479,25 +473,53 @@ namespace GlobalConversationTracker.Harness
                 + $"{text.Length} characters";
     }
 
-        /// <summary>Finds a suite by name.</summary>
-        /// <param name="name">The suite's name, or null for every suite.</param>
-        /// <exception cref="ArgumentException">No suite goes by that name.</exception>
-        public static IReadOnlyList<LookAheadSuite> Select(string? name)
+        /// <summary>Finds the requested suites.</summary>
+        /// <param name="names">Suite names, or an empty list for every suite.</param>
+        /// <exception cref="ArgumentException">No suite goes by a requested name.</exception>
+        public static IReadOnlyList<LookAheadSuite> SelectMany(IReadOnlyList<string> names)
         {
-            if (name == null)
+            if (names == null)
+            {
+                throw new ArgumentNullException(nameof(names));
+            }
+
+            if (names.Count == 0)
             {
                 return All;
             }
 
-            LookAheadSuite? found = All.FirstOrDefault(
-                suite => string.Equals(suite.Name, name, StringComparison.OrdinalIgnoreCase));
+            var selected = new List<LookAheadSuite>();
+            foreach (string name in names)
+            {
+                LookAheadSuite? found = All.FirstOrDefault(
+                    suite => string.Equals(suite.Name, name, StringComparison.OrdinalIgnoreCase));
 
-            return found == null
-                ? throw new ArgumentException(
-                    $"No look-ahead suite called '{name}'. Known suites: "
-                    + string.Join(", ", All.Select(s => s.Name)) + ".",
-                    nameof(name))
-                : new[] { found };
+                if (found == null)
+                {
+                    throw new ArgumentException(
+                        $"No look-ahead suite called '{name}'. Known suites: "
+                        + string.Join(", ", All.Select(s => s.Name)) + ".",
+                        nameof(names));
+                }
+
+                if (!selected.Contains(found))
+                {
+                    selected.Add(found);
+                }
+            }
+
+            return selected;
+        }
+
+        /// <summary>Finds one suite by name, or every suite when no name is given.</summary>
+        /// <param name="name">The suite's name, or null for every suite.</param>
+        /// <returns>The matching suite, or every suite.</returns>
+        /// <exception cref="ArgumentException">No suite goes by that name.</exception>
+        public static IReadOnlyList<LookAheadSuite> Select(string? name)
+        {
+            return name == null
+                ? All
+                : SelectMany(new[] { name });
         }
 
         /// <summary>Asking the mod to keep the statistics a suite reads back.</summary>

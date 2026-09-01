@@ -408,6 +408,38 @@ namespace GlobalConversationTracker.Tests
         }
 
         [Fact]
+        public void ReplaceWith_RemovesOldHistoryAndCopiesTheReplacement()
+        {
+            var state = new GlobalConversationState();
+            state.Merge(1, 1, SimStatus.WasDisplayed);
+            state.MergeOrb("old orb");
+
+            var replacement = new GlobalConversationState();
+            replacement.Merge(2, 3, SimStatus.WasOffered);
+            replacement.MergeOrb("new orb");
+
+            state.ReplaceWith(replacement);
+
+            Assert.Equal(SimStatus.Untouched, state.GetStatus(1, 1));
+            Assert.Equal(SimStatus.WasOffered, state.GetStatus(2, 3));
+            Assert.False(state.ContainsOrb("old orb"));
+            Assert.True(state.ContainsOrb("new orb"));
+        }
+
+        [Fact]
+        public void ReplaceWith_ItselfPreservesTheState()
+        {
+            var state = new GlobalConversationState();
+            state.Merge(2, 3, SimStatus.WasDisplayed);
+            state.MergeOrb("an orb");
+
+            state.ReplaceWith(state);
+
+            Assert.Equal(SimStatus.WasDisplayed, state.GetStatus(2, 3));
+            Assert.True(state.ContainsOrb("an orb"));
+        }
+
+        [Fact]
         public void MergeAll_ThrowsOnNull()
         {
             var state = new GlobalConversationState();

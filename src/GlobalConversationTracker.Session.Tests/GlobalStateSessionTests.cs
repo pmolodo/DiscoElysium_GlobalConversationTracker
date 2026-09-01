@@ -341,6 +341,51 @@ namespace GlobalConversationTracker.Session.Tests
         }
 
         [Fact]
+        public void ReloadFrom_ReplacesTheStableStateAndLeavesTheCurrentSaveAlone()
+        {
+            using var dir = new TempDirectory();
+            GlobalStateStore live = dir.CreateStore();
+            live.Save(StateWith((1, 1, SimStatus.WasDisplayed)));
+
+            string replacementPath = Path.Combine(dir.Path, "replacement.json");
+            GlobalStateStore.AtPath(replacementPath)
+                .Save(StateWith((2, 3, SimStatus.WasOffered)));
+
+            using var session = new GlobalStateSession(live, new RecordingLog());
+            GlobalConversationState original = session.EnsureInitialized();
+            session.Record(9, 9, "WasDisplayed");
+            Assert.Equal(1, session.CurrentSaveEntryCount);
+
+            GlobalConversationState reloaded = session.ReloadFrom(replacementPath);
+
+            Assert.Same(original, reloaded);
+            Assert.Equal(SimStatus.Untouched, reloaded.GetStatus(1, 1));
+            Assert.Equal(SimStatus.Untouched, reloaded.GetStatus(9, 9));
+            Assert.Equal(SimStatus.WasOffered, reloaded.GetStatus(2, 3));
+            Assert.Equal(1, session.CurrentSaveEntryCount);
+            Assert.Equal(
+                SimStatus.WasOffered,
+                live.Load().RequireState().GetStatus(2, 3));
+        }
+
+        [Fact]
+        public void ReloadFrom_InvalidCandidateLeavesTheRunningStateUntouched()
+        {
+            using var dir = new TempDirectory();
+            GlobalStateStore live = dir.CreateStore();
+            live.Save(StateWith((1, 1, SimStatus.WasDisplayed)));
+            string replacementPath = Path.Combine(dir.Path, "replacement.json");
+            File.WriteAllText(replacementPath, "not json");
+
+            using var session = new GlobalStateSession(live, new RecordingLog());
+            GlobalConversationState original = session.EnsureInitialized();
+
+            Assert.Throws<InvalidDataException>(() => session.ReloadFrom(replacementPath));
+            Assert.Same(original, session.State);
+            Assert.Equal(SimStatus.WasDisplayed, session.State.GetStatus(1, 1));
+        }
+
+        [Fact]
         public void EnsureInitialized_KeepsWhateverAHookMergedBeforeTheFileWasRead()
         {
             // The state object exists from construction, so an early hook can merge

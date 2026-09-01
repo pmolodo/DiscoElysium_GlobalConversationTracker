@@ -83,6 +83,18 @@ namespace GlobalConversationTracker.Automation
                 : (int?)null;
         }
 
+        /// <summary>One Boolean member, or null if it is missing or not Boolean.</summary>
+        /// <param name="key">The member name.</param>
+        public bool? Boolean(string key)
+        {
+            return _body.ValueKind == JsonValueKind.Object
+                && _body.TryGetProperty(key, out JsonElement value)
+                && (value.ValueKind == JsonValueKind.True
+                    || value.ValueKind == JsonValueKind.False)
+                ? value.GetBoolean()
+                : (bool?)null;
+        }
+
         /// <summary>
         /// The options a "menu" event carried, or an empty array for any other event.
         /// </summary>

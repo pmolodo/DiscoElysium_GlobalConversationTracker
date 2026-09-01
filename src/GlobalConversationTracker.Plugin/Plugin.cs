@@ -78,6 +78,43 @@ namespace GlobalConversationTracker
                 $"{PluginName} has not finished loading; there is no global state session yet.");
 
         private static GlobalStateSession? _session;
+        private static GlobalStateStore? _store;
+        private static IGlobalStateLog? _globalStateLog;
+
+        /// <summary>Prepares suite-scoped state and look-ahead settings.</summary>
+        /// <param name="sourcePath">The staged global-state fixture.</param>
+        /// <param name="enabled">Whether look-ahead markers are enabled.</param>
+        /// <param name="stateBudget">The maximum search states per option.</param>
+        /// <param name="logBudgetExceeded">Whether to log budget overflows.</param>
+        /// <param name="keepStatistics">Whether to retain crawl statistics.</param>
+        public static void PrepareLookAheadSuite(
+            string sourcePath,
+            bool enabled,
+            int stateBudget,
+            bool logBudgetExceeded,
+            bool keepStatistics)
+        {
+            Session.ReloadFrom(sourcePath);
+
+            GlobalStateStore store = _store
+                ?? throw new InvalidOperationException("The global state store is unavailable.");
+            IGlobalStateLog log = _globalStateLog
+                ?? throw new InvalidOperationException("The global state log is unavailable.");
+            ResponseLookAheadPatch.Configure(
+                enabled,
+                stateBudget,
+                new LookAheadDiagnosticsWriter(
+                    store.DirectoryPath,
+                    log,
+                    logBudgetExceeded,
+                    keepStatistics));
+        }
+
+        /// <summary>Flushes look-ahead diagnostics before a test suite is checked.</summary>
+        public static void FinishLookAheadSuite()
+        {
+            ResponseLookAheadPatch.FlushDiagnostics();
+        }
 
         private Harmony? _harmony;
 
@@ -114,6 +151,8 @@ namespace GlobalConversationTracker
             var log = new BepInExGlobalStateLog(Log);
             var session = new GlobalStateSession(store, log);
             _session = session;
+            _store = store;
+            _globalStateLog = log;
 
             // One switch per thing the mod draws, all default on. Separate because they
             // answer different questions - how far along this run is, how much has ever
@@ -275,27 +314,26 @@ namespace GlobalConversationTracker
                     + "draws them. Tracking is unaffected. Turn it back on with MarkNovelOptions.");
             }
 
-            bool markingLookAhead = markLookAhead.Value;
-            if (markingLookAhead)
-            {
-                markingLookAhead = TryInstall(
-                    "Sunshine.ConversationLogger.ChooseResponseText",
-                    "options that can still lead to unread text are marked with an asterisk",
-                    "Dialogue options will carry no look-ahead marker this session; their own colours "
-                        + "are unaffected",
-                    () => ResponseLookAheadPatch.Install(
-                        harmony,
-                        session,
+            bool markingLookAhead = TryInstall(
+                "Sunshine.ConversationLogger.ChooseResponseText",
+                markLookAhead.Value
+                    ? "options that can still lead to unread text are marked with an asterisk"
+                    : "the look-ahead hook is ready but disabled by MarkLookAhead",
+                "Dialogue options will carry no look-ahead marker this session; their own colours "
+                    + "are unaffected",
+                () => ResponseLookAheadPatch.Install(
+                    harmony,
+                    session,
+                    log,
+                    novelOptionColor.Value,
+                    ResponseLookAheadPatch.DefaultUnseenThisGameColorHtml,
+                    lookAheadBudget.Value,
+                    markLookAhead.Value,
+                    new LookAheadDiagnosticsWriter(
+                        store.DirectoryPath,
                         log,
-                        novelOptionColor.Value,
-                        ResponseLookAheadPatch.DefaultUnseenThisGameColorHtml,
-                        lookAheadBudget.Value,
-                        new LookAheadDiagnosticsWriter(
-                            store.DirectoryPath,
-                            log,
-                            logLookAheadBudgetExceeded.Value,
-                            keepLookAheadStates.Value)));
-            }
+                        logLookAheadBudgetExceeded.Value,
+                        keepLookAheadStates.Value)));
 
             if (!recording && !recordingOrbs && !resyncing && !resyncingOrbs
                 && !resettingCurrentSave && !showingCount && !colouringNovelOptions

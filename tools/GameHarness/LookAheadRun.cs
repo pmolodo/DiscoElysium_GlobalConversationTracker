@@ -19,11 +19,9 @@ namespace GlobalConversationTracker.Harness
     /// the game composed. The search itself is covered by the LookAhead suite over graphs
     /// handed to it; this covers the wiring.</para>
     ///
-    /// <para>One launch per suite, and every save in a suite loaded in place by the test
-    /// probe. A cold start is about a minute, so relaunching per scenario would multiply
-    /// the run for nothing - but a suite cannot span two global states or two mod
-    /// configurations, because the mod reads the first once and BepInEx reads the second
-    /// at chainload.</para>
+    /// <para>One launch for the whole run. Every suite's global state is staged beside
+    /// the saves, then the probe asks the mod to reload that fixture and apply the
+    /// suite's look-ahead settings before any scenario in it runs.</para>
     /// </remarks>
     public static class LookAheadRun
     {
@@ -43,14 +41,14 @@ namespace GlobalConversationTracker.Harness
         /// </summary>
         private static readonly TimeSpan BetweenPresses = TimeSpan.FromSeconds(2);
 
-        /// <summary>Runs the named suites, one launch each.</summary>
+        /// <summary>Runs the named suites in one game process.</summary>
         /// <param name="game">Path to disco.exe.</param>
         /// <param name="scenarioRoot">Where the built scenarios are.</param>
         /// <param name="settingsFile">The test settings to stage.</param>
         /// <param name="artifacts">Where packed saves go.</param>
         /// <param name="timeout">How long any single wait may take.</param>
         /// <param name="keepOpen">Leave the last game running.</param>
-        /// <param name="suiteName">One suite's name, or null for every suite.</param>
+        /// <param name="suiteNames">Suite names, or an empty list for every suite.</param>
         /// <returns>0 when every check passed.</returns>
         public static int Run(
             string game,
@@ -59,19 +57,13 @@ namespace GlobalConversationTracker.Harness
             string artifacts,
             TimeSpan timeout,
             bool keepOpen,
-            string? suiteName = null)
+            IReadOnlyList<string> suiteNames)
         {
-            IReadOnlyList<LookAheadSuite> suites = LookAheadSuites.Select(suiteName);
+            IReadOnlyList<LookAheadSuite> suites = LookAheadSuites.SelectMany(suiteNames);
             var report = new Report();
 
-            foreach (LookAheadSuite suite in suites)
-            {
-                Console.WriteLine();
-                Console.WriteLine($"=== suite '{suite.Name}': {suite.What} ===");
-                RunSuite(
-                    suite, game, scenarioRoot, settingsFile, artifacts, timeout,
-                    keepOpen && suite == suites[suites.Count - 1], report);
-            }
+            RunSuites(
+                suites, game, scenarioRoot, settingsFile, artifacts, timeout, keepOpen, report);
 
             Console.WriteLine();
             Console.WriteLine($"{report.Passed}/{report.Total} checks passed");
@@ -83,8 +75,8 @@ namespace GlobalConversationTracker.Harness
             return report.Failures.Count == 0 ? 0 : 1;
         }
 
-        private static void RunSuite(
-            LookAheadSuite suite,
+        private static void RunSuites(
+            IReadOnlyList<LookAheadSuite> suites,
             string game,
             string scenarioRoot,
             string settingsFile,
@@ -96,13 +88,6 @@ namespace GlobalConversationTracker.Harness
             string logPath = Path.Combine(
                 FilePaths.FolderOf(game, nameof(game)), "BepInEx", "LogOutput.log");
             string saveGames = GameProfile.SavesFolder;
-            string globalState = Path.Combine(scenarioRoot, suite.GlobalStateFile);
-            if (!File.Exists(globalState))
-            {
-                throw new FileNotFoundException(
-                    $"Suite '{suite.Name}' names a global state at {globalState}.", globalState);
-            }
-
             // Packed in REVERSE order so the first scenario's archive is the newest. The
             // first save is loaded by pressing Continue at the main menu, which takes the
             // newest one, because loading from the menu through the probe dies in
@@ -110,7 +95,11 @@ namespace GlobalConversationTracker.Harness
             // yet. Once a save is in and the HUD exists, the probe can load the rest.
             var packed = new List<string>();
             var stagedNames = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (LookAheadScenario scenario in Enumerable.Reverse(suite.Scenarios))
+            foreach (LookAheadScenario scenario in suites
+                .SelectMany(suite => suite.Scenarios)
+                .Reverse()
+                .GroupBy(scenario => scenario.SaveName, StringComparer.Ordinal)
+                .Select(group => group.First()))
             {
                 string expanded = Path.Combine(scenarioRoot, scenario.SaveName + ".ntwtf");
                 if (!Directory.Exists(expanded))
@@ -137,15 +126,23 @@ namespace GlobalConversationTracker.Harness
                 "disco",
                 settingsFile,
                 packed,
-                globalState,
+                null,
                 progress: message => Console.WriteLine($"staging:   {message}"));
 
-            using StagedPluginConfig? config = suite.PluginSettings.Count == 0
-                ? null
-                : StagedPluginConfig.Apply(
-                    game,
-                    suite.PluginSettings,
-                    message => Console.WriteLine($"mod cfg:   {message}"));
+            var stateFiles = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (LookAheadSuite suite in suites)
+            {
+                string source = Path.Combine(scenarioRoot, suite.GlobalStateFile);
+                if (!File.Exists(source))
+                {
+                    throw new FileNotFoundException(
+                        $"Suite '{suite.Name}' names a global state at {source}.", source);
+                }
+
+                string fileName = $"gct-look-ahead-{suite.Name}.json";
+                File.Copy(source, Path.Combine(saveGames, fileName), overwrite: true);
+                stateFiles[suite.Name] = fileName;
+            }
 
             using ProbeDeployment probe = ProbeDeployment.Deploy(
                 game,
@@ -167,7 +164,7 @@ namespace GlobalConversationTracker.Harness
 
                 var watcher = new ProbeWatcher(logPath);
                 watcher.WaitForEvent("ready", timeout, Log);
-                report.Check(true, $"{suite.Name}: the probe loaded", $"reading {logPath}");
+                report.Check(true, "the probe loaded", $"reading {logPath}");
 
                 // Checked, not assumed. Everything downstream is measured against a
                 // window of a known size, and a run at the machine's own resolution would
@@ -176,32 +173,62 @@ namespace GlobalConversationTracker.Harness
                 report.Check(
                     window.Width == staged.Requested.Width
                         && window.Height == staged.Requested.Height,
-                    $"{suite.Name}: the window is the requested {staged.Requested}",
+                    $"the window is the requested {staged.Requested}",
                     $"got {window.Width}x{window.Height}");
 
-                for (int i = 0; i < suite.Scenarios.Count; i++)
+                bool firstScenario = true;
+                foreach (LookAheadSuite suite in suites)
                 {
-                    LookAheadScenario scenario = suite.Scenarios[i];
                     Console.WriteLine();
-                    Console.WriteLine($"--- {scenario.SaveName}: {scenario.Why} ---");
+                    Console.WriteLine($"=== suite '{suite.Name}': {suite.What} ===");
+                    watcher.Mark();
+                    SendPrepareSuite(suite, saveGames, stateFiles[suite.Name]);
+                    ProbeEvent prepared = watcher.WaitForEvent(
+                        "look-ahead-suite-prepared", timeout, Log);
+                    bool enabled = Setting(suite, "MarkLookAhead", true);
+                    int stateBudget = Setting(suite, "LookAheadStateBudget", 200_000);
+                    report.Check(
+                        prepared.Text("file") == stateFiles[suite.Name]
+                            && prepared.Boolean("enabled") == enabled
+                            && prepared.Number("stateBudget") == stateBudget,
+                        $"{suite.Name}: its global state and settings were prepared",
+                        $"the probe loaded {prepared.Text("file") ?? "nothing"} with enabled="
+                            + $"{prepared.Boolean("enabled")?.ToString() ?? "missing"} and budget="
+                            + $"{prepared.Number("stateBudget")?.ToString() ?? "missing"}");
+                    // Preparing flushes the preceding diagnostics writer. Clear after
+                    // that flush so files from the prior suite cannot satisfy this one.
+                    ClearArtefacts(suite, saveGames);
+
+                    foreach (LookAheadScenario scenario in suite.Scenarios)
+                    {
+                        Console.WriteLine();
+                        Console.WriteLine($"--- {scenario.SaveName}: {scenario.Why} ---");
+
+                        watcher.Mark();
+                        if (firstScenario)
+                        {
+                            PressEnterUntil(
+                                watcher,
+                                e => e.Name == "save-applied",
+                                timeout,
+                                "a save starts loading",
+                                "still on a splash screen");
+                            firstScenario = false;
+                        }
+                        else
+                        {
+                            ProbeCommand.SendLoadSave(saveGames, stagedNames[scenario.SaveName]);
+                            watcher.WaitForEvent("save-applied", timeout, Log);
+                        }
+
+                        RunScenario(scenario, saveGames, watcher, timeout, report);
+                    }
 
                     watcher.Mark();
-                    if (i == 0)
-                    {
-                        PressEnterUntil(
-                            watcher,
-                            e => e.Name == "save-applied",
-                            timeout,
-                            "a save starts loading",
-                            "still on a splash screen");
-                    }
-                    else
-                    {
-                        ProbeCommand.SendLoadSave(saveGames, stagedNames[scenario.SaveName]);
-                        watcher.WaitForEvent("save-applied", timeout, Log);
-                    }
-
-                    RunScenario(scenario, saveGames, watcher, timeout, report);
+                    ProbeCommand.SendFinishLookAheadSuite(saveGames);
+                    watcher.WaitForEvent("look-ahead-suite-finished", timeout, Log);
+                    CheckArtefacts(suite, saveGames, report);
+                    CheckLog(suite, logPath, report);
                 }
 
                 // Closed here, not in the finally, and asked rather than killed: the
@@ -215,9 +242,6 @@ namespace GlobalConversationTracker.Harness
                     Quit(saveGames, process);
                 }
 
-                // Before the finally puts the profile back, which is when these exist.
-                CheckArtefacts(suite, saveGames, report);
-                CheckLog(suite, logPath, report);
             }
             finally
             {
@@ -236,6 +260,40 @@ namespace GlobalConversationTracker.Harness
                     // because the run threw before reaching it.
                     Close(process);
                     staged.Restore();
+                }
+            }
+        }
+
+        private static void SendPrepareSuite(
+            LookAheadSuite suite, string saveGames, string stateFile)
+        {
+            ProbeCommand.SendPrepareLookAheadSuite(
+                saveGames,
+                stateFile,
+                Setting(suite, "MarkLookAhead", true),
+                Setting(suite, "LookAheadStateBudget", 200_000),
+                Setting(suite, "LogLookAheadBudgetExceeded", false),
+                Setting(suite, "KeepLookAheadStates", false));
+        }
+
+        private static bool Setting(LookAheadSuite suite, string name, bool fallback) =>
+            suite.PluginSettings.TryGetValue(name, out string? value)
+                ? bool.Parse(value)
+                : fallback;
+
+        private static int Setting(LookAheadSuite suite, string name, int fallback) =>
+            suite.PluginSettings.TryGetValue(name, out string? value)
+                ? int.Parse(value)
+                : fallback;
+
+        private static void ClearArtefacts(LookAheadSuite suite, string saveGames)
+        {
+            foreach (SuiteArtefact artefact in suite.Artefacts)
+            {
+                string path = Path.Combine(saveGames, artefact.FileName);
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
                 }
             }
         }

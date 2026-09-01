@@ -128,6 +128,15 @@ namespace GlobalConversationTracker.Automation.Tests
         }
 
         [Fact]
+        public void SelectingMultipleNamesPreservesTheirOrder()
+        {
+            IReadOnlyList<LookAheadSuite> selected = LookAheadSuites.SelectMany(
+                new[] { "pristine", "budget" });
+
+            Assert.Equal(new[] { "pristine", "budget" }, selected.Select(suite => suite.Name));
+        }
+
+        [Fact]
         public void AnUnknownSuiteNameIsRefusedAndListsTheRealOnes()
         {
             ArgumentException error = Assert.Throws<ArgumentException>(

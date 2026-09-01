@@ -37,6 +37,7 @@ namespace GlobalConversationTracker
         private static LookAheadEngine? _tracingEngine;
         private static LookAheadDiagnosticsWriter? _diagnostics;
         private static int _budget = new LookAheadOptions().StateBudget;
+        private static bool _enabled = true;
 
         /// <summary>
         /// The colour for "leads to something no save has reached", matching the option
@@ -53,6 +54,7 @@ namespace GlobalConversationTracker
         /// <param name="unseenAnyGameHtml">Colour for reaching never-seen-anywhere text.</param>
         /// <param name="unseenThisGameHtml">Colour for reaching unseen-this-save text.</param>
         /// <param name="stateBudget">The most search states one option may cost.</param>
+        /// <param name="enabled">Whether the installed hook should add markers.</param>
         /// <param name="diagnostics">
         /// Where budget overflows and cost statistics are recorded, or null to record
         /// neither.
@@ -65,6 +67,7 @@ namespace GlobalConversationTracker
             string unseenAnyGameHtml,
             string unseenThisGameHtml,
             int stateBudget,
+            bool enabled,
             LookAheadDiagnosticsWriter? diagnostics = null)
         {
             if (harmony == null)
@@ -82,13 +85,23 @@ namespace GlobalConversationTracker
                 "marking options that still lead somewhere unread", log);
             _unseenAnyGameHtml = Validate(unseenAnyGameHtml, nameof(unseenAnyGameHtml));
             _unseenThisGameHtml = Validate(unseenThisGameHtml, nameof(unseenThisGameHtml));
+            Configure(enabled, stateBudget, diagnostics);
+
+            harmony.PatchAll(typeof(ChooseResponseTextPatch));
+        }
+
+        /// <summary>Changes suite-scoped behavior without reinstalling the hook.</summary>
+        internal static void Configure(
+            bool enabled,
+            int stateBudget,
+            LookAheadDiagnosticsWriter? diagnostics)
+        {
+            _diagnostics?.Flush();
+            _enabled = enabled;
             _budget = stateBudget;
             _diagnostics = diagnostics != null && diagnostics.Enabled ? diagnostics : null;
 
-            // The walk every menu pays for keeps no tally, whatever the diagnostics say.
             _engine = new LookAheadEngine(new LookAheadOptions { StateBudget = stateBudget });
-
-            // A second engine, used only to reproduce a crawl that already overflowed.
             _tracingEngine = _diagnostics != null && _diagnostics.RetriesOverflowsWithTrace
                 ? new LookAheadEngine(new LookAheadOptions
                 {
@@ -96,8 +109,12 @@ namespace GlobalConversationTracker
                     CollectTrace = true,
                 })
                 : null;
+        }
 
-            harmony.PatchAll(typeof(ChooseResponseTextPatch));
+        /// <summary>Flushes diagnostics belonging to the current test suite.</summary>
+        internal static void FlushDiagnostics()
+        {
+            _diagnostics?.Flush();
         }
 
         /// <summary>
@@ -135,7 +152,7 @@ namespace GlobalConversationTracker
         private static string? MarkerFor(DialogueEntry entry)
         {
             GlobalStateSession? session = _session;
-            if (session == null || entry == null)
+            if (!_enabled || session == null || entry == null)
             {
                 return null;
             }

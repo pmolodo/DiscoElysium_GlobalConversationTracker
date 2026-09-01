@@ -159,7 +159,7 @@ namespace GlobalConversationTracker.Harness
                             Path.Combine(RepoRoot(), ".build", "automation"),
                             TimeSpan.FromSeconds(options.TimeoutSeconds),
                             options.KeepOpen,
-                            options.Suite);
+                            options.SuiteNames);
                     default:
                         PrintUsage();
                         return 2;
@@ -188,7 +188,8 @@ Verbs:
                       scenarios are committed under testing/scenarios as sparse
                       diffs of save_template; the probe is installed and removed
                       by this verb. --artifacts names the scenario folder, and
-                      --suite runs one suite instead of all of them.
+                      --suite runs one or more named suites instead of all of them.
+                      Repeat --suite or separate names with commas.
   analyse-timeline    Read a recorded timeline back and report which frames
                       identify which screens, with a measured threshold. Add
                       --save-reference to write the chosen frame as main-menu.png.
@@ -1578,8 +1579,10 @@ Options:
             /// <summary>A single save to stage, so Continue has only one thing to load.</summary>
             public string? SaveFile { get; private set; }
 
-            /// <summary>Which look-ahead suite to run, or null for every one.</summary>
-            public string? Suite { get; private set; }
+            private readonly List<string> _suiteNames = new List<string>();
+
+            /// <summary>Which look-ahead suites to run, or none for every suite.</summary>
+            public IReadOnlyList<string> SuiteNames => _suiteNames;
 
             /// <summary>
             /// The part of the menu to match on: the option list, which does not animate.
@@ -1668,7 +1671,21 @@ Options:
                         case "--save-reference": options.SaveReference = true; break;
                         case "--whole-frame": options.MenuRegion = null; break;
                         case "--save": options.SaveFile = Next(); break;
-                        case "--suite": options.Suite = Next(); break;
+                        case "--suite":
+                        {
+                            string suite = Next() ?? throw new ArgumentException(
+                                "--suite needs at least one suite name.");
+                            string[] names = suite.Split(
+                                new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                            if (names.Length == 0)
+                            {
+                                throw new ArgumentException(
+                                    "--suite needs at least one suite name.");
+                            }
+
+                            options._suiteNames.AddRange(names.Select(name => name.Trim()));
+                            break;
+                        }
                         case "--region":
                         {
                             string[] parts = (Next() ?? string.Empty).Split(',');

@@ -312,6 +312,32 @@ namespace GlobalConversationTracker
             return MergeAll(other.EnumerateEntries()) + MergeAllOrbs(other.EnumerateOrbs());
         }
 
+        /// <summary>Replaces every entry and orb with a copy of another state.</summary>
+        /// <param name="other">The state to copy.</param>
+        /// <remarks>
+        /// Unlike the ordinary merge operations, this may lower or remove history. It
+        /// exists for an explicit whole-session reload, where preserving the identity of
+        /// this object matters because callers may already hold a reference to it.
+        /// </remarks>
+        /// <exception cref="ArgumentNullException">The replacement is null.</exception>
+        public void ReplaceWith(GlobalConversationState other)
+        {
+            if (other == null)
+            {
+                throw new ArgumentNullException(nameof(other));
+            }
+
+            GlobalConversationState replacement = ReferenceEquals(this, other)
+                ? other.Snapshot()
+                : other;
+
+            _conversations.Clear();
+            _orbs.Clear();
+            _offeredCount = 0;
+            _displayedCount = 0;
+            MergeAll(replacement);
+        }
+
         // -------------------------------------------------------------------
         // Read-only access.
         // -------------------------------------------------------------------

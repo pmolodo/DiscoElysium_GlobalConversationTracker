@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 using System;
 using System.IO;
+using System.Reflection;
 using System.Text.Json;
 using PixelCrushers.DialogueSystem;
 using UnityEngine;
@@ -42,6 +43,10 @@ namespace GlobalConversationTracker.TestProbe
 
         /// <summary>Report the state a scenario cares about.</summary>
         internal const string ReportCommand = "report";
+
+        /// <summary>Replace the mod's global state from a staged fixture.</summary>
+        internal const string PrepareLookAheadSuiteCommand = "prepare-look-ahead-suite";
+        internal const string FinishLookAheadSuiteCommand = "finish-look-ahead-suite";
 
         /// <summary>Ask the game to close itself the way a player would.</summary>
         internal const string QuitCommand = "quit";
@@ -165,6 +170,13 @@ namespace GlobalConversationTracker.TestProbe
                     case StartConversationCommand:
                         StartConversation(root);
                         break;
+                    case PrepareLookAheadSuiteCommand:
+                        PrepareLookAheadSuite(root);
+                        break;
+                    case FinishLookAheadSuiteCommand:
+                        InvokePlugin("FinishLookAheadSuite", Array.Empty<object>());
+                        ProbeLog.Write("look-ahead-suite-finished");
+                        break;
                     case QuitCommand:
                         // Not a kill. The mod flushes its global state and writes its
                         // look-ahead statistics from Application.quitting, so a run that
@@ -212,6 +224,16 @@ namespace GlobalConversationTracker.TestProbe
                 : (int?)null;
         }
 
+        private static bool? BoolMember(JsonElement root, string name)
+        {
+            return root.ValueKind == JsonValueKind.Object
+                && root.TryGetProperty(name, out JsonElement value)
+                && (value.ValueKind == JsonValueKind.True
+                    || value.ValueKind == JsonValueKind.False)
+                ? value.GetBoolean()
+                : (bool?)null;
+        }
+
         private static void LoadSave(string? save)
         {
             if (string.IsNullOrEmpty(save))
@@ -233,6 +255,63 @@ namespace GlobalConversationTracker.TestProbe
             // the tests already hook rather than a private shortcut. Not bundled: these
             // are ordinary saves staged into the profile's SaveGames folder.
             persistence.Load(save!, false);
+        }
+
+        private static void PrepareLookAheadSuite(JsonElement root)
+        {
+            string? fileName = Member(root, "file");
+            if (string.IsNullOrWhiteSpace(fileName)
+                || !string.Equals(fileName, Path.GetFileName(fileName), StringComparison.Ordinal))
+            {
+                throw new ArgumentException(
+                    "Give a global state filename directly inside SaveGames.");
+            }
+
+            string directory = Path.GetDirectoryName(CommandPath)
+                ?? throw new InvalidOperationException("The probe command directory is unavailable.");
+            string sourcePath = Path.Combine(directory, fileName);
+
+            bool enabled = BoolMember(root, "enabled")
+                ?? throw new ArgumentException("No enabled setting was given.");
+            int stateBudget = NumberMember(root, "stateBudget")
+                ?? throw new ArgumentException("No state budget was given.");
+            bool logBudgetExceeded = BoolMember(root, "logBudgetExceeded")
+                ?? throw new ArgumentException("No budget-log setting was given.");
+            bool keepStatistics = BoolMember(root, "keepStatistics")
+                ?? throw new ArgumentException("No statistics setting was given.");
+
+            ProbeLog.Write(
+                "command-started",
+                "command", PrepareLookAheadSuiteCommand,
+                "file", fileName);
+            InvokePlugin(
+                "PrepareLookAheadSuite",
+                new object[]
+                {
+                    sourcePath, enabled, stateBudget, logBudgetExceeded, keepStatistics,
+                });
+            ProbeLog.Write(
+                "look-ahead-suite-prepared",
+                "file", fileName,
+                "enabled", enabled,
+                "stateBudget", stateBudget,
+                "logBudgetExceeded", logBudgetExceeded,
+                "keepStatistics", keepStatistics);
+        }
+
+        private static void InvokePlugin(string methodName, object[] arguments)
+        {
+            Type plugin = Type.GetType(
+                    "GlobalConversationTracker.GlobalConversationTrackerPlugin, "
+                        + "GlobalConversationTracker",
+                    throwOnError: true)
+                ?? throw new InvalidOperationException(
+                    "The Global Conversation Tracker plugin assembly is not loaded.");
+            MethodInfo method = plugin.GetMethod(
+                    methodName,
+                    BindingFlags.Public | BindingFlags.Static)
+                ?? throw new MissingMethodException(plugin.FullName, methodName);
+            method.Invoke(null, arguments);
         }
 
         private static void StartConversation(JsonElement root)
