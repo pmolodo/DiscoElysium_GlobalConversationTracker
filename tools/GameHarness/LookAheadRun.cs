@@ -363,20 +363,16 @@ namespace GlobalConversationTracker.Harness
             foreach (SuiteArtefact artefact in suite.Artefacts)
             {
                 string path = Path.Combine(saveGames, artefact.FileName);
-                if (!File.Exists(path))
-                {
-                    report.Check(
-                        false,
-                        $"{suite.Name}: {artefact.What}",
-                        $"{artefact.FileName} was never written");
-                    continue;
-                }
+                string? contents = File.Exists(path) ? FilePaths.ReadShared(path) : null;
 
-                string? complaint = artefact.Check(FilePaths.ReadShared(path));
+                string? complaint = artefact.Check(contents);
                 report.Check(
                     complaint is null,
                     $"{suite.Name}: {artefact.What}",
-                    complaint ?? $"{artefact.FileName} says so");
+                    complaint
+                        ?? (contents is null
+                            ? $"{artefact.FileName} was never written, which is right here"
+                            : $"{artefact.FileName} says so"));
             }
         }
 

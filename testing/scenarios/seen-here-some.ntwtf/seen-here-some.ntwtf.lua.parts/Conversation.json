@@ -1,0 +1,10 @@
+{
+  "_format": "sparse-diff",
+  "_changes": {
+    "451": {
+      "Dialog": {
+        "WasDisplayed": "33,67"
+      }
+    }
+  }
+}

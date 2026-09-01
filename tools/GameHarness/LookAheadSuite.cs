@@ -142,9 +142,13 @@ namespace GlobalConversationTracker.Harness
         /// <summary>Creates an artefact check.</summary>
         /// <param name="fileName">Its name inside SaveGames.</param>
         /// <param name="what">What it proves, in one line.</param>
-        /// <param name="check">Returns null when the contents are right, else why not.</param>
+        /// <param name="check">
+        /// Given the file's contents, or null when it was never written; returns null
+        /// when that is right, else why not. Absence is passed rather than failed
+        /// because a file the mod declines to write can be the thing being checked.
+        /// </param>
         /// <exception cref="ArgumentNullException">An argument is null.</exception>
-        public SuiteArtefact(string fileName, string what, Func<string, string?> check)
+        public SuiteArtefact(string fileName, string what, Func<string?, string?> check)
         {
             FileName = fileName ?? throw new ArgumentNullException(nameof(fileName));
             What = what ?? throw new ArgumentNullException(nameof(what));
@@ -157,8 +161,8 @@ namespace GlobalConversationTracker.Harness
         /// <summary>What it proves.</summary>
         public string What { get; }
 
-        /// <summary>Returns null when the contents are right, else why not.</summary>
-        public Func<string, string?> Check { get; }
+        /// <summary>Given the contents or null; returns null when right, else why not.</summary>
+        public Func<string?, string?> Check { get; }
     }
 
     /// <summary>

@@ -1,0 +1,30 @@
+{
+  "_format": "expanded-save-diff",
+  "base": "../at-siileng.ntwtf",
+  "members": [
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "seen-here-some.1st.ntwtf.json",
+      "suffix": ".1st.ntwtf.json"
+    },
+    {
+      "diff": "seen-here-some.2nd.ntwtf.json",
+      "kind": "json",
+      "name": "seen-here-some.2nd.ntwtf.json",
+      "suffix": ".2nd.ntwtf.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "seen-here-some.FOW.json",
+      "suffix": ".FOW.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "seen-here-some.states.lua",
+      "suffix": ".states.lua"
+    }
+  ]
+}

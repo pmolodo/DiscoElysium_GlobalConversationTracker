@@ -37,7 +37,19 @@ namespace GlobalConversationTracker.Harness
         public const int LeaveEntry = 85;
 
         /// <summary>The global state all three money scenarios share.</summary>
+        /// <remarks>
+        /// Every entry of the conversation except 80, so reaching 80 is the only way to
+        /// find something no save has read.
+        /// </remarks>
         private const string MoneyState = "global-conversation-state.json";
+
+        /// <summary>
+        /// Every entry recorded, so nothing the crawl reaches is unseen anywhere.
+        /// </summary>
+        private const string AllSeenElsewhereState = "global-state-all-seen-elsewhere.json";
+
+        /// <summary>Nothing recorded, so every option is itself unseen anywhere.</summary>
+        private const string EmptyState = "global-state-empty.json";
 
         /// <summary>Every suite, in the order a full run does them.</summary>
         /// <remarks>
@@ -45,7 +57,7 @@ namespace GlobalConversationTracker.Harness
         /// suites it names, and would quietly hold nulls.
         /// </remarks>
         public static IReadOnlyList<LookAheadSuite> All =>
-            new[] { Money, Budget, SwitchedOff };
+            new[] { Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff };
 
         /// <summary>
         /// The forward scan spends as it walks.
@@ -89,14 +101,11 @@ namespace GlobalConversationTracker.Harness
                     AllUnmarked("nothing on the path is affordable"),
                     money: 4900),
             },
-            pluginSettings: new Dictionary<string, string>
-            {
-                // Costs this suite nothing - it makes the mod write a summary it would
-                // otherwise keep to itself - and this is the suite with the most crawls
-                // to summarise, so it is the cheapest place to check the summary is
-                // right rather than paying for another launch.
-                ["KeepLookAheadStates"] = "true",
-            },
+            // Costs this suite nothing - it makes the mod write a summary it would
+            // otherwise keep to itself - and this is the suite with the most crawls to
+            // summarise, so it is the cheapest place to check the summary is right
+            // rather than paying for another launch.
+            pluginSettings: KeepStatistics,
             artefacts: new[]
             {
                 new SuiteArtefact(
@@ -113,7 +122,17 @@ namespace GlobalConversationTracker.Harness
     /// found counts must sum to the crawl count; if they did not, some crawl reached a
     /// state the classification does not name, and no marker check would say so.
     /// </remarks>
-    private static string? CheckStatistics(string json)
+    private static string? CheckStatistics(string? json)
+    {
+        if (json is null)
+        {
+            return "look-ahead-stats.json was never written";
+        }
+
+        return CheckStatisticsOf(json);
+    }
+
+    private static string? CheckStatisticsOf(string json)
     {
         using JsonDocument document = JsonDocument.Parse(json);
         JsonElement root = document.RootElement;
@@ -187,11 +206,7 @@ namespace GlobalConversationTracker.Harness
                 new SuiteArtefact(
                     "look-ahead-budget-overflows.log",
                     "the overflow log names the option that ran out",
-                    text => text.Contains($"budget exhausted", StringComparison.Ordinal)
-                        && text.Contains($"{SiilengConversation}:", StringComparison.Ordinal)
-                        ? null
-                        : "no overflow block for conversation "
-                            + $"{SiilengConversation} in {text.Length} characters"),
+                    CheckOverflowLog),
             });
 
         /// <summary>
@@ -236,6 +251,146 @@ namespace GlobalConversationTracker.Harness
                     "tracking is unaffected by the switch"),
             });
 
+        /// <summary>
+        /// Reaching a line another save has read, from an option this one has, is red.
+        /// </summary>
+        /// <remarks>
+        /// <para>The rung that has never run in game. It needs both halves of the ladder
+        /// at once: the option's own entry read in THIS save, so its own novelty is the
+        /// lowest rung, and everything the crawl reaches recorded in the global state but
+        /// not in the save, so the best it can find is the middle one.</para>
+        ///
+        /// <para>Entries 33 and 67 are read in the save and so should be marked; 85 is
+        /// not read and reaches nothing anyway; 86 is not read either, so its own novelty
+        /// already equals the best thing it can reach and the rule says leave it alone.
+        /// That last one is what makes this more than a colour check - it is the ordering
+        /// rule failing to fire, in the same menu as it fires twice.</para>
+        /// </remarks>
+        public static LookAheadSuite SeenElsewhere { get; } = new LookAheadSuite(
+            "seen-elsewhere",
+            "an option this save has read, leading somewhere only another save has, is red",
+            AllSeenElsewhereState,
+            new[]
+            {
+                new LookAheadScenario(
+                    "seen-here-some",
+                    SiilengConversation,
+                    "two options read in this save, everything recorded in another",
+                    new[]
+                    {
+                        Marked(InspectSneakersEntry, Marker.Red,
+                            "read here, and it leads on to lines only another save has read"),
+                        Marked(InspectSpeakersEntry, Marker.Red, "and so does the other"),
+                        Unmarked(BuySneakersEntry,
+                            "not read here, so it already ranks as high as anything it reaches"),
+                        Unmarked(LeaveEntry, "leaving reaches nothing at all"),
+                    },
+                    money: 5100),
+            });
+
+        /// <summary>
+        /// A conversation this save has read to the end earns nothing.
+        /// </summary>
+        /// <remarks>
+        /// The bottom rung. Every entry is read in this save, so every option's own
+        /// novelty and everything it can reach are both the lowest, and nothing can
+        /// outrank anything. Distinguished from a crawl that simply did not run by the
+        /// statistics, which must still record crawls.
+        /// </remarks>
+        public static LookAheadSuite SeenHere { get; } = new LookAheadSuite(
+            "seen-here",
+            "a conversation already read to the end earns no marker",
+            AllSeenElsewhereState,
+            new[]
+            {
+                new LookAheadScenario(
+                    "seen-here-all",
+                    SiilengConversation,
+                    "every entry read in this save",
+                    AllUnmarked("there is nothing here this save has not read"),
+                    money: 5100),
+            },
+            pluginSettings: KeepStatistics,
+            artefacts: new[]
+            {
+                new SuiteArtefact(
+                    "look-ahead-stats.json",
+                    "the crawls ran and found nothing, rather than not running",
+                    CheckStatistics),
+            });
+
+        /// <summary>
+        /// An option that is itself unread anywhere is never marked, and never crawled.
+        /// </summary>
+        /// <remarks>
+        /// <para>The rule that gives the feature its shape: nothing outranks where such
+        /// an option already leads, so a marker would say nothing. On a profile that has
+        /// recorded nothing at all - a first playthrough - no option in the game is ever
+        /// marked, which is a strong claim and worth holding to.</para>
+        ///
+        /// <para>And it is decided WITHOUT crawling. MarkerFor answers from the option's
+        /// own novelty and returns before it builds a graph, so a first playthrough pays
+        /// nothing at all for the feature. That is why this suite asserts the statistics
+        /// record no crawl rather than crawls that found nothing - the difference between
+        /// the two is the whole of the optimisation.</para>
+        /// </remarks>
+        public static LookAheadSuite Pristine { get; } = new LookAheadSuite(
+            "pristine",
+            "an option that is itself unread anywhere is never marked, and never crawled",
+            EmptyState,
+            new[]
+            {
+                new LookAheadScenario(
+                    "afford-both",
+                    SiilengConversation,
+                    "nothing recorded in any save",
+                    AllUnmarked("every option is already as novel as anything it reaches"),
+                    money: 5100),
+            },
+            pluginSettings: KeepStatistics,
+            artefacts: new[]
+            {
+                new SuiteArtefact(
+                    "look-ahead-stats.json",
+                    "no crawl ran at all, because none could have said anything",
+                    NoCrawls),
+            });
+
+    /// <summary>
+    /// Checks that nothing was crawled.
+    /// </summary>
+    /// <remarks>
+    /// The statistics are written at shutdown only when a crawl was recorded, so on a
+    /// pristine profile the file is legitimately absent. A file that IS there must
+    /// report no crawl.
+    /// </remarks>
+    private static string? NoCrawls(string? json)
+    {
+        if (json is null)
+        {
+            return null;
+        }
+
+        using JsonDocument document = JsonDocument.Parse(json);
+        int crawls = document.RootElement.GetProperty("crawls").GetInt32();
+        return crawls == 0 ? null : $"{crawls} crawls ran, but none should have";
+    }
+
+    /// <summary>Checks the overflow log names the conversation that ran out.</summary>
+    private static string? CheckOverflowLog(string? text)
+    {
+        if (text is null)
+        {
+            return "look-ahead-budget-overflows.log was never written";
+        }
+
+        return text.Contains("budget exhausted", StringComparison.Ordinal)
+            && text.Contains($"{SiilengConversation}:", StringComparison.Ordinal)
+            ? null
+            : $"no overflow block for conversation {SiilengConversation} in "
+                + $"{text.Length} characters";
+    }
+
         /// <summary>Finds a suite by name.</summary>
         /// <param name="name">The suite's name, or null for every suite.</param>
         /// <exception cref="ArgumentException">No suite goes by that name.</exception>
@@ -256,6 +411,13 @@ namespace GlobalConversationTracker.Harness
                     nameof(name))
                 : new[] { found };
         }
+
+        /// <summary>Asking the mod to keep the statistics a suite reads back.</summary>
+        private static Dictionary<string, string> KeepStatistics =>
+            new Dictionary<string, string> { ["KeepLookAheadStates"] = "true" };
+
+        private static OptionExpectation Marked(int entryId, Marker marker, string why) =>
+            new OptionExpectation(entryId, marker, why);
 
         private static OptionExpectation Orange(int entryId, string why) =>
             new OptionExpectation(entryId, Marker.Orange, why);
