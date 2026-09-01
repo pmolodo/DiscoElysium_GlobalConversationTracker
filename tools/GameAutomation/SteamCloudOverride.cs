@@ -46,7 +46,7 @@ namespace GlobalConversationTracker.Automation
             TimeSpan timeout,
             Action<string>? progress = null)
         {
-            string steamRoot = Path.GetDirectoryName(steamExecutable);
+            string steamRoot = FilePaths.FolderOf(steamExecutable, nameof(steamExecutable));
             string[] configs = SteamCloud.FindAppConfigs(steamRoot, DiscoElysiumAppId);
             if (configs.Length != 1)
             {

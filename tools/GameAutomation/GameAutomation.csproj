@@ -2,21 +2,37 @@
 
   <PropertyGroup>
     <!--
-      net48 rather than netstandard2.0: this assembly captures the screen, which
-      needs System.Drawing, and .NET Framework carries System.Drawing in the box
-      while netstandard2.0 would need a NuGet package - in a repo that otherwise
-      has none. Windows PowerShell 5.1 is .NET Framework, so it loads this
-      directly with Add-Type -Path.
+      net6.0, matching the plugin and the rest of the repo. It was net48 until
+      2026-09-01, for two reasons of which only one was ever load-bearing and
+      neither now is:
 
-      This exists as a compiled assembly rather than an Add-Type block inside the
-      PowerShell module because Defender's AMSI blocks the module outright when
-      the SendInput and EnumWindows P/Invokes appear as script text: the pair is
+        "Windows PowerShell 5.1 loads this directly with Add-Type -Path" - no
+        longer true. Nothing loads this assembly from a script; the harness that
+        used to be a PowerShell module is now the compiled GameHarness console
+        app, and the only Add-Type left in the repo names a framework assembly.
+
+        "System.Drawing is in the box on .NET Framework, and this repo has no
+        package references" - half true, and the half that was true has been
+        paid. System.Drawing.Common is referenced below. The no-packages property
+        only ever covered non-test projects; every test project here already
+        references xunit and the test SDK.
+
+      What the move buys is System.Text.Json in the box, which is what reads the
+      in-game probe's JSON events. The alternative was a hand-written JSON parser
+      in the harness - more code, and more ways to be subtly wrong, than one
+      package reference.
+
+      This exists as a compiled assembly rather than an Add-Type block inside a
+      PowerShell module because Defender's AMSI blocks a script containing the
+      SendInput and EnumWindows P/Invokes side by side: the pair is
       indistinguishable from a keylogger by inspection. Compiling them is not a
       workaround for a false positive so much as the honest shape - this is
       interop, and interop belongs in a compiled, warned-on, reviewable assembly
       rather than in a here-string.
     -->
-    <TargetFramework>net48</TargetFramework>
+    <TargetFramework>net6.0-windows</TargetFramework>
+    <!-- net6.0 is chosen to match the plugin's runtime, not for support status. -->
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
@@ -28,9 +44,13 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
-  <!-- In the framework, so no package reference. -->
+  <!--
+    Screen capture and the pixel diff. Windows-only, which costs nothing here:
+    this assembly enumerates Win32 windows and injects input with SendInput, so
+    it could not run anywhere else regardless.
+  -->
   <ItemGroup>
-    <Reference Include="System.Drawing" />
+    <PackageReference Include="System.Drawing.Common" Version="6.0.0" />
   </ItemGroup>
 
 </Project>

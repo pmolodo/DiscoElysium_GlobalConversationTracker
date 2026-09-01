@@ -922,7 +922,7 @@ Options:
             string testSettings = options.TestSettings ?? Path.Combine(RepoRoot(), @"testing\Settings.json");
             string referencePath = Path.Combine(artifacts, "main-menu.png");
             string logPath = Path.Combine(
-                Path.GetDirectoryName(game), "BepInEx", "LogOutput.log");
+                FilePaths.FolderOf(game, nameof(game)), "BepInEx", "LogOutput.log");
 
             Directory.CreateDirectory(artifacts);
 

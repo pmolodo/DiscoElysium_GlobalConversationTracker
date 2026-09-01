@@ -1,12 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!--
-      net48 because it references GameAutomation, which needs System.Drawing from
-      the framework rather than a NuGet package.
-    -->
+    <!-- net6.0, matching GameAutomation, which it is a front end for. -->
     <OutputType>Exe</OutputType>
-    <TargetFramework>net48</TargetFramework>
+    <TargetFramework>net6.0-windows</TargetFramework>
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
@@ -20,7 +18,7 @@
     <ProjectReference Include="..\GameAutomation\GameAutomation.csproj" />
   </ItemGroup>
 
-  <!-- The net48 harness invokes the net10 decoder as a child process. -->
+  <!-- The harness invokes the net10 decoder as a child process. -->
   <Target Name="BuildNtwtfDecode" BeforeTargets="Build">
     <MSBuild
       Projects="..\NtwtfDecode\NtwtfDecode.csproj"

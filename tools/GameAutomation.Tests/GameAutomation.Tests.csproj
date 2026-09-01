@@ -2,10 +2,10 @@
 
   <PropertyGroup>
     <!--
-      net48 to match the assembly under test, which needs the framework's
-      System.Drawing.
+      net6.0 to match the assembly under test.
     -->
-    <TargetFramework>net48</TargetFramework>
+    <TargetFramework>net6.0-windows</TargetFramework>
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
@@ -23,9 +23,5 @@
     <ProjectReference Include="..\GameHarness\GameHarness.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Reference Include="System.IO.Compression" />
-    <Reference Include="System.IO.Compression.FileSystem" />
-  </ItemGroup>
 
 </Project>
