@@ -13,7 +13,8 @@ public class TextDiffTests
 
         string patch = TextDiff.Create("save.states.lua", baseline, target)!;
 
-        Assert.StartsWith("--- a/save.states.lua\n+++ b/save.states.lua\n@@\n-", patch);
+        Assert.Contains("-old \"text\"\n+new text", patch);
+        Assert.DoesNotContain("\\u0022", patch);
         Assert.Equal(target, TextDiff.Apply("save.states.lua", baseline, patch));
         Assert.Throws<InvalidDataException>(() =>
             TextDiff.Apply("save.states.lua", "wrong"u8.ToArray(), patch)
