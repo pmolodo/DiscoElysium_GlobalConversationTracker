@@ -43,47 +43,99 @@ public static class LuaSplitFiles
         File.WriteAllBytes(Path.Combine(directory, TrailingFileName), root.TrailingBytes);
     }
 
-    /// <summary>Writes only recursive sparse-JSON changes from a baseline.</summary>
-    public static void WriteDiff(
+    /// <summary>
+    /// Writes only the tables that differ from a base document.
+    /// </summary>
+    /// <remarks>
+    /// No manifest, and no directory at all when nothing differs. The base is named once,
+    /// by the expanded save's own _archive.json; a second copy of it down here said the
+    /// same thing by a different relative path, and for a diff that changes no table it
+    /// was the only reason the directory existed.
+    /// </remarks>
+    /// <returns>Whether anything was written.</returns>
+    public static bool WriteDiff(
         string directory,
         LuaTable root,
-        string baseline,
+        LuaTable baseDocument,
         int? indent
     )
     {
-        string baselinePath = Path.GetFullPath(baseline);
-        SparseBaseline baseData = ReadBaseline(baselinePath);
-        Directory.CreateDirectory(directory);
+        Dictionary<string, SparseMap> baseTrees = EncodeSparse(baseDocument);
         Dictionary<string, SparseMap> target = EncodeSparse(root);
+
+        var patches = new Dictionary<string, SparseMap>();
         foreach (string name in RawDataParser.TableNames)
         {
-            SparseMap? patch = SparseDiff.Create(baseData.Trees[name], target[name]);
-            if (patch is null)
+            SparseMap? patch = SparseDiff.Create(baseTrees[name], target[name]);
+            if (patch is not null)
             {
-                continue;
+                patches[name] = patch;
             }
-            using FileStream stream = File.Create(TablePath(directory, name));
-            SparseJson.Write(stream, patch, indent);
+        }
+
+        bool trailingDiffers = !root.TrailingBytes.SequenceEqual(baseDocument.TrailingBytes);
+        if (patches.Count == 0 && !trailingDiffers)
+        {
+            return false;
+        }
+
+        Directory.CreateDirectory(directory);
+        foreach (KeyValuePair<string, SparseMap> patch in patches)
+        {
+            using FileStream stream = File.Create(TablePath(directory, patch.Key));
+            SparseJson.Write(stream, patch.Value, indent);
             stream.WriteByte((byte)'\n');
         }
 
-        if (!root.TrailingBytes.SequenceEqual(baseData.TrailingBytes))
+        if (trailingDiffers)
         {
             File.WriteAllBytes(Path.Combine(directory, TrailingFileName), root.TrailingBytes);
         }
 
-        var manifest = new SparseMap();
-        manifest.Add(LuaJson.FormatName, SparseDiff.SetFormat);
-        manifest.Add(
-            "base",
-            Path.GetRelativePath(directory, baselinePath)
-                .Replace(Path.DirectorySeparatorChar, '/')
-        );
-        using FileStream manifestStream = File.Create(
-            Path.Combine(directory, SparseDiff.ManifestFileName)
-        );
-        SparseJson.Write(manifestStream, manifest, indent);
-        manifestStream.WriteByte((byte)'\n');
+        return true;
+    }
+
+    /// <summary>
+    /// Applies whatever table patches a diff carries onto its base document.
+    /// </summary>
+    /// <remarks>
+    /// The directory is allowed not to exist. A save that changes only a pass-through
+    /// member - money lives in the 2nd JSON, not in the Lua - has no table patches to
+    /// carry, and should not have to carry an empty folder to say so.
+    /// </remarks>
+    /// <param name="directory">The split directory, which need not exist.</param>
+    /// <param name="baseDocument">The document the patches apply to.</param>
+    public static LuaTable ReadDiff(string? directory, LuaTable baseDocument)
+    {
+        Dictionary<string, SparseMap> baseTrees = EncodeSparse(baseDocument);
+        var trees = new Dictionary<string, object?>();
+        bool present = directory is not null && Directory.Exists(directory);
+
+        foreach (string name in RawDataParser.TableNames)
+        {
+            SparseMap tree = baseTrees[name];
+            string patchPath = present ? TablePath(directory!, name) : string.Empty;
+            if (present && File.Exists(patchPath))
+            {
+                using FileStream stream = File.OpenRead(patchPath);
+                tree = SparseJson.Read(stream) is SparseMap patch
+                    ? SparseDiff.Apply(tree, patch, patchPath)
+                    : throw new InvalidDataException($"'{patchPath}' is not a JSON object");
+            }
+            trees[name] = tree;
+        }
+
+        byte[] trailingBytes = baseDocument.TrailingBytes;
+        if (present)
+        {
+            string trailing = Path.Combine(directory!, TrailingFileName);
+            if (File.Exists(trailing))
+            {
+                trailingBytes = File.ReadAllBytes(trailing);
+            }
+        }
+
+        return DecodeSparse(trees, trailingBytes);
     }
 
     /// <summary>Reads five table JSON files and one trailing-data binary file.</summary>
@@ -97,12 +149,6 @@ public static class LuaSplitFiles
         if (!Directory.Exists(directory))
         {
             throw new DirectoryNotFoundException($"No such split directory: '{directory}'");
-        }
-
-        string manifestPath = Path.Combine(directory, SparseDiff.ManifestFileName);
-        if (File.Exists(manifestPath))
-        {
-            return ReadDiff(directory, manifestPath);
         }
 
         var trees = new Dictionary<string, object?>();
@@ -171,67 +217,6 @@ public static class LuaSplitFiles
         );
     }
 
-    private static LuaTable ReadDiff(string directory, string manifestPath)
-    {
-        SparseBaseline resolved = ReadDiffTrees(directory, manifestPath, chain: null);
-        var trees = new Dictionary<string, object?>();
-        foreach (KeyValuePair<string, SparseMap> tree in resolved.Trees)
-        {
-            trees[tree.Key] = tree.Value;
-        }
-        return DecodeSparse(trees, resolved.TrailingBytes);
-    }
-
-    /// <summary>
-    /// Applies a table diff to its base, which may itself be a diff.
-    /// </summary>
-    /// <remarks>
-    /// Chaining is what lets several saves that share a setup state it once: an
-    /// intermediate diff carries the shared tables and each save beyond it carries only
-    /// its own. The tables come back still sparse, so a base can be applied to without
-    /// being decoded first.
-    /// </remarks>
-    private static SparseBaseline ReadDiffTrees(
-        string directory,
-        string manifestPath,
-        HashSet<string>? chain
-    )
-    {
-        using FileStream manifestStream = File.OpenRead(manifestPath);
-        if (SparseJson.Read(manifestStream) is not SparseMap manifest
-            || manifest.Find(LuaJson.FormatName) is not string format
-            || format != SparseDiff.SetFormat
-            || manifest.Find("base") is not string relativeBase)
-        {
-            throw new InvalidDataException($"'{manifestPath}' is not a sparse diff manifest");
-        }
-
-        chain ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        ExpandedSave.Descend(chain, directory, manifestPath);
-
-        string baselinePath = Path.GetFullPath(Path.Combine(directory, relativeBase));
-        SparseBaseline baseline = ReadBaseline(baselinePath, chain);
-        var trees = new Dictionary<string, SparseMap>();
-        foreach (string name in RawDataParser.TableNames)
-        {
-            SparseMap tree = baseline.Trees[name];
-            string patchPath = TablePath(directory, name);
-            if (File.Exists(patchPath))
-            {
-                using FileStream stream = File.OpenRead(patchPath);
-                tree = SparseJson.Read(stream) is SparseMap patch
-                    ? SparseDiff.Apply(tree, patch, patchPath)
-                    : throw new InvalidDataException($"'{patchPath}' is not a JSON object");
-            }
-            trees[name] = tree;
-        }
-        string trailing = Path.Combine(directory, TrailingFileName);
-        byte[] trailingBytes = File.Exists(trailing)
-            ? File.ReadAllBytes(trailing)
-            : baseline.TrailingBytes;
-        return new SparseBaseline(trees, trailingBytes);
-    }
-
     private static LuaTable DecodeSparse(Dictionary<string, object?> trees, byte[] trailingBytes)
     {
         // Conversation first: the Variable table may have left out the variables
@@ -275,54 +260,6 @@ public static class LuaSplitFiles
         }
         return trees;
     }
-
-    private static SparseMap ReadSparseTable(string directory, string name)
-    {
-        string path = TablePath(directory, name);
-        using FileStream stream = File.OpenRead(path);
-        if (LuaJson.FormatOf(stream) != SparseFormat)
-        {
-            throw new InvalidDataException($"Diff baseline table '{path}' is not sparse");
-        }
-        return SparseJson.Read(stream) as SparseMap
-            ?? throw new InvalidDataException($"Sparse table '{path}' is not a JSON object");
-    }
-
-    private static SparseBaseline ReadBaseline(string path, HashSet<string>? chain = null)
-    {
-        if (SaveBlob.IsArchive(path))
-        {
-            PackedSave packed = SaveBlob.ReadArchive(path);
-            LuaTable root = LuaTableVisitor.ReadAllTables(packed.LuaBytes, out _);
-            return new SparseBaseline(EncodeSparse(root), root.TrailingBytes);
-        }
-
-        string directory = ResolveDirectory(path);
-
-        // A base that is itself a diff has to be applied before it can be read as a
-        // baseline; without this its sparse-diff tables are taken for sparse ones and
-        // refused for not being sparse, which is the truth but not the useful part.
-        string manifestPath = Path.Combine(directory, SparseDiff.ManifestFileName);
-        if (File.Exists(manifestPath))
-        {
-            return ReadDiffTrees(directory, manifestPath, chain);
-        }
-
-        var trees = new Dictionary<string, SparseMap>();
-        foreach (string name in RawDataParser.TableNames)
-        {
-            trees[name] = ReadSparseTable(directory, name);
-        }
-        return new SparseBaseline(
-            trees,
-            File.ReadAllBytes(Path.Combine(directory, TrailingFileName))
-        );
-    }
-
-    private sealed record SparseBaseline(
-        Dictionary<string, SparseMap> Trees,
-        byte[] TrailingBytes
-    );
 
     private static LuaTable TableOf(LuaTable root, string name) =>
         root.TryGetValue(name, out object? value) && value is LuaTable table

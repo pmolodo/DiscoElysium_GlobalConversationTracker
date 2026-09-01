@@ -40,7 +40,8 @@ public static class ExpandedSave
         else
         {
             WriteMemberDiffs(directory, packed, baseline, indent);
-            LuaSplitFiles.WriteDiff(parts, document, baseline, indent);
+            LuaSplitFiles.WriteDiff(
+                parts, document, ReadBaseDocument(Path.GetFullPath(baseline), null), indent);
         }
     }
 
@@ -68,15 +69,32 @@ public static class ExpandedSave
             );
         }
 
-        string parts = LuaSplitFiles.ResolveDirectory(source);
-        string partsName = Path.GetFileName(parts);
-        const string PartsSuffix = ".parts";
-        if (!partsName.EndsWith(SaveBlob.LuaExtension + PartsSuffix, StringComparison.Ordinal))
+        string manifestPath = Path.Combine(source, DiffManifestFileName);
+        bool isDiff = File.Exists(manifestPath);
+        string archiveName = isDiff ? ManifestStem(manifestPath) : string.Empty;
+        string luaName = archiveName + SaveBlob.LuaExtension;
+        string? parts = FindParts(source);
+        if (parts is not null)
         {
-            throw new InvalidDataException($"Split directory '{parts}' is not named for a Lua blob");
+            string partsName = Path.GetFileName(parts);
+            const string PartsSuffix = ".parts";
+            if (!partsName.EndsWith(SaveBlob.LuaExtension + PartsSuffix, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    $"Split directory '{parts}' is not named for a Lua blob"
+                );
+            }
+            luaName = partsName[..^PartsSuffix.Length];
+            archiveName = luaName[..^SaveBlob.LuaExtension.Length];
         }
-        string luaName = partsName[..^PartsSuffix.Length];
-        string archiveName = luaName[..^SaveBlob.LuaExtension.Length];
+        else if (!isDiff)
+        {
+            // Only a diff may leave the tables out; a complete save has nowhere else to
+            // keep them.
+            throw new InvalidDataException(
+                $"'{source}' has no split directory and no {DiffManifestFileName} to inherit from."
+            );
+        }
         string outputArchiveName = archiveName;
         if (!TimestampPattern.IsMatch(archiveName))
         {
@@ -88,7 +106,9 @@ public static class ExpandedSave
             output = AppendTimestamp(output, timestamp);
         }
         string outputLuaName = outputArchiveName + SaveBlob.LuaExtension;
-        LuaTable document = LuaSplitFiles.Read(parts);
+        LuaTable document = isDiff
+            ? LuaSplitFiles.ReadDiff(parts, ReadBaseDocument(BaseOf(source, manifestPath), null))
+            : LuaSplitFiles.Read(parts!);
 
         string? parent = Path.GetDirectoryName(output);
         if (!string.IsNullOrEmpty(parent))
@@ -103,8 +123,7 @@ public static class ExpandedSave
             LuaBinary.WriteDocument(stream, document);
         }
 
-        string manifestPath = Path.Combine(source, DiffManifestFileName);
-        if (File.Exists(manifestPath))
+        if (isDiff)
         {
             WriteDiffMembers(archive, source, manifestPath, archiveName, outputArchiveName);
             return output;
@@ -123,6 +142,91 @@ public static class ExpandedSave
             archive.CreateEntryFromFile(file, outputName, CompressionLevel.Optimal);
         }
         return output;
+    }
+
+    /// <summary>The save name a diff's members are written for.</summary>
+    /// <remarks>
+    /// Read off the manifest rather than off the directory name, because the members are
+    /// what the name has to agree with and the manifest already records both halves of
+    /// each: strip a member's suffix from its name and what is left is the save. A
+    /// directory can be renamed without its contents; the manifest cannot disagree with
+    /// itself.
+    /// </remarks>
+    private static string ManifestStem(string manifestPath)
+    {
+        JsonObject manifest = JsonNode.Parse(File.ReadAllText(manifestPath)) as JsonObject
+            ?? throw new InvalidDataException($"'{manifestPath}' is not a JSON object");
+        if (manifest["members"] is not JsonArray members || members.Count == 0)
+        {
+            throw new InvalidDataException($"'{manifestPath}' lists no members");
+        }
+
+        JsonObject first = members[0] as JsonObject
+            ?? throw new InvalidDataException($"'{manifestPath}' has a malformed member");
+        string name = first["name"]?.GetValue<string>()
+            ?? throw new InvalidDataException($"'{manifestPath}' has a member with no name");
+        string suffix = first["suffix"]?.GetValue<string>()
+            ?? throw new InvalidDataException($"'{manifestPath}' has a member with no suffix");
+
+        return name.EndsWith(suffix, StringComparison.Ordinal)
+            ? name[..^suffix.Length]
+            : throw new InvalidDataException(
+                $"'{manifestPath}' has member '{name}' that does not end in '{suffix}'"
+            );
+    }
+
+    /// <summary>The split directory, or null when the save inherits every table.</summary>
+    private static string? FindParts(string source)
+    {
+        try
+        {
+            return LuaSplitFiles.ResolveDirectory(source);
+        }
+        catch (InvalidDataException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Where a diff manifest says its base is.</summary>
+    private static string BaseOf(string source, string manifestPath)
+    {
+        JsonObject manifest = JsonNode.Parse(File.ReadAllText(manifestPath)) as JsonObject
+            ?? throw new InvalidDataException($"'{manifestPath}' is not a JSON object");
+        string relative = manifest["base"]?.GetValue<string>()
+            ?? throw new InvalidDataException($"'{manifestPath}' does not name a base");
+        return Path.GetFullPath(Path.Combine(source, relative));
+    }
+
+    /// <summary>
+    /// The complete Lua document a base holds, applying its own diff if it is one.
+    /// </summary>
+    /// <remarks>
+    /// The base is named once, in _archive.json, and that one name now answers for both
+    /// halves of a save - the pass-through members and the Lua tables. It used to be
+    /// written twice, once here and once in the split directory, which is what made an
+    /// otherwise empty split directory necessary.
+    /// </remarks>
+    public static LuaTable ReadBaseDocument(string path, HashSet<string>? chain = null)
+    {
+        if (SaveBlob.IsArchive(path))
+        {
+            PackedSave packed = SaveBlob.ReadArchive(path);
+            return LuaTableVisitor.ReadAllTables(packed.LuaBytes, out _);
+        }
+
+        string manifestPath = Path.Combine(path, DiffManifestFileName);
+        if (!File.Exists(manifestPath))
+        {
+            return LuaSplitFiles.Read(LuaSplitFiles.ResolveDirectory(path));
+        }
+
+        chain ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Descend(chain, path, manifestPath);
+        return LuaSplitFiles.ReadDiff(
+            FindParts(path),
+            ReadBaseDocument(BaseOf(path, manifestPath), chain)
+        );
     }
 
     private static void WriteMemberDiffs(
@@ -309,16 +413,25 @@ public static class ExpandedSave
             PackedSave packed = SaveBlob.ReadArchive(path);
             return BuildMembers(packed.LuaName, packed.PassThrough, path);
         }
-        string parts = LuaSplitFiles.ResolveDirectory(path);
-        string luaName = Path.GetFileName(parts)[..^".parts".Length];
-
+        // The split directory names the save when there is one, and the expanded
+        // directory does when there is not: a diff that changes no Lua table has no
+        // split directory to ask.
         // A base that is itself a diff has to be applied before it can be read as one,
-        // or its diff files would be taken for the members they describe.
+        // or its diff files would be taken for the members they describe. Its name comes
+        // from the manifest, since a diff that changes no Lua table has no split
+        // directory to ask.
         string manifestPath = Path.Combine(path, DiffManifestFileName);
         if (File.Exists(manifestPath))
         {
-            return BuildMembers(luaName, ApplyDiff(path, manifestPath, chain), path);
+            return BuildMembers(
+                ManifestStem(manifestPath) + SaveBlob.LuaExtension,
+                ApplyDiff(path, manifestPath, chain),
+                path
+            );
         }
+
+        string parts = LuaSplitFiles.ResolveDirectory(path);
+        string luaName = Path.GetFileName(parts)[..^".parts".Length];
 
         var entries = Directory.GetFiles(path)
             .Where(file => Path.GetFileName(file) != DiffManifestFileName)

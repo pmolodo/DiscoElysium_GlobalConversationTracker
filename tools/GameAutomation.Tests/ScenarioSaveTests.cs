@@ -106,11 +106,11 @@ namespace GlobalConversationTracker.Automation.Tests
 
                 Assert.Equal(new[] { $"{scenario}.2nd.ntwtf.json" }, members);
 
-                string parts = Path.Combine(
-                    ScenarioRoot, scenario + ".ntwtf", $"{scenario}.ntwtf.lua.parts");
-                Assert.Equal(
-                    new[] { "_base.json" },
-                    Directory.GetFiles(parts).Select(Path.GetFileName).ToArray()!);
+                // Not even an empty one. Money lives in the 2nd JSON, so a scenario
+                // changes no Lua table, and the base it inherits them from is named by
+                // _archive.json rather than by a second file down here.
+                Assert.False(Directory.Exists(Path.Combine(
+                    ScenarioRoot, scenario + ".ntwtf", $"{scenario}.ntwtf.lua.parts")));
             }
         }
 

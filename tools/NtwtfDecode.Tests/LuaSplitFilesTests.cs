@@ -84,15 +84,15 @@ public class LuaSplitFilesTests
         LuaTable document = LuaTableVisitor.ReadAllTables(original, out _);
         LuaSplitFiles.Write(baseline, document, indent: 2, sparse: true);
 
-        LuaSplitFiles.WriteDiff(diff, document, baseline, indent: 2);
-        LuaTable rebuilt = LuaSplitFiles.Read(diff);
+        bool wrote = LuaSplitFiles.WriteDiff(diff, document, document, indent: 2);
+        LuaTable rebuilt = LuaSplitFiles.ReadDiff(diff, document);
         using var output = new MemoryStream();
         LuaBinary.WriteDocument(output, rebuilt);
 
-        Assert.Equal(
-            new[] { SparseDiff.ManifestFileName },
-            Directory.GetFiles(diff).Select(Path.GetFileName).ToArray()
-        );
+        // Nothing differs, so there is nothing to write - not even a folder. The base is
+        // named once by the expanded save that holds this, and every table is inherited.
+        Assert.False(wrote);
+        Assert.False(Directory.Exists(diff));
         Assert.Equal(original, output.ToArray());
     }
 
@@ -108,8 +108,8 @@ public class LuaSplitFilesTests
         changed.TrailingBytes = new byte[] { 1, 2, 3 };
         LuaSplitFiles.Write(baseline, baseDocument, indent: 2, sparse: true);
 
-        LuaSplitFiles.WriteDiff(diff, changed, baseline, indent: 2);
-        LuaTable rebuilt = LuaSplitFiles.Read(diff);
+        Assert.True(LuaSplitFiles.WriteDiff(diff, changed, baseDocument, indent: 2));
+        LuaTable rebuilt = LuaSplitFiles.ReadDiff(diff, baseDocument);
 
         Assert.Equal(new byte[] { 1, 2, 3 }, rebuilt.TrailingBytes);
         Assert.True(File.Exists(Path.Combine(diff, LuaSplitFiles.TrailingFileName)));

@@ -202,7 +202,12 @@ int Run(string[] argv)
         }
         else
         {
-            LuaSplitFiles.WriteDiff(output, allTables, baseline, indent);
+            LuaSplitFiles.WriteDiff(
+                output,
+                allTables,
+                ExpandedSave.ReadBaseDocument(Path.GetFullPath(baseline)),
+                indent
+            );
         }
         return 0;
     }
