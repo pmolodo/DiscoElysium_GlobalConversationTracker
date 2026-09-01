@@ -34,5 +34,28 @@ namespace GlobalConversationTracker.Automation
 
             return folder!;
         }
+
+        /// <summary>
+        /// Reads a file something else is still writing to.
+        /// </summary>
+        /// <remarks>
+        /// BepInEx holds its log open for the whole run, and the mod rewrites its
+        /// diagnostics as it goes, so a plain read of either fails with a sharing
+        /// violation while the game is up - which is exactly when a harness wants to look.
+        /// </remarks>
+        /// <param name="path">The file.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="path"/> is null.</exception>
+        public static string ReadShared(string path)
+        {
+            if (path == null)
+            {
+                throw new ArgumentNullException(nameof(path));
+            }
+
+            using var stream = new FileStream(
+                path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd();
+        }
     }
 }

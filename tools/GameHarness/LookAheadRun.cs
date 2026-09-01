@@ -204,8 +204,20 @@ namespace GlobalConversationTracker.Harness
                     RunScenario(scenario, saveGames, watcher, timeout, report);
                 }
 
+                // Closed here, not in the finally, and asked rather than killed: the
+                // mod writes its look-ahead statistics and flushes its global state from
+                // Application.quitting, so a killed game leaves neither. The statistics
+                // are otherwise written once every two hundred crawls, which is far more
+                // than a suite produces.
+                if (!keepOpen)
+                {
+                    Console.WriteLine();
+                    Quit(saveGames, process);
+                }
+
                 // Before the finally puts the profile back, which is when these exist.
                 CheckArtefacts(suite, saveGames, report);
+                CheckLog(suite, logPath, report);
             }
             finally
             {
@@ -220,8 +232,8 @@ namespace GlobalConversationTracker.Harness
                 }
                 else
                 {
-                    Console.WriteLine();
-                    Console.WriteLine("closing the game...");
+                    // Anything still alive after the polite close, and anything alive
+                    // because the run threw before reaching it.
                     Close(process);
                     staged.Restore();
                 }
@@ -319,6 +331,27 @@ namespace GlobalConversationTracker.Harness
             }
         }
 
+        /// <summary>Checks what a suite says the mod should have written to the log.</summary>
+        private static void CheckLog(LookAheadSuite suite, string logPath, Report report)
+        {
+            if (suite.LogExpectations.Count == 0)
+            {
+                return;
+            }
+
+            string log = File.Exists(logPath) ? FilePaths.ReadShared(logPath) : string.Empty;
+            foreach (LogExpectation expected in suite.LogExpectations)
+            {
+                bool present = log.Contains(expected.Substring, StringComparison.Ordinal);
+                report.Check(
+                    present == expected.ShouldAppear,
+                    $"{suite.Name}: {expected.What}",
+                    present
+                        ? $"the log says '{expected.Substring}'"
+                        : $"the log does not say '{expected.Substring}'");
+            }
+        }
+
         /// <summary>Checks the files a suite says the run should leave behind.</summary>
         /// <remarks>
         /// Run inside the try, not the finally: the profile is staged, so the mod's
@@ -339,7 +372,7 @@ namespace GlobalConversationTracker.Harness
                     continue;
                 }
 
-                string? complaint = artefact.Check(File.ReadAllText(path));
+                string? complaint = artefact.Check(FilePaths.ReadShared(path));
                 report.Check(
                     complaint is null,
                     $"{suite.Name}: {artefact.What}",
@@ -430,6 +463,48 @@ namespace GlobalConversationTracker.Harness
             string oneLine = text.Replace("\r", " ").Replace("\n", " ");
             return oneLine.Length <= 80 ? oneLine : oneLine.Substring(0, 77) + "...";
         }
+
+        /// <summary>
+        /// Asks the game to close itself, and waits for it to go.
+        /// </summary>
+        /// <remarks>
+        /// Killing it is the fallback, not the plan. A killed game runs neither
+        /// Application.quitting nor AppDomain.ProcessExit, which is where the mod writes
+        /// everything it has been holding - so a run that killed would be measuring a
+        /// shutdown no player ever performs.
+        /// </remarks>
+        private static void Quit(string saveGames, Process? process)
+        {
+            Console.WriteLine("asking the game to close...");
+            try
+            {
+                ProbeCommand.SendQuit(saveGames);
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine($"  could not ask: {error.Message}");
+                return;
+            }
+
+            var clock = Stopwatch.StartNew();
+            while (clock.Elapsed < QuitDeadline)
+            {
+                if (Process.GetProcessesByName("disco").Length == 0)
+                {
+                    Console.WriteLine($"  it closed after {clock.Elapsed.TotalSeconds:N0}s");
+                    return;
+                }
+
+                Thread.Sleep(500);
+            }
+
+            Console.Error.WriteLine(
+                $"  still running after {QuitDeadline.TotalSeconds:N0}s; it will be closed "
+                + "the hard way, and anything the mod writes on the way out will be lost.");
+        }
+
+        /// <summary>How long to wait for the game to close itself before killing it.</summary>
+        private static readonly TimeSpan QuitDeadline = TimeSpan.FromSeconds(30);
 
         private static void Close(Process? process)
         {

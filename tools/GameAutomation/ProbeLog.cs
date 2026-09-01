@@ -165,13 +165,8 @@ namespace GlobalConversationTracker.Automation
                 return Array.Empty<ProbeEvent>();
             }
 
-            // Shared read: BepInEx holds the log open for writing for the whole run.
-            using (var stream = new FileStream(
-                logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-            using (var reader = new StreamReader(stream))
-            {
-                return Read(reader.ReadToEnd());
-            }
+            // Shared: BepInEx holds the log open for writing for the whole run.
+            return Read(FilePaths.ReadShared(logPath));
         }
 
         /// <summary>Every probe event in some text, in order.</summary>

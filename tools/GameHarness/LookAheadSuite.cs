@@ -99,6 +99,37 @@ namespace GlobalConversationTracker.Harness
             entryId is int id && Options.Any(o => o.EntryId == id);
     }
 
+    /// <summary>A line the mod should, or should not, have written.</summary>
+    /// <remarks>
+    /// Some of what a setting does is only visible here. Turning the feature off and
+    /// starving it of budget both leave every option unmarked, and the only thing that
+    /// tells them apart is whether the hook was installed at all - which the mod says
+    /// once, at load, and nowhere else.
+    /// </remarks>
+    public sealed class LogExpectation
+    {
+        /// <summary>Creates an expectation about the log.</summary>
+        /// <param name="substring">What to look for.</param>
+        /// <param name="shouldAppear">Whether it should be there.</param>
+        /// <param name="what">What its presence or absence proves.</param>
+        /// <exception cref="ArgumentNullException">An argument is null.</exception>
+        public LogExpectation(string substring, bool shouldAppear, string what)
+        {
+            Substring = substring ?? throw new ArgumentNullException(nameof(substring));
+            ShouldAppear = shouldAppear;
+            What = what ?? throw new ArgumentNullException(nameof(what));
+        }
+
+        /// <summary>What to look for.</summary>
+        public string Substring { get; }
+
+        /// <summary>Whether it should be there.</summary>
+        public bool ShouldAppear { get; }
+
+        /// <summary>What its presence or absence proves.</summary>
+        public string What { get; }
+    }
+
     /// <summary>A file the run should leave in the profile's SaveGames folder.</summary>
     /// <remarks>
     /// Checked before the profile is put back, because that is when it exists. The mod's
@@ -155,6 +186,7 @@ namespace GlobalConversationTracker.Harness
         /// <param name="scenarios">The scenarios, in the order they run.</param>
         /// <param name="pluginSettings">Mod settings to change for the run, or null.</param>
         /// <param name="artefacts">Files the run should leave behind, or null.</param>
+        /// <param name="logExpectations">What the mod should have logged, or null.</param>
         /// <exception cref="ArgumentNullException">An argument is null.</exception>
         public LookAheadSuite(
             string name,
@@ -162,7 +194,8 @@ namespace GlobalConversationTracker.Harness
             string globalStateFile,
             IReadOnlyList<LookAheadScenario> scenarios,
             IReadOnlyDictionary<string, string>? pluginSettings = null,
-            IReadOnlyList<SuiteArtefact>? artefacts = null)
+            IReadOnlyList<SuiteArtefact>? artefacts = null,
+            IReadOnlyList<LogExpectation>? logExpectations = null)
         {
             Name = name ?? throw new ArgumentNullException(nameof(name));
             What = what ?? throw new ArgumentNullException(nameof(what));
@@ -171,6 +204,7 @@ namespace GlobalConversationTracker.Harness
             Scenarios = scenarios ?? throw new ArgumentNullException(nameof(scenarios));
             PluginSettings = pluginSettings ?? new Dictionary<string, string>();
             Artefacts = artefacts ?? Array.Empty<SuiteArtefact>();
+            LogExpectations = logExpectations ?? Array.Empty<LogExpectation>();
         }
 
         /// <summary>What to call it on the command line.</summary>
@@ -190,5 +224,8 @@ namespace GlobalConversationTracker.Harness
 
         /// <summary>Files the run should leave behind, checked before the restore.</summary>
         public IReadOnlyList<SuiteArtefact> Artefacts { get; }
+
+        /// <summary>What the mod should, and should not, have logged.</summary>
+        public IReadOnlyList<LogExpectation> LogExpectations { get; }
     }
 }

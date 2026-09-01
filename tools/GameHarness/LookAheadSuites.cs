@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 
 namespace GlobalConversationTracker.Harness
 {
@@ -43,7 +44,8 @@ namespace GlobalConversationTracker.Harness
         /// Computed rather than stored: a static field would be initialised before the
         /// suites it names, and would quietly hold nulls.
         /// </remarks>
-        public static IReadOnlyList<LookAheadSuite> All => new[] { Money, Budget };
+        public static IReadOnlyList<LookAheadSuite> All =>
+            new[] { Money, Budget, SwitchedOff };
 
         /// <summary>
         /// The forward scan spends as it walks.
@@ -86,7 +88,61 @@ namespace GlobalConversationTracker.Harness
                     "the sneakers cannot be bought at all",
                     AllUnmarked("nothing on the path is affordable"),
                     money: 4900),
+            },
+            pluginSettings: new Dictionary<string, string>
+            {
+                // Costs this suite nothing - it makes the mod write a summary it would
+                // otherwise keep to itself - and this is the suite with the most crawls
+                // to summarise, so it is the cheapest place to check the summary is
+                // right rather than paying for another launch.
+                ["KeepLookAheadStates"] = "true",
+            },
+            artefacts: new[]
+            {
+                new SuiteArtefact(
+                    "look-ahead-stats.json",
+                    "the statistics account for every crawl",
+                    CheckStatistics),
             });
+
+    /// <summary>
+    /// Reads look-ahead-stats.json and checks it adds up.
+    /// </summary>
+    /// <remarks>
+    /// The identity is the point. Every crawl ends at one of three answers, so the three
+    /// found counts must sum to the crawl count; if they did not, some crawl reached a
+    /// state the classification does not name, and no marker check would say so.
+    /// </remarks>
+    private static string? CheckStatistics(string json)
+    {
+        using JsonDocument document = JsonDocument.Parse(json);
+        JsonElement root = document.RootElement;
+
+        int crawls = root.GetProperty("crawls").GetInt32();
+        if (crawls <= 0)
+        {
+            return "no crawl was recorded at all";
+        }
+
+        JsonElement found = root.GetProperty("found");
+        int total = found.GetProperty("nothing").GetInt32()
+            + found.GetProperty("unseenThisGame").GetInt32()
+            + found.GetProperty("unseenAnyGame").GetInt32();
+        if (total != crawls)
+        {
+            return $"{crawls} crawls but {total} classified";
+        }
+
+        foreach (JsonElement conversation in root.GetProperty("byConversation").EnumerateArray())
+        {
+            if (conversation.GetProperty("conversation").GetInt32() == SiilengConversation)
+            {
+                return null;
+            }
+        }
+
+        return $"nothing recorded for conversation {SiilengConversation}";
+    }
 
         /// <summary>
         /// A crawl that runs out of budget shows nothing, and says where it stopped.
@@ -136,6 +192,48 @@ namespace GlobalConversationTracker.Harness
                         ? null
                         : "no overflow block for conversation "
                             + $"{SiilengConversation} in {text.Length} characters"),
+            });
+
+        /// <summary>
+        /// Turning the feature off leaves the options alone and the tracking working.
+        /// </summary>
+        /// <remarks>
+        /// <para>The setting is documented as leaving tracking unaffected, and nothing
+        /// checked either half of that.</para>
+        ///
+        /// <para>Unmarked options are not enough on their own to show the switch worked:
+        /// the budget suite produces exactly the same menu by starving the crawl instead.
+        /// What separates them is whether the hook was installed at all, which the mod
+        /// says once at load - so this suite asserts the look-ahead hook line is absent
+        /// while the tracking hook line is still there.</para>
+        /// </remarks>
+        public static LookAheadSuite SwitchedOff { get; } = new LookAheadSuite(
+            "switched-off",
+            "MarkLookAhead=false marks nothing and leaves tracking alone",
+            MoneyState,
+            new[]
+            {
+                new LookAheadScenario(
+                    "afford-both",
+                    SiilengConversation,
+                    "the balance that marks three options, with the feature switched off",
+                    AllUnmarked("the look-ahead is not installed at all"),
+                    money: 5100),
+            },
+            pluginSettings: new Dictionary<string, string>
+            {
+                ["MarkLookAhead"] = "false",
+            },
+            logExpectations: new[]
+            {
+                new LogExpectation(
+                    "options that can still lead to unread text are marked with an asterisk",
+                    false,
+                    "the look-ahead hook was not installed"),
+                new LogExpectation(
+                    "dialogue statuses are being tracked",
+                    true,
+                    "tracking is unaffected by the switch"),
             });
 
         /// <summary>Finds a suite by name.</summary>

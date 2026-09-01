@@ -34,6 +34,9 @@ namespace GlobalConversationTracker.Automation
         /// <summary>Ask the probe to report the state a scenario cares about.</summary>
         public const string Report = "report";
 
+        /// <summary>Ask the game to close itself, so the mod can flush on the way out.</summary>
+        public const string Quit = "quit";
+
         /// <summary>Where the command file goes for a given profile.</summary>
         /// <param name="saveGamesFolder">The profile's SaveGames folder.</param>
         /// <exception cref="ArgumentNullException">The folder is null.</exception>
@@ -73,6 +76,19 @@ namespace GlobalConversationTracker.Automation
         public static void SendReport(string saveGamesFolder)
         {
             Send(saveGamesFolder, Report);
+        }
+
+        /// <summary>Asks the game to close itself.</summary>
+        /// <remarks>
+        /// Killing the process loses everything the mod writes on the way out: the
+        /// global state it has not flushed, and its look-ahead statistics, which are
+        /// otherwise written only every two hundred crawls.
+        /// </remarks>
+        /// <param name="saveGamesFolder">The profile's SaveGames folder.</param>
+        public static void SendQuit(string saveGamesFolder)
+        {
+            Clear(saveGamesFolder);
+            Send(saveGamesFolder, Quit);
         }
 
         /// <summary>Writes one command.</summary>

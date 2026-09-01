@@ -43,6 +43,9 @@ namespace GlobalConversationTracker.TestProbe
         /// <summary>Report the state a scenario cares about.</summary>
         internal const string ReportCommand = "report";
 
+        /// <summary>Ask the game to close itself the way a player would.</summary>
+        internal const string QuitCommand = "quit";
+
         /// <summary>
         /// How many frames pass between checks. The harness waits on a probe event
         /// rather than on a deadline, so this only decides how quickly a command is
@@ -161,6 +164,15 @@ namespace GlobalConversationTracker.TestProbe
                         break;
                     case StartConversationCommand:
                         StartConversation(root);
+                        break;
+                    case QuitCommand:
+                        // Not a kill. The mod flushes its global state and writes its
+                        // look-ahead statistics from Application.quitting, so a run that
+                        // killed the process would lose both - and the statistics file is
+                        // otherwise only written every two hundred crawls, far more than
+                        // a scenario produces.
+                        ProbeLog.Write("command-started", "command", QuitCommand);
+                        Application.Quit();
                         break;
                     case ReportCommand:
                         ProbeLog.Write(
