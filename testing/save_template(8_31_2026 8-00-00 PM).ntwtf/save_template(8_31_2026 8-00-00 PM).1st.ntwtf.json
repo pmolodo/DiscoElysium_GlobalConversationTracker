@@ -1,0 +1,37 @@
+{
+    "areaId": "Martinaise-ext",
+    "partyState": {
+        "isKimInParty": true,
+        "isKimLeftOutside": false,
+        "isKimAbandoned": false,
+        "isKimAwayUpToMorning": false,
+        "isKimSleepingInHisRoom": false,
+        "isCunoInParty": false,
+        "isCunoLeftOutside": false,
+        "isCunoAbandoned": true,
+        "isKimSayingGoodMorning": false,
+        "sleepLocation": 0,
+        "waitLocation": 0,
+        "cunoWaitLocation": 0,
+        "timeSinceKimWentSleepingInHisRoom": 2781,
+        "kimLastArrivalLocation": 1,
+        "cunoLastArrivalLocation": 0,
+        "hasHangover": false
+    },
+    "fowUnrevealersStatusCache": {
+        "fog-whirling-klaasje-main": "UNSEEN",
+        "fog-whirling-kitsuragi": "UNSEEN",
+        "fog-whirling-klaasje-bathroom": "UNSEEN",
+        "fog-main": "ACTIVE",
+        "fog-whirling-backstage": "UNSEEN",
+        "fog-whirling-union": "ACTIVE",
+        "fog-whirling-kitchen": "ACTIVE",
+        "fog-doomed-f1_curtains": "ACTIVE",
+        "fow_capeside-apps_bathroom": "ACTIVE",
+        "fow_capeside-apps_destroyed": "ACTIVE",
+        "fow_capeside-apps_empty": "ACTIVE",
+        "fow_capeside-apps_hobo": "ACTIVE",
+        "fow_capeside-apps_mazov": "UNSEEN",
+        "fow_capeside-apps_cunos": "UNSEEN"
+    }
+}

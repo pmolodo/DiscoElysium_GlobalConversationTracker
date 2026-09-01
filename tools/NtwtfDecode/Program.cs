@@ -15,6 +15,7 @@ const string Usage = """
       dotnet run --project tools/NtwtfDecode -- --to-lua <input.json> -o <output.ntwtf.lua>
       dotnet run --project tools/NtwtfDecode -- <input> --split -o <directory>
       dotnet run --project tools/NtwtfDecode -- --to-lua <directory> --split -o <output.ntwtf.lua>
+      dotnet run --project tools/NtwtfDecode -- --pack <expanded.ntwtf> -o <save.ntwtf.zip>
 
     <input> is any of:
       - a packed save archive, {save}.ntwtf.zip, as written to SaveGames
@@ -29,6 +30,7 @@ const string Usage = """
           --indent N      JSON indent width. Default: 2.
           --compact       Single-line JSON (overrides --indent).
           --to-lua        Convert reversible JSON back to a .ntwtf.lua blob.
+          --pack          Rebuild and pack an expanded sparse save for the game.
           --split         Use five table JSON files (Actor.json through
                           Conversation.json) plus trailing.bin in one directory.
           --sparse        With --split, restructure the tables whose shape is
@@ -67,6 +69,7 @@ int Run(string[] argv)
     bool toLua = false;
     bool split = false;
     bool sparse = false;
+    bool pack = false;
 
     for (int i = 0; i < argv.Length; i++)
     {
@@ -90,6 +93,9 @@ int Run(string[] argv)
                 break;
             case "--to-lua":
                 toLua = true;
+                break;
+            case "--pack":
+                pack = true;
                 break;
             case "--split":
                 split = true;
@@ -119,6 +125,16 @@ int Run(string[] argv)
     if (sparse && !split)
     {
         throw new ArgumentException($"--sparse only applies to --split output\n\n{Usage}");
+    }
+
+    if (pack)
+    {
+        if (toLua || split || sparse || output is null)
+        {
+            throw new ArgumentException($"--pack requires only --output <save.ntwtf.zip>\n\n{Usage}");
+        }
+        ExpandedSave.Pack(input, output);
+        return 0;
     }
 
     if (toLua)

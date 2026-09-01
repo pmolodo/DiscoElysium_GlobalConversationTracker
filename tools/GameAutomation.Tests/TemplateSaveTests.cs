@@ -1,37 +1,30 @@
 // SPDX-License-Identifier: MIT
 using System;
 using System.IO;
-using System.IO.Compression;
 using Xunit;
 
 namespace GlobalConversationTracker.Automation.Tests
 {
-    /// <summary>The committed save the harness stages.</summary>
+    /// <summary>The committed expanded save the harness packs and stages.</summary>
     public class TemplateSaveTests
     {
-        /// <summary>
-        /// Every entry in a save is prefixed with the save's own filename, and the game
-        /// needs them to agree.
-        /// </summary>
-        /// <remarks>
-        /// Renaming the archive to save_template.ntwtf.zip while its entries still said
-        /// MARTINAISE produced a main menu with no Continue and Load Game greyed out: the
-        /// game had found no saves at all. Nothing failed, nothing was logged, and the
-        /// only symptom was a menu that no longer matched its reference.
-        /// </remarks>
+        /// <summary>Every game member is prefixed with the expanded save's name.</summary>
         [Fact]
-        public void TheArchivesEntriesMatchItsFileName()
+        public void TheExpandedMembersMatchTheDirectoryName()
         {
             string save = FindTemplateSave();
-            string expected = Path.GetFileName(save);
-            expected = expected.Substring(0, expected.Length - GameSaves.SaveExtension.Length);
+            string expandedName = Path.GetFileName(save);
+            string archiveName = expandedName.Substring(0, expandedName.Length - ".ntwtf".Length);
 
-            using ZipArchive archive = ZipFile.OpenRead(save);
-
-            Assert.NotEmpty(archive.Entries);
-            foreach (ZipArchiveEntry entry in archive.Entries)
+            string[] members = Directory.GetFileSystemEntries(save);
+            Assert.NotEmpty(members);
+            foreach (string member in members)
             {
-                Assert.StartsWith(expected + ".", entry.FullName, StringComparison.Ordinal);
+                string name = Path.GetFileName(member);
+                Assert.True(
+                    name.StartsWith(archiveName + ".", StringComparison.Ordinal)
+                        || name == expandedName + ".lua.parts",
+                    $"expanded member '{name}' does not match '{archiveName}'");
             }
         }
 
@@ -40,20 +33,21 @@ namespace GlobalConversationTracker.Automation.Tests
         public void TheThumbnailIsNamedForTheSave()
         {
             string save = FindTemplateSave();
-            string thumbnail =
-                save.Substring(0, save.Length - GameSaves.SaveExtension.Length) + ".jpg";
+            string thumbnail = save.Substring(0, save.Length - ".ntwtf".Length) + ".jpg";
 
             Assert.True(File.Exists(thumbnail), $"expected a thumbnail at {thumbnail}");
         }
 
-        /// <summary>It has to be a save, holding the parts a save holds.</summary>
+        /// <summary>The sparse source has all six files needed to rebuild the Lua blob.</summary>
         [Fact]
-        public void TheSaveHoldsItsParts()
+        public void TheSaveHoldsItsSparseParts()
         {
-            using ZipArchive archive = ZipFile.OpenRead(FindTemplateSave());
+            string save = FindTemplateSave();
+            string parts = Path.Combine(save, Path.GetFileName(save) + ".lua.parts");
 
-            Assert.Contains(archive.Entries, e => e.FullName.EndsWith(".ntwtf.lua", StringComparison.Ordinal));
-            Assert.Contains(archive.Entries, e => e.FullName.EndsWith(".states.lua", StringComparison.Ordinal));
+            Assert.True(Directory.Exists(parts), $"expected sparse parts at {parts}");
+            Assert.Equal(5, Directory.GetFiles(parts, "*.json").Length);
+            Assert.True(File.Exists(Path.Combine(parts, "trailing.bin")));
         }
 
         private static string FindTemplateSave()
@@ -64,23 +58,21 @@ namespace GlobalConversationTracker.Automation.Tests
                 string testing = Path.Combine(directory.FullName, "testing");
                 if (Directory.Exists(testing))
                 {
-                    string[] saves = GameSaves.ListSaves(testing);
+                    string[] saves = Directory.GetDirectories(testing, "*.ntwtf");
                     if (saves.Length == 1)
                     {
                         return saves[0];
                     }
-
                     if (saves.Length > 1)
                     {
                         throw new InvalidOperationException(
-                            $"{testing} holds {saves.Length} saves; the harness stages one.");
+                            $"{testing} holds {saves.Length} expanded saves; the harness stages one.");
                     }
                 }
-
                 directory = directory.Parent;
             }
-
-            throw new FileNotFoundException("Could not find a template save under testing/.");
+            throw new DirectoryNotFoundException(
+                "Could not find an expanded template save under testing/.");
         }
     }
 }

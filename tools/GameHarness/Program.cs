@@ -38,7 +38,7 @@ namespace GlobalConversationTracker.Harness
         /// renaming the file alone produced a main menu with no Continue and Load Game
         /// greyed out, the game having found no saves at all. A test checks they agree.
         /// </remarks>
-        private const string TemplateSave = "save_template.ntwtf.zip";
+        private const string TemplateSave = "save_template(8_31_2026 8-00-00 PM).ntwtf";
 
         private static readonly string[] DefaultGamePaths =
         {
@@ -192,7 +192,7 @@ Options:
   --process <name>    Process name without .exe (default: disco).
   --artifacts <dir>   Where screenshots go (default: .build/automation).
   --settings <file>   Test settings to install (default: testing/Settings.json).
-  --save <file>       The .ntwtf.zip to stage as the ONLY save. Defaults to
+  --save <path>       The .ntwtf.zip or expanded .ntwtf source to stage as the ONLY save. Defaults to
                       the save in testing/, so Continue has exactly
                       one thing it can load.
   --keys a,b,c        The key sequence for load-save (default: Enter, which is
@@ -957,12 +957,13 @@ Options:
             Process? process = null;
             try
             {
-                string saveTemplate = options.SaveFile
+                string saveSource = options.SaveFile
                     ?? Path.Combine(RepoRoot(), "testing", TemplateSave);
+                string saveTemplate = PrepareSave(saveSource, artifacts);
                 GameProfile.Stage(testSettings, saveTemplate);
                 Console.WriteLine($"staged:    {Path.GetFileName(testSettings)}");
                 Console.WriteLine(
-                    $"           {Path.GetFileName(saveTemplate)} as the only save, so "
+                    $"           {Path.GetFileName(saveSource)} as the only save, so "
                     + "Continue can only load that one");
 
                 // The file does not size the window on its own; Unity does, from the
@@ -1397,6 +1398,47 @@ Options:
             }
 
             throw new FileNotFoundException("Could not find disco.exe. Pass --game.");
+        }
+
+        /// <summary>Turns an expanded sparse save into the archive the game reads.</summary>
+        private static string PrepareSave(string source, string artifacts)
+        {
+            if (!Directory.Exists(source))
+            {
+                return source;
+            }
+
+            string configuration =
+                new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory).Parent?.Name ?? "Debug";
+            string decoder = Path.Combine(
+                RepoRoot(),
+                ".build",
+                "bin",
+                "NtwtfDecode",
+                configuration,
+                "net10.0",
+                "NtwtfDecode.dll");
+            if (!File.Exists(decoder))
+            {
+                throw new FileNotFoundException(
+                    "NtwtfDecode was not built with GameHarness.", decoder);
+            }
+
+            string packed = Path.Combine(artifacts, Path.GetFileName(source) + ".zip");
+            Console.WriteLine($"packing:   {Path.GetFileName(source)}");
+            using Process process = Process.Start(new ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = $"\"{decoder}\" --pack \"{source}\" -o \"{packed}\"",
+                UseShellExecute = false,
+            }) ?? throw new InvalidOperationException("Could not start NtwtfDecode.");
+            process.WaitForExit();
+            if (process.ExitCode != 0)
+            {
+                throw new InvalidOperationException(
+                    $"NtwtfDecode could not pack '{source}' (exit {process.ExitCode}).");
+            }
+            return packed;
         }
 
         /// <summary>

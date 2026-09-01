@@ -1,0 +1,3995 @@
+{
+  "_format": "sparse",
+  "Fysique": {
+    "Name": "Fysique",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "fysique",
+    "IsNPC": true,
+    "short_description": "How well your body is built.",
+    "LongDescription": "This would be a rather lengthened and interesting description of what Fysique does",
+    "color": 4,
+    "Articy_Id": "0x010000520000000D"
+  },
+  "Intellect": {
+    "Name": "Intellect",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "intellect",
+    "IsNPC": true,
+    "short_description": "Your capacity to reason.",
+    "LongDescription": "This would be a rather lengthened and interesting description of what Intelligence does",
+    "color": 2,
+    "Articy_Id": "0x0100005200000009"
+  },
+  "Motorics": {
+    "Name": "Motorics",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "motorics",
+    "IsNPC": true,
+    "short_description": "How well you move your body.",
+    "LongDescription": "This would be a rather lengthened and interesting description of what Motorics does",
+    "color": 5,
+    "Articy_Id": "0x0100005200000005"
+  },
+  "Psyche": {
+    "Name": "Psyche",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "psyche",
+    "IsNPC": true,
+    "short_description": "Your power to influence yourself and others.",
+    "LongDescription": "This would be a rather lengthened and interesting description of what Psyche does",
+    "color": 3,
+    "Articy_Id": "0x0100005200000001"
+  },
+  "Cuno": {
+    "Name": "Cuno",
+    "IsPlayer": false,
+    "Pictures": "[portrait_cuno.png]",
+    "Description": "",
+    "character_short_name": "cuno",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x01000000000004FC",
+    "Bark_Index": 0
+  },
+  "Cunoesse": {
+    "Name": "Cunoesse",
+    "IsPlayer": false,
+    "Pictures": "[portrait_cunoesse.png]",
+    "Description": "",
+    "character_short_name": "cunoesse",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100000000000500",
+    "Bark_Index": 0
+  },
+  "Smoker_on_the_Balcony": {
+    "Name": "Smoker on the Balcony",
+    "IsPlayer": false,
+    "Pictures": "[portrait_smoker.png]",
+    "Description": "",
+    "character_short_name": "smokeronthebalcony",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000000000053C"
+  },
+  "Novelty_Dicemaker": {
+    "Name": "Novelty Dicemaker",
+    "IsPlayer": false,
+    "Pictures": "[portrait_dicemaker.png]",
+    "Description": "A jeweller. And a repairing master. FORMERLY named Giulia al-Gindi.",
+    "character_short_name": "noveltydicemaker",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000060000033F"
+  },
+  "Sleeping_Dockworker": {
+    "Name": "Sleeping Dockworker",
+    "IsPlayer": false,
+    "Pictures": "[portrait_sleeping_dockworker.png]",
+    "Description": "",
+    "character_short_name": "sleepingdockworker",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100000900000002"
+  },
+  "Lilienne,_the_Net_Picker": {
+    "Name": "Lilienne, the Net Picker",
+    "IsPlayer": false,
+    "Pictures": "[portrait_netpicker.png]",
+    "Description": "The net-picker is a middle-aged woman who is of independent nature and carries a sword. Politically, she's a none-too-well developed Revachol nationalist.",
+    "character_short_name": "liliennethenetpicker",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100000900000265"
+  },
+  "Racist_lorry_driver": {
+    "Name": "Racist lorry driver",
+    "IsPlayer": false,
+    "Pictures": "[portrait_racist.png]",
+    "Description": "A rotund man with cold, pale eyes and short-cropped hair. A lit cigarette lingers between his fingers. The man is wearing a pilot jacket, high-waist jeans and a T-shirt with an unrecognisable image. About 40 years old. Reeks of heavy motor oils and the untold deaths of numerous smokes and alcohol bottles.",
+    "character_short_name": "racistlorrydriver",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100000900001971",
+    "Bark_Index": 3
+  },
+  "Annette": {
+    "Name": "Annette",
+    "IsPlayer": false,
+    "Pictures": "[portrait_annete.png]",
+    "Description": "Annette is the daughter of the book shop clerk. She is standing outside by the book stands, her purpose to lure customers in with all the dated bestsellers and what have they. She is cold.",
+    "character_short_name": "annette",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100000900001C3A"
+  },
+  "Acele": {
+    "Name": "Acele",
+    "IsPlayer": false,
+    "Pictures": "[portrait_acele.png]",
+    "Description": "",
+    "character_short_name": "acele",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x01000004000012FB"
+  },
+  "Andre": {
+    "Name": "Andre",
+    "IsPlayer": false,
+    "Pictures": "[portrait_andre.png]",
+    "Description": "",
+    "character_short_name": "andre",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100000B00000464"
+  },
+  "Noid": {
+    "Name": "Noid",
+    "IsPlayer": false,
+    "Pictures": "[portrait_noid.jpg]",
+    "Description": "",
+    "character_short_name": "noid",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100000B00000468"
+  },
+  "Egg_Head": {
+    "Name": "Egg Head",
+    "IsPlayer": false,
+    "Pictures": "[portrait_egg-head.png]",
+    "Description": "Egg Head is the \"party boy\" of a group of proto-rave enthusiasts. He represents the light side of trance culture. He's basically like HP Baxxter. He is emulating a Dutch accent in his shouts.",
+    "character_short_name": "egghead",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100000B0000046C"
+  },
+  "Plaisance": {
+    "Name": "Plaisance",
+    "IsPlayer": false,
+    "Pictures": "[portrait_plaisance.png]",
+    "Description": "Plaisance runs the book store (of crime, romances, and biographies of famous people). She's a woman in her early fourties, she dons a moss green costume and little golden spectacles, and the look on her face does it's best to appear friendly, but yet it looks mostly disappointed.",
+    "character_short_name": "plaisance",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x01000009000023B0"
+  },
+  "Scab": {
+    "Name": "Scab",
+    "IsPlayer": false,
+    "Pictures": "[portrait_scab.png]",
+    "Description": "",
+    "character_short_name": "scab",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x01000014000003D0"
+  },
+  "Strikebreaker": {
+    "Name": "Strikebreaker",
+    "IsPlayer": false,
+    "Pictures": "[portrait_strikebreaker.png]",
+    "Description": "",
+    "character_short_name": "strikebreaker",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x01000014000003D4"
+  },
+  "Large_Scab": {
+    "Name": "Large Scab",
+    "IsPlayer": false,
+    "Pictures": "[portrait_large-scab.png]",
+    "Description": "",
+    "character_short_name": "largescab",
+    "Articy_Id": "0x01000014000003D8"
+  },
+  "Unemployed_Person": {
+    "Name": "Unemployed Person",
+    "IsPlayer": false,
+    "Pictures": "[portrait_unemployed.png]",
+    "Description": "",
+    "character_short_name": "unemployedperson",
+    "Articy_Id": "0x01000014000003DC"
+  },
+  "Former_Coal_Miner": {
+    "Name": "Former Coal Miner",
+    "IsPlayer": false,
+    "Pictures": "[portrait_coal-miner.png]",
+    "Description": "",
+    "character_short_name": "formercoalminer",
+    "Articy_Id": "0x01000014000003E0"
+  },
+  "Scabette": {
+    "Name": "Scabette",
+    "IsPlayer": false,
+    "Pictures": "[portrait_scabette.png]",
+    "Description": "",
+    "character_short_name": "scabette",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x01000014000003E4"
+  },
+  "Boy_Strikebreaker": {
+    "Name": "Boy Strikebreaker",
+    "IsPlayer": false,
+    "Pictures": "[portrait_strikebreaker.png]",
+    "Description": "",
+    "character_short_name": "boystrikebreaker",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x01000014000003E8"
+  },
+  "Banger_Scab": {
+    "Name": "Banger Scab",
+    "IsPlayer": false,
+    "Pictures": "[portrait_banger-scab.png]",
+    "Description": "",
+    "character_short_name": "bangerscab",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x01000014000003EC"
+  },
+  "Alphonse_the_Scab": {
+    "Name": "Alphonse the Scab",
+    "IsPlayer": false,
+    "Pictures": "[portrait_alphonse.png]",
+    "Description": "",
+    "character_short_name": "alphonsethescab",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x01000014000003F0"
+  },
+  "Old_Scab": {
+    "Name": "Old Scab",
+    "IsPlayer": false,
+    "Pictures": "[portrait_old-scab.png]",
+    "Description": "",
+    "character_short_name": "oldscab",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x01000014000003F4"
+  },
+  "Mother_of_a_Scab": {
+    "Name": "Mother of a Scab",
+    "IsPlayer": false,
+    "Pictures": "[portrait_mother-scab.png]",
+    "Description": "",
+    "character_short_name": "motherofascab",
+    "Articy_Id": "0x01000014000003F8"
+  },
+  "Right_to_Worker": {
+    "Name": "Right-to-Worker",
+    "IsPlayer": false,
+    "Pictures": "[portrait_right-to-worker.png]",
+    "Description": "",
+    "character_short_name": "righttoworker",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x01000014000003FC"
+  },
+  "Probably_a_Migrant": {
+    "Name": "Probably a Migrant",
+    "IsPlayer": false,
+    "Pictures": "[portrait_migrant.png]",
+    "Description": "",
+    "character_short_name": "probablyamigrant",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100001400000400"
+  },
+  "Self_Educated_Humanitarian": {
+    "Name": "Self-Educated Humanitarian",
+    "IsPlayer": false,
+    "Pictures": "[portrait_humanitarian.png]",
+    "Description": "",
+    "character_short_name": "selfeducatedhumanitarian",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100001400000404"
+  },
+  "Job_Market_Loser": {
+    "Name": "Job Market Loser",
+    "IsPlayer": false,
+    "Pictures": "[portrait_market-loser.png]",
+    "Description": "",
+    "character_short_name": "jobmarketloser",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000140000040C"
+  },
+  "Very_Hard_to_Exploit_Handicapped_Person": {
+    "Name": "Very Hard to Exploit Handicapped Person",
+    "IsPlayer": false,
+    "Pictures": "[portrait_handicapped.png]",
+    "Description": "",
+    "character_short_name": "veryhardtoexploithandicappedperson",
+    "Articy_Id": "0x0100001400000410"
+  },
+  "Another_Scab": {
+    "Name": "Another Scab",
+    "IsPlayer": false,
+    "Pictures": "[portrait_another-scab.png]",
+    "Description": "",
+    "character_short_name": "anotherscab",
+    "Articy_Id": "0x0100001400000418"
+  },
+  "Sad_Scab": {
+    "Name": "Sad Scab",
+    "IsPlayer": false,
+    "Pictures": "[portrait_sad-scab.png]",
+    "Description": "He looks quite old, his cheeks have fallen in and a there's a rancid smell emanating from his mouth. Not many teeth left there.",
+    "character_short_name": "sadscab",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000140000041C"
+  },
+  "Scab_Leader": {
+    "Name": "Scab Leader",
+    "IsPlayer": false,
+    "Pictures": "[portrait_scablead.png]",
+    "Description": "",
+    "character_short_name": "scableader",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100001400000420"
+  },
+  "Women's_Rights": {
+    "Name": "Women's Rights",
+    "IsPlayer": false,
+    "Pictures": "[portrait_womens-rights.png]",
+    "Description": "A protester in the midst of the scabs. With a protest sign. Possibly in the wrong place. But maybe just likes to protest.",
+    "character_short_name": "womensrights",
+    "Articy_Id": "0x0100002F00008F79"
+  },
+  "Measurehead": {
+    "Name": "Measurehead",
+    "IsPlayer": false,
+    "Pictures": "[portrait_measurehead.png]",
+    "Description": "It's goddamn Measurehead! A black-übermensch monolith guarding the button to the harbour office door. Into \"science\"-anthropometry based racism. Loud, eloquent if need be, antagonistic superiority attitude. Will not lower himself to your inferior level, does not *argue* and *debate* with you -- he is just better in every way. Helps take the dead body down, if you know and say the right things.",
+    "character_short_name": "measurehead",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000140000046E"
+  },
+  "Call_Me_Mañana": {
+    "Name": "Call Me Mañana",
+    "IsPlayer": false,
+    "Pictures": "[portrait_manana.png]",
+    "Description": "",
+    "character_short_name": "callmemanana",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100001400000472"
+  },
+  "Harbour_Worker": {
+    "Name": "Harbour Worker",
+    "IsPlayer": false,
+    "Pictures": "[portrait_harbour-worker .png]",
+    "Description": "",
+    "character_short_name": "harbourworker",
+    "Articy_Id": "0x0100001400000476"
+  },
+  "Striker": {
+    "Name": "Striker",
+    "IsPlayer": false,
+    "Pictures": "[portrait_striker.png]",
+    "Description": "",
+    "character_short_name": "striker",
+    "Articy_Id": "0x010000140000047A"
+  },
+  "Lawyerly_Guy": {
+    "Name": "Lawyerly Guy",
+    "IsPlayer": false,
+    "Pictures": "[portrait_lawyerly-guy.png]",
+    "Description": "",
+    "character_short_name": "lawyerlyguy",
+    "Articy_Id": "0x010000140000047E"
+  },
+  "Loader": {
+    "Name": "Loader",
+    "IsPlayer": false,
+    "Pictures": "[portrait_loader.png]",
+    "Description": "",
+    "character_short_name": "loader",
+    "Articy_Id": "0x0100001400000482"
+  },
+  "Union_Man": {
+    "Name": "Union Man",
+    "IsPlayer": false,
+    "Pictures": "[portrait_union-man.png]",
+    "Description": "",
+    "character_short_name": "unionman",
+    "Articy_Id": "0x0100001400000486"
+  },
+  "Machinist": {
+    "Name": "Machinist",
+    "IsPlayer": false,
+    "Pictures": "[portrait_machinist.png]",
+    "Description": "",
+    "character_short_name": "machinist",
+    "Articy_Id": "0x010000140000048A"
+  },
+  "Bookkeeper": {
+    "Name": "Bookkeeper",
+    "IsPlayer": false,
+    "Pictures": "[portrait_bookkeeper.png]",
+    "Description": "",
+    "character_short_name": "bookkeeper",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000140000048E"
+  },
+  "Unionista": {
+    "Name": "Unionista",
+    "IsPlayer": false,
+    "Pictures": "[portrait_unionista.png]",
+    "Description": "",
+    "character_short_name": "unionista",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100001400000492"
+  },
+  "Former_Sailor": {
+    "Name": "Former Sailor",
+    "IsPlayer": false,
+    "Pictures": "[portrait_former-sailor.png]",
+    "Description": "",
+    "character_short_name": "formersailor",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100001400000496"
+  },
+  "Union_Veteran": {
+    "Name": "Union Veteran",
+    "IsPlayer": false,
+    "Pictures": "[portrait_union-veteran.png]",
+    "Description": "",
+    "character_short_name": "unionveteran",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000140000049A"
+  },
+  "Cleaning_Woman": {
+    "Name": "Cleaning Woman",
+    "IsPlayer": false,
+    "Pictures": "[portrait_cleaning-woman.png]",
+    "Description": "",
+    "character_short_name": "cleaningwoman",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000140000049E"
+  },
+  "Measurehead's_Babe": {
+    "Name": "Measurehead's Babe",
+    "IsPlayer": false,
+    "Pictures": "[portrait_babe.png]",
+    "Description": "One of Measurehead's babes. The one standing/chilling behind him, the one you can't get to... but she's close enough to add some of her own comments inside the Measurehead dialogue.",
+    "character_short_name": "measureheadsbabe",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x01000014000004A2",
+    "Bark_Index": 0
+  },
+  "Union_Rookie": {
+    "Name": "Union Rookie",
+    "IsPlayer": false,
+    "Pictures": "[portrait_union-rookie.png]",
+    "Description": "",
+    "character_short_name": "unionrookie",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x01000014000004A6"
+  },
+  "Operator": {
+    "Name": "Operator",
+    "IsPlayer": false,
+    "Pictures": "[portrait_operator.png]",
+    "Description": "",
+    "character_short_name": "operator",
+    "Articy_Id": "0x0100001800001263"
+  },
+  "Mysterious_Pair_of_Eyes": {
+    "Name": "Mysterious Pair of Eyes",
+    "IsPlayer": false,
+    "Pictures": "[portrait_mysterious-eyes.png]",
+    "Description": "The eyes peeking through the gap between the two harbour gates. Super suspicious.",
+    "character_short_name": "mysteriouspairofeyes",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F00008F75"
+  },
+  "Clubber_Shahi": {
+    "Name": "Clubber Shahi",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "clubbershahi",
+    "Articy_Id": "0x0100007100002AFB"
+  },
+  "Tommy_Le_Homme": {
+    "Name": "Tommy Le Homme",
+    "IsPlayer": false,
+    "Pictures": "[portrait_tommy.png]",
+    "Description": "A young family man pacing anxiously near his lorry, stuck in the traffic jam for several days with the others. He is a bit more talented than one might assume, doing a tedious, dead-end job just to keep the family afloat. Tends to wax poetic when gets emotional (stressed, irritated, anxious), especially when discussing his family or FALN, where they live.",
+    "character_short_name": "tommylehomme",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000160000271F",
+    "Bark_Index": 0
+  },
+  "René_Arnoux": {
+    "Name": "René Arnoux",
+    "IsPlayer": false,
+    "Pictures": "[portrait_rene.png]",
+    "Description": "Fanatical royalist, ex-army, decorated vet, on and off lover of the beautiful Jeanne-Marie (now deceased) and a life long rival of his neighbour, René Arnoux. Now at almost eighty years of age spends most of his days playing pétanque with his former arch-nemesis and competitor Gaston and reminiscing about the good old times when king Frissel the First was still in charge,",
+    "character_short_name": "renearnoux",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002C0000000E",
+    "Bark_Index": 0
+  },
+  "Gaston_Martin": {
+    "Name": "Gaston Martin",
+    "IsPlayer": false,
+    "Pictures": "[portrait_gaston.png]",
+    "Description": "A pétanque partner and a former arch-rival of René Arnoux. Contrarian. Didn't fight for The King. Didn't fight for anything. When René went off to fight for Frissel the First, Gaston stayed behind and stuck his dick in their friend Jeanne-Marie for whose attention the boys had been fighting for since they where eight. Now Jeanne-Marie is dead and an old enemy and pétanque are all he has.",
+    "character_short_name": "gastonmartin",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002C00000012",
+    "Bark_Index": 2
+  },
+  "Working_Class_Woman": {
+    "Name": "Working Class Woman",
+    "IsPlayer": false,
+    "Pictures": "[portrait_working-woman.png]",
+    "Description": "Anaïs. Just another working class woman, who has kept several jobs and raised two kids and three husbands. She's come out to look for her family, as the supper is nearly ready. Her teenage daughters have been missing for a night - \"A boy trouble,\" she remarks - and her current husband (Mathieu) hasn't been around for a week. You learn about her array of marriages and jobs, as well as about her steady passion for bloody and violent history books.",
+    "character_short_name": "workingclasswoman",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002B00000001"
+  },
+  "Working_Class_Drunk": {
+    "Name": "Working Class Drunk",
+    "IsPlayer": false,
+    "Pictures": "[portrait_working-class-drunk.png]",
+    "Description": "A working class drunk. He's passed out.",
+    "character_short_name": "workingclassdrunk",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002B00000022"
+  },
+  "Mack_Torson": {
+    "Name": "Mack Torson",
+    "IsPlayer": false,
+    "Pictures": "[portrait_Torson_v3.png]",
+    "Description": "",
+    "character_short_name": "macktorson",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000040000B2A5"
+  },
+  "Chester_McLaine": {
+    "Name": "Chester McLaine",
+    "IsPlayer": false,
+    "Pictures": "[portrait_chester.png]",
+    "Description": "",
+    "character_short_name": "chestermclaine",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000040000B2A9"
+  },
+  "Moneyman": {
+    "Name": "Moneyman",
+    "IsPlayer": false,
+    "Pictures": "[portrait_moneyman.png]",
+    "Description": "A barking investor who only exclaims comments about money, he stands on the second floor of Whirling-in-Rags, near the newspaper.",
+    "character_short_name": "moneyman",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F00002892"
+  },
+  "Jules_Pidieu": {
+    "Name": "Jules Pidieu",
+    "IsPlayer": false,
+    "Pictures": "[portrait_jules.png]",
+    "Description": "Jules \"Oldboy\" Pidieu answers and works the radio at the Precinct 41. Brother of the late \"Cardiac\" Pidieu, Jules took over his duties when the morbidly obese Cardiac past away last year.",
+    "character_short_name": "julespidieu",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x01000031000061B9"
+  },
+  "Alice": {
+    "Name": "Alice",
+    "IsPlayer": false,
+    "Pictures": "[portrait_aliiz.png]",
+    "Description": "Alice Jarier is the radio officer of the 57th precinct. She is the daughter of one of the senior officers and has been in the station ever since she was old enough for her dad to take her with. She knows the station, the people in it and the many nooks and crannies of police work.",
+    "character_short_name": "alice",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x01000031000061CA"
+  },
+  "Coupris_Kineema": {
+    "Name": "Coupris Kineema",
+    "IsPlayer": false,
+    "Pictures": "[kineema värvitud.png]",
+    "Description": "",
+    "character_short_name": "coupriskineema",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x01000031000061D2"
+  },
+  "Sylvie": {
+    "Name": "Sylvie",
+    "IsPlayer": false,
+    "Pictures": "[portrait_sylvie.png]",
+    "Description": "The waitress of Whirling-in-Rags, who was scared away by the combination of a rotting dead body hanged in the back yard of the establishment, advances of the cafeteria manager and most of all your drunken exploits.",
+    "character_short_name": "sylvie",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100003100006B82"
+  },
+  "Sunday_Friend": {
+    "Name": "Sunday Friend",
+    "IsPlayer": false,
+    "Pictures": "[portrait_sponsor.png]",
+    "Description": "This is Thomas, a bureaucrat from Sur-la-Clef. He's Smoker on the Balcony's 'friend' and a witness.",
+    "character_short_name": "sundayfriend",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002B00008376"
+  },
+  "The_Gardener": {
+    "Name": "The Gardener",
+    "IsPlayer": false,
+    "Pictures": "[portrait_gardener.png]",
+    "Description": "",
+    "character_short_name": "thegardener",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002B0001618A"
+  },
+  "Gorący_Kubek": {
+    "Name": "Gorący Kubek",
+    "IsPlayer": false,
+    "Pictures": "[portrait_cook.png]",
+    "Description": "",
+    "character_short_name": "goracykubek",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002B000244AA"
+  },
+  "Frittte_clerk": {
+    "Name": "Frittte clerk",
+    "IsPlayer": false,
+    "Pictures": "[portrait_fritte.png]",
+    "Description": "",
+    "character_short_name": "frittteclerk",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002B00029DB2"
+  },
+  "Cindy_the_SKULL": {
+    "Name": "Cindy the SKULL",
+    "IsPlayer": false,
+    "Pictures": "[portrait_cindy.png]",
+    "Description": "",
+    "character_short_name": "cindytheskull",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100000400010F99"
+  },
+  "Video_Revachol,_24h": {
+    "Name": "Video Revachol, 24h",
+    "IsPlayer": false,
+    "Pictures": "[portrait_tape-rental.png]",
+    "Description": "The moving pictures rental place you and your ex-wife used to frequent.",
+    "character_short_name": "videorevachol24h",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000310000AA15"
+  },
+  "Onomatopoetic_Lorryman": {
+    "Name": "Onomatopoetic Lorryman",
+    "IsPlayer": false,
+    "Pictures": "[portrait_lorryman.png]",
+    "Description": "A lorryman who wanders in the far right corner of the Jam, he's way into lorries and other machinery, and just barks out lorry-related sounds.",
+    "character_short_name": "onomatopoeticlorryman",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F000088BF"
+  },
+  "Siileng": {
+    "Name": "Siileng",
+    "IsPlayer": false,
+    "Pictures": "[portrait_siileng.png]",
+    "Description": "Humanitarian Aid Guy.",
+    "character_short_name": "siileng",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002B00037BCD"
+  },
+  "Game_Over": {
+    "Name": "Game Over",
+    "IsPlayer": false,
+    "Pictures": "[portrait_game-over.png]",
+    "Description": "",
+    "character_short_name": "gameover",
+    "Articy_Id": "0x01000004000115C2"
+  },
+  "Paledriver": {
+    "Name": "Paledriver",
+    "IsPlayer": false,
+    "Pictures": "[portrait_paledriver.png]",
+    "Description": "Pale-aged long-haul lorry pilot. Completely bonked out of her mind due to the effects of going through the Pale too much.",
+    "character_short_name": "paledriver",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F000097CF"
+  },
+  "Tare_Drunk": {
+    "Name": "Tare Drunk",
+    "IsPlayer": false,
+    "Pictures": "[portrait_tare-drunk.png]",
+    "Description": "",
+    "character_short_name": "taredrunk",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002B00065084"
+  },
+  "Easy_Leo": {
+    "Name": "Easy Leo",
+    "IsPlayer": false,
+    "Pictures": "[portrait_leo.png]",
+    "Description": "",
+    "character_short_name": "easyleo",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100004C0000492D"
+  },
+  "Bird's_Nest_Roy": {
+    "Name": "Bird's Nest Roy",
+    "IsPlayer": false,
+    "Pictures": "[portrait_roy.png]",
+    "Description": "",
+    "character_short_name": "birdsnestroy",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100004D00002929"
+  },
+  "Tricentennial_Electrics": {
+    "Name": "Tricentennial Electrics",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "tricentennialelectrics",
+    "Articy_Id": "0x0100002B0007DFEB"
+  },
+  "Ancient_Reptilian_Brain": {
+    "Name": "Ancient Reptilian Brain",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "ancientreptilianbrain",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100000000000559"
+  },
+  "Limbic_System": {
+    "Name": "Limbic System",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "limbicsystem",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100000000000658"
+  },
+  "Spinal_Cord": {
+    "Name": "Spinal Cord",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "spinalcord",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100000B00000CE6"
+  },
+  "Man_on_water_lock": {
+    "Name": "Man on water lock",
+    "IsPlayer": false,
+    "Pictures": "[portrait_waterlock.png]",
+    "Description": "",
+    "character_short_name": "manonwaterlock",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100004D00003A96",
+    "Bark_Index": 1
+  },
+  "Washerwoman": {
+    "Name": "Washerwoman",
+    "IsPlayer": false,
+    "Pictures": "[portrait_washerwoman.png]",
+    "Description": "The landlady / washing woman in the Fishing Village. She gives you access to your secondary sleeping location -- the shack. Features as a greeting to the area. Also helps finish Evrart task.",
+    "character_short_name": "washerwoman",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F0000DF43"
+  },
+  "Canal_Crew": {
+    "Name": "Canal Crew",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "canalcrew",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "Hardy canal workers.",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F0000EF4B"
+  },
+  "Gary,_the_Cryptofascist": {
+    "Name": "Gary, the Cryptofascist",
+    "IsPlayer": false,
+    "Pictures": "[portrait_crypto.png]",
+    "Description": "",
+    "character_short_name": "garythecryptofascist",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F0000EFD2",
+    "Bark_Index": 6
+  },
+  "Idiot_Doom_Spiral": {
+    "Name": "Idiot Doom Spiral",
+    "IsPlayer": false,
+    "Pictures": "[portrait_doomspiral.png]",
+    "Description": "",
+    "character_short_name": "idiotdoomspiral",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F0000EFDA"
+  },
+  "Kortenaer": {
+    "Name": "Kortenaer",
+    "IsPlayer": false,
+    "Pictures": "[portrait_kortenaer.png]",
+    "Description": "ex-scab leader, named Kortenaer, as a mercenary, decked out in his armour, drunk off his ass.",
+    "character_short_name": "kortenaer",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F0000F10D"
+  },
+  "De_Paule": {
+    "Name": "De Paule",
+    "IsPlayer": false,
+    "Pictures": "[portrait_de-paule.png]",
+    "Description": "The third mercenary guy, radio operator, who has been in the base of operations, bored and irritated.",
+    "character_short_name": "depaule",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F0000F111"
+  },
+  "Man_with_Sunglasses": {
+    "Name": "Man with Sunglasses",
+    "IsPlayer": false,
+    "Pictures": "[portrait_man-with-sunglasses.png]",
+    "Description": "",
+    "character_short_name": "manwithsunglasses",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F0000F928"
+  },
+  "Horse_Faced_Woman": {
+    "Name": "Horse-Faced Woman",
+    "IsPlayer": false,
+    "Pictures": "[portrait_Minot.png]",
+    "Description": "",
+    "character_short_name": "horsefacedwoman",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F0000F92C"
+  },
+  "Pissf****t": {
+    "Name": "Pissf****t",
+    "IsPlayer": false,
+    "Pictures": "[portrait_flaubert.png]",
+    "Description": "",
+    "character_short_name": "pissft",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F0000F934"
+  },
+  "Fuck_the_World": {
+    "Name": "Fuck the World",
+    "IsPlayer": false,
+    "Pictures": "[portrait_ftw.png]",
+    "Description": "",
+    "character_short_name": "fucktheworld",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F0000F938"
+  },
+  "Cleaning_Lady": {
+    "Name": "Cleaning Lady",
+    "IsPlayer": false,
+    "Pictures": "[portrait_cleaning-lady.png]",
+    "Description": "",
+    "character_short_name": "cleaninglady",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F0000F944"
+  },
+  "A_Shadow_on_the_Bed": {
+    "Name": "A Shadow on the Bed",
+    "IsPlayer": false,
+    "Description": "Cuno's dad.",
+    "character_short_name": "ashadowonthebed",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F0000F948"
+  },
+  "Don't_Call_Abigail": {
+    "Name": "Don't Call Abigail",
+    "IsPlayer": false,
+    "Pictures": "[portrait_abigail.png]",
+    "Description": "",
+    "character_short_name": "dontcallabigail",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F0000F95C"
+  },
+  "Rosemary": {
+    "Name": "Rosemary",
+    "IsPlayer": false,
+    "Pictures": "[portrait_rosemary.png]",
+    "Description": "Previously known as Female drunk, also previously known as Under Control. One of the Union of Moribund Alcoholics, the shopkeeper who sells you booze and smokes and stuff.",
+    "character_short_name": "rosemary",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F0000F960",
+    "Bark_Index": 0
+  },
+  "The_Pigs": {
+    "Name": "The Pigs",
+    "IsPlayer": false,
+    "Pictures": "[portrait_pigs.png]",
+    "Description": "",
+    "character_short_name": "thepigs",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F0000F964"
+  },
+  "Little_Lily": {
+    "Name": "Little Lily",
+    "IsPlayer": false,
+    "Pictures": "[portrait_little-lily.png]",
+    "Description": "Lilienne the Net Picker's young kid who is inside the shack doing her thing. She's about 4 you can talk to her about stuff.",
+    "character_short_name": "littlelily",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F0000F968"
+  },
+  "Working_Class_Husband": {
+    "Name": "Working Class Husband",
+    "IsPlayer": false,
+    "Pictures": "[portrait_working-class-husband.png]",
+    "Description": "",
+    "character_short_name": "workingclasshusband",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F0000F988"
+  },
+  "Titus_Hardie": {
+    "Name": "Titus Hardie",
+    "IsPlayer": false,
+    "Pictures": "[portrait_titus.png]",
+    "Description": "Titus Hardie, leader of the Hardie Boys. Former prizefighter and a rowing enthusiast. Tall guy, wide in the shoulders and narrow at the hips. Hard-ass, stubborn, take-shit-from-no-one type of guy. He's wearing a baseball cap with the \"Martinaise Burning Rhinos\" (a local rugby team) logo (A flaming rhino horn). Also an orange padded west. It's says \"ROWING CLUB\" on the back and \"T. Hardie\" on left side on the chest. He's also wearing fingerless gloves and yellow boots with bluejeans tucked in them.\n\nHe's 39 years old. Short dark hair. Sharp features. Kind of handsome - like Johnny Football Hero once he's past his prime and never moved out of the home town.\n\nQuarterback for the \"Martinaise Flaming Rhinos\".",
+    "character_short_name": "titushardie",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100004C0000C042"
+  },
+  "Fat_Angus": {
+    "Name": "Fat Angus",
+    "IsPlayer": false,
+    "Pictures": "[portrait_fat-angus.png]",
+    "Description": "Fat-Angus is fat. Period. Big fat guy. Tall too. Think Blob from X-men, but less of a charicature and more of a guy who's gonna have a heart attack at 40. I imagine him wearing a regular dockworker hat, overalls and some stupid bright coloured mittens. Something like pink. His sister made 'em. Fat-Angus lives with his sister. His sister is 50 and single. They have cats and dogs.\n\nUnlike fat people in general (!) Angus is not jolly. He's got podagra. His feet stink like hell and he's stomach is always making annoying loud noises. He's also gassy. And clumsy. Always trying to be super-serious and not liking if the joke is on him on any way.",
+    "character_short_name": "fatangus",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100004C0000C048"
+  },
+  "Theo": {
+    "Name": "Theo",
+    "IsPlayer": false,
+    "Pictures": "[portrait_theo.png]",
+    "Description": "Theo is an older black dude with a curly beard. He's 55 and has already got some gray in his hair. He smokes a pipe and cracks his knuckles. Doesn't talk much, but when he does he talks in a slow deliberate manner and doesn't waste words.",
+    "character_short_name": "theo",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100004C0000C04C"
+  },
+  "Glen": {
+    "Name": "Glen",
+    "IsPlayer": false,
+    "Pictures": "[portrait_glen.png]",
+    "Description": "Glenn is 36 years old. Also a rugby player. As tall and wide as Titus, but with a lushious blonde maine. Like a viking god. He chews tobaco and spits a lot. Kinda a violent and sadistic. Wearing the dockworker overalls, but has the top half off and a dirty white tanktop underneath it.",
+    "character_short_name": "glen",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100004C0000C050",
+    "Bark_Index": 3
+  },
+  "Shanky": {
+    "Name": "Shanky",
+    "IsPlayer": false,
+    "Pictures": "[portrait_shanky.png]",
+    "Description": "Shanky, real name Dennis, is a small rat-like guy with dark eyes and a mean face. He's all mean and cunning. Not a nice guy. A former featherweight amateur boxer. The kind of guy who always used to pick fight with big guys who can't fight. Now he carries a shank a sticks people with it. Shanky is 46 years old. Childless, divorced. An alcoholic.",
+    "character_short_name": "shanky",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100004C0000C054",
+    "Bark_Index": 0
+  },
+  "Eugene": {
+    "Name": "Eugene",
+    "IsPlayer": false,
+    "Pictures": "[portrait_eugene.png]",
+    "Description": "",
+    "character_short_name": "eugene",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100004C0000C07A",
+    "Bark_Index": 0
+  },
+  "Alain": {
+    "Name": "Alain",
+    "IsPlayer": false,
+    "Pictures": "[portrait_alain.png]",
+    "Description": "",
+    "character_short_name": "alain",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100004C0000C07E",
+    "Bark_Index": 0
+  },
+  "Elizabeth": {
+    "Name": "Elizabeth",
+    "IsPlayer": false,
+    "Pictures": "[portrait_gardener.png]",
+    "Description": "Union Fixer -- previously known as Gardener.",
+    "character_short_name": "elizabeth",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F0000E4DC"
+  },
+  "Tiago": {
+    "Name": "Tiago",
+    "IsPlayer": false,
+    "Pictures": "[portrait_tiago.png]",
+    "Description": "A blind sacristan. Exceptional climber.",
+    "character_short_name": "tiago",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000060000032D"
+  },
+  "East_Insulindian_Repeater_Station": {
+    "Name": "East-Insulindian Repeater Station",
+    "IsPlayer": false,
+    "Pictures": "[portrait_repeater-station.png]",
+    "Description": "",
+    "character_short_name": "eastinsulindianrepeaterstation",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100005700016E13"
+  },
+  "Ruud_Hoenkloewen": {
+    "Name": "Ruud Hoenkloewen",
+    "IsPlayer": false,
+    "Pictures": "[portrait_ruud.png]",
+    "Description": "",
+    "character_short_name": "ruudhoenkloewen",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100004500018AA9"
+  },
+  "Mega_Rich_Light_Bending_Guy": {
+    "Name": "Mega Rich Light-Bending Guy",
+    "IsPlayer": false,
+    "Pictures": "[portrait_lightbending.png]",
+    "Description": "The Mega Rich Light Bending Guy is in a container in the containeryard.",
+    "character_short_name": "megarichlightbendingguy",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100005A0000D9D3"
+  },
+  "Netpicker's_Twins": {
+    "Name": "Netpicker's Twins",
+    "IsPlayer": false,
+    "Description": "Two Netpicker's twin kids who run around outside, they're about 7 and they talk something about the island.",
+    "character_short_name": "netpickerstwins",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100005A0000E6A1"
+  },
+  "Lilienne's_Twin": {
+    "Name": "Lilienne's Twin",
+    "IsPlayer": false,
+    "Pictures": "[portrait_liliennes-twin.png]",
+    "Description": "",
+    "character_short_name": "liliennestwin",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000450001BBF9"
+  },
+  "Real_Estate_Agent": {
+    "Name": "Real Estate Agent",
+    "IsPlayer": false,
+    "Pictures": "[portrait_real-estate-agent.png]",
+    "Description": "",
+    "character_short_name": "realestateagent",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000570001DFDF"
+  },
+  "Bloated_Corpse_of_a_Drunk": {
+    "Name": "Bloated Corpse of a Drunk",
+    "IsPlayer": false,
+    "Pictures": "[portrait_bloated-corpse.png]",
+    "Description": "",
+    "character_short_name": "bloatedcorpseofadrunk",
+    "Articy_Id": "0x01000057000218A1"
+  },
+  "Jamrock_Public_Library": {
+    "Name": "Jamrock Public Library",
+    "IsPlayer": false,
+    "Pictures": "[portrait_librarian.png]",
+    "Description": "",
+    "character_short_name": "jamrockpubliclibrary",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x01000075000010FE"
+  },
+  "Barry_the_Butcher": {
+    "Name": "Barry the Butcher",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "barrythebutcher",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "A man with something to say.",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100006B00009D07",
+    "Bark_Index": 2
+  },
+  "Nix_Gottlieb": {
+    "Name": "Nix Gottlieb",
+    "IsPlayer": false,
+    "Pictures": "[portrait_nix-gottlieb.png]",
+    "Description": "",
+    "character_short_name": "nixgottlieb",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x01000081000002AD"
+  },
+  "MrDeleteMe": {
+    "Name": "MrDeleteMe",
+    "IsPlayer": false,
+    "Description": "This is just a test character for a test dialogue.",
+    "character_short_name": "mrdeleteme",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000750000223F"
+  },
+  "Cuno's_Dad": {
+    "Name": "Cuno's Dad",
+    "IsPlayer": false,
+    "Pictures": "[portrait_cunos-dad.png]",
+    "Description": "",
+    "character_short_name": "cunosdad",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100008200008E08"
+  },
+  "Mikael_Heidelstam": {
+    "Name": "Mikael Heidelstam",
+    "IsPlayer": false,
+    "Pictures": "[portrait_mikael.png]",
+    "Description": "",
+    "character_short_name": "mikaelheidelstam",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100000800001110"
+  },
+  "Lilienne's_Other_Twin": {
+    "Name": "Lilienne's Other Twin",
+    "IsPlayer": false,
+    "Pictures": "[portrait_liliennes-other-twin.png]",
+    "Description": "",
+    "character_short_name": "liliennesothertwin",
+    "Articy_Id": "0x010000060001C8EB"
+  },
+  "Steban,_the_Student_Communist": {
+    "Name": "Steban, the Student Communist",
+    "IsPlayer": false,
+    "Pictures": "[portrait_steban.png]",
+    "Description": "Steban, the Student Communist is a young, ideologically combative Mazovian. He runs an underground reading group in a disused section of the Capeside Apartments, though recently he's excommunicated most of the reading group's membership over various ideological heresies. Though steeped in theory, at heart he's quite sincere and perhaps less strident than he initially appears.",
+    "character_short_name": "stebanthestudentcommunist",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100000F00007594"
+  },
+  "Echo_Maker": {
+    "Name": "Echo Maker",
+    "IsPlayer": false,
+    "Pictures": "[portrait_echomaker.png]",
+    "Description": "The Echo Maker is the one participant in the underground reading group who hasn't been excommunicated by the Student Communist. He echoes whatever the Student Communist says, much to the Student Communist's irritation. An intellectual hanger-on and toady.",
+    "character_short_name": "echomaker",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100000F000075A5"
+  },
+  "Coalition_Warship_Archer": {
+    "Name": "Coalition Warship Archer",
+    "IsPlayer": false,
+    "Pictures": "[portrait_archer.png]",
+    "Description": "",
+    "character_short_name": "coalitionwarshiparcher",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100000F0000CA5D"
+  },
+  "DJ_Mesh": {
+    "Name": "DJ Mesh",
+    "IsPlayer": false,
+    "Pictures": "[portrait_djmesh.png]",
+    "Description": "DJ Mesh is half of Speedfreaks FM, along with DJ Flacio.",
+    "character_short_name": "djmesh",
+    "Articy_Id": "0x0100004B00002348"
+  },
+  "DJ_Flacio": {
+    "Name": "DJ Flacio",
+    "IsPlayer": false,
+    "Pictures": "[portrait_flacio.png]",
+    "Description": "One half of the Speedfreaks FM duo.",
+    "character_short_name": "djflacio",
+    "Articy_Id": "0x0100004B0000234D"
+  },
+  "Woman_from_Gottwald": {
+    "Name": "Woman from Gottwald",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "womanfromgottwald",
+    "Articy_Id": "0x0100005300003C26"
+  },
+  "Civilian": {
+    "Name": "Civilian",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "civilian",
+    "Articy_Id": "0x010000580002068B"
+  },
+  "Ceiling_Fan": {
+    "Name": "Ceiling Fan",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "ceilingfan",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x01000004000008DB"
+  },
+  "Mirror": {
+    "Name": "Mirror",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "mirror",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000040000090A"
+  },
+  "Candle": {
+    "Name": "Candle",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "candle",
+    "Articy_Id": "0x0100000600000487"
+  },
+  "Gun_Barrel__4_Bullets_": {
+    "Name": "Gun Barrel (4 Bullets)",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "gunbarrel4bullets",
+    "Articy_Id": "0x010000060000048B"
+  },
+  "Dice_d4": {
+    "Name": "Dice d4",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "diced4",
+    "Articy_Id": "0x01000006000009C4"
+  },
+  "Dice_d20": {
+    "Name": "Dice d20",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "diced20",
+    "Articy_Id": "0x01000006000009C8"
+  },
+  "Blurred_Mirror": {
+    "Name": "Blurred Mirror",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "blurredmirror",
+    "Articy_Id": "0x01000006000009D0"
+  },
+  "Church_Doors": {
+    "Name": "Church Doors",
+    "IsPlayer": false,
+    "Pictures": "[broken-stained-glass-window-1.jpg]",
+    "Description": "",
+    "character_short_name": "churchdoors",
+    "Articy_Id": "0x0100000B0000002D"
+  },
+  "The_Greatest_Innocence": {
+    "Name": "The Greatest Innocence",
+    "IsPlayer": false,
+    "Description": "Young Mesque fascist arguing over who's the coolest and best innocence ever.",
+    "character_short_name": "thegreatestinnocence",
+    "Articy_Id": "0x0100002F000034E7"
+  },
+  "From_A_to_Zrieek!_A_Guide_To_a_Well_Behaved_Cockatoo": {
+    "Name": "From A to Zrieek! A Guide To a Well-Behaved Cockatoo",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "fromatozrieekaguidetoawellbehavedcockatoo",
+    "Articy_Id": "0x0100002F00003529"
+  },
+  "Man_from_Hjelmdall": {
+    "Name": "Man from Hjelmdall",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "manfromhjelmdall",
+    "Articy_Id": "0x0100002F00003532"
+  },
+  "Man_from_Hjelmdall_in_Hell": {
+    "Name": "Man from Hjelmdall in Hell",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "manfromhjelmdallinhell",
+    "Articy_Id": "0x0100002F00003536"
+  },
+  "Man_from_Hjelmdall_and_the_Swamp_Beast": {
+    "Name": "Man from Hjelmdall and the Swamp Beast",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "manfromhjelmdallandtheswampbeast",
+    "Articy_Id": "0x0100002F0000353A"
+  },
+  "Man_from_Hjelmdall_and_the_Wild_Fire": {
+    "Name": "Man from Hjelmdall and the Wild Fire",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "manfromhjelmdallandthewildfire",
+    "Articy_Id": "0x0100002F0000353E"
+  },
+  "Man_from_Hjelmdall_and_the_Devil_Woman": {
+    "Name": "Man from Hjelmdall and the Devil Woman",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "manfromhjelmdallandthedevilwoman",
+    "Articy_Id": "0x0100002F00003542"
+  },
+  "The_“Great_Ideas”_of_Mass_Murderers_Debunked": {
+    "Name": "The “Great Ideas” of Mass Murderers Debunked",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "thegreatideasofmassmurderersdebunked",
+    "Articy_Id": "0x0100002F0000354F"
+  },
+  "From_Synchromesh_to_TwinClutch:_A_Beginners_Guide_to_Changing_Gears": {
+    "Name": "From Synchromesh to TwinClutch: A Beginners Guide to Changing Gears",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "fromsynchromeshtotwinclutchabeginnersguidetochanginggears",
+    "Articy_Id": "0x0100002F0000355A"
+  },
+  "Le_TipTop_Tournée:_C'est_Suicide,_C'est_Madness": {
+    "Name": "Le TipTop Tournée: C'est Suicide, C'est Madness",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "letiptoptourneecestsuicidecestmadness",
+    "Articy_Id": "0x0100002F0000355E"
+  },
+  "Nailing_the_Cochonnet": {
+    "Name": "Nailing the Cochonnet",
+    "IsPlayer": false,
+    "Description": "This sounds like a book about petanque, but it's actually erotica.",
+    "character_short_name": "nailingthecochonnet",
+    "Articy_Id": "0x0100002F00003562"
+  },
+  "Boule_Brothers:_The_Tale_of_Pétanque": {
+    "Name": "Boule Brothers: The Tale of Pétanque",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "boulebrothersthetaleofpetanque",
+    "Articy_Id": "0x0100002F00003567"
+  },
+  "Dick_Mullen_and_the_Murder_in_the_Orchard": {
+    "Name": "Dick Mullen and the Murder in the Orchard",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "dickmullenandthemurderintheorchard",
+    "Articy_Id": "0x0100002F0000356B"
+  },
+  "The_Stout_Adventures_of_Dick_Mullen": {
+    "Name": "The Stout Adventures of Dick Mullen",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "thestoutadventuresofdickmullen",
+    "Articy_Id": "0x0100002F0000356F"
+  },
+  "The_Stalwart_Investigations_of_Dick_Mullen": {
+    "Name": "The Stalwart Investigations of Dick Mullen",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "thestalwartinvestigationsofdickmullen",
+    "Articy_Id": "0x0100002F00003573"
+  },
+  "Lord_of_the_Western_Plain": {
+    "Name": "Lord of the Western Plain",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "lordofthewesternplain",
+    "Articy_Id": "0x0100002F00003577"
+  },
+  "The_Perikarnassian": {
+    "Name": "The Perikarnassian",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "theperikarnassian",
+    "Articy_Id": "0x0100002F0000357B"
+  },
+  "Happy_With_the_Perikarnassian": {
+    "Name": "Happy With the Perikarnassian",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "happywiththeperikarnassian",
+    "Articy_Id": "0x0100002F0000357F"
+  },
+  "Tractatus_Politico_Extraphysicus": {
+    "Name": "Tractatus Politico-Extraphysicus",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "tractatuspoliticoextraphysicus",
+    "Articy_Id": "0x0100002F00003583"
+  },
+  "The_Relay_Out_of_Death": {
+    "Name": "The Relay Out of Death",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "therelayoutofdeath",
+    "Articy_Id": "0x0100002F00003587"
+  },
+  "Interisolary_Love": {
+    "Name": "Interisolary Love",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "interisolarylove",
+    "Articy_Id": "0x0100002F00003598"
+  },
+  "How_To_Repair_Eendracht_class_Airships:_An_Instruction_Manual": {
+    "Name": "How To Repair Eendracht-class Airships: An Instruction Manual",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "howtorepaireendrachtclassairshipsaninstructionmanual",
+    "Articy_Id": "0x0100002F0000359C"
+  },
+  "Most_Able_Bodied_Detectives:_A_Top_10": {
+    "Name": "Most Able-Bodied Detectives: A Top 10",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "mostablebodieddetectivesatop10",
+    "Articy_Id": "0x0100002F000035A0"
+  },
+  "Isolary_Atlas": {
+    "Name": "Isolary Atlas",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "isolaryatlas",
+    "Articy_Id": "0x0100002F000035A4"
+  },
+  "Franconigerian_Hardbody:_Boiadeiro_Culture,_Use_Your_Hardbody": {
+    "Name": "Franconigerian Hardbody: Boiadeiro Culture, Use Your Hardbody",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "franconigerianhardbodyboiadeirocultureuseyourhardbody",
+    "Articy_Id": "0x0100002F000035A8"
+  },
+  "Architectural_Peculiarities_of_Jamrock": {
+    "Name": "Architectural Peculiarities of Jamrock",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "architecturalpeculiaritiesofjamrock",
+    "Articy_Id": "0x0100002F000035AC"
+  },
+  "Death_on_the_Disco_Floor": {
+    "Name": "Death on the Disco Floor",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "deathonthediscofloor",
+    "Articy_Id": "0x0100002F000035B0"
+  },
+  "Shortwave:_An_Operator's_Handbook": {
+    "Name": "Shortwave: An Operator's Handbook",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "shortwaveanoperatorshandbook",
+    "Articy_Id": "0x0100002F000035B4"
+  },
+  "Radio_Programme_of_'49": {
+    "Name": "Radio Programme of '49",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "radioprogrammeof49",
+    "Articy_Id": "0x0100002F000035B8"
+  },
+  "Off_We_Go_Into_the_Wild_Pale_Yonder": {
+    "Name": "Off We Go Into the Wild Pale Yonder",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "offwegointothewildpaleyonder",
+    "Articy_Id": "0x0100002F000037A6"
+  },
+  "Ardish_National_Recipes:_The_Variable_Flavours_of_Lake_Trout": {
+    "Name": "Ardish National Recipes: The Variable Flavours of Lake Trout",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "ardishnationalrecipesthevariableflavoursoflaketrout",
+    "Articy_Id": "0x0100002F000037AC"
+  },
+  "Wholeness,_Unity,_Balance": {
+    "Name": "Wholeness, Unity, Balance",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "wholenessunitybalance",
+    "Articy_Id": "0x0100002F000037B0"
+  },
+  "Fifty_Savors_of_Pâté": {
+    "Name": "Fifty Savors of Pâté",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "fiftysavorsofpate",
+    "Articy_Id": "0x0100002F000037B4"
+  },
+  "Raise_Your_Offspring_Properly:_A_Guidebook": {
+    "Name": "Raise Your Offspring Properly: A Guidebook",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "raiseyouroffspringproperlyaguidebook",
+    "Articy_Id": "0x0100002F000037B8"
+  },
+  "World_Domination_Through_Concentration": {
+    "Name": "World Domination Through Concentration",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "worlddominationthroughconcentration",
+    "Articy_Id": "0x0100002F000037BD"
+  },
+  "The_Intrepid_Life_of_Dick_Mullen": {
+    "Name": "The Intrepid Life of Dick Mullen",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "theintrepidlifeofdickmullen",
+    "Articy_Id": "0x0100002F000037C1"
+  },
+  "Tome_of_Fascist_Magic": {
+    "Name": "Tome of Fascist Magic",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "tomeoffascistmagic",
+    "Articy_Id": "0x0100002F000037C5"
+  },
+  "Man_from_Hjelmdall_and_the_Hjelmdall_Man": {
+    "Name": "Man from Hjelmdall and the Hjelmdall Man",
+    "IsPlayer": false,
+    "Description": "The man from Hjelmdall has forgotten his identity, now he must find them anew.",
+    "character_short_name": "manfromhjelmdallandthehjelmdallman",
+    "Articy_Id": "0x0100002F000037C9"
+  },
+  "Greatest_Meals_From_The_New": {
+    "Name": "Greatest Meals From The New",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "greatestmealsfromthenew",
+    "Articy_Id": "0x0100002F000037CD"
+  },
+  "Hjelmdallermann:_the_Man_from_Hjelmdall": {
+    "Name": "Hjelmdallermann: the Man from Hjelmdall",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "hjelmdallermannthemanfromhjelmdall",
+    "Articy_Id": "0x0100002F00009779"
+  },
+  "Man_from_Hjelmdall_in_the_Lost_City_of_the_Pygmies": {
+    "Name": "Man from Hjelmdall in the Lost City of the Pygmies",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "manfromhjelmdallinthelostcityofthepygmies",
+    "Articy_Id": "0x0100002F0000977D"
+  },
+  "Man_from_Hjelmdall_in_Pellucidar": {
+    "Name": "Man from Hjelmdall in Pellucidar",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "manfromhjelmdallinpellucidar",
+    "Articy_Id": "0x0100002F00009DA7"
+  },
+  "Man_from_Hjelmdall_and_the_Mystery_of_the_Lost_Identity": {
+    "Name": "Man from Hjelmdall and the Mystery of the Lost Identity",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "manfromhjelmdallandthemysteryofthelostidentity",
+    "Articy_Id": "0x0100002F0000CFDB"
+  },
+  "The_Lie_Detector": {
+    "Name": "The Lie Detector",
+    "IsPlayer": false,
+    "Description": "\"The Lie Detector\" by Lita Zippora.\nIt seems to go into great detail about how different facets of private and public life are a falsehood, a failure and an abomination.\nIt doesn't resemble other self-help books much, in style or general attitude - it's much more like a philosophy book. It's probably been released as a self-help book as a prank, or to boost reader's numbers.",
+    "character_short_name": "theliedetector",
+    "Articy_Id": "0x0100002F0000D01E"
+  },
+  "Primer_Book": {
+    "Name": "Primer Book",
+    "IsPlayer": false,
+    "Description": "Primer Book task item (find it for Kim and learn about the world).",
+    "character_short_name": "primerbook",
+    "Articy_Id": "0x0100002F0000D3F8"
+  },
+  "High_Speed_Love:_The_Tragic_True_Story_of_Jacob_Irw_and_Alfie_Deletraz": {
+    "Name": "High Speed Love: The Tragic True Story of Jacob Irw and Alfie Deletraz",
+    "IsPlayer": false,
+    "Description": "A book about a love story between two madcap drivers.\n\nJacob Irw is a crazy TipTop Tournée driver, a madman behind the wheel. Like he doesn't even care anymore. Locks flying in the breeze, laughing maniacally, going top speed (or EVEN HIGHER). Some say he's seeking death on the circuit - wants to go out in a blaze, but death won't take him! \"Not today, Irw,\" death always seemed to say... and Irve claims another title.\n\nIt's why he quit racing... he wanted to die after his lover, also a racer, died on the circuit. But now he's 80 and making up for lost time, racing around Revachol, jumping over canals. Irw the Tormentor, Irw the Tormented.\n\nNEVER FORGET. And lay a rose on Alfie's grave every year.\n\n\"It was the first race he'd lost in almost two years, and to a Tiptop newcomer -- some young kid from a provincial town, from what he'd heard. He approached the winner to offer his congratulations reluctantly, searching his mind for the stock phrases of good sportsmanship that he had forgotten how to use. But then everything changed. The younger racer, still with his back to Jacob, removed his helmet, and chestnut locks came tumbling down onto his shoulders, made golden by the bright sunlight of that cold April afternoon -- and when he turned, smiling, Jacob felt as though he'd won something more important than a title.\"",
+    "character_short_name": "highspeedlovethetragictruestoryofjacobirwandalfiedeletraz",
+    "Articy_Id": "0x0100002F0000D487"
+  },
+  "Un_Pays_Infernal": {
+    "Name": "Un Pays Infernal",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "unpaysinfernal",
+    "Articy_Id": "0x010000450001D2C0"
+  },
+  "Medicinal_Purposes_of_the_Pale": {
+    "Name": "Medicinal Purposes of the Pale",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "medicinalpurposesofthepale",
+    "Articy_Id": "0x0100006B00005E88"
+  },
+  "Suzerainty:_The_Board_Game": {
+    "Name": "Suzerainty: The Board Game",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "suzeraintytheboardgame",
+    "Articy_Id": "0x0100006B00005E8C"
+  },
+  "Sixteen_Days_of_Coldest_April": {
+    "Name": "Sixteen Days of Coldest April",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "sixteendaysofcoldestapril",
+    "Articy_Id": "0x0100006B00005E90"
+  },
+  "Dick_Mullen_and_the_Mistaken_Identity": {
+    "Name": "Dick Mullen and the Mistaken Identity",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "dickmullenandthemistakenidentity",
+    "Articy_Id": "0x0100006B00006006"
+  },
+  "Codex_Urik": {
+    "Name": "Codex Urik",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "codexurik",
+    "Articy_Id": "0x01000089000047BD"
+  },
+  "Tourist_map_of_Martinaise": {
+    "Name": "Tourist map of Martinaise",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "touristmapofmartinaise",
+    "Articy_Id": "0x01000006000172E3"
+  },
+  "Stained_Glass_Window": {
+    "Name": "Stained Glass Window",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "stainedglasswindow",
+    "Articy_Id": "0x0100000D00001417"
+  },
+  "Workout_Bench": {
+    "Name": "Workout Bench",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "workoutbench",
+    "Articy_Id": "0x0100000900002CC3"
+  },
+  "Tent_Flap": {
+    "Name": "Tent Flap",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "tentflap",
+    "Articy_Id": "0x0100000B00000474"
+  },
+  "Key_On_Yellow_Keyring": {
+    "Name": "Key On Yellow Keyring",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "keyonyellowkeyring",
+    "Articy_Id": "0x0100000400002C96"
+  },
+  "Shards_of_Dei": {
+    "Name": "Shards of Dei",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "shardsofdei",
+    "Articy_Id": "0x0100001600000589"
+  },
+  "Payphone": {
+    "Name": "Payphone",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "payphone",
+    "Articy_Id": "0x01000014000029F1"
+  },
+  "Torch": {
+    "Name": "Torch",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "torch",
+    "Articy_Id": "0x01000016000018C2"
+  },
+  "Firefighter's_Axe": {
+    "Name": "Firefighter's Axe",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "firefightersaxe",
+    "Articy_Id": "0x01000016000018C6"
+  },
+  "Trash_Container": {
+    "Name": "Trash Container",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "trashcontainer",
+    "Articy_Id": "0x0100000400009B34"
+  },
+  "Coin_Operated_Viewer": {
+    "Name": "Coin-Operated Viewer",
+    "IsPlayer": false,
+    "Pictures": "[coinoperatedviewer.jpg]",
+    "Description": "A mounted telescope on the plaza.",
+    "character_short_name": "coinoperatedviewer",
+    "Articy_Id": "0x0100002B0000514E"
+  },
+  "Broken_Window": {
+    "Name": "Broken Window",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "brokenwindow",
+    "Articy_Id": "0x010000040000C514"
+  },
+  "Warded_Door": {
+    "Name": "Warded Door",
+    "IsPlayer": false,
+    "Description": "There's a contraption made of small bones and feathers and coins and the like on the door. A Thought Cabinet check or Kim may reveal that they are of semenese origin and believed to be magical. Probably for warding off evil spirits..",
+    "character_short_name": "wardeddoor",
+    "Articy_Id": "0x0100002F000034E2"
+  },
+  "Closed_Curtains": {
+    "Name": "Closed Curtains",
+    "IsPlayer": false,
+    "Description": "There's a cage-like contraption on the door, made of sticks and beads and leather straps and coins and so forth, with a fish skull in the middle. A TC check or Kim may reveal that those are made by the semenese people and constitute some magical defence against evil spirits and curses.",
+    "character_short_name": "closedcurtains",
+    "Articy_Id": "0x0100002F0000352D"
+  },
+  "Radio": {
+    "Name": "Radio",
+    "IsPlayer": false,
+    "Description": "A radio tuned to an interisolar weather station on the second floor of Whirling.",
+    "character_short_name": "radio",
+    "Articy_Id": "0x0100002B0000670B",
+    "Bark_Index": 10
+  },
+  "Mail_Collection_Box": {
+    "Name": "Mail Collection Box",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "mailcollectionbox",
+    "Articy_Id": "0x010000040000DDFF"
+  },
+  "Stone": {
+    "Name": "Stone",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "stone",
+    "Articy_Id": "0x01000040000028FC"
+  },
+  "Tare_Machine": {
+    "Name": "Tare Machine",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "taremachine",
+    "Articy_Id": "0x0100002B00029F1F"
+  },
+  "Plastic_Rain_Coat": {
+    "Name": "Plastic Rain Coat",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "plasticraincoat",
+    "Articy_Id": "0x0100002B0002A0D3"
+  },
+  "Pile_of_Clothes": {
+    "Name": "Pile of Clothes",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "pileofclothes",
+    "Articy_Id": "0x0100002B0004102C"
+  },
+  "Pile_of_Sunglasses": {
+    "Name": "Pile of Sunglasses",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "pileofsunglasses",
+    "Articy_Id": "0x0100002B00041030"
+  },
+  "Blind_Musician's_Soulful_Shades": {
+    "Name": "Blind Musician's Soulful Shades",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "blindmusicianssoulfulshades",
+    "Articy_Id": "0x0100002B00041034"
+  },
+  "Electronic_Doorbell": {
+    "Name": "Electronic Doorbell",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "electronicdoorbell",
+    "Articy_Id": "0x0100002B0005B5BE"
+  },
+  "Damaged_Ledger": {
+    "Name": "Damaged Ledger",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "damagedledger",
+    "Articy_Id": "0x01000045000012F2"
+  },
+  "Ledger_of_Failure_and_Hatred": {
+    "Name": "Ledger of Failure and Hatred",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "ledgeroffailureandhatred",
+    "Articy_Id": "0x0100004500003299"
+  },
+  "Oblivion_Ledger": {
+    "Name": "Oblivion Ledger",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "oblivionledger",
+    "Articy_Id": "0x010000450000329D"
+  },
+  "Lieutenant's_Notebook": {
+    "Name": "Lieutenant's Notebook",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "lieutenantsnotebook",
+    "Articy_Id": "0x010000450000338A"
+  },
+  "Wirrâl": {
+    "Name": "Wirrâl",
+    "IsPlayer": false,
+    "Description": "Popular binoclard fantasy board game (module), feat. faeries and welkin and pygmees and other fantasy folk. The non-grim dark version with miniatures.",
+    "character_short_name": "wirral",
+    "Articy_Id": "0x0100002F0000D062"
+  },
+  "Sawed_off_Street_Light": {
+    "Name": "Sawed-off Street Light",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "sawedoffstreetlight",
+    "Articy_Id": "0x0100004D00002940"
+  },
+  "Canary_Cage": {
+    "Name": "Canary Cage",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "canarycage",
+    "Articy_Id": "0x0100004D00002944"
+  },
+  "Key,_Room_#1": {
+    "Name": "Key, Room #1",
+    "IsPlayer": false,
+    "Description": "This key opens the door of room #1 in the Whiling-in-Rags hostel. The keychain has the hostel name on it.",
+    "character_short_name": "keyroom1",
+    "Articy_Id": "0x0100002700000731"
+  },
+  "Door,_Apartment_#28": {
+    "Name": "Door, Apartment #28",
+    "IsPlayer": false,
+    "Description": "Door to the apartment 28 where Smoker on the Balcony lives. You can interview The Sponsor there.",
+    "character_short_name": "doorapartment28",
+    "Articy_Id": "0x0100002B00008371"
+  },
+  "Door,_Room_#3": {
+    "Name": "Door, Room #3",
+    "IsPlayer": false,
+    "Description": "Klaasje room door in Whirling, floor 2.",
+    "character_short_name": "doorroom3",
+    "Articy_Id": "0x010000040000C2CC"
+  },
+  "Box_of_Sunglasses": {
+    "Name": "Box of Sunglasses",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "boxofsunglasses",
+    "Articy_Id": "0x0100004500000EE2"
+  },
+  "FALN_Sneakers_on_a_Pedestal_of_Speakers": {
+    "Name": "FALN Sneakers on a Pedestal of Speakers",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "falnsneakersonapedestalofspeakers",
+    "Articy_Id": "0x0100004500000EDE"
+  },
+  "Box_of_Clothes": {
+    "Name": "Box of Clothes",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "boxofclothes",
+    "Articy_Id": "0x0100004500000EE6"
+  },
+  "Rack_of_Second_Hand_Uniforms": {
+    "Name": "Rack of Second-Hand Uniforms",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "rackofsecondhanduniforms",
+    "Articy_Id": "0x0100004D00003160"
+  },
+  "Central_Furnace": {
+    "Name": "Central Furnace",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "centralfurnace",
+    "Articy_Id": "0x0100002B00081E5F"
+  },
+  "Horrific_Necktie": {
+    "Name": "Horrific Necktie",
+    "IsPlayer": false,
+    "Pictures": "[portrait_horrific necktie.png]",
+    "Description": "",
+    "character_short_name": "horrificnecktie",
+    "Articy_Id": "0x0100002B00081F16"
+  },
+  "Breaker_Box": {
+    "Name": "Breaker Box",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "breakerbox",
+    "Articy_Id": "0x0100002B000833C4"
+  },
+  "Ice_Cream_Maker": {
+    "Name": "Ice Cream Maker",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "icecreammaker",
+    "Articy_Id": "0x0100002B0008598F"
+  },
+  "Ice_Bear_Fridge": {
+    "Name": "Ice Bear Fridge",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "icebearfridge",
+    "Articy_Id": "0x0100002B00085E80"
+  },
+  "Knick_knacks_Stand": {
+    "Name": "Knick-knacks Stand",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "knickknacksstand",
+    "Articy_Id": "0x0100004D00003164"
+  },
+  "Shelf_of_Boomboxes": {
+    "Name": "Shelf of Boomboxes",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "shelfofboomboxes",
+    "Articy_Id": "0x0100004D00003E8E"
+  },
+  "A_Hole_in_the_Wall": {
+    "Name": "A Hole in the Wall",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "aholeinthewall",
+    "Articy_Id": "0x0100002B00086400"
+  },
+  "Door,_Room_#1": {
+    "Name": "Door, Room #1",
+    "IsPlayer": false,
+    "Description": "Tequila room door in Whirling, floor 2.",
+    "character_short_name": "doorroom1",
+    "Articy_Id": "0x0100002F0000DC61"
+  },
+  "Bed": {
+    "Name": "Bed",
+    "IsPlayer": false,
+    "Description": "It's your bed in Whirling, it's where you sleep!",
+    "character_short_name": "bed",
+    "Articy_Id": "0x0100002F0000DD92"
+  },
+  "First_Aid_Kit": {
+    "Name": "First Aid Kit",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "firstaidkit",
+    "Articy_Id": "0x0100002B000869F7"
+  },
+  "Shack_Door": {
+    "Name": "Shack Door",
+    "IsPlayer": false,
+    "Description": "This is the door to the shack in the fishing village.",
+    "character_short_name": "shackdoor",
+    "Articy_Id": "0x0100002F0000DE9F"
+  },
+  "ROO_A72_Motor_Skiff": {
+    "Name": "ROO A72 Motor Skiff",
+    "IsPlayer": false,
+    "Description": "This is the boat you can loan from Net picker. It takes you to the Sea Fortress island and back.",
+    "character_short_name": "rooa72motorskiff",
+    "Articy_Id": "0x0100002F0000DF1F"
+  },
+  "Gaston's_Sandwich": {
+    "Name": "Gaston's Sandwich",
+    "IsPlayer": false,
+    "Pictures": "[portrait_gaston-sandwich.png]",
+    "Description": "With abundance of ham, mayo, roasted onions, tomatoes and pretty much everything one could dream of in a sandwich, Gaston's Culinary Wonder stands tall among meals",
+    "character_short_name": "gastonssandwich",
+    "Articy_Id": "0x0100003100001756"
+  },
+  "Policeman_Cloak": {
+    "Name": "Policeman Cloak",
+    "IsPlayer": false,
+    "Pictures": "[portrait_police-man-cloak.png]",
+    "Description": "",
+    "character_short_name": "policemancloak",
+    "Articy_Id": "0x010000310000E52A"
+  },
+  "Police_Radio": {
+    "Name": "Police Radio",
+    "IsPlayer": false,
+    "Pictures": "[portrait_police-radio.png]",
+    "Description": "",
+    "character_short_name": "policeradio",
+    "Articy_Id": "0x01000031000061CE"
+  },
+  "File_Cabinet": {
+    "Name": "File Cabinet",
+    "IsPlayer": false,
+    "Pictures": "[portrait_file-cabinet.png]",
+    "Description": "",
+    "character_short_name": "filecabinet",
+    "Articy_Id": "0x010000310000B329"
+  },
+  "Saint_Batiste_Pharmaceutics": {
+    "Name": "Saint-Batiste Pharmaceutics",
+    "IsPlayer": false,
+    "Description": "Fritte kiosk",
+    "character_short_name": "saintbatistepharmaceutics",
+    "Articy_Id": "0x0100002B00086E4E"
+  },
+  "Medicine_Cabinet": {
+    "Name": "Medicine Cabinet",
+    "IsPlayer": false,
+    "Description": "The medicine cabinet in Klaasje's room. Includes clues and whatnot.",
+    "character_short_name": "medicinecabinet",
+    "Articy_Id": "0x0100002F0000E6B7"
+  },
+  "The_Button": {
+    "Name": "The Button",
+    "IsPlayer": false,
+    "Description": "It's the big red button behind Measurehead that you have to push in order to open electronically locked door.",
+    "character_short_name": "thebutton",
+    "Articy_Id": "0x0100002F0000E6BC"
+  },
+  "Electronically_Locked_Door": {
+    "Name": "Electronically Locked Door",
+    "IsPlayer": false,
+    "Description": "The door at the top of the gates, which leads to Mom's Office/Rec Room.",
+    "character_short_name": "electronicallylockeddoor",
+    "Articy_Id": "0x0100002F0000E6C1"
+  },
+  "Barbell": {
+    "Name": "Barbell",
+    "IsPlayer": false,
+    "Description": "In the doomed gym.",
+    "character_short_name": "barbell",
+    "Articy_Id": "0x0100004500005C47"
+  },
+  "Project_Dread_Board": {
+    "Name": "Project Dread Board",
+    "IsPlayer": false,
+    "Description": "Fortress Accident's moodboard.",
+    "character_short_name": "projectdreadboard",
+    "Articy_Id": "0x0100004500005CA2"
+  },
+  "Reeds": {
+    "Name": "Reeds",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "reeds",
+    "Articy_Id": "0x0100002F0000EFD6"
+  },
+  "Sewage_Run_off_Pipe": {
+    "Name": "Sewage Run-off Pipe",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "sewagerunoffpipe",
+    "Articy_Id": "0x0100002F0000F101"
+  },
+  "Phasmid_Trap": {
+    "Name": "Phasmid Trap",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "phasmidtrap",
+    "Articy_Id": "0x0100002F0000F105"
+  },
+  "Radiocomputer": {
+    "Name": "Radiocomputer",
+    "IsPlayer": false,
+    "Description": "Fortress Accident's radiocomputer.",
+    "character_short_name": "radiocomputer",
+    "Articy_Id": "0x0100004500005CFB"
+  },
+  "Photo_of_Klaasje": {
+    "Name": "Photo of Klaasje",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "photoofklaasje",
+    "Articy_Id": "0x0100002F0000F43B"
+  },
+  "Note_from_Klaasje": {
+    "Name": "Note from Klaasje",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "notefromklaasje",
+    "Articy_Id": "0x0100002F0000F546"
+  },
+  "Control_Buoy": {
+    "Name": "Control Buoy",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "controlbuoy",
+    "Articy_Id": "0x0100002F0000F729"
+  },
+  "Door,_Room_#2": {
+    "Name": "Door, Room #2",
+    "IsPlayer": false,
+    "Description": "Kim's room door on the second floor of Whirling-in-Rags.",
+    "character_short_name": "doorroom2",
+    "Articy_Id": "0x0100002F0000F911"
+  },
+  "Elevator": {
+    "Name": "Elevator",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "elevator",
+    "Articy_Id": "0x0100002F0000F930"
+  },
+  "Abandoned_Lorry": {
+    "Name": "Abandoned Lorry",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "abandonedlorry",
+    "Articy_Id": "0x0100002F0000F93C"
+  },
+  "Fishing_Rod": {
+    "Name": "Fishing Rod",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "fishingrod",
+    "Articy_Id": "0x0100002F0000F940"
+  },
+  "Bust_of_Kras_Mazov": {
+    "Name": "Bust of Kras Mazov",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "bustofkrasmazov",
+    "Articy_Id": "0x0100002F0000F94C"
+  },
+  "Samaran_Butter": {
+    "Name": "Samaran Butter",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "samaranbutter",
+    "Articy_Id": "0x0100002F0000F950"
+  },
+  "Sunken_Motor_Carriage": {
+    "Name": "Sunken Motor Carriage",
+    "IsPlayer": false,
+    "Pictures": "[portrait_sunken-motor-carriage.png]",
+    "Description": "",
+    "character_short_name": "sunkenmotorcarriage",
+    "Articy_Id": "0x0100002F0000F954"
+  },
+  "Washbasin": {
+    "Name": "Washbasin",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "washbasin",
+    "Articy_Id": "0x0100002F0000F958"
+  },
+  "Eternite_Drawbridge": {
+    "Name": "Eternite Drawbridge",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "eternitedrawbridge",
+    "Articy_Id": "0x0100002F0000F970"
+  },
+  "Mainframe": {
+    "Name": "Mainframe",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "mainframe",
+    "Articy_Id": "0x0100002F0000F974"
+  },
+  "Radio_Array": {
+    "Name": "Radio Array",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "radioarray",
+    "Articy_Id": "0x0100002F0000F978"
+  },
+  "Safety_Curtains": {
+    "Name": "Safety Curtains",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "safetycurtains",
+    "Articy_Id": "0x0100002F0000F97C"
+  },
+  "Horseback_Monument": {
+    "Name": "Horseback Monument",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "horsebackmonument",
+    "Articy_Id": "0x0100002F0000F984"
+  },
+  "Door,_Apartment_#20": {
+    "Name": "Door, Apartment #20",
+    "IsPlayer": false,
+    "Description": "Door to Working Class Woman.",
+    "character_short_name": "doorapartment20",
+    "Articy_Id": "0x0100002F0000FE22"
+  },
+  "Padlocked_Door": {
+    "Name": "Padlocked Door",
+    "IsPlayer": false,
+    "Description": "Door to the room where you find Bust of Kras Mazov?",
+    "character_short_name": "padlockeddoor",
+    "Articy_Id": "0x0100002F0000FE26"
+  },
+  "Door,_Apartment_#12": {
+    "Name": "Door, Apartment #12",
+    "IsPlayer": false,
+    "Description": "Door to Cuno's Dad.",
+    "character_short_name": "doorapartment12",
+    "Articy_Id": "0x0100002F0000FE2A"
+  },
+  "Shelf_of_Biographies": {
+    "Name": "Shelf of Biographies",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "shelfofbiographies",
+    "Articy_Id": "0x0100002F000118B4"
+  },
+  "Shelf_of_Crime_Novels": {
+    "Name": "Shelf of Crime Novels",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "shelfofcrimenovels",
+    "Articy_Id": "0x0100002F000118B8"
+  },
+  "Shelf_of_Romance_Stories": {
+    "Name": "Shelf of Romance Stories",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "shelfofromancestories",
+    "Articy_Id": "0x0100002F000118BC"
+  },
+  "Mountain_of_Board_Games": {
+    "Name": "Mountain of Board Games",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "mountainofboardgames",
+    "Articy_Id": "0x0100002F000118C0"
+  },
+  "Display_of_Paranormal_Books": {
+    "Name": "Display of Paranormal Books",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "displayofparanormalbooks",
+    "Articy_Id": "0x0100002F000118C4"
+  },
+  "Map_Wall": {
+    "Name": "Map Wall",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "mapwall",
+    "Articy_Id": "0x0100002F000118C8"
+  },
+  "Man_from_Hjelmdall_Series": {
+    "Name": "Man from Hjelmdall Series",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "manfromhjelmdallseries",
+    "Articy_Id": "0x0100002F00011917"
+  },
+  "Fractured_Bullet": {
+    "Name": "Fractured Bullet",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "fracturedbullet",
+    "Articy_Id": "0x0100005800002577"
+  },
+  "Frequency_Fireplace": {
+    "Name": "Frequency Fireplace",
+    "IsPlayer": false,
+    "Description": "Frequency fireplace in Fortress Accident's studio (doomed f2).",
+    "character_short_name": "frequencyfireplace",
+    "Articy_Id": "0x010000570000215F"
+  },
+  "Working_Class_Corpse": {
+    "Name": "Working Class Corpse",
+    "IsPlayer": false,
+    "Pictures": "[portrait_working-class-husband.png]",
+    "Description": "",
+    "character_short_name": "workingclasscorpse",
+    "Articy_Id": "0x0100005800004005"
+  },
+  "Thank_You_Note": {
+    "Name": "Thank You Note",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "thankyounote",
+    "Articy_Id": "0x010000580000422F"
+  },
+  "BADGE:_LTN_2JFR_DU_BOIS": {
+    "Name": "BADGE: LTN-2JFR DU BOIS",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "badgeltn2jfrdubois",
+    "Articy_Id": "0x0100004C0000B269"
+  },
+  "Clear_Window": {
+    "Name": "Clear Window",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "clearwindow",
+    "Articy_Id": "0x010000450000EAEB"
+  },
+  "Dried_Wildflower": {
+    "Name": "Dried Wildflower",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "driedwildflower",
+    "Articy_Id": "0x010000450000EC5A"
+  },
+  "Barred_Door": {
+    "Name": "Barred Door",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "barreddoor",
+    "Articy_Id": "0x010000450000EDFB"
+  },
+  "Colonial_Mug_Collection": {
+    "Name": "Colonial Mug Collection",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "colonialmugcollection",
+    "Articy_Id": "0x0100005800005A25"
+  },
+  "Stereo_8_Player": {
+    "Name": "Stereo 8 Player",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "stereo8player",
+    "Articy_Id": "0x01000045000128FB"
+  },
+  "Blue_door": {
+    "Name": "Blue door",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "bluedoor",
+    "Articy_Id": "0x0100005800006D4B"
+  },
+  "Cafeteria_Window": {
+    "Name": "Cafeteria Window",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "cafeteriawindow",
+    "Articy_Id": "0x0100004C000112FD"
+  },
+  "Footprints_in_the_Dust": {
+    "Name": "Footprints in the Dust",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "footprintsinthedust",
+    "Articy_Id": "0x01000058000074EF"
+  },
+  "Bathtub": {
+    "Name": "Bathtub",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "bathtub",
+    "Articy_Id": "0x010000580000850D"
+  },
+  "Southwest_Entrance_to_the_Tenements": {
+    "Name": "Southwest Entrance to the Tenements",
+    "IsPlayer": false,
+    "Description": "Entrance to the apartment building from the pier.",
+    "character_short_name": "southwestentrancetothetenements",
+    "Articy_Id": "0x01000057000166F8"
+  },
+  "Hawthorn_Tree": {
+    "Name": "Hawthorn Tree",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "hawthorntree",
+    "Articy_Id": "0x0100005A0000B18E"
+  },
+  "Ice_Bear_Fridge_with_Hanged_Man": {
+    "Name": "Ice Bear Fridge with Hanged Man",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "icebearfridgewithhangedman",
+    "Articy_Id": "0x010000580000A793"
+  },
+  "Industrial_Stove": {
+    "Name": "Industrial Stove",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "industrialstove",
+    "Articy_Id": "0x010000580000A797"
+  },
+  "Instigator's_Tent": {
+    "Name": "Instigator's Tent",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "instigatorstent",
+    "Articy_Id": "0x010000580000BD64"
+  },
+  "Feld_Mural": {
+    "Name": "Feld Mural",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "feldmural",
+    "Articy_Id": "0x010000580000BEFD"
+  },
+  "Feld_Ladder": {
+    "Name": "Feld Ladder",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "feldladder",
+    "Articy_Id": "0x010000580000BF01"
+  },
+  "Kras_Mazov_Portrait": {
+    "Name": "Kras Mazov Portrait",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "krasmazovportrait",
+    "Articy_Id": "0x010000580000C5D9"
+  },
+  "Pale_Latitude_Compressor": {
+    "Name": "Pale Latitude Compressor",
+    "IsPlayer": false,
+    "Pictures": "[portrait_pale-compressor.png]",
+    "Description": "",
+    "character_short_name": "palelatitudecompressor",
+    "Articy_Id": "0x010000580000C5DD"
+  },
+  "Door__Unopenable_": {
+    "Name": "Door (Unopenable)",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "doorunopenable",
+    "Articy_Id": "0x0100005A0000DCDA"
+  },
+  "Half_Finished_Paperwork": {
+    "Name": "Half-Finished Paperwork",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "halffinishedpaperwork",
+    "Articy_Id": "0x010000450001AA35"
+  },
+  "Klaasje's_Note": {
+    "Name": "Klaasje's Note",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "klaasjesnote",
+    "Articy_Id": "0x010000450001AD02"
+  },
+  "Water_Bowls": {
+    "Name": "Water Bowls",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "waterbowls",
+    "Articy_Id": "0x010000570001CD22"
+  },
+  "ONE_DAY_I_WILL_RETURN_TO_YOUR_SIDE": {
+    "Name": "ONE DAY I WILL RETURN TO YOUR SIDE",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "onedayiwillreturntoyourside",
+    "Articy_Id": "0x010000450001B4C1"
+  },
+  "Microgrid_Generator": {
+    "Name": "Microgrid Generator",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "microgridgenerator",
+    "Articy_Id": "0x010000450001C7FF"
+  },
+  "Hard_Spring_Mattress": {
+    "Name": "Hard Spring Mattress",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "hardspringmattress",
+    "Articy_Id": "0x010000450001C80D"
+  },
+  "Spring_Mattress": {
+    "Name": "Spring Mattress",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "springmattress",
+    "Articy_Id": "0x010000450001C871"
+  },
+  "Reading_Materials": {
+    "Name": "Reading Materials",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "readingmaterials",
+    "Articy_Id": "0x010000450001CB9F"
+  },
+  "Small_Blast_Door": {
+    "Name": "Small Blast Door",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "smallblastdoor",
+    "Articy_Id": "0x010000450001CE38"
+  },
+  "Feld__Insular__Console": {
+    "Name": "Feld \"Insular\" Console",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "feldinsularconsole",
+    "Articy_Id": "0x010000450001CE3C"
+  },
+  "Mattress_Nest": {
+    "Name": "Mattress Nest",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "mattressnest",
+    "Articy_Id": "0x010000450001D4B8"
+  },
+  "Door": {
+    "Name": "Door",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "door",
+    "Articy_Id": "0x0100004C0000AF73"
+  },
+  "Beautiful_Necktie": {
+    "Name": "Beautiful Necktie",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "beautifulnecktie",
+    "Articy_Id": "0x0100004C0001A4A3"
+  },
+  "Ruby's_Journal": {
+    "Name": "Ruby's Journal",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "rubysjournal",
+    "Articy_Id": "0x010000580000F5CF"
+  },
+  "Cargo_Container_Door": {
+    "Name": "Cargo Container Door",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "cargocontainerdoor",
+    "Articy_Id": "0x010000590000975E"
+  },
+  "Locked_Door": {
+    "Name": "Locked Door",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "lockeddoor",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000570001DD99"
+  },
+  "Writing_Desk": {
+    "Name": "Writing Desk",
+    "IsPlayer": false,
+    "Description": "A writing table with speed in Cuno's parents apt.",
+    "character_short_name": "writingdesk",
+    "Articy_Id": "0x010000570001DEDB"
+  },
+  "Shelf_of_Paranormal_Books": {
+    "Name": "Shelf of Paranormal Books",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "shelfofparanormalbooks",
+    "Articy_Id": "0x0100006B000008B9"
+  },
+  "Door,_Basement_Apartment": {
+    "Name": "Door, Basement Apartment",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "doorbasementapartment",
+    "Articy_Id": "0x010000580001B4FE"
+  },
+  "The_Great_Doorgunner_Megamix": {
+    "Name": "The Great Doorgunner Megamix",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "thegreatdoorgunnermegamix",
+    "Articy_Id": "0x0100006B00002035"
+  },
+  "Coffee_Table": {
+    "Name": "Coffee Table",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "coffeetable",
+    "Articy_Id": "0x0100006B0000221C"
+  },
+  "A_Note_from_the_Fridge": {
+    "Name": "A Note from the Fridge",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "anotefromthefridge",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000570002267F"
+  },
+  "Shimmering_Wall_of_Vices": {
+    "Name": "Shimmering Wall of Vices",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "shimmeringwallofvices",
+    "Articy_Id": "0x0100005700022CA2"
+  },
+  "Photo_of_Tattoos": {
+    "Name": "Photo of Tattoos",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "photooftattoos",
+    "Articy_Id": "0x0100006B00003E60"
+  },
+  "_Smallest_Church_in_Saint_Saëns_": {
+    "Name": "\"Smallest Church in Saint-Saëns\"",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "smallestchurchinsaintsaens",
+    "Articy_Id": "0x01000057000237E9"
+  },
+  "Karaoke_Stand": {
+    "Name": "Karaoke Stand",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "karaokestand",
+    "Articy_Id": "0x0100005700023A45"
+  },
+  "A_Folded_Library_Card": {
+    "Name": "A Folded Library Card",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "afoldedlibrarycard",
+    "Articy_Id": "0x0100007500000AD9"
+  },
+  "Trash_Can": {
+    "Name": "Trash Can",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "trashcan",
+    "Articy_Id": "0x0100007500000F27"
+  },
+  "Water_Lock_Control_Panel": {
+    "Name": "Water Lock Control Panel",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "waterlockcontrolpanel",
+    "Articy_Id": "0x0100006B00007E99"
+  },
+  "Small_Buoy": {
+    "Name": "Small Buoy",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "smallbuoy",
+    "Articy_Id": "0x0100007100005992"
+  },
+  "Apricot_Chewing_Gum_Wrapper": {
+    "Name": "Apricot Chewing Gum Wrapper",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "apricotchewinggumwrapper",
+    "Articy_Id": "0x0100006B00009DE9"
+  },
+  "Railing": {
+    "Name": "Railing",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "railing",
+    "Articy_Id": "0x0100007B000020CF"
+  },
+  "The_Sun": {
+    "Name": "The Sun",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "thesun",
+    "Articy_Id": "0x01000081000024F8"
+  },
+  "Boots_with_Rotting_Flesh": {
+    "Name": "Boots with Rotting Flesh",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "bootswithrottingflesh",
+    "Articy_Id": "0x01000081000035B1"
+  },
+  "Deluxe_Topping_Pie": {
+    "Name": "Deluxe Topping Pie",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "deluxetoppingpie",
+    "Articy_Id": "0x0100008100003A3E"
+  },
+  "A_Pile_of_Clothes": {
+    "Name": "A Pile of Clothes",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "apileofclothes",
+    "Articy_Id": "0x0100008200008E75"
+  },
+  "Nightwatchman's_Booth": {
+    "Name": "Nightwatchman's Booth",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "nightwatchmansbooth",
+    "Articy_Id": "0x0100008200010CDE"
+  },
+  "Filthy_Jacket": {
+    "Name": "Filthy Jacket",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "filthyjacket",
+    "Articy_Id": "0x0100008900001BE7"
+  },
+  "Bench": {
+    "Name": "Bench",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "bench",
+    "Articy_Id": "0x0100008900001D24"
+  },
+  "A_Pedestal_of_Speakers": {
+    "Name": "A Pedestal of Speakers",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "apedestalofspeakers",
+    "Articy_Id": "0x010000780000A8B6"
+  },
+  "Oranjese_Passport": {
+    "Name": "Oranjese Passport",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "oranjesepassport",
+    "Articy_Id": "0x01000089000029F0"
+  },
+  "Pile_of_Eternite": {
+    "Name": "Pile of Eternite",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "pileofeternite",
+    "Articy_Id": "0x0100006400000603"
+  },
+  "Crane_Control_Panel": {
+    "Name": "Crane Control Panel",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "cranecontrolpanel",
+    "Articy_Id": "0x0100008900004010"
+  },
+  "Punch_Clock/Payphone": {
+    "Name": "Punch Clock/Payphone",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "punchclockpayphone",
+    "Articy_Id": "0x010000820001EFA7"
+  },
+  "Flashlight": {
+    "Name": "Flashlight",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "flashlight",
+    "Articy_Id": "0x0100009700004C94"
+  },
+  "Drainage_Pipe": {
+    "Name": "Drainage Pipe",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "drainagepipe",
+    "Articy_Id": "0x0100009700004D03"
+  },
+  "White_Envelope": {
+    "Name": "White Envelope",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "whiteenvelope",
+    "Articy_Id": "0x010000070000138D"
+  },
+  "Tutorial_Agent": {
+    "Name": "Tutorial Agent",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "tutorialagent",
+    "Articy_Id": "0x01000006000083DA"
+  },
+  "Backyard_Wall": {
+    "Name": "Backyard Wall",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "backyardwall",
+    "Articy_Id": "0x0100001600003241"
+  },
+  "Set_of_Tracks": {
+    "Name": "Set of Tracks",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "setoftracks",
+    "Articy_Id": "0x010000080000683E"
+  },
+  "Scattering_of_Bullet_Holes": {
+    "Name": "Scattering of Bullet Holes",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "scatteringofbulletholes",
+    "Articy_Id": "0x0100000800006842"
+  },
+  "Footprints_in_the_Mud": {
+    "Name": "Footprints in the Mud",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "footprintsinthemud",
+    "Articy_Id": "0x0100000800006846"
+  },
+  "Loose_Floorboard": {
+    "Name": "Loose Floorboard",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "loosefloorboard",
+    "Articy_Id": "0x010000160000A41F"
+  },
+  "Trap:_Boathouses": {
+    "Name": "Trap: Boathouses",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "trapboathouses",
+    "Articy_Id": "0x0100002900000A4E"
+  },
+  "Trap:_Land's_End": {
+    "Name": "Trap: Land's End",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "traplandsend",
+    "Articy_Id": "0x0100002900000A52"
+  },
+  "Trap:_Canal": {
+    "Name": "Trap: Canal",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "trapcanal",
+    "Articy_Id": "0x0100002900000A56"
+  },
+  "Trap:_Morell": {
+    "Name": "Trap: Morell",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "trapmorell",
+    "Articy_Id": "0x0100002900000A5A"
+  },
+  "Sandcastle": {
+    "Name": "Sandcastle",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "sandcastle",
+    "Articy_Id": "0x0100000700012073"
+  },
+  "Yellow_Man_Mug": {
+    "Name": "Yellow Man Mug",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "yellowmanmug",
+    "Articy_Id": "0x0100000600018A46"
+  },
+  "Graad_Factory_of_Magnets_and_Miracles_U49": {
+    "Name": "Graad Factory of Magnets and Miracles U49",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "graadfactoryofmagnetsandmiraclesu49",
+    "Articy_Id": "0x010000060001D26E"
+  },
+  "Figure_in_the_dark": {
+    "Name": "Figure in the dark",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "figureinthedark",
+    "Articy_Id": "0x010000060001FED0"
+  },
+  "Metal_Grille_Door": {
+    "Name": "Metal Grille Door",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "metalgrilledoor",
+    "Articy_Id": "0x0100000F000072CF"
+  },
+  "La_Fumée,_Vol._1_No._4": {
+    "Name": "La Fumée, Vol. 1 No. 4",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "lafumeevol1no4",
+    "Articy_Id": "0x0100000F00008469"
+  },
+  "A_Brief_Look_at_Infra_Materialism": {
+    "Name": "A Brief Look at Infra-Materialism",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "abrieflookatinframaterialism",
+    "Articy_Id": "0x0100000F00008A89"
+  },
+  "Horseback_Antenna": {
+    "Name": "Horseback Antenna",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "horsebackantenna",
+    "Articy_Id": "0x0100000F0000BF99"
+  },
+  "Office_Radio": {
+    "Name": "Office Radio",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "officeradio",
+    "Articy_Id": "0x0100000F0000E7BC"
+  },
+  "Stock_Certificate": {
+    "Name": "Stock Certificate",
+    "IsPlayer": false,
+    "Description": "",
+    "character_short_name": "stockcertificate",
+    "Articy_Id": "0x0100000F000168C3"
+  },
+  "BRANCH_MARKER": {
+    "Name": "BRANCH MARKER",
+    "IsPlayer": false,
+    "Description": "stable",
+    "character_short_name": "branchmarker",
+    "Articy_Id": "0x01000001000003B4"
+  },
+  "Dolores_Dei": {
+    "Name": "Dolores Dei",
+    "IsPlayer": false,
+    "Pictures": "[portrait_Dolores.png]",
+    "Description": "It's Dolores Dei, who appears to you in the Final Dream. If you sleep on the Sea Fortress island.",
+    "character_short_name": "doloresdei",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F0000F80C"
+  },
+  "Evrart_Claire": {
+    "Name": "Evrart Claire",
+    "IsPlayer": false,
+    "Pictures": "[portrait_evrart.png]",
+    "Description": "This is the Representative for the Union of Harbour Workers. He looks surprisingly young for a guy this fat.",
+    "character_short_name": "evrartclaire",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x01000014000040ED"
+  },
+  "Garte,_the_Cafeteria_Manager": {
+    "Name": "Garte, the Cafeteria Manager",
+    "IsPlayer": false,
+    "Pictures": "[portrait_garte.png]",
+    "Description": "",
+    "character_short_name": "gartethecafeteriamanager",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100000400006295"
+  },
+  "Insulindian_Phasmid": {
+    "Name": "Insulindian Phasmid",
+    "IsPlayer": false,
+    "Pictures": "[portrait_phasmid.png]",
+    "Description": "The Insulindian Phasmid, a large cryptid who lurks in the reeds on the sea fortress island. It's got amazing mimicry-camouflage skills and nicely disappears into the reeds. Also might have creepy mind control powers.",
+    "character_short_name": "insulindianphasmid",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F0000F774"
+  },
+  "Jean_Vicquemare": {
+    "Name": "Jean Vicquemare",
+    "IsPlayer": false,
+    "Pictures": "[portrait_jean.png]",
+    "Description": "",
+    "character_short_name": "jeanvicquemare",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000040000B299"
+  },
+  "Joyce_Messier": {
+    "Name": "Joyce Messier",
+    "IsPlayer": false,
+    "Pictures": "[portrait_joyce.png]",
+    "Description": "Wild Pines representative Joyce Leyen-Messier",
+    "character_short_name": "joycemessier",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002B00005079",
+    "Bark_Index": 0
+  },
+  "Judit_Minot": {
+    "Name": "Judit Minot",
+    "IsPlayer": false,
+    "Pictures": "[portrait_Minot.png]",
+    "Description": "",
+    "character_short_name": "juditminot",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000040000B29D"
+  },
+  "Klaasje__Miss_Oranje_Disco_Dancer_": {
+    "Name": "Klaasje (Miss Oranje Disco Dancer)",
+    "IsPlayer": false,
+    "Pictures": "[portrait_klaasje.png]",
+    "Description": "",
+    "character_short_name": "klaasjemissoranjediscodancer",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100000000000449",
+    "Bark_Index": 0
+  },
+  "Lena,_the_Cryptozoologist's_wife": {
+    "Name": "Lena, the Cryptozoologist's wife",
+    "IsPlayer": false,
+    "Pictures": "[portrait_lena.png]",
+    "Description": "",
+    "character_short_name": "lenathecryptozoologistswife",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000000000044D"
+  },
+  "Morell,_the_Cryptozoologist": {
+    "Name": "Morell, the Cryptozoologist",
+    "IsPlayer": false,
+    "Pictures": "[portrait_morell.png]",
+    "Description": "",
+    "character_short_name": "morellthecryptozoologist",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F0000EFCE"
+  },
+  "Ruby,_the_Instigator": {
+    "Name": "Ruby, the Instigator",
+    "IsPlayer": false,
+    "Pictures": "[portrait_ruby.png]",
+    "Description": "It's the instigator! She's hiding under the boardwalk.",
+    "character_short_name": "rubytheinstigator",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F0000F36A"
+  },
+  "Shadow_of_a_Shadow": {
+    "Name": "Shadow of a Shadow",
+    "IsPlayer": false,
+    "Pictures": "[portrait_shadow.png]",
+    "Description": "",
+    "character_short_name": "shadowofashadow",
+    "Articy_Id": "0x0100004500002ACE"
+  },
+  "Soona,_the_Programmer": {
+    "Name": "Soona, the Programmer",
+    "IsPlayer": false,
+    "Pictures": "[portrait_soona.png]",
+    "Description": "The palediver. Not good for your sanity.",
+    "character_short_name": "soonatheprogrammer",
+    "IsNPC": true,
+    "IsFemale": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000060000033A"
+  },
+  "The_Deserter": {
+    "Name": "The Deserter",
+    "IsPlayer": false,
+    "Pictures": "[portrait_deserter.png]",
+    "Description": "The Deserter is an old revolutionary and war veteran sniper who has been hiding on the sea fortress island.",
+    "character_short_name": "thedeserter",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100002F0000F36F"
+  },
+  "The_Hanged_Man": {
+    "Name": "The Hanged Man",
+    "IsPlayer": false,
+    "Pictures": "[portrait_hanged.png]",
+    "Description": "",
+    "character_short_name": "thehangedman",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100000400009A01"
+  },
+  "Trant_Heidelstam": {
+    "Name": "Trant Heidelstam",
+    "IsPlayer": false,
+    "Pictures": "[portrait_trant.png]",
+    "Description": "",
+    "character_short_name": "trantheidelstam",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x010000040000B2A1"
+  },
+  "Ice_swimmer": {
+    "Name": "Ice-swimmer",
+    "IsPlayer": false,
+    "Pictures": "[i2638p11kdb5l22a.png?version=1631278869711]",
+    "Description": "",
+    "character_alternative_name": "",
+    "character_short_name": "swimmer",
+    "Articy_Id": "i2638p11kdb5l22a"
+  },
+  "Seagull": {
+    "Name": "Seagull",
+    "IsPlayer": false,
+    "Description": "",
+    "character_alternative_name": "",
+    "character_short_name": "seagull",
+    "Articy_Id": "l_g3lf0sent68y1i"
+  },
+  "Cornelius_Gurdi_and_the_Mountain_Goats": {
+    "Name": "Cornelius Gurdi and the Mountain Goats",
+    "IsPlayer": false,
+    "Pictures": "[2s1_ecylh9phmmlw.png?version=1631262733479]",
+    "Description": "",
+    "character_alternative_name": "",
+    "character_short_name": "gurdigoat",
+    "Articy_Id": "2s1_ecylh9phmmlw"
+  },
+  "Leopard_patterned_bodysuit": {
+    "Name": "Leopard-patterned bodysuit",
+    "IsPlayer": false,
+    "Description": "",
+    "character_alternative_name": "",
+    "character_short_name": "bodysuit",
+    "Articy_Id": "s3d41lujkckucung"
+  },
+  "Kim_Kitsuragi": {
+    "Name": "Kim Kitsuragi",
+    "IsPlayer": false,
+    "Pictures": "[portrait_kitsuragi.jpg]",
+    "Description": "",
+    "character_short_name": "kimkitsuragi",
+    "IsNPC": true,
+    "IsFemale": false,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 1,
+    "Articy_Id": "0x0100000000000445",
+    "Position_Whirling_int_f1": "-5.17376,0.007123602,0.9441706,0,0.4782508,0,0.8782233,Whirling-int-f1",
+    "Position_Martinaise_ext": "-15.40064,4.267382,-48.96547,0,0.4814715,0,-0.8764617,Martinaise-ext",
+    "Position_Whirling_int_f2": "-7.714442,3.635526,-2.071526,0,0.6724472,0,0.7401451,Whirling-int-f2",
+    "Position_Kiosque_int": "7.48611,0.3796855,-6.136166,0,0,0,1,Kiosque-int",
+    "Position_Pawnshop_int": "-3.130887,0.108342,9.703771,0,0.9930319,0,0.1178456,Pawnshop-int",
+    "Position_Doomed_commerce_int_f1": "-6.267494,0.3346467,0.3390734,0,0.9982547,0,-0.05905676,Doomed-commerce-int-f1",
+    "Position_Capeside_apartments_int": "-10.05321,1.928598,20.23778,0,0.5913802,0,-0.806393,Capeside-apartments-int",
+    "Position_FV_house_int": "-4.634374,1.121056,13.35782,0,0.9875852,0,-0.1570844,FV-house-int"
+  },
+  "You": {
+    "Name": "You",
+    "IsPlayer": true,
+    "Pictures": "[portrait_you.jpg]",
+    "Description": "",
+    "character_short_name": "you",
+    "color": 7,
+    "Articy_Id": "0x010000000000057C",
+    "Position_Whirling_int_f2": "9.31,3.634974,-0.57,0,0.4071351,0,-0.9133679,Whirling-int-f2",
+    "Position_Whirling_int_f1": "-3.764055,0.007118511,-0.1823139,0,0.2749876,0,0.9614478,Whirling-int-f1",
+    "Position_Martinaise_ext": "-15.55373,4.267835,-49.91183,0,0.6010301,0,-0.7992264,Martinaise-ext",
+    "Position_Kiosque_int": "6.779141,0.3798208,-6.522346,0,0.9606528,0,-0.2777521,Kiosque-int",
+    "Position_Pawnshop_int": "-3.780592,0.1083418,8.201941,0,0.9769982,0,0.2132476,Pawnshop-int",
+    "Position_Doomed_commerce_int_f1": "-6.982104,0.3346466,-0.2579026,0,0.9911324,0,-0.1328778,Doomed-commerce-int-f1",
+    "Position_Dream_2": "-19.84013,4.243996,-84.56187,0,0.5296972,0,0.8481868,Dream-2",
+    "Position_Capeside_apartments_int": "-8.599411,1.923557,22.72139,0,0.01857812,0,0.9998274,Capeside-apartments-int",
+    "Position_FV_house_int": "-5.182495,1.121056,14.20561,0,0.8585547,0,-0.512722,FV-house-int"
+  },
+  "Conceptualization": {
+    "Name": "Conceptualization",
+    "IsPlayer": false,
+    "Pictures": "[portrait_conceptualization_rank1.png]",
+    "Description": "",
+    "character_short_name": "conceptualization",
+    "IsNPC": true,
+    "short_description": "Understand creativity. See Art in the world.",
+    "LongDescription": "COOL FOR: CREATIVES. PSYCHEDELIC FANCIERS. CRITICS.\n\nConceptualization has a special role it wants you to play in this world – not the role of cop, but of Art Cop. It enables you to make fresh associations, to delve into world-concepts from Jan Kaarp’s postmodernist karperie, to Revachol’s arabesque architectural style dideridada, and even the concept of HARDCORE – and then, importantly, to add your own contribution to these works.\n\nAt high levels, Conceptualization makes you go big – perhaps too big. It is ostentatious, demanding grand displays. Why live life when you can throw yourself into a live volcano? At low levels, however, you will be unable to see the world in a creative light. You’ll be unable to contribute to conversations in an art gallery. Only boring people will invite you to their dust parties.",
+    "color": 2,
+    "Articy_Id": "0x0100000400000918"
+  },
+  "Logic": {
+    "Name": "Logic",
+    "IsPlayer": false,
+    "Pictures": "[portrait_logic.png]",
+    "Description": "",
+    "character_short_name": "logic",
+    "IsNPC": true,
+    "short_description": "Wield raw intellectual power. Deduce the world.",
+    "LongDescription": "COOL FOR: ANALYSTS. PURE RATIONALISTS. OBVIOUSLY LOGICIANS.\n\nLogic urges you to analyze the living daylights out of the case. It enables you to piece evidence together, detect inconsistencies in statements, and impress everyone with your astonishing conclusions. It's the bread and butter of many a detective.\n\nAt high levels, Logic will be able to solve even the most complicated puzzle. You will be very proud, and thus susceptible to intellectual flattery; for those blinded by their own brilliance often miss important clues. With low levels of Logic, you’re going to have a hard time solving even the simplest puzzle. Even if you find the pieces, good luck putting them together.",
+    "color": 2,
+    "Articy_Id": "0x0100000400000767"
+  },
+  "Encyclopedia": {
+    "Name": "Encyclopedia",
+    "IsPlayer": false,
+    "Pictures": "[portrait_encyclopedia.png]",
+    "Description": "Encyclopedia is an Intellect skill in Disco Elysium. Call upon all your knowledge. Produce fascinating trivia.\n\nCool for: Thinkers, Historians, Trivia Freaks\n\nEncyclopedia makes you a know-it-all, turning your mind into a database of facts. It enables you to draw on these facts innately, offering a wealth of background knowledge to all things related and unrelated to your case. Who knows when the history of cigarette brands will provide the breakthrough you need to arrest a murderer – or when knowledge of pre-Revolutionary guns might save a life?\n\nAt high levels, Encyclopedia shares this wealth of knowledge to an almost overwhelming degree – while it may give you crucial breakthroughs, it more often will clutter your mind with useless tidbits. With low levels of Encyclopedia, though, you’ll be forced to work with only the clues in front of you. Without any background knowledge, copping is going to be tough stuff.",
+    "character_short_name": "encyclopedia",
+    "IsNPC": true,
+    "short_description": "Call upon all your knowledge. Produce fascinating trivia.",
+    "LongDescription": "COOL FOR: THINKERS. HISTORIANS. TRIVIA FREAKS.\n\nEncyclopedia makes you a know-it-all, turning your mind into a database of facts. It enables you to draw on these facts innately, offering a wealth of background knowledge to all things related and unrelated to your case. Who knows when the history of cigarette brands will provide the breakthrough you need to arrest a murderer – or when knowledge of pre-Revolutionary guns might save a life?\n\nAt high levels, Encyclopedia shares this wealth of knowledge to an almost overwhelming degree – while it may give you crucial breakthroughs, it more often will clutter your mind with useless tidbits. With low levels of Encyclopedia, though, you’ll be forced to work with only the clues in front of you. Without any background knowledge, copping is going to be tough stuff.",
+    "color": 2,
+    "Articy_Id": "0x010000040000076B"
+  },
+  "Rhetoric": {
+    "Name": "Rhetoric",
+    "IsPlayer": false,
+    "Pictures": "[portrait_rhetoric.png]",
+    "Description": "",
+    "character_short_name": "rhetoric",
+    "IsNPC": true,
+    "short_description": "Practice the art of persuasion. Enjoy rigorous intellectual discourse.",
+    "LongDescription": "COOL FOR: IDEOLOGUES. CONVERSATIONALISTS. WOULD-BE-POLITICIANS.\n\nRhetoric urges you to debate, make intellectual discourse, nitpick – and win. It enables you to break down arguments and hear what people are really saying. You’ll spot fallacies as soon as they’re used -- what exactly did the waiter leave out of their testimony? What was the dancer trying to divert you from? Was that double entendre intended, or did you just get an accidental lead? \n\nAt high levels, Rhetoric will make you an impressive political beast – one whose beliefs are impenetrable. Which is to say, one whose mind will not change; one who will calcify. With low Rhetoric, though, you’ll have a hard time of shooting down any argument. Nailing people to their testimonies will be neigh impossible.",
+    "color": 2,
+    "Articy_Id": "0x0100000A00000016"
+  },
+  "Drama": {
+    "Name": "Drama",
+    "IsPlayer": false,
+    "Pictures": "[portrait_drama_rank1.png]",
+    "Description": "",
+    "character_short_name": "drama",
+    "IsNPC": true,
+    "short_description": "Play the actor. Lie – and detect lies.",
+    "LongDescription": "COOL FOR: UNDERCOVER COPS. THESPIANS OF THE STAGE. PSYCHOPATHS.\n\nDrama urges you to treat the world as a stage – and on it, to perform. It enables you to lie, to concoct the most elaborate and wonderful stories; to take on ingenious personas and perform acts of stagecraft in an entertaining amalgam of fourberie and deceit! As well, it enables you to see through would-be actors and their false antics. If they lie, you’ll know. Immediately.\n\nAt high levels, Drama may render you an insufferable thespian – one prone to hysterics and bouts of paranoia; for to know the world is a stage is to know that Truth is a Vanity. However, with low Drama you cannot lie – or discern when others lie. And a cop who can't do either is a cop who's soon going to be lying six feet under.",
+    "color": 2,
+    "Articy_Id": "0x0100000A0000001A"
+  },
+  "Visual_Calculus": {
+    "Name": "Visual Calculus",
+    "IsPlayer": false,
+    "Pictures": "[portrait_visual-calculus_rank1.png]",
+    "Description": "",
+    "character_short_name": "visualcalculus",
+    "IsNPC": true,
+    "short_description": "Reconstruct crime scenes. Make laws of physics work for the Law.",
+    "LongDescription": "COOL FOR: FORENSIC SCIENTISTS. TACTICAL FIGHTERS. MATH-MINDED PEOPLE.\n\nVisual Calculus verses you not only in the laws of the state, but the laws of nature. It enables you to create virtual crime-scene models in your mind’s eye. You’ll see how a bullet shattered the glass, and from that trace its trajectory with mathematical precision. You’ll also count so many footprints – and at a glance discern shoe size and design; as well as the height, weight, and gender of the one who wore them.\n\nAt high levels, Visual Calculus makes the world reveal its secrets to you – but you may be so absorbed by your mind-diorama, you don’t notice as crooks steal your pants. However, at low levels, your mind’s eye will be blind. Reconstructing crime scenes will be difficult without outside help.",
+    "color": 2,
+    "Articy_Id": "0x0100000A0000001E"
+  },
+  "Empathy": {
+    "Name": "Empathy",
+    "IsPlayer": false,
+    "Pictures": "[portrait_empathy_rank1.png]",
+    "Description": "",
+    "character_short_name": "empathy",
+    "IsNPC": true,
+    "short_description": "Understand others. Work your mirror neurons.",
+    "LongDescription": "COOL FOR: JUDGES OF CHARACTER. INTERVIEWERS. INTERROGATORS.\n\nEmpathy breaks into the souls of others and forces you to feel what’s inside. It enables you to notice social cues others may miss: perhaps a hidden sadness you could coax out a little more, a strange joy from someone who should be bereaved, or a hidden resentment that could return to harm you later.\n\nAt high levels, Empathy really puts you in other people’s shoes. You’ll cry for their sorrows, punch walls to relieve their angers, and be an even more unstable cop. With low Empathy, however, you’ll be an ungainly beast unable to talk to anyone without upsetting them.",
+    "color": 3,
+    "Articy_Id": "0x0100000400000773"
+  },
+  "Inland_Empire": {
+    "Name": "Inland Empire",
+    "IsPlayer": false,
+    "Pictures": "[portrait_inland-empire.png]",
+    "Description": "",
+    "character_short_name": "inlandempire",
+    "IsNPC": true,
+    "short_description": "Hunches and gut feelings. Dreams in waking life.",
+    "LongDescription": "COOL FOR: DREAMERS. PARA-NATURAL INVESTIGATORS. MENTAL CREATORS.\n\nInland Empire is the unfiltered wellspring of imagination, emotion, and foreboding. It enables you to grope your way through invisible dimensions of reality, gaining insight into that which sight can’t see. What’s really going? What do these enigmatic riddles mean for the world-fate?\n\nAt high levels, Inland Empire animates the inanimate. You’ll have conversations with your clothing, conversations that may change the course of the investigation if you’re not thrown in the loony bin first. With low Inland Empire, however, you’ll be void of imagination – and character. And then how will you shape the cosmos?",
+    "color": 3,
+    "Articy_Id": "0x010000040000076F"
+  },
+  "Volition": {
+    "Name": "Volition",
+    "IsPlayer": false,
+    "Pictures": "[portrait_volition.png]",
+    "Description": "",
+    "character_short_name": "volition",
+    "IsNPC": true,
+    "short_description": "Hold yourself together. Keep your Morale up.",
+    "LongDescription": "COOL FOR: SANE PEOPLE. WELL-ADJUSTED COPS. THE NON-SUICIDIAL.\n\nVolition urges you to be a good guy – to others and to yourself. It enables you to resist temptation: be it in a bottle, between a pair of legs, or at the end of an iron barrel which promises oblivion. Volition gives you the will to finish the investigation, improving your Morale – one of the two health pools in the game.\n\nAt high levels, Volition makes you hyper-sane. When you’re about to get funky, it keeps you normal. It’s a bit of a party-pooper. At low levels, however, you’ll have little Morale. Without it, you’ll be a profoundly unstable cop, falling apart at the seams as you make irreversible mistakes.",
+    "color": 3,
+    "Articy_Id": "0x0100000A0000003E"
+  },
+  "Authority": {
+    "Name": "Authority",
+    "IsPlayer": false,
+    "Pictures": "[portrait_authority.png]",
+    "Description": "",
+    "character_short_name": "authority",
+    "IsNPC": true,
+    "short_description": "Intimidate the public. Assert yourself.",
+    "LongDescription": "COOL FOR: LEADERS. EXPERTS OF PSYCHOLOGICAL WARFARE. RESPECT-JUNKIES.\n\nAuthority urges you to assert and reassert your dominance over those around you. It enables you to understand the power dynamics of groups of thugs, know how far you can push a perpetrator, and how to establish control of situations.\n\nAt high levels, Authority demands respect; even a perceived slight could send you into knee-breaking mode. With low Authority, however, you’re forever in awkward situations – like when you suffer psychological breakdowns after you yell at teenagers and they laugh at you. ",
+    "color": 3,
+    "Articy_Id": "0x0100000A00000042"
+  },
+  "Suggestion": {
+    "Name": "Suggestion",
+    "IsPlayer": false,
+    "Pictures": "[portrait_suggestion.png]",
+    "Description": "",
+    "character_short_name": "suggestion",
+    "IsNPC": true,
+    "short_description": "Charm men and women. Play the puppet-master.",
+    "LongDescription": "COOL FOR: DIPLOMATS. CHARMERS. SOCIOPATHS.\n\nSuggestion urges a soft-power approach. If people think they want what you want, you’ve already won. This skill enables you to implant ideas into the minds of others. You can make the citizens like you more. You can make gangsters turn on each other, too; many crime-rings have been broken by just a little doubt, after all.\n\nAt high levels, Suggestion makes you affable to everyone and more resistant to their charms in turn. But all that schmoozing and oozing charm will make you slimy. And you’ll know it, even if no one else does. With low levels of Suggestion, though, you’ll have difficulty getting any kind of rapport with others. You’ll be alone, both during the day and at night.",
+    "color": 3,
+    "Articy_Id": "0x0100000A00000046"
+  },
+  "Esprit_de_Corps": {
+    "Name": "Esprit de Corps",
+    "IsPlayer": false,
+    "Pictures": "[portrait_esprit-de-Corps.png]",
+    "Description": "",
+    "character_short_name": "espritdecorps",
+    "IsNPC": true,
+    "short_description": "Connect to Station 41. Understand cop culture.",
+    "LongDescription": "COOL FOR: COPS. COP-AFICIONADOS. PRETEND-COPS.\n\nEsprit de Corps is the very spirit of policing: the cop-geist. It enables you to understand your blue-souled sisters and brothers – not only by picking up subtle signals from your partner, but by witnessing flash-sideways scenes as they play out in your precinct.\n\nAt high levels, you’ll be the very heart of the police force: not only willing and able but obliged to take a bullet for your partner. However, without Esprit de Corps you’ll be flying blind, unable to understand discreet remarks colleagues make in high-stakes situations; remarks that might just save your life.",
+    "color": 3,
+    "Articy_Id": "0x0100000A0000004A"
+  },
+  "Endurance": {
+    "Name": "Endurance",
+    "IsPlayer": false,
+    "Pictures": "[portrait_endurance.png]",
+    "Description": "",
+    "character_short_name": "endurance",
+    "IsNPC": true,
+    "short_description": "Take the blows. Don’t let the world kill you.",
+    "LongDescription": "COOL FOR: FIGHTERS WHO CAN TAKE A HIT. LOOKOUTS WHO DON’T SLEEP. HUMAN BATTERIES.\n\nEndurance is your metabolism and circulatory system. It improves your Health – one of the two health pools in the game. It enables to survive being a cop. Who cares if you can’t aim a gun, if you can take a few bullets? Why be afraid of drugs that hurt your health if you’re a very, very healthy man?\n\nAt high levels, Endurance enables you to take a few knocks to the head, enjoy a greater quantity of drugs, and shake off a few cardiac arrests – it makes you a powerful man, who looks down on the weaklings who can’t keep up. However, cops with low Endurance are likely to struggle. The body is frail already, and the flesh of a cop will often be tested. And if it doesn’t pass, it dies.",
+    "color": 4,
+    "Articy_Id": "0x01000004000009A7"
+  },
+  "Physical_Instrument": {
+    "Name": "Physical Instrument",
+    "IsPlayer": false,
+    "Pictures": "[portrait_physical-instrument.png]",
+    "Description": "",
+    "character_short_name": "physicalinstrument",
+    "IsNPC": true,
+    "short_description": "Flex powerful muscles. Enjoy healthy organs.",
+    "LongDescription": "COOL FOR: MUSCLE MEN. BARE-KNUCKLE BRAWLERS. GYM TEACHERS.\n\nPhysical Instrument is not only your muscles and your skeleton – it is your ability to use them effectively. It enables you to do push-ups, sit-ups, knock-out punches and 360-degree spin-kicks. It's a one size fits all solution to thriving and surviving in a physical world.\n\nAt high levels, Physical Instrument breaks doors, chains, and bones, and it makes you laugh at the namby-pansies who can’t. You’ll be manned-up, encouraging others to curl iron until they’re manned-up too. At low levels, however, you’ll have a hard time arresting anyone who isn’t infirm or already dead. Indeed, engaging in physical confrontations could leave you in either state. ",
+    "color": 4,
+    "Articy_Id": "0x0100000400000B11"
+  },
+  "Shivers": {
+    "Name": "Shivers",
+    "IsPlayer": false,
+    "Pictures": "[portrait_shivers.png]",
+    "Description": "",
+    "character_short_name": "shivers",
+    "IsNPC": true,
+    "short_description": "Raise the hair on your neck. Tune in to the city.",
+    "LongDescription": "COOL FOR: CITY LOVERS.  THE WISEST OF THE STREET WISE. THE GENUINELY SUPRA-NATURAL.\n\nShivers come when the temperature drops and you become more keenly aware of your surroundings. It enables you to hear the city itself, to truly belong to the streets. It is a supra-natural ability; old wrongs play out in present time, scenes across the city happen in front of you. But who is speaking to you?  \n\nAt high levels, Shivers may make you seem mad to the outside world – as you listen to the city, you don’t listen to others. Your superiors may begin to worry. With a low Shivers, though you will seldom hear the city speaking to you – and if you cannot hear it, how can you ever save it?",
+    "color": 4,
+    "Articy_Id": "0x0100000400000BC7"
+  },
+  "Pain_Threshold": {
+    "Name": "Pain Threshold",
+    "IsPlayer": false,
+    "Pictures": "[portrait_pain-threshold.png]",
+    "Description": "",
+    "character_short_name": "painthreshold",
+    "IsNPC": true,
+    "short_description": "Shrug off the pain. They’ll have to hurt you more.",
+    "LongDescription": "COOL FOR: UNSTOPPABLE FIGHTERS. GUYS WHO WON’T DIE. MASOCHISTS.\n\nPain Threshold ignores damage so you can push on, bloodied and crawling, to the bitterest end. It enables you to negate damage you would otherwise take. Even mental pain – heartache and loneliness. In fact, these things can become a thrill you seek out and perversely revel in.\n\nAt high levels, Pain Threshold turns in on itself in seriously unhealthy way, with full-on self-destructive behaviour. With a low Pain Threshold, however, you will suffer too easily. Even a slap from a teenager will make you whine and complain.",
+    "color": 4,
+    "Articy_Id": "0x0100000A00000022"
+  },
+  "Electrochemistry": {
+    "Name": "Electrochemistry",
+    "IsPlayer": false,
+    "Pictures": "[portrait_electrochemistry.png]",
+    "Description": "",
+    "character_short_name": "electrochemistry",
+    "IsNPC": true,
+    "short_description": "Go to party planet. Love and be loved by drugs.",
+    "LongDescription": "COOL FOR: HIGH-FLIERS. PARTY ENTHUSIASTS. COPS WHO NEED LIGHTNING.\n\nElectrochemistry is the animal within you, the beast longing to be unleashed to indulge and enjoy. It enables you to take drugs with fewer negative side-effects. It also enables you to better investigate lurid matters – if you need to understand a chemical breakdown, or talk to someone blasted out of their mind, or understand sexual dynamics, Electrochemistry is there to guide you.\n\nAt high levels, Electrochemistry makes you a man of unrestrained pleasure – an unrepentant lothario who leers at people with a bottle of speed and a plastic bendy straw in either hand. But with a low Electrochemistry, you’ll be too innocent to be effective. Without a working knowledge of drugs and sex, the city will be difficult to understand.",
+    "color": 4,
+    "Articy_Id": "0x0100000A00000026"
+  },
+  "Half_Light": {
+    "Name": "Half Light",
+    "IsPlayer": false,
+    "Pictures": "[portrait_half-light.png]",
+    "Description": "",
+    "character_short_name": "halflight",
+    "IsNPC": true,
+    "short_description": "Let the body take control. Threaten people.",
+    "LongDescription": "COOL FOR: HIGH-STRUNG INVESTIGATORS. SHOOT-NOW-ASK-QUESTIONS-LATER COPS. SURPRISE HATERS.\n\nHalf Light is your fight-or-flight response. It enables you to sense the way situations are about to turn. It injects palpable fear into your heart – fear that urges you to act before it’s too late to act ever again; fear that makes you frighten others. It is the aggression that lets you squeeze every last drop of information out of a witness.\n\nAt high levels, Half Light makes you ultra-attuned to the world. It is perpetual fear – of your own shadow, of someone else’s name or scent. You’ll be ready, always, to pounce and physically interrogate passers-by. At low levels, however, you’ll find your survival instinct is lacking. And your methods limp-wristed. Those who respect violence will not respect you.",
+    "color": 4,
+    "Articy_Id": "0x01000011000010D8"
+  },
+  "Hand/Eye_Coordination": {
+    "Name": "Hand/Eye Coordination",
+    "IsPlayer": false,
+    "Pictures": "[portrait_he_coordination.png]",
+    "Description": "",
+    "character_short_name": "handeyecoordination",
+    "IsNPC": true,
+    "short_description": "Ready? Aim and fire.",
+    "LongDescription": "COOL FOR: TRICK-SHOOTERS. SNIPERS. JUGGLERS.\n\nHand / Eye Coordination loves the interactions between you and things that fly in the air. It enables you to catch coins from mob bosses, shoot straight, and understand firearms intimately. Want to know the precise make and mark of a pistol? H/E Coordination's got you. Want to shoot someone with it? Ditto.\n\nAt high levels, Hand / Eye Coordination makes you deadly – supposing you’ve a weapon in your hand. But once you do, H/E Coordination will compel you to take the shot – even if it’s not the best approach. At low levels, however, you’ll be even more of a disaster in waiting. Because when the guns go off – and they always do – you’ll probably hit the wrong target.",
+    "color": 5,
+    "Articy_Id": "0x0100000A0000002A"
+  },
+  "Reaction_Speed": {
+    "Name": "Reaction Speed",
+    "IsPlayer": false,
+    "Pictures": "[portrait_reaction.png]",
+    "Description": "",
+    "character_short_name": "reactionspeed",
+    "IsNPC": true,
+    "short_description": "The quickest to react. An untouchable man.",
+    "LongDescription": "COOL FOR: SHOT-DODGERS. THINKERS ON THEIR FEET. PINBALL-HEADS.\n\nReaction Speed is the agility of your body and mind. It is instinct. It enables you to dodge punches, knives, bullets. Also sucker punches of the verbal kind. You'll be more streetwise, never lost for words or lacking a witty comeback. Your mental alacrity lets you connect little details on the fly, working in tandem with your Intellect skills.\n\nAt high levels, Reaction Speed makes your twitch-reflex freakishly good. However, when your body acts before your mind, innocent situations can turn bad fast. You're high strung, overly alert. At low levels, though, you won’t be the one shooting first – which probably means you won’t be shooting at all.",
+    "color": 5,
+    "Articy_Id": "0x0100000A0000002E"
+  },
+  "Savoir_Faire": {
+    "Name": "Savoir Faire",
+    "IsPlayer": false,
+    "Pictures": "[portrait_savoir-faire.png]",
+    "Description": "",
+    "character_short_name": "savoirfaire",
+    "IsNPC": true,
+    "short_description": "Sneak under their noses. Stun with immense panache.",
+    "LongDescription": "COOL FOR: ACROBATS. THIEVES. UNBEARABLE SHOW-OFFS.\n\nSavoir Faire urges you to be better than you are: it urges you to be disco. Slip by others in Samaran boxing style, then tumble out the back with unexpected acrobatics. It enables you to move with silent footsteps, to groove to a good beat, and to lift useful evidence off perps without them noticing. It also makes you a cooler cop, whose athletic flair will certainly impress the citizenry.\n\nAt high levels, Savoir Faire will make you the King of Cool – which is as much to say, the most stylish douchebag in Revachol. Nobody will see you until you’re ready to be seen; and then, they’ll get the full treatment, whether they want it or not. At low levels, however, you’ll be a bumbling, feckless cop unable to catch a pair of keys thrown by your partner without losing an eye.",
+    "color": 5,
+    "Articy_Id": "0x0100000A00000032"
+  },
+  "Interfacing": {
+    "Name": "Interfacing",
+    "IsPlayer": false,
+    "Pictures": "[portrait_interfacing.png]",
+    "Description": "",
+    "character_short_name": "interfacing",
+    "IsNPC": true,
+    "short_description": "Master machines. Pick locks and pockets.",
+    "LongDescription": "COOL FOR: MACHINISTS. TINKERERS. INSTRUMENT PLAYERS.\n\nInterfacing wants you to connect to machines: to use and improve them, because that makes you a better human organism. It enables you to understand interactions with machines – be that how to repair the motor of a Kineema motor carriage, how to analyze the way a suspect used a pen, or how to re-figure electrical circuits. It even lets you steal keys off a keyring without being noticed.\n\nAt high levels, Interfacing will isolate you from society – why bother with people when you can talk to machines? And why bother with things like money when you can just pocket that display sandwich? At low levels, however, you will have a crucial part of the world cut off from you. People use machines to commit crimes all the time – if you can’t understand how a crime was accomplished, how can you solve it?",
+    "color": 5,
+    "Articy_Id": "0x0100000A00000036"
+  },
+  "Composure": {
+    "Name": "Composure",
+    "IsPlayer": false,
+    "Pictures": "[portrait_composure.png]",
+    "Description": "",
+    "character_short_name": "composure",
+    "IsNPC": true,
+    "short_description": "Straighten your back. Keep your poker face.",
+    "LongDescription": "COOL FOR: CARD PLAYERS. MILITARY FETISHISTS. COOL PEOPLE.\n\nComposure wants you to not crack: or, at least, it wants you to not crack in front of other people. It enables you to put up a strong front. It keeps your emotions hidden from the world and helps you to read the body language of others – to sense the cracks in their own composure. As well, it keeps you looking good while you do it. You’ll rock that disco outfit a lot more if you don’t slouch.\n\nAt high levels, Composure makes you tuck your gut in and maintain a stern expression. Even lying in bed, late night when no one else can see you, you’ll have to keep it up. You’ll never be able to stop. With low Composure, though, you’ll always be the first to crack. Every cop’s got a point when all that fear and rage comes spilling out – and the ones who unleash it don’t stay on the force much longer. Perhaps worse still, you won’t even make the ranks of Fashion Police.",
+    "color": 5,
+    "Articy_Id": "0x0100000A0000003A"
+  },
+  "Perception": {
+    "Name": "Perception",
+    "IsPlayer": false,
+    "Pictures": "[portrait_perception.png]",
+    "Description": "This is how immune you are to legedermain.",
+    "character_short_name": "perception",
+    "IsNPC": true,
+    "short_description": "See, hear, and smell everything. Let no detail go unnoticed.",
+    "LongDescription": "COOL FOR: FINE DETAIL DETECTIVES. SENSUALISTS. URBAN SCAVENGERS.\n\nPerception wants you to be open to the world – with eyes, ears, and nose working at full capacity. It enables you to take in what others don’t notice. The little wad of bills hid away in the sugar bowl; the odor of a perp, hiding beneath the floor boards; the gulp of a suspect, after claiming they’ve nothing to hide.\n\nAt high levels, Perception takes in every final detail of the physical world – enough to overwhelm all but the strongest mind. However, with low levels, you are going to miss out on everything. After all, you can’t arrest what you can’t see, hear, or smell.",
+    "color": 5,
+    "Articy_Id": "0x0100000400000BC3"
+  },
+  "Perception__Smell_": {
+    "Name": "Perception (Smell)",
+    "IsPlayer": false,
+    "Pictures": "[portrait_perception.png]",
+    "Description": "",
+    "character_short_name": "perceptionsmell",
+    "IsNPC": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 5,
+    "Articy_Id": "0x0100000800000BAC"
+  },
+  "Perception__Hearing_": {
+    "Name": "Perception (Hearing)",
+    "IsPlayer": false,
+    "Pictures": "[portrait_perception.png]",
+    "Description": "",
+    "character_short_name": "perceptionhearing",
+    "IsNPC": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 5,
+    "Articy_Id": "0x0100000800000BB0"
+  },
+  "Perception__Taste_": {
+    "Name": "Perception (Taste)",
+    "IsPlayer": false,
+    "Pictures": "[portrait_perception.png]",
+    "Description": "",
+    "character_short_name": "perceptiontaste",
+    "IsNPC": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 5,
+    "Articy_Id": "0x0100000800000BB8"
+  },
+  "Perception__Sight_": {
+    "Name": "Perception (Sight)",
+    "IsPlayer": false,
+    "Pictures": "[portrait_perception.png]",
+    "Description": "",
+    "character_short_name": "perceptionsight",
+    "IsNPC": true,
+    "short_description": "",
+    "LongDescription": "",
+    "color": 5,
+    "Articy_Id": "0x0100000800000BBC"
+  },
+  "Lena": {
+    "Bark_Index": 0
+  },
+  "gardener": {
+    "Bark_Index": 0
+  },
+  "tareDrunkess": {
+    "Bark_Index": 0
+  },
+  "siileng": {
+    "Bark_Index": 2
+  },
+  "Roy": {
+    "Bark_Index": 0
+  },
+  "Smoker": {
+    "Bark_Index": 0
+  },
+  "Cindy": {
+    "Bark_Index": 0
+  },
+  "gardenerTribunal": {
+    "Bark_Index": 2
+  },
+  "FatAngus": {
+    "Bark_Index": 0
+  },
+  "drunkWorker": {
+    "Bark_Index": 4
+  },
+  "Working_Woman": {
+    "Bark_Index": 7
+  },
+  "Minot": {
+    "Bark_Index": 0
+  },
+  "Netpicker's_Twin": {
+    "Bark_Index": 3
+  },
+  "washerwoman": {
+    "Bark_Index": 1
+  },
+  "Netpicker": {
+    "Bark_Index": 0
+  },
+  "Abigail": {
+    "Bark_Index": 0
+  },
+  "acele": {
+    "Bark_Index": 1
+  },
+  "trant_and_kid": {
+    "Bark_Index": 7
+  },
+  "CanalCrew1": {
+    "Bark_Index": 0
+  }
+}

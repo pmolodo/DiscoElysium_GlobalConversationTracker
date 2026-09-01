@@ -20,4 +20,12 @@
     <ProjectReference Include="..\GameAutomation\GameAutomation.csproj" />
   </ItemGroup>
 
+  <!-- The net48 harness invokes the net10 decoder as a child process. -->
+  <Target Name="BuildNtwtfDecode" BeforeTargets="Build">
+    <MSBuild
+      Projects="..\NtwtfDecode\NtwtfDecode.csproj"
+      Targets="Build"
+      Properties="Configuration=$(Configuration)" />
+  </Target>
+
 </Project>
