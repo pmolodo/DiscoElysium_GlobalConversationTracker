@@ -945,62 +945,33 @@ Options:
                 Console.WriteLine("mode:      dry run, no keys will be sent");
             }
 
-            if (Process.GetProcessesByName(options.ProcessName).Length > 0)
-            {
-                throw new InvalidOperationException(
-                    $"'{options.ProcessName}' is already running. Close it first: two instances make "
-                    + "the capture ambiguous.");
-            }
-
             var checks = new Checks();
-            string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-            string profileBackupPath = GameProfile.DefaultBackupPath(stamp);
-            string registryBackupPath = Path.Combine(Path.GetTempPath(), $"disco-prefs-{stamp}.reg");
+            string saveSource = options.SaveFile
+                ?? Path.Combine(RepoRoot(), "testing", TemplateSave);
+            string saveTemplate = PackSave(saveSource, artifacts);
 
-            // The registry is backed up separately because the profile move cannot reach
-            // it: PlayerPrefs live under HKCU, not in the folder.
-            GameSettings.BackupRegistry(registryBackupPath);
-            Console.WriteLine($"prefs:     {registryBackupPath}");
+            // The same staging the look-ahead run uses. Sharing it is the point: this
+            // one forced a known window size and asserted it while that one staged only
+            // the settings file, so the two were measuring the same game at different
+            // resolutions with nothing saying so.
+            StagedGame staged = StagedGame.Stage(
+                options.ProcessName,
+                testSettings,
+                new[] { saveTemplate },
+                globalStateFile: null,
+                screenOverride: options.RegistryScreen,
+                installScreenPrefs: !options.SkipScreenPrefs,
+                backupProfile: path => BackupProfile(path, options),
+                progress: message => Console.WriteLine($"staging:   {message}"));
+            DisplaySettings requested = staged.Requested;
 
-            ProfileBackup profileBackup = BackupProfile(profileBackupPath, options);
             Console.WriteLine(
-                profileBackup.MovedTo == null
-                    ? "profile:   none found; a fresh one will be built"
-                    : $"profile:   {profileBackup.EntryCount} entries moved to {profileBackup.MovedTo}");
-
-            DisplaySettings requested = GameSettings.ReadDisplay(testSettings);
+                $"           {Path.GetFileName(saveSource)} as the only save, so "
+                + "Continue can only load that one");
 
             Process? process = null;
             try
             {
-                string saveSource = options.SaveFile
-                    ?? Path.Combine(RepoRoot(), "testing", TemplateSave);
-                string saveTemplate = PackSave(saveSource, artifacts);
-                GameProfile.Stage(testSettings, saveTemplate);
-                Console.WriteLine($"staged:    {Path.GetFileName(testSettings)}");
-                Console.WriteLine(
-                    $"           {Path.GetFileName(saveSource)} as the only save, so "
-                    + "Continue can only load that one");
-
-                // The file does not size the window on its own; Unity does, from the
-                // registry, before the game runs. See testing/SETTINGS-PRECEDENCE.md.
-                if (options.RegistryScreen != null)
-                {
-                    GameSettings.InstallScreenPrefs(options.RegistryScreen);
-                    Console.WriteLine(
-                        $"screen:    asked Unity for {options.RegistryScreen} "
-                        + $"(settings file says {requested})");
-                }
-                else if (options.SkipScreenPrefs)
-                {
-                    Console.WriteLine(
-                        "screen:    left Unity's registry alone; only the settings file was staged");
-                }
-                else
-                {
-                    GameSettings.InstallScreenPrefs(requested);
-                    Console.WriteLine($"screen:    asked Unity for {requested}");
-                }
 
                 Console.WriteLine();
                 Console.WriteLine("launching...");
@@ -1236,45 +1207,20 @@ Options:
 
                 if (options.KeepOpen)
                 {
+                    staged.Abandon();
                     Console.Error.WriteLine();
                     Console.Error.WriteLine(
                         "Left the game running, so NOTHING was restored. The player's profile is");
-                    Console.Error.WriteLine($"  at {profileBackup.MovedTo ?? "(there was none)"}");
-                    Console.Error.WriteLine($"  and their PlayerPrefs at {registryBackupPath}.");
+                    Console.Error.WriteLine(
+                        $"  at {staged.ProfileMovedTo ?? "(there was none)"}");
+                    Console.Error.WriteLine(
+                        $"  and their PlayerPrefs at {staged.RegistryBackupPath}.");
                     Console.Error.WriteLine(
                         "Close the game and put both back before playing.");
                 }
                 else
                 {
-                // The profile first: a staged one is the worst thing to leave behind,
-                // because it is Steam-Cloud-synced and a later launch can push it upward.
-                // Each restore gets its own try, so a failure in one does not skip the
-                // other - they are independent, and leaving either is its own problem.
-                try
-                {
-                    GameProfile.Restore(profileBackup);
-                    Console.WriteLine($"restored the profile ({profileBackup.EntryCount} entries)");
-                }
-                catch (Exception error)
-                {
-                    Console.Error.WriteLine();
-                    Console.Error.WriteLine($"PROFILE NOT RESTORED: {error.Message}");
-                    Console.Error.WriteLine(
-                        "Put it back by hand before launching the game again; a staged profile");
-                    Console.Error.WriteLine(
-                        "left in place can be synced to Steam Cloud by the next launch.");
-                }
-
-                try
-                {
-                    GameSettings.RestoreRegistry(registryBackupPath);
-                    File.Delete(registryBackupPath);
-                }
-                catch (Exception error)
-                {
-                    Console.Error.WriteLine($"WARNING: could not restore PlayerPrefs: {error.Message}");
-                    Console.Error.WriteLine($"WARNING: the export is at {registryBackupPath}");
-                }
+                    staged.Restore();
                 }
             }
         }

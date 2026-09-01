@@ -166,19 +166,23 @@ namespace GlobalConversationTracker.Harness
                     globalState);
             }
 
-            string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-            ProfileBackup backup = GameProfile.Backup(GameProfile.DefaultBackupPath(stamp));
-            Console.WriteLine(
-                backup.MovedTo == null
-                    ? "profile:   there was none to move aside"
-                    : $"profile:   moved aside to {backup.MovedTo}");
-
             Process? process = null;
+
+            // The same staging every in-game run uses, so they all measure the game
+            // under the same conditions. It carries the display too: the settings file
+            // does not size the window, Unity's PlayerPrefs do, and staging only the
+            // file left this run at whatever resolution the machine happened to be at.
+            using StagedGame staged = StagedGame.Stage(
+                "disco",
+                settingsFile,
+                packed,
+                globalState,
+                progress: message => Console.WriteLine($"staging:   {message}"));
 
             // The probe is this verb's own dependency: without it there is nothing to
             // drive the game with and nothing to read the markers off. Installed here
             // rather than by the caller so the verb is runnable on its own, and inside
-            // the profile swap so a failure anywhere below still takes it out again.
+            // the staging so a failure anywhere below still takes it out again.
             using ProbeDeployment probe = ProbeDeployment.Deploy(
                 game,
                 GameInstall.FindProbeAssembly(),
@@ -186,7 +190,6 @@ namespace GlobalConversationTracker.Harness
 
             try
             {
-                GameProfile.Stage(settingsFile, packed, globalState);
                 Console.WriteLine(
                     $"staged:    {packed.Count} saves and a global state into {saveGames}");
 
@@ -208,6 +211,16 @@ namespace GlobalConversationTracker.Harness
                 var watcher = new ProbeWatcher(logPath);
                 watcher.WaitForEvent("ready", timeout, Log);
                 Check(true, "the probe loaded", $"reading {logPath}");
+
+                // Checked, not assumed. Everything downstream is measured against a
+                // window of a known size, and a run at the machine's own resolution
+                // would still pass every marker check while testing something else.
+                GameWindow window = GameSession.WaitForWindow("disco", timeout);
+                Check(
+                    window.Width == staged.Requested.Width
+                        && window.Height == staged.Requested.Height,
+                    $"the window is the requested {staged.Requested}",
+                    $"got {window.Width}x{window.Height}");
 
                 // The probe says "ready" the moment BepInEx chainloads it, which is long
                 // before the game can load anything - SunshinePersistence has no instance
@@ -238,23 +251,21 @@ namespace GlobalConversationTracker.Harness
             }
             finally
             {
-                if (!keepOpen)
+                if (keepOpen)
+                {
+                    staged.Abandon();
+                    Console.Error.WriteLine();
+                    Console.Error.WriteLine(
+                        "Left the game running, so NOTHING was restored. The player's profile "
+                        + $"is at {staged.ProfileMovedTo} and their PlayerPrefs at "
+                        + $"{staged.RegistryBackupPath}.");
+                }
+                else
                 {
                     Console.WriteLine();
                     Console.WriteLine("closing the game...");
                     Close(process);
-                }
-
-                if (!keepOpen)
-                {
-                    GameProfile.Restore(backup);
-                    Console.WriteLine("profile:   restored");
-                }
-                else
-                {
-                    Console.Error.WriteLine(
-                        "Left the game running, so the profile was NOT restored. It is at "
-                        + $"{backup.MovedTo}.");
+                    staged.Restore();
                 }
             }
 
