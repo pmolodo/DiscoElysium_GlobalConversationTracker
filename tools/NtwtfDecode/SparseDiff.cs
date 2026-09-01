@@ -6,8 +6,6 @@ namespace NtwtfDecode;
 public static class SparseDiff
 {
     public const string DiffFormat = "sparse-diff";
-    public const string SetFormat = "sparse-diff-set";
-    public const string ManifestFileName = "_base.json";
 
     private const string ChangesName = "_changes";
     private const string RemoveName = "_remove";
