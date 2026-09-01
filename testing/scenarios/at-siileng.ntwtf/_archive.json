@@ -1,29 +1,29 @@
 {
   "_format": "expanded-save-diff",
-  "base": "../at-siileng.ntwtf",
+  "base": "../../save_template.ntwtf",
   "members": [
     {
-      "diff": null,
-      "kind": "inherit",
-      "name": "afford-both.1st.ntwtf.json",
+      "diff": "at-siileng.1st.ntwtf.json",
+      "kind": "json",
+      "name": "at-siileng.1st.ntwtf.json",
       "suffix": ".1st.ntwtf.json"
     },
     {
-      "diff": "afford-both.2nd.ntwtf.json",
-      "kind": "json",
-      "name": "afford-both.2nd.ntwtf.json",
+      "diff": null,
+      "kind": "inherit",
+      "name": "at-siileng.2nd.ntwtf.json",
       "suffix": ".2nd.ntwtf.json"
     },
     {
       "diff": null,
       "kind": "inherit",
-      "name": "afford-both.FOW.json",
+      "name": "at-siileng.FOW.json",
       "suffix": ".FOW.json"
     },
     {
       "diff": null,
       "kind": "inherit",
-      "name": "afford-both.states.lua",
+      "name": "at-siileng.states.lua",
       "suffix": ".states.lua"
     }
   ]

@@ -1,10 +1,10 @@
 {
   "_format": "expanded-save-diff",
-  "base": "../../../testing/save_template.ntwtf",
+  "base": "../at-siileng.ntwtf",
   "members": [
     {
-      "diff": "afford-only-sneakers.1st.ntwtf.json",
-      "kind": "json",
+      "diff": null,
+      "kind": "inherit",
       "name": "afford-only-sneakers.1st.ntwtf.json",
       "suffix": ".1st.ntwtf.json"
     },

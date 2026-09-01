@@ -10,38 +10,34 @@ namespace GlobalConversationTracker.Automation.Tests
     /// The committed look-ahead scenarios say what they are meant to say.
     /// </summary>
     /// <remarks>
-    /// <para>The three scenarios are sparse diffs of testing/save_template.ntwtf, and
-    /// they are meant to differ in exactly one field: the money. Three of the four
-    /// changed fields - where the player stands, which area they are in, and the two
-    /// Siileng variables - are deliberately identical, because a scenario that moved the
-    /// player somewhere slightly different would not be testing the same thing as its
-    /// neighbours, and nothing about a run would say so.</para>
+    /// <para>The layout is the documentation. at-siileng.ntwtf is a diff of
+    /// save_template carrying the setup all three scenarios share - the area, where the
+    /// player stands, the two Siileng variables - and each scenario is a diff of THAT
+    /// carrying one field, its money. A reader can see which field varies without
+    /// comparing anything.</para>
     ///
-    /// <para>The tool cannot express that: a sparse diff must name one complete base, so
-    /// the shared fields cannot be factored into an intermediate the three share. They
-    /// are therefore three copies, hand-maintained, and this is what stops them
-    /// drifting.</para>
-    ///
-    /// <para>It runs in the ordinary suite, with no game and no launch: it reads
-    /// committed JSON.</para>
+    /// <para>What is left to check is that the structure is still that shape, and that
+    /// the money in the files matches the money the run expects, which is written
+    /// somewhere else entirely. It reads committed JSON, so it runs in the ordinary
+    /// suite with no game and no launch.</para>
     /// </remarks>
     public class ScenarioSaveTests
     {
+        /// <summary>The diff every scenario is built on.</summary>
+        private const string Shared = "at-siileng";
+
         private static string ScenarioRoot =>
             Path.Combine(GameInstall.RepoRoot(), "testing", "scenarios");
 
-        private static readonly string[] Names =
-        {
-            "afford-both", "afford-only-sneakers", "afford-neither",
-        };
+        private static string Read(string save, string relative) =>
+            File.ReadAllText(Path.Combine(ScenarioRoot, save + ".ntwtf", relative));
 
-        private static string Read(string scenario, string relative)
+        private static JsonElement Manifest(string save)
         {
-            return File.ReadAllText(
-                Path.Combine(ScenarioRoot, scenario + ".ntwtf", relative));
+            using JsonDocument document = JsonDocument.Parse(Read(save, "_archive.json"));
+            return document.RootElement.Clone();
         }
 
-        /// <summary>The money each scenario sets, from its own diff.</summary>
         private static int MoneyOf(string scenario)
         {
             using JsonDocument document = JsonDocument.Parse(
@@ -53,64 +49,78 @@ namespace GlobalConversationTracker.Automation.Tests
                 .GetInt32();
         }
 
+        private static string[] Scenarios =>
+            Harness.LookAheadRun.Scenarios.Select(s => s.SaveName).ToArray();
+
         [Fact]
-        public void EveryScenarioIsThere()
+        public void TheSharedSetupCarriesEverythingButTheMoney()
         {
-            foreach (string name in Names)
+            string parts = $"{Shared}.ntwtf.lua.parts";
+
+            Assert.Contains("Martinaise-ext", Read(Shared, $"{Shared}.1st.ntwtf.json"));
+            Assert.Contains(
+                "Position_Martinaise_ext", Read(Shared, $"{parts}/Actor.json"));
+            Assert.Contains(
+                "jam.siileng_faln_sneakers", Read(Shared, $"{parts}/Variable.json"));
+            Assert.Contains(
+                "jam.siileng_learned_when_you_can_buy_speakers",
+                Read(Shared, $"{parts}/Variable.json"));
+        }
+
+        [Fact]
+        public void TheSharedSetupDiffsAgainstTheTemplate()
+        {
+            string? relativeBase = Manifest(Shared).GetProperty("base").GetString();
+
+            Assert.EndsWith(
+                "save_template.ntwtf", relativeBase!.Replace('\\', '/'));
+            Assert.True(Directory.Exists(Path.GetFullPath(
+                Path.Combine(ScenarioRoot, Shared + ".ntwtf", relativeBase!))));
+        }
+
+        [Fact]
+        public void EveryScenarioDiffsAgainstTheSharedSetup()
+        {
+            foreach (string scenario in Scenarios)
             {
-                Assert.True(
-                    Directory.Exists(Path.Combine(ScenarioRoot, name + ".ntwtf")),
-                    $"{name} is missing from {ScenarioRoot}");
+                string? relativeBase = Manifest(scenario).GetProperty("base").GetString();
+
+                Assert.EndsWith(
+                    Shared + ".ntwtf", relativeBase!.Replace('\\', '/'));
             }
         }
 
         [Fact]
-        public void TheScenariosAgreeOnWhereThePlayerStands()
+        public void EveryScenarioChangesNothingButItsMoney()
         {
-            string[] actors = Names
-                .Select(n => Read(n, $"{n}.ntwtf.lua.parts/Actor.json"))
-                .ToArray();
+            // The invariant the layout exists to make obvious. A scenario that carried a
+            // second file would be varying something the others do not, and no run would
+            // say so.
+            foreach (string scenario in Scenarios)
+            {
+                string[] members = Directory
+                    .GetFiles(Path.Combine(ScenarioRoot, scenario + ".ntwtf"))
+                    .Select(Path.GetFileName)
+                    .Where(name => name != "_archive.json")
+                    .ToArray()!;
 
-            Assert.All(actors, actor => Assert.Equal(actors[0], actor));
-            Assert.Contains("Position_Martinaise_ext", actors[0]);
-        }
+                Assert.Equal(new[] { $"{scenario}.2nd.ntwtf.json" }, members);
 
-        [Fact]
-        public void TheScenariosAgreeOnTheSiilengVariables()
-        {
-            string[] variables = Names
-                .Select(n => Read(n, $"{n}.ntwtf.lua.parts/Variable.json"))
-                .ToArray();
-
-            Assert.All(variables, v => Assert.Equal(variables[0], v));
-            Assert.Contains("jam.siileng_faln_sneakers", variables[0]);
-            Assert.Contains("jam.siileng_learned_when_you_can_buy_speakers", variables[0]);
-        }
-
-        [Fact]
-        public void TheScenariosAgreeOnTheArea()
-        {
-            string[] areas = Names.Select(n => Read(n, $"{n}.1st.ntwtf.json")).ToArray();
-
-            Assert.All(areas, area => Assert.Equal(areas[0], area));
-            Assert.Contains("Martinaise-ext", areas[0]);
-        }
-
-        [Fact]
-        public void OnlyTheMoneyDiffers()
-        {
-            int[] money = Names.Select(MoneyOf).ToArray();
-
-            Assert.Equal(money.Length, money.Distinct().Count());
+                string parts = Path.Combine(
+                    ScenarioRoot, scenario + ".ntwtf", $"{scenario}.ntwtf.lua.parts");
+                Assert.Equal(
+                    new[] { "_base.json" },
+                    Directory.GetFiles(parts).Select(Path.GetFileName).ToArray()!);
+            }
         }
 
         [Fact]
         public void TheMoneyMatchesWhatTheRunExpects()
         {
-            // The saves and the expectations are written in two places - the committed
-            // diffs and Harness.LookAheadRun.Scenarios - and a run that disagreed with
-            // its own fixtures would fail in the game, forty seconds in, saying only
-            // that the balance was wrong.
+            // The saves and the expectations live in two places - the committed diffs and
+            // Harness.LookAheadRun.Scenarios - and a run that disagreed with its own
+            // fixtures would fail in the game, a minute in, saying only that the balance
+            // was wrong.
             foreach (Harness.LookAheadScenario scenario in Harness.LookAheadRun.Scenarios)
             {
                 Assert.Equal(scenario.Money, MoneyOf(scenario.SaveName));
@@ -118,24 +128,11 @@ namespace GlobalConversationTracker.Automation.Tests
         }
 
         [Fact]
-        public void EveryScenarioDiffsAgainstTheTemplate()
+        public void TheScenariosDifferFromEachOther()
         {
-            foreach (string name in Names)
-            {
-                using JsonDocument manifest = JsonDocument.Parse(
-                    Read(name, "_archive.json"));
-                string? relativeBase = manifest.RootElement
-                    .GetProperty("base").GetString();
+            int[] money = Scenarios.Select(MoneyOf).ToArray();
 
-                Assert.NotNull(relativeBase);
-                Assert.EndsWith("save_template.ntwtf", relativeBase!.Replace('\\', '/'));
-
-                string resolved = Path.GetFullPath(Path.Combine(
-                    ScenarioRoot, name + ".ntwtf", relativeBase!));
-                Assert.True(
-                    Directory.Exists(resolved),
-                    $"{name}'s base does not resolve to a directory: {resolved}");
-            }
+            Assert.Equal(money.Length, money.Distinct().Count());
         }
 
         [Fact]
@@ -150,8 +147,8 @@ namespace GlobalConversationTracker.Automation.Tests
                 .GetProperty(Harness.LookAheadRun.ConversationId.ToString());
 
             // Entry 80 is the only one reachable exclusively through the speakers
-            // purchase, so it is what an orange marker means. Marking it would make
-            // every scenario pass for the wrong reason.
+            // purchase, so it is what an orange marker means. Marking it would make every
+            // scenario pass for the wrong reason.
             Assert.False(
                 conversation.TryGetProperty("80", out _),
                 "entry 80 must stay unseen; it is what the marker is looking for");
