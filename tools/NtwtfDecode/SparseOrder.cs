@@ -7,15 +7,14 @@ namespace NtwtfDecode;
 /// <summary>Compact text for the runs of numbers the sparse form carries.</summary>
 /// <remarks>
 /// A grouped table names its entries by value rather than by key, so it has to say
-/// separately which keys it stands for; that is a key range. The other user is the
-/// dialogue order inside a SimX string. Both are strings rather than arrays so that
-/// an indented writer cannot spread a few hundred numbers over a few hundred lines.
+/// separately which keys it stands for, and which keys carry each value. Those are
+/// key ranges. They are strings rather than arrays so that an indented writer cannot
+/// spread a few hundred numbers over a few hundred lines.
 /// </remarks>
 public static class SparseOrder
 {
     private const char GroupSeparator = ',';
     private const char RangeSeparator = '-';
-    private const char MoveSeparator = ':';
 
     /// <summary>
     /// Renders a run of numbers as comma-separated ranges, e.g. "0-11,14-26". A
@@ -83,77 +82,6 @@ public static class SparseOrder
         return keys;
     }
 
-    /// <summary>
-    /// Replays a recorded list of lift-and-reinsert moves. Each is (from, to): the
-    /// item at index <c>from</c> of the canonical order belongs at index <c>to</c>.
-    /// Only <see cref="SimXOrders"/> uses this now, for the dialogue order inside a
-    /// SimX string; the moves themselves are computed by generate_simx_order.py.
-    /// </summary>
-    public static List<T> ApplyMoves<T>(
-        IReadOnlyList<T> canonical,
-        IReadOnlyList<(int From, int To)> moves
-    )
-    {
-        var lifted = new List<(int From, int To)>(moves);
-        // Lifting from the back first keeps the earlier indices meaning what they
-        // meant in the canonical order.
-        var byFrom = new List<(int From, int To)>(lifted);
-        byFrom.Sort((a, b) => b.From.CompareTo(a.From));
-        var rest = new List<T>(canonical);
-        var items = new Dictionary<int, T>(byFrom.Count);
-        foreach ((int from, int _) in byFrom)
-        {
-            if (from < 0 || from >= rest.Count)
-            {
-                throw new InvalidDataException($"Reorder source {from} is out of range");
-            }
-            items[from] = rest[from];
-            rest.RemoveAt(from);
-        }
-
-        lifted.Sort((a, b) => a.To.CompareTo(b.To));
-        foreach ((int from, int to) in lifted)
-        {
-            if (to < 0 || to > rest.Count)
-            {
-                throw new InvalidDataException($"Reorder target {to} is out of range");
-            }
-            rest.Insert(to, items[from]);
-        }
-        return rest;
-    }
-
-    /// <summary>Reads "from:to" pairs, as generate_simx_order.py writes them.</summary>
-    public static List<(int From, int To)> UnpackMoves(object? node, string context)
-    {
-        var moves = new List<(int, int)>();
-        if (node is null)
-        {
-            return moves;
-        }
-        if (node is not string text)
-        {
-            throw new InvalidDataException($"{context} reorder must be a string");
-        }
-        if (text.Length == 0)
-        {
-            return moves;
-        }
-        foreach (string part in text.Split(GroupSeparator))
-        {
-            int colon = part.IndexOf(MoveSeparator);
-            if (colon < 0)
-            {
-                throw new InvalidDataException($"{context} reorder '{part}' is not 'from:to'");
-            }
-            moves.Add((
-                ParseIndex(part[..colon], part, context),
-                ParseIndex(part[(colon + 1)..], part, context)
-            ));
-        }
-        return moves;
-    }
-
     private static string Number(long value) =>
         value.ToString(CultureInfo.InvariantCulture);
 
@@ -162,9 +90,4 @@ public static class SparseOrder
             ? value
             : throw new InvalidDataException($"{context} has a malformed key range '{part}'");
 
-    private static int ParseIndex(string text, string part, string context) =>
-        int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value)
-        && value >= 0
-            ? value
-            : throw new InvalidDataException($"{context} reorder '{part}' has a bad index");
 }

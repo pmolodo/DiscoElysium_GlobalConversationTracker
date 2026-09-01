@@ -18,10 +18,17 @@ namespace NtwtfDecode;
 /// <para>
 /// Dropping it costs the Variable table its independence: it can no longer be read
 /// without the Conversation table beside it, and editing a status in one place now
-/// changes both. What it does not cost is exactness. Every string is rebuilt during
-/// encoding and compared against the original; only an exact match is dropped, so a
-/// save whose SimX strings do not follow the pattern - or a stale
-/// <see cref="SimXOrders"/> - keeps them verbatim instead of losing them.
+/// changes both. What it does not cost is the data. Every string is rebuilt during
+/// encoding and compared against the original pair for pair; only a string that
+/// matches is dropped, so one that does not follow the pattern is kept verbatim
+/// rather than lost.
+/// </para>
+/// <para>
+/// The comparison ignores the order the pairs came in, and a rebuilt string uses
+/// one fixed order instead. A save's own order is the game's Lua table order, which
+/// is not stable even between saves of a single playthrough, and it carries nothing:
+/// an id that appears more than once always carries the same status, so the string
+/// says only which status each dialogue entry has.
 /// </para>
 /// </remarks>
 public static class LuaSimX
@@ -84,7 +91,7 @@ public static class LuaSimX
             if (
                 conversation is int index
                 && Rebuild(index, conversations, orders) is string rebuilt
-                && rebuilt == actual
+                && SamePairs(rebuilt, actual)
             )
             {
                 derived[i] = name;
@@ -150,7 +157,7 @@ public static class LuaSimX
                 Rebuild(conversation, conversations, orders)
                 ?? throw new InvalidDataException(
                     $"{context}.{HeaderName} names conversation {conversation}, whose "
-                        + "dialogue order is not in " + SimXOrders.OrderResourceName
+                        + $"dialogue entries {SimXOrders.ArticyIdsFileName} does not list"
                 );
             variables.Insert((int)positions[i], VariablePrefix + articyId, rebuilt);
         }
@@ -196,6 +203,30 @@ public static class LuaSimX
             text.Append(articyId).Append(PairSeparator).Append(code);
         }
         return text.ToString();
+    }
+
+    /// <summary>
+    /// Whether two SimX strings say the same thing: the same id and status pairs,
+    /// in whatever order each happens to list them.
+    /// </summary>
+    private static bool SamePairs(string rebuilt, string actual)
+    {
+        string[] left = rebuilt.Split(PairSeparator);
+        string[] right = actual.Split(PairSeparator);
+        if (left.Length != right.Length)
+        {
+            return false;
+        }
+        var leftPairs = new List<string>(left.Length / 2);
+        var rightPairs = new List<string>(right.Length / 2);
+        for (int i = 0; i + 1 < left.Length; i += 2)
+        {
+            leftPairs.Add(left[i] + PairSeparator + left[i + 1]);
+            rightPairs.Add(right[i] + PairSeparator + right[i + 1]);
+        }
+        leftPairs.Sort(StringComparer.Ordinal);
+        rightPairs.Sort(StringComparer.Ordinal);
+        return leftPairs.SequenceEqual(rightPairs, StringComparer.Ordinal);
     }
 
     private static char? CodeFor(string status)
