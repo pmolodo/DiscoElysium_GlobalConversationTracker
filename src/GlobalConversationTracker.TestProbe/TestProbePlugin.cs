@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 using System;
+using System.IO;
 using BepInEx;
 using BepInEx.Unity.IL2CPP;
 using HarmonyLib;
@@ -27,9 +28,17 @@ namespace GlobalConversationTracker.TestProbe
     /// under test, with no test-only branch in it that could behave differently from
     /// what a player installs.</para>
     ///
-    /// <para>Read-only with respect to the game. Every hook is a postfix that reads
-    /// arguments and writes a log line, and every one swallows its own exceptions: an
-    /// instrument that breaks the run it is measuring is worse than no instrument.</para>
+    /// <para>Every hook is a postfix that reads arguments and writes a log line, and
+    /// every one swallows its own exceptions: an instrument that breaks the run it is
+    /// measuring is worse than no instrument.</para>
+    ///
+    /// <para>It also drives, through <see cref="ProbeCommands"/>. That is the one place
+    /// it is not an observer, and it is deliberate: a run has to reach a particular save
+    /// and a particular conversation, and doing that by clicking through the pause menu
+    /// means encoding a layout that can only be learned from a screenshot and re-learned
+    /// whenever the UI moves. The commands call the game's own loader and its own
+    /// dialogue system, so the setup travels the same code the tests already hook - it
+    /// replaces the navigation, not the behaviour under test.</para>
     /// </remarks>
     [BepInPlugin(PluginGuid, PluginName, PluginVersion)]
     public class TestProbePlugin : BasePlugin
@@ -56,7 +65,7 @@ namespace GlobalConversationTracker.TestProbe
 
         private static readonly ResponseMenuRecorder Menu = new ResponseMenuRecorder();
 
-        /// <summary>Installs the hooks.</summary>
+        /// <summary>Installs the hooks and the command pump.</summary>
         public override void Load()
         {
             ProbeLog.Attach(Log);
@@ -68,7 +77,48 @@ namespace GlobalConversationTracker.TestProbe
             harmony.PatchAll(typeof(SaveLoadedProbe));
             harmony.PatchAll(typeof(WorldReadyProbe));
 
-            ProbeLog.Write("ready", "version", PluginVersion, "watching", ModGuid);
+            // Beside the global state, in the profile the harness stages. Resolved the
+            // same way the mod resolves it, and with the same fallback, so the probe
+            // and the mod cannot end up looking at two different folders.
+            string saveGames = SaveGamesFolder();
+            ProbeCommands.UseDirectory(saveGames);
+            AddComponent<ProbeCommands>();
+
+            ProbeLog.Write(
+                "ready",
+                "version", PluginVersion,
+                "watching", ModGuid,
+                "commands", ProbeCommands.CommandPath);
+        }
+
+        /// <summary>
+        /// The SaveGames folder, asking the game first and falling back to Unity.
+        /// </summary>
+        /// <remarks>
+        /// The game's own accessor is coupled to the interop shape, which is
+        /// regenerated per build and would break on a rename; persistentDataPath is
+        /// stable but is only the parent. Trying both, in that order, is what the mod
+        /// does, and the two must agree or the harness would write commands into a
+        /// folder nothing is watching.
+        /// </remarks>
+        private static string SaveGamesFolder()
+        {
+            try
+            {
+                string folder = SunshinePersistenceFileManager.GetSaveGameDirectoryPath();
+                if (!string.IsNullOrWhiteSpace(folder))
+                {
+                    return folder;
+                }
+            }
+            catch (Exception error)
+            {
+                ProbeLog.Failed("asking the game where its saves are", error);
+            }
+
+            return Path.Combine(
+                Application.persistentDataPath,
+                SunshinePersistenceFileManager.SAVE_GAME_DIRECTORY);
         }
 
         /// <summary>The money the game reports now, or null if Lua would not answer.</summary>

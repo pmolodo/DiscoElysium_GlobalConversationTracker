@@ -1,0 +1,223 @@
+// SPDX-License-Identifier: MIT
+using System;
+using System.IO;
+using System.Text.Json;
+using PixelCrushers.DialogueSystem;
+using UnityEngine;
+
+namespace GlobalConversationTracker.TestProbe
+{
+    /// <summary>
+    /// Carries out the commands a harness leaves in a file, so a run can drive the
+    /// game without clicking through its menus.
+    /// </summary>
+    /// <remarks>
+    /// <para>A file rather than a socket or a pipe: the harness and the game are two
+    /// processes on one machine with no shared lifetime, one command is in flight at a
+    /// time, and a file is the only channel that needs no handshake, survives the game
+    /// not having started yet, and can be read afterwards when something went
+    /// wrong.</para>
+    ///
+    /// <para>Each command is consumed by deleting the file before it runs, so a command
+    /// cannot be executed twice if it throws or if the game stalls. The outcome is
+    /// reported as a probe event, which is what the harness actually waits on - the file
+    /// disappearing only means it was read.</para>
+    ///
+    /// <para>What this replaces is menu navigation. Loading a save through the game's
+    /// own loader reaches the same <c>PersistentDataManager.ApplyRawData</c> that a
+    /// menu click reaches, and starting a conversation through the dialogue system runs
+    /// the identical code that composes an option's text - so nothing under test is
+    /// lost, and the part that could only be learned from a screenshot is gone.</para>
+    /// </remarks>
+    internal sealed class ProbeCommands : MonoBehaviour
+    {
+        /// <summary>The file the harness writes a command into.</summary>
+        internal const string CommandFileName = "gct-probe-command.json";
+
+        /// <summary>Load a savegame by name.</summary>
+        internal const string LoadSaveCommand = "load-save";
+
+        /// <summary>Open a conversation by id, with no walking and no clicking.</summary>
+        internal const string StartConversationCommand = "start-conversation";
+
+        /// <summary>Report the state a scenario cares about.</summary>
+        internal const string ReportCommand = "report";
+
+        /// <summary>
+        /// How many frames pass between checks. The harness waits on a probe event
+        /// rather than on a deadline, so this only decides how quickly a command is
+        /// noticed; a per-frame File.Exists on a path that is usually absent is cheap,
+        /// but not free, and nothing here needs frame accuracy.
+        /// </summary>
+        private const int PollFrames = 10;
+
+        private static string? _commandPath;
+        private int _sinceLastPoll;
+
+        /// <summary>Required by Il2CppInterop for an injected component.</summary>
+        /// <param name="pointer">The native object.</param>
+        public ProbeCommands(IntPtr pointer)
+            : base(pointer)
+        {
+        }
+
+        /// <summary>Where commands are read from.</summary>
+        /// <remarks>
+        /// Beside the global state in the SaveGames folder, which the harness already
+        /// stages and already reads artefacts out of. It is not the game install, so a
+        /// command file left behind by a killed run cannot outlive the staged profile.
+        /// </remarks>
+        internal static string CommandPath => _commandPath ?? string.Empty;
+
+        /// <summary>Points the pump at a directory. Call before the component runs.</summary>
+        /// <param name="directoryPath">The SaveGames folder.</param>
+        internal static void UseDirectory(string directoryPath)
+        {
+            _commandPath = Path.Combine(directoryPath, CommandFileName);
+        }
+
+        /// <summary>Polls for a command. Called by Unity.</summary>
+        public void Update()
+        {
+            if (++_sinceLastPoll < PollFrames)
+            {
+                return;
+            }
+
+            _sinceLastPoll = 0;
+
+            string path = CommandPath;
+            if (path.Length == 0 || !File.Exists(path))
+            {
+                return;
+            }
+
+            string text;
+            try
+            {
+                text = File.ReadAllText(path);
+                // Consumed before it runs: a command that throws, or that stalls the
+                // game, must not be picked up again on the next poll.
+                File.Delete(path);
+            }
+            catch (IOException)
+            {
+                // Half-written, or still open in the harness. Try again next poll.
+                return;
+            }
+
+            Run(text);
+        }
+
+        private static void Run(string text)
+        {
+            string name = "?";
+            try
+            {
+                using JsonDocument document = JsonDocument.Parse(text);
+                JsonElement root = document.RootElement;
+                name = Member(root, "command") ?? "?";
+
+                switch (name)
+                {
+                    case LoadSaveCommand:
+                        LoadSave(Member(root, "save"));
+                        break;
+                    case StartConversationCommand:
+                        StartConversation(root);
+                        break;
+                    case ReportCommand:
+                        ProbeLog.Write(
+                            "report",
+                            "money", TestProbePlugin.Money(),
+                            "conversation", TestProbePlugin.ConversationId());
+                        break;
+                    default:
+                        ProbeLog.Write(
+                            "command-failed", "command", name, "message", "unknown command");
+                        break;
+                }
+            }
+            catch (Exception error)
+            {
+                ProbeLog.Write(
+                    "command-failed", "command", name, "message", error.Message);
+            }
+        }
+
+        private static string? Member(JsonElement root, string name)
+        {
+            return root.ValueKind == JsonValueKind.Object
+                && root.TryGetProperty(name, out JsonElement value)
+                && value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : null;
+        }
+
+        private static int? NumberMember(JsonElement root, string name)
+        {
+            return root.ValueKind == JsonValueKind.Object
+                && root.TryGetProperty(name, out JsonElement value)
+                && value.ValueKind == JsonValueKind.Number
+                && value.TryGetInt32(out int number)
+                ? number
+                : (int?)null;
+        }
+
+        private static void LoadSave(string? save)
+        {
+            if (string.IsNullOrEmpty(save))
+            {
+                throw new ArgumentException("No save name was given.");
+            }
+
+            ProbeLog.Write(
+                "command-started",
+                "command", LoadSaveCommand,
+                "save", save,
+                "canLoad", SunshinePersistence.CanLoad());
+
+            SunshinePersistence persistence = SunshinePersistence.Singleton
+                ?? throw new InvalidOperationException(
+                    "SunshinePersistence has no instance yet; the game is still starting.");
+
+            // The same call the Load Game menu item makes, so the save travels the path
+            // the tests already hook rather than a private shortcut. Not bundled: these
+            // are ordinary saves staged into the profile's SaveGames folder.
+            persistence.Load(save!, false);
+        }
+
+        private static void StartConversation(JsonElement root)
+        {
+            int? conversationId = NumberMember(root, "conversation");
+            string? title = Member(root, "title");
+            if (conversationId == null && string.IsNullOrEmpty(title))
+            {
+                throw new ArgumentException(
+                    "Give either a conversation id or a title to start.");
+            }
+
+            string resolved = title ?? TitleOf(conversationId!.Value);
+            ProbeLog.Write(
+                "command-started",
+                "command", StartConversationCommand,
+                "conversation", conversationId,
+                "title", resolved);
+
+            DialogueManager.StartConversation(resolved);
+        }
+
+        private static string TitleOf(int conversationId)
+        {
+            DialogueDatabase database = DialogueManager.masterDatabase
+                ?? throw new InvalidOperationException(
+                    "There is no dialogue database yet; load a save first.");
+
+            Conversation conversation = database.GetConversation(conversationId)
+                ?? throw new InvalidOperationException(
+                    $"No conversation {conversationId} in the database.");
+
+            return conversation.Title;
+        }
+    }
+}
