@@ -9,57 +9,24 @@ using GlobalConversationTracker.Automation;
 
 namespace GlobalConversationTracker.Harness
 {
-    /// <summary>One money scenario and what its menu should look like.</summary>
-    public sealed class LookAheadScenario
-    {
-        /// <summary>Creates a scenario.</summary>
-        /// <param name="saveName">The staged save's name.</param>
-        /// <param name="money">The balance it sets, in centimes.</param>
-        /// <param name="expectOrange">Whether an option should carry the orange marker.</param>
-        /// <param name="why">Why, in one line, for the report.</param>
-        public LookAheadScenario(
-            string saveName, int money, bool expectOrange, string why)
-        {
-            SaveName = saveName;
-            Money = money;
-            ExpectOrange = expectOrange;
-            Why = why;
-        }
-
-        /// <summary>The staged save's name.</summary>
-        public string SaveName { get; }
-
-        /// <summary>The balance it sets, in centimes.</summary>
-        public int Money { get; }
-
-        /// <summary>Whether an option should carry the orange marker.</summary>
-        public bool ExpectOrange { get; }
-
-        /// <summary>Why, for the report.</summary>
-        public string Why { get; }
-    }
-
     /// <summary>
-    /// Drives the look-ahead money scenarios: one launch, three saves, and the marker
-    /// read off the option text the game was about to draw.
+    /// Runs look-ahead suites against the game and reads the marker off the option text
+    /// the game was about to draw.
     /// </summary>
     /// <remarks>
-    /// <para>Conversation 451 gates a 0.50 real purchase behind a 50.00 one, and the
-    /// staged global state leaves exactly one entry unseen - the one only a speaker
-    /// buyer reaches. An option therefore carries the orange marker precisely when the
-    /// crawl spent 50.00 and still had 0.50, which is what the three balances separate.
-    /// The middle one is the point: a scan that checked an option's price without
-    /// subtracting what the path already spent would mark it.</para>
+    /// <para>What this covers that no unit test can: the crawl runs over the real
+    /// dialogue database, from the real world state, and the marker is read from the text
+    /// the game composed. The search itself is covered by the LookAhead suite over graphs
+    /// handed to it; this covers the wiring.</para>
     ///
-    /// <para>One launch for all three. A cold start is about a minute, and the probe can
-    /// load a save in place, so relaunching per scenario would triple the run for
-    /// nothing.</para>
+    /// <para>One launch per suite, and every save in a suite loaded in place by the test
+    /// probe. A cold start is about a minute, so relaunching per scenario would multiply
+    /// the run for nothing - but a suite cannot span two global states or two mod
+    /// configurations, because the mod reads the first once and BepInEx reads the second
+    /// at chainload.</para>
     /// </remarks>
     public static class LookAheadRun
     {
-        /// <summary>The conversation the scenarios open.</summary>
-        public const int ConversationId = 451;
-
         /// <summary>The colour meaning "leads somewhere no save has reached".</summary>
         public const string OrangeHtml = "#FF8C42";
 
@@ -69,27 +36,21 @@ namespace GlobalConversationTracker.Harness
         /// <summary>What a packed save archive is called.</summary>
         private const string SaveExtension = ".ntwtf.zip";
 
-        /// <summary>The scenarios, in the order they are run.</summary>
-        public static readonly LookAheadScenario[] Scenarios =
-        {
-            new LookAheadScenario(
-                "afford-both", 5100, true,
-                "100 centimes left after the sneakers, so the speakers are still affordable"),
-            new LookAheadScenario(
-                "afford-only-sneakers", 5025, false,
-                "25 centimes left after the sneakers, so the speakers are not"),
-            new LookAheadScenario(
-                "afford-neither", 4900, false,
-                "the sneakers cannot be bought at all"),
-        };
+        /// <summary>
+        /// How long to give one Enter before pressing it again. Short enough to walk
+        /// through a splash screen or a run of dialogue briskly, long enough that a
+        /// loading screen is not hammered.
+        /// </summary>
+        private static readonly TimeSpan BetweenPresses = TimeSpan.FromSeconds(2);
 
-        /// <summary>Runs every scenario in one session.</summary>
+        /// <summary>Runs the named suites, one launch each.</summary>
         /// <param name="game">Path to disco.exe.</param>
         /// <param name="scenarioRoot">Where the built scenarios are.</param>
         /// <param name="settingsFile">The test settings to stage.</param>
-        /// <param name="artifacts">Where to write screenshots.</param>
+        /// <param name="artifacts">Where packed saves go.</param>
         /// <param name="timeout">How long any single wait may take.</param>
-        /// <param name="keepOpen">Leave the game running at the end.</param>
+        /// <param name="keepOpen">Leave the last game running.</param>
+        /// <param name="suiteName">One suite's name, or null for every suite.</param>
         /// <returns>0 when every check passed.</returns>
         public static int Run(
             string game,
@@ -97,81 +58,81 @@ namespace GlobalConversationTracker.Harness
             string settingsFile,
             string artifacts,
             TimeSpan timeout,
-            bool keepOpen)
+            bool keepOpen,
+            string? suiteName = null)
         {
-            var checks = new List<string>();
-            var failures = new List<string>();
+            IReadOnlyList<LookAheadSuite> suites = LookAheadSuites.Select(suiteName);
+            var report = new Report();
 
-            void Check(bool ok, string label, string detail)
+            foreach (LookAheadSuite suite in suites)
             {
-                checks.Add(label);
-                Console.WriteLine($"  {(ok ? "PASS" : "FAIL")}  {label}");
-                if (detail.Length > 0)
-                {
-                    Console.WriteLine($"        {detail}");
-                }
-
-                if (!ok)
-                {
-                    failures.Add(label);
-                }
+                Console.WriteLine();
+                Console.WriteLine($"=== suite '{suite.Name}': {suite.What} ===");
+                RunSuite(
+                    suite, game, scenarioRoot, settingsFile, artifacts, timeout,
+                    keepOpen && suite == suites[suites.Count - 1], report);
             }
 
+            Console.WriteLine();
+            Console.WriteLine($"{report.Passed}/{report.Total} checks passed");
+            foreach (string failure in report.Failures)
+            {
+                Console.WriteLine($"  FAILED: {failure}");
+            }
+
+            return report.Failures.Count == 0 ? 0 : 1;
+        }
+
+        private static void RunSuite(
+            LookAheadSuite suite,
+            string game,
+            string scenarioRoot,
+            string settingsFile,
+            string artifacts,
+            TimeSpan timeout,
+            bool keepOpen,
+            Report report)
+        {
             string logPath = Path.Combine(
                 FilePaths.FolderOf(game, nameof(game)), "BepInEx", "LogOutput.log");
             string saveGames = GameProfile.SavesFolder;
-            string globalState = Path.Combine(scenarioRoot, "global-conversation-state.json");
+            string globalState = Path.Combine(scenarioRoot, suite.GlobalStateFile);
+            if (!File.Exists(globalState))
+            {
+                throw new FileNotFoundException(
+                    $"Suite '{suite.Name}' names a global state at {globalState}.", globalState);
+            }
 
+            // Packed in REVERSE order so the first scenario's archive is the newest. The
+            // first save is loaded by pressing Continue at the main menu, which takes the
+            // newest one, because loading from the menu through the probe dies in
+            // HudToggle.FixForDreamScene - the HUD views that path expects are not built
+            // yet. Once a save is in and the HUD exists, the probe can load the rest.
             var packed = new List<string>();
-
-            // The packer stamps the time into the archive's name, and the game keys a
-            // save by exactly that name, so what gets staged is "afford-both(9_1_2026
-            // 8-14-05 AM)" and not "afford-both". Asking the game to load the scenario's
-            // own name found nothing and failed silently - the load simply did not
-            // happen - so the staged name is what the load command has to carry.
             var stagedNames = new Dictionary<string, string>(StringComparer.Ordinal);
-
-            // Packed in REVERSE order so the first scenario's archive is the newest.
-            // The first save is loaded by pressing Continue at the main menu, which takes
-            // the newest one, and that path is used because loading from the menu through
-            // the probe does not work: SunshinePersistence.Load called with no menu
-            // interaction dies in HudToggle.FixForDreamScene, since the HUD views the
-            // load path expects have not been built. Once a save is in and the HUD
-            // exists, the probe can load the rest.
-            foreach (LookAheadScenario scenario in Enumerable.Reverse(Scenarios))
+            foreach (LookAheadScenario scenario in Enumerable.Reverse(suite.Scenarios))
             {
                 string expanded = Path.Combine(scenarioRoot, scenario.SaveName + ".ntwtf");
                 if (!Directory.Exists(expanded))
                 {
-                    throw new DirectoryNotFoundException(
-                        $"No scenario save at {expanded}.");
+                    throw new DirectoryNotFoundException($"No scenario save at {expanded}.");
                 }
 
                 string archive = Program.PackSave(expanded, artifacts);
                 packed.Add(archive);
 
+                // The packer stamps the time into the archive's name and the game keys a
+                // save by exactly that, so the load command has to carry the staged name
+                // and not the scenario's. Getting this wrong failed silently.
                 string fileName = Path.GetFileName(archive);
                 stagedNames[scenario.SaveName] =
                     fileName.EndsWith(SaveExtension, StringComparison.OrdinalIgnoreCase)
                         ? fileName.Substring(0, fileName.Length - SaveExtension.Length)
                         : fileName;
-                Console.WriteLine(
-                    $"           {scenario.SaveName} staged as \"{stagedNames[scenario.SaveName]}\"");
-            }
-
-            if (!File.Exists(globalState))
-            {
-                throw new FileNotFoundException(
-                    $"No staged global state at {globalState}.",
-                    globalState);
             }
 
             Process? process = null;
 
-            // The same staging every in-game run uses, so they all measure the game
-            // under the same conditions. It carries the display too: the settings file
-            // does not size the window, Unity's PlayerPrefs do, and staging only the
-            // file left this run at whatever resolution the machine happened to be at.
             using StagedGame staged = StagedGame.Stage(
                 "disco",
                 settingsFile,
@@ -179,10 +140,13 @@ namespace GlobalConversationTracker.Harness
                 globalState,
                 progress: message => Console.WriteLine($"staging:   {message}"));
 
-            // The probe is this verb's own dependency: without it there is nothing to
-            // drive the game with and nothing to read the markers off. Installed here
-            // rather than by the caller so the verb is runnable on its own, and inside
-            // the staging so a failure anywhere below still takes it out again.
+            using StagedPluginConfig? config = suite.PluginSettings.Count == 0
+                ? null
+                : StagedPluginConfig.Apply(
+                    game,
+                    suite.PluginSettings,
+                    message => Console.WriteLine($"mod cfg:   {message}"));
+
             using ProbeDeployment probe = ProbeDeployment.Deploy(
                 game,
                 GameInstall.FindProbeAssembly(),
@@ -190,55 +154,46 @@ namespace GlobalConversationTracker.Harness
 
             try
             {
-                Console.WriteLine(
-                    $"staged:    {packed.Count} saves and a global state into {saveGames}");
-
                 // Before launching, not after. BepInEx truncates its log when it starts,
                 // but the harness begins reading the instant the process exists, and in
-                // that gap it would find the PREVIOUS run's events - see a stale
-                // world-ready, believe the menu was up, and fire the first command at
-                // chainload time, when nothing can load a save yet.
+                // that gap it would find the PREVIOUS run's events.
                 if (File.Exists(logPath))
                 {
                     File.Delete(logPath);
-                    Console.WriteLine("log:       cleared the previous run's BepInEx log");
                 }
 
-                Console.WriteLine();
                 Console.WriteLine("launching...");
                 process = Process.Start(new ProcessStartInfo(game) { UseShellExecute = false });
 
                 var watcher = new ProbeWatcher(logPath);
                 watcher.WaitForEvent("ready", timeout, Log);
-                Check(true, "the probe loaded", $"reading {logPath}");
+                report.Check(true, $"{suite.Name}: the probe loaded", $"reading {logPath}");
 
                 // Checked, not assumed. Everything downstream is measured against a
-                // window of a known size, and a run at the machine's own resolution
-                // would still pass every marker check while testing something else.
+                // window of a known size, and a run at the machine's own resolution would
+                // still pass every marker check while testing something else.
                 GameWindow window = GameSession.WaitForWindow("disco", timeout);
-                Check(
+                report.Check(
                     window.Width == staged.Requested.Width
                         && window.Height == staged.Requested.Height,
-                    $"the window is the requested {staged.Requested}",
+                    $"{suite.Name}: the window is the requested {staged.Requested}",
                     $"got {window.Width}x{window.Height}");
 
-                // The probe says "ready" the moment BepInEx chainloads it, which is long
-                // before the game can load anything - SunshinePersistence has no instance
-                // yet, and a command sent then fails on nothing being there. world-ready
-                // fires when the HUD is built, which at startup means the menu is up.
-                watcher.WaitForEvent("main-menu", timeout, Log);
-                Check(true, "the game reached its main menu", "Continue can be pressed");
-
-                for (int i = 0; i < Scenarios.Length; i++)
+                for (int i = 0; i < suite.Scenarios.Count; i++)
                 {
-                    LookAheadScenario scenario = Scenarios[i];
+                    LookAheadScenario scenario = suite.Scenarios[i];
                     Console.WriteLine();
-                    Console.WriteLine($"--- {scenario.SaveName} ({scenario.Money} centimes) ---");
+                    Console.WriteLine($"--- {scenario.SaveName}: {scenario.Why} ---");
 
                     watcher.Mark();
                     if (i == 0)
                     {
-                        ContinueFromMenu(watcher, timeout);
+                        PressEnterUntil(
+                            watcher,
+                            e => e.Name == "save-applied",
+                            timeout,
+                            "a save starts loading",
+                            "still on a splash screen");
                     }
                     else
                     {
@@ -246,7 +201,7 @@ namespace GlobalConversationTracker.Harness
                         watcher.WaitForEvent("save-applied", timeout, Log);
                     }
 
-                    RunScenario(scenario, saveGames, watcher, timeout, Check);
+                    RunScenario(scenario, saveGames, watcher, timeout, report);
                 }
             }
             finally
@@ -268,16 +223,6 @@ namespace GlobalConversationTracker.Harness
                     staged.Restore();
                 }
             }
-
-            Console.WriteLine();
-            Console.WriteLine(
-                $"{checks.Count - failures.Count}/{checks.Count} checks passed");
-            foreach (string failure in failures)
-            {
-                Console.WriteLine($"  FAILED: {failure}");
-            }
-
-            return failures.Count == 0 ? 0 : 1;
         }
 
         private static void RunScenario(
@@ -285,11 +230,11 @@ namespace GlobalConversationTracker.Harness
             string saveGames,
             ProbeWatcher watcher,
             TimeSpan timeout,
-            Action<bool, string, string> check)
+            Report report)
         {
             watcher.WaitForEvent("load-finished", timeout, Log);
 
-            ProbeCommand.SendStartConversation(saveGames, ConversationId);
+            ProbeCommand.SendStartConversation(saveGames, scenario.ConversationId);
 
             // The conversation opens on narration, not on a menu: StartConversation puts
             // the first line up and the game waits to be told to go on, exactly as it
@@ -298,106 +243,108 @@ namespace GlobalConversationTracker.Harness
             // "complete" only. The game composes each menu twice - once per response-UI
             // path - so the recorder reports the first pass as superseded when the second
             // begins. Both carry the same options, but only the completed one is tied to
-            // its conversation and its balance, and matching either would make the run
-            // depend on which arrived first.
+            // its conversation and its balance.
             ProbeEvent menu = PressEnterUntil(
                 watcher,
                 e => e.Name == "menu"
-                    && e.Number("conversation") == ConversationId
+                    && e.Number("conversation") == scenario.ConversationId
                     && e.Text("state") == "complete",
                 timeout,
-                $"a response menu in conversation {ConversationId}",
+                $"a response menu in conversation {scenario.ConversationId}",
                 "advancing dialogue");
 
-            // Taken from the menu rather than from load-finished. load-finished is
-            // emitted when the game's IsLoading flag falls, which is a poll boundary
-            // earlier than the loaded save's money reaching Lua - it reported the
-            // previous scenario's balance. The menu's reading is the one the look-ahead
-            // actually crawled from, which is the number this check is about.
-            int? money = menu.Number("money");
-            check(
-                money == scenario.Money,
-                $"{scenario.SaveName}: the look-ahead crawled from {scenario.Money} centimes",
-                $"the probe reports {money?.ToString() ?? "nothing"}");
+            // Taken from the menu rather than from load-finished, which is emitted when
+            // the game's IsLoading flag falls - a poll boundary earlier than the loaded
+            // save's world state reaching Lua. The menu's reading is the one the
+            // look-ahead actually crawled from.
+            if (scenario.Money is int money)
+            {
+                report.Check(
+                    menu.Number("money") == money,
+                    $"{scenario.SaveName}: the look-ahead crawled from {money} centimes",
+                    $"the probe reports {menu.Number("money")?.ToString() ?? "nothing"}");
+            }
 
             ProbeOption[] options = menu.Options();
-            check(
+            report.Check(
                 options.Length > 0,
                 $"{scenario.SaveName}: the response menu was drawn",
-                $"{options.Length} option(s), state {menu.Text("state")}");
-
-            ProbeOption[] orange = options.Where(o => o.HasMarker(OrangeHtml)).ToArray();
-            ProbeOption[] red = options.Where(o => o.HasMarker(RedHtml)).ToArray();
+                $"{options.Length} option(s)");
 
             foreach (ProbeOption option in options)
             {
                 Console.WriteLine(
-                    $"        [{(option.HasMarker(OrangeHtml) ? "orange" : option.HasMarker(RedHtml) ? "red   " : "      ")}] "
+                    $"        [{Describe(MarkerOn(option)),-6}] "
                     + $"{option.ConversationId}:{option.EntryId} {Trim(option.Text)}");
             }
 
-            check(
-                (orange.Length > 0) == scenario.ExpectOrange,
-                $"{scenario.SaveName}: "
-                    + (scenario.ExpectOrange
-                        ? "an option leads to the unseen line"
-                        : "no option leads to the unseen line"),
-                $"{orange.Length} orange, {red.Length} red - {scenario.Why}");
+            foreach (OptionExpectation expected in scenario.Options)
+            {
+                ProbeOption? option = options.FirstOrDefault(o => o.EntryId == expected.EntryId);
+                if (option == null)
+                {
+                    report.Check(
+                        false,
+                        $"{scenario.SaveName}: entry {expected.EntryId} is offered",
+                        $"the menu offered {string.Join(", ", options.Select(o => o.EntryId))}");
+                    continue;
+                }
+
+                Marker actual = MarkerOn(option);
+                report.Check(
+                    actual == expected.Marker,
+                    $"{scenario.SaveName}: entry {expected.EntryId} is "
+                        + $"{Describe(expected.Marker)}",
+                    $"it is {Describe(actual)} - {expected.Why}");
+            }
+
+            // An option the scenario says nothing about must not be marked either.
+            // Without this a scan that marked everything would satisfy every expectation
+            // a scenario happened to name.
+            foreach (ProbeOption option in options)
+            {
+                if (scenario.Names(option.EntryId))
+                {
+                    continue;
+                }
+
+                report.Check(
+                    MarkerOn(option) == Marker.None,
+                    $"{scenario.SaveName}: entry {option.EntryId}, which the scenario does "
+                        + "not name, is unmarked",
+                    $"it is {Describe(MarkerOn(option))}");
+            }
         }
 
-        /// <summary>
-        /// How long to give one Enter before pressing it again. Short enough to walk
-        /// through a splash screen or a run of dialogue briskly, long enough that a
-        /// loading screen is not hammered.
-        /// </summary>
-        private static readonly TimeSpan BetweenPresses = TimeSpan.FromSeconds(2);
+        private static Marker MarkerOn(ProbeOption option) =>
+            option.HasMarker(OrangeHtml) ? Marker.Orange
+            : option.HasMarker(RedHtml) ? Marker.Red
+            : Marker.None;
 
-        /// <summary>
-        /// Presses Enter until a save actually starts loading.
-        /// </summary>
-        /// <remarks>
-        /// <para>The first save has to come in through the menu. Asking the probe to
-        /// load one straight from the main menu throws inside the game, in
-        /// HudToggle.FixForDreamScene, because the HUD views the load path expects have
-        /// not been built - so the run does what a player does once, and drives the rest
-        /// from inside a session that has a HUD.</para>
-        ///
-        /// <para>Repeated rather than timed, because nothing says when the menu is
-        /// actually on screen. Both the events that sound like it fire about ten seconds
-        /// in - MainMenuList.Start builds the menu object, HudMoneyController.Start
-        /// builds the HUD - while the legal notice and the logo still have twenty-five
-        /// seconds to run, and an Enter sent then is swallowed by a splash screen. An
-        /// Enter that lands on one of those skips it, and an Enter that lands on the menu
-        /// starts the newest save, so pressing until something loads is both the simplest
-        /// thing that works and the fastest way through the splash screens.</para>
-        /// </remarks>
-        private static ProbeEvent ContinueFromMenu(ProbeWatcher watcher, TimeSpan timeout)
+        private static string Describe(Marker marker) => marker switch
         {
-            return PressEnterUntil(
-                watcher,
-                e => e.Name == "save-applied",
-                timeout,
-                "a save starts loading",
-                "still on a splash screen");
-        }
+            Marker.Orange => "orange",
+            Marker.Red => "red",
+            _ => "plain",
+        };
 
         /// <summary>
         /// Presses Enter until the probe reports what is being waited for.
         /// </summary>
         /// <remarks>
-        /// <para>Two places need this and neither can be timed. Nothing says when the
-        /// main menu is actually on screen - both events that sound like it fire about
-        /// ten seconds in, while the legal notice and the logo still have twenty-five
-        /// seconds to run - and nothing says when a conversation has finished showing
-        /// the lines that precede its first response menu.</para>
+        /// <para>Two places need this and neither can be timed. Nothing says when the main
+        /// menu is actually on screen - both events that sound like it fire about ten
+        /// seconds in, while the legal notice and the logo still have twenty-five seconds
+        /// to run - and nothing says when a conversation has finished showing the lines
+        /// that precede its first response menu.</para>
         ///
         /// <para>An Enter that lands on a splash screen skips it, one that lands on the
         /// menu starts the newest save, and one that lands on a line of dialogue advances
-        /// it. So pressing until the awaited thing happens is both the simplest thing
-        /// that works and the fastest way through.</para>
+        /// it. So pressing until the awaited thing happens is both the simplest thing that
+        /// works and the fastest way through.</para>
         ///
         /// <para>The last press can race the menu it was waiting for and pick an option.
-        /// That is harmless here: the menu has already been reported by then, with every
+        /// That is harmless: the menu has already been reported by then, with every
         /// option's text, and the next scenario loads a save over whatever it chose.</para>
         /// </remarks>
         private static ProbeEvent PressEnterUntil(
@@ -424,8 +371,7 @@ namespace GlobalConversationTracker.Harness
                 try
                 {
                     ProbeEvent found = watcher.WaitFor(matches, BetweenPresses, what);
-                    Console.WriteLine(
-                        $"        {what} after {clock.Elapsed.TotalSeconds:N0}s");
+                    Console.WriteLine($"        {what} after {clock.Elapsed.TotalSeconds:N0}s");
                     return found;
                 }
                 catch (TimeoutException)
@@ -451,7 +397,7 @@ namespace GlobalConversationTracker.Harness
             }
 
             string oneLine = text.Replace("\r", " ").Replace("\n", " ");
-            return oneLine.Length <= 90 ? oneLine : oneLine.Substring(0, 87) + "...";
+            return oneLine.Length <= 80 ? oneLine : oneLine.Substring(0, 77) + "...";
         }
 
         private static void Close(Process? process)
@@ -470,14 +416,45 @@ namespace GlobalConversationTracker.Harness
             }
 
             process?.Dispose();
-            // The profile is moved back next, and Windows will not move a folder the
-            // game still has open.
+            // The profile is moved back next, and Windows will not move a folder the game
+            // still has open.
             Thread.Sleep(2000);
         }
 
         private static void Log(string message)
         {
             Console.WriteLine($"        {message}");
+        }
+
+        /// <summary>Counts what passed and what did not, across every suite.</summary>
+        private sealed class Report
+        {
+            private readonly List<string> _failures = new List<string>();
+
+            /// <summary>How many checks have run.</summary>
+            public int Total { get; private set; }
+
+            /// <summary>How many of them passed.</summary>
+            public int Passed => Total - _failures.Count;
+
+            /// <summary>What failed, in the order it failed.</summary>
+            public IReadOnlyList<string> Failures => _failures;
+
+            /// <summary>Records one check.</summary>
+            public void Check(bool ok, string label, string detail)
+            {
+                Total++;
+                Console.WriteLine($"  {(ok ? "PASS" : "FAIL")}  {label}");
+                if (detail.Length > 0)
+                {
+                    Console.WriteLine($"        {detail}");
+                }
+
+                if (!ok)
+                {
+                    _failures.Add(label);
+                }
+            }
         }
     }
 }

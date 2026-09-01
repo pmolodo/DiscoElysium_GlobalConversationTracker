@@ -50,7 +50,7 @@ namespace GlobalConversationTracker.Automation.Tests
         }
 
         private static string[] Scenarios =>
-            Harness.LookAheadRun.Scenarios.Select(s => s.SaveName).ToArray();
+            Harness.LookAheadSuites.Money.Scenarios.Select(s => s.SaveName).ToArray();
 
         [Fact]
         public void TheSharedSetupCarriesEverythingButTheMoney()
@@ -118,10 +118,10 @@ namespace GlobalConversationTracker.Automation.Tests
         public void TheMoneyMatchesWhatTheRunExpects()
         {
             // The saves and the expectations live in two places - the committed diffs and
-            // Harness.LookAheadRun.Scenarios - and a run that disagreed with its own
+            // Harness.LookAheadSuites.Money.Scenarios - and a run that disagreed with its own
             // fixtures would fail in the game, a minute in, saying only that the balance
             // was wrong.
-            foreach (Harness.LookAheadScenario scenario in Harness.LookAheadRun.Scenarios)
+            foreach (Harness.LookAheadScenario scenario in Harness.LookAheadSuites.Money.Scenarios)
             {
                 Assert.Equal(scenario.Money, MoneyOf(scenario.SaveName));
             }
@@ -144,13 +144,14 @@ namespace GlobalConversationTracker.Automation.Tests
 
             JsonElement conversation = state.RootElement
                 .GetProperty("conversations")
-                .GetProperty(Harness.LookAheadRun.ConversationId.ToString());
+                .GetProperty(Harness.LookAheadSuites.SiilengConversation.ToString());
 
             // Entry 80 is the only one reachable exclusively through the speakers
             // purchase, so it is what an orange marker means. Marking it would make every
             // scenario pass for the wrong reason.
             Assert.False(
-                conversation.TryGetProperty("80", out _),
+                conversation.TryGetProperty(
+                    Harness.LookAheadSuites.SpeakersOnlyEntry.ToString(), out _),
                 "entry 80 must stay unseen; it is what the marker is looking for");
             Assert.Equal(94, conversation.EnumerateObject().Count());
         }

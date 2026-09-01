@@ -158,7 +158,8 @@ namespace GlobalConversationTracker.Harness
                                 ?? Path.Combine(RepoRoot(), "testing", "Settings.json"),
                             Path.Combine(RepoRoot(), ".build", "automation"),
                             TimeSpan.FromSeconds(options.TimeoutSeconds),
-                            options.KeepOpen);
+                            options.KeepOpen,
+                            options.Suite);
                     default:
                         PrintUsage();
                         return 2;
@@ -186,7 +187,8 @@ Verbs:
                       and check which options carry a look-ahead marker. The
                       scenarios are committed under testing/scenarios as sparse
                       diffs of save_template; the probe is installed and removed
-                      by this verb. --artifacts names the scenario folder.
+                      by this verb. --artifacts names the scenario folder, and
+                      --suite runs one suite instead of all of them.
   analyse-timeline    Read a recorded timeline back and report which frames
                       identify which screens, with a measured threshold. Add
                       --save-reference to write the chosen frame as main-menu.png.
@@ -1576,6 +1578,9 @@ Options:
             /// <summary>A single save to stage, so Continue has only one thing to load.</summary>
             public string? SaveFile { get; private set; }
 
+            /// <summary>Which look-ahead suite to run, or null for every one.</summary>
+            public string? Suite { get; private set; }
+
             /// <summary>
             /// The part of the menu to match on: the option list, which does not animate.
             /// </summary>
@@ -1663,6 +1668,7 @@ Options:
                         case "--save-reference": options.SaveReference = true; break;
                         case "--whole-frame": options.MenuRegion = null; break;
                         case "--save": options.SaveFile = Next(); break;
+                        case "--suite": options.Suite = Next(); break;
                         case "--region":
                         {
                             string[] parts = (Next() ?? string.Empty).Split(',');
