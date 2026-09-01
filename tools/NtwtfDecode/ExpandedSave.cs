@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 using System.IO.Compression;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 namespace NtwtfDecode;
 
@@ -9,6 +11,10 @@ namespace NtwtfDecode;
 public static class ExpandedSave
 {
     public const string DiffManifestFileName = "_archive.json";
+    private static readonly Regex TimestampPattern = new(
+        @"\(\d{1,2}_\d{1,2}_\d{4} \d{1,2}-\d{2}-\d{2} (?:AM|PM)\)$",
+        RegexOptions.CultureInvariant
+    );
 
     /// <summary>Writes a complete expanded save from a packed input.</summary>
     public static void Write(
@@ -40,7 +46,7 @@ public static class ExpandedSave
     /// <summary>
     /// Reconstructs the Lua blob and packs it with the expanded save's pass-through files.
     /// </summary>
-    public static void Pack(string source, string output)
+    public static string Pack(string source, string output, DateTime? now = null)
     {
         if (!Directory.Exists(source))
         {
@@ -69,6 +75,18 @@ public static class ExpandedSave
             throw new InvalidDataException($"Split directory '{parts}' is not named for a Lua blob");
         }
         string luaName = partsName[..^PartsSuffix.Length];
+        string archiveName = luaName[..^SaveBlob.LuaExtension.Length];
+        string outputArchiveName = archiveName;
+        if (!TimestampPattern.IsMatch(archiveName))
+        {
+            string timestamp = (now ?? DateTime.Now).ToString(
+                "(M_d_yyyy h-mm-ss tt)",
+                CultureInfo.InvariantCulture
+            );
+            outputArchiveName += timestamp;
+            output = AppendTimestamp(output, timestamp);
+        }
+        string outputLuaName = outputArchiveName + SaveBlob.LuaExtension;
         LuaTable document = LuaSplitFiles.Read(parts);
 
         string? parent = Path.GetDirectoryName(output);
@@ -78,7 +96,7 @@ public static class ExpandedSave
         }
         using FileStream destination = File.Create(output);
         using var archive = new ZipArchive(destination, ZipArchiveMode.Create);
-        ZipArchiveEntry lua = archive.CreateEntry(luaName, CompressionLevel.Optimal);
+        ZipArchiveEntry lua = archive.CreateEntry(outputLuaName, CompressionLevel.Optimal);
         using (Stream stream = lua.Open())
         {
             LuaBinary.WriteDocument(stream, document);
@@ -87,11 +105,10 @@ public static class ExpandedSave
         string manifestPath = Path.Combine(source, DiffManifestFileName);
         if (File.Exists(manifestPath))
         {
-            WriteDiffMembers(archive, source, manifestPath);
-            return;
+            WriteDiffMembers(archive, source, manifestPath, archiveName, outputArchiveName);
+            return output;
         }
 
-        string archiveName = luaName[..^SaveBlob.LuaExtension.Length];
         foreach (string file in Directory.GetFiles(source))
         {
             string name = Path.GetFileName(file);
@@ -101,8 +118,10 @@ public static class ExpandedSave
                     $"Expanded save member '{name}' does not match save name '{archiveName}'."
                 );
             }
-            archive.CreateEntryFromFile(file, name, CompressionLevel.Optimal);
+            string outputName = outputArchiveName + name[archiveName.Length..];
+            archive.CreateEntryFromFile(file, outputName, CompressionLevel.Optimal);
         }
+        return output;
     }
 
     private static void WriteMemberDiffs(
@@ -168,7 +187,9 @@ public static class ExpandedSave
     private static void WriteDiffMembers(
         ZipArchive archive,
         string source,
-        string manifestPath
+        string manifestPath,
+        string archiveName,
+        string outputArchiveName
     )
     {
         JsonObject manifest = JsonNode.Parse(File.ReadAllText(manifestPath)) as JsonObject
@@ -202,7 +223,8 @@ public static class ExpandedSave
                 ),
                 _ => throw new InvalidDataException($"Diff member '{name}' has unknown kind '{kind}'"),
             };
-            ZipArchiveEntry output = archive.CreateEntry(name, CompressionLevel.Optimal);
+            string outputName = outputArchiveName + name[archiveName.Length..];
+            ZipArchiveEntry output = archive.CreateEntry(outputName, CompressionLevel.Optimal);
             using Stream stream = output.Open();
             stream.Write(bytes);
         }
@@ -290,6 +312,12 @@ public static class ExpandedSave
             : throw new InvalidDataException(
                 $"Save member '{name}' does not match save name '{stem}'"
             );
+
+    private static string AppendTimestamp(string output, string timestamp)
+    {
+        string stem = output[..^SaveBlob.ZipExtension.Length];
+        return stem + timestamp + SaveBlob.ZipExtension;
+    }
 
     private sealed record SaveMembers(Dictionary<string, PackedSaveEntry> BySuffix);
 }

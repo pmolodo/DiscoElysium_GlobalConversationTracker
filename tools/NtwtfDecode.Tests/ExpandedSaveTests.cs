@@ -53,12 +53,25 @@ public class ExpandedSaveTests
         LuaSplitFiles.Write(parts, document, indent: 2, sparse: true);
         File.WriteAllText(Path.Combine(source, "chosen.states.lua"), "state");
 
-        ExpandedSave.Pack(source, output);
+        string actualOutput = ExpandedSave.Pack(
+            source,
+            output,
+            new DateTime(2026, 8, 31, 20, 13, 30)
+        );
 
-        Assert.Equal(original, SaveBlob.Read(output));
-        using ZipArchive archive = ZipFile.OpenRead(output);
         Assert.Equal(
-            new[] { "chosen.ntwtf.lua", "chosen.states.lua" },
+            temp.Combine("chosen(8_31_2026 8-13-30 PM).ntwtf.zip"),
+            actualOutput
+        );
+        Assert.False(File.Exists(output));
+        Assert.Equal(original, SaveBlob.Read(actualOutput));
+        using ZipArchive archive = ZipFile.OpenRead(actualOutput);
+        Assert.Equal(
+            new[]
+            {
+                "chosen(8_31_2026 8-13-30 PM).ntwtf.lua",
+                "chosen(8_31_2026 8-13-30 PM).states.lua",
+            },
             archive.Entries.Select(entry => entry.FullName).ToArray()
         );
     }
@@ -125,16 +138,26 @@ public class ExpandedSaveTests
         );
 
         string rebuilt = temp.Combine("target.ntwtf.zip");
-        ExpandedSave.Pack(expanded, rebuilt);
-        PackedSave packed = SaveBlob.ReadArchive(rebuilt);
+        string actualRebuilt = ExpandedSave.Pack(
+            expanded,
+            rebuilt,
+            new DateTime(2026, 8, 31, 20, 13, 30)
+        );
+        PackedSave packed = SaveBlob.ReadArchive(actualRebuilt);
         Assert.Equal(lua, packed.LuaBytes);
         Assert.Equal(
-            target.PassThrough.Select(entry => entry.Name),
+            target.PassThrough.Select(entry =>
+                entry.Name.Replace("target", "target(8_31_2026 8-13-30 PM)")
+            ),
             packed.PassThrough.Select(entry => entry.Name)
         );
         foreach (PackedSaveEntry expected in target.PassThrough)
         {
-            PackedSaveEntry actual = packed.PassThrough.Single(entry => entry.Name == expected.Name);
+            string expectedName = expected.Name.Replace(
+                "target",
+                "target(8_31_2026 8-13-30 PM)"
+            );
+            PackedSaveEntry actual = packed.PassThrough.Single(entry => entry.Name == expectedName);
             if (expected.Name.EndsWith(".json", StringComparison.Ordinal))
             {
                 Assert.True(

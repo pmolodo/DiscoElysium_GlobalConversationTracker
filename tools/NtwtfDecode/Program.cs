@@ -148,7 +148,7 @@ int Run(string[] argv)
         {
             throw new ArgumentException($"--pack requires only --output <save.ntwtf.zip>\n\n{Usage}");
         }
-        ExpandedSave.Pack(input, output);
+        Console.WriteLine(ExpandedSave.Pack(input, output));
         return 0;
     }
 

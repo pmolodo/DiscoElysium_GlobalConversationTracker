@@ -38,7 +38,7 @@ namespace GlobalConversationTracker.Harness
         /// renaming the file alone produced a main menu with no Continue and Load Game
         /// greyed out, the game having found no saves at all. A test checks they agree.
         /// </remarks>
-        private const string TemplateSave = "save_template(8_31_2026 8-00-00 PM).ntwtf";
+        private const string TemplateSave = "save_template.ntwtf";
 
         private static readonly string[] DefaultGamePaths =
         {
@@ -1430,15 +1430,22 @@ Options:
             {
                 FileName = "dotnet",
                 Arguments = $"\"{decoder}\" --pack \"{source}\" -o \"{packed}\"",
+                RedirectStandardOutput = true,
                 UseShellExecute = false,
             }) ?? throw new InvalidOperationException("Could not start NtwtfDecode.");
+            string actualPacked = process.StandardOutput.ReadToEnd().Trim();
             process.WaitForExit();
             if (process.ExitCode != 0)
             {
                 throw new InvalidOperationException(
                     $"NtwtfDecode could not pack '{source}' (exit {process.ExitCode}).");
             }
-            return packed;
+            if (!File.Exists(actualPacked))
+            {
+                throw new FileNotFoundException(
+                    "NtwtfDecode did not report a packed save it created.", actualPacked);
+            }
+            return actualPacked;
         }
 
         /// <summary>
