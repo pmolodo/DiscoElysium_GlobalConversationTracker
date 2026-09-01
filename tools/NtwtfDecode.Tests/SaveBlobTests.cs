@@ -43,6 +43,21 @@ public class SaveBlobTests
     }
 
     [Fact]
+    public void ReadArchive_ReturnsEveryCompanionMember()
+    {
+        using var temp = new TempDirectory();
+        string path = temp.WriteZip(ZipName, Thumbnail, BlobEntry(BlobName));
+
+        PackedSave packed = SaveBlob.ReadArchive(path);
+
+        Assert.Equal(BlobName, packed.LuaName);
+        Assert.Equal(Blob, packed.LuaBytes);
+        PackedSaveEntry companion = Assert.Single(packed.PassThrough);
+        Assert.Equal(Thumbnail.EntryName, companion.Name);
+        Assert.Equal(Thumbnail.Content, companion.Bytes);
+    }
+
+    [Fact]
     public void Read_PackedSave_FindsABlobNestedInsideTheArchive()
     {
         using var temp = new TempDirectory();

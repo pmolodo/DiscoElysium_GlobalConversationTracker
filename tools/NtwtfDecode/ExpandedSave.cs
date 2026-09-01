@@ -6,6 +6,32 @@ namespace NtwtfDecode;
 /// <summary>Builds a game-ready archive from an expanded sparse save source.</summary>
 public static class ExpandedSave
 {
+    /// <summary>Writes a complete expanded save from a packed input.</summary>
+    public static void Write(
+        string directory,
+        PackedSave packed,
+        LuaTable document,
+        int? indent,
+        bool sparse,
+        string? baseline
+    )
+    {
+        Directory.CreateDirectory(directory);
+        foreach (PackedSaveEntry entry in packed.PassThrough)
+        {
+            File.WriteAllBytes(Path.Combine(directory, entry.Name), entry.Bytes);
+        }
+        string parts = Path.Combine(directory, packed.LuaName + ".parts");
+        if (baseline is null)
+        {
+            LuaSplitFiles.Write(parts, document, indent, sparse);
+        }
+        else
+        {
+            LuaSplitFiles.WriteDiff(parts, document, baseline, indent);
+        }
+    }
+
     /// <summary>
     /// Reconstructs the Lua blob and packs it with the expanded save's pass-through files.
     /// </summary>
@@ -30,9 +56,15 @@ public static class ExpandedSave
             );
         }
 
-        string expandedName = Path.GetFileName(source);
-        string archiveName = expandedName[..^SaveBlob.ExpandedExtension.Length];
-        string parts = Path.Combine(source, expandedName + ".lua.parts");
+        string parts = LuaSplitFiles.ResolveDirectory(source);
+        string partsName = Path.GetFileName(parts);
+        const string PartsSuffix = ".parts";
+        if (!partsName.EndsWith(SaveBlob.LuaExtension + PartsSuffix, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException($"Split directory '{parts}' is not named for a Lua blob");
+        }
+        string luaName = partsName[..^PartsSuffix.Length];
+        string archiveName = luaName[..^SaveBlob.LuaExtension.Length];
         LuaTable document = LuaSplitFiles.Read(parts);
 
         string? parent = Path.GetDirectoryName(output);
@@ -42,7 +74,7 @@ public static class ExpandedSave
         }
         using FileStream destination = File.Create(output);
         using var archive = new ZipArchive(destination, ZipArchiveMode.Create);
-        ZipArchiveEntry lua = archive.CreateEntry(expandedName + ".lua", CompressionLevel.Optimal);
+        ZipArchiveEntry lua = archive.CreateEntry(luaName, CompressionLevel.Optimal);
         using (Stream stream = lua.Open())
         {
             LuaBinary.WriteDocument(stream, document);

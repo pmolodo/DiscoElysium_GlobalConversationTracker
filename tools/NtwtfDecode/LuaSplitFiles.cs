@@ -162,8 +162,14 @@ public static class LuaSplitFiles
         {
             return parts;
         }
+        string[] candidates = Directory.GetDirectories(path, "*.ntwtf.lua.parts");
+        if (candidates.Length == 1)
+        {
+            return candidates[0];
+        }
         throw new InvalidDataException(
-            $"'{path}' is neither a split directory nor an expanded save with sparse parts"
+            $"'{path}' is neither a split directory nor an expanded save with exactly one "
+                + $"*.ntwtf.lua.parts directory (found {candidates.Length})"
         );
     }
 

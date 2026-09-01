@@ -13,7 +13,7 @@ const string Usage = """
     Usage:
       dotnet run --project tools/NtwtfDecode -- <input> [options]
       dotnet run --project tools/NtwtfDecode -- --to-lua <input.json> -o <output.ntwtf.lua>
-      dotnet run --project tools/NtwtfDecode -- <input> --split -o <directory>
+      dotnet run --project tools/NtwtfDecode -- <save.ntwtf.zip> --split -o <expanded.ntwtf>
       dotnet run --project tools/NtwtfDecode -- <input> --split --sparse --base <expanded.ntwtf> -o <directory>
       dotnet run --project tools/NtwtfDecode -- --to-lua <directory> --split -o <output.ntwtf.lua>
       dotnet run --project tools/NtwtfDecode -- --pack <expanded.ntwtf> -o <save.ntwtf.zip>
@@ -22,6 +22,9 @@ const string Usage = """
       - a packed save archive, {save}.ntwtf.zip, as written to SaveGames
       - a {save}.ntwtf.lua file
       - an expanded .ntwtf save folder containing exactly one such file
+
+    Packed input with --split writes a complete expanded save: companion archive
+    members stay at top level and the Lua split goes in <name>.ntwtf.lua.parts.
 
     Options:
       -o, --output PATH   Write output here instead of stdout. With --split
@@ -166,7 +169,12 @@ int Run(string[] argv)
         return 0;
     }
 
-    LuaTable allTables = ReadTables(SaveBlob.Read(input), input, out int trailing);
+    PackedSave? packed = SaveBlob.IsArchive(input) ? SaveBlob.ReadArchive(input) : null;
+    LuaTable allTables = ReadTables(
+        packed?.LuaBytes ?? SaveBlob.Read(input),
+        input,
+        out int trailing
+    );
     if (trailing > 0)
     {
         // PersistentDataManager.ApplyExtraData reads length-prefixed Lua source
@@ -181,6 +189,11 @@ int Run(string[] argv)
         if (output is null)
         {
             throw new ArgumentException("--split conversion to JSON requires --output <directory>");
+        }
+        if (packed is not null)
+        {
+            ExpandedSave.Write(output, packed, allTables, indent, sparse, baseline);
+            return 0;
         }
         if (baseline is null)
         {

@@ -71,15 +71,21 @@ public static class SaveBlob
 
         // Recognised by extension, and also by content, so a save that has been
         // renamed is still handled rather than fed to the decoder as a raw blob.
-        if (input.EndsWith(ZipExtension, StringComparison.OrdinalIgnoreCase) || LooksLikeZip(input))
+        if (IsArchive(input))
         {
-            return ReadFromZip(input);
+            return ReadArchive(input).LuaBytes;
         }
 
         return File.ReadAllBytes(input);
     }
 
-    private static byte[] ReadFromZip(string path)
+    /// <summary>Whether an existing file is a packed save archive.</summary>
+    public static bool IsArchive(string path) =>
+        File.Exists(path)
+        && (path.EndsWith(ZipExtension, StringComparison.OrdinalIgnoreCase) || LooksLikeZip(path));
+
+    /// <summary>Reads the Lua blob and every pass-through member of a packed save.</summary>
+    public static PackedSave ReadArchive(string path)
     {
         using ZipArchive archive = OpenZip(path);
         List<ZipArchiveEntry> blobs = archive
@@ -102,10 +108,29 @@ public static class SaveBlob
             );
         }
 
-        using Stream entryStream = blobs[0].Open();
+        ZipArchiveEntry lua = blobs[0];
+        using Stream entryStream = lua.Open();
         using var buffer = new MemoryStream();
         entryStream.CopyTo(buffer);
-        return buffer.ToArray();
+        var passThrough = new List<PackedSaveEntry>();
+        foreach (ZipArchiveEntry entry in archive.Entries)
+        {
+            if (entry == lua)
+            {
+                continue;
+            }
+            if (entry.FullName != entry.Name || entry.Name.Length == 0)
+            {
+                throw new InvalidDataException(
+                    $"Archive '{path}' has non-flat member '{entry.FullName}'; save members must be files"
+                );
+            }
+            using Stream source = entry.Open();
+            using var bytes = new MemoryStream();
+            source.CopyTo(bytes);
+            passThrough.Add(new PackedSaveEntry(entry.Name, bytes.ToArray()));
+        }
+        return new PackedSave(lua.Name, buffer.ToArray(), passThrough);
     }
 
     private static ZipArchive OpenZip(string path)
@@ -146,3 +171,13 @@ public static class SaveBlob
         return string.Join(", ", shown.Select(name => $"'{name}'")) + (truncated ? ", ..." : "");
     }
 }
+
+/// <summary>A packed save's decoded Lua member and untouched companion members.</summary>
+public sealed record PackedSave(
+    string LuaName,
+    byte[] LuaBytes,
+    IReadOnlyList<PackedSaveEntry> PassThrough
+);
+
+/// <summary>One non-Lua archive member copied through an expanded save.</summary>
+public sealed record PackedSaveEntry(string Name, byte[] Bytes);
