@@ -24,7 +24,7 @@ public static class LuaSplitFiles
     public static void Write(string directory, LuaTable root, int? indent, bool sparse = false)
     {
         Directory.CreateDirectory(directory);
-        LuaTable? conversations = sparse ? TableOf(root, LuaSparse.ConversationTableName) : null;
+        Dictionary<string, SparseMap>? sparseTrees = sparse ? EncodeSparse(root) : null;
         foreach (string name in RawDataParser.TableNames)
         {
             LuaTable table = TableOf(root, name);
@@ -32,12 +32,7 @@ public static class LuaSplitFiles
             using FileStream stream = File.Create(TablePath(directory, name));
             if (sparse)
             {
-                SparseMap map = LuaSparse.Encode(table, name, conversations);
-                map.Entries.Insert(
-                    0,
-                    new KeyValuePair<string, object?>(LuaJson.FormatName, SparseFormat)
-                );
-                SparseJson.Write(stream, map, indent);
+                SparseJson.Write(stream, sparseTrees![name], indent);
             }
             else
             {
@@ -46,6 +41,51 @@ public static class LuaSplitFiles
             stream.WriteByte((byte)'\n');
         }
         File.WriteAllBytes(Path.Combine(directory, TrailingFileName), root.TrailingBytes);
+    }
+
+    /// <summary>Writes only recursive sparse-JSON changes from a baseline.</summary>
+    public static void WriteDiff(
+        string directory,
+        LuaTable root,
+        string baseline,
+        int? indent
+    )
+    {
+        string baselinePath = Path.GetFullPath(baseline);
+        string baseDirectory = ResolveDirectory(baselinePath);
+        Directory.CreateDirectory(directory);
+        Dictionary<string, SparseMap> target = EncodeSparse(root);
+        foreach (string name in RawDataParser.TableNames)
+        {
+            SparseMap baseTree = ReadSparseTable(baseDirectory, name);
+            SparseMap? patch = SparseDiff.Create(baseTree, target[name]);
+            if (patch is null)
+            {
+                continue;
+            }
+            using FileStream stream = File.Create(TablePath(directory, name));
+            SparseJson.Write(stream, patch, indent);
+            stream.WriteByte((byte)'\n');
+        }
+
+        string baseTrailing = Path.Combine(baseDirectory, TrailingFileName);
+        if (!root.TrailingBytes.SequenceEqual(File.ReadAllBytes(baseTrailing)))
+        {
+            File.WriteAllBytes(Path.Combine(directory, TrailingFileName), root.TrailingBytes);
+        }
+
+        var manifest = new SparseMap();
+        manifest.Add(LuaJson.FormatName, SparseDiff.SetFormat);
+        manifest.Add(
+            "base",
+            Path.GetRelativePath(directory, baselinePath)
+                .Replace(Path.DirectorySeparatorChar, '/')
+        );
+        using FileStream manifestStream = File.Create(
+            Path.Combine(directory, SparseDiff.ManifestFileName)
+        );
+        SparseJson.Write(manifestStream, manifest, indent);
+        manifestStream.WriteByte((byte)'\n');
     }
 
     /// <summary>Reads five table JSON files and one trailing-data binary file.</summary>
@@ -59,6 +99,12 @@ public static class LuaSplitFiles
         if (!Directory.Exists(directory))
         {
             throw new DirectoryNotFoundException($"No such split directory: '{directory}'");
+        }
+
+        string manifestPath = Path.Combine(directory, SparseDiff.ManifestFileName);
+        if (File.Exists(manifestPath))
+        {
+            return ReadDiff(directory, manifestPath);
         }
 
         var trees = new Dictionary<string, object?>();
@@ -97,6 +143,66 @@ public static class LuaSplitFiles
             );
         }
 
+        return DecodeSparse(trees, File.ReadAllBytes(Path.Combine(directory, TrailingFileName)));
+    }
+
+    /// <summary>Resolves either a six-file split folder or its expanded save parent.</summary>
+    public static string ResolveDirectory(string path)
+    {
+        if (!Directory.Exists(path))
+        {
+            throw new DirectoryNotFoundException($"No such split directory: '{path}'");
+        }
+        if (File.Exists(TablePath(path, RawDataParser.TableNames[0])))
+        {
+            return path;
+        }
+        string parts = Path.Combine(path, Path.GetFileName(path) + ".lua.parts");
+        if (Directory.Exists(parts))
+        {
+            return parts;
+        }
+        throw new InvalidDataException(
+            $"'{path}' is neither a split directory nor an expanded save with sparse parts"
+        );
+    }
+
+    private static LuaTable ReadDiff(string directory, string manifestPath)
+    {
+        using FileStream manifestStream = File.OpenRead(manifestPath);
+        if (SparseJson.Read(manifestStream) is not SparseMap manifest
+            || manifest.Find(LuaJson.FormatName) is not string format
+            || format != SparseDiff.SetFormat
+            || manifest.Find("base") is not string relativeBase)
+        {
+            throw new InvalidDataException($"'{manifestPath}' is not a sparse diff manifest");
+        }
+        string baseline = ResolveDirectory(
+            Path.GetFullPath(Path.Combine(directory, relativeBase))
+        );
+        var trees = new Dictionary<string, object?>();
+        foreach (string name in RawDataParser.TableNames)
+        {
+            SparseMap tree = ReadSparseTable(baseline, name);
+            string patchPath = TablePath(directory, name);
+            if (File.Exists(patchPath))
+            {
+                using FileStream stream = File.OpenRead(patchPath);
+                tree = SparseJson.Read(stream) is SparseMap patch
+                    ? SparseDiff.Apply(tree, patch, patchPath)
+                    : throw new InvalidDataException($"'{patchPath}' is not a JSON object");
+            }
+            trees[name] = tree;
+        }
+        string trailing = Path.Combine(directory, TrailingFileName);
+        byte[] trailingBytes = File.Exists(trailing)
+            ? File.ReadAllBytes(trailing)
+            : File.ReadAllBytes(Path.Combine(baseline, TrailingFileName));
+        return DecodeSparse(trees, trailingBytes);
+    }
+
+    private static LuaTable DecodeSparse(Dictionary<string, object?> trees, byte[] trailingBytes)
+    {
         // Conversation first: the Variable table may have left out the variables
         // that only repeat it, and needs it to put them back.
         var decoded = new Dictionary<string, LuaTable>
@@ -119,8 +225,36 @@ public static class LuaSplitFiles
             }
             root.Add(name, table);
         }
-        root.TrailingBytes = File.ReadAllBytes(Path.Combine(directory, TrailingFileName));
+        root.TrailingBytes = trailingBytes;
         return root;
+    }
+
+    private static Dictionary<string, SparseMap> EncodeSparse(LuaTable root)
+    {
+        LuaTable conversations = TableOf(root, LuaSparse.ConversationTableName);
+        var trees = new Dictionary<string, SparseMap>();
+        foreach (string name in RawDataParser.TableNames)
+        {
+            SparseMap map = LuaSparse.Encode(TableOf(root, name), name, conversations);
+            map.Entries.Insert(
+                0,
+                new KeyValuePair<string, object?>(LuaJson.FormatName, SparseFormat)
+            );
+            trees[name] = map;
+        }
+        return trees;
+    }
+
+    private static SparseMap ReadSparseTable(string directory, string name)
+    {
+        string path = TablePath(directory, name);
+        using FileStream stream = File.OpenRead(path);
+        if (LuaJson.FormatOf(stream) != SparseFormat)
+        {
+            throw new InvalidDataException($"Diff baseline table '{path}' is not sparse");
+        }
+        return SparseJson.Read(stream) as SparseMap
+            ?? throw new InvalidDataException($"Sparse table '{path}' is not a JSON object");
     }
 
     private static LuaTable TableOf(LuaTable root, string name) =>

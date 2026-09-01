@@ -73,4 +73,45 @@ public class LuaSplitFilesTests
 
         Assert.Throws<FileNotFoundException>(() => LuaSplitFiles.Read(split));
     }
+
+    [Fact]
+    public void DiffOfUnchangedSaveContainsOnlyManifestAndRebuilds()
+    {
+        using var temp = new TempDirectory();
+        string baseline = temp.Combine("baseline");
+        string diff = temp.Combine("diff");
+        byte[] original = LuaBlob.SerializeSampleSave();
+        LuaTable document = LuaTableVisitor.ReadAllTables(original, out _);
+        LuaSplitFiles.Write(baseline, document, indent: 2, sparse: true);
+
+        LuaSplitFiles.WriteDiff(diff, document, baseline, indent: 2);
+        LuaTable rebuilt = LuaSplitFiles.Read(diff);
+        using var output = new MemoryStream();
+        LuaBinary.WriteDocument(output, rebuilt);
+
+        Assert.Equal(
+            new[] { SparseDiff.ManifestFileName },
+            Directory.GetFiles(diff).Select(Path.GetFileName).ToArray()
+        );
+        Assert.Equal(original, output.ToArray());
+    }
+
+    [Fact]
+    public void DiffCarriesChangedTrailingBytes()
+    {
+        using var temp = new TempDirectory();
+        string baseline = temp.Combine("baseline");
+        string diff = temp.Combine("diff");
+        byte[] original = LuaBlob.SerializeSampleSave();
+        LuaTable baseDocument = LuaTableVisitor.ReadAllTables(original, out _);
+        LuaTable changed = LuaTableVisitor.ReadAllTables(original, out _);
+        changed.TrailingBytes = new byte[] { 1, 2, 3 };
+        LuaSplitFiles.Write(baseline, baseDocument, indent: 2, sparse: true);
+
+        LuaSplitFiles.WriteDiff(diff, changed, baseline, indent: 2);
+        LuaTable rebuilt = LuaSplitFiles.Read(diff);
+
+        Assert.Equal(new byte[] { 1, 2, 3 }, rebuilt.TrailingBytes);
+        Assert.True(File.Exists(Path.Combine(diff, LuaSplitFiles.TrailingFileName)));
+    }
 }

@@ -14,6 +14,7 @@ const string Usage = """
       dotnet run --project tools/NtwtfDecode -- <input> [options]
       dotnet run --project tools/NtwtfDecode -- --to-lua <input.json> -o <output.ntwtf.lua>
       dotnet run --project tools/NtwtfDecode -- <input> --split -o <directory>
+      dotnet run --project tools/NtwtfDecode -- <input> --split --sparse --base <expanded.ntwtf> -o <directory>
       dotnet run --project tools/NtwtfDecode -- --to-lua <directory> --split -o <output.ntwtf.lua>
       dotnet run --project tools/NtwtfDecode -- --pack <expanded.ntwtf> -o <save.ntwtf.zip>
 
@@ -31,6 +32,8 @@ const string Usage = """
           --compact       Single-line JSON (overrides --indent).
           --to-lua        Convert reversible JSON back to a .ntwtf.lua blob.
           --pack          Rebuild and pack an expanded sparse save for the game.
+          --base PATH     With --split --sparse, write a recursive JSON diff against
+                          this sparse split directory or expanded save.
           --split         Use five table JSON files (Actor.json through
                           Conversation.json) plus trailing.bin in one directory.
           --sparse        With --split, restructure the tables whose shape is
@@ -70,6 +73,7 @@ int Run(string[] argv)
     bool split = false;
     bool sparse = false;
     bool pack = false;
+    string? baseline = null;
 
     for (int i = 0; i < argv.Length; i++)
     {
@@ -96,6 +100,9 @@ int Run(string[] argv)
                 break;
             case "--pack":
                 pack = true;
+                break;
+            case "--base":
+                baseline = NextArg(argv, ref i, arg);
                 break;
             case "--split":
                 split = true;
@@ -125,6 +132,10 @@ int Run(string[] argv)
     if (sparse && !split)
     {
         throw new ArgumentException($"--sparse only applies to --split output\n\n{Usage}");
+    }
+    if (baseline is not null && (!split || !sparse || toLua || pack))
+    {
+        throw new ArgumentException($"--base requires --split --sparse output\n\n{Usage}");
     }
 
     if (pack)
@@ -171,7 +182,14 @@ int Run(string[] argv)
         {
             throw new ArgumentException("--split conversion to JSON requires --output <directory>");
         }
-        LuaSplitFiles.Write(output, allTables, indent, sparse);
+        if (baseline is null)
+        {
+            LuaSplitFiles.Write(output, allTables, indent, sparse);
+        }
+        else
+        {
+            LuaSplitFiles.WriteDiff(output, allTables, baseline, indent);
+        }
         return 0;
     }
 
