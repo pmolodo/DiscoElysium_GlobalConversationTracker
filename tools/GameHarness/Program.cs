@@ -43,12 +43,6 @@ namespace GlobalConversationTracker.Harness
         private const string SaveLoadedLogText =
             "Resynced the global state after a savegame load:";
 
-        private static readonly string[] DefaultGamePaths =
-        {
-            @"C:\apps (x86)\games\steam\steamapps\common\Disco Elysium\disco.exe",
-            @"C:\Program Files (x86)\Steam\steamapps\common\Disco Elysium\disco.exe",
-        };
-
         /// <summary>Entry point.</summary>
         /// <param name="args">The verb and its options.</param>
         /// <returns>0 when every check passed.</returns>
@@ -1439,25 +1433,7 @@ Options:
 
         private static string ResolveGame(Options options)
         {
-            if (options.GamePath != null)
-            {
-                if (!File.Exists(options.GamePath))
-                {
-                    throw new FileNotFoundException($"No game at {options.GamePath}.", options.GamePath);
-                }
-
-                return options.GamePath;
-            }
-
-            foreach (string candidate in DefaultGamePaths)
-            {
-                if (File.Exists(candidate))
-                {
-                    return candidate;
-                }
-            }
-
-            throw new FileNotFoundException("Could not find disco.exe. Pass --game.");
+            return GameInstall.FindGame(options.GamePath);
         }
 
         /// <summary>Turns an expanded sparse save into the archive the game reads.</summary>
@@ -1508,25 +1484,10 @@ Options:
             return actualPacked;
         }
 
-        /// <summary>
-        /// The repository root, found by walking up from the assembly to the directory
-        /// holding the solution.
-        /// </summary>
+        /// <summary>The repository root, which is where the test data lives.</summary>
         private static string RepoRoot()
         {
-            var directory = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
-            while (directory != null)
-            {
-                if (File.Exists(Path.Combine(directory.FullName, "GlobalConversationTracker.slnx")))
-                {
-                    return directory.FullName;
-                }
-
-                directory = directory.Parent;
-            }
-
-            throw new InvalidOperationException(
-                "Could not find the repository root; pass --artifacts and --settings.");
+            return GameInstall.RepoRoot();
         }
 
         /// <summary>Counts what passed and what did not, and reports at the end.</summary>
