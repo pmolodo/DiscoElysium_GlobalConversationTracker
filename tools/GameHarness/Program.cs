@@ -40,6 +40,9 @@ namespace GlobalConversationTracker.Harness
         /// </remarks>
         private const string TemplateSave = "save_template.ntwtf";
 
+        private const string SaveLoadedLogText =
+            "Resynced the global state after a savegame load:";
+
         private static readonly string[] DefaultGamePaths =
         {
             @"C:\apps (x86)\games\steam\steamapps\common\Disco Elysium\disco.exe",
@@ -918,6 +921,8 @@ Options:
             string artifacts = options.Artifacts ?? Path.Combine(RepoRoot(), @".build\automation");
             string testSettings = options.TestSettings ?? Path.Combine(RepoRoot(), @"testing\Settings.json");
             string referencePath = Path.Combine(artifacts, "main-menu.png");
+            string logPath = Path.Combine(
+                Path.GetDirectoryName(game), "BepInEx", "LogOutput.log");
 
             Directory.CreateDirectory(artifacts);
 
@@ -1138,6 +1143,20 @@ Options:
                     return checks.Report();
                 }
 
+                if (!File.Exists(logPath))
+                {
+                    throw new FileNotFoundException(
+                        $"No BepInEx log at {logPath}; cannot verify that the save loaded.",
+                        logPath);
+                }
+
+                if (LogContains(logPath, SaveLoadedLogText))
+                {
+                    throw new InvalidOperationException(
+                        "The current BepInEx log already says a save loaded before the load key "
+                        + "was sent, so it cannot prove this command loaded the staged save.");
+                }
+
                 GameWindows.BringToFront(window.Handle);
                 GameSession.SendKeys(options.Keys, options.Verbose ? Log : (Action<string>?)null);
 
@@ -1160,14 +1179,21 @@ Options:
                     left.Succeeded,
                     $"difference {left.Difference:N4}; too low means the keys did nothing");
 
-                GameScreen.SaveCapture(window.Handle, Path.Combine(artifacts, "after-keys.png"));
-
                 Console.WriteLine();
-                Console.WriteLine(
-                    "Look at after-keys.png. That the screen changed is checked; that the save");
-                Console.WriteLine(
-                    "LOADED is not, and cannot be until there is a reference for the loaded");
-                Console.WriteLine("screen to compare against.");
+                Console.WriteLine("waiting for the tracker to receive the loaded save...");
+                bool loaded = WaitForLogText(
+                    logPath,
+                    SaveLoadedLogText,
+                    TimeSpan.FromSeconds(options.TimeoutSeconds));
+                string loadDetail = loaded
+                    ? $"saw '{SaveLoadedLogText}' in {logPath}"
+                    : $"'{SaveLoadedLogText}' did not appear in {logPath}";
+                checks.Check(
+                    "the staged save finished loading",
+                    loaded,
+                    loadDetail);
+
+                GameScreen.SaveCapture(window.Handle, Path.Combine(artifacts, "after-load.png"));
 
                 Console.WriteLine();
                 Console.WriteLine($"screenshots are in {artifacts}");
@@ -1240,6 +1266,40 @@ Options:
                 }
                 }
             }
+        }
+
+        private static bool WaitForLogText(string path, string text, TimeSpan timeout)
+        {
+            DateTime deadline = DateTime.UtcNow + timeout;
+            while (DateTime.UtcNow < deadline)
+            {
+                try
+                {
+                    if (LogContains(path, text))
+                    {
+                        return true;
+                    }
+                }
+                catch (IOException)
+                {
+                    // BepInEx may be writing the file while it is sampled.
+                }
+
+                Thread.Sleep(500);
+            }
+
+            return false;
+        }
+
+        private static bool LogContains(string path, string text)
+        {
+            using var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd().Contains(text);
         }
 
         /// <summary>
