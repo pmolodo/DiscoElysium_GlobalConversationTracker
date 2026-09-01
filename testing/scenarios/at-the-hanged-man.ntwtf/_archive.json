@@ -1,0 +1,30 @@
+{
+  "_format": "expanded-save-diff",
+  "base": "../../save_template.ntwtf",
+  "members": [
+    {
+      "diff": "at-the-hanged-man.1st.ntwtf.json",
+      "kind": "json",
+      "name": "at-the-hanged-man.1st.ntwtf.json",
+      "suffix": ".1st.ntwtf.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "at-the-hanged-man.2nd.ntwtf.json",
+      "suffix": ".2nd.ntwtf.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "at-the-hanged-man.FOW.json",
+      "suffix": ".FOW.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "at-the-hanged-man.states.lua",
+      "suffix": ".states.lua"
+    }
+  ]
+}

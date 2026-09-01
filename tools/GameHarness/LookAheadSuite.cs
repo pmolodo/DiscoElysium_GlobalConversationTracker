@@ -18,6 +18,28 @@ namespace GlobalConversationTracker.Harness
         Red = 2,
     }
 
+    /// <summary>How much a scenario claims about the markers in its menu.</summary>
+    public enum MarkerPolicy
+    {
+        /// <summary>
+        /// Named options must match, and every other option must be unmarked.
+        /// </summary>
+        Named = 0,
+
+        /// <summary>
+        /// Nothing in the menu should be marked, whatever it offers. For a conversation
+        /// whose option ids are not known until it has been opened once.
+        /// </summary>
+        NoneAnywhere = 1,
+
+        /// <summary>
+        /// The markers are not the subject. For a scenario that exists to measure what a
+        /// crawl costs, where what gets marked depends on parts of the database the
+        /// scenario has not arranged and asserting it would be inventing a claim.
+        /// </summary>
+        Ignored = 2,
+    }
+
     /// <summary>What one option in a menu should look like.</summary>
     public sealed class OptionExpectation
     {
@@ -58,12 +80,7 @@ namespace GlobalConversationTracker.Harness
         /// <param name="options">What each named option should carry.</param>
         /// <param name="money">The balance to assert, or null not to.</param>
         /// <param name="dayMinutes">The clock to assert, or null not to.</param>
-        /// <param name="expectsNoMarkers">
-        /// Whether nothing in this menu should be marked, whatever it offers. For a
-        /// conversation whose option ids are not known in advance: the run already
-        /// checks that options a scenario does not name are unmarked, so naming none
-        /// of them says exactly this.
-        /// </param>
+        /// <param name="markers">How much the scenario claims about the markers.</param>
         /// <exception cref="ArgumentNullException">An argument is null.</exception>
         public LookAheadScenario(
             string saveName,
@@ -72,7 +89,7 @@ namespace GlobalConversationTracker.Harness
             IReadOnlyList<OptionExpectation> options,
             int? money = null,
             int? dayMinutes = null,
-            bool expectsNoMarkers = false)
+            MarkerPolicy markers = MarkerPolicy.Named)
         {
             SaveName = saveName ?? throw new ArgumentNullException(nameof(saveName));
             ConversationId = conversationId;
@@ -80,7 +97,7 @@ namespace GlobalConversationTracker.Harness
             Options = options ?? throw new ArgumentNullException(nameof(options));
             Money = money;
             DayMinutes = dayMinutes;
-            ExpectsNoMarkers = expectsNoMarkers;
+            Markers = markers;
         }
 
         /// <summary>The staged save's name, without extension.</summary>
@@ -101,8 +118,8 @@ namespace GlobalConversationTracker.Harness
         /// <summary>The clock to assert, in minutes past midnight, or null not to.</summary>
         public int? DayMinutes { get; }
 
-        /// <summary>Whether nothing in this menu should be marked, whatever it offers.</summary>
-        public bool ExpectsNoMarkers { get; }
+        /// <summary>How much the scenario claims about the markers.</summary>
+        public MarkerPolicy Markers { get; }
 
         /// <summary>Whether the scenario says anything about an entry.</summary>
         /// <param name="entryId">The entry, which may be unreadable.</param>

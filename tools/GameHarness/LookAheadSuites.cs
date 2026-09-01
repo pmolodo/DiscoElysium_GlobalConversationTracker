@@ -36,17 +36,73 @@ namespace GlobalConversationTracker.Harness
         /// <summary>The option that leaves, reaching nothing.</summary>
         public const int LeaveEntry = 85;
 
-        /// <summary>The ceiling fan in the player's first room; no purchase in it.</summary>
-        public const int CeilingFanConversation = 9;
+        /// <summary>
+        /// A conversation, and a save that puts the player beside the actor it belongs to.
+        /// </summary>
+        /// <remarks>
+        /// The pairing is the point. The probe will open any conversation by id from
+        /// anywhere, which is convenient and wrong: a conversation started somewhere else
+        /// can stall outright - its sequences reach for a scene that is not loaded, and it
+        /// sits there active with no menu - and where it does run it may take branches it
+        /// would not take in its own place. Every position here is one the game itself
+        /// wrote for a character in a real save, chosen as the nearest recorded position
+        /// to that actor, because a recorded position is known to be standing and on the
+        /// navmesh.
+        /// </remarks>
+        public sealed class Somewhere
+        {
+            /// <summary>Creates a pairing.</summary>
+            /// <param name="save">The save that stands in the right place.</param>
+            /// <param name="conversation">The conversation to open from there.</param>
+            /// <param name="what">Where it is and who is there.</param>
+            public Somewhere(string save, int conversation, string what)
+            {
+                Save = save;
+                Conversation = conversation;
+                What = what;
+            }
 
-        /// <summary>A small, heavily gated conversation on the Whirling's second floor.</summary>
-        public const int KlaasjesNoteConversation = 717;
+            /// <summary>The save that stands in the right place.</summary>
+            public string Save { get; }
 
-        /// <summary>A mid-sized one, on the Whirling's ground floor.</summary>
-        public const int SmokerConversation = 892;
+            /// <summary>The conversation to open from there.</summary>
+            public int Conversation { get; }
 
-        /// <summary>One of the largest conversations in the game.</summary>
-        public const int GarteConversation = 28;
+            /// <summary>Where it is and who is there.</summary>
+            public string What { get; }
+        }
+
+        /// <summary>Siileng's stall on the canal, where the sneakers are.</summary>
+        public static Somewhere Siileng { get; } =
+            new Somewhere("afford-both", 451, "Siileng's stall, on the canal");
+
+        /// <summary>The player's own room, where a new game starts.</summary>
+        public static Somewhere CeilingFan { get; } =
+            new Somewhere("at-the-fan", 9, "the ceiling fan, in the player's own room");
+
+        /// <summary>Klaasje's room on the Whirling's second floor.</summary>
+        public static Somewhere KlaasjesNote { get; } =
+            new Somewhere("at-klaasjes-note", 717, "Klaasje's note, in her room");
+
+        /// <summary>The cafeteria on the Whirling's ground floor.</summary>
+        public static Somewhere Garte { get; } =
+            new Somewhere("at-garte", 28, "Garte, behind the cafeteria counter");
+
+        /// <summary>The balcony off the same floor.</summary>
+        public static Somewhere Smoker { get; } =
+            new Somewhere("at-the-smoker", 892, "the smoker on the balcony");
+
+        /// <summary>Joyce's sloop, at the pier.</summary>
+        public static Somewhere Joyce { get; } =
+            new Somewhere("at-joyce", 631, "Joyce, on her sloop at the pier");
+
+        /// <summary>The tree in the yard behind the Whirling.</summary>
+        public static Somewhere HangedMan { get; } =
+            new Somewhere("at-the-hanged-man", 14, "the hanged man, in the yard");
+
+        /// <summary>The fishing village, far along the coast.</summary>
+        public static Somewhere DoomSpiral { get; } =
+            new Somewhere("at-the-doom-spiral", 1030, "the doom spiral, in the village");
 
         /// <summary>The global state all three money scenarios share.</summary>
         /// <remarks>
@@ -374,24 +430,19 @@ namespace GlobalConversationTracker.Harness
         /// in it, Klaasje's note is small and heavily gated, the smoker is mid-sized, and
         /// Garte is one of the largest conversations in the game.
         /// </remarks>
-        private static LookAheadScenario[] PristineScenarios => new[]
-        {
-            Nothing("afford-both", SiilengConversation, "Siileng's stall"),
-            Nothing("afford-both", CeilingFanConversation, "the ceiling fan"),
-            Nothing("afford-both", KlaasjesNoteConversation, "Klaasje's note"),
-            Nothing("afford-both", SmokerConversation, "the smoker on the balcony"),
-            Nothing("afford-both", GarteConversation, "Garte"),
-        };
+        private static LookAheadScenario[] PristineScenarios =>
+            new[] { CeilingFan, KlaasjesNote, Smoker, Garte }
+                .Select(Nothing)
+                .ToArray();
 
         /// <summary>A scenario that says nothing in the menu should be marked.</summary>
-        private static LookAheadScenario Nothing(string save, int conversation, string what) =>
+        private static LookAheadScenario Nothing(Somewhere where) =>
             new LookAheadScenario(
-                save,
-                conversation,
-                $"{what}, on a profile that has recorded nothing",
+                where.Save,
+                where.Conversation,
+                $"{where.What}, on a profile that has recorded nothing",
                 Array.Empty<OptionExpectation>(),
-                money: 5100,
-                expectsNoMarkers: true);
+                markers: MarkerPolicy.NoneAnywhere);
 
     /// <summary>
     /// Checks that nothing was crawled.

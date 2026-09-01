@@ -1,0 +1,30 @@
+{
+  "_format": "expanded-save-diff",
+  "base": "../../save_template.ntwtf",
+  "members": [
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "at-the-fan.1st.ntwtf.json",
+      "suffix": ".1st.ntwtf.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "at-the-fan.2nd.ntwtf.json",
+      "suffix": ".2nd.ntwtf.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "at-the-fan.FOW.json",
+      "suffix": ".FOW.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "at-the-fan.states.lua",
+      "suffix": ".states.lua"
+    }
+  ]
+}

@@ -82,10 +82,19 @@ namespace GlobalConversationTracker.Automation.Tests
                 foreach (LookAheadScenario scenario in suite.Scenarios)
                 {
                     Assert.True(
-                        scenario.Options.Count > 0 || scenario.ExpectsNoMarkers,
+                        scenario.Options.Count > 0
+                            || scenario.Markers != MarkerPolicy.Named,
                         $"{suite.Name}/{scenario.SaveName} asserts nothing at all");
                 }
             }
+        }
+
+        [Fact]
+        public void PristineKeepsItsFourRepresentativeConversations()
+        {
+            Assert.Equal(
+                new[] { 9, 717, 892, 28 },
+                LookAheadSuites.Pristine.Scenarios.Select(s => s.ConversationId));
         }
 
         [Fact]

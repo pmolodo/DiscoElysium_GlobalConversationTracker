@@ -293,6 +293,11 @@ namespace GlobalConversationTracker.Harness
                     + $"{option.ConversationId}:{option.EntryId} {Trim(option.Text)}");
             }
 
+            if (scenario.Markers == MarkerPolicy.Ignored)
+            {
+                return;
+            }
+
             foreach (OptionExpectation expected in scenario.Options)
             {
                 ProbeOption? option = options.FirstOrDefault(o => o.EntryId == expected.EntryId);
