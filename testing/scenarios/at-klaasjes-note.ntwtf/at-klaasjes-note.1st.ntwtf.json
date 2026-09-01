@@ -1,6 +1,9 @@
 {
   "_format": "json-diff",
   "_changes": {
-    "areaId": "Whirling-int-f2"
+    "areaId": "Whirling-int-f2",
+    "fowUnrevealersStatusCache": {
+      "fog-whirling-klaasje-main": "ACTIVE"
+    }
   }
 }

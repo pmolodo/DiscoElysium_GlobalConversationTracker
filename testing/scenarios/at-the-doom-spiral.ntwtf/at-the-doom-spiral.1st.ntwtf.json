@@ -1,6 +1,9 @@
 {
   "_format": "json-diff",
   "_changes": {
-    "areaId": "Martinaise-ext"
+    "areaId": "Martinaise-ext",
+    "fowUnrevealersStatusCache": {
+      "fog-main": "ACTIVE"
+    }
   }
 }
