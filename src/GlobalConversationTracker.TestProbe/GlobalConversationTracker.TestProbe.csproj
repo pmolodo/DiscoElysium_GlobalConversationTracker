@@ -1,0 +1,65 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <!-- BepInEx 6.0.0-be.688 runs IL2CPP plugins on CoreCLR .NET 6. -->
+        <TargetFramework>net6.0</TargetFramework>
+        <AssemblyName>GlobalConversationTrackerTestProbe</AssemblyName>
+        <RootNamespace>GlobalConversationTracker.TestProbe</RootNamespace>
+        <Version>0.1.0</Version>
+        <LangVersion>latest</LangVersion>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>disable</ImplicitUsings>
+        <Deterministic>true</Deterministic>
+        <DebugType>portable</DebugType>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <!-- BepInEx resolves plugin dependencies itself; a deps.json only confuses it. -->
+        <GenerateDependencyFile>false</GenerateDependencyFile>
+    </PropertyGroup>
+
+    <!--
+    Deliberately NOT a reference to the mod, and deliberately not compiled into it.
+
+    This assembly exists to watch the mod from outside, and the only thing it borrows
+    is the mod's plugin GUID, which it needs to order its own patches after the mod's.
+    That is copied as a string constant rather than referenced, because a reference
+    would put the mod's DLL beside the probe in the plugins folder and BepInEx would
+    load a second copy of it.
+  -->
+    <PropertyGroup>
+        <NeedsBepInExCore>true</NeedsBepInExCore>
+        <NeedsBepInExInterop>true</NeedsBepInExInterop>
+    </PropertyGroup>
+
+    <!-- BepInEx / Il2CppInterop framework assemblies. -->
+    <ItemGroup>
+        <Reference Include="BepInEx.Core" HintPath="$(BepInExCoreDir)BepInEx.Core.dll"
+            Private="false" />
+        <Reference Include="BepInEx.Unity.Common"
+            HintPath="$(BepInExCoreDir)BepInEx.Unity.Common.dll" Private="false" />
+        <Reference Include="BepInEx.Unity.IL2CPP"
+            HintPath="$(BepInExCoreDir)BepInEx.Unity.IL2CPP.dll" Private="false" />
+        <Reference Include="Il2CppInterop.Runtime"
+            HintPath="$(BepInExCoreDir)Il2CppInterop.Runtime.dll" Private="false" />
+        <Reference Include="0Harmony" HintPath="$(BepInExCoreDir)0Harmony.dll" Private="false" />
+    </ItemGroup>
+
+    <!-- Game assemblies, as generated into BepInEx\interop by the IL2CPP interop step. -->
+    <ItemGroup>
+        <Reference Include="Assembly-CSharp" HintPath="$(BepInExInteropDir)Assembly-CSharp.dll"
+            Private="false" />
+        <Reference Include="DialogueSystem" HintPath="$(BepInExInteropDir)DialogueSystem.dll"
+            Private="false" />
+        <Reference Include="PixelCrushers" HintPath="$(BepInExInteropDir)PixelCrushers.dll"
+            Private="false" />
+        <Reference Include="Il2Cppmscorlib" HintPath="$(BepInExInteropDir)Il2Cppmscorlib.dll"
+            Private="false" />
+        <Reference Include="Il2CppSystem" HintPath="$(BepInExInteropDir)Il2CppSystem.dll"
+            Private="false" />
+        <Reference Include="UnityEngine" HintPath="$(BepInExInteropDir)UnityEngine.dll"
+            Private="false" />
+        <Reference Include="UnityEngine.CoreModule"
+            HintPath="$(BepInExInteropDir)UnityEngine.CoreModule.dll" Private="false" />
+    </ItemGroup>
+
+</Project>

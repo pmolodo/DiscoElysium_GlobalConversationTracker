@@ -61,6 +61,21 @@
             Path="src/GlobalConversationTracker.Session.Tests/GlobalConversationTracker.Session.Tests.csproj" />
         <Project
             Path="src/GlobalConversationTracker.Session/GlobalConversationTracker.Session.csproj" />
+        <!--
+      A second BepInEx plugin, and deliberately not part of the mod. It watches
+      the mod from outside during an automated in-game run and narrates what the
+      game is doing - which conversation opened, and the final text of every
+      dialogue option, which is where the look-ahead's asterisk ends up. Logging
+      that text is the same evidence a pixel diff would chase, exactly, and it
+      says which option was marked.
+
+      It is never shipped and never installed for ordinary play: the harness
+      copies it into BepInEx\plugins for the length of a run and removes it
+      afterwards. Keeping it out of the mod is the point - the assembly a player
+      installs must have no test-only branch in it.
+    -->
+        <Project
+            Path="src/GlobalConversationTracker.TestProbe/GlobalConversationTracker.TestProbe.csproj" />
     </Folder>
 
     <!--
