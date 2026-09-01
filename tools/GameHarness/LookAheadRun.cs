@@ -203,6 +203,9 @@ namespace GlobalConversationTracker.Harness
 
                     RunScenario(scenario, saveGames, watcher, timeout, report);
                 }
+
+                // Before the finally puts the profile back, which is when these exist.
+                CheckArtefacts(suite, saveGames, report);
             }
             finally
             {
@@ -313,6 +316,34 @@ namespace GlobalConversationTracker.Harness
                     $"{scenario.SaveName}: entry {option.EntryId}, which the scenario does "
                         + "not name, is unmarked",
                     $"it is {Describe(MarkerOn(option))}");
+            }
+        }
+
+        /// <summary>Checks the files a suite says the run should leave behind.</summary>
+        /// <remarks>
+        /// Run inside the try, not the finally: the profile is staged, so the mod's
+        /// diagnostics are in the staged SaveGames folder and go away with it.
+        /// </remarks>
+        private static void CheckArtefacts(
+            LookAheadSuite suite, string saveGames, Report report)
+        {
+            foreach (SuiteArtefact artefact in suite.Artefacts)
+            {
+                string path = Path.Combine(saveGames, artefact.FileName);
+                if (!File.Exists(path))
+                {
+                    report.Check(
+                        false,
+                        $"{suite.Name}: {artefact.What}",
+                        $"{artefact.FileName} was never written");
+                    continue;
+                }
+
+                string? complaint = artefact.Check(File.ReadAllText(path));
+                report.Check(
+                    complaint is null,
+                    $"{suite.Name}: {artefact.What}",
+                    complaint ?? $"{artefact.FileName} says so");
             }
         }
 

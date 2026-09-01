@@ -99,6 +99,37 @@ namespace GlobalConversationTracker.Harness
             entryId is int id && Options.Any(o => o.EntryId == id);
     }
 
+    /// <summary>A file the run should leave in the profile's SaveGames folder.</summary>
+    /// <remarks>
+    /// Checked before the profile is put back, because that is when it exists. The mod's
+    /// diagnostics are written there and are the only evidence for some of what the
+    /// look-ahead does - a budget overflow leaves no other trace, since the feature's
+    /// response to running out is to say nothing.
+    /// </remarks>
+    public sealed class SuiteArtefact
+    {
+        /// <summary>Creates an artefact check.</summary>
+        /// <param name="fileName">Its name inside SaveGames.</param>
+        /// <param name="what">What it proves, in one line.</param>
+        /// <param name="check">Returns null when the contents are right, else why not.</param>
+        /// <exception cref="ArgumentNullException">An argument is null.</exception>
+        public SuiteArtefact(string fileName, string what, Func<string, string?> check)
+        {
+            FileName = fileName ?? throw new ArgumentNullException(nameof(fileName));
+            What = what ?? throw new ArgumentNullException(nameof(what));
+            Check = check ?? throw new ArgumentNullException(nameof(check));
+        }
+
+        /// <summary>Its name inside SaveGames.</summary>
+        public string FileName { get; }
+
+        /// <summary>What it proves.</summary>
+        public string What { get; }
+
+        /// <summary>Returns null when the contents are right, else why not.</summary>
+        public Func<string, string?> Check { get; }
+    }
+
     /// <summary>
     /// A set of scenarios that can share one launch of the game.
     /// </summary>
@@ -123,13 +154,15 @@ namespace GlobalConversationTracker.Harness
         /// </param>
         /// <param name="scenarios">The scenarios, in the order they run.</param>
         /// <param name="pluginSettings">Mod settings to change for the run, or null.</param>
+        /// <param name="artefacts">Files the run should leave behind, or null.</param>
         /// <exception cref="ArgumentNullException">An argument is null.</exception>
         public LookAheadSuite(
             string name,
             string what,
             string globalStateFile,
             IReadOnlyList<LookAheadScenario> scenarios,
-            IReadOnlyDictionary<string, string>? pluginSettings = null)
+            IReadOnlyDictionary<string, string>? pluginSettings = null,
+            IReadOnlyList<SuiteArtefact>? artefacts = null)
         {
             Name = name ?? throw new ArgumentNullException(nameof(name));
             What = what ?? throw new ArgumentNullException(nameof(what));
@@ -137,6 +170,7 @@ namespace GlobalConversationTracker.Harness
                 ?? throw new ArgumentNullException(nameof(globalStateFile));
             Scenarios = scenarios ?? throw new ArgumentNullException(nameof(scenarios));
             PluginSettings = pluginSettings ?? new Dictionary<string, string>();
+            Artefacts = artefacts ?? Array.Empty<SuiteArtefact>();
         }
 
         /// <summary>What to call it on the command line.</summary>
@@ -153,5 +187,8 @@ namespace GlobalConversationTracker.Harness
 
         /// <summary>Mod settings to change for the run.</summary>
         public IReadOnlyDictionary<string, string> PluginSettings { get; }
+
+        /// <summary>Files the run should leave behind, checked before the restore.</summary>
+        public IReadOnlyList<SuiteArtefact> Artefacts { get; }
     }
 }

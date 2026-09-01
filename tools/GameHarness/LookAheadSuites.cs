@@ -43,7 +43,7 @@ namespace GlobalConversationTracker.Harness
         /// Computed rather than stored: a static field would be initialised before the
         /// suites it names, and would quietly hold nulls.
         /// </remarks>
-        public static IReadOnlyList<LookAheadSuite> All => new[] { Money };
+        public static IReadOnlyList<LookAheadSuite> All => new[] { Money, Budget };
 
         /// <summary>
         /// The forward scan spends as it walks.
@@ -86,6 +86,56 @@ namespace GlobalConversationTracker.Harness
                     "the sneakers cannot be bought at all",
                     AllUnmarked("nothing on the path is affordable"),
                     money: 4900),
+            });
+
+        /// <summary>
+        /// A crawl that runs out of budget shows nothing, and says where it stopped.
+        /// </summary>
+        /// <remarks>
+        /// <para>The same save and the same global state as the money suite's first
+        /// scenario, which marks three options - with one setting changed. That makes it
+        /// a clean discriminator: if the markers still appear, the budget is not being
+        /// honoured; if they vanish for any other reason, the money suite would have
+        /// caught it.</para>
+        ///
+        /// <para>A budget of one is exhausted before the search dequeues anything, so
+        /// LookAheadResult.Best stays at SeenThisGame and no option can beat its own
+        /// state. That is the feature's deliberate failure mode: it costs a marker rather
+        /// than a slow menu, and until now nothing checked that it does.</para>
+        ///
+        /// <para>The overflow log is the only other evidence, since saying nothing is
+        /// exactly what an exhausted crawl does. Writing it also exercises the traced
+        /// re-walk - a second engine that only runs on an overflow, so that menus which
+        /// stay within budget pay nothing for a report they will never produce.</para>
+        /// </remarks>
+        public static LookAheadSuite Budget { get; } = new LookAheadSuite(
+            "budget",
+            "a crawl that runs out of budget shows nothing and says where",
+            MoneyState,
+            new[]
+            {
+                new LookAheadScenario(
+                    "afford-both",
+                    SiilengConversation,
+                    "the balance that marks three options, with a budget of one",
+                    AllUnmarked("the crawl gave up before it could reach anything"),
+                    money: 5100),
+            },
+            pluginSettings: new Dictionary<string, string>
+            {
+                ["LookAheadStateBudget"] = "1",
+                ["LogLookAheadBudgetExceeded"] = "true",
+            },
+            artefacts: new[]
+            {
+                new SuiteArtefact(
+                    "look-ahead-budget-overflows.log",
+                    "the overflow log names the option that ran out",
+                    text => text.Contains($"budget exhausted", StringComparison.Ordinal)
+                        && text.Contains($"{SiilengConversation}:", StringComparison.Ordinal)
+                        ? null
+                        : "no overflow block for conversation "
+                            + $"{SiilengConversation} in {text.Length} characters"),
             });
 
         /// <summary>Finds a suite by name.</summary>
