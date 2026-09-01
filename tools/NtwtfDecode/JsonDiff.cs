@@ -18,29 +18,49 @@ public static class JsonDiff
         {
             return null;
         }
-        return new JsonObject
+        // Both members are left out when they have nothing to say. A diff that changes
+        // one field should read as that one field; "_remove": [] on every file is noise
+        // that a reader has to look past to find the change.
+        var patch = new JsonObject { [LuaJson.FormatName] = Format };
+        if (removed.Count > 0)
         {
-            [LuaJson.FormatName] = Format,
-            ["_remove"] = removed,
-            ["_changes"] = changes,
-        };
+            patch["_remove"] = removed;
+        }
+        if (changed)
+        {
+            patch["_changes"] = changes;
+        }
+        return patch;
     }
 
     /// <summary>Applies a diff document to a baseline.</summary>
     public static JsonNode? Apply(JsonNode? baseline, JsonObject patch, string context)
     {
-        if (patch[LuaJson.FormatName]?.GetValue<string>() != Format
-            || patch["_remove"] is not JsonArray removals
-            || !patch.ContainsKey("_changes"))
+        if (patch[LuaJson.FormatName]?.GetValue<string>() != Format)
         {
             throw new InvalidDataException($"{context} is not a {Format} JSON file");
         }
+
+        // Absent means empty, for both. Only the format marker is required, so a diff
+        // that removes nothing and a diff that changes nothing each say only what they
+        // do rather than carrying an empty half.
+        JsonNode? removeNode = patch["_remove"];
+        if (removeNode is not null && removeNode is not JsonArray)
+        {
+            throw new InvalidDataException($"{context} has a '_remove' that is not an array");
+        }
+        var removals = removeNode as JsonArray ?? new JsonArray();
+
         var removed = new HashSet<string>(
             removals.Select(node => node?.GetValue<string>()
                 ?? throw new InvalidDataException($"{context} has a null removal path")),
             StringComparer.Ordinal
         );
-        return MergeNode(baseline, patch["_changes"], string.Empty, removed);
+        // Absent and present-but-null are different: a missing '_changes' changes
+        // nothing, while an explicit null is a document that became null. Only
+        // ContainsKey tells them apart, since the indexer answers null for both.
+        JsonNode? changes = patch.ContainsKey("_changes") ? patch["_changes"] : new JsonObject();
+        return MergeNode(baseline, changes, string.Empty, removed);
     }
 
     /// <summary>Writes JSON using the repository's indented UTF-8 style.</summary>

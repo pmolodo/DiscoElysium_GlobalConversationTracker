@@ -22,15 +22,24 @@ public static class SparseDiff
             return null;
         }
 
-        var removalMap = new SparseMap();
-        foreach (string path in removed)
-        {
-            removalMap.Add(path, true);
-        }
         var patch = new SparseMap();
         patch.Add(LuaJson.FormatName, DiffFormat);
-        patch.Add(RemoveName, removalMap);
-        patch.Add(ChangesName, changes);
+
+        // Left out when empty, like the JSON form: a table diff that only changes a
+        // value should read as that value.
+        if (removed.Count > 0)
+        {
+            var removalMap = new SparseMap();
+            foreach (string path in removed)
+            {
+                removalMap.Add(path, true);
+            }
+            patch.Add(RemoveName, removalMap);
+        }
+        if (changes.Entries.Count > 0)
+        {
+            patch.Add(ChangesName, changes);
+        }
         return patch;
     }
 
@@ -41,8 +50,9 @@ public static class SparseDiff
         {
             throw new InvalidDataException($"{context} is not a {DiffFormat} JSON file");
         }
-        SparseMap removals = RequireMap(patch, RemoveName, context);
-        SparseMap changes = RequireMap(patch, ChangesName, context);
+        // Absent means empty for both, so a patch states only what it does.
+        SparseMap removals = OptionalMap(patch, RemoveName, context);
+        SparseMap changes = OptionalMap(patch, ChangesName, context);
         var removed = new HashSet<string>(
             removals.Entries.Select(entry => entry.Key),
             StringComparer.Ordinal
@@ -126,6 +136,10 @@ public static class SparseDiff
         }
         return merged;
     }
+
+    /// <summary>A member map, or an empty one when the member is absent.</summary>
+    private static SparseMap OptionalMap(SparseMap patch, string name, string context) =>
+        patch.Find(name) is null ? new SparseMap() : RequireMap(patch, name, context);
 
     private static SparseMap RequireMap(SparseMap parent, string name, string context) =>
         parent.Find(name) is SparseMap map
