@@ -52,13 +52,12 @@ public static class LuaSplitFiles
     )
     {
         string baselinePath = Path.GetFullPath(baseline);
-        string baseDirectory = ResolveDirectory(baselinePath);
+        SparseBaseline baseData = ReadBaseline(baselinePath);
         Directory.CreateDirectory(directory);
         Dictionary<string, SparseMap> target = EncodeSparse(root);
         foreach (string name in RawDataParser.TableNames)
         {
-            SparseMap baseTree = ReadSparseTable(baseDirectory, name);
-            SparseMap? patch = SparseDiff.Create(baseTree, target[name]);
+            SparseMap? patch = SparseDiff.Create(baseData.Trees[name], target[name]);
             if (patch is null)
             {
                 continue;
@@ -68,8 +67,7 @@ public static class LuaSplitFiles
             stream.WriteByte((byte)'\n');
         }
 
-        string baseTrailing = Path.Combine(baseDirectory, TrailingFileName);
-        if (!root.TrailingBytes.SequenceEqual(File.ReadAllBytes(baseTrailing)))
+        if (!root.TrailingBytes.SequenceEqual(baseData.TrailingBytes))
         {
             File.WriteAllBytes(Path.Combine(directory, TrailingFileName), root.TrailingBytes);
         }
@@ -183,13 +181,12 @@ public static class LuaSplitFiles
         {
             throw new InvalidDataException($"'{manifestPath}' is not a sparse diff manifest");
         }
-        string baseline = ResolveDirectory(
-            Path.GetFullPath(Path.Combine(directory, relativeBase))
-        );
+        string baselinePath = Path.GetFullPath(Path.Combine(directory, relativeBase));
+        SparseBaseline baseline = ReadBaseline(baselinePath);
         var trees = new Dictionary<string, object?>();
         foreach (string name in RawDataParser.TableNames)
         {
-            SparseMap tree = ReadSparseTable(baseline, name);
+            SparseMap tree = baseline.Trees[name];
             string patchPath = TablePath(directory, name);
             if (File.Exists(patchPath))
             {
@@ -203,7 +200,7 @@ public static class LuaSplitFiles
         string trailing = Path.Combine(directory, TrailingFileName);
         byte[] trailingBytes = File.Exists(trailing)
             ? File.ReadAllBytes(trailing)
-            : File.ReadAllBytes(Path.Combine(baseline, TrailingFileName));
+            : baseline.TrailingBytes;
         return DecodeSparse(trees, trailingBytes);
     }
 
@@ -262,6 +259,32 @@ public static class LuaSplitFiles
         return SparseJson.Read(stream) as SparseMap
             ?? throw new InvalidDataException($"Sparse table '{path}' is not a JSON object");
     }
+
+    private static SparseBaseline ReadBaseline(string path)
+    {
+        if (SaveBlob.IsArchive(path))
+        {
+            PackedSave packed = SaveBlob.ReadArchive(path);
+            LuaTable root = LuaTableVisitor.ReadAllTables(packed.LuaBytes, out _);
+            return new SparseBaseline(EncodeSparse(root), root.TrailingBytes);
+        }
+
+        string directory = ResolveDirectory(path);
+        var trees = new Dictionary<string, SparseMap>();
+        foreach (string name in RawDataParser.TableNames)
+        {
+            trees[name] = ReadSparseTable(directory, name);
+        }
+        return new SparseBaseline(
+            trees,
+            File.ReadAllBytes(Path.Combine(directory, TrailingFileName))
+        );
+    }
+
+    private sealed record SparseBaseline(
+        Dictionary<string, SparseMap> Trees,
+        byte[] TrailingBytes
+    );
 
     private static LuaTable TableOf(LuaTable root, string name) =>
         root.TryGetValue(name, out object? value) && value is LuaTable table

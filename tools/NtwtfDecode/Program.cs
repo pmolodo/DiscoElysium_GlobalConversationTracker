@@ -35,8 +35,9 @@ const string Usage = """
           --compact       Single-line JSON (overrides --indent).
           --to-lua        Convert reversible JSON back to a .ntwtf.lua blob.
           --pack          Rebuild and pack an expanded sparse save for the game.
-          --base PATH     With --split --sparse, write a recursive JSON diff against
-                          this sparse split directory or expanded save.
+          --base PATH     With --split --sparse, diff every save member against this
+                          packed save, sparse split directory, or expanded save.
+                          JSON uses recursive overlays; other members use text diffs.
           --split         Use five table JSON files (Actor.json through
                           Conversation.json) plus trailing.bin in one directory.
           --sparse        With --split, restructure the tables whose shape is
