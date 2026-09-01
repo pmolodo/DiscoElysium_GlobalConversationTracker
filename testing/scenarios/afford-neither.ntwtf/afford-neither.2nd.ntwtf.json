@@ -1,0 +1,9 @@
+{
+  "_format": "json-diff",
+  "_remove": [],
+  "_changes": {
+    "playerCharacter": {
+      "Money": 4900
+    }
+  }
+}

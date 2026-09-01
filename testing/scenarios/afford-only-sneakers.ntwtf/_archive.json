@@ -1,0 +1,30 @@
+{
+  "_format": "expanded-save-diff",
+  "base": "../../../testing/save_template.ntwtf",
+  "members": [
+    {
+      "diff": "afford-only-sneakers.1st.ntwtf.json",
+      "kind": "json",
+      "name": "afford-only-sneakers.1st.ntwtf.json",
+      "suffix": ".1st.ntwtf.json"
+    },
+    {
+      "diff": "afford-only-sneakers.2nd.ntwtf.json",
+      "kind": "json",
+      "name": "afford-only-sneakers.2nd.ntwtf.json",
+      "suffix": ".2nd.ntwtf.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "afford-only-sneakers.FOW.json",
+      "suffix": ".FOW.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "afford-only-sneakers.states.lua",
+      "suffix": ".states.lua"
+    }
+  ]
+}

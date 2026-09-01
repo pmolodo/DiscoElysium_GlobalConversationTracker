@@ -43,8 +43,3 @@ uv.lock
 # it ours to redistribute, and all of it reproducible - a Steam copy from
 # depot_download.ps1, the exports from the tools that made them.
 .game_reference_copies/
-
-# Look-ahead scenario saves, built from testing/save_template.ntwtf by
-# make_scenario_saves.py. Six megabytes of a save that is already committed, with
-# four fields changed; the generator is the diff worth keeping.
-testing/scenarios/

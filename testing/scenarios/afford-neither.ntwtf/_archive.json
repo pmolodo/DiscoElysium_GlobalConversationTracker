@@ -1,0 +1,30 @@
+{
+  "_format": "expanded-save-diff",
+  "base": "../../../testing/save_template.ntwtf",
+  "members": [
+    {
+      "diff": "afford-neither.1st.ntwtf.json",
+      "kind": "json",
+      "name": "afford-neither.1st.ntwtf.json",
+      "suffix": ".1st.ntwtf.json"
+    },
+    {
+      "diff": "afford-neither.2nd.ntwtf.json",
+      "kind": "json",
+      "name": "afford-neither.2nd.ntwtf.json",
+      "suffix": ".2nd.ntwtf.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "afford-neither.FOW.json",
+      "suffix": ".FOW.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "afford-neither.states.lua",
+      "suffix": ".states.lua"
+    }
+  ]
+}

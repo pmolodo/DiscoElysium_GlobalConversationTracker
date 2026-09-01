@@ -183,10 +183,10 @@ Verbs:
                       check the screen changed to something else.
   look-ahead          Launch once, then for each money scenario ask the test
                       probe to load its save and open Siileng's conversation,
-                      and check which options carry a look-ahead marker. Needs
-                      the probe installed and the scenarios built by
-                      make_scenario_saves.py. --artifacts names the scenario
-                      folder for this verb.
+                      and check which options carry a look-ahead marker. The
+                      scenarios are committed under testing/scenarios as sparse
+                      diffs of save_template; the probe is installed and removed
+                      by this verb. --artifacts names the scenario folder.
   analyse-timeline    Read a recorded timeline back and report which frames
                       identify which screens, with a measured threshold. Add
                       --save-reference to write the chosen frame as main-menu.png.

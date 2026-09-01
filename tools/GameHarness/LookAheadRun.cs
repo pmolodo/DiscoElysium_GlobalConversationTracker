@@ -144,7 +144,7 @@ namespace GlobalConversationTracker.Harness
                 if (!Directory.Exists(expanded))
                 {
                     throw new DirectoryNotFoundException(
-                        $"No scenario save at {expanded}. Run make_scenario_saves.py first.");
+                        $"No scenario save at {expanded}.");
                 }
 
                 string archive = Program.PackSave(expanded, artifacts);
@@ -162,7 +162,7 @@ namespace GlobalConversationTracker.Harness
             if (!File.Exists(globalState))
             {
                 throw new FileNotFoundException(
-                    $"No staged global state at {globalState}. Run make_scenario_saves.py first.",
+                    $"No staged global state at {globalState}.",
                     globalState);
             }
 
