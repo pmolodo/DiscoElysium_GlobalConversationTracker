@@ -55,8 +55,7 @@
     "short_description": "",
     "LongDescription": "",
     "color": 1,
-    "Articy_Id": "0x01000000000004FC",
-    "Bark_Index": 0
+    "Articy_Id": "0x01000000000004FC"
   },
   "Cunoesse": {
     "Name": "Cunoesse",
@@ -69,8 +68,7 @@
     "short_description": "",
     "LongDescription": "",
     "color": 1,
-    "Articy_Id": "0x0100000000000500",
-    "Bark_Index": 0
+    "Articy_Id": "0x0100000000000500"
   },
   "Smoker_on_the_Balcony": {
     "Name": "Smoker on the Balcony",
@@ -135,8 +133,7 @@
     "short_description": "",
     "LongDescription": "",
     "color": 1,
-    "Articy_Id": "0x0100000900001971",
-    "Bark_Index": 3
+    "Articy_Id": "0x0100000900001971"
   },
   "Annette": {
     "Name": "Annette",
@@ -591,8 +588,7 @@
     "short_description": "",
     "LongDescription": "",
     "color": 1,
-    "Articy_Id": "0x01000014000004A2",
-    "Bark_Index": 0
+    "Articy_Id": "0x01000014000004A2"
   },
   "Union_Rookie": {
     "Name": "Union Rookie",
@@ -646,8 +642,7 @@
     "short_description": "",
     "LongDescription": "",
     "color": 1,
-    "Articy_Id": "0x010000160000271F",
-    "Bark_Index": 0
+    "Articy_Id": "0x010000160000271F"
   },
   "René_Arnoux": {
     "Name": "René Arnoux",
@@ -660,8 +655,7 @@
     "short_description": "",
     "LongDescription": "",
     "color": 1,
-    "Articy_Id": "0x0100002C0000000E",
-    "Bark_Index": 0
+    "Articy_Id": "0x0100002C0000000E"
   },
   "Gaston_Martin": {
     "Name": "Gaston Martin",
@@ -674,8 +668,7 @@
     "short_description": "",
     "LongDescription": "",
     "color": 1,
-    "Articy_Id": "0x0100002C00000012",
-    "Bark_Index": 2
+    "Articy_Id": "0x0100002C00000012"
   },
   "Working_Class_Woman": {
     "Name": "Working Class Woman",
@@ -1012,8 +1005,7 @@
     "short_description": "",
     "LongDescription": "",
     "color": 1,
-    "Articy_Id": "0x0100004D00003A96",
-    "Bark_Index": 1
+    "Articy_Id": "0x0100004D00003A96"
   },
   "Washerwoman": {
     "Name": "Washerwoman",
@@ -1051,8 +1043,7 @@
     "short_description": "",
     "LongDescription": "",
     "color": 1,
-    "Articy_Id": "0x0100002F0000EFD2",
-    "Bark_Index": 6
+    "Articy_Id": "0x0100002F0000EFD2"
   },
   "Idiot_Doom_Spiral": {
     "Name": "Idiot Doom Spiral",
@@ -1194,8 +1185,7 @@
     "short_description": "",
     "LongDescription": "",
     "color": 1,
-    "Articy_Id": "0x0100002F0000F960",
-    "Bark_Index": 0
+    "Articy_Id": "0x0100002F0000F960"
   },
   "The_Pigs": {
     "Name": "The Pigs",
@@ -1286,8 +1276,7 @@
     "short_description": "",
     "LongDescription": "",
     "color": 1,
-    "Articy_Id": "0x0100004C0000C050",
-    "Bark_Index": 3
+    "Articy_Id": "0x0100004C0000C050"
   },
   "Shanky": {
     "Name": "Shanky",
@@ -1300,8 +1289,7 @@
     "short_description": "",
     "LongDescription": "",
     "color": 1,
-    "Articy_Id": "0x0100004C0000C054",
-    "Bark_Index": 0
+    "Articy_Id": "0x0100004C0000C054"
   },
   "Eugene": {
     "Name": "Eugene",
@@ -1314,8 +1302,7 @@
     "short_description": "",
     "LongDescription": "",
     "color": 1,
-    "Articy_Id": "0x0100004C0000C07A",
-    "Bark_Index": 0
+    "Articy_Id": "0x0100004C0000C07A"
   },
   "Alain": {
     "Name": "Alain",
@@ -1328,8 +1315,7 @@
     "short_description": "",
     "LongDescription": "",
     "color": 1,
-    "Articy_Id": "0x0100004C0000C07E",
-    "Bark_Index": 0
+    "Articy_Id": "0x0100004C0000C07E"
   },
   "Elizabeth": {
     "Name": "Elizabeth",
@@ -1465,8 +1451,7 @@
     "short_description": "A man with something to say.",
     "LongDescription": "",
     "color": 1,
-    "Articy_Id": "0x0100006B00009D07",
-    "Bark_Index": 2
+    "Articy_Id": "0x0100006B00009D07"
   },
   "Nix_Gottlieb": {
     "Name": "Nix Gottlieb",
@@ -2132,7 +2117,7 @@
     "Description": "A radio tuned to an interisolar weather station on the second floor of Whirling.",
     "character_short_name": "radio",
     "Articy_Id": "0x0100002B0000670B",
-    "Bark_Index": 10
+    "Bark_Index": 0
   },
   "Mail_Collection_Box": {
     "Name": "Mail Collection Box",
@@ -3397,8 +3382,7 @@
     "short_description": "",
     "LongDescription": "",
     "color": 1,
-    "Articy_Id": "0x0100002B00005079",
-    "Bark_Index": 0
+    "Articy_Id": "0x0100002B00005079"
   },
   "Judit_Minot": {
     "Name": "Judit Minot",
@@ -3571,15 +3555,7 @@
     "short_description": "",
     "LongDescription": "",
     "color": 1,
-    "Articy_Id": "0x0100000000000445",
-    "Position_Whirling_int_f1": "-5.17376,0.007123602,0.9441706,0,0.4782508,0,0.8782233,Whirling-int-f1",
-    "Position_Martinaise_ext": "-15.40064,4.267382,-48.96547,0,0.4814715,0,-0.8764617,Martinaise-ext",
-    "Position_Whirling_int_f2": "-7.714442,3.635526,-2.071526,0,0.6724472,0,0.7401451,Whirling-int-f2",
-    "Position_Kiosque_int": "7.48611,0.3796855,-6.136166,0,0,0,1,Kiosque-int",
-    "Position_Pawnshop_int": "-3.130887,0.108342,9.703771,0,0.9930319,0,0.1178456,Pawnshop-int",
-    "Position_Doomed_commerce_int_f1": "-6.267494,0.3346467,0.3390734,0,0.9982547,0,-0.05905676,Doomed-commerce-int-f1",
-    "Position_Capeside_apartments_int": "-10.05321,1.928598,20.23778,0,0.5913802,0,-0.806393,Capeside-apartments-int",
-    "Position_FV_house_int": "-4.634374,1.121056,13.35782,0,0.9875852,0,-0.1570844,FV-house-int"
+    "Articy_Id": "0x0100000000000445"
   },
   "You": {
     "Name": "You",
@@ -3589,15 +3565,7 @@
     "character_short_name": "you",
     "color": 7,
     "Articy_Id": "0x010000000000057C",
-    "Position_Whirling_int_f2": "9.31,3.634974,-0.57,0,0.4071351,0,-0.9133679,Whirling-int-f2",
-    "Position_Whirling_int_f1": "-3.764055,0.007118511,-0.1823139,0,0.2749876,0,0.9614478,Whirling-int-f1",
-    "Position_Martinaise_ext": "-15.55373,4.267835,-49.91183,0,0.6010301,0,-0.7992264,Martinaise-ext",
-    "Position_Kiosque_int": "6.779141,0.3798208,-6.522346,0,0.9606528,0,-0.2777521,Kiosque-int",
-    "Position_Pawnshop_int": "-3.780592,0.1083418,8.201941,0,0.9769982,0,0.2132476,Pawnshop-int",
-    "Position_Doomed_commerce_int_f1": "-6.982104,0.3346466,-0.2579026,0,0.9911324,0,-0.1328778,Doomed-commerce-int-f1",
-    "Position_Dream_2": "-19.84013,4.243996,-84.56187,0,0.5296972,0,0.8481868,Dream-2",
-    "Position_Capeside_apartments_int": "-8.599411,1.923557,22.72139,0,0.01857812,0,0.9998274,Capeside-apartments-int",
-    "Position_FV_house_int": "-5.182495,1.121056,14.20561,0,0.8585547,0,-0.512722,FV-house-int"
+    "Position_Whirling_int_f2": "7.203,3.634579,0.644,0,0.2756374,0,-0.9612617,Whirling-int-f2"
   },
   "Conceptualization": {
     "Name": "Conceptualization",
@@ -3934,62 +3902,5 @@
     "LongDescription": "",
     "color": 5,
     "Articy_Id": "0x0100000800000BBC"
-  },
-  "Lena": {
-    "Bark_Index": 0
-  },
-  "gardener": {
-    "Bark_Index": 0
-  },
-  "tareDrunkess": {
-    "Bark_Index": 0
-  },
-  "siileng": {
-    "Bark_Index": 2
-  },
-  "Roy": {
-    "Bark_Index": 0
-  },
-  "Smoker": {
-    "Bark_Index": 0
-  },
-  "Cindy": {
-    "Bark_Index": 0
-  },
-  "gardenerTribunal": {
-    "Bark_Index": 2
-  },
-  "FatAngus": {
-    "Bark_Index": 0
-  },
-  "drunkWorker": {
-    "Bark_Index": 4
-  },
-  "Working_Woman": {
-    "Bark_Index": 7
-  },
-  "Minot": {
-    "Bark_Index": 0
-  },
-  "Netpicker's_Twin": {
-    "Bark_Index": 3
-  },
-  "washerwoman": {
-    "Bark_Index": 1
-  },
-  "Netpicker": {
-    "Bark_Index": 0
-  },
-  "Abigail": {
-    "Bark_Index": 0
-  },
-  "acele": {
-    "Bark_Index": 1
-  },
-  "trant_and_kid": {
-    "Bark_Index": 7
-  },
-  "CanalCrew1": {
-    "Bark_Index": 0
   }
 }

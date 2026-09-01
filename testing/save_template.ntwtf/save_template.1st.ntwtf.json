@@ -1,9 +1,9 @@
 {
-    "areaId": "Martinaise-ext",
+    "areaId": "Whirling-int-f2",
     "partyState": {
-        "isKimInParty": true,
+        "isKimInParty": false,
         "isKimLeftOutside": false,
-        "isKimAbandoned": false,
+        "isKimAbandoned": true,
         "isKimAwayUpToMorning": false,
         "isKimSleepingInHisRoom": false,
         "isCunoInParty": false,
@@ -16,22 +16,12 @@
         "timeSinceKimWentSleepingInHisRoom": 2781,
         "kimLastArrivalLocation": 1,
         "cunoLastArrivalLocation": 0,
-        "hasHangover": false
+        "hasHangover": true
     },
     "fowUnrevealersStatusCache": {
         "fog-whirling-klaasje-main": "UNSEEN",
         "fog-whirling-kitsuragi": "UNSEEN",
         "fog-whirling-klaasje-bathroom": "UNSEEN",
-        "fog-main": "ACTIVE",
-        "fog-whirling-backstage": "UNSEEN",
-        "fog-whirling-union": "ACTIVE",
-        "fog-whirling-kitchen": "ACTIVE",
-        "fog-doomed-f1_curtains": "ACTIVE",
-        "fow_capeside-apps_bathroom": "ACTIVE",
-        "fow_capeside-apps_destroyed": "ACTIVE",
-        "fow_capeside-apps_empty": "ACTIVE",
-        "fow_capeside-apps_hobo": "ACTIVE",
-        "fow_capeside-apps_mazov": "UNSEEN",
-        "fow_capeside-apps_cunos": "UNSEEN"
+        "fog-main": "UNSEEN"
     }
 }
