@@ -173,6 +173,30 @@ public static class LuaSplitFiles
 
     private static LuaTable ReadDiff(string directory, string manifestPath)
     {
+        SparseBaseline resolved = ReadDiffTrees(directory, manifestPath, chain: null);
+        var trees = new Dictionary<string, object?>();
+        foreach (KeyValuePair<string, SparseMap> tree in resolved.Trees)
+        {
+            trees[tree.Key] = tree.Value;
+        }
+        return DecodeSparse(trees, resolved.TrailingBytes);
+    }
+
+    /// <summary>
+    /// Applies a table diff to its base, which may itself be a diff.
+    /// </summary>
+    /// <remarks>
+    /// Chaining is what lets several saves that share a setup state it once: an
+    /// intermediate diff carries the shared tables and each save beyond it carries only
+    /// its own. The tables come back still sparse, so a base can be applied to without
+    /// being decoded first.
+    /// </remarks>
+    private static SparseBaseline ReadDiffTrees(
+        string directory,
+        string manifestPath,
+        HashSet<string>? chain
+    )
+    {
         using FileStream manifestStream = File.OpenRead(manifestPath);
         if (SparseJson.Read(manifestStream) is not SparseMap manifest
             || manifest.Find(LuaJson.FormatName) is not string format
@@ -181,9 +205,13 @@ public static class LuaSplitFiles
         {
             throw new InvalidDataException($"'{manifestPath}' is not a sparse diff manifest");
         }
+
+        chain ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        ExpandedSave.Descend(chain, directory, manifestPath);
+
         string baselinePath = Path.GetFullPath(Path.Combine(directory, relativeBase));
-        SparseBaseline baseline = ReadBaseline(baselinePath);
-        var trees = new Dictionary<string, object?>();
+        SparseBaseline baseline = ReadBaseline(baselinePath, chain);
+        var trees = new Dictionary<string, SparseMap>();
         foreach (string name in RawDataParser.TableNames)
         {
             SparseMap tree = baseline.Trees[name];
@@ -201,7 +229,7 @@ public static class LuaSplitFiles
         byte[] trailingBytes = File.Exists(trailing)
             ? File.ReadAllBytes(trailing)
             : baseline.TrailingBytes;
-        return DecodeSparse(trees, trailingBytes);
+        return new SparseBaseline(trees, trailingBytes);
     }
 
     private static LuaTable DecodeSparse(Dictionary<string, object?> trees, byte[] trailingBytes)
@@ -260,7 +288,7 @@ public static class LuaSplitFiles
             ?? throw new InvalidDataException($"Sparse table '{path}' is not a JSON object");
     }
 
-    private static SparseBaseline ReadBaseline(string path)
+    private static SparseBaseline ReadBaseline(string path, HashSet<string>? chain = null)
     {
         if (SaveBlob.IsArchive(path))
         {
@@ -270,6 +298,16 @@ public static class LuaSplitFiles
         }
 
         string directory = ResolveDirectory(path);
+
+        // A base that is itself a diff has to be applied before it can be read as a
+        // baseline; without this its sparse-diff tables are taken for sparse ones and
+        // refused for not being sparse, which is the truth but not the useful part.
+        string manifestPath = Path.Combine(directory, SparseDiff.ManifestFileName);
+        if (File.Exists(manifestPath))
+        {
+            return ReadDiffTrees(directory, manifestPath, chain);
+        }
+
         var trees = new Dictionary<string, SparseMap>();
         foreach (string name in RawDataParser.TableNames)
         {

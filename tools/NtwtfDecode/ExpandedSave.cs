@@ -11,6 +11,7 @@ namespace NtwtfDecode;
 public static class ExpandedSave
 {
     public const string DiffManifestFileName = "_archive.json";
+
     private static readonly Regex TimestampPattern = new(
         @"\(\d{1,2}_\d{1,2}_\d{4} \d{1,2}-\d{2}-\d{2} (?:AM|PM)\)$",
         RegexOptions.CultureInvariant
@@ -192,6 +193,31 @@ public static class ExpandedSave
         string outputArchiveName
     )
     {
+        foreach (PackedSaveEntry entry in ApplyDiff(source, manifestPath, chain: null))
+        {
+            string outputName = outputArchiveName + entry.Name[archiveName.Length..];
+            ZipArchiveEntry output = archive.CreateEntry(outputName, CompressionLevel.Optimal);
+            using Stream stream = output.Open();
+            stream.Write(entry.Bytes);
+        }
+    }
+
+    /// <summary>
+    /// Materialises the members a diff describes, resolving its base first.
+    /// </summary>
+    /// <remarks>
+    /// The base may itself be a diff, which is what lets several saves that share a
+    /// setup state it once: an intermediate diff names the shared changes, and each save
+    /// beyond it carries only what makes it different. Resolution is therefore
+    /// recursive, and <paramref name="chain"/> is what stops a base that eventually
+    /// points back at itself from recursing forever.
+    /// </remarks>
+    private static List<PackedSaveEntry> ApplyDiff(
+        string source,
+        string manifestPath,
+        HashSet<string>? chain
+    )
+    {
         JsonObject manifest = JsonNode.Parse(File.ReadAllText(manifestPath)) as JsonObject
             ?? throw new InvalidDataException($"'{manifestPath}' is not a JSON object");
         if (manifest[LuaJson.FormatName]?.GetValue<string>() != "expanded-save-diff"
@@ -200,8 +226,13 @@ public static class ExpandedSave
         {
             throw new InvalidDataException($"'{manifestPath}' is not an expanded save diff");
         }
+
+        chain ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Descend(chain, source, manifestPath);
+
         string baselinePath = Path.GetFullPath(Path.Combine(source, relativeBase));
-        SaveMembers baseline = ReadMembers(baselinePath);
+        SaveMembers baseline = ReadMembers(baselinePath, chain);
+        var applied = new List<PackedSaveEntry>();
         foreach (JsonNode? node in members)
         {
             if (node is not JsonObject member
@@ -223,10 +254,27 @@ public static class ExpandedSave
                 ),
                 _ => throw new InvalidDataException($"Diff member '{name}' has unknown kind '{kind}'"),
             };
-            string outputName = outputArchiveName + name[archiveName.Length..];
-            ZipArchiveEntry output = archive.CreateEntry(outputName, CompressionLevel.Optimal);
-            using Stream stream = output.Open();
-            stream.Write(bytes);
+            applied.Add(new PackedSaveEntry(name, bytes));
+        }
+        return applied;
+    }
+
+    /// <summary>
+    /// Records one step of a base chain, refusing one that returns to itself.
+    /// </summary>
+    /// <remarks>
+    /// A cycle is the only way resolution could fail to terminate: every other chain
+    /// ends at a complete save, because the filesystem is finite and each step moves to
+    /// a different directory. So there is no depth limit - a long chain is unusual but
+    /// not wrong, and a cap would only turn a working save into a refused one.
+    /// </remarks>
+    internal static void Descend(HashSet<string> chain, string source, string context)
+    {
+        if (!chain.Add(Path.GetFullPath(source)))
+        {
+            throw new InvalidDataException(
+                $"'{context}' is part of a base chain that returns to '{source}'."
+            );
         }
     }
 
@@ -254,7 +302,7 @@ public static class ExpandedSave
         return Path.Combine(source, diff);
     }
 
-    private static SaveMembers ReadMembers(string path)
+    private static SaveMembers ReadMembers(string path, HashSet<string>? chain = null)
     {
         if (SaveBlob.IsArchive(path))
         {
@@ -263,6 +311,15 @@ public static class ExpandedSave
         }
         string parts = LuaSplitFiles.ResolveDirectory(path);
         string luaName = Path.GetFileName(parts)[..^".parts".Length];
+
+        // A base that is itself a diff has to be applied before it can be read as one,
+        // or its diff files would be taken for the members they describe.
+        string manifestPath = Path.Combine(path, DiffManifestFileName);
+        if (File.Exists(manifestPath))
+        {
+            return BuildMembers(luaName, ApplyDiff(path, manifestPath, chain), path);
+        }
+
         var entries = Directory.GetFiles(path)
             .Where(file => Path.GetFileName(file) != DiffManifestFileName)
             .Select(file => new PackedSaveEntry(Path.GetFileName(file), File.ReadAllBytes(file)))
