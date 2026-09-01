@@ -81,7 +81,9 @@ namespace GlobalConversationTracker.Automation.Tests
             {
                 foreach (LookAheadScenario scenario in suite.Scenarios)
                 {
-                    Assert.NotEmpty(scenario.Options);
+                    Assert.True(
+                        scenario.Options.Count > 0 || scenario.ExpectsNoMarkers,
+                        $"{suite.Name}/{scenario.SaveName} asserts nothing at all");
                 }
             }
         }

@@ -58,6 +58,12 @@ namespace GlobalConversationTracker.Harness
         /// <param name="options">What each named option should carry.</param>
         /// <param name="money">The balance to assert, or null not to.</param>
         /// <param name="dayMinutes">The clock to assert, or null not to.</param>
+        /// <param name="expectsNoMarkers">
+        /// Whether nothing in this menu should be marked, whatever it offers. For a
+        /// conversation whose option ids are not known in advance: the run already
+        /// checks that options a scenario does not name are unmarked, so naming none
+        /// of them says exactly this.
+        /// </param>
         /// <exception cref="ArgumentNullException">An argument is null.</exception>
         public LookAheadScenario(
             string saveName,
@@ -65,7 +71,8 @@ namespace GlobalConversationTracker.Harness
             string why,
             IReadOnlyList<OptionExpectation> options,
             int? money = null,
-            int? dayMinutes = null)
+            int? dayMinutes = null,
+            bool expectsNoMarkers = false)
         {
             SaveName = saveName ?? throw new ArgumentNullException(nameof(saveName));
             ConversationId = conversationId;
@@ -73,6 +80,7 @@ namespace GlobalConversationTracker.Harness
             Options = options ?? throw new ArgumentNullException(nameof(options));
             Money = money;
             DayMinutes = dayMinutes;
+            ExpectsNoMarkers = expectsNoMarkers;
         }
 
         /// <summary>The staged save's name, without extension.</summary>
@@ -92,6 +100,9 @@ namespace GlobalConversationTracker.Harness
 
         /// <summary>The clock to assert, in minutes past midnight, or null not to.</summary>
         public int? DayMinutes { get; }
+
+        /// <summary>Whether nothing in this menu should be marked, whatever it offers.</summary>
+        public bool ExpectsNoMarkers { get; }
 
         /// <summary>Whether the scenario says anything about an entry.</summary>
         /// <param name="entryId">The entry, which may be unreadable.</param>

@@ -36,6 +36,18 @@ namespace GlobalConversationTracker.Harness
         /// <summary>The option that leaves, reaching nothing.</summary>
         public const int LeaveEntry = 85;
 
+        /// <summary>The ceiling fan in the player's first room; no purchase in it.</summary>
+        public const int CeilingFanConversation = 9;
+
+        /// <summary>A small, heavily gated conversation on the Whirling's second floor.</summary>
+        public const int KlaasjesNoteConversation = 717;
+
+        /// <summary>A mid-sized one, on the Whirling's ground floor.</summary>
+        public const int SmokerConversation = 892;
+
+        /// <summary>One of the largest conversations in the game.</summary>
+        public const int GarteConversation = 28;
+
         /// <summary>The global state all three money scenarios share.</summary>
         /// <remarks>
         /// Every entry of the conversation except 80, so reaching 80 is the only way to
@@ -338,15 +350,7 @@ namespace GlobalConversationTracker.Harness
             "pristine",
             "an option that is itself unread anywhere is never marked, and never crawled",
             EmptyState,
-            new[]
-            {
-                new LookAheadScenario(
-                    "afford-both",
-                    SiilengConversation,
-                    "nothing recorded in any save",
-                    AllUnmarked("every option is already as novel as anything it reaches"),
-                    money: 5100),
-            },
+            PristineScenarios,
             pluginSettings: KeepStatistics,
             artefacts: new[]
             {
@@ -355,6 +359,39 @@ namespace GlobalConversationTracker.Harness
                     "no crawl ran at all, because none could have said anything",
                     NoCrawls),
             });
+
+        /// <summary>
+        /// The same fresh profile, put to several conversations of different shapes.
+        /// </summary>
+        /// <remarks>
+        /// The claim is about the whole game rather than one stall, so it is worth asking
+        /// it of more than one conversation - and this is the suite that can, since it
+        /// needs no global state and no save of its own. The probe opens any conversation
+        /// by id wherever the player is standing, so five cost one launch and about five
+        /// seconds each.
+        ///
+        /// Named for their shapes rather than at random: the ceiling fan has no purchase
+        /// in it, Klaasje's note is small and heavily gated, the smoker is mid-sized, and
+        /// Garte is one of the largest conversations in the game.
+        /// </remarks>
+        private static LookAheadScenario[] PristineScenarios => new[]
+        {
+            Nothing("afford-both", SiilengConversation, "Siileng's stall"),
+            Nothing("afford-both", CeilingFanConversation, "the ceiling fan"),
+            Nothing("afford-both", KlaasjesNoteConversation, "Klaasje's note"),
+            Nothing("afford-both", SmokerConversation, "the smoker on the balcony"),
+            Nothing("afford-both", GarteConversation, "Garte"),
+        };
+
+        /// <summary>A scenario that says nothing in the menu should be marked.</summary>
+        private static LookAheadScenario Nothing(string save, int conversation, string what) =>
+            new LookAheadScenario(
+                save,
+                conversation,
+                $"{what}, on a profile that has recorded nothing",
+                Array.Empty<OptionExpectation>(),
+                money: 5100,
+                expectsNoMarkers: true);
 
     /// <summary>
     /// Checks that nothing was crawled.
