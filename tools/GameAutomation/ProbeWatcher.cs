@@ -109,6 +109,7 @@ namespace GlobalConversationTracker.Automation
 
             var clock = Stopwatch.StartNew();
             var seen = new List<string>();
+            int lastReport = -1;
 
             while (true)
             {
@@ -139,7 +140,17 @@ namespace GlobalConversationTracker.Automation
                         $"Waited {timeout.TotalSeconds:N0}s for {what} and it never came. {detail}");
                 }
 
-                progress?.Invoke($"waiting for {what} ({clock.Elapsed.TotalSeconds:N0}s)");
+                // Every ten seconds, not every poll: at two polls a second a three-minute
+                // wait buries the run's actual output under three hundred identical
+                // lines, and the one thing worth saying - that it is still waiting, and
+                // for how long - is said just as well by six of them.
+                int decisecond = (int)(clock.Elapsed.TotalSeconds / 10);
+                if (decisecond != lastReport)
+                {
+                    lastReport = decisecond;
+                    progress?.Invoke($"waiting for {what} ({clock.Elapsed.TotalSeconds:N0}s)");
+                }
+
                 Thread.Sleep(_poll);
             }
         }

@@ -53,6 +53,7 @@ namespace GlobalConversationTracker.TestProbe
 
         private static string? _commandPath;
         private int _sinceLastPoll;
+        private bool _wasLoading;
 
         /// <summary>Required by Il2CppInterop for an injected component.</summary>
         /// <param name="pointer">The native object.</param>
@@ -85,6 +86,7 @@ namespace GlobalConversationTracker.TestProbe
             }
 
             _sinceLastPoll = 0;
+            ReportLoadingFinished();
 
             string path = CommandPath;
             if (path.Length == 0 || !File.Exists(path))
@@ -107,6 +109,40 @@ namespace GlobalConversationTracker.TestProbe
             }
 
             Run(text);
+        }
+
+        /// <summary>
+        /// Says when a load has actually finished, which nothing else does.
+        /// </summary>
+        /// <remarks>
+        /// <c>save-applied</c> fires while the save is still being applied, and
+        /// <c>world-ready</c> fires when the HUD is first built - once, at the main menu
+        /// - so neither marks the moment the loaded world is there. The game's own
+        /// <c>IsLoading</c> flag does, and watching it fall is the only signal that
+        /// survives loading a second save into a session that already has a HUD.
+        /// </remarks>
+        private void ReportLoadingFinished()
+        {
+            bool loading;
+            try
+            {
+                SunshinePersistence? persistence = SunshinePersistence.Singleton;
+                loading = persistence != null && persistence.IsLoading;
+            }
+            catch (Exception)
+            {
+                return;
+            }
+
+            if (_wasLoading && !loading)
+            {
+                ProbeLog.Write(
+                    "load-finished",
+                    "money", TestProbePlugin.Money(),
+                    "conversation", TestProbePlugin.ConversationId());
+            }
+
+            _wasLoading = loading;
         }
 
         private static void Run(string text)
@@ -171,12 +207,12 @@ namespace GlobalConversationTracker.TestProbe
                 throw new ArgumentException("No save name was given.");
             }
 
-            ProbeLog.Write(
-                "command-started",
-                "command", LoadSaveCommand,
-                "save", save,
-                "canLoad", SunshinePersistence.CanLoad());
+            ProbeLog.Write("command-started", "command", LoadSaveCommand, "save", save);
 
+            // Not SunshinePersistence.CanLoad(): it reads ViewsPagesBridge.Current, which
+            // is null until the menu exists, so asking merely to log the answer threw and
+            // failed the command it was describing. The singleton being there is the only
+            // precondition worth checking, and the caller waits for the game's UI anyway.
             SunshinePersistence persistence = SunshinePersistence.Singleton
                 ?? throw new InvalidOperationException(
                     "SunshinePersistence has no instance yet; the game is still starting.");
@@ -205,6 +241,17 @@ namespace GlobalConversationTracker.TestProbe
                 "title", resolved);
 
             DialogueManager.StartConversation(resolved);
+
+            // Whether it took is not obvious from the call: StartConversation returns
+            // nothing and a conversation whose first node is gated simply ends. Saying
+            // what happened here is the difference between "the id was wrong" and "the
+            // conversation started and had nothing to offer".
+            ProbeLog.Write(
+                "command-finished",
+                "command", StartConversationCommand,
+                "title", resolved,
+                "active", DialogueManager.isConversationActive,
+                "conversation", TestProbePlugin.ConversationId());
         }
 
         private static string TitleOf(int conversationId)

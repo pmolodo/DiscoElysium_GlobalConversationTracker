@@ -142,7 +142,15 @@ namespace GlobalConversationTracker.Automation
         /// <summary>The glyph the look-ahead appends to an option it has marked.</summary>
         public const string MarkerGlyph = "*";
 
-        /// <summary>Every probe event in a log file, in order.</summary>
+        /// <summary>
+        /// Every probe event in a log file, in order, or none if it is not there yet.
+        /// </summary>
+        /// <remarks>
+        /// A missing file is empty rather than an error because a run deletes the log
+        /// before launching - which is what stops it reading the PREVIOUS run's events
+        /// and acting on them - so there is a window, until BepInEx creates its own,
+        /// where the right answer is "nothing has happened yet".
+        /// </remarks>
         /// <param name="logPath">The BepInEx log.</param>
         /// <exception cref="ArgumentNullException"><paramref name="logPath"/> is null.</exception>
         public static ProbeEvent[] ReadFile(string logPath)
@@ -150,6 +158,11 @@ namespace GlobalConversationTracker.Automation
             if (logPath == null)
             {
                 throw new ArgumentNullException(nameof(logPath));
+            }
+
+            if (!File.Exists(logPath))
+            {
+                return Array.Empty<ProbeEvent>();
             }
 
             // Shared read: BepInEx holds the log open for writing for the whole run.

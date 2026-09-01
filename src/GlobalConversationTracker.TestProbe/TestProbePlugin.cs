@@ -73,9 +73,11 @@ namespace GlobalConversationTracker.TestProbe
             var harmony = new Harmony(PluginGuid);
             harmony.PatchAll(typeof(ResponseTextProbe));
             harmony.PatchAll(typeof(ResponseMenuProbe));
+            harmony.PatchAll(typeof(ConversationStartProbe));
             harmony.PatchAll(typeof(ConversationEndProbe));
             harmony.PatchAll(typeof(SaveLoadedProbe));
             harmony.PatchAll(typeof(WorldReadyProbe));
+            harmony.PatchAll(typeof(MainMenuProbe));
 
             // Beside the global state, in the profile the harness stages. Resolved the
             // same way the mod resolves it, and with the same fallback, so the probe
@@ -229,6 +231,33 @@ namespace GlobalConversationTracker.TestProbe
         }
 
         /// <summary>
+        /// The start of a conversation, which separates "it never began" from "it began
+        /// and offered nothing".
+        /// </summary>
+        [HarmonyPatch(
+            typeof(Sunshine.ConversationLogger),
+            nameof(Sunshine.ConversationLogger.OnConversationStart))]
+        private static class ConversationStartProbe
+        {
+            /// <summary>The parameter name has to stay <c>actor</c>.</summary>
+            [HarmonyPostfix]
+            private static void Postfix(Transform actor)
+            {
+                try
+                {
+                    ProbeLog.Write(
+                        "conversation-start",
+                        "conversation", ConversationId(),
+                        "money", Money());
+                }
+                catch (Exception error)
+                {
+                    ProbeLog.Failed("the start of a conversation", error);
+                }
+            }
+        }
+
+        /// <summary>
         /// The end of a conversation, which is the last chance to report a menu whose
         /// options never all arrived.
         /// </summary>
@@ -280,6 +309,32 @@ namespace GlobalConversationTracker.TestProbe
                 catch (Exception error)
                 {
                     ProbeLog.Failed("a savegame load", error);
+                }
+            }
+        }
+
+        /// <summary>
+        /// The main menu being built, which is when a keypress can start a game.
+        /// </summary>
+        /// <remarks>
+        /// Needed because <c>world-ready</c> is not it. The HUD is built about ten
+        /// seconds in, while the legal notice and the logo are still to come, and a run
+        /// that took that for the menu pressed Continue into a splash screen. The menu
+        /// list is the thing that has to exist for Continue to mean anything.
+        /// </remarks>
+        [HarmonyPatch(typeof(MainMenuList), "Start")]
+        private static class MainMenuProbe
+        {
+            [HarmonyPostfix]
+            private static void Postfix()
+            {
+                try
+                {
+                    ProbeLog.Write("main-menu");
+                }
+                catch (Exception error)
+                {
+                    ProbeLog.Failed("the main menu appearing", error);
                 }
             }
         }

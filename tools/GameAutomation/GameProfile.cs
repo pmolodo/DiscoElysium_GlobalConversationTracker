@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 using System;
+using System.Collections.Generic;
 using System.IO;
 
 namespace GlobalConversationTracker.Automation
@@ -71,6 +72,13 @@ namespace GlobalConversationTracker.Automation
 
         /// <summary>The saves folder inside the profile.</summary>
         public static string SavesFolder => Path.Combine(ProfilePath, "SaveGames");
+
+        /// <summary>
+        /// The mod's global state file, which lives beside the saves rather than in
+        /// the game install.
+        /// </summary>
+        public static string GlobalStateFile =>
+            Path.Combine(SavesFolder, "global-conversation-state.json");
 
         /// <summary>Where to move the profile, beside where it already is.</summary>
         /// <remarks>
@@ -160,6 +168,30 @@ namespace GlobalConversationTracker.Automation
         /// <exception cref="FileNotFoundException">A named file does not exist.</exception>
         public static void Stage(string? settingsFile, string? saveFile)
         {
+            Stage(settingsFile, saveFile == null ? null : new[] { saveFile }, null);
+        }
+
+        /// <summary>
+        /// Builds a profile holding a settings file, any number of saves, and a global
+        /// state for the mod to read.
+        /// </summary>
+        /// <remarks>
+        /// Several saves because a cold start costs about a minute, so one session runs
+        /// several scenarios and switches between them in place. One global state,
+        /// shared: it is per-profile rather than per-save, and staging it is what makes
+        /// a run hermetic - without it the look-ahead would read whatever the player's
+        /// own playthrough has recorded, and every expectation would depend on the
+        /// machine.
+        /// </remarks>
+        /// <param name="settingsFile">The settings file to install, or null to omit it.</param>
+        /// <param name="saveFiles">The saves to install, or null for none.</param>
+        /// <param name="globalStateFile">The global state to install, or null for none.</param>
+        /// <exception cref="FileNotFoundException">A named file does not exist.</exception>
+        public static void Stage(
+            string? settingsFile,
+            IEnumerable<string>? saveFiles,
+            string? globalStateFile)
+        {
             Directory.CreateDirectory(ProfilePath);
             Directory.CreateDirectory(SavesFolder);
 
@@ -175,9 +207,23 @@ namespace GlobalConversationTracker.Automation
                 File.Copy(settingsFile, SettingsFile, overwrite: true);
             }
 
-            if (saveFile != null)
+            if (saveFiles != null)
             {
-                GameSaves.CopyInto(saveFile, SavesFolder);
+                foreach (string saveFile in saveFiles)
+                {
+                    GameSaves.CopyInto(saveFile, SavesFolder);
+                }
+            }
+
+            if (globalStateFile != null)
+            {
+                if (!File.Exists(globalStateFile))
+                {
+                    throw new FileNotFoundException(
+                        $"No global state file at {globalStateFile}.", globalStateFile);
+                }
+
+                File.Copy(globalStateFile, GlobalStateFile, overwrite: true);
             }
         }
 

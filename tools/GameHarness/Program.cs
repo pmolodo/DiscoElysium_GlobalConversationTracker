@@ -148,6 +148,17 @@ namespace GlobalConversationTracker.Harness
                         return RunSession(options, captureReference: true);
                     case "load-save":
                         return RunSession(options, captureReference: false);
+                    case "look-ahead":
+                        return LookAheadRun.Run(
+                            ResolveGame(options),
+                            options.Artifacts is null
+                                ? Path.Combine(RepoRoot(), "testing", "scenarios")
+                                : options.Artifacts,
+                            options.TestSettings
+                                ?? Path.Combine(RepoRoot(), "testing", "Settings.json"),
+                            Path.Combine(RepoRoot(), ".build", "automation"),
+                            TimeSpan.FromSeconds(options.TimeoutSeconds),
+                            options.KeepOpen);
                     default:
                         PrintUsage();
                         return 2;
@@ -170,6 +181,12 @@ Verbs:
                       main-menu reference. Look at the PNG before trusting it.
   load-save           Launch, confirm the main menu, send the load-save keys, and
                       check the screen changed to something else.
+  look-ahead          Launch once, then for each money scenario ask the test
+                      probe to load its save and open Siileng's conversation,
+                      and check which options carry a look-ahead marker. Needs
+                      the probe installed and the scenarios built by
+                      make_scenario_saves.py. --artifacts names the scenario
+                      folder for this verb.
   analyse-timeline    Read a recorded timeline back and report which frames
                       identify which screens, with a measured threshold. Add
                       --save-reference to write the chosen frame as main-menu.png.
@@ -958,7 +975,7 @@ Options:
             {
                 string saveSource = options.SaveFile
                     ?? Path.Combine(RepoRoot(), "testing", TemplateSave);
-                string saveTemplate = PrepareSave(saveSource, artifacts);
+                string saveTemplate = PackSave(saveSource, artifacts);
                 GameProfile.Stage(testSettings, saveTemplate);
                 Console.WriteLine($"staged:    {Path.GetFileName(testSettings)}");
                 Console.WriteLine(
@@ -1437,7 +1454,7 @@ Options:
         }
 
         /// <summary>Turns an expanded sparse save into the archive the game reads.</summary>
-        private static string PrepareSave(string source, string artifacts)
+        internal static string PackSave(string source, string artifacts)
         {
             if (!Directory.Exists(source))
             {

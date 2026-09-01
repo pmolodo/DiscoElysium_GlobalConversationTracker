@@ -30,21 +30,26 @@ namespace GlobalConversationTracker.Automation.Tests
     }
 
     /// <summary>
-    /// What every opted-in in-game test runs inside: Steam Cloud off, and the test
-    /// probe installed.
+    /// What every opted-in in-game test runs inside: Steam Cloud off for the whole
+    /// collection.
     /// </summary>
     /// <remarks>
-    /// The order is the point, and it is why these two live together rather than one
-    /// per fixture. Cloud sync goes off FIRST and comes back on LAST, so nothing
-    /// written in between - the staged profile, the probe - can be replaced underneath
-    /// a run by a sync, and nothing the tests staged can be uploaded.
+    /// <para>Off FIRST and back on LAST, around everything. A run stages a profile, and
+    /// the profile is what Steam Cloud syncs: with sync on, a staged profile can be
+    /// replaced underneath a test, and a staged profile can be uploaded over the
+    /// player's own.</para>
+    ///
+    /// <para>The test probe is NOT installed here. It is a dependency of whatever drives
+    /// the game - the look-ahead verb installs its own - so a test that never launches
+    /// the game does not touch the player's plugins folder, and the verb stays runnable
+    /// from a command line. It still ends up inside this scope, because this wraps the
+    /// whole collection.</para>
     /// </remarks>
     public sealed class InGameTestContext : IDisposable
     {
         private readonly SteamCloudOverride? _cloud;
-        private readonly ProbeDeployment? _probe;
 
-        /// <summary>Opens both scopes before the collection starts.</summary>
+        /// <summary>Turns cloud sync off before the collection starts.</summary>
         public InGameTestContext()
         {
             if (!InGameFactAttribute.IsOptedIn)
@@ -61,34 +66,12 @@ namespace GlobalConversationTracker.Automation.Tests
                 backup,
                 TimeSpan.FromSeconds(60),
                 message => Console.WriteLine($"Steam Cloud: {message}"));
-
-            try
-            {
-                _probe = ProbeDeployment.Deploy(
-                    GameInstall.FindGame(),
-                    GameInstall.FindProbeAssembly(),
-                    message => Console.WriteLine($"Test probe: {message}"));
-            }
-            catch (Exception)
-            {
-                // Without this the cloud setting would stay off after a failure here,
-                // and the player would find their game silently not syncing.
-                _cloud.Dispose();
-                throw;
-            }
         }
 
-        /// <summary>Removes the probe, then restores the cloud setting.</summary>
+        /// <summary>Restores the original cloud setting.</summary>
         public void Dispose()
         {
-            try
-            {
-                _probe?.Dispose();
-            }
-            finally
-            {
-                _cloud?.Dispose();
-            }
+            _cloud?.Dispose();
         }
     }
 }
