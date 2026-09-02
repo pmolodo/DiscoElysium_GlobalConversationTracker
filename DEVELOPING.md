@@ -56,7 +56,8 @@ Two things about its contents are deliberate:
   so that a repo-root build keeps the whole repo compiling rather than most of it. Each is
   a standalone console app; run one with `dotnet run --project tools\<name> -- --help`.
   - `NtwtfDecode` - dumps the Lua tables inside a `{save}.ntwtf` save (zip, folder or
-    `.lua` file) as JSON.
+    `.lua` file) as JSON. It dumps the `Conversation` table by default; `-t all` dumps
+    all five (Actor, Item, Location, Variable, Conversation) as one document.
   - `GlobalStateCheck` - verifies `global-conversation-state.json` is the union of two or
     more saves, with no dialogue status lower than the highest save that mentions it.
   - `GlobalStateBenchmark` - times `GlobalStateStore.Save` broken out by phase, and what
