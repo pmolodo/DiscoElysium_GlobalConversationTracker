@@ -89,9 +89,10 @@ namespace GlobalConversationTracker.Harness
                             target, message => Console.WriteLine($"  {message}"));
                         Console.WriteLine($"closed {moved} Explorer window(s)");
 
-                        // Explorer first because it is free: the window survives, only
-                        // pointed elsewhere. Only what is still holding the folder after
-                        // that is worth asking to close.
+                        // Explorer first because it is the cheapest to be rid of: the
+                        // window is closed outright, with nothing to save and nothing to
+                        // ask. Only what is still holding the folder after that is worth
+                        // asking to close.
                         Console.WriteLine();
                         LockHolder[]? stillHolding = SysinternalsHandle.WhoIsHolding(
                             target, executable: null,
