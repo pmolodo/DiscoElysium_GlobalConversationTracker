@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using GlobalConversationTracker.Harness;
+using GlobalConversationTracker.Persistence;
 using Xunit;
 
 namespace GlobalConversationTracker.Automation.Tests
@@ -45,6 +46,33 @@ namespace GlobalConversationTracker.Automation.Tests
                 Assert.True(
                     File.Exists(Path.Combine(ScenarioRoot, suite.GlobalStateFile)),
                     $"suite '{suite.Name}' names a missing global state: {suite.GlobalStateFile}");
+            }
+        }
+
+        /// <remarks>
+        /// Existing is not enough - the mod has to be able to read it. A fixture in a
+        /// shape the parser rejects loads as an empty state, and an empty state makes
+        /// every option unseen-anywhere, which is a passing-looking run of the wrong
+        /// experiment.
+        /// </remarks>
+        [Fact]
+        public void EverySuitesGlobalStateIsReadableByTheMod()
+        {
+            foreach (LookAheadSuite suite in LookAheadSuites.All)
+            {
+                string path = Path.Combine(ScenarioRoot, suite.GlobalStateFile);
+                GlobalStateLoadResult result = GlobalStateJson.Deserialize(
+                    File.ReadAllBytes(path), path);
+
+                Assert.True(
+                    result.Outcome == GlobalStateLoadOutcome.Loaded,
+                    $"suite '{suite.Name}' names a global state the mod would refuse: "
+                        + $"{result.Outcome} - {result.ErrorMessage}");
+                Assert.True(
+                    result.SkippedRowCount == 0,
+                    $"suite '{suite.Name}' names a global state with "
+                        + $"{result.SkippedRowCount} unreadable row(s): "
+                        + string.Join("; ", result.Warnings));
             }
         }
 

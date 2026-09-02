@@ -21,6 +21,12 @@
   <ItemGroup>
     <ProjectReference Include="..\GameAutomation\GameAutomation.csproj" />
     <ProjectReference Include="..\GameHarness\GameHarness.csproj" />
+    <!--
+      So a suite's global state can be read with the same parser the mod uses. A
+      fixture the mod would reject is otherwise found only by launching the game.
+    -->
+    <ProjectReference
+      Include="..\..\src\GlobalConversationTracker.Persistence\GlobalConversationTracker.Persistence.csproj" />
   </ItemGroup>
 
 

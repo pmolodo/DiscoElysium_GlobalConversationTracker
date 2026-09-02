@@ -13,10 +13,21 @@ namespace GlobalConversationTracker.Persistence
     /// bytes-to-state conversion with no file IO.
     /// </summary>
     /// <remarks>
-    /// <para>Shape (format version 1):</para>
+    /// <para>Shape (format version 3):</para>
     /// <code>
-    /// {"version":1,"conversations":{"3":{"17":"WasDisplayed","18":"WasOffered"}}}
+    /// {"version":3,"conversations":{"WasDisplayed":{"3":[17,19]},"WasOffered":{"3":[18]}},"orbs":[]}
     /// </code>
+    /// <para>Grouped by status, then by conversation, then a plain array of entry IDs.
+    /// A status string is written once per conversation that has entries in it rather
+    /// than once per entry, and an entry costs the digits of its ID: a state recording
+    /// every one of the game's ~113,000 entries is about 0.4 MB this way against 2.3 MB
+    /// spelled out per entry.</para>
+    ///
+    /// <para>Shape (format versions 1 and 2), still read:</para>
+    /// <code>
+    /// {"version":2,"conversations":{"3":{"17":"WasDisplayed","18":"WasOffered"}},"orbs":[]}
+    /// </code>
+    ///
     /// <para>JSON object keys must be strings, so the integer IDs are written as
     /// invariant decimal strings. Statuses are written as the game's own strings rather
     /// than enum integers, so the file is self-describing and immune to the enum being
@@ -26,9 +37,9 @@ namespace GlobalConversationTracker.Persistence
     /// it, and an absent conversation or entry reads back as Untouched. A real save
     /// therefore holds roughly a thousand entries, not the ~113,000 the game tracks.</para>
     ///
-    /// <para>Output is UTF-8 with no BOM, unindented, and deterministic: entries in
-    /// conversation-ID then entry-ID order, so two saves of equal states produce
-    /// byte-identical files.</para>
+    /// <para>Output is UTF-8 with no BOM, unindented, and deterministic: statuses in
+    /// SimStatus order, then conversation-ID, then entry-ID order, so two saves of equal
+    /// states produce byte-identical files.</para>
     ///
     /// <para>On load, every row goes back through
     /// <see cref="GlobalConversationState.TryMerge"/>. Nothing here assigns a status, so
@@ -44,9 +55,23 @@ namespace GlobalConversationTracker.Persistence
         /// <remarks>
         /// Version 2 added <see cref="OrbsPropertyName"/>. A version 1 file is a version
         /// 2 file with no orbs, which is why reading one needs no conversion beyond
-        /// letting the property be absent.
+        /// letting the property be absent. Version 3 regrouped
+        /// <see cref="ConversationsPropertyName"/> by status, which is a different shape
+        /// rather than another optional property, so it has a reader of its own.
         /// </remarks>
-        public const int FormatVersion = 2;
+        public const int FormatVersion = 3;
+
+        /// <summary>
+        /// The newest version written in the per-entry shape, which this build still
+        /// reads.
+        /// </summary>
+        /// <remarks>
+        /// A migration affordance with an expiry, not a feature. Once no profile in use
+        /// holds a file this old, the per-entry reader and this constant go, and the
+        /// minimum accepted version rises to 3 so an ancient file is refused loudly
+        /// instead of being parsed by code nothing exercises. Tracked as de-pc2.
+        /// </remarks>
+        public const int LegacyPerEntryFormatVersion = 2;
 
         /// <summary>Name of the root version property.</summary>
         public const string VersionPropertyName = "version";
@@ -83,31 +108,23 @@ namespace GlobalConversationTracker.Persistence
                 writer.WritePropertyName(ConversationsPropertyName);
                 writer.WriteStartObject();
 
-                // EnumerateEntriesInIdOrder is sorted by conversation then entry, so a
-                // single pass can close one conversation object and open the next as the
-                // conversation ID changes. Linear in the number of stored entries.
-                int currentConversationId = 0;
-                bool inConversation = false;
-                foreach (GlobalStatusEntry entry in state.EnumerateEntriesInIdOrder())
+                foreach (KeyValuePair<SimStatus, SortedDictionary<int, List<int>>> status
+                    in GroupByStatus(state))
                 {
-                    if (!inConversation || entry.ConversationId != currentConversationId)
+                    writer.WritePropertyName(SimStatusNames.ToGameString(status.Key));
+                    writer.WriteStartObject();
+                    foreach (KeyValuePair<int, List<int>> conversation in status.Value)
                     {
-                        if (inConversation)
+                        writer.WritePropertyName(ToKey(conversation.Key));
+                        writer.WriteStartArray();
+                        foreach (int dialogueEntryId in conversation.Value)
                         {
-                            writer.WriteEndObject();
+                            writer.WriteNumberValue(dialogueEntryId);
                         }
 
-                        writer.WritePropertyName(ToKey(entry.ConversationId));
-                        writer.WriteStartObject();
-                        currentConversationId = entry.ConversationId;
-                        inConversation = true;
+                        writer.WriteEndArray();
                     }
 
-                    writer.WriteString(ToKey(entry.DialogueEntryId), SimStatusNames.ToGameString(entry.Status));
-                }
-
-                if (inConversation)
-                {
                     writer.WriteEndObject();
                 }
 
@@ -128,6 +145,47 @@ namespace GlobalConversationTracker.Persistence
             }
 
             return buffer.ToArray();
+        }
+
+        /// <summary>
+        /// Buckets a state's entries by status, then by conversation.
+        /// </summary>
+        /// <remarks>
+        /// Ordered throughout, because the file is: statuses by their SimStatus value,
+        /// conversations by ID, and entry IDs ascending - the last for free, since
+        /// EnumerateEntriesInIdOrder already yields them that way and each list is
+        /// appended to in that order.
+        ///
+        /// Keyed on whatever statuses are actually present rather than on a fixed list
+        /// of the two a state is supposed to hold, so a value that should never be
+        /// stored is written out and read back rather than silently dropped here.
+        /// </remarks>
+        private static SortedDictionary<SimStatus, SortedDictionary<int, List<int>>>
+            GroupByStatus(GlobalConversationState state)
+        {
+            var byStatus =
+                new SortedDictionary<SimStatus, SortedDictionary<int, List<int>>>();
+
+            foreach (GlobalStatusEntry entry in state.EnumerateEntriesInIdOrder())
+            {
+                if (!byStatus.TryGetValue(
+                        entry.Status, out SortedDictionary<int, List<int>>? conversations))
+                {
+                    conversations = new SortedDictionary<int, List<int>>();
+                    byStatus.Add(entry.Status, conversations);
+                }
+
+                if (!conversations.TryGetValue(
+                        entry.ConversationId, out List<int>? dialogueEntryIds))
+                {
+                    dialogueEntryIds = new List<int>();
+                    conversations.Add(entry.ConversationId, dialogueEntryIds);
+                }
+
+                dialogueEntryIds.Add(entry.DialogueEntryId);
+            }
+
+            return byStatus;
         }
 
         /// <summary>Serializes a state to a JSON string.</summary>
@@ -241,6 +299,111 @@ namespace GlobalConversationTracker.Persistence
             var warnings = new List<string>();
             int skippedRowCount = 0;
 
+            if (version > LegacyPerEntryFormatVersion)
+            {
+                ReadGroupedConversations(conversations, state, warnings, ref skippedRowCount);
+            }
+            else
+            {
+                ReadPerEntryConversations(conversations, state, warnings, ref skippedRowCount);
+            }
+
+            ReadOrbs(root, state, warnings, ref skippedRowCount);
+
+            return GlobalStateLoadResult.Loaded(sourcePath, state, skippedRowCount, warnings);
+        }
+
+        /// <summary>
+        /// Reads the grouped shape: status, then conversation, then an array of IDs.
+        /// </summary>
+        /// <remarks>
+        /// An unrecognized status name costs one warning for the whole block rather than
+        /// one per row. There are only ever a handful of blocks, and spending the warning
+        /// budget on repetitions of the same fact would push out every other complaint in
+        /// the file.
+        /// </remarks>
+        private static void ReadGroupedConversations(
+            JsonElement conversations,
+            GlobalConversationState state,
+            List<string> warnings,
+            ref int skippedRowCount)
+        {
+            foreach (JsonProperty status in conversations.EnumerateObject())
+            {
+                if (status.Value.ValueKind != JsonValueKind.Object)
+                {
+                    skippedRowCount++;
+                    AddWarning(
+                        warnings,
+                        $"Status group '{status.Name}' is {status.Value.ValueKind}, expected an object; skipped.");
+                    continue;
+                }
+
+                if (!SimStatusNames.TryParse(status.Name, out _))
+                {
+                    int dropped = CountGroupedRows(status.Value);
+                    skippedRowCount += dropped;
+                    AddWarning(
+                        warnings,
+                        $"Unrecognized status '{status.Name}'; skipped {dropped} row(s).");
+                    continue;
+                }
+
+                foreach (JsonProperty conversation in status.Value.EnumerateObject())
+                {
+                    if (!TryParseId(conversation.Name, out int conversationId))
+                    {
+                        int dropped = CountIds(conversation.Value);
+                        skippedRowCount += dropped;
+                        AddWarning(
+                            warnings,
+                            $"Conversation key '{conversation.Name}' in '{status.Name}' is not an integer; skipped {dropped} row(s).");
+                        continue;
+                    }
+
+                    if (conversation.Value.ValueKind != JsonValueKind.Array)
+                    {
+                        skippedRowCount++;
+                        AddWarning(
+                            warnings,
+                            $"Conversation {conversationId} in '{status.Name}' is {conversation.Value.ValueKind}, expected an array; skipped.");
+                        continue;
+                    }
+
+                    foreach (JsonElement dialogueEntry in conversation.Value.EnumerateArray())
+                    {
+                        if (dialogueEntry.ValueKind != JsonValueKind.Number
+                            || !dialogueEntry.TryGetInt32(out int dialogueEntryId))
+                        {
+                            skippedRowCount++;
+                            AddWarning(
+                                warnings,
+                                $"Dialogue entry ID in conversation {conversationId} of '{status.Name}' is not an integer; skipped.");
+                            continue;
+                        }
+
+                        // TryMerge for the same reason the per-entry reader uses it: a
+                        // status already in memory cannot be pulled back down by a file.
+                        // The name is known good by here, so a false return is impossible
+                        // and is not treated as a skipped row.
+                        state.TryMerge(conversationId, dialogueEntryId, status.Name, out _);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Reads the per-entry shape written by format versions 1 and 2.
+        /// </summary>
+        /// <remarks>
+        /// Goes when <see cref="LegacyPerEntryFormatVersion"/> does; see de-pc2.
+        /// </remarks>
+        private static void ReadPerEntryConversations(
+            JsonElement conversations,
+            GlobalConversationState state,
+            List<string> warnings,
+            ref int skippedRowCount)
+        {
             foreach (JsonProperty conversation in conversations.EnumerateObject())
             {
                 if (!TryParseId(conversation.Name, out int conversationId))
@@ -296,10 +459,6 @@ namespace GlobalConversationTracker.Persistence
                     }
                 }
             }
-
-            ReadOrbs(root, state, warnings, ref skippedRowCount);
-
-            return GlobalStateLoadResult.Loaded(sourcePath, state, skippedRowCount, warnings);
         }
 
         /// <summary>
@@ -367,6 +526,39 @@ namespace GlobalConversationTracker.Persistence
 
             int count = 0;
             foreach (JsonProperty _ in conversationValue.EnumerateObject())
+            {
+                count++;
+            }
+
+            return count;
+        }
+
+        /// <summary>How many rows a grouped status block holds, for the skipped count.</summary>
+        private static int CountGroupedRows(JsonElement statusValue)
+        {
+            int count = 0;
+            foreach (JsonProperty conversation in statusValue.EnumerateObject())
+            {
+                count += CountIds(conversation.Value);
+            }
+
+            return count;
+        }
+
+        /// <summary>
+        /// How many rows one conversation's ID array holds. Anything that is not an array
+        /// is one unusable row rather than none, so a malformed file cannot report that it
+        /// skipped nothing.
+        /// </summary>
+        private static int CountIds(JsonElement conversationValue)
+        {
+            if (conversationValue.ValueKind != JsonValueKind.Array)
+            {
+                return 1;
+            }
+
+            int count = 0;
+            foreach (JsonElement _ in conversationValue.EnumerateArray())
             {
                 count++;
             }

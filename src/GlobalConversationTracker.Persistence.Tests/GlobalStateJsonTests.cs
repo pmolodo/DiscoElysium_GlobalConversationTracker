@@ -40,8 +40,11 @@ namespace GlobalConversationTracker.Persistence.Tests
                 (3, 17, SimStatus.WasDisplayed),
                 (3, 18, SimStatus.WasOffered));
 
+            // Grouped by status, then conversation, then a plain array of entry IDs, so
+            // a status string is written once per conversation instead of once per entry.
             Assert.Equal(
-                "{\"version\":2,\"conversations\":{\"3\":{\"17\":\"WasDisplayed\",\"18\":\"WasOffered\"}},\"orbs\":[]}",
+                "{\"version\":3,\"conversations\":{\"WasOffered\":{\"3\":[18]},"
+                + "\"WasDisplayed\":{\"3\":[17]}},\"orbs\":[]}",
                 GlobalStateJson.Serialize(state));
         }
 
@@ -49,7 +52,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         public void Serialize_EmptyState_WritesAnEmptyConversationMap()
         {
             Assert.Equal(
-                "{\"version\":2,\"conversations\":{},\"orbs\":[]}",
+                "{\"version\":3,\"conversations\":{},\"orbs\":[]}",
                 GlobalStateJson.Serialize(new GlobalConversationState()));
         }
 
@@ -74,7 +77,8 @@ namespace GlobalConversationTracker.Persistence.Tests
             string json = GlobalStateJson.Serialize(state);
 
             Assert.DoesNotContain(SimStatusNames.Untouched, json, StringComparison.Ordinal);
-            Assert.Equal("{\"version\":2,\"conversations\":{\"1\":{\"2\":\"WasOffered\"}},\"orbs\":[]}", json);
+            Assert.Equal(
+                "{\"version\":3,\"conversations\":{\"WasOffered\":{\"1\":[2]}},\"orbs\":[]}", json);
         }
 
         [Fact]
@@ -106,8 +110,8 @@ namespace GlobalConversationTracker.Persistence.Tests
             string json = GlobalStateJson.Serialize(state);
 
             Assert.Equal(
-                "{\"version\":2,\"conversations\":{\"2\":{\"9\":\"WasOffered\",\"100\":\"WasOffered\"},"
-                + "\"10\":{\"1\":\"WasOffered\"}},\"orbs\":[]}",
+                "{\"version\":3,\"conversations\":{\"WasOffered\":{\"2\":[9,100],\"10\":[1]}},"
+                + "\"orbs\":[]}",
                 json);
         }
 
@@ -300,6 +304,109 @@ namespace GlobalConversationTracker.Persistence.Tests
         }
 
         // -------------------------------------------------------------------
+        // The grouped shape, and the per-entry one it replaced
+        // -------------------------------------------------------------------
+
+        [Fact]
+        public void Deserialize_GroupedFormat_ReadsEveryStatusGroup()
+        {
+            GlobalStateLoadResult result = Parse(
+                "{\"version\":3,\"conversations\":{\"WasDisplayed\":{\"3\":[17,19],\"8\":[1]},"
+                + "\"WasOffered\":{\"3\":[18]}},\"orbs\":[]}");
+
+            Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
+            Assert.Equal(0, result.SkippedRowCount);
+            Assert.Empty(result.Warnings);
+            Assert.Equal(SimStatus.WasDisplayed, result.State!.GetStatus(3, 17));
+            Assert.Equal(SimStatus.WasDisplayed, result.State.GetStatus(3, 19));
+            Assert.Equal(SimStatus.WasDisplayed, result.State.GetStatus(8, 1));
+            Assert.Equal(SimStatus.WasOffered, result.State.GetStatus(3, 18));
+        }
+
+        [Fact]
+        public void Deserialize_VersionTwoFile_StillReadsThePerEntryShape()
+        {
+            // The shape every file on disk had before the grouping. Read for as long as
+            // GlobalStateJson.LegacyPerEntryFormatVersion says so, and no longer.
+            GlobalStateLoadResult result = Parse(
+                "{\"version\":2,\"conversations\":{\"3\":{\"17\":\"WasDisplayed\",\"18\":\"WasOffered\"}},"
+                + "\"orbs\":[\"COAST ORB / floatice\"]}");
+
+            Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
+            Assert.Equal(0, result.SkippedRowCount);
+            Assert.Empty(result.Warnings);
+            Assert.Equal(SimStatus.WasDisplayed, result.State!.GetStatus(3, 17));
+            Assert.Equal(SimStatus.WasOffered, result.State.GetStatus(3, 18));
+            Assert.Equal(1, result.State.OrbCount);
+        }
+
+        [Fact]
+        public void Deserialize_BothShapes_DescribeTheSameState()
+        {
+            // The claim the migration rests on: the two files say the same thing, so a
+            // profile that has not been rewritten yet loses nothing by waiting.
+            GlobalStateLoadResult grouped = Parse(
+                "{\"version\":3,\"conversations\":{\"WasOffered\":{\"3\":[18]},"
+                + "\"WasDisplayed\":{\"3\":[17]}},\"orbs\":[]}");
+            GlobalStateLoadResult perEntry = Parse(
+                "{\"version\":2,\"conversations\":{\"3\":{\"17\":\"WasDisplayed\","
+                + "\"18\":\"WasOffered\"}},\"orbs\":[]}");
+
+            Assert.Equal(
+                GlobalStateJson.Serialize(grouped.State!),
+                GlobalStateJson.Serialize(perEntry.State!));
+        }
+
+        [Fact]
+        public void Deserialize_GroupedFormat_SkipsAnUnrecognizedStatusBlockWhole()
+        {
+            // One warning for the block rather than one per row: there are only ever a
+            // few blocks, and repeating the same fact would push every other complaint
+            // out of the warning budget.
+            GlobalStateLoadResult result = Parse(
+                "{\"version\":3,\"conversations\":{\"WasChewed\":{\"3\":[17,18,19]},"
+                + "\"WasOffered\":{\"3\":[20]}}}");
+
+            Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
+            Assert.Equal(3, result.SkippedRowCount);
+            Assert.Single(result.Warnings);
+            Assert.Contains("WasChewed", result.Warnings[0]);
+            Assert.Equal(SimStatus.Untouched, result.State!.GetStatus(3, 17));
+            Assert.Equal(SimStatus.WasOffered, result.State.GetStatus(3, 20));
+        }
+
+        [Fact]
+        public void Deserialize_GroupedFormat_SkipsMalformedRowsAndKeepsTheRest()
+        {
+            GlobalStateLoadResult result = Parse(
+                "{\"version\":3,\"conversations\":{\"WasOffered\":{"
+                + "\"not-a-number\":[1,2],"
+                + "\"4\":{\"5\":\"WasOffered\"},"
+                + "\"6\":[7,\"eight\",9]}}}");
+
+            Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
+            // Two under the unreadable key, one for the object where an array belongs,
+            // one for the entry ID that is not a number.
+            Assert.Equal(4, result.SkippedRowCount);
+            Assert.Equal(SimStatus.WasOffered, result.State!.GetStatus(6, 7));
+            Assert.Equal(SimStatus.WasOffered, result.State.GetStatus(6, 9));
+            Assert.Equal(SimStatus.Untouched, result.State.GetStatus(4, 5));
+        }
+
+        [Fact]
+        public void Deserialize_GroupedFormat_CannotLowerAStatus()
+        {
+            // The same guarantee the per-entry reader gives: every row goes through
+            // TryMerge, so a file cannot pull a status back down.
+            GlobalStateLoadResult result = Parse(
+                "{\"version\":3,\"conversations\":{\"WasDisplayed\":{\"3\":[17]},"
+                + "\"WasOffered\":{\"3\":[17]}}}");
+
+            Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
+            Assert.Equal(SimStatus.WasDisplayed, result.State!.GetStatus(3, 17));
+        }
+
+        // -------------------------------------------------------------------
         // Orbs
         // -------------------------------------------------------------------
 
@@ -312,7 +419,7 @@ namespace GlobalConversationTracker.Persistence.Tests
             state.MergeOrb("COAST ORB / drawbridge");
 
             Assert.Equal(
-                "{\"version\":2,\"conversations\":{},\"orbs\":["
+                "{\"version\":3,\"conversations\":{},\"orbs\":["
                 + "\"COAST ORB / drawbridge\",\"COAST ORB / floatice\",\"PLAZA ORB / seagull\"]}",
                 GlobalStateJson.Serialize(state));
         }
