@@ -1,0 +1,1 @@
+{"id":1,"entries":[{"id":1,"group":false,"guard":"","script":"SetVariableValue(\"opened\", true)","to":[2],"fields":{}},{"id":2,"group":false,"guard":"Variable[\"opened\"] == true","script":"","to":[],"fields":{}}]}

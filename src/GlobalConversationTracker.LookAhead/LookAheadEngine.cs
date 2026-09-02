@@ -223,6 +223,17 @@ namespace GlobalConversationTracker.LookAhead
         public int CounterCap { get; set; } = 16;
 
         /// <summary>
+        /// An optional cap for one state slot. When null, every counter uses
+        /// <see cref="CounterCap"/>.
+        /// </summary>
+        /// <remarks>
+        /// A graph can often prove a tighter cap for one counter from the constants in
+        /// its guards. Keeping that decision outside the engine makes the default
+        /// conservative while allowing an offline analysis to test the proof.
+        /// </remarks>
+        public Func<int, int>? CounterCapForSlot { get; set; }
+
+        /// <summary>
         /// Whether a failed skill check still lets the crawl walk past the entry.
         /// </summary>
         /// <remarks>
@@ -708,7 +719,7 @@ namespace GlobalConversationTracker.LookAhead
 
             return DialogueAction.Apply(
                 node.Actions, paid, symbols.Once(node.Id), _options.CounterCap,
-                clockLocked);
+                clockLocked, _options.CounterCapForSlot);
         }
 
         /// <summary>

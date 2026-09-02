@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      Nothing here touches the game or BepInEx: it reads the extracted conversation
+      index and runs the same engine the mod runs, so it can target whatever is
+      convenient rather than the game's runtime.
+    -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>GlobalConversationTracker.LookAheadOffline</RootNamespace>
+    <AssemblyName>LookAheadOffline</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference
+      Include="..\..\src\GlobalConversationTracker.LookAhead\GlobalConversationTracker.LookAhead.csproj" />
+  </ItemGroup>
+
+</Project>

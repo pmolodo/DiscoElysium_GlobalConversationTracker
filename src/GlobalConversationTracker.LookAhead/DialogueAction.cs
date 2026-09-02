@@ -161,6 +161,10 @@ namespace GlobalConversationTracker.LookAhead
         /// <c>NormalTimeForward</c> refuses to move a locked clock, and the story locks it
         /// around scripted sequences.
         /// </param>
+        /// <param name="counterCapForSlot">
+        /// An optional per-slot cap. It is used for increments only; null applies
+        /// <paramref name="counterCap"/> to every slot.
+        /// </param>
         /// <returns>The resulting state.</returns>
         /// <exception cref="ArgumentNullException">An argument is null.</exception>
         public static LookAheadState Apply(
@@ -168,7 +172,8 @@ namespace GlobalConversationTracker.LookAhead
             LookAheadState state,
             int onceSlot,
             int counterCap,
-            bool clockLocked = false)
+            bool clockLocked = false,
+            Func<int, int>? counterCapForSlot = null)
         {
             if (actions == null)
             {
@@ -214,8 +219,10 @@ namespace GlobalConversationTracker.LookAhead
                     {
                         int current = Latest(changes, action.Slot, state);
                         int raised = current + action.Value;
+                        int cap = counterCapForSlot == null
+                            ? counterCap : counterCapForSlot(action.Slot);
                         changes.Add(new KeyValuePair<int, int>(
-                            action.Slot, raised > counterCap ? counterCap : raised));
+                            action.Slot, raised > cap ? cap : raised));
                         break;
                     }
 
