@@ -90,17 +90,30 @@ namespace GlobalConversationTracker.Automation.Tests
         }
 
         [Fact]
-        public void AProbeLeftByAKilledRunIsRefusedRatherThanReused()
+        public void AProbeLeftByAKilledRunIsReplacedWhenTheGameIsNotRunning()
         {
             File.WriteAllText(Installed, "a probe from some older build");
 
+            using (ProbeDeployment deployment = ProbeDeployment.Deploy(
+                _game, _probe, isGameRunning: () => false))
+            {
+                Assert.Equal(Installed, deployment.DeployedPath);
+                Assert.Equal("not really a plugin", File.ReadAllText(Installed));
+            }
+
+            Assert.False(File.Exists(Installed));
+        }
+
+        [Fact]
+        public void AProbeIsRefusedWhileTheGameIsRunning()
+        {
+            File.WriteAllText(Installed, "a probe currently loaded by the game");
+
             InvalidOperationException error = Assert.Throws<InvalidOperationException>(
-                () => ProbeDeployment.Deploy(_game, _probe));
+                () => ProbeDeployment.Deploy(_game, _probe, isGameRunning: () => true));
 
             Assert.Contains("already installed", error.Message);
-
-            // And the stale one is left alone, so a person can look at it.
-            Assert.Equal("a probe from some older build", File.ReadAllText(Installed));
+            Assert.Equal("a probe currently loaded by the game", File.ReadAllText(Installed));
         }
 
         [Fact]

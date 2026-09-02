@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 using System;
+using System.Diagnostics;
 using System.IO;
 
 namespace GlobalConversationTracker.Automation
@@ -19,10 +20,10 @@ namespace GlobalConversationTracker.Automation
     /// mid-test. Ordering the scopes is how that is avoided; nothing here can check it,
     /// so it is stated where it is done.</para>
     ///
-    /// <para>A probe already sitting in the folder is refused rather than reused. It
-    /// means an earlier run was killed before it could clean up, and the DLL there is
-    /// of unknown age - quietly running against a stale build is how a test starts
-    /// reporting on code that is no longer written.</para>
+    /// <para>A probe already sitting in the folder is removed only when Disco is not
+    /// running. That is an interrupted harness run's safe-to-recover artifact. When the
+    /// game is running, the probe might be loaded, so deployment still fails rather than
+    /// touching a live process's plugin.</para>
     /// </remarks>
     public sealed class ProbeDeployment : IDisposable
     {
@@ -62,9 +63,19 @@ namespace GlobalConversationTracker.Automation
         /// <exception cref="ArgumentNullException">An argument is null.</exception>
         /// <exception cref="FileNotFoundException">The probe assembly is not there.</exception>
         /// <exception cref="DirectoryNotFoundException">The game has no plugins folder.</exception>
-        /// <exception cref="InvalidOperationException">A probe is already installed.</exception>
+        /// <param name="isGameRunning">
+        /// Says whether the game process is running. Null checks the process named by
+        /// <paramref name="gameExecutable"/>; tests may supply it to avoid inspecting
+        /// the machine process list.
+        /// </param>
+        /// <exception cref="InvalidOperationException">
+        /// A probe is already installed while the game is running.
+        /// </exception>
         public static ProbeDeployment Deploy(
-            string gameExecutable, string probePath, Action<string>? progress = null)
+            string gameExecutable,
+            string probePath,
+            Action<string>? progress = null,
+            Func<bool>? isGameRunning = null)
         {
             if (probePath == null)
             {
@@ -90,15 +101,27 @@ namespace GlobalConversationTracker.Automation
             string destination = Path.Combine(plugins, ProbeFileName);
             if (File.Exists(destination))
             {
-                throw new InvalidOperationException(
-                    $"A test probe is already installed at {destination}. An earlier run was "
-                    + "killed before it could remove it; delete it and try again, rather than "
-                    + "letting this run report on whatever build that is.");
+                if ((isGameRunning ?? GameIsRunning(gameExecutable))())
+                {
+                    throw new InvalidOperationException(
+                        $"A test probe is already installed at {destination} while the game is "
+                        + "running. Stop Disco before changing a plugin it may have loaded.");
+                }
+
+                File.Delete(destination);
+                progress?.Invoke($"removed stale test probe at {destination}");
             }
 
             File.Copy(probePath, destination);
             progress?.Invoke($"installed the test probe at {destination}");
             return new ProbeDeployment(destination, progress);
+        }
+
+        /// <summary>Builds the default check for the executable's process name.</summary>
+        private static Func<bool> GameIsRunning(string gameExecutable)
+        {
+            string processName = Path.GetFileNameWithoutExtension(gameExecutable);
+            return () => Process.GetProcessesByName(processName).Length > 0;
         }
 
         /// <summary>Removes the probe. Safe to call more than once.</summary>
