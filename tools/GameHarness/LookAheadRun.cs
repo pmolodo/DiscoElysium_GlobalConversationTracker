@@ -75,6 +75,41 @@ namespace GlobalConversationTracker.Harness
             return report.Failures.Count == 0 ? 0 : 1;
         }
 
+        /// <summary>
+        /// The saves a run has to stage, in the order they must be packed.
+        /// </summary>
+        /// <remarks>
+        /// <para>Oldest first, so that the FIRST scenario's save is packed last and is
+        /// therefore the newest on disk. That matters because the first save of a run is
+        /// loaded by pressing Continue at the main menu, which takes the newest one -
+        /// loading from the menu through the probe dies in HudToggle.FixForDreamScene,
+        /// whose HUD views are not built yet. Once a save is in and the HUD exists, the
+        /// probe can load the rest by name and the order stops mattering.</para>
+        ///
+        /// <para>Duplicates are dropped by FIRST use, before the reversal, and that
+        /// ordering is the whole of this. A save several suites share - afford-both is
+        /// used by three - would otherwise be positioned by its LAST use, which is not
+        /// where the run needs it: reversing after the deduplication left afford-both
+        /// packed fifth of twelve rather than last, so Continue loaded a different save
+        /// and the money scenario silently measured the wrong balance.</para>
+        /// </remarks>
+        /// <param name="suites">The suites about to run, in order.</param>
+        /// <returns>Distinct save names, oldest to newest.</returns>
+        public static IReadOnlyList<string> StagingOrder(IEnumerable<LookAheadSuite> suites)
+        {
+            if (suites == null)
+            {
+                throw new ArgumentNullException(nameof(suites));
+            }
+
+            return suites
+                .SelectMany(suite => suite.Scenarios)
+                .Select(scenario => scenario.SaveName)
+                .Distinct(StringComparer.Ordinal)
+                .Reverse()
+                .ToArray();
+        }
+
         private static void RunSuites(
             IReadOnlyList<LookAheadSuite> suites,
             string game,
@@ -88,20 +123,11 @@ namespace GlobalConversationTracker.Harness
             string logPath = Path.Combine(
                 FilePaths.FolderOf(game, nameof(game)), "BepInEx", "LogOutput.log");
             string saveGames = GameProfile.SavesFolder;
-            // Packed in REVERSE order so the first scenario's archive is the newest. The
-            // first save is loaded by pressing Continue at the main menu, which takes the
-            // newest one, because loading from the menu through the probe dies in
-            // HudToggle.FixForDreamScene - the HUD views that path expects are not built
-            // yet. Once a save is in and the HUD exists, the probe can load the rest.
             var packed = new List<string>();
             var stagedNames = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (LookAheadScenario scenario in suites
-                .SelectMany(suite => suite.Scenarios)
-                .Reverse()
-                .GroupBy(scenario => scenario.SaveName, StringComparer.Ordinal)
-                .Select(group => group.First()))
+            foreach (string saveName in StagingOrder(suites))
             {
-                string expanded = Path.Combine(scenarioRoot, scenario.SaveName + ".ntwtf");
+                string expanded = Path.Combine(scenarioRoot, saveName + ".ntwtf");
                 if (!Directory.Exists(expanded))
                 {
                     throw new DirectoryNotFoundException($"No scenario save at {expanded}.");
@@ -114,7 +140,7 @@ namespace GlobalConversationTracker.Harness
                 // save by exactly that, so the load command has to carry the staged name
                 // and not the scenario's. Getting this wrong failed silently.
                 string fileName = Path.GetFileName(archive);
-                stagedNames[scenario.SaveName] =
+                stagedNames[saveName] =
                     fileName.EndsWith(SaveExtension, StringComparison.OrdinalIgnoreCase)
                         ? fileName.Substring(0, fileName.Length - SaveExtension.Length)
                         : fileName;

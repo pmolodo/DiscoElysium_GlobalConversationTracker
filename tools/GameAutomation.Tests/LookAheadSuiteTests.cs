@@ -140,6 +140,51 @@ namespace GlobalConversationTracker.Automation.Tests
             }
         }
 
+        /// <remarks>
+        /// The bug this pins down cost four silent failures. Only the newest save on
+        /// disk can be loaded by the Continue press that starts a run, so the first
+        /// scenario's save has to be packed last - and a save that several suites share
+        /// used to be positioned by its last use rather than its first, which put
+        /// afford-both fifth of twelve. Continue then loaded a different save, and the
+        /// money scenario measured a balance nobody asked for while still drawing a menu
+        /// and reporting on it.
+        /// </remarks>
+        [Fact]
+        public void TheFirstScenariosSaveIsStagedLastSoItIsTheNewest()
+        {
+            IReadOnlyList<LookAheadSuite> all = LookAheadSuites.All;
+            IReadOnlyList<string> order = LookAheadRun.StagingOrder(all);
+
+            Assert.Equal(all[0].Scenarios[0].SaveName, order[order.Count - 1]);
+        }
+
+        [Fact]
+        public void EverySaveIsStagedExactlyOnceHoweverManySuitesShareIt()
+        {
+            IReadOnlyList<string> order = LookAheadRun.StagingOrder(LookAheadSuites.All);
+
+            Assert.Equal(order.Count, order.Distinct(StringComparer.Ordinal).Count());
+            Assert.Equal(
+                LookAheadSuites.All
+                    .SelectMany(suite => suite.Scenarios)
+                    .Select(scenario => scenario.SaveName)
+                    .Distinct(StringComparer.Ordinal)
+                    .Count(),
+                order.Count);
+        }
+
+        [Fact]
+        public void ASharedSaveIsPlacedByItsFirstUseNotItsLast()
+        {
+            // Two suites, the second reusing the first's save. Staging must still end
+            // with the first suite's first save.
+            LookAheadSuite[] suites = { LookAheadSuites.Money, LookAheadSuites.SwitchedOff };
+
+            IReadOnlyList<string> order = LookAheadRun.StagingOrder(suites);
+
+            Assert.Equal(LookAheadSuites.Money.Scenarios[0].SaveName, order[order.Count - 1]);
+        }
+
         [Fact]
         public void SelectingBySuiteNameFindsIt()
         {
