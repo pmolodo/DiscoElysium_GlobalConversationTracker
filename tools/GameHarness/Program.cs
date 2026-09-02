@@ -160,7 +160,9 @@ namespace GlobalConversationTracker.Harness
                             Path.Combine(RepoRoot(), ".build", "automation"),
                             TimeSpan.FromSeconds(options.TimeoutSeconds),
                             options.KeepOpen,
-                            options.SuiteNames);
+                            options.SuiteNames,
+                            options.StateBudget,
+                            options.TimeBudgetMs);
                     default:
                         PrintUsage();
                         return 2;
@@ -1449,6 +1451,20 @@ Options:
             public IReadOnlyList<string> SuiteNames => _suiteNames;
 
             /// <summary>
+            /// A state budget to run every suite at, overriding what they ask for; null
+            /// to leave them alone.
+            /// </summary>
+            /// <remarks>
+            /// For asking how the cost behaves as the limit moves, which is a question
+            /// about the conversations rather than about any suite. Editing the suite to
+            /// ask it makes the answer unrepeatable and the tree dirty.
+            /// </remarks>
+            public int? StateBudget { get; private set; }
+
+            /// <summary>A time budget to run every suite at, or null to leave them.</summary>
+            public int? TimeBudgetMs { get; private set; }
+
+            /// <summary>
             /// The part of the menu to match on: the option list, which does not animate.
             /// </summary>
             /// <remarks>
@@ -1550,6 +1566,18 @@ Options:
                             options._suiteNames.AddRange(names.Select(name => name.Trim()));
                             break;
                         }
+                        case "--state-budget":
+                            options.StateBudget = int.Parse(
+                                Next() ?? throw new ArgumentException(
+                                    "--state-budget needs a number."),
+                                CultureInfo.InvariantCulture);
+                            break;
+                        case "--time-budget-ms":
+                            options.TimeBudgetMs = int.Parse(
+                                Next() ?? throw new ArgumentException(
+                                    "--time-budget-ms needs a number."),
+                                CultureInfo.InvariantCulture);
+                            break;
                         case "--region":
                         {
                             string[] parts = (Next() ?? string.Empty).Split(',');

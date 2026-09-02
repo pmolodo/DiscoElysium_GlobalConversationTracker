@@ -25,6 +25,17 @@ namespace GlobalConversationTracker.Harness
     /// </remarks>
     public static class LookAheadRun
     {
+        /// <summary>
+        /// Limits to run every suite at, whatever it declares; null to respect it.
+        /// </summary>
+        /// <remarks>
+        /// Set once per run from the command line, for asking how cost behaves as a limit
+        /// moves. A suite whose markers depend on a crawl completing may fail under one,
+        /// which is why the run says loudly that it is in force.
+        /// </remarks>
+        private static int? _stateBudgetOverride;
+        private static int? _timeBudgetOverride;
+
         /// <summary>The colour meaning "leads somewhere no save has reached".</summary>
         public const string OrangeHtml = "#FF8C42";
 
@@ -49,6 +60,12 @@ namespace GlobalConversationTracker.Harness
         /// <param name="timeout">How long any single wait may take.</param>
         /// <param name="keepOpen">Leave the last game running.</param>
         /// <param name="suiteNames">Suite names, or an empty list for every suite.</param>
+        /// <param name="stateBudget">
+        /// A state budget to force on every suite, or null to respect what they declare.
+        /// </param>
+        /// <param name="timeBudgetMs">
+        /// A time budget to force on every suite, or null to respect what they declare.
+        /// </param>
         /// <returns>0 when every check passed.</returns>
         public static int Run(
             string game,
@@ -57,10 +74,22 @@ namespace GlobalConversationTracker.Harness
             string artifacts,
             TimeSpan timeout,
             bool keepOpen,
-            IReadOnlyList<string> suiteNames)
+            IReadOnlyList<string> suiteNames,
+            int? stateBudget = null,
+            int? timeBudgetMs = null)
         {
             IReadOnlyList<LookAheadSuite> suites = LookAheadSuites.SelectMany(suiteNames);
             var report = new Report();
+            _stateBudgetOverride = stateBudget;
+            _timeBudgetOverride = timeBudgetMs;
+            if (stateBudget != null || timeBudgetMs != null)
+            {
+                Console.WriteLine(
+                    "Overriding every suite's limits: "
+                    + $"state budget {stateBudget?.ToString() ?? "as declared"}, "
+                    + $"time budget {timeBudgetMs?.ToString() ?? "as declared"}ms. "
+                    + "Marker expectations may no longer hold.");
+            }
 
             RunSuites(
                 suites, game, scenarioRoot, settingsFile, artifacts, timeout, keepOpen, report);
@@ -414,10 +443,24 @@ namespace GlobalConversationTracker.Harness
                 ? bool.Parse(value)
                 : fallback;
 
-        private static int Setting(LookAheadSuite suite, string name, int fallback) =>
-            suite.PluginSettings.TryGetValue(name, out string? value)
+        private static int Setting(LookAheadSuite suite, string name, int fallback)
+        {
+            int? forced = name switch
+            {
+                "LookAheadStateBudget" => _stateBudgetOverride,
+                "LookAheadTimeBudgetMs" => _timeBudgetOverride,
+                _ => null,
+            };
+
+            if (forced != null)
+            {
+                return forced.Value;
+            }
+
+            return suite.PluginSettings.TryGetValue(name, out string? value)
                 ? int.Parse(value)
                 : fallback;
+        }
 
         private static void ClearArtefacts(LookAheadSuite suite, string saveGames)
         {
