@@ -26,8 +26,8 @@ namespace GlobalConversationTracker.DialogueAsset
         EntryField,
 
         /// <summary>
-        /// An entry property written directly rather than as a field: isGroup,
-        /// conditionsString or userScript.
+        /// An entry property written directly rather than as a field: conversationID,
+        /// isGroup, conditionsString or userScript.
         /// </summary>
         EntryProperty,
 
@@ -86,6 +86,13 @@ namespace GlobalConversationTracker.DialogueAsset
         /// <summary>The line the conversations end at.</summary>
         public const string NextSection = "  syncInfo:";
 
+        /// <summary>
+        /// The conversationID property name: the id of the conversation an entry says it
+        /// belongs to, which is not always read but is worth checking against the
+        /// conversation it was actually written inside.
+        /// </summary>
+        public const string ConversationIdProperty = "conversationID";
+
         /// <summary>The isGroup property name, as <see cref="DialogueAssetEvent.Name"/> reports it.</summary>
         public const string IsGroupProperty = "isGroup";
 
@@ -108,6 +115,9 @@ namespace GlobalConversationTracker.DialogueAsset
         private const string EntryStartPrefix = "    - id: ";
         private const string EntryFieldPrefix = "      - title: ";
         private const string EntryValuePrefix = "        value: ";
+        // Six spaces, so the eight-space originConversationID inside an outgoing link does
+        // not match it.
+        private const string EntryConversationIdPrefix = "      conversationID: ";
         private const string EntryIsGroupPrefix = "      isGroup: ";
         private const string EntryConditionsPrefix = "      conditionsString: ";
         private const string EntryScriptPrefix = "      userScript: ";
@@ -204,6 +214,10 @@ namespace GlobalConversationTracker.DialogueAsset
                     yield return new DialogueAssetEvent(DialogueAssetEventKind.EntryField,
                         pendingEntryField, line.Substring(EntryValuePrefix.Length));
                     pendingEntryField = null;
+                }
+                else if (line.StartsWith(EntryConversationIdPrefix, StringComparison.Ordinal))
+                {
+                    yield return Property(ConversationIdProperty, line, EntryConversationIdPrefix);
                 }
                 else if (line.StartsWith(EntryIsGroupPrefix, StringComparison.Ordinal))
                 {

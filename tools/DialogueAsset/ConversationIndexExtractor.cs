@@ -56,19 +56,32 @@ namespace GlobalConversationTracker.DialogueAsset
                         break;
 
                     case DialogueAssetEventKind.ConversationField:
-                        // Three of the conversation's fields are wanted; the rest, and the
-                        // whole list once the entries have started, are not.
-                        switch (DialogueScalar.Decode(item.Name))
                         {
-                            case TitleField:
-                                conversation!.Title = DialogueScalar.Decode(item.Text);
+                            string name = DialogueScalar.Decode(item.Name);
+                            if (name.Length == 0)
+                            {
+                                // As for an entry: a field with no name is no field.
                                 break;
-                            case ActorField:
-                                conversation!.Actor = DialogueScalar.AsInt(DialogueScalar.Decode(item.Text));
-                                break;
-                            case ConversantField:
-                                conversation!.Conversant = DialogueScalar.AsInt(DialogueScalar.Decode(item.Text));
-                                break;
+                            }
+
+                            // Every field is kept, as for an entry, so that a reader after
+                            // one the index line never named - the Articy Id, above all -
+                            // does not need a scan of its own. Three of them are also read
+                            // out by name, because the line carries those.
+                            string value = DialogueScalar.Decode(item.Text);
+                            conversation!.Fields[name] = value;
+                            switch (name)
+                            {
+                                case TitleField:
+                                    conversation.Title = value;
+                                    break;
+                                case ActorField:
+                                    conversation.Actor = DialogueScalar.AsInt(value);
+                                    break;
+                                case ConversantField:
+                                    conversation.Conversant = DialogueScalar.AsInt(value);
+                                    break;
+                            }
                         }
 
                         break;
@@ -105,6 +118,9 @@ namespace GlobalConversationTracker.DialogueAsset
                     case DialogueAssetEventKind.EntryProperty:
                         switch (item.Name)
                         {
+                            case DialogueAssetScanner.ConversationIdProperty:
+                                entry!.ConversationId = DialogueScalar.AsInt(item.Text);
+                                break;
                             case DialogueAssetScanner.IsGroupProperty:
                                 entry!.Group = item.Text.Trim() == GroupValue;
                                 break;

@@ -9,6 +9,7 @@ namespace GlobalConversationTracker.DialogueExtract
     /// <summary>Reads what the offline tools need out of the Dialogue System database.</summary>
     internal static class Program
     {
+        private const string ArticyIdsCommand = "articy-ids";
         private const string ConversationIndexCommand = "conversation-index";
         private const string CorpusCommand = "corpus";
         private const string WorstCaseStateCommand = "worst-case-state";
@@ -21,6 +22,9 @@ namespace GlobalConversationTracker.DialogueExtract
               dotnet run --project tools/DialogueExtract -- <command> [options]
 
             Commands:
+              articy-ids          The articy id of every conversation and dialogue entry,
+                                  as the two maps NtwtfDecode reads to rebuild a save's
+                                  Conversation_SimX_* strings.
               conversation-index  One compact JSON object per conversation, one per line:
                                   its id, title, actor, conversant, and every dialogue
                                   entry with its guard, script, links and fields.
@@ -32,11 +36,13 @@ namespace GlobalConversationTracker.DialogueExtract
                                   conversation in the index recorded as WasDisplayed.
 
             Options:
-              --asset PATH    conversation-index, corpus: the database .asset. Default:
+              --asset PATH    articy-ids, conversation-index, corpus: the database .asset.
+                              Default:
                               .game_reference_copies/AssetRipperExport/ExportedProject/Assets/Dialogue Databases/Disco Elysium.asset
               --index PATH    worst-case-state: the index conversation-index wrote. Default:
                               .game_reference_copies/derived/conversation_index.jsonl
               --out PATH      Where to write the output. Defaults:
+                              articy-ids          articy_ids_final_cut.json
                               conversation-index  .game_reference_copies/derived/conversation_index.jsonl
                               worst-case-state    testing/scenarios/global-state-worst-case.json
               --out-dir PATH  corpus: the directory to write the two files into. Default:
@@ -56,6 +62,9 @@ namespace GlobalConversationTracker.DialogueExtract
 
         private static readonly string DefaultStateOut = Path.Combine("testing", "scenarios",
             "global-state-worst-case.json");
+
+        // At the repository root, where NtwtfDecode looks for it by name.
+        private static readonly string DefaultArticyIdsOut = "articy_ids_final_cut.json";
 
         private static int Main(string[] args)
         {
@@ -92,6 +101,8 @@ namespace GlobalConversationTracker.DialogueExtract
             string command = args[0];
             switch (command)
             {
+                case ArticyIdsCommand:
+                    return ArticyIds(ParseOptions(args, command));
                 case ConversationIndexCommand:
                     return ConversationIndex(ParseOptions(args, command));
                 case CorpusCommand:
@@ -101,6 +112,20 @@ namespace GlobalConversationTracker.DialogueExtract
                 default:
                     throw new ArgumentException($"Unknown command '{command}'\n\n{Usage}");
             }
+        }
+
+        private static int ArticyIds(Dictionary<string, string> options)
+        {
+            string asset = Option(options, "--asset", DefaultAsset);
+            string outPath = Option(options, "--out", DefaultArticyIdsOut);
+            RejectUnknownOptions(options);
+            PrepareOutput(outPath);
+
+            ArticyIdIndex index = ArticyIdIndex.Build(asset);
+            ArticyIdFile.Write(outPath, index);
+            Console.WriteLine($"wrote {index.Conversations.Count} conversation and "
+                + $"{index.DialogueEntries.Count} dialogue entry articy ids to {outPath}");
+            return 0;
         }
 
         private static int ConversationIndex(Dictionary<string, string> options)

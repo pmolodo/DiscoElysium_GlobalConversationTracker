@@ -19,6 +19,20 @@ namespace GlobalConversationTracker.DialogueAsset
         /// <summary>The conversation's Conversant field as a number, or null where it has none.</summary>
         public int? Conversant { get; set; }
 
+        /// <summary>
+        /// Every field on the conversation, as entries already keep theirs. The three
+        /// above are read out of this one and kept beside it because the index line
+        /// carries them by name; the rest are here for readers that want a field the
+        /// index never named, such as the Articy Id the articy-ids output is built from.
+        /// </summary>
+        /// <remarks>
+        /// Not written to the conversation index and not read back from it: the index is
+        /// compared byte for byte against the last one written, so the line's shape is
+        /// fixed. A reader that needs these has to extract from the .asset.
+        /// </remarks>
+        [JsonIgnore]
+        public OrderedDictionary<string, string> Fields { get; set; } = new OrderedDictionary<string, string>();
+
         /// <summary>Its dialogue entries, in the order the database writes them.</summary>
         public List<EntryRecord> Entries { get; set; } = new List<EntryRecord>();
     }
@@ -28,6 +42,15 @@ namespace GlobalConversationTracker.DialogueAsset
     {
         /// <summary>The entry id, unique within its conversation.</summary>
         public int Id { get; set; }
+
+        /// <summary>
+        /// The conversation this entry says it belongs to, or null where it says nothing.
+        /// Always the id of the conversation it was written inside, in a database that is
+        /// not corrupt, which is worth checking before trusting either.
+        /// </summary>
+        /// <remarks>Not part of the index line: an entry is already inside its conversation there.</remarks>
+        [JsonIgnore]
+        public int? ConversationId { get; set; }
 
         /// <summary>Whether the entry is a group node rather than a selectable line.</summary>
         public bool Group { get; set; }
