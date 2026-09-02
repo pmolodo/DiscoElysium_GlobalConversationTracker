@@ -60,9 +60,26 @@ namespace GlobalConversationTracker.TestProbe
         /// </summary>
         private const int PollFrames = 10;
 
+        /// <summary>
+        /// How many polls may pass after a load is latched before "not loading" is
+        /// taken to mean the load is over.
+        /// </summary>
+        /// <remarks>
+        /// Only ever reached when the rising edge was missed. Watching for the falling
+        /// edge alone waits forever on a load whose <c>IsLoading</c> window opens and
+        /// closes between two polls, because such a load never looks like it started.
+        /// Long enough that a latch taken just before <c>IsLoading</c> rises does not
+        /// report the load before it has begun, short enough that the settle costs a
+        /// genuinely fast load nothing worth measuring.
+        /// </remarks>
+        private const int LoadSettlePolls = 3;
+
         private static string? _commandPath;
+        private static bool _saveApplied;
         private int _sinceLastPoll;
-        private bool _wasLoading;
+        private bool _loadPending;
+        private bool _sawLoading;
+        private int _pollsSinceLoad;
 
         /// <summary>Required by Il2CppInterop for an injected component.</summary>
         /// <param name="pointer">The native object.</param>
@@ -84,6 +101,21 @@ namespace GlobalConversationTracker.TestProbe
         internal static void UseDirectory(string directoryPath)
         {
             _commandPath = Path.Combine(directoryPath, CommandFileName);
+        }
+
+        /// <summary>
+        /// Says that a save is being applied, so the load that follows is reported even
+        /// if it finishes too quickly to be observed.
+        /// </summary>
+        /// <remarks>
+        /// Called from the <c>ApplyRawData</c> hook, which is the one place every load
+        /// goes through, whether it came from the main menu or from a probe command.
+        /// Latching there rather than on seeing <c>IsLoading</c> rise is what makes the
+        /// report survive a load that opens and closes between two polls.
+        /// </remarks>
+        internal static void NoteSaveApplied()
+        {
+            _saveApplied = true;
         }
 
         /// <summary>Polls for a command. Called by Unity.</summary>
@@ -124,14 +156,36 @@ namespace GlobalConversationTracker.TestProbe
         /// Says when a load has actually finished, which nothing else does.
         /// </summary>
         /// <remarks>
-        /// <c>save-applied</c> fires while the save is still being applied, and
+        /// <para><c>save-applied</c> fires while the save is still being applied, and
         /// <c>world-ready</c> fires when the HUD is first built - once, at the main menu
         /// - so neither marks the moment the loaded world is there. The game's own
         /// <c>IsLoading</c> flag does, and watching it fall is the only signal that
-        /// survives loading a second save into a session that already has a HUD.
+        /// survives loading a second save into a session that already has a HUD.</para>
+        ///
+        /// <para>But the fall can only be watched for once the rise has been seen, and
+        /// at one poll every ten frames a fast load can begin and end unobserved. Then
+        /// the falling edge never fires, and a harness waiting on it waits out its whole
+        /// timeout against a game that finished the load and is sitting there idle -
+        /// which is what it looks like from outside, and it is not what happened. So the
+        /// load is latched when the save is applied instead. Seeing the rise still
+        /// reports the exact falling edge, as before; not seeing it now reports the load
+        /// a few polls late rather than never.</para>
         /// </remarks>
         private void ReportLoadingFinished()
         {
+            if (_saveApplied)
+            {
+                _saveApplied = false;
+                _loadPending = true;
+                _sawLoading = false;
+                _pollsSinceLoad = 0;
+            }
+
+            if (!_loadPending)
+            {
+                return;
+            }
+
             bool loading;
             try
             {
@@ -140,18 +194,29 @@ namespace GlobalConversationTracker.TestProbe
             }
             catch (Exception)
             {
+                // A singleton that throws mid-scene-swap costs this poll, not the latch:
+                // the load stays pending and the next poll asks again.
                 return;
             }
 
-            if (_wasLoading && !loading)
+            _pollsSinceLoad++;
+            if (loading)
             {
-                ProbeLog.Write(
-                    "load-finished",
-                    "money", TestProbePlugin.Money(),
-                    "conversation", TestProbePlugin.ConversationId());
+                _sawLoading = true;
+                return;
             }
 
-            _wasLoading = loading;
+            if (!_sawLoading && _pollsSinceLoad < LoadSettlePolls)
+            {
+                return;
+            }
+
+            _loadPending = false;
+            ProbeLog.Write(
+                "load-finished",
+                "money", TestProbePlugin.Money(),
+                "conversation", TestProbePlugin.ConversationId(),
+                "observed", _sawLoading);
         }
 
         private static void Run(string text)
@@ -191,7 +256,8 @@ namespace GlobalConversationTracker.TestProbe
                         ProbeLog.Write(
                             "report",
                             "money", TestProbePlugin.Money(),
-                            "conversation", TestProbePlugin.ConversationId());
+                            "conversation", TestProbePlugin.ConversationId(),
+                            "active", TestProbePlugin.IsConversationActive());
                         break;
                     default:
                         ProbeLog.Write(
@@ -374,7 +440,7 @@ namespace GlobalConversationTracker.TestProbe
                 "command-finished",
                 "command", StartConversationCommand,
                 "title", resolved,
-                "active", DialogueManager.isConversationActive,
+                "active", TestProbePlugin.IsConversationActive(),
                 "conversation", TestProbePlugin.ConversationId());
         }
 

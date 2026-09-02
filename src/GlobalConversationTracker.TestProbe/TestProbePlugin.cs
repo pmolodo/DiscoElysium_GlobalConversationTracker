@@ -166,6 +166,30 @@ namespace GlobalConversationTracker.TestProbe
         }
 
         /// <summary>
+        /// Whether a conversation is running right now, or null if the question could
+        /// not be asked.
+        /// </summary>
+        /// <remarks>
+        /// Not answerable from <see cref="ConversationId"/>, which reads
+        /// <c>lastConversation</c> - the conversation most recently entered, which keeps
+        /// its value after that conversation ends. Telling "still talking" from "started
+        /// and fell straight back out" needs the dialogue system's own live flag, and
+        /// that difference is the whole of what a caller retrying a failed open wants to
+        /// know.
+        /// </remarks>
+        internal static bool? IsConversationActive()
+        {
+            try
+            {
+                return DialogueManager.isConversationActive;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
         /// Every option's text, after the mod has finished composing it.
         /// </summary>
         /// <remarks>
@@ -299,6 +323,11 @@ namespace GlobalConversationTracker.TestProbe
             [HarmonyPostfix]
             private static void Postfix(Il2CppStructArray<byte> bytes)
             {
+                // Before the logging, and outside the try, because this is the latch the
+                // load-finished report hangs on: losing it to a formatting failure would
+                // cost a whole scenario, and it cannot itself throw.
+                ProbeCommands.NoteSaveApplied();
+
                 try
                 {
                     ProbeLog.Write(
