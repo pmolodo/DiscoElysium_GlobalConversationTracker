@@ -195,6 +195,61 @@ namespace GlobalConversationTracker.Persistence
             return Encoding.UTF8.GetString(SerializeToUtf8Bytes(state));
         }
 
+        /// <summary>
+        /// Converts a format version 1 or 2 document to the current grouped format.
+        /// </summary>
+        /// <remarks>
+        /// Unlike the runtime reader, conversion is strict: a document that would lose
+        /// even one unreadable row is rejected instead of producing a partial migration.
+        /// </remarks>
+        /// <exception cref="ArgumentNullException">
+        /// <paramref name="utf8Json"/> or <paramref name="sourcePath"/> is null.
+        /// </exception>
+        /// <exception cref="InvalidDataException">
+        /// The input is corrupt, is not format version 1 or 2, or contains an unreadable
+        /// row.
+        /// </exception>
+        public static byte[] ConvertLegacyToUtf8Bytes(byte[] utf8Json, string sourcePath)
+        {
+            if (utf8Json == null)
+            {
+                throw new ArgumentNullException(nameof(utf8Json));
+            }
+
+            if (sourcePath == null)
+            {
+                throw new ArgumentNullException(nameof(sourcePath));
+            }
+
+            GlobalStateLoadResult result = DeserializeWithFormatVersion(
+                utf8Json, sourcePath, out int? sourceFormatVersion);
+            if (!result.IsLoaded)
+            {
+                throw new InvalidDataException(
+                    $"Could not convert '{sourcePath}': {result.ErrorMessage ?? result.Outcome.ToString()}.");
+            }
+
+            int version = sourceFormatVersion.GetValueOrDefault();
+            if (!sourceFormatVersion.HasValue
+                || version < 1
+                || version > LegacyPerEntryFormatVersion)
+            {
+                throw new InvalidDataException(
+                    $"Could not convert '{sourcePath}': format version {version} is not "
+                    + $"a supported legacy version (expected 1 or {LegacyPerEntryFormatVersion}).");
+            }
+
+            if (result.SkippedRowCount > 0)
+            {
+                string warnings = string.Join(" ", result.Warnings);
+                throw new InvalidDataException(
+                    $"Could not convert '{sourcePath}': {result.SkippedRowCount} unreadable row(s) "
+                    + $"would be lost. {warnings}");
+            }
+
+            return SerializeToUtf8Bytes(result.RequireState());
+        }
+
         /// <summary>Parses UTF-8 JSON bytes back into a state.</summary>
         /// <param name="utf8Json">The file contents.</param>
         /// <param name="sourcePath">
@@ -216,6 +271,14 @@ namespace GlobalConversationTracker.Persistence
                 throw new ArgumentNullException(nameof(utf8Json));
             }
 
+            return DeserializeWithFormatVersion(utf8Json, sourcePath, out _);
+        }
+
+        private static GlobalStateLoadResult DeserializeWithFormatVersion(
+            byte[] utf8Json,
+            string sourcePath,
+            out int? formatVersion)
+        {
             JsonDocument document;
             try
             {
@@ -225,12 +288,13 @@ namespace GlobalConversationTracker.Persistence
             {
                 // Covers the whole "torn write" family: zero bytes, half an object,
                 // trailing garbage.
+                formatVersion = null;
                 return GlobalStateLoadResult.Corrupt(sourcePath, $"Not valid JSON: {ex.Message}");
             }
 
             using (document)
             {
-                return ReadRoot(document.RootElement, sourcePath);
+                return ReadRoot(document.RootElement, sourcePath, out formatVersion);
             }
         }
 
@@ -245,8 +309,13 @@ namespace GlobalConversationTracker.Persistence
             return Deserialize(Encoding.UTF8.GetBytes(json), sourcePath);
         }
 
-        private static GlobalStateLoadResult ReadRoot(JsonElement root, string sourcePath)
+        private static GlobalStateLoadResult ReadRoot(
+            JsonElement root,
+            string sourcePath,
+            out int? formatVersion)
         {
+            formatVersion = null;
+
             if (root.ValueKind != JsonValueKind.Object)
             {
                 return GlobalStateLoadResult.Corrupt(
@@ -265,6 +334,8 @@ namespace GlobalConversationTracker.Persistence
                 return GlobalStateLoadResult.Corrupt(
                     sourcePath, $"'{VersionPropertyName}' is not an integer.");
             }
+
+            formatVersion = version;
 
             if (version > FormatVersion)
             {

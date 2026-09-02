@@ -120,6 +120,7 @@
         <Project Path="tools/GlobalStateBenchmark/GlobalStateBenchmark.csproj" />
         <Project Path="tools/GlobalStateCheck.Tests/GlobalStateCheck.Tests.csproj" />
         <Project Path="tools/GlobalStateCheck/GlobalStateCheck.csproj" />
+        <Project Path="tools/GlobalStateConvert/GlobalStateConvert.csproj" />
         <Project Path="tools/LookAheadOffline/LookAheadOffline.csproj" />
     </Folder>
 

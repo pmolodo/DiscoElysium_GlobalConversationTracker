@@ -76,6 +76,10 @@ Two things about its contents are deliberate:
   - `GlobalStateBenchmark` - times `GlobalStateStore.Save` broken out by phase, and what
     a caller pays now that the write runs on a background thread, over a sweep of state
     sizes.
+  - `GlobalStateConvert` - migrates a version 1 or 2 `global-conversation-state.json`
+    from the legacy per-entry layout to the current version 3 grouped layout. Takes an
+    input and an output path, never modifies the input, and refuses to overwrite an
+    existing output. See `tools\GlobalStateConvert\README.md` for the migration order.
 
 The `.slnx` format, not the classic `.sln`, because it is what `dotnet new sln` emits with
 the SDK this repo builds on and it can carry those notes as comments. It needs the .NET SDK
