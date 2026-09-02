@@ -54,7 +54,20 @@ Two things about its contents are deliberate:
   DLL path - not the only way to compile it.
 - **The `tools\` projects are included**, even though none of them is part of the plugin,
   so that a repo-root build keeps the whole repo compiling rather than most of it. Each is
-  a standalone console app; run one with `dotnet run --project tools\<name> -- --help`.
+  either a shared library or a standalone console app; run a console app with
+  `dotnet run --project tools\<name> -- --help`.
+  - `DialogueAsset` - streams the Dialogue System database `.asset` and supplies the
+    shared models, readers and writers used by the extraction and look-ahead tools.
+  - `DialogueExtract` - regenerates the offline data derived from that database. The
+    `.asset` is not in the repo: it comes from an AssetRipper export and defaults to
+    `.game_reference_copies\AssetRipperExport\ExportedProject\Assets\Dialogue Databases\Disco Elysium.asset`.
+    Its subcommands and default outputs are:
+    - `articy-ids` - `articy_ids_final_cut.json` at the repo root.
+    - `conversation-index` - `.game_reference_copies\derived\conversation_index.jsonl`.
+    - `corpus` - `.game_reference_copies\derived\distinct_guards.txt` and
+      `.game_reference_copies\derived\distinct_scripts.txt`.
+    - `worst-case-state` - `testing\scenarios\global-state-worst-case.json`, derived from
+      the conversation index rather than directly from the `.asset`.
   - `NtwtfDecode` - dumps the Lua tables inside a `{save}.ntwtf` save (zip, folder or
     `.lua` file) as JSON. It dumps the `Conversation` table by default; `-t all` dumps
     all five (Actor, Item, Location, Variable, Conversation) as one document.
