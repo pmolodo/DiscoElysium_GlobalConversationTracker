@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
@@ -201,7 +202,7 @@ namespace GlobalConversationTracker.TestProbe
             catch (Exception error)
             {
                 ProbeLog.Write(
-                    "command-failed", "command", name, "message", error.Message);
+                    "command-failed", "command", name, "message", Explain(error));
             }
         }
 
@@ -297,6 +298,33 @@ namespace GlobalConversationTracker.TestProbe
                 "stateBudget", stateBudget,
                 "logBudgetExceeded", logBudgetExceeded,
                 "keepStatistics", keepStatistics);
+        }
+
+        /// <summary>
+        /// The message to report for a failed command, following the chain of causes.
+        /// </summary>
+        /// <remarks>
+        /// Everything here reaches the plugin by reflection, and a method that throws
+        /// comes back wrapped in a TargetInvocationException whose own message is the
+        /// useless "Exception has been thrown by the target of an invocation." Reporting
+        /// that alone says a command failed and nothing whatever about why - which turned
+        /// a plugin refusing a file format it did not recognise into an unexplained hang.
+        /// </remarks>
+        private static string Explain(Exception error)
+        {
+            var parts = new List<string>();
+            for (Exception? cause = error; cause != null; cause = cause.InnerException)
+            {
+                // The wrapper's own message carries nothing the cause does not.
+                if (cause is TargetInvocationException && cause.InnerException != null)
+                {
+                    continue;
+                }
+
+                parts.Add($"{cause.GetType().Name}: {cause.Message}");
+            }
+
+            return string.Join(" -> ", parts);
         }
 
         private static void InvokePlugin(string methodName, object[] arguments)

@@ -72,6 +72,75 @@ namespace GlobalConversationTracker.Automation.Tests
             Assert.True(log.Reads >= 3, $"only read {log.Reads} times");
         }
 
+        /// <remarks>
+        /// The failure this turns from a hang into a sentence. A command that threw is
+        /// never followed by the event its success would have written, so the run used to
+        /// sit out the whole timeout and then report that the game was slow - while the
+        /// probe had already said, in the same log, exactly what it refused and why.
+        /// </remarks>
+        [Fact]
+        public void AFailedCommandStopsTheWaitAndCarriesItsReason()
+        {
+            var log = new GrowingLog(
+                new[] { Named("command-started") },
+                new[]
+                {
+                    Named("command-started"),
+                    Event(
+                        "{\"event\":\"command-failed\",\"command\":\"prepare-look-ahead-suite\","
+                        + "\"message\":\"NotSupportedException: format version 3\"}"),
+                });
+            var watcher = new ProbeWatcher(log.Next, Poll);
+
+            ProbeCommandFailedException error =
+                Assert.Throws<ProbeCommandFailedException>(
+                    () => watcher.WaitForEvent(
+                        "look-ahead-suite-prepared", TimeSpan.FromSeconds(5)));
+
+            Assert.Equal("prepare-look-ahead-suite", error.Command);
+            Assert.Contains("format version 3", error.Message);
+            Assert.Contains("look-ahead-suite-prepared", error.Message);
+        }
+
+        [Fact]
+        public void AWaitForAFailureIsStillAnsweredByIt()
+        {
+            // The abort must not shadow a caller that wants the failure itself.
+            var watcher = new ProbeWatcher(
+                () => new[] { Named("command-failed") }, Poll);
+
+            Assert.Equal(
+                "command-failed", watcher.WaitForEvent("command-failed", Instant).Name);
+        }
+
+        [Fact]
+        public void AClosedGameEndsTheWaitWithoutServingOutTheTimeout()
+        {
+            bool gone = false;
+            var watcher = new ProbeWatcher(() => new ProbeEvent[0], Poll);
+            watcher.AbandonIf(() => gone, "the game is no longer running");
+            gone = true;
+
+            ProbeGoneException error = Assert.Throws<ProbeGoneException>(
+                () => watcher.WaitForEvent("world-ready", TimeSpan.FromHours(1)));
+
+            Assert.Contains("no longer running", error.Message);
+        }
+
+        [Fact]
+        public void AWaitIsNotAbandonedWhileTheGameIsStillThere()
+        {
+            var log = new GrowingLog(
+                new ProbeEvent[0],
+                new[] { Named("world-ready") });
+            var watcher = new ProbeWatcher(log.Next, Poll);
+            watcher.AbandonIf(() => false, "the game is no longer running");
+
+            Assert.Equal(
+                "world-ready",
+                watcher.WaitForEvent("world-ready", TimeSpan.FromSeconds(5)).Name);
+        }
+
         [Fact]
         public void MarkMakesEarlierEventsUnwaitable()
         {

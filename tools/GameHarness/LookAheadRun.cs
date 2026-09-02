@@ -163,6 +163,15 @@ namespace GlobalConversationTracker.Harness
                 process = Process.Start(new ProcessStartInfo(game) { UseShellExecute = false });
 
                 var watcher = new ProbeWatcher(logPath);
+
+                // Every wait from here on gives up the moment the game is gone. Closed by
+                // hand, crashed, or killed, it will not report anything again, and the
+                // profile is staged until this returns.
+                Process? launched = process;
+                watcher.AbandonIf(
+                    () => launched != null && launched.HasExited,
+                    "the game is no longer running");
+
                 watcher.WaitForEvent("ready", timeout, Log);
                 report.Check(true, "the probe loaded", $"reading {logPath}");
 

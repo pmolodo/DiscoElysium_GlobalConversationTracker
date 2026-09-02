@@ -28,9 +28,14 @@ namespace GlobalConversationTracker.Automation
         /// <summary>How often the log is re-read.</summary>
         public static readonly TimeSpan DefaultPollInterval = TimeSpan.FromMilliseconds(500);
 
+        /// <summary>The event the probe writes when a command throws.</summary>
+        public const string CommandFailedEvent = "command-failed";
+
         private readonly Func<ProbeEvent[]> _read;
         private readonly TimeSpan _poll;
         private int _consumed;
+        private Func<bool>? _gone;
+        private string _whyGone = "the game is gone";
 
         /// <summary>Watches a BepInEx log file.</summary>
         /// <param name="logPath">The log.</param>
@@ -123,9 +128,31 @@ namespace GlobalConversationTracker.Automation
                         progress?.Invoke($"saw {what} after {clock.Elapsed.TotalSeconds:N1}s");
                         return all[i];
                     }
+
+                    // Checked after the match, so a caller deliberately waiting for a
+                    // failure still gets it. A command that threw is never followed by the
+                    // event its success would have produced, so waiting out the timeout
+                    // only delays the report and hides the reason inside it: the probe
+                    // already said what went wrong.
+                    if (string.Equals(all[i].Name, CommandFailedEvent, StringComparison.Ordinal))
+                    {
+                        _consumed = i + 1;
+                        throw new ProbeCommandFailedException(
+                            all[i].Text("command"), all[i].Text("message"), what);
+                    }
                 }
 
                 _consumed = all.Length;
+
+                // Before the timeout check: a closed game will never report anything
+                // again, and the run has cleanup to do. Waiting the full timeout to
+                // discover it delays the restore of a staged profile by minutes.
+                if (_gone != null && _gone())
+                {
+                    throw new ProbeGoneException(
+                        $"Gave up waiting for {what} after {clock.Elapsed.TotalSeconds:N0}s: "
+                        + $"{_whyGone}.");
+                }
 
                 if (clock.Elapsed >= timeout)
                 {
@@ -153,6 +180,25 @@ namespace GlobalConversationTracker.Automation
 
                 Thread.Sleep(_poll);
             }
+        }
+
+        /// <summary>
+        /// Says how to tell that the game has gone, so a wait can stop early.
+        /// </summary>
+        /// <remarks>
+        /// A wait's timeout is sized for the slowest thing that could legitimately be
+        /// happening - a cold start, a save loading, a crawl over the largest conversation
+        /// in the game. None of that applies once the process has exited, and a run that
+        /// sits out the timeout anyway leaves the player's profile staged for that much
+        /// longer.
+        /// </remarks>
+        /// <param name="gone">Returns true once the game is no longer running.</param>
+        /// <param name="why">How to describe it, for the error message.</param>
+        /// <exception cref="ArgumentNullException">An argument is null.</exception>
+        public void AbandonIf(Func<bool> gone, string why)
+        {
+            _gone = gone ?? throw new ArgumentNullException(nameof(gone));
+            _whyGone = why ?? throw new ArgumentNullException(nameof(why));
         }
 
         /// <summary>Waits for an event of a given name.</summary>
