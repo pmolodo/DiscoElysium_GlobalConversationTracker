@@ -402,12 +402,13 @@ namespace GlobalConversationTracker.Harness
         /// <remarks>
         /// The bottom rung. Every entry is read in this save, so every option's own
         /// novelty and everything it can reach are both the lowest, and nothing can
-        /// outrank anything. Distinguished from a crawl that simply did not run by the
-        /// statistics, which must still record crawls.
+        /// outrank anything. The global state and local save are both exhaustive, so the
+        /// structural scan can prove that before any crawl state is built. Statistics
+        /// distinguish that shortcut from crawls that ran and found nothing.
         /// </remarks>
         public static LookAheadSuite SeenHere { get; } = new LookAheadSuite(
             "seen-here",
-            "a conversation already read to the end earns no marker",
+            "a conversation read to the end earns no marker and needs no crawl",
             AllSeenElsewhereState,
             new[]
             {
@@ -423,8 +424,8 @@ namespace GlobalConversationTracker.Harness
             {
                 new SuiteArtefact(
                     "look-ahead-stats.json",
-                    "the crawls ran and found nothing, rather than not running",
-                    CheckStatistics),
+                    "no crawl ran because every scoreable entry is already seen here",
+                    NoCrawls),
             });
 
         /// <summary>

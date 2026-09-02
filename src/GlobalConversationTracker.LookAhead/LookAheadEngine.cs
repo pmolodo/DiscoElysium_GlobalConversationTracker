@@ -295,6 +295,47 @@ namespace GlobalConversationTracker.LookAhead
         }
 
         /// <summary>
+        /// Whether this conversation group contains any scoreable entry that could
+        /// improve an option with <paramref name="ownNovelty"/>.
+        /// </summary>
+        /// <remarks>
+        /// This is deliberately a structural upper bound: it does not decide whether a
+        /// candidate is reachable in the current world. Its useful negative answer is
+        /// exact, though. If no entry in the complete group outranks the option, no walk
+        /// can produce a marker, so the caller can avoid building crawl state entirely.
+        /// </remarks>
+        /// <param name="graph">The complete conversation group.</param>
+        /// <param name="ownNovelty">The novelty already shown by the option.</param>
+        /// <param name="novelty">How novel each entry is.</param>
+        /// <returns>True when a crawl might improve the option; otherwise false.</returns>
+        /// <exception cref="ArgumentNullException">An argument is null.</exception>
+        public static bool HasPotentialImprovement(
+            LookAheadGraph graph, Novelty ownNovelty, NoveltyLookup novelty)
+        {
+            if (graph == null)
+            {
+                throw new ArgumentNullException(nameof(graph));
+            }
+
+            if (novelty == null)
+            {
+                throw new ArgumentNullException(nameof(novelty));
+            }
+
+            foreach (LookAheadNode node in graph.Nodes)
+            {
+                // Groups are expanded in place. The game never writes their SimStatus,
+                // so treating one as an unseen candidate would make this check useless.
+                if (!node.IsGroup && novelty(node.Id) > ownNovelty)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Finds the most novel entry reachable beyond <paramref name="start"/>.
         /// </summary>
         /// <param name="graph">The conversation group to walk.</param>

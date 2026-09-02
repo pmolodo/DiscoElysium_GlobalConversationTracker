@@ -126,6 +126,37 @@ namespace GlobalConversationTracker.Automation.Tests
         }
 
         [Fact]
+        public void HeadroomRemainsAMeasurementSuite()
+        {
+            LookAheadSuite suite = LookAheadSuites.Headroom;
+            SuiteArtefact statistics = Assert.Single(
+                suite.Artefacts,
+                artefact => artefact.FileName == "look-ahead-stats.json");
+
+            Assert.All(
+                suite.Scenarios,
+                scenario => Assert.Equal(MarkerPolicy.Ignored, scenario.Markers));
+            Assert.NotNull(statistics.Check(null));
+        }
+
+        [Fact]
+        public void SeenHereIsTheExhaustedNoCrawlFixture()
+        {
+            LookAheadSuite suite = LookAheadSuites.SeenHere;
+            LookAheadScenario scenario = Assert.Single(suite.Scenarios);
+            SuiteArtefact statistics = Assert.Single(
+                suite.Artefacts,
+                artefact => artefact.FileName == "look-ahead-stats.json");
+
+            Assert.Equal("global-state-all-seen-elsewhere.json", suite.GlobalStateFile);
+            Assert.Equal("seen-here-all", scenario.SaveName);
+            Assert.Equal(MarkerPolicy.Named, scenario.Markers);
+            Assert.Equal("true", suite.PluginSettings["KeepLookAheadStates"]);
+            Assert.Null(statistics.Check(null));
+            Assert.NotNull(statistics.Check("{\"crawls\":1}"));
+        }
+
+        [Fact]
         public void NoScenarioNamesTheSameEntryTwice()
         {
             foreach (LookAheadSuite suite in LookAheadSuites.All)

@@ -215,6 +215,12 @@ namespace GlobalConversationTracker
                 return null;
             }
 
+            if (!LookAheadEngine.HasPotentialImprovement(
+                graph, own, node => NoveltyOf(session, node.ConversationId, node.EntryId)))
+            {
+                return null;
+            }
+
             var world = new GameLookAheadWorld();
             var start = new DialogueNodeId(entry.conversationID, entry.id);
 
