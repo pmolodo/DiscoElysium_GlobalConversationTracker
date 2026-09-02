@@ -1,0 +1,9 @@
+{
+  "_format": "json-diff",
+  "_changes": {
+    "areaId": "Commustudent-int",
+    "fowUnrevealersStatusCache": {
+      "fog-main": "ACTIVE"
+    }
+  }
+}

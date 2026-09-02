@@ -118,6 +118,14 @@ namespace GlobalConversationTracker.Harness
         public static Somewhere DoomSpiral { get; } =
             new Somewhere("at-the-doom-spiral", 1030, "the doom spiral, in the village");
 
+        /// <summary>The students' flat, up its own staircase off the street.</summary>
+        public static Somewhere Steban { get; } =
+            new Somewhere("at-steban", 362, "Steban, in the students' flat");
+
+        /// <summary>The wall the young communists have made their own.</summary>
+        public static Somewhere Noid { get; } =
+            new Somewhere("at-noid", 368, "Noid, under the mural");
+
         /// <summary>The global state all three money scenarios share.</summary>
         /// <remarks>
         /// Every entry of the conversation except 80, so reaching 80 is the only way to
@@ -146,17 +154,13 @@ namespace GlobalConversationTracker.Harness
         /// <remarks>
         /// Entry count is not the cost - the budget counts (entry, state) pairs, so what
         /// blows up is the state slots a conversation touches multiplied by its reachable
-        /// entries - but it is the best proxy available without running them, and these
-        /// are also among the ones with the most guards and actions.
-        ///
-        /// Two larger ones are missing. 362 (APT / STUDENT COMMUNIST, 1860 entries) and
-        /// 368 (JAM / COALITION WARSHIP ARCHER, 1770) are set in areas no save here
-        /// stands in; adding them means finding a position in those scenes first, and
-        /// opening a conversation from somewhere else is what these suites stopped doing.
-        /// The staged state records them anyway, so adding a save is all it would take.
+        /// entries - and it turns out to be a poor proxy: 1030 is the sixth largest
+        /// conversation in the game and its crawls peak at 201 states, a thousandth of
+        /// Joyce's. It is still the only ordering available without running them, and it
+        /// is what these six are: the six largest of the game's 1,501 conversations.
         /// </remarks>
         public static IReadOnlyList<Somewhere> BiggestConversations =>
-            new[] { HangedMan, Joyce, Garte, DoomSpiral };
+            new[] { Noid, HangedMan, Joyce, Garte, DoomSpiral };
 
         /// <summary>Every suite, in the order a full run does them.</summary>
         /// <remarks>
