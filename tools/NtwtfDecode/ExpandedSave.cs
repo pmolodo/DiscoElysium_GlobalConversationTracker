@@ -95,8 +95,21 @@ public static class ExpandedSave
                 $"'{source}' has no split directory and no {DiffManifestFileName} to inherit from."
             );
         }
-        string outputArchiveName = archiveName;
-        if (!TimestampPattern.IsMatch(archiveName))
+        // Named for the archive the game will see, not for the directory it came from.
+        // Every entry in a save is prefixed with the save's own name and an archive whose
+        // entries disagree is ignored outright - the main menu comes up with no Continue
+        // and Load Game greyed out - so an explicit output name has to reach the members
+        // too. When the output is named after its source, which is the ordinary case,
+        // this is the source stem and nothing changes.
+        string outputArchiveName = Path.GetFileName(output)[..^SaveBlob.ZipExtension.Length];
+        if (outputArchiveName.Length == 0)
+        {
+            throw new ArgumentException(
+                $"A packed save needs a name before '{SaveBlob.ZipExtension}': '{output}'.",
+                nameof(output)
+            );
+        }
+        if (!TimestampPattern.IsMatch(outputArchiveName))
         {
             string timestamp = (now ?? DateTime.Now).ToString(
                 "(M_d_yyyy h-mm-ss tt)",

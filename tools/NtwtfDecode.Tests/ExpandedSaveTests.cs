@@ -76,6 +76,82 @@ public class ExpandedSaveTests
         );
     }
 
+    /// <remarks>
+    /// The reason a prefixed copy of a save is not a save. Every entry inside the
+    /// archive is prefixed with the save's own name, and the game ignores an archive
+    /// whose entries disagree with it: the main menu comes up with no Continue and Load
+    /// Game greyed out, having found no saves at all. Renaming the outer file alone -
+    /// which is what packing to an explicit name used to do - produces exactly that.
+    /// </remarks>
+    [Fact]
+    public void Pack_NamesMembersForTheRequestedOutputRatherThanTheSource()
+    {
+        using var temp = new TempDirectory();
+        string source = temp.Combine("chosen.ntwtf");
+        string parts = Path.Combine(source, "chosen.ntwtf.lua.parts");
+        byte[] original = LuaBlob.SerializeSampleSave();
+        LuaTable document = LuaTableVisitor.ReadAllTables(original, out _);
+        LuaSplitFiles.Write(parts, document, indent: 2, sparse: true);
+        File.WriteAllText(Path.Combine(source, "chosen.states.lua"), "state");
+
+        string actualOutput = ExpandedSave.Pack(
+            source,
+            temp.Combine("GCT-chosen.ntwtf.zip"),
+            new DateTime(2026, 8, 31, 20, 13, 30)
+        );
+
+        Assert.Equal(
+            temp.Combine("GCT-chosen(8_31_2026 8-13-30 PM).ntwtf.zip"),
+            actualOutput
+        );
+        Assert.Equal(original, SaveBlob.Read(actualOutput));
+        using ZipArchive archive = ZipFile.OpenRead(actualOutput);
+        Assert.Equal(
+            new[]
+            {
+                "GCT-chosen(8_31_2026 8-13-30 PM).ntwtf.lua",
+                "GCT-chosen(8_31_2026 8-13-30 PM).states.lua",
+            },
+            archive.Entries.Select(entry => entry.FullName).ToArray()
+        );
+    }
+
+    /// <remarks>
+    /// A name that already carries a timestamp is used as it stands, so a second one is
+    /// not appended to the first. The outer file keeps the name that was asked for.
+    /// </remarks>
+    [Fact]
+    public void Pack_KeepsAnOutputNameThatAlreadyCarriesATimestamp()
+    {
+        using var temp = new TempDirectory();
+        string source = temp.Combine("chosen.ntwtf");
+        string parts = Path.Combine(source, "chosen.ntwtf.lua.parts");
+        LuaTable document = LuaTableVisitor.ReadAllTables(
+            LuaBlob.SerializeSampleSave(),
+            out _
+        );
+        LuaSplitFiles.Write(parts, document, indent: 2, sparse: true);
+        File.WriteAllText(Path.Combine(source, "chosen.states.lua"), "state");
+        string requested = temp.Combine("GCT-chosen(1_2_2026 3-04-05 AM).ntwtf.zip");
+
+        string actualOutput = ExpandedSave.Pack(
+            source,
+            requested,
+            new DateTime(2026, 8, 31, 20, 13, 30)
+        );
+
+        Assert.Equal(requested, actualOutput);
+        using ZipArchive archive = ZipFile.OpenRead(actualOutput);
+        Assert.Equal(
+            new[]
+            {
+                "GCT-chosen(1_2_2026 3-04-05 AM).ntwtf.lua",
+                "GCT-chosen(1_2_2026 3-04-05 AM).states.lua",
+            },
+            archive.Entries.Select(entry => entry.FullName).ToArray()
+        );
+    }
+
     [Fact]
     public void Pack_RejectsPassThroughFilesForAnotherSave()
     {
