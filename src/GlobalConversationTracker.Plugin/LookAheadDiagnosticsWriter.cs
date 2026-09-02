@@ -253,6 +253,7 @@ namespace GlobalConversationTracker
                     DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture));
                 writer.WriteNumber("crawls", statistics.Crawls);
                 writer.WriteNumber("budgetExhausted", statistics.BudgetExhausted);
+                writer.WriteNumber("timeExhausted", statistics.TimeExhausted);
 
                 writer.WriteStartObject("states");
                 writer.WriteNumber("total", statistics.TotalStates);
@@ -299,6 +300,7 @@ namespace GlobalConversationTracker
                     writer.WriteNumber("maxStates", pair.Value.MaxStates);
                     writer.WriteNumber("maxMs", Round(pair.Value.MaxMilliseconds));
                     writer.WriteNumber("budgetExhausted", pair.Value.BudgetExhausted);
+                    writer.WriteNumber("timeExhausted", pair.Value.TimeExhausted);
                     writer.WriteEndObject();
                 }
 

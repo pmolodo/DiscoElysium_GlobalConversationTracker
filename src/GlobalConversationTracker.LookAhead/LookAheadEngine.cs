@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace GlobalConversationTracker.LookAhead
 {
@@ -8,6 +9,27 @@ namespace GlobalConversationTracker.LookAhead
     /// <param name="node">The entry to score.</param>
     /// <returns>Its novelty.</returns>
     public delegate Novelty NoveltyLookup(DialogueNodeId node);
+
+    /// <summary>Says that a crawl is still going, and how far it has got.</summary>
+    /// <param name="start">The option the crawl began from.</param>
+    /// <param name="statesExplored">How many (entry, state) pairs it has visited.</param>
+    /// <param name="nodesReached">How many distinct entries it has reached.</param>
+    /// <param name="elapsed">How long it has been running.</param>
+    public delegate void LookAheadProgressReport(
+        DialogueNodeId start, int statesExplored, int nodesReached, TimeSpan elapsed);
+
+    /// <summary>What ended a crawl before it had explored everything reachable.</summary>
+    public enum LookAheadLimit
+    {
+        /// <summary>Nothing did: the crawl finished, or found the best there is.</summary>
+        None = 0,
+
+        /// <summary>It ran out of state budget.</summary>
+        States = 1,
+
+        /// <summary>It ran out of time.</summary>
+        Time = 2,
+    }
 
     /// <summary>What one look-ahead crawl found.</summary>
     public sealed class LookAheadResult
@@ -27,13 +49,40 @@ namespace GlobalConversationTracker.LookAhead
             int nodesReached,
             bool budgetExhausted,
             LookAheadTrace? trace = null)
+            : this(
+                best,
+                statesExplored,
+                nodesReached,
+                budgetExhausted ? LookAheadLimit.States : LookAheadLimit.None,
+                trace)
+        {
+        }
+
+        /// <summary>Creates a result, saying which limit stopped it.</summary>
+        /// <param name="best">The most novel entry reachable beyond the start.</param>
+        /// <param name="statesExplored">How many (entry, state) pairs were visited.</param>
+        /// <param name="nodesReached">How many distinct entries were reached.</param>
+        /// <param name="stoppedBy">Which limit ended it, if either did.</param>
+        /// <param name="trace">
+        /// What the crawl did, when <see cref="LookAheadOptions.CollectTrace"/> asked for
+        /// it; null otherwise.
+        /// </param>
+        public LookAheadResult(
+            Novelty best,
+            int statesExplored,
+            int nodesReached,
+            LookAheadLimit stoppedBy,
+            LookAheadTrace? trace = null)
         {
             Best = best;
             StatesExplored = statesExplored;
             NodesReached = nodesReached;
-            BudgetExhausted = budgetExhausted;
+            StoppedBy = stoppedBy;
             Trace = trace;
         }
+
+        /// <summary>Which limit ended the crawl, if either did.</summary>
+        public LookAheadLimit StoppedBy { get; }
 
         /// <summary>
         /// The most novel entry reachable strictly beyond the starting entry.
@@ -51,10 +100,15 @@ namespace GlobalConversationTracker.LookAhead
         public int NodesReached { get; }
 
         /// <summary>
-        /// Whether the search hit its budget and stopped early. When true,
+        /// Whether the search hit a limit and stopped early. When true,
         /// <see cref="Best"/> is a lower bound rather than an answer.
         /// </summary>
-        public bool BudgetExhausted { get; }
+        /// <remarks>
+        /// Says that the answer is incomplete, which is what every caller acting on a
+        /// result needs to know; <see cref="StoppedBy"/> says which limit did it, which
+        /// only the diagnostics care about.
+        /// </remarks>
+        public bool BudgetExhausted => StoppedBy != LookAheadLimit.None;
 
         /// <summary>
         /// What the crawl did, when it was asked to keep track; null otherwise.
@@ -65,7 +119,12 @@ namespace GlobalConversationTracker.LookAhead
         public override string ToString()
         {
             return $"{Best} after {StatesExplored} states over {NodesReached} nodes"
-                + (BudgetExhausted ? " (budget exhausted)" : string.Empty);
+                + StoppedBy switch
+                {
+                    LookAheadLimit.States => " (state budget exhausted)",
+                    LookAheadLimit.Time => " (out of time)",
+                    _ => string.Empty,
+                };
         }
     }
 
@@ -78,6 +137,60 @@ namespace GlobalConversationTracker.LookAhead
         /// entries.
         /// </summary>
         public int StateBudget { get; set; } = 200_000;
+
+        /// <summary>
+        /// The longest one crawl may run for, or <see cref="TimeSpan.Zero"/> for no
+        /// limit.
+        /// </summary>
+        /// <remarks>
+        /// <para>What a player actually notices is how long the menu takes to appear, and
+        /// the state budget is only a proxy for that. It is a decent one - measured over
+        /// the largest conversations in the game, cost per state stayed within about a
+        /// third of itself - but it is a proxy for the wrong quantity, and it cannot
+        /// account for the machine the game is running on.</para>
+        ///
+        /// <para>It does not replace <see cref="StateBudget"/>, it sits beside it, and
+        /// the state budget stays the one that makes a result reproducible: the same menu
+        /// on the same save marks the same way twice, which a clock cannot promise. Read
+        /// the pair as a deterministic ceiling with a wall-clock backstop for the machine
+        /// that is slower than the one this was measured on.</para>
+        ///
+        /// <para>One second by default. That is far above anything measured in game -
+        /// the worst single crawl over the largest conversations came to about three
+        /// quarters of that, and almost everything is under a hundredth of it - so it is
+        /// a backstop rather than a working limit, and it is the machine slower than the
+        /// one those numbers came from that it exists for. Set it to
+        /// <see cref="TimeSpan.Zero"/> to measure without it.</para>
+        /// </remarks>
+        public TimeSpan TimeBudget { get; set; } = TimeSpan.FromSeconds(1);
+
+        /// <summary>
+        /// How many states pass between readings of the clock.
+        /// </summary>
+        /// <remarks>
+        /// Reading it every state would put a timer call in the loop that decides what
+        /// the feature costs. Reading it every few hundred bounds the overshoot at the
+        /// time those states take - single-digit milliseconds at the rates measured in
+        /// game - for an overhead too small to find.
+        /// </remarks>
+        public int TimeCheckInterval { get; set; } = 512;
+
+        /// <summary>
+        /// Called while a crawl is still running, no more often than
+        /// <see cref="ProgressInterval"/>; null to say nothing.
+        /// </summary>
+        /// <remarks>
+        /// For the crawls that take long enough to wonder about. At the default interval
+        /// this never fires in play - a menu's crawls are done in milliseconds, and one
+        /// that is not is stopped by the time budget shortly after the first report - so
+        /// it costs nothing and says nothing until something is genuinely slow, which is
+        /// exactly when a run that has printed nothing for a minute is impossible to tell
+        /// from a run that has hung.
+        /// </remarks>
+        public LookAheadProgressReport? OnProgress { get; set; }
+
+        /// <summary>How often <see cref="OnProgress"/> may be called.</summary>
+        public TimeSpan ProgressInterval { get; set; } = TimeSpan.FromSeconds(1);
 
         /// <summary>
         /// Where counter increments saturate. Guards in the shipped database compare
@@ -205,14 +318,43 @@ namespace GlobalConversationTracker.LookAhead
             Count(tally, start);
 
             Novelty best = Novelty.SeenThisGame;
-            bool exhausted = false;
+            LookAheadLimit stoppedBy = LookAheadLimit.None;
+
+            // Read only when something is going to read it. A crawl that is neither timed
+            // nor reporting should not pay for a timer.
+            bool timed = _options.TimeBudget > TimeSpan.Zero;
+            LookAheadProgressReport? report = _options.OnProgress;
+            bool reporting = report != null && _options.ProgressInterval > TimeSpan.Zero;
+            bool clocked = timed || reporting;
+
+            long started = clocked ? Stopwatch.GetTimestamp() : 0;
+            long deadline = timed ? started + Ticks(_options.TimeBudget) : 0;
+            long nextReport = reporting ? started + Ticks(_options.ProgressInterval) : 0;
+            int untilClockCheck = _options.TimeCheckInterval;
 
             while (queue.Count > 0)
             {
                 if (seen.Count >= _options.StateBudget)
                 {
-                    exhausted = true;
+                    stoppedBy = LookAheadLimit.States;
                     break;
+                }
+
+                if (clocked && --untilClockCheck <= 0)
+                {
+                    untilClockCheck = _options.TimeCheckInterval;
+                    long now = Stopwatch.GetTimestamp();
+                    if (timed && now >= deadline)
+                    {
+                        stoppedBy = LookAheadLimit.Time;
+                        break;
+                    }
+
+                    if (reporting && now >= nextReport)
+                    {
+                        nextReport = now + Ticks(_options.ProgressInterval);
+                        report!(start, seen.Count, reached.Count, Elapsed(started, now));
+                    }
                 }
 
                 StateKey current = queue.Dequeue();
@@ -265,9 +407,17 @@ namespace GlobalConversationTracker.LookAhead
             }
 
             return new LookAheadResult(
-                best, seen.Count, reached.Count, exhausted,
+                best, seen.Count, reached.Count, stoppedBy,
                 BuildTrace(graph, start, world, tally));
         }
+
+        /// <summary>A duration as Stopwatch ticks.</summary>
+        private static long Ticks(TimeSpan span) =>
+            (long)(span.TotalSeconds * Stopwatch.Frequency);
+
+        /// <summary>The span between two Stopwatch timestamps.</summary>
+        private static TimeSpan Elapsed(long from, long to) =>
+            TimeSpan.FromSeconds((double)(to - from) / Stopwatch.Frequency);
 
         /// <summary>Notes that an entry was reached in one more distinct state.</summary>
         private static void Count(

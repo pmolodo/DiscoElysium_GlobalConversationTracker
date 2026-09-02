@@ -15,6 +15,20 @@ namespace GlobalConversationTracker.Harness
     /// </remarks>
     public static class LookAheadSuites
     {
+        /// <summary>
+        /// The look-ahead time budget every suite runs with, in milliseconds.
+        /// </summary>
+        /// <remarks>
+        /// Far above anything a crawl here takes - the worst measured over the largest
+        /// conversations in the game is about three quarters of a second - so the clock
+        /// never fires and the state budget stays the only limit that decides anything.
+        /// That is the point. A wall-clock limit is not reproducible: the same menu on
+        /// the same save could mark differently on a machine that happened to be busy,
+        /// and a suite that can flip on load is worse than no suite. The shipped default
+        /// is a second, and testing that would be testing the clock.
+        /// </remarks>
+        public const int TestTimeBudgetMs = 30_000;
+
         /// <summary>Siileng's stall, where a 0.50 purchase sits behind a 50.00 one.</summary>
         public const int SiilengConversation = 451;
 
@@ -571,20 +585,24 @@ namespace GlobalConversationTracker.Harness
 
         Console.WriteLine();
         Console.WriteLine(
-            "        conversation  crawls  max states  max ms  mean states  exhausted");
+            "        conversation  crawls  max states  max ms  mean states  "
+            + "spent  of which time");
 
         int counted = 0;
+        int outOfTime = 0;
         foreach (JsonElement row in root.GetProperty("byConversation").EnumerateArray())
         {
             int crawls = row.GetProperty("crawls").GetInt32();
+            int timed = Count(row, "timeExhausted");
             counted += crawls;
+            outOfTime += timed;
 
             Console.WriteLine(
                 $"        {row.GetProperty("conversation").GetInt32(),12}  {crawls,6}  "
                 + $"{row.GetProperty("maxStates").GetInt32(),10}  "
                 + $"{row.GetProperty("maxMs").GetDouble(),6:N1}  "
                 + $"{row.GetProperty("meanStates").GetDouble(),11:N1}  "
-                + $"{row.GetProperty("budgetExhausted").GetInt32(),9}");
+                + $"{row.GetProperty("budgetExhausted").GetInt32(),5}  {timed,13}");
         }
 
         int total = root.GetProperty("crawls").GetInt32();
@@ -601,10 +619,26 @@ namespace GlobalConversationTracker.Harness
             return "no crawl ran at all, so there is nothing here to measure";
         }
 
-        return counted == total
+        if (counted != total)
+        {
+            return $"{total} crawls overall but {counted} in the per-conversation breakdown";
+        }
+
+        // A measurement the clock cut short is a measurement of the machine. The suite
+        // runs with a time budget far above anything a crawl here takes precisely so this
+        // cannot happen; if it did, the states and milliseconds above are lower bounds
+        // and the run needs repeating on a quieter machine.
+        return outOfTime == 0
             ? null
-            : $"{total} crawls overall but {counted} in the per-conversation breakdown";
+            : $"{outOfTime} crawl(s) ran out of TIME rather than states, so these figures "
+                + "are bounded by the clock rather than by the conversations";
     }
+
+    /// <summary>
+    /// Reads a count that a plugin older than the field would not have written.
+    /// </summary>
+    private static int Count(JsonElement row, string name) =>
+        row.TryGetProperty(name, out JsonElement value) ? value.GetInt32() : 0;
 
         /// <summary>Finds the requested suites.</summary>
         /// <param name="names">Suite names, or an empty list for every suite.</param>

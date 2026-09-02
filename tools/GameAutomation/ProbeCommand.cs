@@ -89,6 +89,9 @@ namespace GlobalConversationTracker.Automation
         /// <param name="fileName">A file staged directly in that folder.</param>
         /// <param name="enabled">Whether look-ahead markers are enabled.</param>
         /// <param name="stateBudget">The maximum search states per option.</param>
+        /// <param name="timeBudgetMs">
+        /// The longest one option's crawl may run for, in milliseconds; 0 for no limit.
+        /// </param>
         /// <param name="logBudgetExceeded">Whether to log budget overflows.</param>
         /// <param name="keepStatistics">Whether to retain crawl statistics.</param>
         public static void SendPrepareLookAheadSuite(
@@ -96,6 +99,7 @@ namespace GlobalConversationTracker.Automation
             string fileName,
             bool enabled,
             int stateBudget,
+            int timeBudgetMs,
             bool logBudgetExceeded,
             bool keepStatistics)
         {
@@ -110,6 +114,7 @@ namespace GlobalConversationTracker.Automation
                 "file", fileName,
                 "enabled", enabled,
                 "stateBudget", stateBudget,
+                "timeBudgetMs", timeBudgetMs,
                 "logBudgetExceeded", logBudgetExceeded,
                 "keepStatistics", keepStatistics);
         }

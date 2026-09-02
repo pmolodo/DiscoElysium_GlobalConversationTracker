@@ -37,7 +37,9 @@ namespace GlobalConversationTracker
         private static LookAheadEngine? _tracingEngine;
         private static LookAheadDiagnosticsWriter? _diagnostics;
         private static int _budget = new LookAheadOptions().StateBudget;
+        private static int _timeBudgetMs;
         private static bool _enabled = true;
+        private static IGlobalStateLog? _log;
 
         /// <summary>
         /// The colour for "leads to something no save has reached", matching the option
@@ -54,6 +56,9 @@ namespace GlobalConversationTracker
         /// <param name="unseenAnyGameHtml">Colour for reaching never-seen-anywhere text.</param>
         /// <param name="unseenThisGameHtml">Colour for reaching unseen-this-save text.</param>
         /// <param name="stateBudget">The most search states one option may cost.</param>
+        /// <param name="timeBudgetMs">
+        /// The longest one option's crawl may run for, in milliseconds; 0 for no limit.
+        /// </param>
         /// <param name="enabled">Whether the installed hook should add markers.</param>
         /// <param name="diagnostics">
         /// Where budget overflows and cost statistics are recorded, or null to record
@@ -67,6 +72,7 @@ namespace GlobalConversationTracker
             string unseenAnyGameHtml,
             string unseenThisGameHtml,
             int stateBudget,
+            int timeBudgetMs,
             bool enabled,
             LookAheadDiagnosticsWriter? diagnostics = null)
         {
@@ -81,11 +87,12 @@ namespace GlobalConversationTracker
             }
 
             _session = session ?? throw new ArgumentNullException(nameof(session));
+            _log = log;
             _failures = new HookFailureLimiter(
                 "marking options that still lead somewhere unread", log);
             _unseenAnyGameHtml = Validate(unseenAnyGameHtml, nameof(unseenAnyGameHtml));
             _unseenThisGameHtml = Validate(unseenThisGameHtml, nameof(unseenThisGameHtml));
-            Configure(enabled, stateBudget, diagnostics);
+            Configure(enabled, stateBudget, timeBudgetMs, diagnostics);
 
             harmony.PatchAll(typeof(ChooseResponseTextPatch));
         }
@@ -94,21 +101,58 @@ namespace GlobalConversationTracker
         internal static void Configure(
             bool enabled,
             int stateBudget,
+            int timeBudgetMs,
             LookAheadDiagnosticsWriter? diagnostics)
         {
             _diagnostics?.Flush();
             _enabled = enabled;
             _budget = stateBudget;
+            _timeBudgetMs = timeBudgetMs;
             _diagnostics = diagnostics != null && diagnostics.Enabled ? diagnostics : null;
 
-            _engine = new LookAheadEngine(new LookAheadOptions { StateBudget = stateBudget });
+            TimeSpan time = TimeBudgetOf(timeBudgetMs);
+            _engine = new LookAheadEngine(new LookAheadOptions
+            {
+                StateBudget = stateBudget,
+                TimeBudget = time,
+                OnProgress = ReportProgress,
+            });
             _tracingEngine = _diagnostics != null && _diagnostics.RetriesOverflowsWithTrace
                 ? new LookAheadEngine(new LookAheadOptions
                 {
                     StateBudget = stateBudget,
+                    // Deliberately untimed. The re-walk exists to explain an overflow that
+                    // has already happened, and it is slower than the crawl it explains -
+                    // it keeps a per-entry tally. Timing it would cut the explanation short
+                    // exactly when the crawl was expensive enough to need one.
+                    TimeBudget = TimeSpan.Zero,
                     CollectTrace = true,
                 })
                 : null;
+        }
+
+        /// <summary>
+        /// The time budget a millisecond setting asks for; zero or less means no limit.
+        /// </summary>
+        private static TimeSpan TimeBudgetOf(int milliseconds) =>
+            milliseconds > 0 ? TimeSpan.FromMilliseconds(milliseconds) : TimeSpan.Zero;
+
+        /// <summary>
+        /// Says that a crawl is taking a noticeable amount of time, once a second.
+        /// </summary>
+        /// <remarks>
+        /// Silent in play. Every crawl measured over the largest conversations in the
+        /// game finished in well under the interval, and one that does not is stopped by
+        /// the time budget shortly after saying so once. It exists for the runs that
+        /// deliberately raise the limits, where the alternative to a line a second is a
+        /// game that looks indistinguishable from a hung one.
+        /// </remarks>
+        private static void ReportProgress(
+            DialogueNodeId start, int states, int nodes, TimeSpan elapsed)
+        {
+            _log?.Info(
+                $"Look-ahead still searching from {start.ConversationId}:{start.EntryId} after "
+                + $"{elapsed.TotalSeconds:N1}s: {states} states over {nodes} entries.");
         }
 
         /// <summary>Flushes diagnostics belonging to the current test suite.</summary>

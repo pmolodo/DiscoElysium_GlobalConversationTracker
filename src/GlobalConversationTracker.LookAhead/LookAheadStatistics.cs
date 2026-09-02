@@ -22,8 +22,11 @@ namespace GlobalConversationTracker.LookAhead
         /// <summary>The longest one, in milliseconds.</summary>
         public double MaxMilliseconds { get; internal set; }
 
-        /// <summary>How many of them ran out of budget.</summary>
+        /// <summary>How many of them ran out of budget, by either limit.</summary>
         public long BudgetExhausted { get; internal set; }
+
+        /// <summary>How many of them ran out of time rather than states.</summary>
+        public long TimeExhausted { get; internal set; }
 
         /// <summary>Their mean state count.</summary>
         public double MeanStates => Crawls == 0 ? 0 : (double)TotalStates / Crawls;
@@ -80,8 +83,20 @@ namespace GlobalConversationTracker.LookAhead
         /// <summary>The longest single crawl, in milliseconds.</summary>
         public double MaxMilliseconds { get; private set; }
 
-        /// <summary>How many crawls ran out of budget.</summary>
+        /// <summary>How many crawls ran out of budget, by either limit.</summary>
         public long BudgetExhausted { get; private set; }
+
+        /// <summary>
+        /// How many of those ran out of time rather than states.
+        /// </summary>
+        /// <remarks>
+        /// Counted apart because the two mean different things. Running out of states is
+        /// a property of the conversation and reproduces; running out of time is a
+        /// property of the machine on the day, and a number that moves between runs on
+        /// the same save is the signal that the clock, not the graph, is deciding what
+        /// gets marked.
+        /// </remarks>
+        public long TimeExhausted { get; private set; }
 
         /// <summary>How many crawls found nothing new downstream.</summary>
         public long FoundNothing { get; private set; }
@@ -147,6 +162,10 @@ namespace GlobalConversationTracker.LookAhead
             if (result.BudgetExhausted)
             {
                 BudgetExhausted++;
+                if (result.StoppedBy == LookAheadLimit.Time)
+                {
+                    TimeExhausted++;
+                }
             }
 
             switch (result.Best)
@@ -186,6 +205,10 @@ namespace GlobalConversationTracker.LookAhead
             if (result.BudgetExhausted)
             {
                 row.BudgetExhausted++;
+                if (result.StoppedBy == LookAheadLimit.Time)
+                {
+                    row.TimeExhausted++;
+                }
             }
         }
 

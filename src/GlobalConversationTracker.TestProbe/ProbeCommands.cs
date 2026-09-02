@@ -276,6 +276,9 @@ namespace GlobalConversationTracker.TestProbe
                 ?? throw new ArgumentException("No enabled setting was given.");
             int stateBudget = NumberMember(root, "stateBudget")
                 ?? throw new ArgumentException("No state budget was given.");
+            // Absent means no limit, so an older harness that does not send it keeps
+            // working and gets the behaviour it had.
+            int timeBudgetMs = NumberMember(root, "timeBudgetMs") ?? 0;
             bool logBudgetExceeded = BoolMember(root, "logBudgetExceeded")
                 ?? throw new ArgumentException("No budget-log setting was given.");
             bool keepStatistics = BoolMember(root, "keepStatistics")
@@ -289,13 +292,15 @@ namespace GlobalConversationTracker.TestProbe
                 "PrepareLookAheadSuite",
                 new object[]
                 {
-                    sourcePath, enabled, stateBudget, logBudgetExceeded, keepStatistics,
+                    sourcePath, enabled, stateBudget, timeBudgetMs, logBudgetExceeded,
+                    keepStatistics,
                 });
             ProbeLog.Write(
                 "look-ahead-suite-prepared",
                 "file", fileName,
                 "enabled", enabled,
                 "stateBudget", stateBudget,
+                "timeBudgetMs", timeBudgetMs,
                 "logBudgetExceeded", logBudgetExceeded,
                 "keepStatistics", keepStatistics);
         }

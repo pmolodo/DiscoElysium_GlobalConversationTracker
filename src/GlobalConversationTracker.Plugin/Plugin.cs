@@ -85,12 +85,16 @@ namespace GlobalConversationTracker
         /// <param name="sourcePath">The staged global-state fixture.</param>
         /// <param name="enabled">Whether look-ahead markers are enabled.</param>
         /// <param name="stateBudget">The maximum search states per option.</param>
+        /// <param name="timeBudgetMs">
+        /// The longest one option's crawl may run for, in milliseconds; 0 for no limit.
+        /// </param>
         /// <param name="logBudgetExceeded">Whether to log budget overflows.</param>
         /// <param name="keepStatistics">Whether to retain crawl statistics.</param>
         public static void PrepareLookAheadSuite(
             string sourcePath,
             bool enabled,
             int stateBudget,
+            int timeBudgetMs,
             bool logBudgetExceeded,
             bool keepStatistics)
         {
@@ -103,6 +107,7 @@ namespace GlobalConversationTracker
             ResponseLookAheadPatch.Configure(
                 enabled,
                 stateBudget,
+                timeBudgetMs,
                 new LookAheadDiagnosticsWriter(
                     store.DirectoryPath,
                     log,
@@ -220,6 +225,24 @@ namespace GlobalConversationTracker
                 "The most search states one option's look-ahead may explore before giving up and "
                 + "showing no asterisk. Lower it if response menus feel slow.");
 
+            // Beside the state budget rather than instead of it. States are what makes a
+            // marker reproducible - the same menu on the same save marks the same way
+            // twice, which a clock cannot promise - but what a player notices is how long
+            // the menu takes to appear, and how many states fit in a second depends on
+            // the machine. Off by default so nothing changes until it is asked for.
+            var lookAheadTimeBudget = Config.Bind(
+                "Display",
+                "LookAheadTimeBudgetMs",
+                1000,
+                "The longest one option's look-ahead may run for, in milliseconds, before giving "
+                + "up and showing no asterisk. 0 means no time limit. Applies as well as "
+                + "LookAheadStateBudget, whichever is reached first; a menu draws one of these "
+                + "per option, so a menu's worst case is this times the number of options. The "
+                + "default is well above anything measured - the worst crawl over the largest "
+                + "conversations in the game took about three quarters of a second, and almost "
+                + "every crawl is a small fraction of that - so it is a backstop for a slow "
+                + "machine rather than a limit that normally decides anything.");
+
             // Both off by default and both write into the SaveGames folder, beside the
             // global state. Diagnostics for deciding whether the budget is set right.
             // Neither slows a crawl that stays within budget: the overflow report is
@@ -328,6 +351,7 @@ namespace GlobalConversationTracker
                     novelOptionColor.Value,
                     ResponseLookAheadPatch.DefaultUnseenThisGameColorHtml,
                     lookAheadBudget.Value,
+                    lookAheadTimeBudget.Value,
                     markLookAhead.Value,
                     new LookAheadDiagnosticsWriter(
                         store.DirectoryPath,

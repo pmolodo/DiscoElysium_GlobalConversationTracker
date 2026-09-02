@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+using System;
 using System.Collections.Generic;
 using GlobalConversationTracker.LookAhead;
 using Xunit;
@@ -606,6 +607,120 @@ namespace GlobalConversationTracker.LookAhead.Tests
             var options = new LookAheadOptions { StateBudget = 2 };
             LookAheadResult result = Run(graph, new FakeWorld(), Novel(), options: options);
             Assert.True(result.BudgetExhausted);
+            Assert.Equal(LookAheadLimit.States, result.StoppedBy);
+        }
+
+        /// <summary>A counter loop, whose state space is finite but not tiny.</summary>
+        /// <remarks>
+        /// Each visit increments a counter, so the same entry is reached in a new state
+        /// each time until the counter cap saturates it. Enough states to run into a
+        /// small state budget, and not so many that a test waits for it.
+        /// </remarks>
+        private static LookAheadGraph CountingGraph() =>
+            new GraphBuilder()
+                .Add(0, links: new[] { 1 })
+                .Add(1, script: "Variable[\"n\"] = Variable[\"n\"] + 1", links: new[] { 2 })
+                .Add(2, links: new[] { 1 })
+                .Build();
+
+        /// <remarks>
+        /// A budget already spent when the crawl starts, rather than a real duration.
+        /// Timing a crawl against a wall clock and asserting it stopped would measure the
+        /// build machine as much as the code; what wants proving is that the clock is
+        /// consulted at all, that it ends the crawl, and that it is reported as the clock
+        /// and not as the state budget.
+        /// </remarks>
+        [Fact]
+        public void RunningOutOfTimeIsReportedAsTimeRatherThanStates()
+        {
+            var options = new LookAheadOptions
+            {
+                // High enough that the clock is the only thing that can stop it.
+                StateBudget = int.MaxValue,
+                TimeBudget = TimeSpan.FromTicks(1),
+                TimeCheckInterval = 1,
+            };
+
+            LookAheadResult result = Run(
+                CountingGraph(), new FakeWorld().WithVariable("n", 0), Novel(), options: options);
+
+            Assert.True(result.BudgetExhausted);
+            Assert.Equal(LookAheadLimit.Time, result.StoppedBy);
+        }
+
+        [Fact]
+        public void TheStateBudgetStillAppliesWhenATimeBudgetIsSet()
+        {
+            // The two sit beside each other, and the state budget stays the one that
+            // makes a result reproducible. A generous clock must not disable it.
+            var options = new LookAheadOptions
+            {
+                StateBudget = 2,
+                TimeBudget = TimeSpan.FromMinutes(5),
+            };
+
+            LookAheadResult result = Run(
+                CountingGraph(), new FakeWorld().WithVariable("n", 0), Novel(), options: options);
+
+            Assert.Equal(LookAheadLimit.States, result.StoppedBy);
+        }
+
+        /// <remarks>
+        /// An interval already elapsed, for the same reason the time-budget test uses a
+        /// spent budget: what wants proving is that a running crawl reports itself and
+        /// says where it has got to, not how fast the build machine is.
+        /// </remarks>
+        [Fact]
+        public void ALongCrawlReportsThatItIsStillGoing()
+        {
+            var reports = new List<(DialogueNodeId Start, int States, int Nodes)>();
+            var options = new LookAheadOptions
+            {
+                TimeBudget = TimeSpan.Zero,
+                ProgressInterval = TimeSpan.FromTicks(1),
+                TimeCheckInterval = 1,
+                OnProgress = (start, states, nodes, _) =>
+                    reports.Add((start, states, nodes)),
+            };
+
+            Run(CountingGraph(), new FakeWorld().WithVariable("n", 0), Novel(), options: options);
+
+            Assert.NotEmpty(reports);
+            Assert.All(reports, r => Assert.True(r.States > 0));
+            Assert.All(reports, r => Assert.Equal(0, r.Start.EntryId));
+        }
+
+        [Fact]
+        public void NothingIsReportedWhenNobodyIsListening()
+        {
+            // The clock is not read at all without a time budget or a listener, so this
+            // is really a check that the crawl still completes with both switched off.
+            var options = new LookAheadOptions
+            {
+                TimeBudget = TimeSpan.Zero,
+                OnProgress = null,
+            };
+
+            LookAheadResult result = Run(
+                CountingGraph(), new FakeWorld().WithVariable("n", 0), Novel(), options: options);
+
+            Assert.Equal(LookAheadLimit.None, result.StoppedBy);
+        }
+
+        [Fact]
+        public void NoTimeBudgetMeansNoClock()
+        {
+            // Zero is not "no time at all"; it is the default, and means unlimited.
+            var options = new LookAheadOptions { TimeBudget = TimeSpan.Zero };
+
+            LookAheadResult result = Run(
+                new GraphBuilder().Add(0, links: new[] { 1 }).Add(1).Build(),
+                new FakeWorld(),
+                Novel(),
+                options: options);
+
+            Assert.Equal(LookAheadLimit.None, result.StoppedBy);
+            Assert.False(result.BudgetExhausted);
         }
 
         [Fact]

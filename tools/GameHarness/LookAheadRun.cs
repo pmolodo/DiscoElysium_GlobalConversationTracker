@@ -196,14 +196,18 @@ namespace GlobalConversationTracker.Harness
                         "look-ahead-suite-prepared", timeout, Log);
                     bool enabled = Setting(suite, "MarkLookAhead", true);
                     int stateBudget = Setting(suite, "LookAheadStateBudget", 200_000);
+                    int timeBudgetMs = Setting(
+                        suite, "LookAheadTimeBudgetMs", LookAheadSuites.TestTimeBudgetMs);
                     report.Check(
                         prepared.Text("file") == stateFiles[suite.Name]
                             && prepared.Boolean("enabled") == enabled
-                            && prepared.Number("stateBudget") == stateBudget,
+                            && prepared.Number("stateBudget") == stateBudget
+                            && prepared.Number("timeBudgetMs") == timeBudgetMs,
                         $"{suite.Name}: its global state and settings were prepared",
                         $"the probe loaded {prepared.Text("file") ?? "nothing"} with enabled="
-                            + $"{prepared.Boolean("enabled")?.ToString() ?? "missing"} and budget="
-                            + $"{prepared.Number("stateBudget")?.ToString() ?? "missing"}");
+                            + $"{prepared.Boolean("enabled")?.ToString() ?? "missing"}, budget="
+                            + $"{prepared.Number("stateBudget")?.ToString() ?? "missing"} and "
+                            + $"{prepared.Number("timeBudgetMs")?.ToString() ?? "missing"}ms");
                     // Preparing flushes the preceding diagnostics writer. Clear after
                     // that flush so files from the prior suite cannot satisfy this one.
                     ClearArtefacts(suite, saveGames);
@@ -281,6 +285,7 @@ namespace GlobalConversationTracker.Harness
                 stateFile,
                 Setting(suite, "MarkLookAhead", true),
                 Setting(suite, "LookAheadStateBudget", 200_000),
+                Setting(suite, "LookAheadTimeBudgetMs", LookAheadSuites.TestTimeBudgetMs),
                 Setting(suite, "LogLookAheadBudgetExceeded", false),
                 Setting(suite, "KeepLookAheadStates", false));
         }
