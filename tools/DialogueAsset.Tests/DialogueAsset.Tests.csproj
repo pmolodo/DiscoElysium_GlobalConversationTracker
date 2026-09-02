@@ -29,9 +29,8 @@
       A hand-cut database, shaped like the 170 MB one: quoted scalars, a group
       node, links within and across conversations, a repeated field, and a
       conversation past syncInfo that must never be read. Its .expected.jsonl
-      beside it is what the Python extractor this replaced wrote for it, so the
-      output format is pinned to a record of the old behavior rather than to
-      what the new code happens to do.
+      beside it pins the current output schema independently of what the writer
+      happens to produce.
     -->
     <Content Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

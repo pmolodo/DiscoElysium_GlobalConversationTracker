@@ -55,14 +55,6 @@ namespace GlobalConversationTracker.DialogueAsset
         /// <summary>Whether the entry is a group node rather than a selectable line.</summary>
         public bool Group { get; set; }
 
-        /// <summary>
-        /// Always null. The index has carried this key since it was written and nothing has
-        /// ever filled it in - an entry's actor is in <see cref="Fields"/> under "Actor" -
-        /// but it is part of the file format now, so it is written out as null. See
-        /// de-j35 before removing it.
-        /// </summary>
-        public int? Actor { get; set; }
-
         /// <summary>The entry's conditionsString, verbatim.</summary>
         public string Guard { get; set; } = string.Empty;
 

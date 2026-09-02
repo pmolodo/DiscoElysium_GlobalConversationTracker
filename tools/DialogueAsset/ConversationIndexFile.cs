@@ -137,8 +137,6 @@ namespace GlobalConversationTracker.DialogueAsset
             json.Append("{\"id\":");
             AppendInt(json, entry.Id);
             json.Append(",\"group\":").Append(entry.Group ? "true" : "false");
-            json.Append(",\"actor\":");
-            AppendInt(json, entry.Actor);
             json.Append(",\"guard\":");
             AppendString(json, entry.Guard);
             json.Append(",\"script\":");

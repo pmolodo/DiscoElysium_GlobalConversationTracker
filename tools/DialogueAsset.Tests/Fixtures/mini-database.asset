@@ -42,6 +42,10 @@ MonoBehaviour:
         value: START
         type: 0
         typeString:
+      - title: Actor
+        value: '12'
+        type: 0
+        typeString:
       conversationID: 1
       isRoot: 1
       isGroup: 0

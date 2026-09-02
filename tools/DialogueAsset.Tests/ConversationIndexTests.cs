@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+using System.Text.Json;
 using Xunit;
 
 namespace GlobalConversationTracker.DialogueAsset.Tests
@@ -78,6 +79,16 @@ namespace GlobalConversationTracker.DialogueAsset.Tests
         }
 
         [Fact]
+        public void KeepsEntryActorOnlyInFields()
+        {
+            using JsonDocument document = JsonDocument.Parse(ConversationIndexFile.ToJson(Extract()[0]));
+            JsonElement entry = document.RootElement.GetProperty("entries")[0];
+
+            Assert.False(entry.TryGetProperty("actor", out _));
+            Assert.Equal("12", entry.GetProperty("fields").GetProperty("Actor").GetString());
+        }
+
+        [Fact]
         public void LetsARepeatedFieldWinWithoutMovingIt()
         {
             EntryRecord entry = Extract()[0].Entries[1];
@@ -89,7 +100,7 @@ namespace GlobalConversationTracker.DialogueAsset.Tests
         }
 
         [Fact]
-        public void WritesTheLineTheOldExtractorWrote()
+        public void WritesTheExpectedSchema()
         {
             string[] expected = File.ReadAllLines(ExpectedIndex);
             List<ConversationRecord> conversations = Extract();

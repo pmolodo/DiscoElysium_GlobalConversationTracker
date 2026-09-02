@@ -10,7 +10,9 @@ dotnet run --project tools/DialogueExtract -- conversation-index
 
 That reads the exported `Disco Elysium.asset` and writes
 `.game_reference_copies/derived/conversation_index.jsonl`; pass `--asset` and `--out` to
-use other paths.
+use other paths. The generated file is ignored by Git. Existing indexes with the former
+always-null entry `actor` key remain readable, but rerun this command to produce the current
+schema, where an entry's actor is available only in `fields.Actor`.
 
 Then crawl every selectable entry in one conversation:
 
