@@ -5,8 +5,12 @@ Runs the plugin's look-ahead engine against an extracted dialogue index without 
 Generate a current index from an AssetRipper export first:
 
 ```powershell
-uv run extract_conversation_index.py
+dotnet run --project tools/DialogueExtract -- conversation-index
 ```
+
+That reads the exported `Disco Elysium.asset` and writes
+`.game_reference_copies/derived/conversation_index.jsonl`; pass `--asset` and `--out` to
+use other paths.
 
 Then crawl every selectable entry in one conversation:
 

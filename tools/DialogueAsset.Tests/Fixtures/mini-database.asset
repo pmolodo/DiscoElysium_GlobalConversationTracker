@@ -1,0 +1,118 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_Name: Mini
+  actors:
+  - id: 7
+    fields:
+    - title: Name
+      value: Not a conversation, and must be skipped
+      type: 0
+      typeString:
+  conversations:
+  - id: 1
+    fields:
+    - title: Title
+      value: 'Kim''s notebook: page 2'
+      type: 0
+      typeString:
+    - title: Actor
+      value: '12'
+      type: 0
+      typeString:
+    - title: Conversant
+      value: not-a-number
+      type: 0
+      typeString:
+    - title: Description
+      value: An unwanted field, and the value after it must be ignored
+      type: 0
+      typeString:
+    - title: Articy Id
+      value: 0x0000000000000001
+      type: 0
+      typeString:
+    nodeColor:
+    dialogueEntries:
+    - id: 0
+      fields:
+      - title: Title
+        value: START
+        type: 0
+        typeString:
+      conversationID: 1
+      isRoot: 1
+      isGroup: 0
+      outgoingLinks:
+      - originConversationID: 1
+        originDialogueID: 0
+        destinationConversationID: 1
+        destinationDialogueID: 1
+        isConnector: 0
+      conditionsString:
+      userScript:
+    - id: 1
+      fields:
+      - title: Title
+        value: 'It''s the ''first'' one'
+        type: 0
+        typeString:
+      - title: Sequence
+        value: "Say(\"hi\") \\ done"
+        type: 0
+        typeString:
+      - title: DifficultyPass
+        value: '12'
+        type: 0
+        typeString:
+      - title: Title
+        value: The later Title wins, in the earlier Title's place
+        type: 0
+        typeString:
+      - title: Note
+        value: 'Sur la lune - café 😀'
+        type: 0
+        typeString:
+      conversationID: 1
+      isRoot: 0
+      isGroup: 1
+      outgoingLinks:
+      - originConversationID: 1
+        originDialogueID: 1
+        destinationConversationID: 2
+        destinationDialogueID: 5
+        isConnector: 0
+      - originConversationID: 1
+        originDialogueID: 1
+        destinationConversationID: 1
+        destinationDialogueID: 0
+        isConnector: 0
+      conditionsString: Variable["kim.trust"] > 2 and Variable["money"] == true
+      userScript: Money = Money - 50
+    canvasScrollPosition: {x: 0, y: 0}
+  - id: 2
+    fields:
+    - title: Title
+      value: The second conversation
+      type: 0
+      typeString:
+    dialogueEntries:
+    - id: 5
+      fields: []
+      conversationID: 2
+      isRoot: 1
+      isGroup: 0
+      outgoingLinks: []
+      conditionsString:
+      userScript:
+    canvasScrollPosition: {x: 0, y: 0}
+  syncInfo:
+    syncActors: 0
+  - id: 99
+    fields:
+    - title: Title
+      value: Past syncInfo, and must never be read
+      type: 0
+      typeString:

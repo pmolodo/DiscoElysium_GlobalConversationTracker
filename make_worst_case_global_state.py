@@ -23,7 +23,7 @@ absent from the state is unseen-anywhere, takes the early exit, and is never
 crawled at all. The measurement then reports nothing for that conversation while
 looking like it ran.
 
-The source is the conversation index extracted by extract_conversation_index.py.
+The source is the conversation index written by "DialogueExtract conversation-index".
 Output matches what GlobalStateJson writes: format version 3, grouped by status,
 conversation and entry ids ascending, no indentation, UTF-8 without a BOM - plus a
 trailing newline, which the repository's end-of-file hook adds anyway and which
@@ -114,7 +114,7 @@ def get_parser():
     parser.add_argument(
         "--index",
         default=DEFAULT_INDEX,
-        help="The conversation index from extract_conversation_index.py",
+        help="The conversation index from DialogueExtract conversation-index",
     )
     parser.add_argument(
         "--output",

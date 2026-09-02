@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Test framework and versions match every other test project in the repo, so
+    the whole repo still runs on one `dotnet test` with one set of packages.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>GlobalConversationTracker.DialogueAsset.Tests</RootNamespace>
+    <AssemblyName>DialogueAsset.Tests</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DialogueAsset\DialogueAsset.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      A hand-cut database, shaped like the 170 MB one: quoted scalars, a group
+      node, links within and across conversations, a repeated field, and a
+      conversation past syncInfo that must never be read. Its .expected.jsonl
+      beside it is what the Python extractor this replaced wrote for it, so the
+      output format is pinned to a record of the old behavior rather than to
+      what the new code happens to do.
+    -->
+    <Content Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

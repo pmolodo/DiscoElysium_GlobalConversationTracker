@@ -98,6 +98,20 @@
         <Project Path="tools/GameAutomation/GameAutomation.csproj" />
         <Project Path="tools/GameAutomation.Tests/GameAutomation.Tests.csproj" />
         <!--
+      The reader for the Dialogue System database .asset - a Unity-serialized
+      YAML document of ~170 MB, streamed at fixed indentation rather than
+      parsed - plus the record model for the conversation index it writes.
+      A library rather than part of DialogueExtract next door, because
+      LookAheadOffline reads that index back and every other extraction from
+      the same asset starts from the same scan.
+    -->
+        <Project Path="tools/DialogueAsset/DialogueAsset.csproj" />
+        <Project Path="tools/DialogueAsset.Tests/DialogueAsset.Tests.csproj" />
+        <!--
+      The one command over that asset, carrying a subcommand per output.
+    -->
+        <Project Path="tools/DialogueExtract/DialogueExtract.csproj" />
+        <!--
       The console harness that drives the game. Its unit-testable logic lives
       in GameAutomation; the parts that need a running game are behind a verb
       you invoke deliberately, never in dotnet test.

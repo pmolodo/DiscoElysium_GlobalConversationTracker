@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      One command for everything that has to be read out of the Dialogue System
+      database .asset, carrying a subcommand per output, rather than an
+      executable per output: the reading is the expensive and fiddly part, it is
+      the same read every time, and it lives in DialogueAsset next door.
+    -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>GlobalConversationTracker.DialogueExtract</RootNamespace>
+    <AssemblyName>DialogueExtract</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DialogueAsset\DialogueAsset.csproj" />
+  </ItemGroup>
+
+</Project>

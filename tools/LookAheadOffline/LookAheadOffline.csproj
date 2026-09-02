@@ -16,6 +16,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!--
+      The index record model and its JSONL reader live in DialogueAsset, beside
+      the extractor that writes the file: one model for the tool that produces
+      the index and the tool that consumes it, rather than two that drift.
+    -->
+    <ProjectReference Include="..\DialogueAsset\DialogueAsset.csproj" />
     <ProjectReference
       Include="..\..\src\GlobalConversationTracker.LookAhead\GlobalConversationTracker.LookAhead.csproj" />
   </ItemGroup>
