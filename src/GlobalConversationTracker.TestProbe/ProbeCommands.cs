@@ -173,19 +173,6 @@ namespace GlobalConversationTracker.TestProbe
         /// </remarks>
         private void ReportLoadingFinished()
         {
-            if (_saveApplied)
-            {
-                _saveApplied = false;
-                _loadPending = true;
-                _sawLoading = false;
-                _pollsSinceLoad = 0;
-            }
-
-            if (!_loadPending)
-            {
-                return;
-            }
-
             bool loading;
             try
             {
@@ -195,28 +182,46 @@ namespace GlobalConversationTracker.TestProbe
             catch (Exception)
             {
                 // A singleton that throws mid-scene-swap costs this poll, not the latch:
-                // the load stays pending and the next poll asks again.
+                // a pending load stays pending and the next poll asks again.
+                return;
+            }
+
+            // Watched on every poll, not only while a load is pending, because the flag
+            // rises BEFORE the save is applied - measured: five consecutive loads all
+            // reported the rise as unseen when the watch began at the latch. Keeping the
+            // watch running is what lets the falling edge stay the signal, with the
+            // latch's settle as the fallback rather than the usual path.
+            if (loading)
+            {
+                _sawLoading = true;
+            }
+
+            if (_saveApplied)
+            {
+                _saveApplied = false;
+                _loadPending = true;
+                _pollsSinceLoad = 0;
+            }
+
+            if (!_loadPending)
+            {
                 return;
             }
 
             _pollsSinceLoad++;
-            if (loading)
-            {
-                _sawLoading = true;
-                return;
-            }
-
-            if (!_sawLoading && _pollsSinceLoad < LoadSettlePolls)
+            if (loading || (!_sawLoading && _pollsSinceLoad < LoadSettlePolls))
             {
                 return;
             }
 
             _loadPending = false;
+            bool observed = _sawLoading;
+            _sawLoading = false;
             ProbeLog.Write(
                 "load-finished",
                 "money", TestProbePlugin.Money(),
                 "conversation", TestProbePlugin.ConversationId(),
-                "observed", _sawLoading);
+                "observed", observed);
         }
 
         private static void Run(string text)
