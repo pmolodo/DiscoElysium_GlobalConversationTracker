@@ -14,8 +14,9 @@ travel from one - rather than on whatever happens to stand near the player in a 
 One JSON object per conversation is written, one per line:
 
   {"id": 8, "title": "...", "actor": 12, "conversant": 12,
-   "entries": [{"id": 3, "group": false, "actor": 5, "guard": "Variable[...] == true",
-                "script": "Money = Money - 50", "to": [4, 9], "title": "..."}]}
+   "entries": [{"id": 3, "group": false, "guard": "Variable[...] == true",
+                "script": "Money = Money - 50", "to": [4, 9],
+                "fields": {"DifficultyPass": "12", "Title": "..."}}]}
 
 The guard and script carry the conditionsString and userScript verbatim, because
 what a forward scan can reach turns on them: a purchase is a guard that tests money
@@ -53,18 +54,6 @@ LINK_DESTINATION = "        destinationDialogueID: "
 LINK_DESTINATION_CONVERSATION = "        destinationConversationID: "
 
 WANTED_CONVERSATION_FIELDS = ("Title", "Actor", "Conversant")
-WANTED_ENTRY_FIELDS = ("Title", "Actor", "ClickCost", "CostOnce", "HiddenNotEnough")
-
-# Where an entry's value lands in the record. ClickCost is what a purchase costs, in
-# centimes, and it is a field rather than a script, so a search for "money" in the
-# conditions and actions misses every shop in the game.
-ENTRY_FIELD_KEYS = {
-    "Title": "title",
-    "Actor": "actor",
-    "ClickCost": "cost",
-    "CostOnce": "cost_once",
-    "HiddenNotEnough": "hidden_when_poor",
-}
 
 
 def decode_scalar(value):
@@ -127,9 +116,12 @@ def read_conversations(path):
                     "script": "",
                     "to": [],
                     "title": None,
-                    "cost": 0,
-                    "cost_once": False,
-                    "hidden_when_poor": False,
+                    # Keep every field, not a hand-maintained subset. The offline
+                    # crawler needs several presence-based fields (DifficultyPass,
+                    # DifficultyRed, kim_watch, and others), and retaining them all
+                    # makes a newer graph model possible without regenerating an
+                    # index from the 170 MB source asset.
+                    "fields": {},
                 }
                 continue
 
@@ -146,16 +138,12 @@ def read_conversations(path):
 
             if line.startswith(ENTRY_FIELD):
                 name = decode_scalar(line[len(ENTRY_FIELD) :])
-                pending_entry_field = name if name in WANTED_ENTRY_FIELDS else None
+                pending_entry_field = name
             elif line.startswith(ENTRY_VALUE) and pending_entry_field:
                 value = decode_scalar(line[len(ENTRY_VALUE) :])
-                key = ENTRY_FIELD_KEYS[pending_entry_field]
-                if key == "title":
-                    entry[key] = value
-                elif key in ("cost_once", "hidden_when_poor"):
-                    entry[key] = value.strip().lower() == "true"
-                else:
-                    entry[key] = as_int(value)
+                entry["fields"][pending_entry_field] = value
+                if pending_entry_field == "Title":
+                    entry["title"] = value
                 pending_entry_field = None
             elif line.startswith(ENTRY_IS_GROUP):
                 entry["group"] = line[len(ENTRY_IS_GROUP) :].strip() == "1"

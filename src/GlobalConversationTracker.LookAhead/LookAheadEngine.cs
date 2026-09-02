@@ -193,6 +193,28 @@ namespace GlobalConversationTracker.LookAhead
         public TimeSpan ProgressInterval { get; set; } = TimeSpan.FromSeconds(1);
 
         /// <summary>
+        /// Handed every <see cref="StateSampleInterval"/>th state as it is first
+        /// reached; null to sample nothing.
+        /// </summary>
+        /// <remarks>
+        /// For finding out what a crawl's states actually differ in. The counts say a
+        /// conversation reached two hundred thousand states and which entries they piled
+        /// up at; only the states themselves say WHICH of the tracked slots are doing the
+        /// multiplying, and that is the difference between knowing a conversation is
+        /// expensive and knowing why.
+        ///
+        /// Off by default, and skipped entirely when null, so it costs a crawl nothing to
+        /// have the option.
+        /// </remarks>
+        public Action<DialogueNodeId, LookAheadState, int>? OnStateReached { get; set; }
+
+        /// <summary>
+        /// How many states pass between calls to <see cref="OnStateReached"/>; zero or
+        /// less samples none.
+        /// </summary>
+        public int StateSampleInterval { get; set; }
+
+        /// <summary>
         /// Where counter increments saturate. Guards in the shipped database compare
         /// counters against constants no larger than 5, and any value above the largest
         /// such constant is indistinguishable from it, so capping keeps the domain finite
@@ -317,6 +339,14 @@ namespace GlobalConversationTracker.LookAhead
             reached.Add(start);
             Count(tally, start);
 
+            Action<DialogueNodeId, LookAheadState, int>? sample = _options.OnStateReached;
+            int sampleEvery = _options.StateSampleInterval;
+            bool sampling = sample != null && sampleEvery > 0;
+            if (sampling)
+            {
+                sample!(start, entered, seen.Count);
+            }
+
             Novelty best = Novelty.SeenThisGame;
             LookAheadLimit stoppedBy = LookAheadLimit.None;
 
@@ -401,6 +431,10 @@ namespace GlobalConversationTracker.LookAhead
                             reached.Add(childId);
                             Count(tally, childId);
                             queue.Enqueue(key);
+                            if (sampling && seen.Count % sampleEvery == 0)
+                            {
+                                sample!(childId, next, seen.Count);
+                            }
                         }
                     }
                 }

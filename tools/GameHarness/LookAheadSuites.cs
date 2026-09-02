@@ -559,6 +559,10 @@ namespace GlobalConversationTracker.Harness
                     "look-ahead-stats.json",
                     "the crawls ran and are all accounted for, at a cost the run prints",
                     ReportCost),
+                new SuiteArtefact(
+                    "look-ahead-budget-overflows.log",
+                    "the overflow report says where the blow-up lives",
+                    ReportOverflows),
             });
 
     /// <summary>
@@ -643,6 +647,41 @@ namespace GlobalConversationTracker.Harness
     /// </summary>
     private static int Count(JsonElement row, string name) =>
         row.TryGetProperty(name, out JsonElement value) ? value.GetInt32() : 0;
+
+    /// <summary>
+    /// Prints the overflow report, which says WHERE a crawl's states went.
+    /// </summary>
+    /// <remarks>
+    /// <para>The cost table says a crawl spent its whole budget; this says what it spent
+    /// it on. Each overflow names the option, the state it started from, how many slots
+    /// the group interned, and the entries reached in the most distinct states - and it
+    /// is that last list that identifies a blow-up, because a conversation whose states
+    /// are spread evenly over a thousand entries is a different problem from one where a
+    /// single hub accounts for most of them.</para>
+    ///
+    /// <para>The mod writes this only for a crawl that actually overflowed, and only
+    /// when asked, because producing it means walking the offending option a second time
+    /// with a per-entry tally. Nothing here asserts on it: an overflow is expected in
+    /// this suite, and the report is evidence rather than a claim. It is read at all
+    /// because the profile it is written into is staged, and goes away with it.</para>
+    /// </remarks>
+    private static string? ReportOverflows(string? text)
+    {
+        if (text is null)
+        {
+            // Not a failure. It means nothing overflowed, which the cost table already
+            // reports, and which would be good news.
+            return null;
+        }
+
+        Console.WriteLine();
+        foreach (string line in text.Split('\n'))
+        {
+            Console.WriteLine($"        {line.TrimEnd()}");
+        }
+
+        return null;
+    }
 
         /// <summary>Finds the requested suites.</summary>
         /// <param name="names">Suite names, or an empty list for every suite.</param>
