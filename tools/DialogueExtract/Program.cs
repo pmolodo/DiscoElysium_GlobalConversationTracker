@@ -10,24 +10,31 @@ namespace GlobalConversationTracker.DialogueExtract
     internal static class Program
     {
         private const string ConversationIndexCommand = "conversation-index";
+        private const string WorstCaseStateCommand = "worst-case-state";
         private const int ExitFailure = 1;
 
         private const string Usage = """
             DialogueExtract - read a Disco Elysium Dialogue System database .asset.
 
             Usage:
-              dotnet run --project tools/DialogueExtract -- conversation-index [options]
+              dotnet run --project tools/DialogueExtract -- <command> [options]
 
             Commands:
               conversation-index  One compact JSON object per conversation, one per line:
                                   its id, title, actor, conversant, and every dialogue
                                   entry with its guard, script, links and fields.
+              worst-case-state    The global state that makes a look-ahead crawl as
+                                  expensive as it can be: every entry of every
+                                  conversation in the index recorded as WasDisplayed.
 
             Options:
-              --asset PATH  The database .asset. Default:
+              --asset PATH  conversation-index: the database .asset. Default:
                             .game_reference_copies/AssetRipperExport/ExportedProject/Assets/Dialogue Databases/Disco Elysium.asset
-              --out PATH    Where to write the output. Default:
+              --index PATH  worst-case-state: the index conversation-index wrote. Default:
                             .game_reference_copies/derived/conversation_index.jsonl
+              --out PATH    Where to write the output. Defaults:
+                            conversation-index  .game_reference_copies/derived/conversation_index.jsonl
+                            worst-case-state    testing/scenarios/global-state-worst-case.json
               -h, --help    Show this message.
             """;
 
@@ -37,13 +44,22 @@ namespace GlobalConversationTracker.DialogueExtract
         private static readonly string DefaultOut = Path.Combine(".game_reference_copies", "derived",
             "conversation_index.jsonl");
 
+        private static readonly string DefaultIndex = DefaultOut;
+
+        private static readonly string DefaultStateOut = Path.Combine("testing", "scenarios",
+            "global-state-worst-case.json");
+
         private static int Main(string[] args)
         {
             try
             {
                 return Run(args);
             }
-            catch (Exception exception) when (exception is ArgumentException or IOException)
+            // InvalidDataException is listed on its own: it says the input file is not
+            // what it claims to be, which is the caller's problem too, but it descends
+            // from SystemException rather than IOException.
+            catch (Exception exception) when (exception is ArgumentException or IOException
+                or InvalidDataException)
             {
                 // Bad input is the caller's problem, not a defect: say what is wrong and
                 // stop. A stack trace here would bury the one line that helps.
@@ -66,11 +82,50 @@ namespace GlobalConversationTracker.DialogueExtract
             }
 
             string command = args[0];
-            if (command != ConversationIndexCommand)
+            switch (command)
             {
-                throw new ArgumentException($"Unknown command '{command}'\n\n{Usage}");
+                case ConversationIndexCommand:
+                    return ConversationIndex(ParseOptions(args, command));
+                case WorstCaseStateCommand:
+                    return WorstCaseState(ParseOptions(args, command));
+                default:
+                    throw new ArgumentException($"Unknown command '{command}'\n\n{Usage}");
+            }
+        }
+
+        private static int ConversationIndex(Dictionary<string, string> options)
+        {
+            string asset = Option(options, "--asset", DefaultAsset);
+            string outPath = Option(options, "--out", DefaultOut);
+            RejectUnknownOptions(options);
+            PrepareOutput(outPath);
+
+            int written = ConversationIndexFile.Write(outPath, ConversationIndexExtractor.Extract(asset));
+            Console.WriteLine($"wrote {written} conversations to {outPath}");
+            return 0;
+        }
+
+        private static int WorstCaseState(Dictionary<string, string> options)
+        {
+            string index = Option(options, "--index", DefaultIndex);
+            string outPath = Option(options, "--out", DefaultStateOut);
+            RejectUnknownOptions(options);
+            PrepareOutput(outPath);
+
+            SortedDictionary<int, List<int>> displayed =
+                WorstCaseGlobalState.Write(outPath, ConversationIndexFile.Read(index));
+            int entries = 0;
+            foreach (List<int> ids in displayed.Values)
+            {
+                entries += ids.Count;
             }
 
+            Console.WriteLine($"wrote {displayed.Count} conversations and {entries} entries to {outPath}");
+            return 0;
+        }
+
+        private static Dictionary<string, string> ParseOptions(string[] args, string command)
+        {
             var options = new Dictionary<string, string>(StringComparer.Ordinal);
             for (int i = 1; i < args.Length; i += 2)
             {
@@ -82,23 +137,27 @@ namespace GlobalConversationTracker.DialogueExtract
                 options.Add(args[i], args[i + 1]);
             }
 
-            string asset = Option(options, "--asset", DefaultAsset);
-            string outPath = Option(options, "--out", DefaultOut);
+            return options;
+        }
+
+        private static void RejectUnknownOptions(Dictionary<string, string> options)
+        {
+            // Every option a command knows has been removed by now, so whatever is left is
+            // one it does not: a misspelling, or an option meant for a different command.
             if (options.Count > 0)
             {
                 throw new ArgumentException(
                     $"Unknown option '{FirstKey(options)}'\n\n{Usage}");
             }
+        }
 
+        private static void PrepareOutput(string outPath)
+        {
             string? directory = Path.GetDirectoryName(outPath);
             if (!string.IsNullOrEmpty(directory))
             {
                 Directory.CreateDirectory(directory);
             }
-
-            int written = ConversationIndexFile.Write(outPath, ConversationIndexExtractor.Extract(asset));
-            Console.WriteLine($"wrote {written} conversations to {outPath}");
-            return 0;
         }
 
         private static string Option(Dictionary<string, string> options, string name, string fallback)
