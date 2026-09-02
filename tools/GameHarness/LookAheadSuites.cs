@@ -119,13 +119,41 @@ namespace GlobalConversationTracker.Harness
         /// <summary>Nothing recorded, so every option is itself unseen anywhere.</summary>
         private const string EmptyState = "global-state-empty.json";
 
+        /// <summary>
+        /// Every entry of the biggest conversations recorded, which is the most
+        /// expensive shape a crawl can have.
+        /// </summary>
+        private const string WorstCaseState = "global-state-worst-case.json";
+
+        /// <summary>
+        /// The largest conversations that can be reached from a place the player can
+        /// stand, by entry count.
+        /// </summary>
+        /// <remarks>
+        /// Entry count is not the cost - the budget counts (entry, state) pairs, so what
+        /// blows up is the state slots a conversation touches multiplied by its reachable
+        /// entries - but it is the best proxy available without running them, and these
+        /// are also among the ones with the most guards and actions.
+        ///
+        /// Two larger ones are missing. 362 (APT / STUDENT COMMUNIST, 1860 entries) and
+        /// 368 (JAM / COALITION WARSHIP ARCHER, 1770) are set in areas no save here
+        /// stands in; adding them means finding a position in those scenes first, and
+        /// opening a conversation from somewhere else is what these suites stopped doing.
+        /// The staged state records them anyway, so adding a save is all it would take.
+        /// </remarks>
+        public static IReadOnlyList<Somewhere> BiggestConversations =>
+            new[] { HangedMan, Joyce, Garte, DoomSpiral };
+
         /// <summary>Every suite, in the order a full run does them.</summary>
         /// <remarks>
         /// Computed rather than stored: a static field would be initialised before the
         /// suites it names, and would quietly hold nulls.
         /// </remarks>
         public static IReadOnlyList<LookAheadSuite> All =>
-            new[] { Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff };
+            new[]
+            {
+                Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff, Headroom,
+            };
 
         /// <summary>
         /// The forward scan spends as it walks.
@@ -471,6 +499,111 @@ namespace GlobalConversationTracker.Harness
             ? null
             : $"no overflow block for conversation {SiilengConversation} in "
                 + $"{text.Length} characters";
+    }
+
+        /// <summary>
+        /// What the biggest conversations in the game actually cost.
+        /// </summary>
+        /// <remarks>
+        /// <para>Not a behaviour check - a measurement, with assertions about what the
+        /// measurement found. The staged global state records every entry of every
+        /// conversation here, which is the most expensive shape a crawl can take: no
+        /// option's own novelty is unseen-anywhere, so the early exit in MarkerFor does
+        /// not fire and the crawl runs; and nothing it reaches is unseen-anywhere either,
+        /// so it cannot stop the instant it finds something and has to explore everything
+        /// reachable.</para>
+        ///
+        /// <para>What the run prints alongside is the cost - states and milliseconds,
+        /// worst and mean, per conversation - because whether the budget was reached is
+        /// one bit, and how close it came is what says whether the limit is doing
+        /// anything and whether a larger one would be affordable.</para>
+        /// </remarks>
+        public static LookAheadSuite Headroom { get; } = new LookAheadSuite(
+            "headroom",
+            "what the biggest conversations cost, and whether the budget is ever reached",
+            WorstCaseState,
+            BiggestConversations
+                .Select(where => new LookAheadScenario(
+                    where.Save,
+                    where.Conversation,
+                    where.What,
+                    Array.Empty<OptionExpectation>(),
+                    markers: MarkerPolicy.Ignored))
+                .ToArray(),
+            pluginSettings: new Dictionary<string, string>
+            {
+                ["KeepLookAheadStates"] = "true",
+                ["LogLookAheadBudgetExceeded"] = "true",
+            },
+            artefacts: new[]
+            {
+                new SuiteArtefact(
+                    "look-ahead-stats.json",
+                    "the crawls ran and are all accounted for, at a cost the run prints",
+                    ReportCost),
+            });
+
+    /// <summary>
+    /// Prints what the crawls cost, and checks the figures account for themselves.
+    /// </summary>
+    /// <remarks>
+    /// <para>The printing is the point; the assertion only guards it. Crawls have to have
+    /// happened - a measurement of nothing prints an empty table and would otherwise
+    /// pass - and the per-conversation rows have to add up to the total, since a row
+    /// missing from the breakdown is cost the table does not show.</para>
+    ///
+    /// <para>Deliberately NOT keyed to the conversations the scenarios open. The
+    /// statistics are recorded against the conversation each OPTION belongs to, and an
+    /// option's conversation is often not the one that is open: 28 (WHIRLING F1 / GARTE
+    /// MAIN) draws a menu whose four options are all entries of 13 (WHIRLING F1 / GARTE),
+    /// so a run that crawls Garte's menu perfectly well records nothing under 28.
+    /// Demanding a row per opened conversation fails on correct behaviour.</para>
+    /// </remarks>
+    private static string? ReportCost(string? json)
+    {
+        if (json is null)
+        {
+            return "look-ahead-stats.json was never written, so nothing was crawled";
+        }
+
+        using JsonDocument document = JsonDocument.Parse(json);
+        JsonElement root = document.RootElement;
+
+        Console.WriteLine();
+        Console.WriteLine(
+            "        conversation  crawls  max states  max ms  mean states  exhausted");
+
+        int counted = 0;
+        foreach (JsonElement row in root.GetProperty("byConversation").EnumerateArray())
+        {
+            int crawls = row.GetProperty("crawls").GetInt32();
+            counted += crawls;
+
+            Console.WriteLine(
+                $"        {row.GetProperty("conversation").GetInt32(),12}  {crawls,6}  "
+                + $"{row.GetProperty("maxStates").GetInt32(),10}  "
+                + $"{row.GetProperty("maxMs").GetDouble(),6:N1}  "
+                + $"{row.GetProperty("meanStates").GetDouble(),11:N1}  "
+                + $"{row.GetProperty("budgetExhausted").GetInt32(),9}");
+        }
+
+        int total = root.GetProperty("crawls").GetInt32();
+        Console.WriteLine();
+        Console.WriteLine(
+            $"        overall: {total} crawls, "
+            + $"{root.GetProperty("states").GetProperty("max").GetInt32()} states at worst, "
+            + $"{root.GetProperty("milliseconds").GetProperty("max").GetDouble():N1} ms at worst");
+        Console.WriteLine($"        histogram: {root.GetProperty("statesHistogram")}");
+        Console.WriteLine();
+
+        if (total <= 0)
+        {
+            return "no crawl ran at all, so there is nothing here to measure";
+        }
+
+        return counted == total
+            ? null
+            : $"{total} crawls overall but {counted} in the per-conversation breakdown";
     }
 
         /// <summary>Finds the requested suites.</summary>
