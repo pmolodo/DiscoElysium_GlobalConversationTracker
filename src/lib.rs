@@ -9,6 +9,9 @@ pub mod index;
 pub mod symbolic;
 
 #[cfg(test)]
+pub(crate) mod test_graph;
+
+#[cfg(test)]
 mod integration_tests {
     use crate::core::types::{DialogueNodeId, Novelty, DialogueCheckKind, Ternary};
     use crate::core::state::StateSymbols;
