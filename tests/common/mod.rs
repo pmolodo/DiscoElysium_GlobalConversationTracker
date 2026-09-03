@@ -25,9 +25,14 @@
 //! That case skips - and says so in terms nobody will mistake for success. Every other
 //! failure, including the extractor running and not producing the file, is a hard error.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
+
+use lookahead_engine::core::guard_value::{GuardValue, GuardValueKind};
+use lookahead_engine::core::types::{DialogueNodeId, Ternary};
+use lookahead_engine::world::world::ILookAheadWorld;
 
 /// Serialises regeneration across the tests in one binary.
 ///
@@ -152,4 +157,207 @@ pub fn conversation_index() -> Option<PathBuf> {
         &INDEX_COMMAND,
         "conversation_index.jsonl",
     )
+}
+
+/// A world shaped like a real save, for measuring the guard corpus against.
+///
+/// Shared rather than written twice. Two measurements are only comparable if they run
+/// against the same world, and this was duplicated verbatim in `guard_coverage` and
+/// `modelling_gaps` with a comment in each saying so - which is a convention, not a
+/// guarantee.
+///
+/// ## What makes it save-shaped rather than test-shaped
+///
+/// `TestWorld` answers UNKNOWN for anything it has not been told, which is the safe
+/// answer for a crawl and the useless one for a measurement: every guard mentioning an
+/// unset variable becomes undecidable, and most of the database's variables are unset for
+/// most of a playthrough. A save answers. An unset Lua variable is nil and nil is falsy,
+/// so a variable nobody has written reads FALSE, and the facts a save settles - who is in
+/// the party, what is worn, what is in the thought cabinet - are simply known.
+///
+/// None of it can be changed by a crawl, which is what makes one answer good for the
+/// whole walk.
+pub struct SaveWorld {
+    /// Counter variables, which must answer as NUMBERS rather than as false.
+    ///
+    /// The one place the blanket "unset reads false" rule gives a wrong-shaped answer.
+    /// A guard like `Variable["jam.jammystery_lorrymans_questioned"] >= 3` compares a
+    /// counter, and in the game these exist as numbers initialised to zero; answering
+    /// boolean false makes the comparison undecidable, because `try_as_number` gives
+    /// nothing for a boolean and `GuardExpression::evaluate` gives up in exactly the same
+    /// way. The engine and the compiler agree - they are both just being told the wrong
+    /// thing.
+    ///
+    /// Answering NUMBER ZERO for everything instead is not the fix, and would be a far
+    /// worse bug. `GuardValue::equals` is kind-sensitive, so a number never equals a
+    /// boolean, and 5,994 of the 13,059 distinct guards in the database end in
+    /// `== false`. Every one of them would start answering false.
+    ///
+    /// The real answer is the declared type, which the dialogue database has and the
+    /// extracted index does not yet carry - see de-sze.5.4. Until then a measurement
+    /// names the counters it needs, which is honest as long as it is understood as a
+    /// fixture rather than as a model.
+    numeric: HashSet<String>,
+    /// What the character is wearing, by `CheckEquipped` name.
+    equipped: HashSet<String>,
+    /// Thoughts being internalised, by `IsTHCCooking` name.
+    cooking: HashSet<String>,
+    /// Thoughts already internalised, by `IsTHCFixed` name.
+    fixed: HashSet<String>,
+    money: i32,
+    day_minutes: i32,
+    day_counter: i32,
+}
+
+impl Default for SaveWorld {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SaveWorld {
+    /// Midday on the first day, nothing worn, nothing internalised, no money.
+    pub fn new() -> Self {
+        Self {
+            numeric: HashSet::new(),
+            equipped: HashSet::new(),
+            cooking: HashSet::new(),
+            fixed: HashSet::new(),
+            money: 0,
+            day_minutes: 12 * 60,
+            day_counter: 1,
+        }
+    }
+
+    /// Names a variable the save holds as a NUMBER, so an ordering comparison can read it.
+    pub fn with_counter(mut self, name: &str) -> Self {
+        self.numeric.insert(name.to_string());
+        self
+    }
+
+    pub fn wearing(mut self, name: &str) -> Self {
+        self.equipped.insert(name.to_string());
+        self
+    }
+
+    pub fn cooking(mut self, name: &str) -> Self {
+        self.cooking.insert(name.to_string());
+        self
+    }
+
+    pub fn internalised(mut self, name: &str) -> Self {
+        self.fixed.insert(name.to_string());
+        self
+    }
+
+    pub fn with_money(mut self, centimes: i32) -> Self {
+        self.money = centimes;
+        self
+    }
+
+    pub fn at(mut self, day: i32, hour: i32) -> Self {
+        self.day_counter = day;
+        self.day_minutes = hour * 60;
+        self
+    }
+
+    /// The single text argument a query names its subject with.
+    fn subject(arguments: &[GuardValue]) -> Option<&str> {
+        match arguments {
+            [value] if value.kind() == GuardValueKind::Text => Some(value.text()),
+            _ => None,
+        }
+    }
+}
+
+impl ILookAheadWorld for SaveWorld {
+    fn money(&self) -> i32 {
+        self.money
+    }
+
+    fn day_minutes(&self) -> i32 {
+        self.day_minutes
+    }
+
+    fn day_counter(&self) -> i32 {
+        self.day_counter
+    }
+
+    fn is_clock_locked(&self) -> bool {
+        false
+    }
+
+    fn get_variable(&self, name: &str) -> GuardValue {
+        if self.numeric.contains(name) {
+            GuardValue::from_number(0.0)
+        } else {
+            GuardValue::from_boolean(false)
+        }
+    }
+
+    fn initially_has_item(&self, _name: &str) -> bool {
+        false
+    }
+
+    fn initially_task_active(&self, _name: &str) -> bool {
+        false
+    }
+
+    /// The facts a save settles. Everything else stays unknown, and says so by falling
+    /// back rather than by guessing.
+    fn query(&self, name: &str, arguments: &[GuardValue]) -> GuardValue {
+        let membership = |set: &HashSet<String>| {
+            Self::subject(arguments)
+                .map(|s| GuardValue::from_boolean(set.contains(s)))
+                .unwrap_or_else(GuardValue::unknown)
+        };
+
+        match name {
+            "IsKimHere" | "IsKimInParty" => GuardValue::from_boolean(true),
+            "IsCunoInParty" => GuardValue::from_boolean(false),
+            "CheckEquipped" => membership(&self.equipped),
+            "IsTHCCooking" => membership(&self.cooking),
+            "IsTHCFixed" => membership(&self.fixed),
+            // Present is cooking or fixed - `THCLuaFunctions.IsTHCPresent` returns true
+            // when the thought is cooking and otherwise falls through to whether it is
+            // fixed.
+            "IsTHCPresent" => Self::subject(arguments)
+                .map(|s| {
+                    GuardValue::from_boolean(
+                        self.cooking.contains(s) || self.fixed.contains(s),
+                    )
+                })
+                .unwrap_or_else(GuardValue::unknown),
+            _ => GuardValue::unknown(),
+        }
+    }
+
+    fn check_passes(&self, _node: DialogueNodeId) -> Ternary {
+        Ternary::Unknown
+    }
+
+    fn is_seen(&self, _node: DialogueNodeId) -> bool {
+        false
+    }
+}
+
+/// The one save every corpus measurement is taken against.
+///
+/// A function rather than a constant so the measurements cannot drift apart by
+/// configuring their own; the numbers they print are only comparable against one world.
+///
+/// Every fact here is a CHOICE, and a different save would give different figures. What
+/// it is not is a guess dressed as a model: the point is that a real save answers these
+/// questions, and a world that refuses them makes guards look undecidable when the only
+/// undecided thing is the fixture.
+pub fn measurement_save() -> SaveWorld {
+    SaveWorld::new()
+        // Worn from the first morning, and the guards ask about it more than anything
+        // else worn - six of the eight CheckEquipped calls in conversation 631's group.
+        .wearing("neck_tie")
+        // Counters the guards compare with an ordering operator. Named one at a time
+        // because nothing yet carries the declared type that would make this automatic -
+        // see de-sze.5.4, which is the real fix.
+        .with_counter("jam.jammystery_lorrymans_questioned")
+        .with_counter("pier.joyce_lorry_reporting_counter")
 }

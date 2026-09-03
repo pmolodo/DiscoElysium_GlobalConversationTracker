@@ -20,9 +20,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use lookahead_engine::core::guard::GuardExpression;
-use lookahead_engine::core::guard_value::GuardValue;
-use lookahead_engine::core::types::{DialogueNodeId, Ternary};
-use lookahead_engine::world::world::ILookAheadWorld;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
@@ -38,41 +35,6 @@ const CACHE_CAPACITY: usize = 1 << 18;
 /// The conversation index, regenerating it if it is not there.
 fn index_path() -> Option<PathBuf> {
     common::conversation_index()
-}
-
-/// A world shaped like a real save rather than like a test fixture.
-///
-/// The one difference that matters here: a variable nothing has ever set reads as FALSE,
-/// not as unknown. That is what the game does - an unset Lua variable is nil, and nil is
-/// falsy - and it is the state most of the database's variables are in for most of a
-/// playthrough. `TestWorld` answers unknown instead, which is safe for a crawl but makes
-/// every guard mentioning such a variable undecidable and so hides how much of the corpus
-/// is really readable.
-struct SaveWorld;
-
-impl ILookAheadWorld for SaveWorld {
-    fn money(&self) -> i32 { 0 }
-    fn day_minutes(&self) -> i32 { 720 }
-    fn day_counter(&self) -> i32 { 1 }
-    fn is_clock_locked(&self) -> bool { false }
-    fn get_variable(&self, _name: &str) -> GuardValue { GuardValue::from_boolean(false) }
-    fn initially_has_item(&self, _name: &str) -> bool { false }
-    fn initially_task_active(&self, _name: &str) -> bool { false }
-    /// The party and character facts a save settles, answered; everything else unknown.
-    ///
-    /// These are the queries the crawl cannot change - the engine lets them fall through
-    /// to the world at every step - so a save has one answer for each and it holds for
-    /// the whole crawl. `IsKimHere` is over half of all world queries the guards make on
-    /// its own.
-    fn query(&self, name: &str, _arguments: &[GuardValue]) -> GuardValue {
-        match name {
-            "IsKimHere" => GuardValue::from_boolean(true),
-            "IsCunoInParty" | "IsTHCPresent" => GuardValue::from_boolean(false),
-            _ => GuardValue::unknown(),
-        }
-    }
-    fn check_passes(&self, _node: DialogueNodeId) -> Ternary { Ternary::Unknown }
-    fn is_seen(&self, _node: DialogueNodeId) -> bool { false }
 }
 
 /// Counts the world queries a guard makes, by name.
@@ -163,7 +125,7 @@ fn how_much_of_the_guard_corpus_compiles() {
         // An empty world still ANSWERS for a variable it has never heard of - a variable
         // nothing has set is false - which is exactly the case a real save is in for most
         // of the database. That is what makes an untracked variable decidable.
-        let world = SaveWorld;
+        let world = common::measurement_save();
         let vars = DataVars::new(&layout, &symbols, NODE_CAPACITY, CACHE_CAPACITY);
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(&world)

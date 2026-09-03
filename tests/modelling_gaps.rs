@@ -24,13 +24,10 @@ use std::collections::HashMap;
 
 use lookahead_engine::core::action::DialogueActionKind;
 use lookahead_engine::core::guard::GuardExpression;
-use lookahead_engine::core::guard_value::GuardValue;
-use lookahead_engine::core::types::{DialogueNodeId, Ternary};
 use lookahead_engine::index::{build_group_graph, read_index, Index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::vars::DataVars;
-use lookahead_engine::world::world::ILookAheadWorld;
 
 mod common;
 
@@ -39,31 +36,6 @@ const SUBJECT: i32 = 631;
 const COUNTER_CAP: i32 = 16;
 const NODE_CAPACITY: usize = 1 << 20;
 const CACHE_CAPACITY: usize = 1 << 18;
-
-/// A world shaped like a real save: a variable nothing set reads false, not unknown.
-///
-/// Deliberately the same shape as `guard_coverage`'s, because the two measurements are
-/// only comparable if they run against the same world.
-struct SaveWorld;
-
-impl ILookAheadWorld for SaveWorld {
-    fn money(&self) -> i32 { 0 }
-    fn day_minutes(&self) -> i32 { 720 }
-    fn day_counter(&self) -> i32 { 1 }
-    fn is_clock_locked(&self) -> bool { false }
-    fn get_variable(&self, _name: &str) -> GuardValue { GuardValue::from_boolean(false) }
-    fn initially_has_item(&self, _name: &str) -> bool { false }
-    fn initially_task_active(&self, _name: &str) -> bool { false }
-    fn query(&self, name: &str, _arguments: &[GuardValue]) -> GuardValue {
-        match name {
-            "IsKimHere" => GuardValue::from_boolean(true),
-            "IsCunoInParty" | "IsTHCPresent" => GuardValue::from_boolean(false),
-            _ => GuardValue::unknown(),
-        }
-    }
-    fn check_passes(&self, _node: DialogueNodeId) -> Ternary { Ternary::Unknown }
-    fn is_seen(&self, _node: DialogueNodeId) -> bool { false }
-}
 
 /// Groups strings by how often they occur, most common first.
 fn by_frequency(items: &[String]) -> Vec<(String, usize)> {
@@ -110,7 +82,7 @@ fn what_is_still_unmodelled_in_the_subject_conversation() {
     let (graph, group) =
         build_group_graph(&index, SUBJECT).expect("the subject group builds");
     let symbols = graph.symbols().clone();
-    let world = SaveWorld;
+    let world = common::measurement_save();
 
     println!(
         "conversation {SUBJECT}: {} conversations, {} entries, {} slots",
