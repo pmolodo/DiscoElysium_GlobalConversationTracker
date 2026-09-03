@@ -30,6 +30,35 @@ namespace GlobalConversationTracker.Automation.Tests
             Assert.NotEmpty(LookAheadSuites.All);
         }
 
+        /// <summary>
+        /// The default run leaves out what is checked without a game, but the suite still
+        /// exists, is still validated by the checks that walk every suite, and is still
+        /// reachable by name.
+        /// </summary>
+        [Fact]
+        public void AllSeenIsDeclaredButNotInTheDefaultRun()
+        {
+            Assert.Contains(LookAheadSuites.AllSeen, LookAheadSuites.All);
+            Assert.DoesNotContain(LookAheadSuites.AllSeen, LookAheadSuites.Default);
+            Assert.Equal(
+                new[] { LookAheadSuites.AllSeen },
+                LookAheadSuites.SelectMany(new[] { "all-seen" }));
+        }
+
+        [Fact]
+        public void TheDefaultRunIsMadeOfDeclaredSuites()
+        {
+            Assert.All(LookAheadSuites.Default, suite => Assert.Contains(suite, LookAheadSuites.All));
+            Assert.NotEmpty(LookAheadSuites.Default);
+        }
+
+        [Fact]
+        public void NamingNoSuiteRunsTheDefaultSet()
+        {
+            Assert.Equal(LookAheadSuites.Default, LookAheadSuites.SelectMany(Array.Empty<string>()));
+            Assert.Equal(LookAheadSuites.Default, LookAheadSuites.Select(null));
+        }
+
         [Fact]
         public void SuiteNamesAreDistinct()
         {
@@ -244,10 +273,17 @@ namespace GlobalConversationTracker.Automation.Tests
             Assert.Equal("money", selected[0].Name);
         }
 
+        /// <summary>
+        /// Selecting nothing runs the DEFAULT set, which is no longer every suite: one
+        /// whose claim is checked without a game is left out of the in-game run.
+        /// </summary>
         [Fact]
-        public void SelectingNothingRunsEverySuite()
+        public void SelectingNothingRunsTheDefaultSet()
         {
-            Assert.Equal(LookAheadSuites.All.Count, LookAheadSuites.Select(null).Count);
+            Assert.Equal(LookAheadSuites.Default.Count, LookAheadSuites.Select(null).Count);
+            Assert.True(
+                LookAheadSuites.Default.Count < LookAheadSuites.All.Count,
+                "the default set should be a strict subset, or nothing has been moved offline");
         }
 
         [Fact]

@@ -162,15 +162,39 @@ namespace GlobalConversationTracker.Harness
         public static IReadOnlyList<Somewhere> BiggestConversations =>
             new[] { Noid, HangedMan, Joyce, Garte, DoomSpiral };
 
-        /// <summary>Every suite, in the order a full run does them.</summary>
+        /// <summary>Every suite that exists, in the order a full run would do them.</summary>
         /// <remarks>
-        /// Computed rather than stored: a static field would be initialised before the
-        /// suites it names, and would quietly hold nulls.
+        /// <para>Computed rather than stored: a static field would be initialised before
+        /// the suites it names, and would quietly hold nulls.</para>
+        ///
+        /// <para>Everything declared, including what <see cref="Default"/> leaves out, so
+        /// that naming a suite explicitly always works and so that the checks which walk
+        /// every suite - that its global state exists and that the mod can read it - keep
+        /// covering all of them.</para>
         /// </remarks>
         public static IReadOnlyList<LookAheadSuite> All =>
             new[]
             {
                 Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff, AllSeen,
+            };
+
+        /// <summary>The suites a run does when it is not told which to do.</summary>
+        /// <remarks>
+        /// <para><see cref="AllSeen"/> is deliberately not here. Its claim - that nothing
+        /// is worth crawling once everything is recorded - is about the crawl algorithm
+        /// rather than about the game, and it is checked without a game by
+        /// <c>AllSeenOfflineTests</c>, over the same state and the same conversations, in
+        /// about four seconds and under <c>dotnet test</c>. Repeating it here would cost
+        /// a launch and five save loads to learn the same thing.</para>
+        ///
+        /// <para>It stays available as <c>--suite all-seen</c>, and is worth running that
+        /// way when the plumbing rather than the algorithm is in question, since the
+        /// offline check cannot see whether the patch is wired up at all.</para>
+        /// </remarks>
+        public static IReadOnlyList<LookAheadSuite> Default =>
+            new[]
+            {
+                Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff,
             };
 
         /// <summary>
@@ -702,7 +726,11 @@ namespace GlobalConversationTracker.Harness
     }
 
         /// <summary>Finds the requested suites.</summary>
-        /// <param name="names">Suite names, or an empty list for every suite.</param>
+        /// <param name="names">
+        /// Suite names, or an empty list for <see cref="Default"/>. Naming a suite finds
+        /// it in <see cref="All"/>, so one left out of the default run is still asked for
+        /// by name.
+        /// </param>
         /// <exception cref="ArgumentException">No suite goes by a requested name.</exception>
         public static IReadOnlyList<LookAheadSuite> SelectMany(IReadOnlyList<string> names)
         {
@@ -713,7 +741,7 @@ namespace GlobalConversationTracker.Harness
 
             if (names.Count == 0)
             {
-                return All;
+                return Default;
             }
 
             var selected = new List<LookAheadSuite>();
@@ -740,13 +768,13 @@ namespace GlobalConversationTracker.Harness
         }
 
         /// <summary>Finds one suite by name, or every suite when no name is given.</summary>
-        /// <param name="name">The suite's name, or null for every suite.</param>
-        /// <returns>The matching suite, or every suite.</returns>
+        /// <param name="name">The suite's name, or null for the default run.</param>
+        /// <returns>The matching suite, or <see cref="Default"/>.</returns>
         /// <exception cref="ArgumentException">No suite goes by that name.</exception>
         public static IReadOnlyList<LookAheadSuite> Select(string? name)
         {
             return name == null
-                ? All
+                ? Default
                 : SelectMany(new[] { name });
         }
 

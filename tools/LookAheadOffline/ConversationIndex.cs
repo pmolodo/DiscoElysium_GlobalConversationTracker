@@ -7,7 +7,7 @@ using GlobalConversationTracker.LookAhead;
 
 namespace GlobalConversationTracker.LookAheadOffline
 {
-    internal sealed class ConversationIndex
+    public sealed class ConversationIndex
     {
         private const string PassiveField = "DifficultyPass";
         private const string RedField = "DifficultyRed";

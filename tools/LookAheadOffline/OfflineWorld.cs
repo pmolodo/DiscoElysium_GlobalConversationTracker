@@ -6,7 +6,7 @@ using GlobalConversationTracker.LookAhead;
 
 namespace GlobalConversationTracker.LookAheadOffline
 {
-    internal sealed class OfflineState
+    public sealed class OfflineState
     {
         public int Money { get; set; }
         public int DayMinutes { get; set; }
@@ -21,7 +21,7 @@ namespace GlobalConversationTracker.LookAheadOffline
         public Dictionary<string, int> CounterCaps { get; set; } = new Dictionary<string, int>();
     }
 
-    internal sealed class OfflineWorld : ILookAheadWorld
+    public sealed class OfflineWorld : ILookAheadWorld
     {
         private readonly OfflineState _state;
 
