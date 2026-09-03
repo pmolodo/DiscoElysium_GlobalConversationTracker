@@ -22,6 +22,14 @@
         <Project
             Path="src/GlobalConversationTracker.LookAhead/GlobalConversationTracker.LookAhead.csproj" />
         <!--
+      The managed side of the bridge to the Rust look-ahead engine, which is
+      taking over from the assembly above - see de-i5xj. Marshals to a native
+      library and back and touches nothing else, so it is testable without the
+      game in the same way.
+    -->
+        <Project
+            Path="src/GlobalConversationTracker.Engine/GlobalConversationTracker.Engine.csproj" />
+        <!--
       Test-only console app, built because the persistence tests launch it as a
       child process. It is not shipped: only GlobalConversationTracker* files
       from the plugin's own output folder are deployed (see build.ps1).

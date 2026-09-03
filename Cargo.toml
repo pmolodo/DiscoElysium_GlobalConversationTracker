@@ -3,6 +3,12 @@ name = "lookahead_engine"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+# rlib for the tests, benches and the CLI; cdylib for the plugin, which runs inside the
+# game's Mono runtime and reaches this through DllImport. See de-i5xj.1 - the look-ahead
+# is moving out of C# and this is how it gets back in.
+crate-type = ["rlib", "cdylib"]
+
 [dependencies]
 ahash = "0.8"
 serde = { version = "1.0", features = ["derive"] }

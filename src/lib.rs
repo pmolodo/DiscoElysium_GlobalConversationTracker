@@ -8,6 +8,9 @@ pub mod engine;
 pub mod index;
 pub mod symbolic;
 
+/// The C ABI the game plugin reaches this engine through.
+pub mod ffi;
+
 /// Builds small graphs for tests, the way the database writes them.
 #[cfg(test)]
 pub(crate) mod test_graph;

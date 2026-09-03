@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      The managed side of the bridge to the Rust look-ahead engine - see de-i5xj.
+      netstandard2.0 for the same reason as the assembly it will replace: the
+      BepInEx plugin (net6.0) and the net10.0 test project both consume it.
+      Nothing here touches Unity, BepInEx or PixelCrushers; it marshals to a
+      native library and back, so it can be tested without the game.
+    -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <RootNamespace>GlobalConversationTracker.Engine</RootNamespace>
+    <AssemblyName>GlobalConversationTracker.Engine</AssemblyName>
+  </PropertyGroup>
+
+</Project>
