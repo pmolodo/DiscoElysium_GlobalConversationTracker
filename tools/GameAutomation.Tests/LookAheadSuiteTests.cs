@@ -125,18 +125,37 @@ namespace GlobalConversationTracker.Automation.Tests
                 LookAheadSuites.Pristine.Scenarios.Select(s => s.ConversationId));
         }
 
+        /// <summary>
+        /// The suite formerly known as headroom claims a no-crawl, not a cost. Once
+        /// every entry is recorded nothing can outrank an option, so the short-circuit
+        /// skips every crawl - and a suite that still demanded a cost would fail on
+        /// correct behaviour, which is exactly what it did before this changed.
+        /// </summary>
         [Fact]
-        public void HeadroomRemainsAMeasurementSuite()
+        public void AllSeenClaimsNoCrawlRatherThanACost()
         {
-            LookAheadSuite suite = LookAheadSuites.Headroom;
+            LookAheadSuite suite = LookAheadSuites.AllSeen;
             SuiteArtefact statistics = Assert.Single(
                 suite.Artefacts,
                 artefact => artefact.FileName == "look-ahead-stats.json");
 
-            Assert.All(
-                suite.Scenarios,
-                scenario => Assert.Equal(MarkerPolicy.Ignored, scenario.Markers));
-            Assert.NotNull(statistics.Check(null));
+            Assert.Null(statistics.Check(null));
+            Assert.NotNull(statistics.Check("{\"crawls\":1}"));
+        }
+
+        /// <summary>
+        /// It keeps the biggest conversations, because "not even here" is a stronger
+        /// statement of the cheap case than "not in some small conversation".
+        /// </summary>
+        [Fact]
+        public void AllSeenStillUsesTheBiggestConversations()
+        {
+            LookAheadSuite suite = LookAheadSuites.AllSeen;
+
+            Assert.Equal(
+                LookAheadSuites.BiggestConversations.Select(where => where.Conversation),
+                suite.Scenarios.Select(scenario => scenario.ConversationId));
+            Assert.Equal("true", suite.PluginSettings["KeepLookAheadStates"]);
         }
 
         [Fact]
