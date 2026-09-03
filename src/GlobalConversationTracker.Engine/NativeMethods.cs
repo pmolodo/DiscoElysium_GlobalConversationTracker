@@ -14,9 +14,9 @@ namespace GlobalConversationTracker.Engine
     /// wrong answer somewhere further up.</para>
     ///
     /// <para>Every entry point returns an <c>int</c> status and writes its result through
-    /// an out parameter, because the library must never let a panic cross into Mono - it
-    /// catches its own and reports <see cref="Status.Panic"/> instead. So there is no such
-    /// thing as an exception from the native side, only a code.</para>
+    /// an out parameter, because the library must never let a panic cross into managed
+    /// frames - it catches its own and reports <see cref="Status.Panic"/> instead. So
+    /// there is no such thing as an exception from the native side, only a code.</para>
     /// </remarks>
     internal static class NativeMethods
     {

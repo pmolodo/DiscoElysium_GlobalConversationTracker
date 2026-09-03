@@ -2,9 +2,10 @@
 //! The C ABI the game plugin reaches this engine through.
 //!
 //! The look-ahead used to live in C#, inside the BepInEx plugin, and is moving here - see
-//! de-i5xj. The plugin still has to run it, from inside the game's Mono runtime, so it
-//! comes back the ordinary way: this crate builds a `cdylib` and the plugin declares
-//! `DllImport`s against it.
+//! de-i5xj. The plugin still has to run it, from inside the game process, so it comes back
+//! the ordinary way: this crate builds a `cdylib` and the plugin declares `DllImport`s
+//! against it. BepInEx 6.0.0-be.688 runs IL2CPP plugins on CoreCLR .NET 6, so that is an
+//! ordinary P/Invoke rather than anything exotic.
 //!
 //! ## The shape, and why it is this shape
 //!
@@ -18,13 +19,13 @@
 //! handful of questions hundreds of times as the search fans out. So the world a crawl
 //! sees is a finite table of answers, and the set of questions is derivable from the
 //! parsed guards rather than discovered by running. Passing the answers over means no
-//! function pointers back into Mono, no reentrancy, and nothing that can deadlock.
+//! function pointers back into managed code, no reentrancy, and nothing that can deadlock.
 //!
 //! ## Rules this file lives by
 //!
-//! - NO PANIC MAY CROSS. Unwinding into Mono is undefined behaviour and would take the
-//!   game down with a stack trace nobody can read. Every entry point wraps its work in
-//!   [`catch_unwind`] and turns a panic into an error code.
+//! - NO PANIC MAY CROSS. Unwinding into managed frames is undefined behaviour, and would
+//!   take the game down with a stack trace nobody can read. Every entry point wraps its
+//!   work in [`catch_unwind`] and turns a panic into an error code.
 //! - NO ALLOCATION CROSSES UNOWNED. A string this hands out is owned by this library and
 //!   freed by [`gct_string_free`]; the caller never frees it itself, because the two sides
 //!   have different allocators.
