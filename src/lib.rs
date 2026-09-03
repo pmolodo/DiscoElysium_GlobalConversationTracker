@@ -6,20 +6,21 @@ pub mod graph;
 pub mod world;
 pub mod engine;
 pub mod index;
+pub mod symbolic;
 
 #[cfg(test)]
 mod integration_tests {
     use crate::core::types::{DialogueNodeId, Novelty, DialogueCheckKind, Ternary};
-    use crate::core::state::{StateSymbols, LookAheadState};
-    use crate::core::action::DialogueAction;
+    use crate::core::state::StateSymbols;
+
     use crate::core::guard::GuardExpression;
-    use crate::core::guard_value::GuardValue;
+
     use crate::parser::guard_parser::parse_guard;
     use crate::parser::action_parser::parse_actions;
     use crate::graph::node::LookAheadNode;
     use crate::graph::graph::LookAheadGraph;
     use crate::world::test_world::TestWorld;
-    use crate::engine::engine::{LookAheadEngine, LookAheadOptions};
+    use crate::engine::engine::LookAheadEngine;
 
     #[test]
     fn test_guard_parser() {
@@ -40,7 +41,7 @@ mod integration_tests {
     #[test]
     fn test_simple_crawl() {
         // Build a simple linear graph: A -> B -> C
-        let mut symbols = StateSymbols::new();
+        let symbols = StateSymbols::new();
         let id_a = DialogueNodeId::new(1, 1);
         let id_b = DialogueNodeId::new(1, 2);
         let id_c = DialogueNodeId::new(1, 3);
@@ -77,7 +78,7 @@ mod integration_tests {
 
     #[test]
     fn test_cost_option_blocks() {
-        let mut symbols = StateSymbols::new();
+        let symbols = StateSymbols::new();
         let id_a = DialogueNodeId::new(1, 1);
         let id_b = DialogueNodeId::new(1, 2);
 
@@ -101,7 +102,7 @@ mod integration_tests {
 
     #[test]
     fn test_money_once() {
-        let mut symbols = StateSymbols::new();
+        let symbols = StateSymbols::new();
         let id_a = DialogueNodeId::new(1, 1);
         let id_b = DialogueNodeId::new(1, 2);
         let id_c = DialogueNodeId::new(1, 3);
@@ -203,7 +204,7 @@ mod integration_tests {
 
     #[test]
     fn test_passive_check_passthrough() {
-        let mut symbols = StateSymbols::new();
+        let symbols = StateSymbols::new();
         let id_a = DialogueNodeId::new(1, 1);
         let id_b = DialogueNodeId::new(1, 2);
 
