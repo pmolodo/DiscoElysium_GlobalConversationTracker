@@ -43,3 +43,8 @@ uv.lock
 # it ours to redistribute, and all of it reproducible - a Steam copy from
 # depot_download.ps1, the exports from the tools that made them.
 .game_reference_copies/
+
+
+# Added by cargo
+
+/target
