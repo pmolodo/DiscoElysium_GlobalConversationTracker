@@ -2,6 +2,8 @@
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using GlobalConversationTracker.Core;
+using GlobalConversationTracker.Persistence;
 using Xunit;
 
 namespace GlobalConversationTracker.Automation.Tests
@@ -135,25 +137,37 @@ namespace GlobalConversationTracker.Automation.Tests
             Assert.Equal(money.Length, money.Distinct().Count());
         }
 
+        /// <remarks>
+        /// Read through the mod's own reader rather than by walking the raw JSON. The
+        /// file's shape is a storage detail that has already changed once - it was a
+        /// property per entry, and is now grouped by status - and a test that navigates
+        /// the shape by hand fails on a migration that lost nothing, which is what
+        /// happened here. What the suite depends on is which entries are recorded, and
+        /// the reader answers that in either format.
+        /// </remarks>
         [Fact]
         public void TheStagedGlobalStateLeavesTheOneEntryUnseen()
         {
-            using JsonDocument state = JsonDocument.Parse(
-                File.ReadAllText(
-                    Path.Combine(ScenarioRoot, "global-conversation-state.json")));
+            string path = Path.Combine(ScenarioRoot, "global-conversation-state.json");
+            GlobalStateLoadResult loaded = GlobalStateJson.Deserialize(
+                File.ReadAllBytes(path), path);
 
-            JsonElement conversation = state.RootElement
-                .GetProperty("conversations")
-                .GetProperty(Harness.LookAheadSuites.SiilengConversation.ToString());
+            Assert.Equal(GlobalStateLoadOutcome.Loaded, loaded.Outcome);
+            GlobalConversationState state = loaded.RequireState();
 
             // Entry 80 is the only one reachable exclusively through the speakers
             // purchase, so it is what an orange marker means. Marking it would make every
             // scenario pass for the wrong reason.
             Assert.False(
-                conversation.TryGetProperty(
-                    Harness.LookAheadSuites.SpeakersOnlyEntry.ToString(), out _),
+                state.TryGetStatus(
+                    Harness.LookAheadSuites.SiilengConversation,
+                    Harness.LookAheadSuites.SpeakersOnlyEntry,
+                    out _),
                 "entry 80 must stay unseen; it is what the marker is looking for");
-            Assert.Equal(94, conversation.EnumerateObject().Count());
+            Assert.Equal(
+                94,
+                state.GetConversationEntries(
+                    Harness.LookAheadSuites.SiilengConversation).Count());
         }
     }
 }

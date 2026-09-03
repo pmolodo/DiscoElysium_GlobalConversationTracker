@@ -27,5 +27,15 @@ would be skipped by the legacy reader.
    `global-conversation-state.json` with it.
 5. Install or start the mod version that requires format version 3.
 
-Convert before removing or upgrading away from legacy-reader support. Keep the
-backup until the converted file has been loaded successfully in game.
+Keep the backup until the converted file has been loaded successfully in game.
+
+## This is now the only way to open an old file
+
+The mod no longer reads format versions 1 and 2. It refuses them, saying which
+version it found and naming this tool, and refuses rather than treating them as
+corrupt on purpose: an old file is full of real history, so the mod stops
+instead of overwriting it from a backup.
+
+That makes conversion mandatory rather than a tidy-up. A version 1 or 2 file -
+including one sitting in an old profile backup - has to come through here before
+anything can load it.
