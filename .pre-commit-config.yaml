@@ -39,7 +39,10 @@ repos:
       rev: v6.0.0
       hooks:
           - id: trailing-whitespace
+                \.(?:bash|bat|bats|c|cc|cmd|cpp|cs|csx|cxx|h|h\+\+|hh|hpp|hxx|inl|ipp|json|jsonc|ps1|psd1|psm1|py|pyi|pyw|rs|sh|toml|tpp|yaml|yml)$
           - id: end-of-file-fixer
+            files: >-
+                \.(?:bash|bat|bats|c|cc|cmd|cpp|cs|csx|cxx|h|h\+\+|hh|hpp|hxx|inl|ipp|json|jsonc|ps1|psd1|psm1|py|pyi|pyw|rs|sh|toml|tpp|yaml|yml)$
           - id: mixed-line-ending
             alias: enforce-lf-line-endings
             name: enforce LF line endings
