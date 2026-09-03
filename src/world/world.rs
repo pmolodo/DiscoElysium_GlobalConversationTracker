@@ -13,8 +13,26 @@ pub trait ILookAheadWorld: Send + Sync {
     fn day_counter(&self) -> i32;
     fn is_clock_locked(&self) -> bool;
     fn get_variable(&self, name: &str) -> GuardValue;
-    fn has_item(&self, name: &str) -> bool;
-    fn is_task_active(&self, name: &str) -> bool;
+    /// Whether the player holds an item WHEN THE CRAWL STARTS.
+    ///
+    /// For seeding an `item:` slot, and for nothing else. It is not the answer to a
+    /// `CheckItem` guard: once a crawl is running the truth lives in its state, because
+    /// `GainItem` and `LoseItem` move it, and a guard is answered from the slot - see
+    /// [`BoundContext::query`].
+    ///
+    /// Named for the seed on purpose. It was called `has_item`, which reads as the
+    /// general question and invites exactly the wrong call: it returns a plain `bool`, so
+    /// it is definite even for an item the world has never heard of, while `query`
+    /// answers unknown and leaves the branch open. Substituting one for the other decides
+    /// "not held" where the engine stays permissive, which prunes a branch the real crawl
+    /// walks. That mistake was made and caught while writing the guard compiler.
+    fn initially_has_item(&self, name: &str) -> bool;
+
+    /// Whether a journal task is active WHEN THE CRAWL STARTS.
+    ///
+    /// The same rules as [`Self::initially_has_item`]: for seeding a `task:` slot, not
+    /// for answering an `IsTaskActive` guard.
+    fn initially_task_active(&self, name: &str) -> bool;
     fn query(&self, name: &str, arguments: &[GuardValue]) -> GuardValue;
     fn check_passes(&self, node: DialogueNodeId) -> Ternary;
     fn is_seen(&self, node: DialogueNodeId) -> bool;

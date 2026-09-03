@@ -206,6 +206,55 @@ impl<'a> GuardCompiler<'a> {
             // other thing the crawl asks the game rather than its own state. Undecided
             // here, which is the permissive answer, and counted so the fallback rate can
             // be measured against real content.
+            // Inventory and journal questions, which the crawl DOES change - GainItem
+            // and LoseItem write an `item:` slot, GainTask and FinishTask a `task:` one,
+            // and `BoundContext::query` answers these from exactly those slots. This
+            // mirrors that.
+            //
+            // Where the group has no such slot, the item or task is one no action here
+            // touches, so it is constant for the crawl and the world answers it - the
+            // same rule as an untracked variable. That is also what keeps the variable
+            // count down: a slot exists only for something the group actually
+            // manipulates, not for every item in the game.
+            GuardExpression::Call(name, args)
+                if name == "CheckItem" || name == "IsTaskActive" =>
+            {
+                let is_item = name == "CheckItem";
+                match Self::text_argument(args) {
+                    Some(subject) => {
+                        let slot = format!("{}{subject}", if is_item { "item:" } else { "task:" });
+                        match self.slot_is_set(&slot) {
+                            Some(holds) => self.decided(holds),
+                            // Untracked, so constant - and answered THE WAY THE ENGINE
+                            // ANSWERS IT, through `query`, not through `initially_has_item`.
+                            //
+                            // The difference matters and is easy to get wrong. `initially_has_item`
+                            // returns a plain bool, so it is definite for every name,
+                            // including one the world has simply never heard of. The
+                            // engine does not consult it here: `BoundContext::query`
+                            // falls through to `world.query`, which may answer unknown
+                            // and leave the branch open. Deciding "not held" where the
+                            // engine stays permissive would prune a branch the real crawl
+                            // walks, which is the one direction this compiler must never
+                            // be wrong in. `initially_has_item` is used only by the seed, and only
+                            // for slots the group tracks.
+                            None => match self.constant_query(name, args) {
+                                Some(true) => {
+                                    let t = self.top();
+                                    self.decided(t)
+                                }
+                                Some(false) => {
+                                    let f = self.bottom();
+                                    self.decided(f)
+                                }
+                                None => self.undecided("call: untracked, world cannot say"),
+                            },
+                        }
+                    }
+                    None => self.undecided("call: subject is not a literal"),
+                }
+            }
+
             // A query the CRAWL cannot change is a constant, and the engine says which
             // those are: `BoundContext::query` intercepts MoneyAmount, CheckItem,
             // IsTaskActive and the clock, and lets everything else fall through to the
@@ -344,6 +393,15 @@ impl<'a> GuardCompiler<'a> {
                     None
                 }
             }
+            _ => None,
+        }
+    }
+
+    /// The single text argument a query names its subject with, if that is its shape.
+    fn text_argument(args: &[GuardExpression]) -> Option<String> {
+        let [GuardExpression::Literal(value)] = args else { return None };
+        match value.kind() {
+            GuardValueKind::Text => Some(value.text().to_string()),
             _ => None,
         }
     }
@@ -653,6 +711,113 @@ mod tests {
 
         assert!(compiled.may_be_true.valid());
         assert!(compiled.may_be_false.valid());
+    }
+
+    /// An item the group gains or loses is tracked, so the guard reads its slot.
+    #[test]
+    fn a_tracked_item_compiles_against_its_slot() {
+        // GainItem is what interns an `item:` slot, so build the graph through the
+        // action parser rather than by naming the slot directly.
+        let mut symbols = StateSymbols::new();
+        let actions = crate::parser::action_parser::parse_actions(
+            r#"GainItem("shoes_faln")"#,
+            &mut symbols,
+        );
+        let node = LookAheadNode::new(
+            DialogueNodeId::new(1, 0), false, DialogueCheckKind::None,
+            GuardExpression::always_true(), actions, vec![], 0, false, false, -1, -1, false, -1,
+        );
+        let snapshot = symbols.clone();
+        let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+
+        let slot = snapshot.find("item:shoes_faln").expect("GainItem interns an item slot");
+        let base = layout.slot(slot).unwrap().0;
+
+        let mut compiler = GuardCompiler::new(&layout, &snapshot, NODES, CACHE);
+        let compiled = compiler.compile(&GuardExpression::Call(
+            "CheckItem".to_string(),
+            vec![GuardExpression::Literal(GuardValue::from_text("shoes_faln".to_string()))],
+        ));
+
+        assert!(compiled.may_be_true.eval([(base, true)]));
+        assert!(!compiled.may_be_true.eval([(base, false)]));
+        assert_eq!(compiler.fallbacks(), 0);
+    }
+
+    /// An item no action in the group touches is constant, and the WORLD QUERY answers it.
+    ///
+    /// Through `query`, not `initially_has_item`, matching `BoundContext::query`. Answering from
+    /// `initially_has_item` would be more decisive than the engine - it returns a plain bool even
+    /// for a name the world never heard of - and deciding "not held" where the engine
+    /// stays permissive would prune a branch the real crawl walks.
+    #[test]
+    fn an_untracked_item_is_answered_by_the_world_query() {
+        let (graph, symbols) = fixture(&["a"], None);
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+        let world = crate::world::test_world::TestWorld::new()
+            .set_query_bool("CheckItem", true)
+            // Set as an item too, to prove that is NOT what is being read.
+            .set_item("ledger", false);
+
+        let mut compiler =
+            GuardCompiler::new(&layout, &symbols, NODES, CACHE).with_world(&world);
+        let compiled = compiler.compile(&GuardExpression::Call(
+            "CheckItem".to_string(),
+            vec![GuardExpression::Literal(GuardValue::from_text("ledger".to_string()))],
+        ));
+
+        assert!(compiled.may_be_true.valid());
+        assert_eq!(compiler.fallbacks(), 0);
+    }
+
+    /// And where the world query cannot say, it stays open rather than being called false.
+    #[test]
+    fn an_untracked_item_the_world_cannot_answer_stays_open() {
+        let (graph, symbols) = fixture(&["a"], None);
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+        // Knows the item, but answers no CheckItem query - exactly the shape that would
+        // tempt a `initially_has_item` shortcut into deciding.
+        let world = crate::world::test_world::TestWorld::new().set_item("ledger", false);
+
+        let mut compiler =
+            GuardCompiler::new(&layout, &symbols, NODES, CACHE).with_world(&world);
+        let compiled = compiler.compile(&GuardExpression::Call(
+            "CheckItem".to_string(),
+            vec![GuardExpression::Literal(GuardValue::from_text("ledger".to_string()))],
+        ));
+
+        assert!(!compiled.is_decided());
+        assert!(compiled.may_be_true.valid());
+        assert_eq!(compiler.fallbacks(), 1);
+    }
+
+    #[test]
+    fn a_task_question_reads_the_task_slot() {
+        let mut symbols = StateSymbols::new();
+        let actions = crate::parser::action_parser::parse_actions(
+            r#"GainTask("TASK.find_ruby")"#,
+            &mut symbols,
+        );
+        let node = LookAheadNode::new(
+            DialogueNodeId::new(1, 0), false, DialogueCheckKind::None,
+            GuardExpression::always_true(), actions, vec![], 0, false, false, -1, -1, false, -1,
+        );
+        let snapshot = symbols.clone();
+        let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+
+        let slot = snapshot.find("task:TASK.find_ruby").expect("GainTask interns a task slot");
+        let base = layout.slot(slot).unwrap().0;
+
+        let mut compiler = GuardCompiler::new(&layout, &snapshot, NODES, CACHE);
+        let compiled = compiler.compile(&GuardExpression::Call(
+            "IsTaskActive".to_string(),
+            vec![GuardExpression::Literal(GuardValue::from_text("TASK.find_ruby".to_string()))],
+        ));
+
+        assert!(compiled.may_be_true.eval([(base, true)]));
+        assert_eq!(compiler.fallbacks(), 0);
     }
 
     #[test]

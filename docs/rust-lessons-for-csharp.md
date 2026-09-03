@@ -243,4 +243,60 @@ name that means something other than what it says.
 
 ---
 
+## 8. `HasItem` and `IsTaskActive` are named for a question they do not answer
+
+**C# today.** `ILookAheadWorld` declares:
+
+```csharp
+bool HasItem(string name);
+bool IsTaskActive(string name);
+```
+
+Both are used in exactly one place - `Seed`, to initialise the `item:` and `task:` slots
+from the world. Neither is how a guard gets answered. A `CheckItem` guard is answered
+from crawl STATE, because `GainItem` and `LoseItem` move the slot, and only where no slot
+exists does `CrawlContext.Query` fall through to `world.Query("CheckItem", ...)`.
+
+**Why the names are a trap.** They read as the general question - "does the player have
+this item" - so they are the obvious thing to reach for when answering a guard. And they
+return a plain `bool`, so they are DEFINITE for every name, including one the world has
+never heard of, where `Query` would answer unknown. Substituting one for the other decides
+"not held" where the engine stays permissive, which prunes a branch the real crawl walks
+and can lose a marker.
+
+This is not hypothetical: writing the Rust guard compiler, exactly that substitution was
+made, and it was caught only because the user asked how untracked items were handled.
+
+**Rust instead.** `initially_has_item` and `initially_task_active`, with doc comments
+saying they are for the seed and are not the answer to a guard.
+
+**Cost of adopting.** A rename and two call sites.
+
+---
+
+## 9. The engine is needlessly imprecise about items and tasks it does not track
+
+*An improvement NEITHER implementation has - recorded here because it was found while
+comparing them, and it applies to both.*
+
+When a guard asks `CheckItem("x")` and no action in the group gains or loses `x`, there is
+no slot, and both engines fall through to `world.Query("CheckItem", ...)`. Most worlds
+answer unknown to that, so the guard is undecided and the branch stays open.
+
+But the world already knows: `HasItem("x")` is exactly that question and answers
+definitely. The information is there and is being thrown away. Using it would make the
+crawl strictly more precise - fewer branches kept for no reason, so less walking and fewer
+false reachables - and it is SAFE, because being decisive with a correct answer is fine;
+only being decisive with a wrong one is not.
+
+Measured while building the guard compiler: `CheckItem` is 140 and `IsTaskActive` 95 of
+the world queries the five biggest conversations' guards make, and after every other
+improvement they are among the largest remaining undecidable categories.
+
+Do this in the engine and the compiler follows for free, since the compiler mirrors the
+engine deliberately. Doing it in the compiler ALONE would be wrong - it would make the
+analysis more decisive than the thing it models.
+
+---
+
 *Entries are appended as they are found. Nothing here is applied to the C# side.*

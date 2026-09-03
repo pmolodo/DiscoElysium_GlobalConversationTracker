@@ -310,11 +310,11 @@ impl LookAheadEngine {
         for slot in 0..symbols.count() {
             if let Some(name) = symbols.name_of(slot) {
                 if let Some(stripped) = name.strip_prefix("item:") {
-                    if world.has_item(stripped) {
+                    if world.initially_has_item(stripped) {
                         state = state.with(slot, 1);
                     }
                 } else if let Some(stripped) = name.strip_prefix("task:") {
-                    if world.is_task_active(stripped) {
+                    if world.initially_task_active(stripped) {
                         state = state.with(slot, 1);
                     }
                 } else if !name.starts_with("once:") && !name.starts_with("seen:") {

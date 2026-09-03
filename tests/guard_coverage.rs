@@ -57,8 +57,8 @@ impl ILookAheadWorld for SaveWorld {
     fn day_counter(&self) -> i32 { 1 }
     fn is_clock_locked(&self) -> bool { false }
     fn get_variable(&self, _name: &str) -> GuardValue { GuardValue::from_boolean(false) }
-    fn has_item(&self, _name: &str) -> bool { false }
-    fn is_task_active(&self, _name: &str) -> bool { false }
+    fn initially_has_item(&self, _name: &str) -> bool { false }
+    fn initially_task_active(&self, _name: &str) -> bool { false }
     /// The party and character facts a save settles, answered; everything else unknown.
     ///
     /// These are the queries the crawl cannot change - the engine lets them fall through
@@ -214,6 +214,12 @@ fn how_much_of_the_guard_corpus_compiles() {
             fallbacks,
             if total == 0 { 0.0 } else { 100.0 * compiled as f64 / total as f64 },
             layout.total_vars(),
+        );
+        println!(
+            "         slots: {} item, {} task, {} total",
+            DataLayout::slots_named(&symbols, "item:"),
+            DataLayout::slots_named(&symbols, "task:"),
+            symbols.count(),
         );
         for (reason, count) in compiler.fallback_reasons() {
             println!("         {count:>6}  {reason}");

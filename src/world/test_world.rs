@@ -101,8 +101,8 @@ impl ILookAheadWorld for TestWorld {
     fn get_variable(&self, name: &str) -> GuardValue {
         self.variables.get(name).cloned().unwrap_or(GuardValue::unknown())
     }
-    fn has_item(&self, name: &str) -> bool { self.items.get(name).copied().unwrap_or(false) }
-    fn is_task_active(&self, name: &str) -> bool { self.tasks.get(name).copied().unwrap_or(false) }
+    fn initially_has_item(&self, name: &str) -> bool { self.items.get(name).copied().unwrap_or(false) }
+    fn initially_task_active(&self, name: &str) -> bool { self.tasks.get(name).copied().unwrap_or(false) }
     fn query(&self, name: &str, _arguments: &[GuardValue]) -> GuardValue {
         self.queries.get(name).cloned().unwrap_or(GuardValue::unknown())
     }

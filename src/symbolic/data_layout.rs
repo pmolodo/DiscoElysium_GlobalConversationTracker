@@ -136,6 +136,16 @@ impl DataLayout {
         self.clock
     }
 
+    /// How many slots carry a name with the given prefix, such as `item:` or `task:`.
+    ///
+    /// A slot exists only for something an ACTION in the group touches, so this counts
+    /// what the group actually manipulates rather than what the game contains.
+    pub fn slots_named(symbols: &crate::core::state::StateSymbols, prefix: &str) -> usize {
+        (0..symbols.count())
+            .filter(|slot| symbols.name_of(*slot).is_some_and(|name| name.starts_with(prefix)))
+            .count()
+    }
+
     /// How many slots need more than one bit - the counters.
     ///
     /// The figure that says whether reading widths off the graph was worth it.
