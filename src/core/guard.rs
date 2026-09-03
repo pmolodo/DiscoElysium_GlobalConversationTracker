@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 use std::fmt;
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::core::guard_value::GuardValue;

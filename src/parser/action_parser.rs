@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-use crate::core::action::{DialogueAction, DialogueActionKind};
+use crate::core::action::DialogueAction;
 use crate::core::state::StateSymbols;
 
 const ONCE_FN: &str = "once";
@@ -124,7 +124,6 @@ fn is_name_part(c: char) -> bool {
 }
 
 fn translate_call(call: Invocation, symbols: &mut StateSymbols, actions: &mut Vec<DialogueAction>) {
-    const ONCE_FN: &str = "once";
     match call.name.as_str() {
         "SetVariableValue" => {
             if call.args.len() < 2 {

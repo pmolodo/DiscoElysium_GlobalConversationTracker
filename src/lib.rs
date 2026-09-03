@@ -5,6 +5,7 @@ pub mod parser;
 pub mod graph;
 pub mod world;
 pub mod engine;
+pub mod index;
 
 #[cfg(test)]
 mod integration_tests {

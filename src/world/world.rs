@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT
-use std::collections::HashMap;
 use crate::core::types::{DialogueNodeId, Ternary};
 use crate::core::guard_value::GuardValue;
 use crate::core::guard::IGuardContext;
@@ -60,16 +59,6 @@ pub struct BoundContext<'s> {
     pub symbols: &'s StateSymbols,
     pub world: &'s dyn ILookAheadWorld,
     state: Option<&'s LookAheadState>,
-}
-
-impl BoundContext<'_> {
-    fn get_slot_value(&self, slot: usize) -> i32 {
-        self.state.map(|s| s.get(slot)).unwrap_or(0)
-    }
-
-    fn get_slot_bool(&self, slot: usize) -> bool {
-        self.get_slot_value(slot) != 0
-    }
 }
 
 impl IGuardContext for BoundContext<'_> {

@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 use crate::core::types::{DialogueNodeId, DialogueCheckKind};
 use crate::core::guard::GuardExpression;
 use crate::core::action::DialogueAction;
-use crate::core::state::StateSymbols;
 
 /// One dialogue entry as the look-ahead needs it.
 #[derive(Debug, Clone, Serialize, Deserialize)]

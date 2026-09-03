@@ -79,7 +79,7 @@ impl ILookAheadWorld for TestWorld {
     }
     fn has_item(&self, name: &str) -> bool { self.items.get(name).copied().unwrap_or(false) }
     fn is_task_active(&self, name: &str) -> bool { self.tasks.get(name).copied().unwrap_or(false) }
-    fn query(&self, name: &str, _arguments: &[GuardValue]) -> GuardValue {
+    fn query(&self, _name: &str, _arguments: &[GuardValue]) -> GuardValue {
         GuardValue::unknown()
     }
     fn check_passes(&self, node: DialogueNodeId) -> Ternary {

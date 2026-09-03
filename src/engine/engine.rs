@@ -1,5 +1,5 @@
 use crate::core::types::{DialogueNodeId, Novelty, DialogueCheckKind, Ternary, LookAheadLimit};
-use crate::core::state::{LookAheadState, StateSymbols};
+use crate::core::state::LookAheadState;
 use crate::core::action::DialogueAction;
 use crate::graph::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
@@ -301,7 +301,7 @@ impl LookAheadEngine {
         state: &LookAheadState,
         context: &CrawlContext,
     ) -> Option<LookAheadState> {
-        if !TernaryLogic::can_pass(node.guard.test(&context.bound(state))) {
+        if !ternary_logic::can_pass(node.guard.test(&context.bound(state))) {
             return None;
         }
         if !self.can_afford(node, state) {
@@ -332,7 +332,7 @@ impl LookAheadEngine {
     ) -> Vec<LookAheadState> {
         let mut results = Vec::new();
 
-        if !TernaryLogic::can_pass(node.guard.test(&context.bound(state))) {
+        if !ternary_logic::can_pass(node.guard.test(&context.bound(state))) {
             return results;
         }
         if !self.can_afford(node, state) {
@@ -470,7 +470,7 @@ impl LookAheadEngine {
     }
 }
 
-mod TernaryLogic {
+mod ternary_logic {
     use crate::core::types::Ternary;
     pub fn can_pass(value: Ternary) -> bool {
         value != Ternary::False

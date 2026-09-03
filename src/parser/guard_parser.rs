@@ -224,7 +224,7 @@ impl Parser {
     }
 }
 
-fn tokenize(text: &str, original: &str) -> Vec<Token> {
+fn tokenize(text: &str, _original: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
@@ -258,7 +258,7 @@ fn tokenize(text: &str, original: &str) -> Vec<Token> {
                 }
                 if s == "Variable" {
                     // Try to read Variable["name"]
-                    let save_pos = chars.clone();
+                    let _save_pos = chars.clone();
                     let mut temp = chars.clone();
                     let mut ws = String::new();
                     while let Some(&c) = temp.peek() { if c.is_whitespace() { ws.push(temp.next().unwrap()); } else { break; } }
