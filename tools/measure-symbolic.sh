@@ -16,10 +16,15 @@
 # Examples:
 #   tools/measure-symbolic.sh finding_one_unseen_entry_in_a_group_that_is_otherwise_seen
 #   tools/measure-symbolic.sh what_the_expensive_conversations_cost 631
+#   TEST_BINARY=backward_cost tools/measure-symbolic.sh what_one_backward_pass_costs
 set -u
 
 TEST_NAME="${1:-finding_one_unseen_entry_in_a_group_that_is_otherwise_seen}"
 shift || true
+
+# Which test binary the named test lives in. There is more than one measurement now, and
+# they are not all in symbolic_reachability - the backward ones are in backward_cost.
+TEST_BINARY="${TEST_BINARY:-symbolic_reachability}"
 
 # The five groups that drive the cost, unless told otherwise.
 CONVERSATIONS=("$@")
@@ -42,7 +47,7 @@ for conversation in "${CONVERSATIONS[@]}"; do
     echo "=== conversation ${conversation} ==="
 
     CONVERSATION="${conversation}" cargo test --release \
-        --test symbolic_reachability "${TEST_NAME}" \
+        --test "${TEST_BINARY}" "${TEST_NAME}" \
         -- --ignored --nocapture --test-threads=1 >"${log}" 2>&1
     status=$?
 
