@@ -20,6 +20,9 @@
 //! encoding. The current layout - entry, then the moving slots, then money, then the
 //! clock - is a starting guess and is meant to be varied.
 
+pub mod data_layout;
+pub mod guard_formula;
+
 use std::collections::HashMap;
 
 use oxidd::bdd::{new_manager, BDDFunction, BDDManagerRef};
