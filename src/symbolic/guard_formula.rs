@@ -34,7 +34,7 @@ use oxidd::bdd::{new_manager, BDDFunction, BDDManagerRef};
 use oxidd::{BooleanFunction, Manager, ManagerRef};
 
 use crate::core::guard::GuardExpression;
-use crate::core::guard_value::GuardValueKind;
+use crate::core::guard_value::{GuardValue, GuardValueKind};
 use crate::core::state::StateSymbols;
 use crate::core::types::Ternary;
 use crate::symbolic::data_layout::DataLayout;
@@ -70,6 +70,10 @@ pub struct GuardCompiler<'a> {
     /// falling back. Between 30% and 47% of the distinct variables the biggest
     /// conversations' guards mention are of this kind, so it is not a corner.
     world: Option<&'a dyn ILookAheadWorld>,
+    /// Whether clock questions are answered from the world instead of being refused.
+    constant_clock: bool,
+    /// Whether that is an approximation for this group, rather than exact.
+    clock_approximated: bool,
     fallbacks: usize,
     compiled: usize,
     reasons: HashMap<&'static str, usize>,
@@ -90,13 +94,51 @@ impl<'a> GuardCompiler<'a> {
                 .collect()
         });
 
-        Self { manager, vars, layout, symbols, world: None, fallbacks: 0, compiled: 0, reasons: HashMap::new() }
+        Self {
+            manager, vars, layout, symbols, world: None,
+            constant_clock: false, clock_approximated: false,
+            fallbacks: 0, compiled: 0, reasons: HashMap::new(),
+        }
     }
 
     /// Gives the compiler a world to read untracked variables from.
     pub fn with_world(mut self, world: &'a dyn ILookAheadWorld) -> Self {
         self.world = Some(world);
         self
+    }
+
+    /// Answers clock questions from the world, as though the conversation never moved it.
+    ///
+    /// A DELIBERATE APPROXIMATION where the group can move the clock, and exact where it
+    /// cannot - `group_passes_time` says which, and it should be true exactly when some
+    /// action in the group is a `PassTime`.
+    ///
+    /// Why it is worth taking. Modelling the clock means eleven more variables and
+    /// magnitude comparisons against them, which is the classic way to make a decision
+    /// diagram explode; a guard like `IsHourBetween(14, 18)` is a range test on a
+    /// bit-blasted integer. Against that, the engine advances the clock by fifteen
+    /// minutes per `PassTime` and by nothing else, so a conversation rarely moves it far
+    /// enough to change what a coarse question like `IsNight()` answers.
+    ///
+    /// What it costs. Where the group does move the clock, this can report a branch
+    /// CLOSED that the real crawl would walk - the unsafe direction, and the only place
+    /// in this compiler that is true. A guard that only opens once time has passed is
+    /// judged against the starting hour and refused. Accepted knowingly; the count is
+    /// exposed so the exposure is visible rather than assumed.
+    ///
+    /// A separate and larger question hangs over this: the engine's clock may not match
+    /// the GAME's, which is understood to advance about a minute per unseen entry. The
+    /// engine models no such thing, so its clock already lags. See de-sze.10.
+    pub fn with_constant_clock(mut self, group_passes_time: bool) -> Self {
+        self.constant_clock = true;
+        self.clock_approximated = group_passes_time;
+        self
+    }
+
+    /// Whether treating the clock as constant is an approximation for this group, rather
+    /// than exact - true when some action in the group advances it.
+    pub fn clock_is_approximated(&self) -> bool {
+        self.constant_clock && self.clock_approximated
     }
 
     /// How many sub-expressions the compiler could not read and had to call undecided.
@@ -253,6 +295,25 @@ impl<'a> GuardCompiler<'a> {
                 }
             }
 
+            // The clock, held at whatever the world says and not moved by the
+            // conversation. See `with_constant_clock` for why, and what it costs: this is
+            // the one approximation here that can close a branch the crawl would walk.
+            GuardExpression::Call(name, args)
+                if self.constant_clock && crate::core::clock::ClockTime::owns(name) =>
+            {
+                match self.clock_answer(name, args) {
+                    Some(true) => {
+                        let t = self.top();
+                        self.decided(t)
+                    }
+                    Some(false) => {
+                        let f = self.bottom();
+                        self.decided(f)
+                    }
+                    None => self.undecided("call: clock, world cannot say"),
+                }
+            }
+
             // A query the CRAWL cannot change is a constant, and the engine says which
             // those are: `BoundContext::query` intercepts MoneyAmount, CheckItem,
             // IsTaskActive and the clock, and lets everything else fall through to the
@@ -321,16 +382,18 @@ impl<'a> GuardCompiler<'a> {
             }
         }
 
-        let (Some(slot), Some(value)) = (Self::variable_of(left), Self::constant_of(right))
+        let (Some(name), Some(literal)) = (Self::variable_of(left), Self::literal_of(right))
         else {
             // Also try the other way round: a guard may be written `1 == Variable[..]`.
-            if let (Some(slot), Some(value)) = (Self::variable_of(right), Self::constant_of(left)) {
-                return self.equality(op, &slot, value);
+            if let (Some(name), Some(literal)) =
+                (Self::variable_of(right), Self::literal_of(left))
+            {
+                return self.equality(op, &name, literal);
             }
             return self.undecided("comparison: neither side a known variable");
         };
 
-        self.equality(op, &slot, value)
+        self.equality(op, &name, literal)
     }
 
     /// `expression == truth`, compiled by compiling the expression and, when comparing
@@ -353,20 +416,43 @@ impl<'a> GuardCompiler<'a> {
         }
     }
 
-    fn equality(&mut self, op: &str, name: &str, value: i32) -> MayBe {
-        let equals = match self.slot_equals(name, value) {
-            Some(f) => f,
-            None => return self.undecided("comparison: variable not in the layout"),
+    /// `Variable[name] op literal`, where `op` is an equality.
+    fn equality(&mut self, op: &str, name: &str, literal: &GuardValue) -> MayBe {
+        if op != "==" && op != "~=" {
+            return self.undecided("comparison: ordering operator");
+        }
+
+        let negated = op == "~=";
+
+        // Tracked: pin the slot's bits against the value.
+        if let Some(value) = Self::whole_number(literal) {
+            if let Some(equals) = self.slot_equals(name, value) {
+                let holds = if negated { equals.not().expect("negation") } else { equals };
+                return self.decided(holds);
+            }
+        }
+
+        // Untracked, so constant, and compared THE WAY THE ENGINE COMPARES: the world's
+        // value against the literal, through GuardValue::equals, which is kind-sensitive
+        // - a boolean never equals a number. Doing the comparison on a converted integer
+        // instead would answer differently from the crawl for a variable the world
+        // reports as a boolean.
+        //
+        // Without this an equality on an untracked variable fell back while a BARE
+        // mention of the same variable did not, which was an inconsistency in this
+        // compiler rather than anything about the content.
+        let Some(world) = self.world else {
+            return self.undecided("comparison: variable untracked and no world");
         };
 
-        match op {
-            "==" => self.decided(equals),
-            "~=" => {
-                let differs = equals.not().expect("negation");
-                self.decided(differs)
-            }
-            _ => self.undecided("comparison: ordering operator"),
+        let actual = world.get_variable(name);
+        if actual.kind() == GuardValueKind::Unknown {
+            return self.undecided("comparison: variable untracked and world cannot say");
         }
+
+        let same = actual.equals(literal);
+        let holds = if same != negated { self.top() } else { self.bottom() };
+        self.decided(holds)
     }
 
     /// The name a `Variable` node carries, if the expression is one.
@@ -377,9 +463,16 @@ impl<'a> GuardCompiler<'a> {
         }
     }
 
+    /// The value a literal expression carries, if it is a literal.
+    fn literal_of(expression: &GuardExpression) -> Option<&GuardValue> {
+        match expression {
+            GuardExpression::Literal(value) => Some(value),
+            _ => None,
+        }
+    }
+
     /// The integer a literal stands for, if it is one a slot could hold.
-    fn constant_of(expression: &GuardExpression) -> Option<i32> {
-        let GuardExpression::Literal(value) = expression else { return None };
+    fn whole_number(value: &GuardValue) -> Option<i32> {
         match value.kind() {
             GuardValueKind::Boolean => Some(i32::from(value.boolean())),
             GuardValueKind::Number => {
@@ -412,6 +505,32 @@ impl<'a> GuardCompiler<'a> {
     fn crawl_can_change(name: &str) -> bool {
         matches!(name, "MoneyAmount" | "CheckItem" | "IsTaskActive")
             || crate::core::clock::ClockTime::owns(name)
+    }
+
+    /// What a clock question answers at the world's time, with the conversation ignored.
+    ///
+    /// Answered by `ClockTime` against the world's `day_minutes` and `day_counter`, which
+    /// is exactly what the engine does for a crawl that has not moved the clock - not
+    /// through `world.query`, which knows nothing about hours.
+    fn clock_answer(&self, name: &str, args: &[GuardExpression]) -> Option<bool> {
+        let world = self.world?;
+        let mut values = Vec::with_capacity(args.len());
+        for arg in args {
+            let GuardExpression::Literal(value) = arg else { return None };
+            values.push(value.clone());
+        }
+
+        let answer = crate::core::clock::ClockTime::answer(
+            name,
+            &values,
+            world.day_minutes(),
+            world.day_counter(),
+        );
+        match answer.as_condition() {
+            Ternary::True => Some(true),
+            Ternary::False => Some(false),
+            Ternary::Unknown => None,
+        }
     }
 
     /// What the world says a constant query is, as a condition.
@@ -483,7 +602,6 @@ impl<'a> GuardCompiler<'a> {
 mod tests {
     use super::*;
     use crate::core::action::DialogueAction;
-    use crate::core::guard_value::GuardValue;
     use crate::core::guard::GuardExpression;
     use crate::core::types::{DialogueCheckKind, DialogueNodeId};
     use crate::graph::graph::LookAheadGraph;
@@ -835,6 +953,80 @@ mod tests {
 
         assert!(compiled.may_be_true.eval([(base, true)]));
         assert_eq!(compiler.fallbacks(), 0);
+    }
+
+    /// With the clock held constant, a clock question resolves against the world's time.
+    #[test]
+    fn a_clock_question_is_answered_at_the_worlds_time() {
+        let (graph, symbols) = fixture(&["a"], None);
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+        // Two in the morning.
+        let night = crate::world::test_world::TestWorld::new().with_day_minutes(2 * 60);
+
+        let mut compiler = GuardCompiler::new(&layout, &symbols, NODES, CACHE)
+            .with_world(&night)
+            .with_constant_clock(false);
+        let compiled =
+            compiler.compile(&GuardExpression::Call("IsNight".to_string(), vec![]));
+
+        assert!(compiled.is_decided());
+        assert_eq!(compiler.fallbacks(), 0);
+    }
+
+    /// And it is refused, not guessed, when nothing has been told to hold it constant.
+    #[test]
+    fn a_clock_question_is_undecided_without_the_approximation() {
+        let (graph, symbols) = fixture(&["a"], None);
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+        let night = crate::world::test_world::TestWorld::new().with_day_minutes(2 * 60);
+
+        let mut compiler =
+            GuardCompiler::new(&layout, &symbols, NODES, CACHE).with_world(&night);
+        let compiled =
+            compiler.compile(&GuardExpression::Call("IsNight".to_string(), vec![]));
+
+        assert!(!compiled.is_decided());
+        assert_eq!(compiler.fallbacks(), 1);
+    }
+
+    /// The approximation is only an approximation where the group can move the clock.
+    #[test]
+    fn holding_the_clock_is_exact_unless_the_group_passes_time() {
+        let (graph, symbols) = fixture(&["a"], None);
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+        let world = crate::world::test_world::TestWorld::new();
+
+        let exact = GuardCompiler::new(&layout, &symbols, NODES, CACHE)
+            .with_world(&world)
+            .with_constant_clock(false);
+        assert!(!exact.clock_is_approximated());
+
+        let approximate = GuardCompiler::new(&layout, &symbols, NODES, CACHE)
+            .with_world(&world)
+            .with_constant_clock(true);
+        assert!(approximate.clock_is_approximated());
+    }
+
+    /// A graph with a PassTime action is one where holding the clock is an approximation.
+    #[test]
+    fn a_group_that_passes_time_is_detected() {
+        let mut symbols = StateSymbols::new();
+        let still = crate::parser::action_parser::parse_actions("", &mut symbols);
+        let moving = crate::parser::action_parser::parse_actions("PassTime()", &mut symbols);
+
+        let node = |actions| {
+            LookAheadNode::new(
+                DialogueNodeId::new(1, 0), false, DialogueCheckKind::None,
+                GuardExpression::always_true(), actions, vec![], 0, false, false, -1, -1,
+                false, -1,
+            )
+        };
+
+        let quiet = LookAheadGraph::new(vec![node(still)], StateSymbols::new()).unwrap();
+        assert!(!DataLayout::group_passes_time(&quiet));
+
+        let ticking = LookAheadGraph::new(vec![node(moving)], symbols).unwrap();
+        assert!(DataLayout::group_passes_time(&ticking));
     }
 
     #[test]

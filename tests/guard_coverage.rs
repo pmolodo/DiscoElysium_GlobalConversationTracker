@@ -169,7 +169,8 @@ fn how_much_of_the_guard_corpus_compiles() {
         // of the database. That is what makes an untracked variable decidable.
         let world = SaveWorld;
         let mut compiler = GuardCompiler::new(&layout, &symbols, NODE_CAPACITY, CACHE_CAPACITY)
-            .with_world(&world);
+            .with_world(&world)
+            .with_constant_clock(DataLayout::group_passes_time(&graph));
 
         let mut guards = 0;
         let mut mentioned: Vec<String> = Vec::new();

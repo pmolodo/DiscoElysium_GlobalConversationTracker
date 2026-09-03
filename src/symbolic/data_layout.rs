@@ -136,6 +136,21 @@ impl DataLayout {
         self.clock
     }
 
+    /// Whether any action in the group advances the clock.
+    ///
+    /// What decides whether treating the clock as constant is exact or an approximation.
+    /// Rare in the shipped content: only 19 of the 8,339 distinct scripts in the database
+    /// contain a `PassTime` at all.
+    ///
+    /// This is about what the ENGINE models. Whether the GAME advances the clock by other
+    /// means - it is thought to tick roughly a minute per unseen entry, which the engine
+    /// does not model at all - is de-sze.10 and is a different question.
+    pub fn group_passes_time(graph: &LookAheadGraph) -> bool {
+        graph.nodes().any(|node| {
+            node.actions.iter().any(|a| a.kind() == DialogueActionKind::PassTime)
+        })
+    }
+
     /// How many slots carry a name with the given prefix, such as `item:` or `task:`.
     ///
     /// A slot exists only for something an ACTION in the group touches, so this counts
