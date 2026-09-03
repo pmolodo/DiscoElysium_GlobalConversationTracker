@@ -10,8 +10,11 @@
 //! information; a high one means symbolic reachability would explore everything and the
 //! approach is dead whatever the diagrams cost.
 //!
-//! Opt-in like the other measurements: the index is extracted game content and is not
-//! committed, so this passes silently where it has not been generated.
+//! The extracted game data this needs is not committed. It is REGENERATED automatically
+//! when missing - see `tests/common` - rather than skipped, because a test that passes
+//! without its data still reads as green and hides whatever it was meant to catch. The
+//! only case that still skips is a machine with no game install at all, where nothing can
+//! build it, and that says so loudly.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -24,21 +27,16 @@ use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 
+mod common;
+
 const BIGGEST: [i32; 5] = [368, 631, 14, 28, 1030];
 const COUNTER_CAP: i32 = 16;
 const NODE_CAPACITY: usize = 1 << 20;
 const CACHE_CAPACITY: usize = 1 << 18;
 
+/// The conversation index, regenerating it if it is not there.
 fn index_path() -> Option<PathBuf> {
-    let mut dir: Option<&std::path::Path> = Some(std::path::Path::new(env!("CARGO_MANIFEST_DIR")));
-    while let Some(d) = dir {
-        let candidate = d.join(".game_reference_copies/derived/conversation_index.jsonl");
-        if candidate.exists() {
-            return Some(candidate);
-        }
-        dir = d.parent();
-    }
-    None
+    common::conversation_index()
 }
 
 /// A world shaped like a real save rather than like a test fixture.
@@ -143,10 +141,7 @@ fn tally(guard: &GuardExpression, counts: &mut HashMap<&'static str, usize>) {
 
 #[test]
 fn how_much_of_the_guard_corpus_compiles() {
-    let Some(path) = index_path() else {
-        eprintln!("conversation_index.jsonl not generated; skipping.");
-        return;
-    };
+    let Some(path) = index_path() else { return };
     let index = read_index(&path).expect("the index reads");
 
     println!(
@@ -254,10 +249,7 @@ fn how_much_of_the_guard_corpus_compiles() {
 /// nobody has read.
 #[test]
 fn how_much_of_the_guard_corpus_parses() {
-    let Some(path) = index_path() else {
-        eprintln!("conversation_index.jsonl not generated; skipping.");
-        return;
-    };
+    let Some(path) = index_path() else { return };
     let index = read_index(&path).expect("the index reads");
 
     let mut total = 0;

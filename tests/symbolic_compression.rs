@@ -7,9 +7,11 @@
 //! without building any transition relation: run the explicit crawl, collect the states
 //! it visits, union them into one diagram, and compare.
 //!
-//! Opt-in the same way the C# corpus tests are. The index is extracted game content and
-//! is not committed, so this passes silently where it has not been generated. Regenerate
-//! with `dotnet run --project tools/DialogueExtract -- conversation-index`.
+//! The extracted game data this needs is not committed. It is REGENERATED automatically
+//! when missing - see `tests/common` - rather than skipped, because a test that passes
+//! without its data still reads as green and hides whatever it was meant to catch. The
+//! only case that still skips is a machine with no game install at all, where nothing can
+//! build it, and that says so loudly.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -24,6 +26,8 @@ use lookahead_engine::symbolic::{Profile, StateEncoding, StateSet};
 use lookahead_engine::world::test_world::TestWorld;
 
 /// The conversations the C# all-seen suite opens, biggest first by group size.
+mod common;
+
 const BIGGEST: [i32; 5] = [368, 631, 14, 28, 1030];
 
 /// Enough states to see the shape without waiting all day. Building the diagram costs a
@@ -50,16 +54,9 @@ const PREFIX_CACHE_CAPACITY: usize = 1 << 20;
 const COMPLETE_NODE_CAPACITY: usize = 1 << 18;
 const COMPLETE_CACHE_CAPACITY: usize = 1 << 16;
 
+/// The conversation index, regenerating it if it is not there.
 fn index_path() -> Option<PathBuf> {
-    let mut dir: Option<&std::path::Path> = Some(std::path::Path::new(env!("CARGO_MANIFEST_DIR")));
-    while let Some(d) = dir {
-        let candidate = d.join(".game_reference_copies/derived/conversation_index.jsonl");
-        if candidate.exists() {
-            return Some(candidate);
-        }
-        dir = d.parent();
-    }
-    None
+    common::conversation_index()
 }
 
 /// Collects the states one crawl visits, up to a limit.
@@ -125,10 +122,7 @@ fn how_well_a_crawls_state_set_compresses() {
 }
 
 fn measure() {
-    let Some(path) = index_path() else {
-        eprintln!("conversation_index.jsonl not generated; skipping.");
-        return;
-    };
+    let Some(path) = index_path() else { return };
     let index = read_index(&path).expect("the index reads");
 
     println!(
@@ -278,10 +272,7 @@ fn ratio_of(states: &[(DialogueNodeId, LookAheadState)]) -> (usize, usize) {
 /// conversations small enough to explore exhaustively, and compares each complete set
 /// against its own first half.
 fn measure_complete() {
-    let Some(path) = index_path() else {
-        eprintln!("conversation_index.jsonl not generated; skipping.");
-        return;
-    };
+    let Some(path) = index_path() else { return };
     let index = read_index(&path).expect("the index reads");
 
     // Smallest first, so the exhaustible ones come up early.
