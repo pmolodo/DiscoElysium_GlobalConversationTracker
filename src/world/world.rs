@@ -105,6 +105,18 @@ impl IGuardContext for BoundContext<'_> {
         }
 
         match name {
+            // `FlagSet(name)` asks whether a flag is set, and a flag is a dialogue
+            // variable - so this is `Variable[name]` written another way, and is answered
+            // from the same place. Nine guards in the database use it.
+            "FlagSet" => {
+                match arguments.first()
+                    .filter(|v| v.kind() == GuardValueKind::Text)
+                    .map(|v| v.text())
+                {
+                    Some(name) => self.get_variable(name),
+                    None => self.world.query(name, arguments),
+                }
+            }
             "MoneyAmount" => {
                 if let Some(state) = self.state {
                     GuardValue::from_number(state.money() as f64)

@@ -141,6 +141,20 @@ fn translate_call(call: Invocation, symbols: &mut StateSymbols, actions: &mut Ve
             let val = read_assigned_value(value);
             actions.push(DialogueAction::assign(slot, val, call.name));
         }
+        // A flag IS a dialogue variable. The game's Final Cut addition declares
+        // `SetFlag(string variableName)` - the parameter name is the giveaway - alongside
+        // `UnsetFlag` and a reader `FlagSet`, and the database bears it out: 62 scripts
+        // call SetFlag, 9 guards call FlagSet, and 56 guard lines read the very names
+        // SetFlag writes as `Variable[...]`.
+        //
+        // Left unmodelled, a path that opens only after a SetFlag stays closed for the
+        // crawl, so it misses reachable states and can lose a marker - the failure that
+        // shows nothing rather than something wrong.
+        "SetFlag" | "UnsetFlag" => {
+            let raised = call.name == "SetFlag";
+            let slot = symbols.variable(&unquote(call.args.first().unwrap_or(&String::new())));
+            actions.push(DialogueAction::assign(slot, i32::from(raised), call.name));
+        }
         "GainItem" => {
             let slot = symbols.item(&unquote(call.args.get(0).unwrap_or(&String::new())));
             actions.push(DialogueAction::assign(slot, 1, call.name));

@@ -357,6 +357,79 @@ mod integration_tests {
         assert_eq!(result.best, Novelty::SeenThisGame);
     }
 
+    /// A flag set on the way opens a door guarded on that flag.
+    ///
+    /// Both halves of the flag support at once, because either alone is useless: the
+    /// action has to write the variable and the guard has to read it. Left unmodelled the
+    /// crawl never reaches C, reports nothing reachable, and the option silently loses
+    /// its marker.
+    ///
+    /// A is the option, B sets the flag, C is gated on it and is the only novel entry.
+    #[test]
+    fn a_flag_set_on_the_way_opens_a_guard_that_reads_it() {
+        let mut symbols = StateSymbols::new();
+        let a = DialogueNodeId::new(1, 1);
+        let b = DialogueNodeId::new(1, 2);
+        let c = DialogueNodeId::new(1, 3);
+
+        let setter = crate::parser::action_parser::parse_actions(
+            r#"SetFlag("canal.roy_flashlight_hub_seen")"#,
+            &mut symbols,
+        );
+        let gate = parse_guard(r#"FlagSet("canal.roy_flashlight_hub_seen")"#)
+            .expect("the guard parses");
+
+        let nodes = vec![
+            plain(a, vec![b], false),
+            LookAheadNode::new(
+                b, false, DialogueCheckKind::None, GuardExpression::always_true(),
+                setter, vec![c], 0, false, false, -1, -1, false, -1,
+            ),
+            LookAheadNode::new(
+                c, false, DialogueCheckKind::None, gate,
+                vec![], vec![], 0, false, false, -1, -1, false, -1,
+            ),
+        ];
+        let graph = LookAheadGraph::new(nodes, symbols).unwrap();
+
+        let result = LookAheadEngine::default().evaluate(&graph, a, &TestWorld::new(), |id| {
+            if id == c { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
+        });
+
+        assert_eq!(result.best, Novelty::UnseenAnyGame);
+    }
+
+    /// And the gate stays shut when nothing sets the flag.
+    ///
+    /// Without this the test above would pass just as well on a guard that was never
+    /// evaluated at all.
+    #[test]
+    fn a_flag_guard_stays_shut_when_nothing_sets_it() {
+        let mut symbols = StateSymbols::new();
+        let a = DialogueNodeId::new(1, 1);
+        let c = DialogueNodeId::new(1, 3);
+
+        // Interned so the crawl tracks it, but never written.
+        symbols.variable("canal.roy_flashlight_hub_seen");
+        let gate = parse_guard(r#"FlagSet("canal.roy_flashlight_hub_seen")"#)
+            .expect("the guard parses");
+
+        let nodes = vec![
+            plain(a, vec![c], false),
+            LookAheadNode::new(
+                c, false, DialogueCheckKind::None, gate,
+                vec![], vec![], 0, false, false, -1, -1, false, -1,
+            ),
+        ];
+        let graph = LookAheadGraph::new(nodes, symbols).unwrap();
+
+        let result = LookAheadEngine::default().evaluate(&graph, a, &TestWorld::new(), |id| {
+            if id == c { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
+        });
+
+        assert_eq!(result.best, Novelty::SeenThisGame);
+    }
+
     #[test]
     fn nothing_outranks_the_strongest_novelty_there_is() {
         let a = DialogueNodeId::new(1, 1);
