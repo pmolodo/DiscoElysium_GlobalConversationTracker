@@ -59,7 +59,19 @@ impl ILookAheadWorld for SaveWorld {
     fn get_variable(&self, _name: &str) -> GuardValue { GuardValue::from_boolean(false) }
     fn has_item(&self, _name: &str) -> bool { false }
     fn is_task_active(&self, _name: &str) -> bool { false }
-    fn query(&self, _name: &str, _arguments: &[GuardValue]) -> GuardValue { GuardValue::unknown() }
+    /// The party and character facts a save settles, answered; everything else unknown.
+    ///
+    /// These are the queries the crawl cannot change - the engine lets them fall through
+    /// to the world at every step - so a save has one answer for each and it holds for
+    /// the whole crawl. `IsKimHere` is over half of all world queries the guards make on
+    /// its own.
+    fn query(&self, name: &str, _arguments: &[GuardValue]) -> GuardValue {
+        match name {
+            "IsKimHere" => GuardValue::from_boolean(true),
+            "IsCunoInParty" | "IsTHCPresent" => GuardValue::from_boolean(false),
+            _ => GuardValue::unknown(),
+        }
+    }
     fn check_passes(&self, _node: DialogueNodeId) -> Ternary { Ternary::Unknown }
     fn is_seen(&self, _node: DialogueNodeId) -> bool { false }
 }

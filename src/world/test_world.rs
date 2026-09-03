@@ -16,6 +16,19 @@ pub struct TestWorld {
     pub tasks: HashMap<String, bool>,
     pub check_results: HashMap<DialogueNodeId, Ternary>,
     pub seen: HashMap<DialogueNodeId, bool>,
+    /// Answers to named world queries, keyed by function name.
+    ///
+    /// The counterpart of the C# `OfflineWorld`'s `queries` block, which this had no
+    /// equivalent of: every query answered unknown, so any guard asking one was
+    /// undecidable. That is not a corner - `IsKimHere` alone is 691 of the roughly 1,200
+    /// world queries the five biggest conversations' guards make, more than half.
+    ///
+    /// Only the name is keyed, not the arguments. Every query worth answering this way is
+    /// one the crawl cannot change and that takes no argument - IsKimHere, IsTHCPresent,
+    /// IsCunoInParty and the rest of the party and character facts. The ones that DO take
+    /// an argument, CheckItem and IsTaskActive, are answered from `items` and `tasks`
+    /// instead, by the crawl, because a crawl's own actions can change them.
+    pub queries: HashMap<String, GuardValue>,
 }
 
 impl TestWorld {
@@ -67,6 +80,17 @@ impl TestWorld {
         self.seen.insert(node, seen);
         self
     }
+
+    /// Answers a named world query, such as `IsKimHere`.
+    pub fn set_query(mut self, name: &str, value: GuardValue) -> Self {
+        self.queries.insert(name.to_string(), value);
+        self
+    }
+
+    /// Answers a named world query with a boolean.
+    pub fn set_query_bool(self, name: &str, value: bool) -> Self {
+        self.set_query(name, GuardValue::from_boolean(value))
+    }
 }
 
 impl ILookAheadWorld for TestWorld {
@@ -79,8 +103,8 @@ impl ILookAheadWorld for TestWorld {
     }
     fn has_item(&self, name: &str) -> bool { self.items.get(name).copied().unwrap_or(false) }
     fn is_task_active(&self, name: &str) -> bool { self.tasks.get(name).copied().unwrap_or(false) }
-    fn query(&self, _name: &str, _arguments: &[GuardValue]) -> GuardValue {
-        GuardValue::unknown()
+    fn query(&self, name: &str, _arguments: &[GuardValue]) -> GuardValue {
+        self.queries.get(name).cloned().unwrap_or(GuardValue::unknown())
     }
     fn check_passes(&self, node: DialogueNodeId) -> Ternary {
         self.check_results.get(&node).copied().unwrap_or(Ternary::Unknown)
