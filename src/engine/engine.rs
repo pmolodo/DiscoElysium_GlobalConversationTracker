@@ -303,7 +303,13 @@ impl LookAheadEngine {
         }
     }
 
-    fn seed(graph: &LookAheadGraph, world: &dyn ILookAheadWorld) -> LookAheadState {
+    /// The state a crawl starts in: what the world says about every slot the graph has.
+    ///
+    /// Public so the symbolic search can start from the same place rather than from its
+    /// own idea of one. Seeding is not a detail - a symbolic run seeded with every data
+    /// state explores paths that need an item the player does not have, and reports
+    /// entries the crawl cannot reach. Two searches only agree if they start together.
+    pub fn seed(graph: &LookAheadGraph, world: &dyn ILookAheadWorld) -> LookAheadState {
         let symbols = graph.symbols();
         let mut state = LookAheadState::empty(symbols.count(), world.money(), world.day_minutes());
 

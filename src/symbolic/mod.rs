@@ -23,6 +23,7 @@
 pub mod action_image;
 pub mod data_layout;
 pub mod guard_formula;
+pub mod reachability;
 pub mod vars;
 
 use std::collections::HashMap;
