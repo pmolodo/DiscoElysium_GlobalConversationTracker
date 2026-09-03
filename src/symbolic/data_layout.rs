@@ -257,10 +257,25 @@ impl DataLayout {
     /// `LookAheadEngine::enter_rolled` reads them to decide whether a check can be
     /// attempted, so a layout without them would let a check be retried for ever.
     pub fn read_by(graph: &LookAheadGraph) -> HashSet<String> {
+        Self::read_by_some(graph, graph.nodes().map(|node| node.id))
+    }
+
+    /// The same, for SOME of the entries rather than all of them.
+    ///
+    /// What a per-target analysis needs: the names read on the paths that can reach one
+    /// entry, rather than the names read anywhere in the group. Shared with
+    /// [`Self::read_by`] rather than written twice, because a second copy of the reading
+    /// rules is a copy that drifts - the modelling-gaps report carries the scar of
+    /// exactly that.
+    pub fn read_by_some(
+        graph: &LookAheadGraph,
+        nodes: impl IntoIterator<Item = crate::core::types::DialogueNodeId>,
+    ) -> HashSet<String> {
         let mut names = HashSet::new();
         let symbols = graph.symbols();
 
-        for node in graph.nodes() {
+        for id in nodes {
+            let Some(node) = graph.get(id) else { continue };
             Self::read_by_guard(&node.guard, &mut names);
 
             for slot in [node.flag_slot, node.failed_flag_slot] {
