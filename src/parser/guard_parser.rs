@@ -29,7 +29,7 @@ pub fn parse_guard(text: &str) -> Result<GuardExpression, GuardParseError> {
     if stripped.trim().is_empty() {
         return Ok(GuardExpression::always_true());
     }
-    let mut parser = Parser::new(&stripped, text);
+    let mut parser = Parser::new(&stripped, text)?;
     let expr = parser.parse_expression()?;
     parser.expect_end()?;
     Ok(expr)
@@ -107,9 +107,9 @@ struct Parser {
 }
 
 impl Parser {
-    fn new(text: &str, original: &str) -> Self {
-        let tokens = tokenize(text, original);
-        Self { tokens, pos: 0, source: original.to_string() }
+    fn new(text: &str, original: &str) -> Result<Self, GuardParseError> {
+        let tokens = tokenize(text, original)?;
+        Ok(Self { tokens, pos: 0, source: original.to_string() })
     }
 
     fn parse_expression(&mut self) -> Result<GuardExpression, GuardParseError> {
@@ -224,7 +224,15 @@ impl Parser {
     }
 }
 
-fn tokenize(text: &str, _original: &str) -> Vec<Token> {
+/// Splits guard text into tokens, or fails on a character it cannot read.
+///
+/// Failing is the point. This previously returned, for any unexpected character, a single
+/// Name token holding the text "unexpected: X" - DISCARDING EVERY TOKEN READ SO FAR. That
+/// parsed cleanly as a reference to a variable of that name, satisfied the end-of-input
+/// check, and evaluated to Unknown because no world has heard of it. So an unreadable
+/// guard became a permissive one and nothing reported it, and a corpus test asserting
+/// that every guard parses could not have failed whatever it was given.
+fn tokenize(text: &str, _original: &str) -> Result<Vec<Token>, GuardParseError> {
     let mut tokens = Vec::new();
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
@@ -306,8 +314,13 @@ fn tokenize(text: &str, _original: &str) -> Vec<Token> {
                 }
                 tokens.push(Token { kind: TokenKind::Operator, value: s });
             }
-            _ => return vec![Token { kind: TokenKind::Name, value: format!("unexpected: {c}") }],
+            _ => {
+                return Err(GuardParseError::new(
+                    format!("unexpected character {c:?}"),
+                    text.to_string(),
+                ))
+            }
         }
     }
-    tokens
+    Ok(tokens)
 }

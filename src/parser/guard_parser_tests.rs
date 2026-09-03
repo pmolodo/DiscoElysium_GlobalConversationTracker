@@ -1,0 +1,199 @@
+// SPDX-License-Identifier: MIT
+//! The C# `GuardParserTests`, ported.
+//!
+//! Cases chosen for what they pin rather than for coverage: Lua's refusal to coerce
+//! across types, three-valued conjunction where one side is definite, the exporter's
+//! negation form, and operator precedence. Several are copied from real conversations.
+//!
+//! In a file of their own rather than at the foot of `guard_parser.rs`, because the
+//! parser is only half the subject - every case here parses AND evaluates, and the
+//! evaluation lives in `core::guard`.
+
+use crate::core::guard::IGuardContext;
+use crate::core::guard_value::GuardValue;
+use crate::core::types::Ternary;
+use crate::parser::guard_parser::parse_guard;
+use crate::world::test_world::TestWorld;
+use crate::world::world::ILookAheadWorld;
+
+/// Adapts a world to the guard-evaluation interface, without a crawl state.
+struct WorldContext<'a>(&'a TestWorld);
+
+impl IGuardContext for WorldContext<'_> {
+    fn get_variable(&self, name: &str) -> GuardValue {
+        self.0.get_variable(name)
+    }
+
+    fn query(&self, name: &str, arguments: &[GuardValue]) -> GuardValue {
+        self.0.query(name, arguments)
+    }
+}
+
+/// Parses and evaluates, the way a guard is actually used.
+fn test(guard: &str, world: &TestWorld) -> Ternary {
+    parse_guard(guard)
+        .unwrap_or_else(|e| panic!("{guard} should parse: {e:?}"))
+        .test(&WorldContext(world))
+}
+
+fn with_bool(name: &str, value: bool) -> TestWorld {
+    TestWorld::new().set_variable(name, GuardValue::from_boolean(value))
+}
+
+fn with_number(name: &str, value: f64) -> TestWorld {
+    TestWorld::new().set_variable(name, GuardValue::from_number(value))
+}
+
+#[test]
+fn no_condition_is_true() {
+    for guard in ["", "   "] {
+        assert_eq!(test(guard, &TestWorld::new()), Ternary::True, "{guard:?}");
+    }
+}
+
+#[test]
+fn a_bare_variable_reads_as_truthiness() {
+    let world = with_bool("a.b", true);
+    assert_eq!(test(r#"Variable["a.b"]"#, &world), Ternary::True);
+}
+
+/// The exporter's negation form, and by a wide margin the most common negative shape in
+/// the database - thousands of guards are exactly this.
+#[test]
+fn parenthesised_equals_false_is_negation() {
+    assert_eq!(
+        test(r#"(Variable["a.b"]) == false"#, &with_bool("a.b", true)),
+        Ternary::False
+    );
+    assert_eq!(
+        test(r#"(Variable["a.b"]) == false"#, &with_bool("a.b", false)),
+        Ternary::True
+    );
+}
+
+#[test]
+fn block_comments_are_stripped() {
+    // The comment holds an unbalanced bracket, so a parser that did not strip it first
+    // would try to read it.
+    let world = TestWorld::new().set_query_bool("IsTaskActive", true);
+    assert_eq!(
+        test(r#"IsTaskActive("TASK.x")--[[ Variable[ ]]"#, &world),
+        Ternary::True
+    );
+}
+
+#[test]
+fn an_unknown_query_is_unknown_not_false() {
+    assert_eq!(test("IsKimHere()", &TestWorld::new()), Ternary::Unknown);
+}
+
+/// False beats Unknown: one definitely-false conjunct settles it.
+#[test]
+fn and_with_a_definite_false_is_false_even_when_the_other_is_unknown() {
+    let world = with_bool("a.b", false);
+    assert_eq!(
+        test(r#"IsKimHere() and Variable["a.b"]"#, &world),
+        Ternary::False
+    );
+}
+
+#[test]
+fn or_with_a_definite_true_is_true_even_when_the_other_is_unknown() {
+    let world = with_bool("a.b", true);
+    assert_eq!(
+        test(r#"IsKimHere() or Variable["a.b"]"#, &world),
+        Ternary::True
+    );
+}
+
+#[test]
+fn numeric_comparison() {
+    assert_eq!(
+        test(r#"Variable["q.count"] < 4"#, &with_number("q.count", 3.0)),
+        Ternary::True
+    );
+    assert_eq!(
+        test(r#"Variable["q.count"] < 4"#, &with_number("q.count", 4.0)),
+        Ternary::False
+    );
+}
+
+/// The negated counter guard that sits beside it in conversation 825.
+#[test]
+fn negated_numeric_comparison() {
+    assert_eq!(
+        test(r#"(Variable["q.count"] < 4) == false"#, &with_number("q.count", 3.0)),
+        Ternary::False
+    );
+    assert_eq!(
+        test(r#"(Variable["q.count"] < 4) == false"#, &with_number("q.count", 4.0)),
+        Ternary::True
+    );
+}
+
+/// Lua's equality does not coerce across types, so a numeric variable is not equal to
+/// true however non-zero it is.
+#[test]
+fn equality_does_not_coerce_across_types() {
+    let world = with_number("q.count", 1.0);
+    assert_eq!(test(r#"Variable["q.count"] == true"#, &world), Ternary::False);
+}
+
+/// A real multi-clause guard, copied from conversation 451.
+#[test]
+fn the_siileng_speakers_guard_parses_and_evaluates() {
+    const GUARD: &str = concat!(
+        r#"Variable["jam.siileng_bought_faln_sneakers"] == true"#,
+        r#"  and  Variable["jam.siileng_learned_when_you_can_buy_speakers"] == true"#,
+        r#"  and  CheckItem("samaran_speakers") == false"#
+    );
+
+    let ready = TestWorld::new()
+        .set_variable("jam.siileng_bought_faln_sneakers", GuardValue::from_boolean(true))
+        .set_variable(
+            "jam.siileng_learned_when_you_can_buy_speakers",
+            GuardValue::from_boolean(true),
+        )
+        .set_query_bool("CheckItem", false);
+    assert_eq!(test(GUARD, &ready), Ternary::True);
+
+    let no_sneakers = TestWorld::new()
+        .set_variable("jam.siileng_bought_faln_sneakers", GuardValue::from_boolean(false))
+        .set_variable(
+            "jam.siileng_learned_when_you_can_buy_speakers",
+            GuardValue::from_boolean(true),
+        )
+        .set_query_bool("CheckItem", false);
+    assert_eq!(test(GUARD, &no_sneakers), Ternary::False);
+}
+
+#[test]
+fn operator_precedence_and_binds_tighter_than_or() {
+    // false and false or true  ==  (false and false) or true  ==  true
+    let world = TestWorld::new()
+        .set_variable("a", GuardValue::from_boolean(false))
+        .set_variable("b", GuardValue::from_boolean(false))
+        .set_variable("c", GuardValue::from_boolean(true));
+    assert_eq!(
+        test(r#"Variable["a"] and Variable["b"] or Variable["c"]"#, &world),
+        Ternary::True
+    );
+}
+
+#[test]
+fn garbage_is_an_error() {
+    assert!(parse_guard(r#"Variable["a"] $$ 3"#).is_err());
+}
+
+/// A failed parse must be reportable without unwinding, and the caller's fallback -
+/// treating the guard as absent - must then be true rather than false.
+///
+/// The engine relies on that: `build_group_graph` turns a parse failure into
+/// `always_true`, so a guard nobody can read leaves the branch open instead of silently
+/// closing it.
+#[test]
+fn a_failed_parse_falls_back_to_always_true() {
+    let fallback = parse_guard(r#"Variable["a"] $$ 3"#)
+        .unwrap_or_else(|_| crate::core::guard::GuardExpression::always_true());
+    assert_eq!(fallback.test(&WorldContext(&TestWorld::new())), Ternary::True);
+}
