@@ -57,6 +57,23 @@ namespace GlobalConversationTracker.Engine
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
         internal static extern int gct_entry_count(IntPtr handle, int conversation, out int count);
 
+        /// <summary>
+        /// Every question a crawl over one conversation's group can ask, as JSON.
+        /// </summary>
+        /// <param name="handle">An open engine.</param>
+        /// <param name="conversation">Any conversation in the group.</param>
+        /// <param name="json">Receives a string the caller frees with gct_string_free.</param>
+        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern int gct_questions(IntPtr handle, int conversation, out IntPtr json);
+
+        /// <summary>Answers a look-ahead request, both sides as JSON.</summary>
+        /// <param name="handle">An open engine.</param>
+        /// <param name="requestUtf8">The request, UTF-8 and NUL-terminated.</param>
+        /// <param name="json">Receives a string the caller frees with gct_string_free.</param>
+        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern int gct_look_ahead(
+            IntPtr handle, byte[] requestUtf8, out IntPtr json);
+
         /// <summary>Frees a string the library handed out.</summary>
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
         internal static extern void gct_string_free(IntPtr text);
@@ -90,5 +107,8 @@ namespace GlobalConversationTracker.Engine
 
         /// <summary>The index holds no such conversation.</summary>
         NoSuchConversation = -5,
+
+        /// <summary>An answer could not be turned into JSON. Should not happen.</summary>
+        SerialiseFailed = -6,
     }
 }

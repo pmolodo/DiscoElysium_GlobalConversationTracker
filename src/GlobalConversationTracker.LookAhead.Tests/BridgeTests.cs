@@ -78,9 +78,16 @@ namespace GlobalConversationTracker.LookAhead.Tests
         }
 
         /// <summary>
-        /// Cargo's copy of the library, release preferred over debug, or null if neither
-        /// has been built.
+        /// Cargo's copy of the library, the more recently built of release and debug, or
+        /// null if neither has been built.
         /// </summary>
+        /// <remarks>
+        /// NEWER rather than release-first, which is not a preference but a bug fix. A
+        /// stale release build silently shadows a fresh debug one, and the symptom is an
+        /// EntryPointNotFoundException naming a function that was added minutes ago -
+        /// which reads as a marshalling problem and is not one. Whichever was built last
+        /// is the one the developer meant.
+        /// </remarks>
         private static string? FindLibrary()
         {
             string? root = RepositoryRoot();
@@ -95,16 +102,25 @@ namespace GlobalConversationTracker.LookAhead.Tests
                     ? "liblookahead_engine.dylib"
                     : "liblookahead_engine.so";
 
+            string? newest = null;
+            DateTime newestAt = DateTime.MinValue;
             foreach (string profile in new[] { "release", "debug" })
             {
                 string candidate = Path.Combine(root, "target", profile, name);
-                if (File.Exists(candidate))
+                if (!File.Exists(candidate))
                 {
-                    return candidate;
+                    continue;
+                }
+
+                DateTime written = File.GetLastWriteTimeUtc(candidate);
+                if (newest == null || written > newestAt)
+                {
+                    newest = candidate;
+                    newestAt = written;
                 }
             }
 
-            return null;
+            return newest;
         }
 
         /// <summary>The conversation index, or null where it has not been extracted.</summary>
@@ -180,6 +196,93 @@ namespace GlobalConversationTracker.LookAhead.Tests
             Assert.True(entries > 0);
 
             Assert.Equal(-1, engine.EntryCount(-12345));
+        }
+
+        /// <summary>
+        /// The engine names the questions its own answers will be looked up under.
+        /// </summary>
+        [Fact]
+        public void TheEngineDescribesWhatItNeedsToKnow()
+        {
+            string? index = FindIndex();
+            if (FindLibrary() == null || index == null)
+            {
+                _output.WriteLine("the library or the index is missing; skipping.");
+                return;
+            }
+
+            using LookAheadLibrary engine = LookAheadLibrary.Open(index);
+
+            // Conversation 631's group is the one every measurement uses, so its shape is
+            // known independently of this bridge: six conversations and 4,514 entries.
+            string questions = engine.Questions(631);
+            _output.WriteLine(
+                questions.Length > 400 ? questions.Substring(0, 400) + "..." : questions);
+
+            Assert.Contains("\"conversations\"", questions);
+            Assert.Contains("\"queries\"", questions);
+            Assert.Contains("\"entries\"", questions);
+            // The group, not just the conversation asked about.
+            Assert.Contains("636", questions);
+        }
+
+        /// <summary>
+        /// A whole look-ahead question crosses and comes back answered.
+        /// </summary>
+        /// <remarks>
+        /// The end of the round trip this project exists to make: a request built here, a
+        /// crawl run over there, an answer parsed back. Deliberately asks about a small
+        /// conversation - what is being checked is the crossing, not the search.
+        /// </remarks>
+        [Fact]
+        public void AQuestionCrossesAndComesBackAnswered()
+        {
+            string? index = FindIndex();
+            if (FindLibrary() == null || index == null)
+            {
+                _output.WriteLine("the library or the index is missing; skipping.");
+                return;
+            }
+
+            using LookAheadLibrary engine = LookAheadLibrary.Open(index);
+
+            const string Request = @"{
+                ""conversation"": 1123,
+                ""starts"": [ { ""conversation"": 1123, ""entry"": 0 } ],
+                ""unseen_any_game"": [ { ""conversation"": 1123, ""entry"": 3 } ],
+                ""world"": {
+                    ""money"": 0, ""day_minutes"": 720,
+                    ""day_counter"": 1, ""clock_locked"": false
+                }
+            }";
+
+            string response = engine.LookAhead(Request);
+            _output.WriteLine(response);
+
+            Assert.Contains("\"answers\"", response);
+            Assert.Contains("\"start\"", response);
+            Assert.DoesNotContain("\"error\":\"", response);
+        }
+
+        /// <summary>
+        /// A request that is not JSON is refused as a call, not as a response.
+        /// </summary>
+        [Fact]
+        public void ARequestThatIsNotJsonIsRefused()
+        {
+            string? index = FindIndex();
+            if (FindLibrary() == null || index == null)
+            {
+                _output.WriteLine("the library or the index is missing; skipping.");
+                return;
+            }
+
+            using LookAheadLibrary engine = LookAheadLibrary.Open(index);
+
+            InvalidOperationException refused = Assert.Throws<InvalidOperationException>(
+                () => engine.LookAhead("not json"));
+
+            Assert.Contains(nameof(Status.BadArgument), refused.Message);
         }
 
         /// <summary>
