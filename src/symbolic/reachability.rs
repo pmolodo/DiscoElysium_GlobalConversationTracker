@@ -507,7 +507,41 @@ impl<'a> Reachability<'a> {
             None => self.vars.bottom(),
         };
 
-        image.apply(&current, &node.actions, &already)
+        // A one-time action has to RECORD that it fired, or it is not one.
+        //
+        // `apply` splits on `already` and leaves spent states alone, which is only half of
+        // it: nothing was raising the flag, so no state was ever spent, and a once
+        // increment inside a loop climbed to the counter cap. The explicit crawl does
+        // raise it - `DialogueAction::apply` pushes the once slot when something fired -
+        // and the two have to agree.
+        //
+        // Split here rather than inside `apply`, because the flag is raised once per
+        // ENTRY rather than once per action: an entry with three once actions fires all
+        // three together the first time and none of them afterwards.
+        let fires_once = node.actions.iter().any(|action| action.is_once());
+        if !fires_once || node.once_slot < 0 {
+            return image.apply(&current, &node.actions, &already);
+        }
+
+        let fresh = current.and(&already.not().expect("not")).expect("and");
+        let spent = current.and(&already).expect("and");
+
+        // Fresh: nothing has fired, so the one-time actions apply - and the flag goes up
+        // afterwards, on the states that just used them.
+        let mut result = self.vars.bottom();
+        if fresh.satisfiable() {
+            let acted = image.apply(&fresh, &node.actions, &self.vars.bottom());
+            result = image.assign(&acted, node.once_slot as usize, 1);
+        }
+
+        // Spent: everything has fired already, so the one-time actions are skipped and
+        // the rest still apply. Passing the everywhere-true set says exactly that.
+        if spent.satisfiable() {
+            let acted = image.apply(&spent, &node.actions, &self.vars.top());
+            result = result.or(&acted).expect("or");
+        }
+
+        result
     }
 
     /// The states in which this node has not been seen.

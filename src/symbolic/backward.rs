@@ -406,7 +406,26 @@ impl<'a> Backward<'a> {
             Some(flag) => flag,
             None => self.vars.bottom(),
         };
-        let mut current = image.pre_apply(onward, &node.actions, &already);
+
+        // The mirror of `Reachability::charge` raising the once flag. Forward, an entry
+        // with a one-time action splits: the states that had not fired apply it and come
+        // out with the flag up, and the states that had skip it. So backwards there are
+        // two ways to have arrived, and they are told apart by the flag - which is why
+        // undoing the assignment on the fresh branch comes BEFORE conjoining "it was
+        // clear", exactly as it does for `Fake` and its seen marker.
+        let fires_once = node.actions.iter().any(|action| action.is_once());
+        let mut current = if fires_once && node.once_slot >= 0 {
+            let raised = image.pre_assign(onward, node.once_slot as usize, 1);
+            let fresh = image.pre_apply(&raised, &node.actions, &self.vars.bottom());
+            let fresh = fresh.and(&already.not().expect("not")).expect("and");
+
+            let spent = image.pre_apply(onward, &node.actions, &self.vars.top());
+            let spent = spent.and(&already).expect("and");
+
+            fresh.or(&spent).expect("or")
+        } else {
+            image.pre_apply(onward, &node.actions, &already)
+        };
 
         if node.seen_slot >= 0 {
             current = image.pre_assign(&current, node.seen_slot as usize, 1);
@@ -679,20 +698,16 @@ mod tests {
         );
     }
 
-    /// A once increment inside a cycle climbs anyway, in BOTH directions.
+    /// A once increment inside a cycle does NOT climb past its single step.
     ///
-    /// Not what the explicit crawl does, and not what this test was written expecting.
-    /// The symbolic forward pass never RAISES a once slot for a once action - `charge`
-    /// assigns it only for a cost charged once - so `once_already_fired` is empty at every
-    /// visit, the action fires every time round the loop, and the counter reaches a
-    /// threshold the real crawl would hold it below. See de-sze.15.
-    ///
-    /// Asserted rather than corrected here because the two searches have to agree before
-    /// either can be trusted, and the backward pass mirrors whatever the forward one does.
-    /// When de-sze.15 is fixed this test fails, which is the point of writing it down: it
-    /// forces both directions to be changed together.
+    /// It used to, in both directions, because the symbolic passes never raised a once
+    /// slot for a once action - `charge` assigned it only for a cost charged once - so
+    /// `once_already_fired` was empty at every visit and the action fired every time round
+    /// the loop. That was de-sze.15, and this test was written asserting the wrong
+    /// behaviour on purpose, so that fixing it would fail here and force both directions
+    /// to change together. It did.
     #[test]
-    fn a_once_increment_climbs_anyway_while_the_once_slot_is_never_raised() {
+    fn a_once_increment_does_not_climb_past_its_single_step() {
         agree(
             vec![
                 Entry::new(0).links(&[1]),
@@ -702,9 +717,11 @@ mod tests {
                 Entry::new(2).guard(r#"Variable["count"] >= 3"#).links(&[3]),
                 Entry::new(3),
             ],
-            &TestWorld::new(),
+            // Declared numeric, so the explicit crawl can decide the comparison too - see
+            // the note in `an_awkward_shape_reaches_everything_the_explicit_crawl_does`.
+            &TestWorld::new().set_variable("count", GuardValue::from_number(0.0)),
             3,
-            true,
+            false,
         );
     }
 
@@ -845,7 +862,17 @@ mod tests {
             .add(Entry::new(5))
             .build();
         let symbols = graph.symbols().clone();
-        let world = TestWorld::new().set_variable("locked", GuardValue::from_boolean(false));
+        // `count` is declared a NUMBER, and it has to be. The explicit engine reads a
+        // tracked slot back through the world's idea of its type - see
+        // `BoundContext::get_variable` - so a counter the world has never heard of comes
+        // back as a boolean, `try_as_number` refuses it, and `count >= 2` is undecidable
+        // and therefore permissive. The symbolic side compiles the same comparison against
+        // the slot's bits and decides it. Without this line the two disagree about the
+        // fixture rather than about the once slot, which is what this test is for.
+        // de-sze.5.4 is the real fix: the index does not carry declared types yet.
+        let world = TestWorld::new()
+            .set_variable("locked", GuardValue::from_boolean(false))
+            .set_variable("count", GuardValue::from_number(0.0));
 
         let walked: Arc<Mutex<HashSet<DialogueNodeId>>> = Arc::default();
         let sink = Arc::clone(&walked);
