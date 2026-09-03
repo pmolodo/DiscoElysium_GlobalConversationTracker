@@ -1,11 +1,11 @@
-# Unix-style newlines by default
-[*]
+# Apply formatting only to known text-based source and configuration files.
+[*.{bash,bat,bats,c,cc,cmd,cpp,cs,csx,cxx,h,h++,hh,hpp,hxx,inl,ipp,json,jsonc,ps1,psd1,psm1,py,pyi,pyw,rs,sh,toml,tpp,yaml,yml}]
 end_of_line = lf
 trim_trailing_whitespace = true
 indent_style = space
 indent_size = 4
 
-[*.{bat,cmd,ps1}]
+[*.{bat,cmd,ps1,psd1,psm1}]
 end_of_line = crlf
 
 [.claude/settings{.local.json,.json}]
