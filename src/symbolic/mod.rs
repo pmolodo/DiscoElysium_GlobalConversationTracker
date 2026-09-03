@@ -276,6 +276,16 @@ fn push_bits(bits: &mut Vec<(u32, bool)>, at: usize, width: usize, value: u32) -
 }
 
 /// A set of crawl states, held as one decision diagram.
+///
+/// ## Its manager is its own, and that is deliberate
+///
+/// [`crate::symbolic::guard_formula`] and [`crate::symbolic::action_image`] share one
+/// manager, because formulas that have to be combined must live in the same one. This
+/// does not join them, and must not: a [`StateEncoding`] puts the ENTRY into variables
+/// alongside the data, so its variable space means something different from
+/// [`crate::symbolic::data_layout::DataLayout`]'s. Sharing a manager between two
+/// different ideas of what a variable number means is worse than not sharing at all -
+/// the formulas would combine, and combine into nonsense.
 pub struct StateSet {
     _manager: BDDManagerRef,
     vars: Vec<BDDFunction>,

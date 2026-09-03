@@ -26,6 +26,7 @@ use lookahead_engine::world::world::ILookAheadWorld;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
+use lookahead_engine::symbolic::vars::DataVars;
 
 mod common;
 
@@ -163,7 +164,8 @@ fn how_much_of_the_guard_corpus_compiles() {
         // nothing has set is false - which is exactly the case a real save is in for most
         // of the database. That is what makes an untracked variable decidable.
         let world = SaveWorld;
-        let mut compiler = GuardCompiler::new(&layout, &symbols, NODE_CAPACITY, CACHE_CAPACITY)
+        let vars = DataVars::new(&layout, &symbols, NODE_CAPACITY, CACHE_CAPACITY);
+        let mut compiler = GuardCompiler::new(&vars)
             .with_world(&world)
             .with_constant_clock(DataLayout::group_passes_time(&graph));
 

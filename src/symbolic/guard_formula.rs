@@ -30,14 +30,13 @@
 
 use std::collections::HashMap;
 
-use oxidd::bdd::{new_manager, BDDFunction, BDDManagerRef};
-use oxidd::{BooleanFunction, Manager, ManagerRef};
+use oxidd::bdd::BDDFunction;
+use oxidd::BooleanFunction;
 
 use crate::core::guard::GuardExpression;
 use crate::core::guard_value::{GuardValue, GuardValueKind};
-use crate::core::state::StateSymbols;
 use crate::core::types::Ternary;
-use crate::symbolic::data_layout::DataLayout;
+use crate::symbolic::vars::DataVars;
 use crate::world::world::ILookAheadWorld;
 
 /// A guard as two sets of data states: where it may hold, and where it may fail.
@@ -58,11 +57,17 @@ impl MayBe {
 }
 
 /// Compiles guards over one data layout.
+///
+/// ## It borrows the variables rather than declaring its own
+///
+/// A compiled guard has to be combined with the sets [`crate::symbolic::action_image`]
+/// produces - reachability filters a set by a guard and then applies actions to what
+/// survives - and TWO FORMULAS BUILT OVER DIFFERENT MANAGERS CANNOT BE COMBINED AT ALL.
+/// This compiler used to build a manager of its own over the same layout, which looked
+/// harmless because the variable numbering agreed; it was not, and nothing had caught it
+/// only because nothing had yet asked a guard and an action about the same set.
 pub struct GuardCompiler<'a> {
-    manager: BDDManagerRef,
-    vars: Vec<BDDFunction>,
-    layout: &'a DataLayout,
-    symbols: &'a StateSymbols,
+    vars: &'a DataVars<'a>,
     /// Where a variable no action writes gets its value.
     ///
     /// Such a variable is CONSTANT for the whole crawl - the seed reads it once and
@@ -81,22 +86,10 @@ pub struct GuardCompiler<'a> {
 }
 
 impl<'a> GuardCompiler<'a> {
-    /// Creates a compiler, declaring one variable per bit of the layout.
-    pub fn new(
-        layout: &'a DataLayout,
-        symbols: &'a StateSymbols,
-        node_capacity: usize,
-        cache_capacity: usize,
-    ) -> Self {
-        let manager = new_manager(node_capacity, cache_capacity, 1);
-        let vars = manager.with_manager_exclusive(|m| {
-            m.add_vars(layout.total_vars())
-                .map(|v| BDDFunction::var(m, v).expect("a freshly added variable"))
-                .collect()
-        });
-
+    /// Creates a compiler over variables somebody else declared.
+    pub fn new(vars: &'a DataVars<'a>) -> Self {
         Self {
-            manager, vars, layout, symbols, world: None,
+            vars, world: None,
             constant_clock: false, clock_approximated: false,
             fallbacks: 0, compiled: 0, reasons: HashMap::new(), subjects: Vec::new(),
         }
@@ -152,14 +145,19 @@ impl<'a> GuardCompiler<'a> {
         self.compiled
     }
 
+    /// The variables these formulas are built over, and the manager behind them.
+    pub fn vars(&self) -> &'a DataVars<'a> {
+        self.vars
+    }
+
     /// The everywhere-true formula.
     pub fn top(&self) -> BDDFunction {
-        self.manager.with_manager_shared(BDDFunction::t)
+        self.vars.top()
     }
 
     /// The everywhere-false formula.
     pub fn bottom(&self) -> BDDFunction {
-        self.manager.with_manager_shared(BDDFunction::f)
+        self.vars.bottom()
     }
 
     /// Why each fallback happened, most common first.
@@ -530,9 +528,8 @@ impl<'a> GuardCompiler<'a> {
     /// in this layout, and when one arrives it should get a proper ripple comparator
     /// rather than this.
     fn slot_ordered(&mut self, name: &str, op: &str, value: i32) -> Option<BDDFunction> {
-        let slot = self.symbols.find(name)?;
-        let (_, bits) = self.layout.slot(slot)?;
-        let ceiling: i64 = if bits >= 32 { u32::MAX as i64 } else { (1i64 << bits) - 1 };
+        let slot = self.vars.slot_of(name)?;
+        let ceiling = self.vars.slot_ceiling(slot)? as i64;
 
         let mut holds = self.bottom();
         for candidate in 0..=ceiling {
@@ -672,41 +669,23 @@ impl<'a> GuardCompiler<'a> {
         }
     }
 
-    /// "This slot is non-zero", as a formula.
+    /// "This slot is non-zero", as a formula, by the variable's name.
     fn slot_is_set(&self, name: &str) -> Option<BDDFunction> {
-        let slot = self.symbols.find(name)?;
-        let (base, bits) = self.layout.slot(slot)?;
-        // Non-zero is "any bit set".
-        let mut any = self.bottom();
-        for bit in 0..bits as u32 {
-            any = any.or(&self.vars[(base + bit) as usize]).expect("or");
-        }
-
-        Some(any)
+        self.vars.slot_is_set(self.vars.slot_of(name)?)
     }
 
-    /// "This slot holds exactly this value", as a formula.
+    /// "This slot holds exactly this value", as a formula, by the variable's name.
+    ///
+    /// A value the slot cannot hold gives the empty set rather than nothing: the equality
+    /// is false everywhere, which is decided, not unknown. A NEGATIVE value is one of
+    /// those - a slot is an unsigned run of bits and holds nothing below zero.
     fn slot_equals(&self, name: &str, value: i32) -> Option<BDDFunction> {
-        let slot = self.symbols.find(name)?;
-        let (base, bits) = self.layout.slot(slot)?;
-        if bits < 32 && value as u32 >= (1u32 << bits) {
-            // The slot cannot hold it, so the equality is false everywhere - which is
-            // decided, not unknown.
+        let slot = self.vars.slot_of(name)?;
+        let Ok(value) = u32::try_from(value) else {
             return Some(self.bottom());
-        }
+        };
 
-        let mut all = self.top();
-        for bit in 0..bits as u32 {
-            let var = &self.vars[(base + bit) as usize];
-            let literal = if (value as u32 >> bit) & 1 == 1 {
-                var.clone()
-            } else {
-                var.not().expect("negation")
-            };
-            all = all.and(&literal).expect("and");
-        }
-
-        Some(all)
+        self.vars.slot_equals(slot, value)
     }
 }
 
@@ -715,9 +694,11 @@ mod tests {
     use super::*;
     use crate::core::action::DialogueAction;
     use crate::core::guard::GuardExpression;
+    use crate::core::state::StateSymbols;
     use crate::core::types::{DialogueCheckKind, DialogueNodeId};
     use crate::graph::graph::LookAheadGraph;
     use crate::graph::node::LookAheadNode;
+    use crate::symbolic::data_layout::DataLayout;
 
     const NODES: usize = 1 << 16;
     const CACHE: usize = 1 << 14;
@@ -753,7 +734,8 @@ mod tests {
     fn a_true_literal_holds_everywhere_and_fails_nowhere() {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
-        let mut compiler = GuardCompiler::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let mut compiler = GuardCompiler::new(&vars);
 
         let compiled = compiler.compile(&boolean(true));
         assert!(compiled.may_be_true.valid());
@@ -765,7 +747,8 @@ mod tests {
     fn an_unreadable_guard_is_undecided_everywhere_rather_than_false() {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
-        let mut compiler = GuardCompiler::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let mut compiler = GuardCompiler::new(&vars);
 
         // A world query the compiler cannot read.
         let compiled = compiler.compile(&GuardExpression::Call("IsKimHere".to_string(), vec![]));
@@ -785,7 +768,8 @@ mod tests {
         let (base, bits) = layout.slot(slot).unwrap();
         assert_eq!(bits, 1);
 
-        let mut compiler = GuardCompiler::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Variable("met_kim".to_string()));
 
         assert!(compiled.may_be_true.eval([(base, true)]));
@@ -801,7 +785,8 @@ mod tests {
         let (base, bits) = layout.slot(slot).unwrap();
         assert_eq!(bits, 5);
 
-        let mut compiler = GuardCompiler::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Variable("counter".to_string()));
 
         let zero: Vec<(u32, bool)> = (0..bits as u32).map(|b| (base + b, false)).collect();
@@ -820,7 +805,8 @@ mod tests {
         let slot = symbols.find("counter").unwrap();
         let (base, bits) = layout.slot(slot).unwrap();
 
-        let mut compiler = GuardCompiler::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Comparison(
             "==".to_string(),
             Box::new(GuardExpression::Variable("counter".to_string())),
@@ -842,7 +828,8 @@ mod tests {
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let base = layout.slot(symbols.find("a").unwrap()).unwrap().0;
 
-        let mut compiler = GuardCompiler::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Comparison(
             "~=".to_string(),
             Box::new(GuardExpression::Variable("a".to_string())),
@@ -859,7 +846,8 @@ mod tests {
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let base = layout.slot(symbols.find("a").unwrap()).unwrap().0;
 
-        let mut compiler = GuardCompiler::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Comparison(
             "==".to_string(),
             Box::new(boolean(true)),
@@ -899,7 +887,8 @@ mod tests {
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let slot = symbols.find("counter").unwrap();
 
-        let mut compiler = GuardCompiler::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Comparison(
             ">=".to_string(),
             Box::new(GuardExpression::Variable("counter".to_string())),
@@ -929,7 +918,8 @@ mod tests {
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let slot = symbols.find("counter").unwrap();
 
-        let mut compiler = GuardCompiler::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Comparison(
             "<=".to_string(),
             Box::new(number(3.0)),
@@ -951,8 +941,9 @@ mod tests {
         let world = crate::world::test_world::TestWorld::new()
             .set_variable("untracked", GuardValue::from_number(5.0));
 
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
         let mut compiler =
-            GuardCompiler::new(&layout, &symbols, NODES, CACHE).with_world(&world);
+            GuardCompiler::new(&vars).with_world(&world);
         let holds = compiler.compile(&GuardExpression::Comparison(
             ">=".to_string(),
             Box::new(GuardExpression::Variable("untracked".to_string())),
@@ -980,7 +971,8 @@ mod tests {
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let base = layout.slot(symbols.find("a").unwrap()).unwrap().0;
 
-        let mut compiler = GuardCompiler::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::And(
             Box::new(GuardExpression::Variable("a".to_string())),
             Box::new(GuardExpression::Call("IsKimHere".to_string(), vec![])),
@@ -1000,7 +992,8 @@ mod tests {
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let base = layout.slot(symbols.find("a").unwrap()).unwrap().0;
 
-        let mut compiler = GuardCompiler::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Not(Box::new(
             GuardExpression::Variable("a".to_string()),
         )));
@@ -1015,7 +1008,8 @@ mod tests {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
 
-        let mut compiler = GuardCompiler::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Not(Box::new(
             GuardExpression::Call("IsKimHere".to_string(), vec![]),
         )));
@@ -1045,7 +1039,8 @@ mod tests {
         let slot = snapshot.find("item:shoes_faln").expect("GainItem interns an item slot");
         let base = layout.slot(slot).unwrap().0;
 
-        let mut compiler = GuardCompiler::new(&layout, &snapshot, NODES, CACHE);
+        let vars = DataVars::new(&layout, &snapshot, NODES, CACHE);
+        let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Call(
             "CheckItem".to_string(),
             vec![GuardExpression::Literal(GuardValue::from_text("shoes_faln".to_string()))],
@@ -1069,8 +1064,9 @@ mod tests {
         // Deliberately answers no query, to show that is not what settles it.
         let world = crate::world::test_world::TestWorld::new().set_item("ledger", true);
 
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
         let mut compiler =
-            GuardCompiler::new(&layout, &symbols, NODES, CACHE).with_world(&world);
+            GuardCompiler::new(&vars).with_world(&world);
         let held = compiler.compile(&GuardExpression::Call(
             "CheckItem".to_string(),
             vec![GuardExpression::Literal(GuardValue::from_text("ledger".to_string()))],
@@ -1111,8 +1107,9 @@ mod tests {
         // The world says the player does NOT have them. The slot must still decide, so
         // that a path which buys them is seen.
         let world = crate::world::test_world::TestWorld::new().set_item("shoes_faln", false);
+        let vars = DataVars::new(&layout, &snapshot, NODES, CACHE);
         let mut compiler =
-            GuardCompiler::new(&layout, &snapshot, NODES, CACHE).with_world(&world);
+            GuardCompiler::new(&vars).with_world(&world);
         let compiled = compiler.compile(&GuardExpression::Call(
             "CheckItem".to_string(),
             vec![GuardExpression::Literal(GuardValue::from_text("shoes_faln".to_string()))],
@@ -1140,7 +1137,8 @@ mod tests {
         let slot = snapshot.find("task:TASK.find_ruby").expect("GainTask interns a task slot");
         let base = layout.slot(slot).unwrap().0;
 
-        let mut compiler = GuardCompiler::new(&layout, &snapshot, NODES, CACHE);
+        let vars = DataVars::new(&layout, &snapshot, NODES, CACHE);
+        let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Call(
             "IsTaskActive".to_string(),
             vec![GuardExpression::Literal(GuardValue::from_text("TASK.find_ruby".to_string()))],
@@ -1158,7 +1156,8 @@ mod tests {
         // Two in the morning.
         let night = crate::world::test_world::TestWorld::new().with_day_minutes(2 * 60);
 
-        let mut compiler = GuardCompiler::new(&layout, &symbols, NODES, CACHE)
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let mut compiler = GuardCompiler::new(&vars)
             .with_world(&night)
             .with_constant_clock(false);
         let compiled =
@@ -1175,8 +1174,9 @@ mod tests {
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let night = crate::world::test_world::TestWorld::new().with_day_minutes(2 * 60);
 
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
         let mut compiler =
-            GuardCompiler::new(&layout, &symbols, NODES, CACHE).with_world(&night);
+            GuardCompiler::new(&vars).with_world(&night);
         let compiled =
             compiler.compile(&GuardExpression::Call("IsNight".to_string(), vec![]));
 
@@ -1191,12 +1191,14 @@ mod tests {
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let world = crate::world::test_world::TestWorld::new();
 
-        let exact = GuardCompiler::new(&layout, &symbols, NODES, CACHE)
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let exact = GuardCompiler::new(&vars)
             .with_world(&world)
             .with_constant_clock(false);
         assert!(!exact.clock_is_approximated());
 
-        let approximate = GuardCompiler::new(&layout, &symbols, NODES, CACHE)
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let approximate = GuardCompiler::new(&vars)
             .with_world(&world)
             .with_constant_clock(true);
         assert!(approximate.clock_is_approximated());
@@ -1229,10 +1231,63 @@ mod tests {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
 
-        let mut compiler = GuardCompiler::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Variable("never_heard_of_it".to_string()));
 
         assert!(!compiled.is_decided());
         assert_eq!(compiler.fallbacks(), 1);
+    }
+
+    /// One step of reachability, which is the operation this compiler exists to take part
+    /// in: filter a set of states by a guard, then apply a node's actions to what got
+    /// through.
+    ///
+    /// It could not be written at all until the compiler and the action image shared a
+    /// manager. Two formulas over different managers do not combine - so this is the test
+    /// that the two halves are actually one system, and not merely two that agree about
+    /// variable numbering.
+    #[test]
+    fn a_guard_and_an_action_can_be_applied_to_the_same_set() {
+        let mut symbols = StateSymbols::new();
+        let gate = symbols.variable("gate");
+        let counter = symbols.variable("counter");
+        let actions = vec![DialogueAction::increment(counter, 1, false, "s".to_string())];
+        let node = LookAheadNode::new(
+            DialogueNodeId::new(1, 0), false, DialogueCheckKind::None,
+            GuardExpression::always_true(), actions.clone(), vec![],
+            0, false, false, -1, -1, false, -1,
+        );
+        let snapshot = symbols.clone();
+        let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+        let vars = DataVars::new(&layout, &snapshot, NODES, CACHE);
+
+        // The guard: the gate must be open.
+        let mut compiler = GuardCompiler::new(&vars);
+        let guard = compiler.compile(&GuardExpression::Variable("gate".to_string()));
+        assert!(guard.is_decided());
+
+        // Every state where the counter is zero, gate either way.
+        let counter_at_zero = vars.slot_equals(counter, 0).unwrap();
+
+        // Filter by the guard, then apply the action - the two operations meeting.
+        let allowed = counter_at_zero.and(&guard.may_be_true).expect("and");
+        let mut image = crate::symbolic::action_image::ActionImage::new(&vars, 16);
+        let after = image.apply(&allowed, &actions, &vars.bottom());
+
+        // Through the gate the counter moved; the states that were refused are simply not
+        // in the result, gate closed and counter still zero.
+        let open = vars.slot_is_set(gate).unwrap();
+        assert!(after.and(&open).expect("and").satisfiable());
+        assert!(
+            !after.and(&open.not().expect("not")).expect("and").satisfiable(),
+            "a state that failed the guard should not appear in the image",
+        );
+
+        let moved = vars.slot_equals(counter, 1).unwrap();
+        assert!(after.and(&moved).expect("and").satisfiable());
+        let still = vars.slot_equals(counter, 0).unwrap();
+        assert!(!after.and(&still).expect("and").satisfiable());
     }
 }

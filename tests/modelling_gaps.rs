@@ -29,6 +29,7 @@ use lookahead_engine::core::types::{DialogueNodeId, Ternary};
 use lookahead_engine::index::{build_group_graph, read_index, Index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
+use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::world::world::ILookAheadWorld;
 
 mod common;
@@ -119,7 +120,8 @@ fn what_is_still_unmodelled_in_the_subject_conversation() {
     );
 
     let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
-    let mut compiler = GuardCompiler::new(&layout, &symbols, NODE_CAPACITY, CACHE_CAPACITY)
+    let vars = DataVars::new(&layout, &symbols, NODE_CAPACITY, CACHE_CAPACITY);
+    let mut compiler = GuardCompiler::new(&vars)
         .with_world(&world)
         .with_constant_clock(DataLayout::group_passes_time(&graph));
 
