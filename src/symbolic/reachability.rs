@@ -158,6 +158,13 @@ pub struct ReachabilityStats {
     pub diagram_nodes: usize,
     /// The largest single entry's set.
     pub largest_set: usize,
+    /// Whether the diagram manager ran out of nodes.
+    ///
+    /// A real outcome and not a crash, which is why it is reported rather than left to
+    /// `expect`. It says the representation did not fit, which is the most decisive thing
+    /// a measurement of a representation can say - and a run that dies on an unwrap says
+    /// the same thing while destroying the numbers that would have shown how it got there.
+    pub out_of_memory: bool,
     /// Cost checks that could not be decided because money is not in the layout.
     pub unaffordable_unknown: usize,
     /// Actions skipped because the layout does not carry what they touch.
@@ -291,9 +298,19 @@ impl<'a> Reachability<'a> {
                 // Only what is genuinely new. Diagrams are canonical for a fixed variable
                 // order, so this difference being empty is exactly "nothing changed" -
                 // there is no membership test to do and no approximation in the check.
-                let fresh = arriving
-                    .and(&known.not().expect("not"))
-                    .expect("and");
+                //
+                // Every step from here can run the manager out of nodes, and on the big
+                // groups it does. That is an ANSWER - the representation did not fit -
+                // so it is reported rather than unwrapped, and the numbers showing how it
+                // got there survive.
+                let Ok(complement) = known.not() else {
+                    this.stats.out_of_memory = true;
+                    break 'search;
+                };
+                let Ok(fresh) = arriving.and(&complement) else {
+                    this.stats.out_of_memory = true;
+                    break 'search;
+                };
                 if !fresh.satisfiable() {
                     continue;
                 }
@@ -303,13 +320,21 @@ impl<'a> Reachability<'a> {
                 // whether an entry can be reached at all, so it is asked once, the first
                 // time the entry has any states.
                 let first_sighting = !known.satisfiable();
-                this.sets.insert(child_id, known.or(&fresh).expect("union"));
+                let Ok(widened) = known.or(&fresh) else {
+                    this.stats.out_of_memory = true;
+                    break 'search;
+                };
+                this.sets.insert(child_id, widened);
 
                 let pending = frontier
                     .get(&child_id)
                     .cloned()
                     .unwrap_or_else(|| vars.bottom());
-                frontier.insert(child_id, pending.or(&fresh).expect("union"));
+                let Ok(waiting) = pending.or(&fresh) else {
+                    this.stats.out_of_memory = true;
+                    break 'search;
+                };
+                frontier.insert(child_id, waiting);
                 queue.push_back(child_id);
 
                 if first_sighting {

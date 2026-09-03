@@ -22,7 +22,7 @@
 //! small loses markers. So the assertion is containment, not equality, and the surplus is
 //! reported rather than tolerated silently.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use lookahead_engine::core::types::{DialogueNodeId, Novelty};
@@ -44,6 +44,64 @@ const CACHE_CAPACITY: usize = 1 << 20;
 /// as an oracle. A conversation the explicit crawl gives up on proves nothing when the
 /// symbolic side reaches more.
 const CHECKABLE: [i32; 6] = [1123, 484, 1066, 1147, 949, 511];
+
+/// The groups that drive the cost.
+const EXPENSIVE: [i32; 5] = [368, 631, 14, 28, 1030];
+
+/// Which conversations this process should measure.
+///
+/// ONE PER PROCESS is the intended way to run these, driven by
+/// `tools/measure-symbolic.sh`. They die in ways that take the whole process down - a
+/// manager out of nodes, a stack overflow in a recursive diagram operation, a step that
+/// runs minutes past its budget - and with several in one run the first crash destroys
+/// every row after it. A run that measured 368, then overflowed on 631, reported nothing
+/// at all for 14, 28 and 1030 and had to be started again from the beginning.
+///
+/// Answering the whole list when nothing is named keeps the test runnable on its own; the
+/// script is what makes the results survivable.
+fn conversations(default: &[i32]) -> Vec<i32> {
+    match std::env::var("CONVERSATION") {
+        Ok(named) => named
+            .split(',')
+            .filter_map(|id| id.trim().parse().ok())
+            .collect(),
+        Err(_) => default.to_vec(),
+    }
+}
+
+/// Which entries are reachable from `start` by FOLLOWING LINKS ALONE, and how far.
+///
+/// Guards and actions ignored entirely. This is the loosest possible notion of reachable
+/// and it is exactly why it is worth having: it is an upper bound that no stateful search
+/// can exceed, so an entry it cannot find is unreachable for certain and a measurement
+/// aimed at one proves nothing at all.
+///
+/// The C# tried this shape as a PREFILTER and it was measured and reverted - it prunes
+/// only 0.5 to 4 per cent in the hub-connected case, because ignoring guards throws away
+/// what makes dialogue reachability interesting. As a way of choosing a fair question to
+/// ask, though, it is exactly right.
+fn structurally_reachable(
+    graph: &lookahead_engine::graph::graph::LookAheadGraph,
+    start: DialogueNodeId,
+) -> HashMap<DialogueNodeId, usize> {
+    let mut depth = HashMap::new();
+    let mut queue = std::collections::VecDeque::new();
+    depth.insert(start, 0usize);
+    queue.push_back(start);
+
+    while let Some(id) = queue.pop_front() {
+        let here = depth[&id];
+        let Some(node) = graph.get(id) else { continue };
+        for &child in &node.links {
+            if graph.get(child).is_some() && !depth.contains_key(&child) {
+                depth.insert(child, here + 1);
+                queue.push_back(child);
+            }
+        }
+    }
+
+    depth
+}
 
 /// Every entry the explicit crawl reaches from `start`, and whether it ran out of budget.
 fn explicit(
@@ -88,7 +146,7 @@ fn the_symbolic_search_reaches_what_the_explicit_crawl_reaches() {
 
     let mut compared = 0;
 
-    for conversation in CHECKABLE {
+    for conversation in conversations(&CHECKABLE) {
         let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
         let start = DialogueNodeId::new(conversation, 0);
         if graph.get(start).is_none() {
@@ -184,17 +242,30 @@ fn finding_one_unseen_entry_in_a_group_that_is_otherwise_seen() {
         "conv", "entries", "vars", "engine", "ms", "symbolic", "ms"
     );
 
-    for conversation in [368, 631, 14, 28, 1030] {
+    for conversation in conversations(&EXPENSIVE) {
         let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
         let start = DialogueNodeId::new(conversation, 0);
         if graph.get(start).is_none() {
             continue;
         }
 
-        // The quarry: the LAST entry the builder produced, which is as far from the start
-        // as the group's ordering gets. Picking the first would let either engine trip
-        // over it immediately and measure nothing.
-        let Some(quarry) = graph.nodes().map(|n| n.id).last() else { continue };
+        // The quarry has to be STRUCTURALLY REACHABLE or the question is a trick: an
+        // entry no path leads to is unreachable whatever the guards say, and both engines
+        // answering "not there" would be measuring nothing.
+        //
+        // The first attempt took the last entry the builder produced, which is an
+        // arbitrary position in a hash-ordered walk and has no relation to the links at
+        // all. Taking the DEEPEST structurally reachable entry instead makes the question
+        // both fair and as hard as the group allows.
+        let depths = structurally_reachable(&graph, start);
+        // Deepest wins; the conversation and entry ids break ties so the choice is stable
+        // across runs rather than hash-ordered.
+        let Some((&quarry, &depth)) = depths
+            .iter()
+            .max_by_key(|(id, depth)| (**depth, id.conversation_id, id.entry_id))
+        else {
+            continue;
+        };
         let novelty = move |id: DialogueNodeId| {
             if id == quarry { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
         };
@@ -242,6 +313,8 @@ fn finding_one_unseen_entry_in_a_group_that_is_otherwise_seen() {
         };
         let symbolic_says = if stats.halted_at.is_some() {
             "FOUND"
+        } else if stats.out_of_memory {
+            "NO ROOM"
         } else if stats.reached_fixed_point {
             "not there"
         } else {
@@ -254,6 +327,12 @@ fn finding_one_unseen_entry_in_a_group_that_is_otherwise_seen() {
             graph.count(),
             layout.total_vars(),
             stats.elapsed.as_millis(),
+        );
+        println!(
+            "         quarry {quarry} at link depth {depth}; {} of {} entries are \
+             reachable by links alone",
+            depths.len(),
+            graph.count(),
         );
 
         // Both engines answering the same question must not contradict each other. The
@@ -301,7 +380,7 @@ fn what_the_expensive_conversations_cost() {
         "conv", "entries", "vars", "reached", "bddnodes", "largest", "steps", "ms"
     );
 
-    for conversation in [368, 631, 14, 28, 1030] {
+    for conversation in conversations(&EXPENSIVE) {
         let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
         let start = DialogueNodeId::new(conversation, 0);
         if graph.get(start).is_none() {
