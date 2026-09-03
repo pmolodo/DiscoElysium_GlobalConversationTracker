@@ -811,6 +811,79 @@ mod tests {
         );
     }
 
+    /// The awkward shape, against the EXPLICIT crawl rather than against the forward
+    /// symbolic search.
+    ///
+    /// Everything else here compares the two symbolic searches, which share their
+    /// approximations and so cannot catch one. This asks the engine the plugin actually
+    /// runs, over the shape that has caught the most bugs in this file: a cycle, a once
+    /// action inside it, a counter, and a threshold on the counter.
+    ///
+    /// Containment rather than equality, and in one direction only. The symbolic side may
+    /// reach more - it does here, because de-sze.15 lets the once action fire every time
+    /// round - and a surplus costs precision. Reaching LESS would cost a marker.
+    #[test]
+    fn an_awkward_shape_reaches_everything_the_explicit_crawl_does() {
+        use crate::engine::engine::{LookAheadEngine, LookAheadOptions};
+        use crate::core::types::Novelty;
+        use std::collections::HashSet;
+        use std::sync::{Arc, Mutex};
+
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            // A cycle that counts, with the increment marked once.
+            .add(
+                Entry::new(1)
+                    .script(r#"SetVariableValue("count", Variable["count"] +once(1))"#)
+                    .links(&[1, 2, 4]),
+            )
+            // A threshold only a repeated increment could pass.
+            .add(Entry::new(2).guard(r#"Variable["count"] >= 2"#).links(&[3]))
+            .add(Entry::new(3))
+            // And a branch behind a flag the cycle never sets, which nothing can open.
+            .add(Entry::new(4).guard(r#"Variable["locked"]"#).links(&[5]))
+            .add(Entry::new(5))
+            .build();
+        let symbols = graph.symbols().clone();
+        let world = TestWorld::new().set_variable("locked", GuardValue::from_boolean(false));
+
+        let walked: Arc<Mutex<HashSet<DialogueNodeId>>> = Arc::default();
+        let sink = Arc::clone(&walked);
+        let engine = LookAheadEngine::new(LookAheadOptions {
+            state_sample_interval: 1,
+            counter_cap: CAP,
+            on_state_reached: Some(Box::new(move |id, _state, _count| {
+                sink.lock().expect("the sink").insert(id);
+            })),
+            ..Default::default()
+        });
+        let result = engine.evaluate(&graph, node(0), &world, |_| Novelty::SeenThisGame);
+        assert!(!result.budget_exhausted(), "the fixture should be exhaustible");
+        let walked = walked.lock().expect("the sink").clone();
+
+        let layout = DataLayout::for_graph(&graph, CAP, None, false);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let mut compiler = GuardCompiler::new(&vars).with_world(&world);
+        let seed = seed_of(&graph, &world, &vars);
+
+        for id in graph.nodes().map(|n| n.id).collect::<Vec<_>>() {
+            let backward = Backward::reaching(&graph, id, &mut compiler, &world, CAP as u32);
+            let says = backward.reachable_from(node(0), &seed);
+            if walked.contains(&id) {
+                assert!(says, "the crawl walked to {id} and the backward pass refused it");
+            }
+        }
+
+        // The locked branch is out of reach both ways, which is what stops this test
+        // passing vacuously by calling everything reachable.
+        assert!(!walked.contains(&node(5)));
+        let backward = Backward::reaching(&graph, node(5), &mut compiler, &world, CAP as u32);
+        assert!(
+            !backward.reachable_from(node(0), &seed),
+            "a branch behind a guard nothing sets should be out of reach",
+        );
+    }
+
     /// What the module claims about pruning, asserted rather than described.
     ///
     /// A slot written on the way to the target and never read by any guard must leave no
