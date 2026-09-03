@@ -8,6 +8,9 @@ pub mod engine;
 pub mod index;
 pub mod symbolic;
 
+/// What crosses between the plugin and this engine, and what it means.
+pub mod bridge;
+
 /// The C ABI the game plugin reaches this engine through.
 pub mod ffi;
 

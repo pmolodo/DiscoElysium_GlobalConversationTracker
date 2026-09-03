@@ -51,6 +51,8 @@ pub const GCT_INDEX_UNREADABLE: c_int = -3;
 pub const GCT_PANIC: c_int = -4;
 /// No such conversation in the index.
 pub const GCT_NO_SUCH_CONVERSATION: c_int = -5;
+/// An answer could not be turned into JSON. Should not happen; reported anyway.
+pub const GCT_SERIALISE_FAILED: c_int = -6;
 
 /// The engine, behind a handle the caller keeps.
 ///
@@ -203,6 +205,91 @@ pub unsafe extern "C" fn gct_entry_count(
     })
 }
 
+/// Every question a crawl over one conversation's group can ask the world.
+///
+/// Writes JSON to `out`, which the caller must free with [`gct_string_free`]. The plugin
+/// answers these keys and hands them back in a look-ahead request; see
+/// [`crate::bridge::Questions`] for why the engine names its own keys rather than letting
+/// the caller build them.
+///
+/// # Safety
+///
+/// `handle` must be an open engine and `out` a writable pointer to one string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn gct_questions(
+    handle: *mut Engine,
+    conversation: c_int,
+    out: *mut *mut c_char,
+) -> c_int {
+    guarded(|| {
+        let (Some(engine), false) = (unsafe { engine(handle) }, out.is_null()) else {
+            return GCT_BAD_HANDLE;
+        };
+
+        match crate::bridge::questions_for(&engine.index, conversation) {
+            Ok(questions) => write_json(&questions, out),
+            Err(_) => GCT_NO_SUCH_CONVERSATION,
+        }
+    })
+}
+
+/// Answers a look-ahead request.
+///
+/// `request` is JSON - see [`crate::bridge::LookAheadRequest`] - and the answer is written
+/// to `out` as JSON the caller must free with [`gct_string_free`].
+///
+/// A request that cannot be served at all comes back as a response carrying `error`
+/// rather than as a status code, so the caller has one thing to parse and one place to
+/// look. The status codes are for the things that happen BEFORE there is a response: a
+/// bad handle, unreadable JSON, a panic.
+///
+/// # Safety
+///
+/// `handle` must be an open engine, `request` a valid NUL-terminated UTF-8 string, and
+/// `out` a writable pointer to one string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn gct_look_ahead(
+    handle: *mut Engine,
+    request: *const c_char,
+    out: *mut *mut c_char,
+) -> c_int {
+    guarded(|| {
+        let (Some(engine), false) = (unsafe { engine(handle) }, out.is_null()) else {
+            return GCT_BAD_HANDLE;
+        };
+        let Some(text) = (unsafe { borrowed(request) }) else {
+            return GCT_BAD_ARGUMENT;
+        };
+
+        let parsed: crate::bridge::LookAheadRequest = match serde_json::from_str(text) {
+            Ok(parsed) => parsed,
+            Err(_) => return GCT_BAD_ARGUMENT,
+        };
+
+        let response = crate::bridge::answer(&engine.index, &parsed);
+        write_json(&response, out)
+    })
+}
+
+/// Serialises `value` into a string the caller owns.
+///
+/// A serialisation that fails is reported rather than unwrapped: these are plain data
+/// types and it should not happen, but "should not happen" is not a reason to take the
+/// game down.
+fn write_json<T: serde::Serialize>(value: &T, out: *mut *mut c_char) -> c_int {
+    let Ok(text) = serde_json::to_string(value) else {
+        return GCT_SERIALISE_FAILED;
+    };
+    // A NUL inside would truncate the string on the other side. Nothing here can produce
+    // one - JSON escapes it - but the conversion is the place that would find out.
+    let Ok(owned) = CString::new(text) else {
+        return GCT_SERIALISE_FAILED;
+    };
+
+    unsafe { *out = owned.into_raw() };
+    GCT_OK
+}
+
 /// Frees a string this library handed out.
 ///
 /// # Safety
@@ -278,5 +365,77 @@ mod tests {
     #[test]
     fn freeing_null_is_not_an_error() {
         unsafe { gct_string_free(ptr::null_mut()) };
+    }
+
+    #[test]
+    fn a_null_handle_is_refused_by_the_json_calls_too() {
+        let mut out: *mut c_char = ptr::null_mut();
+        assert_eq!(
+            unsafe { gct_questions(ptr::null_mut(), 631, &mut out) },
+            GCT_BAD_HANDLE,
+        );
+
+        let request = CString::new("{}").unwrap();
+        assert_eq!(
+            unsafe { gct_look_ahead(ptr::null_mut(), request.as_ptr(), &mut out) },
+            GCT_BAD_HANDLE,
+        );
+        assert!(out.is_null(), "a refused call must not hand out a string");
+    }
+
+    /// A request that is not JSON is refused, rather than panicking across the boundary.
+    ///
+    /// The caller here is a modded game, and the whole point of the status codes is that
+    /// its failures are legible instead of fatal.
+    #[test]
+    fn a_request_that_is_not_json_is_a_bad_argument() {
+        // No index needed: the handle is checked first, so this uses a real engine only
+        // where one is required. Here the argument is what is wrong.
+        let engine = Box::into_raw(Box::new(Engine { index: Index::new() }));
+        let request = CString::new("not json at all").unwrap();
+        let mut out: *mut c_char = ptr::null_mut();
+
+        let code = unsafe { gct_look_ahead(engine, request.as_ptr(), &mut out) };
+        assert_eq!(code, GCT_BAD_ARGUMENT);
+        assert!(out.is_null());
+
+        unsafe { gct_engine_close(engine) };
+    }
+
+    /// Asking about a conversation the index does not hold says so.
+    #[test]
+    fn questions_about_an_absent_conversation_are_refused() {
+        let engine = Box::into_raw(Box::new(Engine { index: Index::new() }));
+        let mut out: *mut c_char = ptr::null_mut();
+
+        let code = unsafe { gct_questions(engine, 631, &mut out) };
+        assert_eq!(code, GCT_NO_SUCH_CONVERSATION);
+
+        unsafe { gct_engine_close(engine) };
+    }
+
+    /// A string handed out is readable and freeable, which is the contract the caller
+    /// relies on for every JSON answer.
+    #[test]
+    fn a_json_answer_round_trips_and_frees() {
+        let engine = Box::into_raw(Box::new(Engine { index: Index::new() }));
+        // An empty group answers nothing, but the request is well-formed, so the response
+        // is a real one - which is what this is checking the handling of.
+        let request = CString::new(
+            r#"{"conversation":1,"starts":[],"world":{"money":0,"day_minutes":0,
+               "day_counter":1,"clock_locked":false}}"#,
+        )
+        .unwrap();
+        let mut out: *mut c_char = ptr::null_mut();
+
+        let code = unsafe { gct_look_ahead(engine, request.as_ptr(), &mut out) };
+        assert_eq!(code, GCT_OK);
+        assert!(!out.is_null());
+
+        let text = unsafe { CStr::from_ptr(out) }.to_str().unwrap().to_string();
+        assert!(text.contains("\"answers\""), "got {text}");
+
+        unsafe { gct_string_free(out) };
+        unsafe { gct_engine_close(engine) };
     }
 }
