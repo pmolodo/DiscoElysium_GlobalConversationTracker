@@ -17,13 +17,6 @@
   <ItemGroup>
     <ProjectReference
       Include="..\GlobalConversationTracker.LookAhead\GlobalConversationTracker.LookAhead.csproj" />
-    <!--
-      The offline crawler, so the suites that need no game can be checked here rather
-      than in the harness. GameAutomation.Tests, where the in-game suites are declared,
-      is net6.0-windows and cannot reference this net10.0 tool.
-    -->
-    <ProjectReference
-      Include="..\..\tools\LookAheadOffline\LookAheadOffline.csproj" />
   </ItemGroup>
 
 </Project>

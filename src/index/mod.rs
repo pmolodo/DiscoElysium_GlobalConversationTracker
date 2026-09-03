@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 //! Reading the extracted conversation index, and building a graph out of it.
 //!
-//! The counterpart of the C# `tools/LookAheadOffline/ConversationIndex.cs`, over the same
-//! file: `conversation_index.jsonl`, written by
+//! The only reader of `conversation_index.jsonl`, written by
 //! `dotnet run --project tools/DialogueExtract -- conversation-index`. One JSON object
 //! per line, one conversation each.
 //!

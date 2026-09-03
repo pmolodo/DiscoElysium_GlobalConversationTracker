@@ -102,7 +102,7 @@
       YAML document of ~170 MB, streamed at fixed indentation rather than
       parsed - plus the record model for the conversation index it writes.
       A library rather than part of DialogueExtract next door, because
-      LookAheadOffline reads that index back and every other extraction from
+      the look-ahead reads that index back and every other extraction from
       the same asset starts from the same scan.
     -->
         <Project Path="tools/DialogueAsset/DialogueAsset.csproj" />
@@ -121,7 +121,6 @@
         <Project Path="tools/GlobalStateCheck.Tests/GlobalStateCheck.Tests.csproj" />
         <Project Path="tools/GlobalStateCheck/GlobalStateCheck.csproj" />
         <Project Path="tools/GlobalStateConvert/GlobalStateConvert.csproj" />
-        <Project Path="tools/LookAheadOffline/LookAheadOffline.csproj" />
     </Folder>
 
 </Solution>

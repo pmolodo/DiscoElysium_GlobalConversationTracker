@@ -3,10 +3,11 @@
   <PropertyGroup>
     <!--
       A library, not a tool: the .asset reader is shared by the DialogueExtract
-      CLI, by anything else that has to read the 170 MB Dialogue System database,
-      and by LookAheadOffline, which reads the index this produces. Nothing here
-      touches the game or BepInEx - it reads a text file - so it targets whatever
-      is convenient rather than the game's runtime.
+      CLI and by anything else that has to read the 170 MB Dialogue System
+      database. The index it produces is read back by the Rust engine, which is
+      where the look-ahead lives. Nothing here touches the game or BepInEx - it
+      reads a text file - so it targets whatever is convenient rather than the
+      game's runtime.
     -->
     <TargetFramework>net10.0</TargetFramework>
     <LangVersion>latest</LangVersion>

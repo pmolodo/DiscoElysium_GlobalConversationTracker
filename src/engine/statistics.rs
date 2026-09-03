@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 //! What a run of crawls cost, accumulated.
 //!
-//! The counterpart of the C# `LookAheadStatistics`, with three things folded together
-//! that are separate there - see `docs/rust-lessons-for-csharp.md` entries 5 to 7.
+//! Folds together three things the C# `LookAheadStatistics` kept apart - the tally, the
+//! buckets and the rendering - because nothing ever wanted one without the others.
 
 use std::collections::HashMap;
 
