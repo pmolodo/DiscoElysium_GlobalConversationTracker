@@ -1,0 +1,319 @@
+// SPDX-License-Identifier: MIT
+//! What a node's actions do to a whole SET of data states at once.
+//!
+//! The other half of symbolic reachability. A compiled guard says which states may take
+//! an edge; this says what they become once they have.
+//!
+//! ## Image, not transition relation
+//!
+//! The textbook way to do this is to build a relation over primed and unprimed copies of
+//! every variable and take the relational product. That doubles the variable count and
+//! makes the order of primed against unprimed variables a design problem of its own.
+//!
+//! Not needed here. A dialogue action assigns a slot or increments it, and both are
+//! FUNCTIONS of the current state rather than relations - one input state gives exactly
+//! one output state. So the image can be computed directly: forget what the slot held by
+//! quantifying its variables away, then assert the new value.
+//!
+//! ## Increments are done by cases, and can afford to be
+//!
+//! `slot := min(slot + amount, cap)` is not expressible as a single conjunction, so it is
+//! split over the slot's possible values - at most seventeen of them, because the counter
+//! cap is what keeps a counter in a loop finite and it is 16 by default. A case split
+//! that small is cheaper than a relation, and it keeps the whole thing in one variable
+//! space.
+
+use oxidd::BooleanFunction;
+use oxidd::bdd::BDDFunction;
+use oxidd::BooleanFunctionQuant;
+
+use crate::core::action::{DialogueAction, DialogueActionKind};
+use crate::symbolic::vars::DataVars;
+
+/// Applies actions to sets of data states.
+pub struct ActionImage<'a> {
+    vars: &'a DataVars<'a>,
+    counter_cap: u32,
+    /// Actions that changed nothing because this layout does not carry what they touch.
+    ignored: usize,
+}
+
+impl<'a> ActionImage<'a> {
+    pub fn new(vars: &'a DataVars<'a>, counter_cap: u32) -> Self {
+        Self { vars, counter_cap, ignored: 0 }
+    }
+
+    /// How many actions were skipped because the layout does not carry their subject.
+    ///
+    /// Money and the clock when they are not laid out, and anything the action parser
+    /// could not model. Worth counting rather than silently dropping: an action that does
+    /// not happen is how a symbolic state quietly stops matching the crawl's.
+    pub fn ignored(&self) -> usize {
+        self.ignored
+    }
+
+    /// The states reachable by entering a node whose actions are `actions`, from `states`.
+    ///
+    /// `once_already_fired` is the set of states in which this node's one-time effects
+    /// have already happened; actions marked `once` are applied only outside it. Pass the
+    /// empty set when the node has no once slot.
+    pub fn apply(
+        &mut self,
+        states: &BDDFunction,
+        actions: &[DialogueAction],
+        once_already_fired: &BDDFunction,
+    ) -> BDDFunction {
+        let mut current = states.clone();
+        for action in actions {
+            current = if action.is_once() {
+                // Only the states that have not fired it yet are changed; the rest carry
+                // through untouched. Splitting the set is what keeps a once action from
+                // firing twice round a loop.
+                let fresh = current.and(&once_already_fired.not().expect("negation"))
+                    .expect("and");
+                let spent = current.and(once_already_fired).expect("and");
+                self.apply_one(&fresh, action).or(&spent).expect("or")
+            } else {
+                self.apply_one(&current, action)
+            };
+        }
+
+        current
+    }
+
+    /// One action applied to a set.
+    fn apply_one(&mut self, states: &BDDFunction, action: &DialogueAction) -> BDDFunction {
+        if !states.satisfiable() {
+            return states.clone();
+        }
+
+        let slot = action.slot();
+        let Ok(slot) = usize::try_from(slot) else {
+            // Money, the clock, and anything unmodelled: no slot to write.
+            self.ignored += 1;
+            return states.clone();
+        };
+
+        match action.kind() {
+            DialogueActionKind::Assign => {
+                let value = action.value().max(0) as u32;
+                self.assign(states, slot, value)
+            }
+            DialogueActionKind::Increment => {
+                self.increment(states, slot, action.value())
+            }
+            // GainMoney, LoseMoney, PassTime and Unmodelled write no slot. Money and the
+            // clock are deliberately outside this layout - see DataLayout and de-sze.10.
+            _ => {
+                self.ignored += 1;
+                states.clone()
+            }
+        }
+    }
+
+    /// `slot := value`, over a whole set.
+    ///
+    /// Forget what the slot held, then assert the new value. Quantifying first is what
+    /// makes this an assignment rather than a filter: without it the result would be the
+    /// states that ALREADY held the value.
+    pub fn assign(&mut self, states: &BDDFunction, slot: usize, value: u32) -> BDDFunction {
+        let (Some(cube), Some(equals)) =
+            (self.vars.slot_cube(slot), self.vars.slot_equals(slot, value))
+        else {
+            self.ignored += 1;
+            return states.clone();
+        };
+
+        states.exists(&cube).expect("exists").and(&equals).expect("and")
+    }
+
+    /// `slot := min(slot + amount, cap)`, over a whole set.
+    pub fn increment(&mut self, states: &BDDFunction, slot: usize, amount: i32) -> BDDFunction {
+        let Some(ceiling) = self.vars.slot_ceiling(slot) else {
+            self.ignored += 1;
+            return states.clone();
+        };
+
+        // The cap the counter saturates at, and never above what the slot can hold - a
+        // value the slot is too narrow for would silently become a different value.
+        let cap = self.counter_cap.min(ceiling);
+        let cube = self.vars.slot_cube(slot).expect("a slot in the layout has a cube");
+        let mut result = self.vars.bottom();
+
+        for value in 0..=ceiling {
+            let holding = self.vars.slot_equals(slot, value).expect("in the layout");
+            let matching = states.and(&holding).expect("and");
+            if !matching.satisfiable() {
+                continue;
+            }
+
+            let raised = (value as i64 + amount as i64).clamp(0, cap as i64) as u32;
+            let becomes = self.vars.slot_equals(slot, raised).expect("in the layout");
+            let moved = matching.exists(&cube).expect("exists").and(&becomes).expect("and");
+            result = result.or(&moved).expect("or");
+        }
+
+        result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::state::StateSymbols;
+    use crate::symbolic::data_layout::DataLayout;
+    use crate::symbolic::vars::tests::fixture;
+
+    const NODES: usize = 1 << 16;
+    const CACHE: usize = 1 << 14;
+    const CAP: u32 = 16;
+
+    /// Reads back which values of `slot` a set allows, by trying them all.
+    fn values_of(
+        vars: &DataVars,
+        set: &BDDFunction,
+        slot: usize,
+    ) -> Vec<u32> {
+        let ceiling = vars.slot_ceiling(slot).unwrap();
+        (0..=ceiling)
+            .filter(|v| {
+                let holding = vars.slot_equals(slot, *v).unwrap();
+                set.and(&holding).unwrap().satisfiable()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_assignment_replaces_whatever_was_there() {
+        let (graph, symbols) = fixture(&["counter"], Some("counter"));
+        let layout = DataLayout::for_graph(&graph, CAP as i32, None, false);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let slot = symbols.find("counter").unwrap();
+        let mut image = ActionImage::new(&vars, CAP);
+
+        // Every state at all, so the slot could be anything.
+        let everything = vars.top();
+        assert!(values_of(&vars, &everything, slot).len() > 1);
+
+        let assigned = image.assign(&everything, slot, 3);
+        assert_eq!(values_of(&vars, &assigned, slot), vec![3]);
+    }
+
+    /// The mistake this is written to avoid: filtering instead of assigning.
+    #[test]
+    fn an_assignment_does_not_merely_select_states_already_holding_the_value() {
+        let (graph, symbols) = fixture(&["counter"], Some("counter"));
+        let layout = DataLayout::for_graph(&graph, CAP as i32, None, false);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let slot = symbols.find("counter").unwrap();
+        let mut image = ActionImage::new(&vars, CAP);
+
+        // A set holding only 1. Assigning 3 must give 3, not nothing.
+        let only_one = vars.slot_equals(slot, 1).unwrap();
+        let assigned = image.assign(&only_one, slot, 3);
+
+        assert!(assigned.satisfiable());
+        assert_eq!(values_of(&vars, &assigned, slot), vec![3]);
+    }
+
+    #[test]
+    fn an_increment_moves_every_value_in_the_set() {
+        let (graph, symbols) = fixture(&["counter"], Some("counter"));
+        let layout = DataLayout::for_graph(&graph, CAP as i32, None, false);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let slot = symbols.find("counter").unwrap();
+        let mut image = ActionImage::new(&vars, CAP);
+
+        // A set holding 1 or 4 - two values at once, which is the point of doing this
+        // over sets rather than states.
+        let one = vars.slot_equals(slot, 1).unwrap();
+        let four = vars.slot_equals(slot, 4).unwrap();
+        let both = one.or(&four).unwrap();
+
+        let raised = image.increment(&both, slot, 1);
+        assert_eq!(values_of(&vars, &raised, slot), vec![2, 5]);
+    }
+
+    #[test]
+    fn an_increment_saturates_at_the_cap() {
+        let (graph, symbols) = fixture(&["counter"], Some("counter"));
+        let layout = DataLayout::for_graph(&graph, CAP as i32, None, false);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let slot = symbols.find("counter").unwrap();
+        let mut image = ActionImage::new(&vars, CAP);
+
+        // Five bits hold up to 31, but the cap is 16.
+        assert_eq!(vars.slot_ceiling(slot), Some(31));
+        let at_cap = vars.slot_equals(slot, 16).unwrap();
+        let raised = image.increment(&at_cap, slot, 1);
+
+        assert_eq!(values_of(&vars, &raised, slot), vec![16]);
+    }
+
+    /// The cap is what makes a counter in a dialogue loop terminate.
+    #[test]
+    fn repeated_increments_reach_a_fixed_point() {
+        let (graph, symbols) = fixture(&["counter"], Some("counter"));
+        let layout = DataLayout::for_graph(&graph, CAP as i32, None, false);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let slot = symbols.find("counter").unwrap();
+        let mut image = ActionImage::new(&vars, CAP);
+
+        let mut set = vars.slot_equals(slot, 0).unwrap();
+        for _ in 0..40 {
+            set = image.increment(&set, slot, 1);
+        }
+
+        assert_eq!(values_of(&vars, &set, slot), vec![16]);
+    }
+
+    #[test]
+    fn a_once_action_changes_only_the_states_that_have_not_fired_it() {
+        let mut symbols = StateSymbols::new();
+        let counter = symbols.variable("counter");
+        let fired = symbols.variable("fired");
+        let actions = vec![DialogueAction::increment(counter, 1, true, "s".to_string())];
+        let node = crate::graph::node::LookAheadNode::new(
+            crate::core::types::DialogueNodeId::new(1, 0), false,
+            crate::core::types::DialogueCheckKind::None,
+            crate::core::guard::GuardExpression::always_true(), actions.clone(), vec![],
+            0, false, false, -1, -1, false, -1,
+        );
+        let snapshot = symbols.clone();
+        let graph = crate::graph::graph::LookAheadGraph::new(vec![node], symbols).unwrap();
+        let layout = DataLayout::for_graph(&graph, CAP as i32, None, false);
+        let vars = DataVars::new(&layout, &snapshot, NODES, CACHE);
+        let mut image = ActionImage::new(&vars, CAP);
+
+        let spent = vars.slot_is_set(fired).unwrap();
+        let counter_at_zero = vars.slot_equals(counter, 0).unwrap();
+
+        // Not yet fired: the counter moves.
+        let fresh = counter_at_zero.and(&spent.not().unwrap()).unwrap();
+        let after_fresh = image.apply(&fresh, &actions, &spent);
+        assert_eq!(values_of(&vars, &after_fresh, counter), vec![1]);
+
+        // Already fired: it does not.
+        let used = counter_at_zero.and(&spent).unwrap();
+        let after_used = image.apply(&used, &actions, &spent);
+        assert_eq!(values_of(&vars, &after_used, counter), vec![0]);
+    }
+
+    #[test]
+    fn an_action_the_layout_cannot_carry_is_counted_rather_than_dropped_silently() {
+        let (graph, symbols) = fixture(&["a"], None);
+        let layout = DataLayout::for_graph(&graph, CAP as i32, None, false);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let mut image = ActionImage::new(&vars, CAP);
+
+        let money = vec![DialogueAction::money(true, 50, false, "GainMoney".to_string())];
+        let before = vars.top();
+        let after = image.apply(&before, &money, &vars.bottom());
+
+        assert_eq!(image.ignored(), 1);
+        // Unchanged, because this layout carries no money: nothing in the result lies
+        // outside what went in, and nothing that went in was lost.
+        assert!(!after.and(&before.not().unwrap()).unwrap().satisfiable());
+        assert!(!before.and(&after.not().unwrap()).unwrap().satisfiable());
+    }
+}

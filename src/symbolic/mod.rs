@@ -20,8 +20,10 @@
 //! encoding. The current layout - entry, then the moving slots, then money, then the
 //! clock - is a starting guess and is meant to be varied.
 
+pub mod action_image;
 pub mod data_layout;
 pub mod guard_formula;
+pub mod vars;
 
 use std::collections::HashMap;
 
