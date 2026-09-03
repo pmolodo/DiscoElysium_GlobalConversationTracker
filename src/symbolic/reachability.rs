@@ -102,6 +102,19 @@ pub struct Budget {
     #[allow(clippy::type_complexity)]
     pub on_progress: Option<Box<dyn Fn(usize, usize, usize, usize)>>,
     pub report_every: usize,
+    /// Stop as soon as this says yes about an entry the search has just reached.
+    ///
+    /// THE MOST IMPORTANT KNOB HERE, and the one the first measurement lacked. The
+    /// look-ahead never wants the reachable data states; it wants to know whether an
+    /// unseen entry can be reached, and `LookAheadEngine::evaluate` already returns the
+    /// instant it sees one worth the maximum score. Computing a fixed point over the data
+    /// answers a far harder question that nobody asked - on conversation 368 the reachable
+    /// ENTRIES stopped changing at fifteen thousand steps while the diagrams went on
+    /// doubling, so everything after that was wasted.
+    ///
+    /// Called once per entry, when it is first reached.
+    #[allow(clippy::type_complexity)]
+    pub halt_on: Option<Box<dyn Fn(DialogueNodeId) -> bool>>,
 }
 
 impl Default for Budget {
@@ -111,6 +124,7 @@ impl Default for Budget {
             time: std::time::Duration::from_secs(120),
             on_progress: None,
             report_every: 20_000,
+            halt_on: None,
         }
     }
 }
@@ -121,8 +135,16 @@ pub struct ReachabilityStats {
     /// Whether the search finished, or stopped because it ran out of budget.
     ///
     /// The most important field here. Everything else describes a set; this says whether
-    /// the set is the whole answer or a lower bound on it.
+    /// the set is the whole answer or a lower bound on it. A search that HALTED is
+    /// complete for the question it was asked even though this is false - see
+    /// [`Self::halted_at`].
     pub reached_fixed_point: bool,
+    /// The entry whose arrival stopped the search, if the halt condition fired.
+    ///
+    /// Its presence is a positive answer, and the strongest kind: the entry is reachable
+    /// and here is the one that proves it. A search that halts has done no less work than
+    /// the question needed, however far short of a fixed point it stopped.
+    pub halted_at: Option<DialogueNodeId>,
     /// How long it ran.
     pub elapsed: std::time::Duration,
     /// How many times an entry was taken off the queue.
@@ -211,13 +233,24 @@ impl<'a> Reachability<'a> {
         this.sets.insert(start, entered.clone());
         frontier.insert(start, entered);
 
+        // The start node counts as reached, so a halt condition it satisfies must fire
+        // here rather than being missed for having arrived before the loop.
+        if let Some(halt) = &budget.halt_on {
+            if halt(start) {
+                this.stats.halted_at = Some(start);
+                this.stats.actions_ignored = image.ignored();
+                this.finish();
+                return this;
+            }
+        }
+
         let mut queue = VecDeque::new();
         queue.push_back(start);
 
         let began = std::time::Instant::now();
         let mut ran_out = false;
 
-        while let Some(id) = queue.pop_front() {
+        'search: while let Some(id) = queue.pop_front() {
             // Take the pending states and leave nothing behind. An entry can be queued
             // more than once before it is reached, and the second visit has nothing to do.
             let delta = match frontier.insert(id, vars.bottom()) {
@@ -266,6 +299,10 @@ impl<'a> Reachability<'a> {
                 }
 
                 this.stats.widenings += 1;
+                // Newly reached, as opposed to newly widened: the halt condition is about
+                // whether an entry can be reached at all, so it is asked once, the first
+                // time the entry has any states.
+                let first_sighting = !known.satisfiable();
                 this.sets.insert(child_id, known.or(&fresh).expect("union"));
 
                 let pending = frontier
@@ -274,6 +311,15 @@ impl<'a> Reachability<'a> {
                     .unwrap_or_else(|| vars.bottom());
                 frontier.insert(child_id, pending.or(&fresh).expect("union"));
                 queue.push_back(child_id);
+
+                if first_sighting {
+                    if let Some(halt) = &budget.halt_on {
+                        if halt(child_id) {
+                            this.stats.halted_at = Some(child_id);
+                            break 'search;
+                        }
+                    }
+                }
             }
         }
 

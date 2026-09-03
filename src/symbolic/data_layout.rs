@@ -23,7 +23,10 @@
 //! between about 350 variables and about 1,700.
 
 use crate::core::action::DialogueActionKind;
-use crate::core::state::{StateSymbols, ONCE_PREFIX, SEEN_PREFIX};
+use std::collections::HashSet;
+
+use crate::core::guard::GuardExpression;
+use crate::core::state::{StateSymbols, ITEM_PREFIX, ONCE_PREFIX, SEEN_PREFIX, TASK_PREFIX};
 use crate::graph::graph::LookAheadGraph;
 
 /// Minutes in a day; the clock is wrapped into `0..MINUTES_IN_DAY`.
@@ -129,32 +132,66 @@ impl DataLayout {
         }
     }
 
+    /// The same layout with every slot nothing in the group READS dropped.
+    ///
+    /// ## This one is exact, not an approximation
+    ///
+    /// A conversation group is closed under links, so a crawl over it only ever evaluates
+    /// guards belonging to it. A slot that no guard in the group reads therefore cannot
+    /// change which entries are reachable, whatever any action writes to it - it is
+    /// write-only for the length of the crawl. Dropping it removes a variable and changes
+    /// no answer at all, which is a different and better thing than
+    /// [`Self::without_visit_flags`], where the saving is paid for in precision.
+    ///
+    /// ## How much it removes
+    ///
+    /// A great deal, because the content is full of bookkeeping the dialogue never reads
+    /// back. Conversation 631's group writes 45 `XP.` accomplishment latches and reads
+    /// two of them; the other 43 are variables the rest of the game cares about and this
+    /// crawl cannot.
+    ///
+    /// ## What must be kept even though no guard names it
+    ///
+    /// Three kinds of slot are read by the ENGINE rather than by a guard, and dropping
+    /// them would change behaviour:
+    ///
+    /// - `seen:`, which closes a `Fake` or non-boolean `KimSwitch` entry;
+    /// - `once:`, which stops a one-time effect firing twice and a once-cost being paid
+    ///   twice;
+    /// - a rolled check's pass and fail flags, which decide whether it can be retried.
+    ///
+    /// Items and tasks are kept when a guard asks about them through `CheckItem` or
+    /// `IsTaskActive`, which name their subject as a string rather than as a variable -
+    /// so `reads` must be given those names too, spelled the way the symbol table spells
+    /// them.
+    pub fn keeping_only_read(mut self, symbols: &StateSymbols, reads: &HashSet<String>) -> Self {
+        for slot in 0..self.slots.len() {
+            let Some(name) = symbols.name_of(slot) else { continue };
+            // The engine's own bookkeeping, which no guard mentions and every crawl needs.
+            if name.starts_with(SEEN_PREFIX) || name.starts_with(ONCE_PREFIX) {
+                continue;
+            }
+            if !reads.contains(name) {
+                self.slots[slot].1 = 0;
+            }
+        }
+
+        self.renumber();
+        self
+    }
+
     /// The same layout with the per-entry visit flags dropped.
     ///
-    /// ## Why drop them
+    /// Unlike [`Self::keeping_only_read`] this one is an APPROXIMATION, and it was
+    /// measured and found not to pay: dropping the flags moved conversation 368's diagram
+    /// from 13,634,773 nodes to 13,583,773, about five per cent. Kept because the
+    /// question is a reasonable one to ask again and the answer should stay reproducible.
     ///
-    /// A `seen:` slot exists to stop the EXPLICIT crawl walking the same entry forever,
-    /// and a `once:` slot to stop a one-time effect firing twice round a loop. A fixed
-    /// point needs neither: it terminates because every set only grows and the lattice is
-    /// finite, not because anything is marked.
-    ///
-    /// What they cost is enormous. There is one bit per entry that closes once seen, so
-    /// the reachable set becomes a family of SUBSETS of entries reached by different
-    /// paths - and a path-dependent family of subsets is close to the worst case a
-    /// decision diagram can be asked to hold. Conversation 368's group is 393 variables
-    /// and most of them are these; its reachable set passed 23 million diagram nodes and
-    /// was still doubling every five thousand steps when the measurement was killed,
-    /// while the set of reachable ENTRIES had stopped changing ten thousand steps
-    /// earlier.
-    ///
-    /// ## What it costs to drop them
-    ///
-    /// Precision, in the safe direction. Without a seen flag a `Fake` or `KimSwitch`
-    /// entry no longer closes, so the search may reach entries beyond one that the real
-    /// crawl would have shut; without a once flag a one-time action fires every time,
-    /// which drives its counter to the cap rather than leaving it where the crawl would.
-    /// Both make the reachable set BIGGER, never smaller, so no reachable entry is lost -
-    /// and losing one is the only error that matters.
+    /// What it costs, when it is used. A `seen:` slot closes a `Fake` or non-boolean
+    /// `KimSwitch` entry and a `once:` slot stops a one-time effect firing twice; without
+    /// them such an entry never closes and a one-time action fires every time round a
+    /// loop, driving its counter to the cap. Both make the reachable set BIGGER, never
+    /// smaller, so no reachable entry is lost - which is the only error that matters.
     pub fn without_visit_flags(mut self, symbols: &StateSymbols) -> Self {
         for slot in 0..self.slots.len() {
             let is_flag = symbols.name_of(slot).is_some_and(|name: &str| {
@@ -165,9 +202,15 @@ impl DataLayout {
             }
         }
 
-        // Renumber, so the dropped ones cost no variables rather than merely going
-        // unread. Leaving gaps would keep the diagram's variable count - and its depth -
-        // exactly where it was, which is the thing being attacked.
+        self.renumber();
+        self
+    }
+
+    /// Closes the gaps a dropped slot leaves.
+    ///
+    /// Without this a dropped slot costs no reads but still costs its variable numbers,
+    /// so the diagram keeps exactly the depth the dropping was meant to remove.
+    fn renumber(&mut self) {
         let mut next = 0u32;
         for (base, bits) in &mut self.slots {
             *base = next;
@@ -185,7 +228,6 @@ impl DataLayout {
         }
 
         self.total = next;
-        self
     }
 
     /// Whether a slot is a single bit, which is the common case.
@@ -201,6 +243,73 @@ impl DataLayout {
     /// The variable run for the clock, if it is tracked.
     pub fn clock(&self) -> Option<(u32, u8)> {
         self.clock
+    }
+
+    /// Every slot name something in `graph` reads, for [`Self::keeping_only_read`].
+    ///
+    /// Guards read a variable by name, and an item or a task through `CheckItem` or
+    /// `IsTaskActive`, whose subject is a string argument rather than a variable - so
+    /// those are collected under the prefixes the symbol table stores them with.
+    ///
+    /// The rolled checks' pass and fail flags are added too. Nothing NAMES them, but
+    /// `LookAheadEngine::enter_rolled` reads them to decide whether a check can be
+    /// attempted, so a layout without them would let a check be retried for ever.
+    pub fn read_by(graph: &LookAheadGraph) -> HashSet<String> {
+        let mut names = HashSet::new();
+        let symbols = graph.symbols();
+
+        for node in graph.nodes() {
+            Self::read_by_guard(&node.guard, &mut names);
+
+            for slot in [node.flag_slot, node.failed_flag_slot] {
+                if let Ok(slot) = usize::try_from(slot) {
+                    if let Some(name) = symbols.name_of(slot) {
+                        names.insert(name.to_string());
+                    }
+                }
+            }
+        }
+
+        names
+    }
+
+    /// The names one guard reads, including the subjects of the queries answered from
+    /// crawl state.
+    fn read_by_guard(guard: &GuardExpression, names: &mut HashSet<String>) {
+        match guard {
+            GuardExpression::Variable(name) => {
+                names.insert(name.clone());
+            }
+            GuardExpression::Not(inner) => Self::read_by_guard(inner, names),
+            GuardExpression::And(a, b)
+            | GuardExpression::Or(a, b)
+            | GuardExpression::Comparison(_, a, b) => {
+                Self::read_by_guard(a, names);
+                Self::read_by_guard(b, names);
+            }
+            GuardExpression::Call(function, args) => {
+                // The two queries `BoundContext::query` answers from a slot. Their subject
+                // is a literal string, and the slot it corresponds to carries a prefix.
+                let prefix = match function.as_str() {
+                    "CheckItem" => Some(ITEM_PREFIX),
+                    "IsTaskActive" => Some(TASK_PREFIX),
+                    // FlagSet(name) is Variable[name] written another way.
+                    "FlagSet" => Some(""),
+                    _ => None,
+                };
+
+                if let Some(prefix) = prefix {
+                    if let [GuardExpression::Literal(value)] = &args[..] {
+                        names.insert(format!("{prefix}{}", value.text()));
+                    }
+                }
+
+                for arg in args {
+                    Self::read_by_guard(arg, names);
+                }
+            }
+            GuardExpression::Literal(_) => {}
+        }
     }
 
     /// Whether any action in the group advances the clock.

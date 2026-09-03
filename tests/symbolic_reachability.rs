@@ -158,6 +158,119 @@ fn the_symbolic_search_reaches_what_the_explicit_crawl_reaches() {
     assert!(compared > 0, "no conversation could be compared both ways");
 }
 
+/// The shape that actually costs: everything seen but one entry - can it be reached?
+///
+/// This is the question the look-ahead asks and the one the explicit crawl cannot answer
+/// on the big groups. It burns its 200,000-state budget in about half a second and
+/// returns nothing useful, because with nothing novel to find it has no reason to stop
+/// early and simply enumerates until it is cut off.
+///
+/// Against a fresh save the question is trivial - everything is unseen, so the first
+/// entry reached answers it - which is why the measurement has to be built the other way
+/// round. Here one entry deep in the group is the only unseen one, and both engines are
+/// asked whether it is reachable.
+///
+/// A slow answer beats a budget exhaustion that returns nothing, so the bar the symbolic
+/// side has to clear is low: ANSWER AT ALL.
+#[test]
+#[ignore = "a long measurement, not a test: run it with --ignored --release"]
+fn finding_one_unseen_entry_in_a_group_that_is_otherwise_seen() {
+    let Some(path) = common::conversation_index() else { return };
+    let index = read_index(&path).expect("the index reads");
+    let world = common::measurement_save();
+
+    println!(
+        "{:>6} {:>8} {:>7} {:>10} {:>9} {:>9} {:>8}",
+        "conv", "entries", "vars", "engine", "ms", "symbolic", "ms"
+    );
+
+    for conversation in [368, 631, 14, 28, 1030] {
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        let start = DialogueNodeId::new(conversation, 0);
+        if graph.get(start).is_none() {
+            continue;
+        }
+
+        // The quarry: the LAST entry the builder produced, which is as far from the start
+        // as the group's ordering gets. Picking the first would let either engine trip
+        // over it immediately and measure nothing.
+        let Some(quarry) = graph.nodes().map(|n| n.id).last() else { continue };
+        let novelty = move |id: DialogueNodeId| {
+            if id == quarry { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
+        };
+
+        // The explicit crawl, asked exactly this.
+        let began = std::time::Instant::now();
+        let explicit_answer = LookAheadEngine::new(LookAheadOptions {
+            state_budget: 200_000,
+            time_budget: std::time::Duration::from_secs(60),
+            counter_cap: COUNTER_CAP,
+            ..Default::default()
+        })
+        .evaluate(&graph, start, &world, novelty);
+        let explicit_ms = began.elapsed().as_millis();
+
+        let symbols = graph.symbols().clone();
+        let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false)
+            .keeping_only_read(&symbols, &DataLayout::read_by(&graph));
+        let vars = DataVars::new(&layout, &symbols, NODE_CAPACITY, CACHE_CAPACITY);
+        let mut compiler = GuardCompiler::new(&vars)
+            .with_world(&world)
+            .with_constant_clock(DataLayout::group_passes_time(&graph));
+
+        let seed = lookahead_engine::symbolic::reachability::seed_of(&graph, &world, &vars);
+        let budget = Budget {
+            steps: 500_000,
+            time: std::time::Duration::from_secs(60),
+            report_every: 20_000,
+            on_progress: None,
+            // Stop the moment the quarry is reached - the whole point of the exercise.
+            halt_on: Some(Box::new(move |id| id == quarry)),
+        };
+
+        let found = Reachability::explore_within(
+            &graph, start, &seed, &mut compiler, &world, COUNTER_CAP as u32, &budget,
+        );
+        let stats = found.stats();
+
+        let explicit_says = if explicit_answer.best == Novelty::UnseenAnyGame {
+            "FOUND"
+        } else if explicit_answer.budget_exhausted() {
+            "gave up"
+        } else {
+            "not there"
+        };
+        let symbolic_says = if stats.halted_at.is_some() {
+            "FOUND"
+        } else if stats.reached_fixed_point {
+            "not there"
+        } else {
+            "gave up"
+        };
+
+        println!(
+            "{conversation:>6} {:>8} {:>7} {explicit_says:>10} {explicit_ms:>9} \
+             {symbolic_says:>9} {:>8}",
+            graph.count(),
+            layout.total_vars(),
+            stats.elapsed.as_millis(),
+        );
+
+        // Both engines answering the same question must not contradict each other. The
+        // symbolic side may say FOUND where the crawl gave up - that is the whole hope -
+        // but if the crawl found it and the symbolic search says it is not there, the
+        // symbolic search has missed a reachable entry, which is the one unforgivable
+        // error.
+        if explicit_says == "FOUND" {
+            assert!(
+                symbolic_says != "not there",
+                "conversation {conversation}: the crawl reached {quarry} and the symbolic \
+                 search reported it unreachable",
+            );
+        }
+    }
+}
+
 /// What does the COMPLETE reachable set cost, for the conversations that drive the cost?
 ///
 /// The question de-sze was opened to answer and the one that could not be asked before.
@@ -196,16 +309,16 @@ fn what_the_expensive_conversations_cost() {
         }
 
         let symbols = graph.symbols().clone();
-        let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
-        // The experiment: the per-entry visit flags are one bit each and there are
-        // hundreds of them, and the reachable set of flag-subsets is exactly the shape a
-        // decision diagram holds worst. Dropping them over-approximates, which is the
-        // safe direction, and the two rows say what it buys.
-        let layout = if std::env::var("KEEP_VISIT_FLAGS").is_ok() {
-            layout
-        } else {
-            layout.without_visit_flags(&symbols)
-        };
+        let full = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
+        // Drop every slot no guard in the group reads. Exact, not an approximation: a
+        // group is closed under links, so a slot nothing in it reads cannot change which
+        // entries are reachable however much the actions write to it.
+        let layout = full.clone().keeping_only_read(&symbols, &DataLayout::read_by(&graph));
+        println!(
+            "         {conversation}: {} variables of {} carry anything a guard reads",
+            layout.total_vars(),
+            full.total_vars(),
+        );
         let vars = DataVars::new(&layout, &symbols, NODE_CAPACITY, CACHE_CAPACITY);
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(&world)
@@ -222,6 +335,8 @@ fn what_the_expensive_conversations_cost() {
                      {held} diagram nodes, largest set {largest}"
                 );
             })),
+            // This measurement wants the whole fixed point, so it stops for nothing.
+            halt_on: None,
         };
 
         let found = Reachability::explore_within(
