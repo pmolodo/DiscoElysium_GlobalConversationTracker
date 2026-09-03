@@ -133,6 +133,11 @@ namespace GlobalConversationTracker
         {
             Log.LogMessage($"{PluginName} v{PluginVersion} loaded.");
 
+            // Whether the native look-ahead can be reached from inside the game is the one
+            // thing no test outside it can answer - see de-i5xj. Reported here and never
+            // fatal: a bridge that is not there costs a capability, not a playthrough.
+            NativeEngineCheck.Report(Log);
+
             string saveGameDirectory = SaveGameDirectory.Resolve(Log);
 
             // A redirected global state is the sort of thing that must never happen

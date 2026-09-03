@@ -56,7 +56,42 @@
         <Compile Include="..\GlobalConversationTracker.Session\**\*.cs"
             Exclude="..\GlobalConversationTracker.Session\bin\**;..\GlobalConversationTracker.Session\obj\**"
             LinkBase="GlobalConversationTracker.Session" />
+        <!--
+      The managed side of the bridge to the Rust look-ahead - see de-i5xj. Compiled
+      in for the same reason as the rest, and with one extra benefit: the DllImport
+      then lives in THIS assembly, and the runtime probes for a native library
+      beside the assembly that declares it. That is the plugin's own folder, which
+      is exactly where the native library is deployed.
+    -->
+        <Compile Include="..\GlobalConversationTracker.Engine\**\*.cs"
+            Exclude="..\GlobalConversationTracker.Engine\bin\**;..\GlobalConversationTracker.Engine\obj\**"
+            LinkBase="GlobalConversationTracker.Engine" />
     </ItemGroup>
+
+    <!--
+    The Rust look-ahead library, copied in under a name the deployment already
+    carries: Get-PluginPayloadFile takes $AssemblyName*.dll out of this folder, so
+    calling it GlobalConversationTracker.Native.dll means deploy.ps1, the release
+    packaging and the uninstaller all handle it without being told about it.
+
+    Conditional on the file existing, because a C#-only build must still work - the
+    Rust side needs `cargo build` and a contributor who has not run it should get a
+    plugin that logs the bridge as unavailable, not a build error.
+  -->
+    <Target Name="CopyNativeLookAhead" AfterTargets="Build">
+        <PropertyGroup>
+            <NativeLookAheadRelease>$(MSBuildThisFileDirectory)..\..\target\release\lookahead_engine.dll</NativeLookAheadRelease>
+            <NativeLookAheadDebug>$(MSBuildThisFileDirectory)..\..\target\debug\lookahead_engine.dll</NativeLookAheadDebug>
+            <NativeLookAheadSource Condition="Exists('$(NativeLookAheadRelease)')">$(NativeLookAheadRelease)</NativeLookAheadSource>
+            <NativeLookAheadSource Condition="'$(NativeLookAheadSource)' == '' And Exists('$(NativeLookAheadDebug)')">$(NativeLookAheadDebug)</NativeLookAheadSource>
+        </PropertyGroup>
+        <Copy Condition="'$(NativeLookAheadSource)' != ''"
+            SourceFiles="$(NativeLookAheadSource)"
+            DestinationFiles="$(OutDir)GlobalConversationTracker.Native.dll"
+            SkipUnchangedFiles="true" />
+        <Message Condition="'$(NativeLookAheadSource)' == ''" Importance="high"
+            Text="No Rust look-ahead library found; the plugin will report the bridge as unavailable. Run: cargo build --release" />
+    </Target>
 
     <!--
     This project references assemblies out of a Disco Elysium install. Saying so here

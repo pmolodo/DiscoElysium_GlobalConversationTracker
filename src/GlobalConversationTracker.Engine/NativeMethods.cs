@@ -27,7 +27,7 @@ namespace GlobalConversationTracker.Engine
         /// Resolved by the platform's ordinary search: beside the plugin assembly when the
         /// mod is deployed, and through a resolver the tests install when it is not.
         /// </remarks>
-        internal const string Library = "lookahead_engine";
+        internal const string Library = "GlobalConversationTracker.Native";
 
         /// <summary>The library's version, as a static string not to be freed.</summary>
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
