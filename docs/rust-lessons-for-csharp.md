@@ -166,4 +166,81 @@ measurement unrepeatable. That is why it was noticed.
 
 ---
 
+## 5. `ConversationStatistics` re-implements a subset of `LookAheadStatistics`
+
+**C# today.** Two types accumulate the same quantities by the same arithmetic.
+`LookAheadStatistics.Record` adds to its own crawls, total states, max states, total
+milliseconds, max milliseconds and exhaustion counts, then does it again into a
+`ConversationStatistics` row a few lines below.
+
+The per-conversation row is the poorer copy: it has no `TotalNodes`, no `MaxNodes` and no
+`MinStates`. Not by decision - it was written as "the fields a per-conversation table
+needed", and the table has since grown.
+
+**Rust instead.** One `Tally`, used for the whole run and for each conversation:
+
+```rust
+pub struct LookAheadStatistics {
+    pub overall: Tally,
+    pub by_conversation: HashMap<i32, Tally>,
+    // buckets and per-novelty counts, which only make sense run-wide
+    ...
+}
+```
+
+**Why it is better.** One place the accumulation can be wrong instead of two that must
+agree, and every conversation gets every figure for free. Adding a quantity later means
+adding it once.
+
+**Cost of adopting.** Small, and mostly deletion: promote `ConversationStatistics` to
+carry the full set, have `LookAheadStatistics` hold one for the run, and call `Record` on
+each.
+
+---
+
+## 6. `MinStates` starts at `int.MaxValue` and stays there when nothing was recorded
+
+**C# today.** `public int MinStates { get; private set; } = int.MaxValue;`
+
+A report over a run with no crawls - which is the CORRECT outcome for an all-seen global
+state, and the thing the all-seen suite asserts - prints `2147483647` as its minimum.
+
+**Rust instead.** `min_states: Option<usize>`, `None` until something is recorded.
+
+**Why it is better.** An absent minimum is not a very large one, and the sentinel leaks
+into anything that prints or serialises the figure. The type says which it is.
+
+**Cost of adopting.** `int?`, and one null check wherever it is reported.
+
+---
+
+## 7. `BudgetExhausted` and `TimeExhausted` overlap
+
+**C# today.**
+
+```csharp
+if (result.BudgetExhausted)
+{
+    BudgetExhausted++;
+    if (result.StoppedBy == LookAheadLimit.Time) { TimeExhausted++; }
+}
+```
+
+`LookAheadResult.BudgetExhausted` is `StoppedBy != None`, so it is true for the time limit
+too. `BudgetExhausted` therefore counts crawls stopped by EITHER limit, and `TimeExhausted`
+is a subset of it. The count of crawls stopped by the STATE budget - the one the name
+suggests - is `BudgetExhausted - TimeExhausted`, a subtraction the reader has to know to
+make. Any report adding the two double-counts every timed-out crawl.
+
+**Rust instead.** `stopped_by_states` and `stopped_by_time`, disjoint, with
+`stopped_early()` for the sum.
+
+**Why it is better.** The two fields partition the stopped crawls, so they can be added,
+compared or reported independently without knowing how they were built. It also removes a
+name that means something other than what it says.
+
+**Cost of adopting.** Rename and split the increment; fix any reporter that adds them.
+
+---
+
 *Entries are appended as they are found. Nothing here is applied to the C# side.*
