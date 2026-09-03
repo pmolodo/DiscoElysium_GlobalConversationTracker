@@ -155,7 +155,7 @@ fn how_much_of_the_guard_corpus_compiles() {
     );
 
     let mut shapes: HashMap<&'static str, usize> = HashMap::new();
-    let mut calls: HashMap<String, usize> = HashMap::new();
+
     let mut measured = 0;
 
     for conversation_id in BIGGEST {
@@ -173,6 +173,7 @@ fn how_much_of_the_guard_corpus_compiles() {
 
         let mut guards = 0;
         let mut mentioned: Vec<String> = Vec::new();
+        let mut calls: HashMap<String, usize> = HashMap::new();
         for node in graph.nodes() {
             // An always-true guard is not evidence either way: most entries have none,
             // and counting them would flatter the result.
@@ -224,14 +225,12 @@ fn how_much_of_the_guard_corpus_compiles() {
         for (reason, count) in compiler.fallback_reasons() {
             println!("         {count:>6}  {reason}");
         }
+        let mut call_rows: Vec<(&String, &usize)> = calls.iter().collect();
+        call_rows.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+        let shown: Vec<String> =
+            call_rows.iter().take(8).map(|(n, c)| format!("{n} x{c}")).collect();
+        println!("         world queries: {}", shown.join(", "));
         measured += 1;
-    }
-
-    println!("\nworld queries across all of them, most common first:");
-    let mut call_rows: Vec<(&String, &usize)> = calls.iter().collect();
-    call_rows.sort_by(|a, b| b.1.cmp(a.1));
-    for (name, count) in call_rows.iter().take(15) {
-        println!("  {count:>7}  {name}");
     }
 
     println!("\nleaf shapes across all of them, most common first:");

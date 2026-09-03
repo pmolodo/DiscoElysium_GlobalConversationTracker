@@ -15,23 +15,24 @@ pub trait ILookAheadWorld: Send + Sync {
     fn get_variable(&self, name: &str) -> GuardValue;
     /// Whether the player holds an item WHEN THE CRAWL STARTS.
     ///
-    /// For seeding an `item:` slot, and for nothing else. It is not the answer to a
-    /// `CheckItem` guard: once a crawl is running the truth lives in its state, because
-    /// `GainItem` and `LoseItem` move it, and a guard is answered from the slot - see
-    /// [`BoundContext::query`].
+    /// Two callers, and the difference between them is the whole point of the name.
     ///
-    /// Named for the seed on purpose. It was called `has_item`, which reads as the
-    /// general question and invites exactly the wrong call: it returns a plain `bool`, so
-    /// it is definite even for an item the world has never heard of, while `query`
-    /// answers unknown and leaves the branch open. Substituting one for the other decides
-    /// "not held" where the engine stays permissive, which prunes a branch the real crawl
-    /// walks. That mistake was made and caught while writing the guard compiler.
+    /// - Seeding an `item:` slot, for an item this conversation group's actions DO move.
+    /// - Answering a `CheckItem` guard about an item the group does NOT move. There is no
+    ///   slot for such an item, nothing can change it, so its starting value is its only
+    ///   value and this is simply the answer.
+    ///
+    /// What it must never do is answer a guard about a TRACKED item. Once `GainItem` or
+    /// `LoseItem` has run, the truth is in the crawl's state and this is stale. The old
+    /// name, `has_item`, read as the general question and invited exactly that: it
+    /// returns a plain `bool`, so it looks authoritative everywhere. Using it for a
+    /// tracked item reports the starting inventory forever and the crawl stops seeing its
+    /// own purchases.
     fn initially_has_item(&self, name: &str) -> bool;
 
     /// Whether a journal task is active WHEN THE CRAWL STARTS.
     ///
-    /// The same rules as [`Self::initially_has_item`]: for seeding a `task:` slot, not
-    /// for answering an `IsTaskActive` guard.
+    /// The same two callers and the same restriction as [`Self::initially_has_item`].
     fn initially_task_active(&self, name: &str) -> bool;
     fn query(&self, name: &str, arguments: &[GuardValue]) -> GuardValue;
     fn check_passes(&self, node: DialogueNodeId) -> Ternary;
@@ -112,29 +113,43 @@ impl IGuardContext for BoundContext<'_> {
                 }
             }
             "CheckItem" => {
-                if let Some(state) = self.state {
-                    if let Some(text) = arguments.get(0)
-                        .filter(|v| v.kind() == GuardValueKind::Text)
-                        .map(|v| v.text())
-                    {
+                if let Some(text) = arguments.first()
+                    .filter(|v| v.kind() == GuardValueKind::Text)
+                    .map(|v| v.text())
+                {
+                    // Tracked: the crawl's own actions have been moving it, so the state
+                    // is the truth.
+                    if let Some(state) = self.state {
                         if let Some(slot) = self.symbols.find(&format!("item:{}", text)) {
                             return GuardValue::from_boolean(state.is_set(slot));
                         }
                     }
+
+                    // Untracked: no action in this group gains or loses it, so its
+                    // starting value is its only value and the world can simply be asked.
+                    // Falling through to `query` instead - which most worlds answer
+                    // unknown - would throw away an answer already in hand and leave the
+                    // branch open for no reason.
+                    return GuardValue::from_boolean(self.world.initially_has_item(text));
                 }
+
                 self.world.query(name, arguments)
             }
+            // The same two cases as CheckItem above, for the journal.
             "IsTaskActive" => {
-                if let Some(state) = self.state {
-                    if let Some(text) = arguments.get(0)
-                        .filter(|v| v.kind() == GuardValueKind::Text)
-                        .map(|v| v.text())
-                    {
+                if let Some(text) = arguments.first()
+                    .filter(|v| v.kind() == GuardValueKind::Text)
+                    .map(|v| v.text())
+                {
+                    if let Some(state) = self.state {
                         if let Some(slot) = self.symbols.find(&format!("task:{}", text)) {
                             return GuardValue::from_boolean(state.is_set(slot));
                         }
                     }
+
+                    return GuardValue::from_boolean(self.world.initially_task_active(text));
                 }
+
                 self.world.query(name, arguments)
             }
             _ => self.world.query(name, arguments),

@@ -225,29 +225,27 @@ impl<'a> GuardCompiler<'a> {
                         let slot = format!("{}{subject}", if is_item { "item:" } else { "task:" });
                         match self.slot_is_set(&slot) {
                             Some(holds) => self.decided(holds),
-                            // Untracked, so constant - and answered THE WAY THE ENGINE
-                            // ANSWERS IT, through `query`, not through `initially_has_item`.
+                            // Untracked, so nothing in this group can change it: the
+                            // starting value is the only value, and the world answers
+                            // directly. `BoundContext::query` does exactly the same, and
+                            // the mirroring is the point - a compiler more decisive than
+                            // the engine it models would prune branches the real crawl
+                            // walks.
                             //
-                            // The difference matters and is easy to get wrong. `initially_has_item`
-                            // returns a plain bool, so it is definite for every name,
-                            // including one the world has simply never heard of. The
-                            // engine does not consult it here: `BoundContext::query`
-                            // falls through to `world.query`, which may answer unknown
-                            // and leave the branch open. Deciding "not held" where the
-                            // engine stays permissive would prune a branch the real crawl
-                            // walks, which is the one direction this compiler must never
-                            // be wrong in. `initially_has_item` is used only by the seed, and only
-                            // for slots the group tracks.
-                            None => match self.constant_query(name, args) {
-                                Some(true) => {
-                                    let t = self.top();
-                                    self.decided(t)
-                                }
-                                Some(false) => {
-                                    let f = self.bottom();
+                            // What neither may do is answer this way for a TRACKED
+                            // subject. Once GainItem has run the truth is in the state,
+                            // and the starting inventory is stale.
+                            None => match self.world {
+                                Some(world) => {
+                                    let held = if is_item {
+                                        world.initially_has_item(&subject)
+                                    } else {
+                                        world.initially_task_active(&subject)
+                                    };
+                                    let f = if held { self.top() } else { self.bottom() };
                                     self.decided(f)
                                 }
-                                None => self.undecided("call: untracked, world cannot say"),
+                                None => self.undecided("call: untracked and no world"),
                             },
                         }
                     }
@@ -745,51 +743,70 @@ mod tests {
         assert_eq!(compiler.fallbacks(), 0);
     }
 
-    /// An item no action in the group touches is constant, and the WORLD QUERY answers it.
+    /// An item no action in the group touches is constant, and the WORLD answers it.
     ///
-    /// Through `query`, not `initially_has_item`, matching `BoundContext::query`. Answering from
-    /// `initially_has_item` would be more decisive than the engine - it returns a plain bool even
-    /// for a name the world never heard of - and deciding "not held" where the engine
-    /// stays permissive would prune a branch the real crawl walks.
+    /// From the world's inventory, not from a `CheckItem` query: a world that answers no
+    /// query at all still settles this, because the inventory it was built with IS the
+    /// answer when nothing can change it. `BoundContext::query` does the same, and the
+    /// two must agree.
     #[test]
-    fn an_untracked_item_is_answered_by_the_world_query() {
+    fn an_untracked_item_is_answered_from_the_worlds_inventory() {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
-        let world = crate::world::test_world::TestWorld::new()
-            .set_query_bool("CheckItem", true)
-            // Set as an item too, to prove that is NOT what is being read.
-            .set_item("ledger", false);
+        // Deliberately answers no query, to show that is not what settles it.
+        let world = crate::world::test_world::TestWorld::new().set_item("ledger", true);
 
         let mut compiler =
             GuardCompiler::new(&layout, &symbols, NODES, CACHE).with_world(&world);
-        let compiled = compiler.compile(&GuardExpression::Call(
+        let held = compiler.compile(&GuardExpression::Call(
             "CheckItem".to_string(),
             vec![GuardExpression::Literal(GuardValue::from_text("ledger".to_string()))],
         ));
+        let absent = compiler.compile(&GuardExpression::Call(
+            "CheckItem".to_string(),
+            vec![GuardExpression::Literal(GuardValue::from_text("nothing".to_string()))],
+        ));
 
-        assert!(compiled.may_be_true.valid());
+        assert!(held.may_be_true.valid());
+        assert!(held.is_decided());
+        assert!(!absent.may_be_true.satisfiable());
         assert_eq!(compiler.fallbacks(), 0);
     }
 
-    /// And where the world query cannot say, it stays open rather than being called false.
+    /// A TRACKED item is never answered from the world, however tempting.
+    ///
+    /// The starting inventory is stale the moment GainItem runs, so reading it for a
+    /// tracked item would make the crawl blind to its own purchases. That is the mirror
+    /// of the mistake the untracked case invites, and the reason both sit behind one
+    /// deliberately-named pair of methods.
     #[test]
-    fn an_untracked_item_the_world_cannot_answer_stays_open() {
-        let (graph, symbols) = fixture(&["a"], None);
+    fn a_tracked_item_ignores_the_worlds_starting_inventory() {
+        let mut symbols = StateSymbols::new();
+        let actions = crate::parser::action_parser::parse_actions(
+            r#"GainItem("shoes_faln")"#,
+            &mut symbols,
+        );
+        let node = LookAheadNode::new(
+            DialogueNodeId::new(1, 0), false, DialogueCheckKind::None,
+            GuardExpression::always_true(), actions, vec![], 0, false, false, -1, -1, false, -1,
+        );
+        let snapshot = symbols.clone();
+        let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
         let layout = DataLayout::for_graph(&graph, 16, None, false);
-        // Knows the item, but answers no CheckItem query - exactly the shape that would
-        // tempt a `initially_has_item` shortcut into deciding.
-        let world = crate::world::test_world::TestWorld::new().set_item("ledger", false);
+        let base = layout.slot(snapshot.find("item:shoes_faln").unwrap()).unwrap().0;
 
+        // The world says the player does NOT have them. The slot must still decide, so
+        // that a path which buys them is seen.
+        let world = crate::world::test_world::TestWorld::new().set_item("shoes_faln", false);
         let mut compiler =
-            GuardCompiler::new(&layout, &symbols, NODES, CACHE).with_world(&world);
+            GuardCompiler::new(&layout, &snapshot, NODES, CACHE).with_world(&world);
         let compiled = compiler.compile(&GuardExpression::Call(
             "CheckItem".to_string(),
-            vec![GuardExpression::Literal(GuardValue::from_text("ledger".to_string()))],
+            vec![GuardExpression::Literal(GuardValue::from_text("shoes_faln".to_string()))],
         ));
 
-        assert!(!compiled.is_decided());
-        assert!(compiled.may_be_true.valid());
-        assert_eq!(compiler.fallbacks(), 1);
+        assert!(compiled.may_be_true.eval([(base, true)]));
+        assert!(!compiled.may_be_true.eval([(base, false)]));
     }
 
     #[test]

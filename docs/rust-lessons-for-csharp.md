@@ -274,28 +274,41 @@ saying they are for the seed and are not the answer to a guard.
 
 ---
 
-## 9. The engine is needlessly imprecise about items and tasks it does not track
+## 9. An untracked item or task guard throws away an answer the world already has
 
-*An improvement NEITHER implementation has - recorded here because it was found while
-comparing them, and it applies to both.*
+**C# today.** When a guard asks `CheckItem("x")` and no action in the conversation group
+gains or loses `x`, there is no `item:` slot, and `CrawlContext.Query` falls through to
+`world.Query("CheckItem", ...)`. Most worlds answer unknown to that, so the guard is
+undecided and the crawl keeps a branch it did not need to.
 
-When a guard asks `CheckItem("x")` and no action in the group gains or loses `x`, there is
-no slot, and both engines fall through to `world.Query("CheckItem", ...)`. Most worlds
-answer unknown to that, so the guard is undecided and the branch stays open.
+But the world already knows. `HasItem("x")` is exactly that question and answers
+definitely. For an untracked item the information is sitting there and is being discarded.
 
-But the world already knows: `HasItem("x")` is exactly that question and answers
-definitely. The information is there and is being thrown away. Using it would make the
-crawl strictly more precise - fewer branches kept for no reason, so less walking and fewer
-false reachables - and it is SAFE, because being decisive with a correct answer is fine;
-only being decisive with a wrong one is not.
+**Rust instead.** `BoundContext::query` answers an untracked `CheckItem` from
+`initially_has_item`, and an untracked `IsTaskActive` from `initially_task_active`.
 
-Measured while building the guard compiler: `CheckItem` is 140 and `IsTaskActive` 95 of
-the world queries the five biggest conversations' guards make, and after every other
-improvement they are among the largest remaining undecidable categories.
+**Why it is correct, not merely convenient.** For a subject the group does not track, no
+action can change it, so its starting value is its ONLY value. Being decisive with a
+correct answer is safe; only being decisive with a wrong one is not. The engine was
+permissive here out of ignorance rather than principle.
 
-Do this in the engine and the compiler follows for free, since the compiler mirrors the
-engine deliberately. Doing it in the compiler ALONE would be wrong - it would make the
-analysis more decisive than the thing it models.
+The restriction that makes it correct is the one to hold on to: this must never answer a
+guard about a TRACKED item. Once `GainItem` has run, the truth is in the crawl's state and
+the starting inventory is stale - a crawl reading it would stop seeing its own purchases.
+Both cases now sit behind one deliberately-named pair of methods (see entry 8) with the
+distinction spelled out in their doc comments.
+
+**What it was worth.** On conversation 631, 36 of the 74 remaining guard-compiler
+fallbacks were exactly this case; removing them took that group from 93.8% to 96.8% of
+guard sub-expressions compiling to a real formula. Across the five biggest conversations
+`CheckItem` is 140 and `IsTaskActive` 95 of the world queries guards make.
+
+The gain is not confined to the analysis. A permissive guard means the CRAWL keeps a
+branch it need not, so this makes real crawls cheaper and their markers more accurate too -
+which is the part that matters for the shipped plugin.
+
+**Cost of adopting.** Small: two arms of `CrawlContext.Query`, restructured so the item
+name is read once and the slot lookup is tried before falling back to the world.
 
 ---
 
