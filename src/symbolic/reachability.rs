@@ -92,10 +92,15 @@ pub struct Budget {
     pub steps: usize,
     /// How long to keep going.
     pub time: std::time::Duration,
-    /// Called every `report_every` steps with the step count, entries reached, and the
-    /// diagram nodes held - so a long run says where it is instead of going quiet.
+    /// Called every `report_every` steps with the step count, entries reached, the
+    /// diagram nodes held in total, and the LARGEST single set.
+    ///
+    /// The last of those is the one to watch. The total sums each entry's set separately,
+    /// so it climbs both when sets get harder and merely when more entries have one, and
+    /// those are different problems - the first says the representation is failing, the
+    /// second only says the search is making progress.
     #[allow(clippy::type_complexity)]
-    pub on_progress: Option<Box<dyn Fn(usize, usize, usize)>>,
+    pub on_progress: Option<Box<dyn Fn(usize, usize, usize, usize)>>,
     pub report_every: usize,
 }
 
@@ -224,8 +229,14 @@ impl<'a> Reachability<'a> {
 
             if this.stats.steps % budget.report_every == 0 {
                 if let Some(report) = &budget.on_progress {
-                    let held: usize = this.sets.values().map(|s| s.node_count()).sum();
-                    report(this.stats.steps, this.sets.len(), held);
+                    let sizes: Vec<usize> =
+                        this.sets.values().map(|s| s.node_count()).collect();
+                    report(
+                        this.stats.steps,
+                        this.sets.len(),
+                        sizes.iter().sum(),
+                        sizes.iter().copied().max().unwrap_or(0),
+                    );
                 }
             }
 

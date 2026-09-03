@@ -195,8 +195,17 @@ fn what_the_expensive_conversations_cost() {
             continue;
         }
 
-        let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
         let symbols = graph.symbols().clone();
+        let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
+        // The experiment: the per-entry visit flags are one bit each and there are
+        // hundreds of them, and the reachable set of flag-subsets is exactly the shape a
+        // decision diagram holds worst. Dropping them over-approximates, which is the
+        // safe direction, and the two rows say what it buys.
+        let layout = if std::env::var("KEEP_VISIT_FLAGS").is_ok() {
+            layout
+        } else {
+            layout.without_visit_flags(&symbols)
+        };
         let vars = DataVars::new(&layout, &symbols, NODE_CAPACITY, CACHE_CAPACITY);
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(&world)
@@ -207,10 +216,10 @@ fn what_the_expensive_conversations_cost() {
             steps: 500_000,
             time: std::time::Duration::from_secs(120),
             report_every: 5_000,
-            on_progress: Some(Box::new(move |steps, reached, held| {
+            on_progress: Some(Box::new(move |steps, reached, held, largest| {
                 println!(
                     "         ... {conversation}: {steps} steps, {reached} entries, \
-                     {held} diagram nodes"
+                     {held} diagram nodes, largest set {largest}"
                 );
             })),
         };

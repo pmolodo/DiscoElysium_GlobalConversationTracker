@@ -23,6 +23,7 @@
 //! between about 350 variables and about 1,700.
 
 use crate::core::action::DialogueActionKind;
+use crate::core::state::{StateSymbols, ONCE_PREFIX, SEEN_PREFIX};
 use crate::graph::graph::LookAheadGraph;
 
 /// Minutes in a day; the clock is wrapped into `0..MINUTES_IN_DAY`.
@@ -117,8 +118,74 @@ impl DataLayout {
     }
 
     /// The variable run for one slot: its first variable and its width.
+    ///
+    /// `None` for a slot the layout does not carry, which is how a dropped one is
+    /// reported - see [`Self::without_visit_flags`]. Every caller already had to handle
+    /// `None`, because a slot number can come from a symbol table wider than the layout.
     pub fn slot(&self, slot: usize) -> Option<(u32, u8)> {
-        self.slots.get(slot).copied()
+        match self.slots.get(slot).copied() {
+            Some((_, 0)) => None,
+            other => other,
+        }
+    }
+
+    /// The same layout with the per-entry visit flags dropped.
+    ///
+    /// ## Why drop them
+    ///
+    /// A `seen:` slot exists to stop the EXPLICIT crawl walking the same entry forever,
+    /// and a `once:` slot to stop a one-time effect firing twice round a loop. A fixed
+    /// point needs neither: it terminates because every set only grows and the lattice is
+    /// finite, not because anything is marked.
+    ///
+    /// What they cost is enormous. There is one bit per entry that closes once seen, so
+    /// the reachable set becomes a family of SUBSETS of entries reached by different
+    /// paths - and a path-dependent family of subsets is close to the worst case a
+    /// decision diagram can be asked to hold. Conversation 368's group is 393 variables
+    /// and most of them are these; its reachable set passed 23 million diagram nodes and
+    /// was still doubling every five thousand steps when the measurement was killed,
+    /// while the set of reachable ENTRIES had stopped changing ten thousand steps
+    /// earlier.
+    ///
+    /// ## What it costs to drop them
+    ///
+    /// Precision, in the safe direction. Without a seen flag a `Fake` or `KimSwitch`
+    /// entry no longer closes, so the search may reach entries beyond one that the real
+    /// crawl would have shut; without a once flag a one-time action fires every time,
+    /// which drives its counter to the cap rather than leaving it where the crawl would.
+    /// Both make the reachable set BIGGER, never smaller, so no reachable entry is lost -
+    /// and losing one is the only error that matters.
+    pub fn without_visit_flags(mut self, symbols: &StateSymbols) -> Self {
+        for slot in 0..self.slots.len() {
+            let is_flag = symbols.name_of(slot).is_some_and(|name: &str| {
+                name.starts_with(SEEN_PREFIX) || name.starts_with(ONCE_PREFIX)
+            });
+            if is_flag {
+                self.slots[slot].1 = 0;
+            }
+        }
+
+        // Renumber, so the dropped ones cost no variables rather than merely going
+        // unread. Leaving gaps would keep the diagram's variable count - and its depth -
+        // exactly where it was, which is the thing being attacked.
+        let mut next = 0u32;
+        for (base, bits) in &mut self.slots {
+            *base = next;
+            next += *bits as u32;
+        }
+
+        if let Some((base, bits)) = &mut self.money {
+            *base = next;
+            next += *bits as u32;
+        }
+
+        if let Some((base, bits)) = &mut self.clock {
+            *base = next;
+            next += *bits as u32;
+        }
+
+        self.total = next;
+        self
     }
 
     /// Whether a slot is a single bit, which is the common case.
