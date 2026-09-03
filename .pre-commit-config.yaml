@@ -40,5 +40,17 @@ repos:
       hooks:
           - id: trailing-whitespace
           - id: end-of-file-fixer
+          - id: mixed-line-ending
+            alias: enforce-lf-line-endings
+            name: enforce LF line endings
+            args: [--fix=lf]
+            files: >-
+                \.(?:bash|bats|c|cc|cpp|cs|csx|cxx|h|h\+\+|hh|hpp|hxx|inl|ipp|json|jsonc|py|pyi|pyw|rs|sh|toml|tpp|yaml|yml)$
+          - id: mixed-line-ending
+            alias: enforce-crlf-line-endings
+            name: enforce CRLF line endings
+            args: [--fix=crlf]
+            files: >-
+                \.(?:bat|cmd|ps1|psd1|psm1)$
           - id: check-yaml
           - id: check-toml
