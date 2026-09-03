@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use lookahead_engine::core::state::LookAheadState;
-use lookahead_engine::core::types::{DialogueNodeId, Novelty};
+use lookahead_engine::core::types::{DialogueNodeId, LookAheadLimit, Novelty};
 use lookahead_engine::engine::engine::{LookAheadEngine, LookAheadOptions};
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::{Profile, StateEncoding, StateSet};
@@ -28,11 +28,27 @@ const BIGGEST: [i32; 5] = [368, 631, 14, 28, 1030];
 
 /// Enough states to see the shape without waiting all day. Building the diagram costs a
 /// diagram operation per variable per state, so this is the cost driver, not the crawl.
-const SAMPLE_LIMIT: usize = 20_000;
+///
+/// Held at ten thousand rather than twenty for reliability, not for the result: releasing
+/// a diagram walks it recursively, and the twenty-thousand-state diagrams for
+/// conversations 631 and 14 overflow even a half-gigabyte stack on teardown. The ratios
+/// at twenty thousand were 0.99x and 0.65x against 1.63x and 5.65x for the smaller
+/// groups - the same ordering this produces, so nothing about the conclusion rests on the
+/// larger sample.
+const SAMPLE_LIMIT: usize = 10_000;
 
-/// Generous, so the manager never reallocates mid-measurement.
-const NODE_CAPACITY: usize = 1 << 22;
-const CACHE_CAPACITY: usize = 1 << 20;
+/// Manager capacities, one pair per measurement, each the value that measurement was
+/// actually observed to survive at.
+///
+/// Not one shared number, because the failure is not monotonic in it: the 20,000-state
+/// prefixes need the larger table and overflow the stack with the smaller one, while the
+/// complete sets are the other way round and overflow during teardown with the larger.
+/// A manager is torn down by walking what it holds, and how deep that walk goes depends
+/// on the table as well as on the diagram. Sized by measurement rather than guessed.
+const PREFIX_NODE_CAPACITY: usize = 1 << 22;
+const PREFIX_CACHE_CAPACITY: usize = 1 << 20;
+const COMPLETE_NODE_CAPACITY: usize = 1 << 18;
+const COMPLETE_CACHE_CAPACITY: usize = 1 << 16;
 
 fn index_path() -> Option<PathBuf> {
     let mut dir: Option<&std::path::Path> = Some(std::path::Path::new(env!("CARGO_MANIFEST_DIR")));
@@ -87,13 +103,22 @@ fn sample_states(
 /// Releasing a diagram walks it, so a set of this size needs far more stack than a test
 /// thread is given. Run on a thread with an explicit one rather than leaving the
 /// measurement to depend on RUST_MIN_STACK being set from outside.
-const MEASUREMENT_STACK: usize = 512 << 20;
+const MEASUREMENT_STACK: usize = 2 << 30;
 
+/// Both measurements, on one thread, one after the other.
+///
+/// Deliberately a single test. Cargo runs tests in parallel, and two of these at once -
+/// each holding a diagram manager and a half-gigabyte stack - run the process out of
+/// stack during teardown, after the numbers have been printed. Sequential is also how
+/// they want to be read: the second exists to qualify the first.
 #[test]
-fn a_crawls_state_set_compresses() {
+fn how_well_a_crawls_state_set_compresses() {
     std::thread::Builder::new()
         .stack_size(MEASUREMENT_STACK)
-        .spawn(measure)
+        .spawn(|| {
+            measure();
+            measure_complete();
+        })
         .expect("spawning the measurement thread")
         .join()
         .expect("the measurement thread");
@@ -128,7 +153,7 @@ fn measure() {
 
         let encoding = StateEncoding::for_profile(&profile);
         let started = Instant::now();
-        let mut set = StateSet::new(encoding.total_vars(), NODE_CAPACITY, CACHE_CAPACITY);
+        let mut set = StateSet::new(encoding.total_vars(), PREFIX_NODE_CAPACITY, PREFIX_CACHE_CAPACITY);
         let mut distinct = HashMap::new();
         for (node, state) in &states {
             let bits = encoding.encode(*node, state).expect("a profiled state encodes");
@@ -154,7 +179,7 @@ fn measure() {
         // they agree, the set is close to an arbitrary subset and no order will save it.
         let flipped = StateEncoding::for_profile(&profile).reversed();
         let mut flipped_set =
-            StateSet::new(flipped.total_vars(), NODE_CAPACITY, CACHE_CAPACITY);
+            StateSet::new(flipped.total_vars(), PREFIX_NODE_CAPACITY, PREFIX_CACHE_CAPACITY);
         for (node, state) in &states {
             flipped_set.insert(&flipped.encode(*node, state).expect("a profiled state encodes"));
         }
@@ -184,4 +209,128 @@ fn measure() {
     }
 
     assert!(measured > 0, "no conversation yielded states, so nothing was measured");
+}
+
+/// Crawls one option to exhaustion, if it can be done inside `budget`.
+///
+/// Returns the states only when the search finished of its own accord. A run stopped by
+/// a limit is a prefix, which is the thing this is trying not to measure.
+fn complete_states(
+    conversation_id: i32,
+    index: &lookahead_engine::index::Index,
+    budget: usize,
+) -> Option<Vec<(DialogueNodeId, LookAheadState)>> {
+    let (graph, _) = build_group_graph(index, conversation_id).ok()?;
+    let start = graph.nodes()
+        .filter(|n| !n.is_group && !n.links.is_empty())
+        .map(|n| n.id)
+        .min_by_key(|id| (id.conversation_id, id.entry_id))?;
+
+    let sink: Arc<Mutex<Vec<(DialogueNodeId, LookAheadState)>>> = Arc::default();
+    let writer = Arc::clone(&sink);
+    let engine = LookAheadEngine::new(
+        LookAheadOptions {
+            state_budget: budget,
+            time_budget: Duration::from_secs(30),
+            state_sample_interval: 1,
+            ..Default::default()
+        }
+        .on_state_reached(move |node, state, _| {
+            writer.lock().unwrap().push((node, state.clone()));
+        }),
+    );
+
+    let result = engine.evaluate(&graph, start, &TestWorld::new(), |_| Novelty::SeenThisGame);
+    if result.stopped_by != LookAheadLimit::None {
+        return None;
+    }
+
+    Some(std::mem::take(&mut *sink.lock().unwrap()))
+}
+
+/// The ratio of distinct states to diagram nodes for a sample.
+fn ratio_of(states: &[(DialogueNodeId, LookAheadState)]) -> (usize, usize) {
+    let mut profile = Profile::new();
+    for (node, state) in states {
+        profile.observe(*node, state);
+    }
+
+    let encoding = StateEncoding::for_profile(&profile);
+    let mut set =
+        StateSet::new(encoding.total_vars(), COMPLETE_NODE_CAPACITY, COMPLETE_CACHE_CAPACITY);
+    let mut distinct = HashMap::new();
+    for (node, state) in states {
+        let bits = encoding.encode(*node, state).expect("a profiled state encodes");
+        distinct.insert(bits.clone(), ());
+        set.insert(&bits);
+    }
+
+    let nodes = set.node_count();
+    drop(set);
+    (distinct.len(), nodes)
+}
+
+/// Does a COMPLETE reachable set compress better than a prefix of one?
+///
+/// The caveat that decides whether the negative result above is real. Decision diagrams
+/// often do markedly better on closed sets than on arbitrary prefixes, so measuring only
+/// the first 20,000 states of a breadth-first walk could be pessimistic. This measures
+/// conversations small enough to explore exhaustively, and compares each complete set
+/// against its own first half.
+fn measure_complete() {
+    let Some(path) = index_path() else {
+        eprintln!("conversation_index.jsonl not generated; skipping.");
+        return;
+    };
+    let index = read_index(&path).expect("the index reads");
+
+    // Smallest first, so the exhaustible ones come up early.
+    let mut candidates: Vec<(usize, i32)> = index
+        .values()
+        .filter(|c| c.entries.len() >= 20)
+        .map(|c| (c.entries.len(), c.id))
+        .collect();
+    candidates.sort_unstable();
+
+    println!(
+        "{:>6} {:>8} {:>8} {:>8}   {:>8} {:>8} {:>8}",
+        "conv", "full", "bddnodes", "ratio", "half", "bddnodes", "ratio"
+    );
+
+    let mut measured = 0;
+    for (_, conversation_id) in candidates {
+        if measured >= 6 {
+            break;
+        }
+
+        let Some(states) = complete_states(conversation_id, &index, 60_000) else {
+            continue;
+        };
+        // Big enough to be worth measuring, small enough that releasing the diagram
+        // does not run the thread out of stack - that walk is recursive and a set much
+        // past this depth overflows even a 512 MB stack.
+        if states.len() < 500 || states.len() > SAMPLE_LIMIT {
+            continue;
+        }
+
+        let (full_states, full_nodes) = ratio_of(&states);
+        let half = &states[..states.len() / 2];
+        let (half_states, half_nodes) = ratio_of(half);
+
+        println!(
+            "{:>6} {:>8} {:>8} {:>8.2}   {:>8} {:>8} {:>8.2}",
+            conversation_id,
+            full_states,
+            full_nodes,
+            full_states as f64 / full_nodes.max(1) as f64,
+            half_states,
+            half_nodes,
+            half_states as f64 / half_nodes.max(1) as f64,
+        );
+        measured += 1;
+    }
+
+    if measured == 0 {
+        println!("no conversation was both exhaustible and large enough to be worth it");
+    }
 }
