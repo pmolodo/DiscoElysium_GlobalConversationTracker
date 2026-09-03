@@ -57,6 +57,56 @@ namespace GlobalConversationTracker.LookAhead.Tests
             Assert.Equal(Novelty.SeenThisGame, Run(graph, new FakeWorld(), Novel()).Best);
         }
 
+        [Fact]
+        public void HasPotentialImprovement_IsFalseWhenEveryScoreableNodeIsAlreadySeen()
+        {
+            LookAheadGraph graph = new GraphBuilder()
+                .Add(0, links: new[] { 1 })
+                .Add(1, isGroup: true, links: new[] { 2 })
+                .Add(2)
+                .Build();
+
+            Assert.False(LookAheadEngine.HasPotentialImprovement(
+                graph, Novelty.SeenThisGame, Novel()));
+        }
+
+        [Fact]
+        public void HasPotentialImprovement_IsFalseWhenAllNodesMatchTheOptionsNovelty()
+        {
+            LookAheadGraph graph = new GraphBuilder()
+                .Add(0, links: new[] { 1 })
+                .Add(1)
+                .Build();
+
+            Assert.False(LookAheadEngine.HasPotentialImprovement(
+                graph, Novelty.UnseenThisGame,
+                Scores(new Dictionary<int, Novelty>
+                {
+                    [0] = Novelty.UnseenThisGame,
+                    [1] = Novelty.UnseenThisGame,
+                })));
+        }
+
+        [Fact]
+        public void HasPotentialImprovement_LeavesAnUnreachableCandidateForTheCrawler()
+        {
+            LookAheadGraph graph = new GraphBuilder()
+                .Add(0, links: new[] { 1 })
+                .Add(1, guard: "Variable[\"closed\"]")
+                .Add(2)
+                .Build();
+
+            NoveltyLookup novelty = Novel(2);
+            Assert.True(LookAheadEngine.HasPotentialImprovement(
+                graph, Novelty.SeenThisGame, novelty));
+
+            LookAheadResult result = Run(
+                graph, new FakeWorld().WithVariable("closed", false), novelty);
+            Assert.Equal(Novelty.SeenThisGame, result.Best);
+            Assert.Equal(1, result.StatesExplored);
+            Assert.False(result.BudgetExhausted);
+        }
+
         /// <summary>
         /// The marker describes what lies BEYOND the option; the option's own novelty is
         /// already its text colour.

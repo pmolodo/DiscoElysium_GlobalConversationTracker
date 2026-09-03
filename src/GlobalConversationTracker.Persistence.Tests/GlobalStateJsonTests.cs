@@ -29,6 +29,20 @@ namespace GlobalConversationTracker.Persistence.Tests
 
         private static GlobalStateLoadResult Parse(string json) => GlobalStateJson.Deserialize(json, TestSource);
 
+        /// <summary>
+        /// Reads through the migration-only path, which is the only thing that still
+        /// understands the per-entry shape.
+        /// </summary>
+        /// <remarks>
+        /// Every test below that passes a version 1 or 2 document uses this. They are not
+        /// describing what the game does on load any more - it refuses those files, which
+        /// is what the version-gate tests cover - but what the converter has to cope with
+        /// on the way to producing a version 3 file, which is still worth pinning down:
+        /// the profiles being migrated are real ones, damage and all.
+        /// </remarks>
+        private static GlobalStateLoadResult ParseLegacy(string json) =>
+            GlobalStateJson.DeserializeLegacy(Encoding.UTF8.GetBytes(json), TestSource);
+
         // -------------------------------------------------------------------
         // Writing
         // -------------------------------------------------------------------
@@ -213,17 +227,17 @@ namespace GlobalConversationTracker.Persistence.Tests
         [InlineData("   ")]
         [InlineData("not json at all")]
         [InlineData("{")]
-        [InlineData("{\"version\":1,\"conversations\":{\"3\":{\"17\":\"WasDis")]
-        [InlineData("{\"version\":1,\"conversations\":{}} trailing garbage")]
+        [InlineData("{\"version\":3,\"conversations\":{\"3\":{\"17\":\"WasDis")]
+        [InlineData("{\"version\":3,\"conversations\":{}} trailing garbage")]
         [InlineData("[]")]
         [InlineData("\"a string\"")]
         [InlineData("null")]
         [InlineData("{\"conversations\":{}}")]
         [InlineData("{\"version\":\"1\",\"conversations\":{}}")]
         [InlineData("{\"version\":1.5,\"conversations\":{}}")]
-        [InlineData("{\"version\":1}")]
-        [InlineData("{\"version\":1,\"conversations\":[]}")]
-        [InlineData("{\"version\":1,\"conversations\":null}")]
+        [InlineData("{\"version\":3}")]
+        [InlineData("{\"version\":3,\"conversations\":[]}")]
+        [InlineData("{\"version\":3,\"conversations\":null}")]
         public void Deserialize_StructurallyBrokenFile_IsCorrupt(string json)
         {
             GlobalStateLoadResult result = Parse(json);
@@ -275,25 +289,28 @@ namespace GlobalConversationTracker.Persistence.Tests
         [InlineData(0)]
         [InlineData(-1)]
         [InlineData(1)]
-        public void Deserialize_OlderFormatVersion_IsReadRatherThanRefused(int version)
+        public void Deserialize_OlderFormatVersion_IsRefusedNotRead(int version)
         {
-            // A version this build has outgrown is still this build's own data. Refusing
-            // it would make the caller treat the user's file as unwritable and stop
-            // tracking, which is far worse than reading a document whose only difference
-            // is a property that is not there yet.
+            // This used to load. It loaded because refusing would have made the caller
+            // treat the file as unwritable and stop tracking, which was the greater harm
+            // while old files were still in use. Now that a converter exists and the
+            // profiles in use have been migrated, the balance is the other way: a file
+            // this old should be refused loudly rather than read by a path nothing else
+            // exercises. Refused, not Corrupt - the file is real history, so the caller
+            // must stop rather than overwrite it.
             GlobalStateLoadResult result = Parse(
                 $"{{\"version\":{version},\"conversations\":{{\"1\":{{\"2\":\"WasOffered\"}}}}}}");
 
-            Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
-            Assert.Equal(SimStatus.WasOffered, result.State!.GetStatus(1, 2));
-            Assert.Equal(0, result.State.OrbCount);
+            Assert.Equal(GlobalStateLoadOutcome.UnsupportedVersion, result.Outcome);
+            Assert.Null(result.State);
+            Assert.Contains(version.ToString(), result.ErrorMessage!, StringComparison.Ordinal);
         }
 
         [Fact]
         public void Deserialize_VersionOneFile_LoadsWithNoOrbsAndNoWarnings()
         {
             // The exact shape every file on disk had before orbs existed.
-            GlobalStateLoadResult result = Parse(
+            GlobalStateLoadResult result = ParseLegacy(
                 "{\"version\":1,\"conversations\":{\"3\":{\"17\":\"WasDisplayed\"}}}");
 
             Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
@@ -328,7 +345,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         {
             // The shape every file on disk had before the grouping. Read for as long as
             // GlobalStateJson.LegacyPerEntryFormatVersion says so, and no longer.
-            GlobalStateLoadResult result = Parse(
+            GlobalStateLoadResult result = ParseLegacy(
                 "{\"version\":2,\"conversations\":{\"3\":{\"17\":\"WasDisplayed\",\"18\":\"WasOffered\"}},"
                 + "\"orbs\":[\"COAST ORB / floatice\"]}");
 
@@ -340,6 +357,50 @@ namespace GlobalConversationTracker.Persistence.Tests
             Assert.Equal(1, result.State.OrbCount);
         }
 
+        [Theory]
+        [InlineData(1)]
+        [InlineData(2)]
+        public void Deserialize_LegacyVersion_IsRefusedRatherThanRead(int version)
+        {
+            // Refused as UnsupportedVersion, NOT Corrupt. The distinction is the whole
+            // point: a caller that sees Corrupt may overwrite the file from a backup, and
+            // this file is full of real history. It has to stop instead.
+            GlobalStateLoadResult result = Parse(
+                "{\"version\":" + version + ",\"conversations\":{\"3\":{\"17\":\"WasDisplayed\"}}}");
+
+            Assert.Equal(GlobalStateLoadOutcome.UnsupportedVersion, result.Outcome);
+            Assert.Null(result.State);
+            Assert.Contains(
+                "GlobalStateConvert", result.ErrorMessage!, StringComparison.Ordinal);
+            Assert.Throws<InvalidOperationException>(() => result.RequireState());
+        }
+
+        [Fact]
+        public void Deserialize_LegacyVersion_IsStillReadableForMigration()
+        {
+            // The converter has to keep reading what the runtime now refuses, or there is
+            // no way off the old format.
+            const string legacy =
+                "{\"version\":2,\"conversations\":{\"3\":{\"17\":\"WasDisplayed\"}},\"orbs\":[]}";
+
+            Assert.Equal(GlobalStateLoadOutcome.UnsupportedVersion, Parse(legacy).Outcome);
+            Assert.Equal(GlobalStateLoadOutcome.Loaded, ParseLegacy(legacy).Outcome);
+        }
+
+        [Fact]
+        public void Deserialize_TheCurrentVersion_IsTheOldestAccepted()
+        {
+            // Says out loud what the gate is, so that lowering it needs a deliberate edit
+            // here rather than passing unnoticed.
+            Assert.Equal(
+                GlobalStateJson.FormatVersion,
+                GlobalStateJson.MinimumReadableFormatVersion);
+            Assert.True(
+                GlobalStateJson.LegacyPerEntryFormatVersion
+                    < GlobalStateJson.MinimumReadableFormatVersion,
+                "the per-entry shape must sit below the minimum the runtime reads");
+        }
+
         [Fact]
         public void Deserialize_BothShapes_DescribeTheSameState()
         {
@@ -348,7 +409,7 @@ namespace GlobalConversationTracker.Persistence.Tests
             GlobalStateLoadResult grouped = Parse(
                 "{\"version\":3,\"conversations\":{\"WasOffered\":{\"3\":[18]},"
                 + "\"WasDisplayed\":{\"3\":[17]}},\"orbs\":[]}");
-            GlobalStateLoadResult perEntry = Parse(
+            GlobalStateLoadResult perEntry = ParseLegacy(
                 "{\"version\":2,\"conversations\":{\"3\":{\"17\":\"WasDisplayed\","
                 + "\"18\":\"WasOffered\"}},\"orbs\":[]}");
 
@@ -445,7 +506,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         public void Deserialize_OrbsNotAnArray_SkipsThemAndLoadsTheRest()
         {
             GlobalStateLoadResult result = Parse(
-                "{\"version\":2,\"conversations\":{\"1\":{\"2\":\"WasOffered\"}},\"orbs\":\"nope\"}");
+                "{\"version\":3,\"conversations\":{\"WasOffered\":{\"1\":[2]}},\"orbs\":\"nope\"}");
 
             Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
             Assert.Equal(1, result.SkippedRowCount);
@@ -461,7 +522,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         public void Deserialize_BadOrbElement_SkipsThatElementOnly(string element)
         {
             GlobalStateLoadResult result = Parse(
-                "{\"version\":2,\"conversations\":{},\"orbs\":[\"COAST ORB / seagull\","
+                "{\"version\":3,\"conversations\":{},\"orbs\":[\"COAST ORB / seagull\","
                 + element + "]}");
 
             Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
@@ -474,7 +535,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         public void Deserialize_DuplicateOrbs_AreCountedOnce()
         {
             GlobalStateLoadResult result = Parse(
-                "{\"version\":2,\"conversations\":{},\"orbs\":["
+                "{\"version\":3,\"conversations\":{},\"orbs\":["
                 + "\"COAST ORB / seagull\",\"COAST ORB / seagull\"]}");
 
             Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
@@ -494,7 +555,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         [InlineData("\"\"")]
         public void Deserialize_UnrecognizedStatusString_SkipsThatRowOnly(string statusLiteral)
         {
-            GlobalStateLoadResult result = Parse(
+            GlobalStateLoadResult result = ParseLegacy(
                 "{\"version\":1,\"conversations\":{\"1\":{\"2\":" + statusLiteral + ",\"3\":\"WasOffered\"}}}");
 
             Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
@@ -508,7 +569,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         [Fact]
         public void Deserialize_NonIntegerConversationKey_SkipsTheWholeConversation()
         {
-            GlobalStateLoadResult result = Parse(
+            GlobalStateLoadResult result = ParseLegacy(
                 "{\"version\":1,\"conversations\":{\"oops\":{\"1\":\"WasOffered\",\"2\":\"WasOffered\"},"
                 + "\"5\":{\"6\":\"WasDisplayed\"}}}");
 
@@ -521,7 +582,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         [Fact]
         public void Deserialize_ConversationValueNotAnObject_SkipsIt()
         {
-            GlobalStateLoadResult result = Parse(
+            GlobalStateLoadResult result = ParseLegacy(
                 "{\"version\":1,\"conversations\":{\"1\":\"WasOffered\",\"2\":{\"3\":\"WasOffered\"}}}");
 
             Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
@@ -532,7 +593,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         [Fact]
         public void Deserialize_NonIntegerEntryKey_SkipsThatRowOnly()
         {
-            GlobalStateLoadResult result = Parse(
+            GlobalStateLoadResult result = ParseLegacy(
                 "{\"version\":1,\"conversations\":{\"1\":{\"x\":\"WasOffered\",\"2\":\"WasOffered\"}}}");
 
             Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
@@ -548,7 +609,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         [InlineData("[\"WasOffered\"]")]
         public void Deserialize_StatusNotAString_SkipsThatRowOnly(string statusLiteral)
         {
-            GlobalStateLoadResult result = Parse(
+            GlobalStateLoadResult result = ParseLegacy(
                 "{\"version\":1,\"conversations\":{\"1\":{\"2\":" + statusLiteral + ",\"3\":\"WasOffered\"}}}");
 
             Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
@@ -561,7 +622,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         {
             // A hand-written or older file may spell Untouched out. It is a known
             // status, so it is not a skipped row, but it must not create an entry.
-            GlobalStateLoadResult result = Parse(
+            GlobalStateLoadResult result = ParseLegacy(
                 "{\"version\":1,\"conversations\":{\"1\":{\"2\":\"Untouched\"}}}");
 
             Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
@@ -581,7 +642,7 @@ namespace GlobalConversationTracker.Persistence.Tests
 
             json.Append("}}}");
 
-            GlobalStateLoadResult result = Parse(json.ToString());
+            GlobalStateLoadResult result = ParseLegacy(json.ToString());
 
             Assert.Equal(badRowCount, result.SkippedRowCount);
             Assert.Equal(GlobalStateJson.MaxWarnings, result.Warnings.Count);
@@ -597,9 +658,9 @@ namespace GlobalConversationTracker.Persistence.Tests
             // A hand-edited file can contain the same entry twice. Because loading goes
             // through Merge rather than assignment, the higher status wins whichever
             // order the rows appear in.
-            GlobalStateLoadResult displayedFirst = Parse(
+            GlobalStateLoadResult displayedFirst = ParseLegacy(
                 "{\"version\":1,\"conversations\":{\"1\":{\"2\":\"WasDisplayed\",\"2\":\"WasOffered\"}}}");
-            GlobalStateLoadResult offeredFirst = Parse(
+            GlobalStateLoadResult offeredFirst = ParseLegacy(
                 "{\"version\":1,\"conversations\":{\"1\":{\"2\":\"WasOffered\",\"2\":\"WasDisplayed\"}}}");
 
             Assert.Equal(SimStatus.WasDisplayed, displayedFirst.RequireState().GetStatus(1, 2));
@@ -609,7 +670,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         [Fact]
         public void Deserialize_DuplicateConversationBlocks_AreMergedNotReplaced()
         {
-            GlobalStateLoadResult result = Parse(
+            GlobalStateLoadResult result = ParseLegacy(
                 "{\"version\":1,\"conversations\":{\"1\":{\"2\":\"WasDisplayed\"},\"1\":{\"3\":\"WasOffered\"}}}");
 
             GlobalConversationState state = result.RequireState();
@@ -639,7 +700,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         {
             IReadOnlyList<GlobalStateLoadResult> results = new[]
             {
-                Parse("{\"version\":1,\"conversations\":{}}"),
+                Parse("{\"version\":3,\"conversations\":{}}"),
                 Parse("garbage"),
                 Parse("{\"version\":7,\"conversations\":{}}"),
             };

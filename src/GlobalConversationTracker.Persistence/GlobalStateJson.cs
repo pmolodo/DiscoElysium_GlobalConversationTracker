@@ -49,27 +49,36 @@ namespace GlobalConversationTracker.Persistence
     public static class GlobalStateJson
     {
         /// <summary>
-        /// The format version this build writes. It reads this version and every older
-        /// one; see the version gate in <see cref="Deserialize(string, string)"/>.
+        /// The format version this build writes, and the oldest it will load.
         /// </summary>
         /// <remarks>
         /// Version 2 added <see cref="OrbsPropertyName"/>. A version 1 file is a version
-        /// 2 file with no orbs, which is why reading one needs no conversion beyond
-        /// letting the property be absent. Version 3 regrouped
+        /// 2 file with no orbs. Version 3 regrouped
         /// <see cref="ConversationsPropertyName"/> by status, which is a different shape
         /// rather than another optional property, so it has a reader of its own.
         /// </remarks>
         public const int FormatVersion = 3;
 
         /// <summary>
-        /// The newest version written in the per-entry shape, which this build still
-        /// reads.
+        /// The oldest version <see cref="Deserialize(byte[], string)"/> accepts.
         /// </summary>
         /// <remarks>
-        /// A migration affordance with an expiry, not a feature. Once no profile in use
-        /// holds a file this old, the per-entry reader and this constant go, and the
-        /// minimum accepted version rises to 3 so an ancient file is refused loudly
-        /// instead of being parsed by code nothing exercises. Tracked as de-pc2.
+        /// Equal to <see cref="FormatVersion"/> since de-pc2.2: the per-entry shape is no
+        /// longer loadable at runtime. An older file is refused loudly, as
+        /// <see cref="GlobalStateLoadOutcome.UnsupportedVersion"/>, rather than parsed by
+        /// a path nothing else exercises - and refused rather than treated as corrupt,
+        /// because it is full of real history and the caller must not overwrite it.
+        /// <see cref="DeserializeLegacy"/> still reads it, for migration only.
+        /// </remarks>
+        public const int MinimumReadableFormatVersion = FormatVersion;
+
+        /// <summary>
+        /// The newest version written in the per-entry shape.
+        /// </summary>
+        /// <remarks>
+        /// Only <see cref="DeserializeLegacy"/> and the converter built on it read this
+        /// far back. The runtime reader stops at
+        /// <see cref="MinimumReadableFormatVersion"/>.
         /// </remarks>
         public const int LegacyPerEntryFormatVersion = 2;
 
@@ -195,6 +204,61 @@ namespace GlobalConversationTracker.Persistence
             return Encoding.UTF8.GetString(SerializeToUtf8Bytes(state));
         }
 
+        /// <summary>
+        /// Converts a format version 1 or 2 document to the current grouped format.
+        /// </summary>
+        /// <remarks>
+        /// Unlike the runtime reader, conversion is strict: a document that would lose
+        /// even one unreadable row is rejected instead of producing a partial migration.
+        /// </remarks>
+        /// <exception cref="ArgumentNullException">
+        /// <paramref name="utf8Json"/> or <paramref name="sourcePath"/> is null.
+        /// </exception>
+        /// <exception cref="InvalidDataException">
+        /// The input is corrupt, is not format version 1 or 2, or contains an unreadable
+        /// row.
+        /// </exception>
+        public static byte[] ConvertLegacyToUtf8Bytes(byte[] utf8Json, string sourcePath)
+        {
+            if (utf8Json == null)
+            {
+                throw new ArgumentNullException(nameof(utf8Json));
+            }
+
+            if (sourcePath == null)
+            {
+                throw new ArgumentNullException(nameof(sourcePath));
+            }
+
+            GlobalStateLoadResult result = DeserializeWithFormatVersion(
+                utf8Json, sourcePath, allowLegacy: true, out int? sourceFormatVersion);
+            if (!result.IsLoaded)
+            {
+                throw new InvalidDataException(
+                    $"Could not convert '{sourcePath}': {result.ErrorMessage ?? result.Outcome.ToString()}.");
+            }
+
+            int version = sourceFormatVersion.GetValueOrDefault();
+            if (!sourceFormatVersion.HasValue
+                || version < 1
+                || version > LegacyPerEntryFormatVersion)
+            {
+                throw new InvalidDataException(
+                    $"Could not convert '{sourcePath}': format version {version} is not "
+                    + $"a supported legacy version (expected 1 or {LegacyPerEntryFormatVersion}).");
+            }
+
+            if (result.SkippedRowCount > 0)
+            {
+                string warnings = string.Join(" ", result.Warnings);
+                throw new InvalidDataException(
+                    $"Could not convert '{sourcePath}': {result.SkippedRowCount} unreadable row(s) "
+                    + $"would be lost. {warnings}");
+            }
+
+            return SerializeToUtf8Bytes(result.RequireState());
+        }
+
         /// <summary>Parses UTF-8 JSON bytes back into a state.</summary>
         /// <param name="utf8Json">The file contents.</param>
         /// <param name="sourcePath">
@@ -216,6 +280,42 @@ namespace GlobalConversationTracker.Persistence
                 throw new ArgumentNullException(nameof(utf8Json));
             }
 
+            return DeserializeWithFormatVersion(
+                utf8Json, sourcePath, allowLegacy: false, out _);
+        }
+
+        /// <summary>
+        /// Parses a file of any version this build has ever written, including the
+        /// per-entry shape the runtime reader now refuses. For migration only.
+        /// </summary>
+        /// <remarks>
+        /// Separate from <see cref="Deserialize(byte[], string)"/> rather than a flag on
+        /// it, so that reading a legacy file is something a caller has to ask for by
+        /// name. The runtime must not: an ancient file loaded quietly is a profile whose
+        /// history depends on a code path nothing else exercises, which is exactly what
+        /// de-pc2 set out to end. The only caller that should ask is the converter.
+        /// </remarks>
+        /// <param name="utf8Json">The file contents.</param>
+        /// <param name="sourcePath">Named in messages; not read from.</param>
+        /// <returns>What was read, with the same warnings any other read produces.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="utf8Json"/> is null.</exception>
+        public static GlobalStateLoadResult DeserializeLegacy(byte[] utf8Json, string sourcePath)
+        {
+            if (utf8Json == null)
+            {
+                throw new ArgumentNullException(nameof(utf8Json));
+            }
+
+            return DeserializeWithFormatVersion(
+                utf8Json, sourcePath, allowLegacy: true, out _);
+        }
+
+        private static GlobalStateLoadResult DeserializeWithFormatVersion(
+            byte[] utf8Json,
+            string sourcePath,
+            bool allowLegacy,
+            out int? formatVersion)
+        {
             JsonDocument document;
             try
             {
@@ -225,12 +325,14 @@ namespace GlobalConversationTracker.Persistence
             {
                 // Covers the whole "torn write" family: zero bytes, half an object,
                 // trailing garbage.
+                formatVersion = null;
                 return GlobalStateLoadResult.Corrupt(sourcePath, $"Not valid JSON: {ex.Message}");
             }
 
             using (document)
             {
-                return ReadRoot(document.RootElement, sourcePath);
+                return ReadRoot(
+                    document.RootElement, sourcePath, allowLegacy, out formatVersion);
             }
         }
 
@@ -245,8 +347,14 @@ namespace GlobalConversationTracker.Persistence
             return Deserialize(Encoding.UTF8.GetBytes(json), sourcePath);
         }
 
-        private static GlobalStateLoadResult ReadRoot(JsonElement root, string sourcePath)
+        private static GlobalStateLoadResult ReadRoot(
+            JsonElement root,
+            string sourcePath,
+            bool allowLegacy,
+            out int? formatVersion)
         {
+            formatVersion = null;
+
             if (root.ValueKind != JsonValueKind.Object)
             {
                 return GlobalStateLoadResult.Corrupt(
@@ -266,6 +374,8 @@ namespace GlobalConversationTracker.Persistence
                     sourcePath, $"'{VersionPropertyName}' is not an integer.");
             }
 
+            formatVersion = version;
+
             if (version > FormatVersion)
             {
                 // Deliberately not Corrupt: a newer version's file is presumably full of
@@ -276,11 +386,18 @@ namespace GlobalConversationTracker.Persistence
                     $"File format version {version} is newer than this build, which writes version {FormatVersion}.");
             }
 
-            // Older versions are read, not rejected. Each version so far has only ADDED
-            // an optional root property, so an old file is a new file with those absent,
-            // and the readers below treat absent as empty. Rejecting them would turn into
-            // "refuse to save" at the caller, silently stopping tracking on every
-            // existing install the first time this constant was bumped.
+            // Too old is refused, not parsed - but refused as UnsupportedVersion rather
+            // than Corrupt, for the same reason a too-new file is: the file is full of
+            // real history, so the caller has to stop rather than overwrite it with a
+            // stale backup. The remedy is the converter, so the message names it.
+            if (!allowLegacy && version < MinimumReadableFormatVersion)
+            {
+                return GlobalStateLoadResult.UnsupportedVersion(
+                    sourcePath,
+                    $"File format version {version} is older than version "
+                    + $"{MinimumReadableFormatVersion}, which is the oldest this build "
+                    + "loads. Convert it first with the GlobalStateConvert tool.");
+            }
 
             if (!root.TryGetProperty(ConversationsPropertyName, out JsonElement conversations))
             {

@@ -30,6 +30,35 @@ namespace GlobalConversationTracker.Automation.Tests
             Assert.NotEmpty(LookAheadSuites.All);
         }
 
+        /// <summary>
+        /// The default run leaves out what is checked without a game, but the suite still
+        /// exists, is still validated by the checks that walk every suite, and is still
+        /// reachable by name.
+        /// </summary>
+        [Fact]
+        public void AllSeenIsDeclaredButNotInTheDefaultRun()
+        {
+            Assert.Contains(LookAheadSuites.AllSeen, LookAheadSuites.All);
+            Assert.DoesNotContain(LookAheadSuites.AllSeen, LookAheadSuites.Default);
+            Assert.Equal(
+                new[] { LookAheadSuites.AllSeen },
+                LookAheadSuites.SelectMany(new[] { "all-seen" }));
+        }
+
+        [Fact]
+        public void TheDefaultRunIsMadeOfDeclaredSuites()
+        {
+            Assert.All(LookAheadSuites.Default, suite => Assert.Contains(suite, LookAheadSuites.All));
+            Assert.NotEmpty(LookAheadSuites.Default);
+        }
+
+        [Fact]
+        public void NamingNoSuiteRunsTheDefaultSet()
+        {
+            Assert.Equal(LookAheadSuites.Default, LookAheadSuites.SelectMany(Array.Empty<string>()));
+            Assert.Equal(LookAheadSuites.Default, LookAheadSuites.Select(null));
+        }
+
         [Fact]
         public void SuiteNamesAreDistinct()
         {
@@ -125,6 +154,56 @@ namespace GlobalConversationTracker.Automation.Tests
                 LookAheadSuites.Pristine.Scenarios.Select(s => s.ConversationId));
         }
 
+        /// <summary>
+        /// The suite formerly known as headroom claims a no-crawl, not a cost. Once
+        /// every entry is recorded nothing can outrank an option, so the short-circuit
+        /// skips every crawl - and a suite that still demanded a cost would fail on
+        /// correct behaviour, which is exactly what it did before this changed.
+        /// </summary>
+        [Fact]
+        public void AllSeenClaimsNoCrawlRatherThanACost()
+        {
+            LookAheadSuite suite = LookAheadSuites.AllSeen;
+            SuiteArtefact statistics = Assert.Single(
+                suite.Artefacts,
+                artefact => artefact.FileName == "look-ahead-stats.json");
+
+            Assert.Null(statistics.Check(null));
+            Assert.NotNull(statistics.Check("{\"crawls\":1}"));
+        }
+
+        /// <summary>
+        /// It keeps the biggest conversations, because "not even here" is a stronger
+        /// statement of the cheap case than "not in some small conversation".
+        /// </summary>
+        [Fact]
+        public void AllSeenStillUsesTheBiggestConversations()
+        {
+            LookAheadSuite suite = LookAheadSuites.AllSeen;
+
+            Assert.Equal(
+                LookAheadSuites.BiggestConversations.Select(where => where.Conversation),
+                suite.Scenarios.Select(scenario => scenario.ConversationId));
+            Assert.Equal("true", suite.PluginSettings["KeepLookAheadStates"]);
+        }
+
+        [Fact]
+        public void SeenHereIsTheExhaustedNoCrawlFixture()
+        {
+            LookAheadSuite suite = LookAheadSuites.SeenHere;
+            LookAheadScenario scenario = Assert.Single(suite.Scenarios);
+            SuiteArtefact statistics = Assert.Single(
+                suite.Artefacts,
+                artefact => artefact.FileName == "look-ahead-stats.json");
+
+            Assert.Equal("global-state-all-seen-elsewhere.json", suite.GlobalStateFile);
+            Assert.Equal("seen-here-all", scenario.SaveName);
+            Assert.Equal(MarkerPolicy.Named, scenario.Markers);
+            Assert.Equal("true", suite.PluginSettings["KeepLookAheadStates"]);
+            Assert.Null(statistics.Check(null));
+            Assert.NotNull(statistics.Check("{\"crawls\":1}"));
+        }
+
         [Fact]
         public void NoScenarioNamesTheSameEntryTwice()
         {
@@ -194,10 +273,17 @@ namespace GlobalConversationTracker.Automation.Tests
             Assert.Equal("money", selected[0].Name);
         }
 
+        /// <summary>
+        /// Selecting nothing runs the DEFAULT set, which is no longer every suite: one
+        /// whose claim is checked without a game is left out of the in-game run.
+        /// </summary>
         [Fact]
-        public void SelectingNothingRunsEverySuite()
+        public void SelectingNothingRunsTheDefaultSet()
         {
-            Assert.Equal(LookAheadSuites.All.Count, LookAheadSuites.Select(null).Count);
+            Assert.Equal(LookAheadSuites.Default.Count, LookAheadSuites.Select(null).Count);
+            Assert.True(
+                LookAheadSuites.Default.Count < LookAheadSuites.All.Count,
+                "the default set should be a strict subset, or nothing has been moved offline");
         }
 
         [Fact]

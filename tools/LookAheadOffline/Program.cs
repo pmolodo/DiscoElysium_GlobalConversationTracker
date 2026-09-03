@@ -39,11 +39,27 @@ namespace GlobalConversationTracker.LookAheadOffline
                 });
                 foreach (DialogueNodeId start in starts)
                 {
-                    if (!graph.Get(start).IsGroup)
+                    if (graph.Get(start).IsGroup)
                     {
-                        LookAheadResult result = engine.Evaluate(graph, start, world, world.GetNovelty);
-                        results.Add(new CrawlResult(start, result));
+                        continue;
                     }
+
+                    // The same question ResponseLookAheadPatch.MarkerFor asks before it
+                    // builds any crawl state, asked here for the same reason: if nothing
+                    // in the group outranks this option, no walk can produce a marker.
+                    // Asking it keeps this tool and the game agreeing about which options
+                    // are worth crawling. Without it the tool reports crawls, and costs,
+                    // that the game does not pay - which is exactly backwards for a tool
+                    // whose whole purpose is to model the plugin without launching it.
+                    if (!LookAheadEngine.HasPotentialImprovement(
+                        graph, world.GetNovelty(start), world.GetNovelty))
+                    {
+                        results.Add(CrawlResult.NotCrawled(start));
+                        continue;
+                    }
+
+                    LookAheadResult result = engine.Evaluate(graph, start, world, world.GetNovelty);
+                    results.Add(new CrawlResult(start, result));
                 }
 
                 Console.WriteLine(JsonSerializer.Serialize(results, new JsonSerializerOptions
@@ -102,12 +118,40 @@ namespace GlobalConversationTracker.LookAheadOffline
             StoppedBy = result.StoppedBy.ToString();
         }
 
+        private CrawlResult(DialogueNodeId start)
+        {
+            Conversation = start.ConversationId;
+            Entry = start.EntryId;
+            Best = null;
+            StatesExplored = 0;
+            NodesReached = 0;
+            StoppedBy = nameof(NotCrawled);
+            Crawled = false;
+        }
+
+        /// <summary>
+        /// An option the short-circuit answered without crawling.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="Best"/> is null rather than the option's own novelty, because it is
+        /// genuinely not known: all that was established is that nothing in the group
+        /// outranks the option, which bounds the best reachable novelty without
+        /// measuring it. Reporting the bound as though it were the answer would be a
+        /// quietly wrong number in a file people read to compare against the game.
+        /// </remarks>
+        /// <param name="start">The option that was not crawled.</param>
+        /// <returns>A result recording the skip.</returns>
+        public static CrawlResult NotCrawled(DialogueNodeId start) => new CrawlResult(start);
+
         public int Conversation { get; }
         public int Entry { get; }
-        public string Best { get; }
+        public string? Best { get; }
         public int StatesExplored { get; }
         public int NodesReached { get; }
         public string StoppedBy { get; }
+
+        /// <summary>Whether a crawl actually ran for this option.</summary>
+        public bool Crawled { get; } = true;
     }
 
     internal sealed class Arguments

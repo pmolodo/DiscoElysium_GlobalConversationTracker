@@ -2,14 +2,12 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
-using System.Text.Json;
-using System.Text.Json.Serialization;
+using GlobalConversationTracker.DialogueAsset;
 using GlobalConversationTracker.LookAhead;
 
 namespace GlobalConversationTracker.LookAheadOffline
 {
-    internal sealed class ConversationIndex
+    public sealed class ConversationIndex
     {
         private const string PassiveField = "DifficultyPass";
         private const string RedField = "DifficultyRed";
@@ -23,6 +21,9 @@ namespace GlobalConversationTracker.LookAheadOffline
         private const string CostOnceField = "CostOnce";
         private const string HiddenNotEnoughField = "HiddenNotEnough";
 
+        /// <summary>Stands in for an entry that names no destination conversation at all.</summary>
+        private static readonly List<int> NoConversations = new List<int>();
+
         private readonly Dictionary<int, ConversationRecord> _conversations;
 
         private ConversationIndex(Dictionary<int, ConversationRecord> conversations)
@@ -33,20 +34,8 @@ namespace GlobalConversationTracker.LookAheadOffline
         public static ConversationIndex Read(string path)
         {
             var conversations = new Dictionary<int, ConversationRecord>();
-            foreach (string line in File.ReadLines(path))
+            foreach (ConversationRecord conversation in ConversationIndexFile.Read(path))
             {
-                if (string.IsNullOrWhiteSpace(line))
-                {
-                    continue;
-                }
-
-                ConversationRecord? conversation = JsonSerializer.Deserialize<ConversationRecord>(line,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                if (conversation == null)
-                {
-                    throw new InvalidDataException("The conversation index contains a null record.");
-                }
-
                 conversations.Add(conversation.Id, conversation);
             }
 
@@ -69,7 +58,7 @@ namespace GlobalConversationTracker.LookAheadOffline
                 ConversationRecord conversation = _conversations[pending.Dequeue()];
                 foreach (EntryRecord entry in conversation.Entries)
                 {
-                    foreach (int destination in entry.ToConversation)
+                    foreach (int destination in entry.ToConversation ?? NoConversations)
                     {
                         if (_conversations.ContainsKey(destination) && group.Add(destination))
                         {
@@ -127,11 +116,12 @@ namespace GlobalConversationTracker.LookAheadOffline
                 && ReadBoolean(entry.Fields, BooleanOnlyField);
             bool closesOnceSeen = kind == DialogueCheckKind.Fake
                 || (kind == DialogueCheckKind.KimSwitch && !booleanOnly);
+            List<int> toConversation = entry.ToConversation ?? NoConversations;
             var links = new List<DialogueNodeId>(entry.To.Count);
             for (int i = 0; i < entry.To.Count; i++)
             {
-                int destinationConversation = i < entry.ToConversation.Count
-                    ? entry.ToConversation[i]
+                int destinationConversation = i < toConversation.Count
+                    ? toConversation[i]
                     : conversationId;
                 links.Add(new DialogueNodeId(destinationConversation, entry.To[i]));
             }
@@ -168,23 +158,5 @@ namespace GlobalConversationTracker.LookAheadOffline
                 && int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed)
                 ? parsed : 0;
         }
-    }
-
-    internal sealed class ConversationRecord
-    {
-        public int Id { get; set; }
-        public List<EntryRecord> Entries { get; set; } = new List<EntryRecord>();
-    }
-
-    internal sealed class EntryRecord
-    {
-        public int Id { get; set; }
-        public bool Group { get; set; }
-        public string Guard { get; set; } = string.Empty;
-        public string Script { get; set; } = string.Empty;
-        public List<int> To { get; set; } = new List<int>();
-        [JsonPropertyName("to_conversation")]
-        public List<int> ToConversation { get; set; } = new List<int>();
-        public Dictionary<string, string> Fields { get; set; } = new Dictionary<string, string>();
     }
 }

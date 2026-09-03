@@ -162,15 +162,39 @@ namespace GlobalConversationTracker.Harness
         public static IReadOnlyList<Somewhere> BiggestConversations =>
             new[] { Noid, HangedMan, Joyce, Garte, DoomSpiral };
 
-        /// <summary>Every suite, in the order a full run does them.</summary>
+        /// <summary>Every suite that exists, in the order a full run would do them.</summary>
         /// <remarks>
-        /// Computed rather than stored: a static field would be initialised before the
-        /// suites it names, and would quietly hold nulls.
+        /// <para>Computed rather than stored: a static field would be initialised before
+        /// the suites it names, and would quietly hold nulls.</para>
+        ///
+        /// <para>Everything declared, including what <see cref="Default"/> leaves out, so
+        /// that naming a suite explicitly always works and so that the checks which walk
+        /// every suite - that its global state exists and that the mod can read it - keep
+        /// covering all of them.</para>
         /// </remarks>
         public static IReadOnlyList<LookAheadSuite> All =>
             new[]
             {
-                Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff, Headroom,
+                Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff, AllSeen,
+            };
+
+        /// <summary>The suites a run does when it is not told which to do.</summary>
+        /// <remarks>
+        /// <para><see cref="AllSeen"/> is deliberately not here. Its claim - that nothing
+        /// is worth crawling once everything is recorded - is about the crawl algorithm
+        /// rather than about the game, and it is checked without a game by
+        /// <c>AllSeenOfflineTests</c>, over the same state and the same conversations, in
+        /// about four seconds and under <c>dotnet test</c>. Repeating it here would cost
+        /// a launch and five save loads to learn the same thing.</para>
+        ///
+        /// <para>It stays available as <c>--suite all-seen</c>, and is worth running that
+        /// way when the plumbing rather than the algorithm is in question, since the
+        /// offline check cannot see whether the patch is wired up at all.</para>
+        /// </remarks>
+        public static IReadOnlyList<LookAheadSuite> Default =>
+            new[]
+            {
+                Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff,
             };
 
         /// <summary>
@@ -402,12 +426,13 @@ namespace GlobalConversationTracker.Harness
         /// <remarks>
         /// The bottom rung. Every entry is read in this save, so every option's own
         /// novelty and everything it can reach are both the lowest, and nothing can
-        /// outrank anything. Distinguished from a crawl that simply did not run by the
-        /// statistics, which must still record crawls.
+        /// outrank anything. The global state and local save are both exhaustive, so the
+        /// structural scan can prove that before any crawl state is built. Statistics
+        /// distinguish that shortcut from crawls that ran and found nothing.
         /// </remarks>
         public static LookAheadSuite SeenHere { get; } = new LookAheadSuite(
             "seen-here",
-            "a conversation already read to the end earns no marker",
+            "a conversation read to the end earns no marker and needs no crawl",
             AllSeenElsewhereState,
             new[]
             {
@@ -423,8 +448,8 @@ namespace GlobalConversationTracker.Harness
             {
                 new SuiteArtefact(
                     "look-ahead-stats.json",
-                    "the crawls ran and found nothing, rather than not running",
-                    CheckStatistics),
+                    "no crawl ran because every scoreable entry is already seen here",
+                    NoCrawls),
             });
 
         /// <summary>
@@ -520,25 +545,32 @@ namespace GlobalConversationTracker.Harness
     }
 
         /// <summary>
-        /// What the biggest conversations in the game actually cost.
+        /// The biggest conversations in the game, with everything already recorded, cost
+        /// nothing at all.
         /// </summary>
         /// <remarks>
-        /// <para>Not a behaviour check - a measurement, with assertions about what the
-        /// measurement found. The staged global state records every entry of every
-        /// conversation here, which is the most expensive shape a crawl can take: no
-        /// option's own novelty is unseen-anywhere, so the early exit in MarkerFor does
-        /// not fire and the crawl runs; and nothing it reaches is unseen-anywhere either,
-        /// so it cannot stop the instant it finds something and has to explore everything
-        /// reachable.</para>
+        /// <para>This suite used to be called "headroom" and used to be a measurement:
+        /// the staged global state records every entry of every conversation, which was
+        /// once the most expensive shape a crawl could take, because no option's own
+        /// novelty is unseen-anywhere - so the early exit in MarkerFor did not fire - and
+        /// nothing reachable is unseen-anywhere either, so a crawl could not stop the
+        /// instant it found something and had to explore everything.</para>
         ///
-        /// <para>What the run prints alongside is the cost - states and milliseconds,
-        /// worst and mean, per conversation - because whether the budget was reached is
-        /// one bit, and how close it came is what says whether the limit is doing
-        /// anything and whether a larger one would be affordable.</para>
+        /// <para>The no-potential-improvement short-circuit ended that. When every entry
+        /// is recorded, nothing can outrank the option that is being asked about, so no
+        /// walk can produce a marker and the crawl is skipped before any state is built.
+        /// The expensive shape is now the near-opposite - a group with one unseen node,
+        /// or a handful - and that is measured elsewhere.</para>
+        ///
+        /// <para>So what these five conversations are for now is the strongest available
+        /// statement of the cheap case. They are the largest in the game, so if a crawl
+        /// were going to run anywhere it would run here, and the claim is that not one
+        /// does. That is why the biggest conversations are still the right scenarios for
+        /// it even though nothing is being timed.</para>
         /// </remarks>
-        public static LookAheadSuite Headroom { get; } = new LookAheadSuite(
-            "headroom",
-            "what the biggest conversations cost, and whether the budget is ever reached",
+        public static LookAheadSuite AllSeen { get; } = new LookAheadSuite(
+            "all-seen",
+            "the biggest conversations cost nothing when every entry is already recorded",
             WorstCaseState,
             BiggestConversations
                 .Select(where => new LookAheadScenario(
@@ -550,6 +582,8 @@ namespace GlobalConversationTracker.Harness
                 .ToArray(),
             pluginSettings: new Dictionary<string, string>
             {
+                // Kept on so that a crawl WOULD leave a trace. The claim is that the file
+                // is absent; that means nothing unless the run was configured to write it.
                 ["KeepLookAheadStates"] = "true",
                 ["LogLookAheadBudgetExceeded"] = "true",
             },
@@ -557,11 +591,11 @@ namespace GlobalConversationTracker.Harness
             {
                 new SuiteArtefact(
                     "look-ahead-stats.json",
-                    "the crawls ran and are all accounted for, at a cost the run prints",
-                    ReportCost),
+                    "no crawl ran, because nothing here can outrank any option",
+                    NoCrawls),
                 new SuiteArtefact(
                     "look-ahead-budget-overflows.log",
-                    "the overflow report says where the blow-up lives",
+                    "and so no crawl spent a budget either",
                     ReportOverflows),
             });
 
@@ -580,8 +614,16 @@ namespace GlobalConversationTracker.Harness
     /// MAIN) draws a menu whose four options are all entries of 13 (WHIRLING F1 / GARTE),
     /// so a run that crawls Garte's menu perfectly well records nothing under 28.
     /// Demanding a row per opened conversation fails on correct behaviour.</para>
+    ///
+    /// <para>NO SUITE WIRES THIS UP AT PRESENT, and that is deliberate rather than an
+    /// oversight. The one suite that measured a cost - the old "headroom" - now claims a
+    /// no-crawl instead, because the state it stages makes every crawl skippable. This
+    /// is kept because the shapes that ARE expensive under the short-circuit, a group
+    /// with one unseen node or a handful, still need exactly this table, and because
+    /// asking for a cost on any suite is worth having as an option rather than as a
+    /// property of one suite. Do not delete it as unused.</para>
     /// </remarks>
-    private static string? ReportCost(string? json)
+    public static string? ReportCost(string? json)
     {
         if (json is null)
         {
@@ -684,7 +726,11 @@ namespace GlobalConversationTracker.Harness
     }
 
         /// <summary>Finds the requested suites.</summary>
-        /// <param name="names">Suite names, or an empty list for every suite.</param>
+        /// <param name="names">
+        /// Suite names, or an empty list for <see cref="Default"/>. Naming a suite finds
+        /// it in <see cref="All"/>, so one left out of the default run is still asked for
+        /// by name.
+        /// </param>
         /// <exception cref="ArgumentException">No suite goes by a requested name.</exception>
         public static IReadOnlyList<LookAheadSuite> SelectMany(IReadOnlyList<string> names)
         {
@@ -695,7 +741,7 @@ namespace GlobalConversationTracker.Harness
 
             if (names.Count == 0)
             {
-                return All;
+                return Default;
             }
 
             var selected = new List<LookAheadSuite>();
@@ -722,13 +768,13 @@ namespace GlobalConversationTracker.Harness
         }
 
         /// <summary>Finds one suite by name, or every suite when no name is given.</summary>
-        /// <param name="name">The suite's name, or null for every suite.</param>
-        /// <returns>The matching suite, or every suite.</returns>
+        /// <param name="name">The suite's name, or null for the default run.</param>
+        /// <returns>The matching suite, or <see cref="Default"/>.</returns>
         /// <exception cref="ArgumentException">No suite goes by that name.</exception>
         public static IReadOnlyList<LookAheadSuite> Select(string? name)
         {
             return name == null
-                ? All
+                ? Default
                 : SelectMany(new[] { name });
         }
 

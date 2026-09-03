@@ -57,9 +57,15 @@ namespace GlobalConversationTracker.Session.Tests
         {
             using var dir = new TempDirectory();
             GlobalStateStore store = dir.CreateStore();
+            // Damage in the CURRENT shape. It used to be written per-entry, but the
+            // runtime no longer loads that version at all, so a version 1 file here would
+            // be testing the version gate rather than the row-level recovery this is
+            // about. "Nonsense" is not a status, so the whole block is skipped and entry
+            // 18 stays untouched while entry 17 loads.
             File.WriteAllText(
                 store.LivePath,
-                "{\"version\":1,\"conversations\":{\"3\":{\"17\":\"WasDisplayed\",\"18\":\"Nonsense\"}}}",
+                "{\"version\":3,\"conversations\":{\"WasDisplayed\":{\"3\":[17]},"
+                + "\"Nonsense\":{\"3\":[18]}},\"orbs\":[]}",
                 new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
 
             var log = new RecordingLog();

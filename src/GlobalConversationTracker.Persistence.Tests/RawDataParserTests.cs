@@ -127,6 +127,22 @@ public class RawDataParserTests
     }
 
     [Fact]
+    public void ReadAllTables_RejectsAKeyRepeatedBetweenTheListAndDictParts()
+    {
+        // Merging the two parts into one map is only safe while they do not
+        // overlap: the list part supplies key 1, so a hash key that narrows to 1
+        // would silently overwrite it. Written as the double 1.0 because that is
+        // the only spelling of the collision the wire format can carry.
+        byte[] blob = LuaBlob.SerializeConversations(LuaBlob.Table((1, "list"), (1.0, "dict")));
+
+        InvalidDataException error = Assert.Throws<InvalidDataException>(
+            () => LuaTableVisitor.ReadAllTables(blob, out _)
+        );
+
+        Assert.Contains("Duplicate key 1", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ReadAllTables_IntegralNumbersComeBackAsIntegers()
     {
         LuaTable tables = ReadSample(out _);

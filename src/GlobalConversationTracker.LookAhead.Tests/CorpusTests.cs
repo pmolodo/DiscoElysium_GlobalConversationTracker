@@ -19,7 +19,8 @@ namespace GlobalConversationTracker.LookAhead.Tests
     /// been generated and pass silently if it has not, so a checkout without a game
     /// install still runs green.</para>
     ///
-    /// <para>Regenerate with <c>extract_dialogue_corpus.py</c> at the repo root. The
+    /// <para>Regenerate with
+    /// <c>dotnet run --project tools/DialogueExtract -- corpus</c>. The
     /// parser was developed against this corpus and handled 100% of it; a failure here
     /// means either a regression or a database this build has not seen.</para>
     /// </remarks>
@@ -186,7 +187,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
         }
 
         /// <summary>
-        /// Reverses the escaping <c>extract_dialogue_corpus.py</c> applies. Done as a
+        /// Reverses the escaping <c>DialogueCorpusFile</c> applies. Done as a
         /// scan rather than chained Replace calls, because a script containing a literal
         /// backslash followed by 'n' must not turn into a newline.
         /// </summary>

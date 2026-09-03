@@ -52,6 +52,41 @@ namespace GlobalConversationTracker.Harness
         /// </summary>
         private static readonly TimeSpan BetweenPresses = TimeSpan.FromSeconds(2);
 
+        /// <summary>
+        /// How many times a scenario will ask for its conversation before giving up.
+        /// </summary>
+        /// <remarks>
+        /// A conversation asked for too early finds its first node gated and ends at
+        /// once, which from outside is indistinguishable from one that never started.
+        /// Retrying costs a few seconds and rescues the run; not retrying costs the
+        /// whole suite, because the failure lands mid-run with the profile staged.
+        /// Three rather than more: if two settles have not made the world ready, the
+        /// cause is not a race and a fourth ask will not find it either.
+        /// </remarks>
+        private const int OpenAttempts = 3;
+
+        /// <summary>
+        /// How long to let the world settle before asking for a conversation again.
+        /// </summary>
+        /// <remarks>
+        /// The gap being closed is between <c>load-finished</c> - the game's own loading
+        /// flag falling - and the loaded save's world state reaching Lua, which is what
+        /// the first node's condition is evaluated against. That is a short gap; this is
+        /// several times its size, because the cost of waiting too long is seconds and
+        /// the cost of waiting too little is the retry failing the same way.
+        /// </remarks>
+        private static readonly TimeSpan BetweenOpenAttempts = TimeSpan.FromSeconds(5);
+
+        /// <summary>
+        /// How long to wait for the probe to say whether <c>start-conversation</c> took.
+        /// </summary>
+        /// <remarks>
+        /// The probe answers on its next poll, ten frames away, so this is generous by a
+        /// wide margin. It is a guard against the command never being picked up at all,
+        /// not a real wait.
+        /// </remarks>
+        private static readonly TimeSpan StartAcknowledgement = TimeSpan.FromSeconds(30);
+
         /// <summary>Runs the named suites in one game process.</summary>
         /// <param name="game">Path to disco.exe.</param>
         /// <param name="scenarioRoot">Where the built scenarios are.</param>
@@ -474,6 +509,137 @@ namespace GlobalConversationTracker.Harness
             }
         }
 
+        /// <summary>
+        /// Opens a scenario's conversation and returns the response menu it draws,
+        /// asking again if the conversation did not take.
+        /// </summary>
+        /// <remarks>
+        /// <para>Asking once is not enough. A conversation started before the loaded
+        /// save's world state has reached Lua evaluates its first node's condition
+        /// against the outgoing world, finds it false, and ends immediately - so the
+        /// game is healthy, the id was right, and no menu is ever drawn. Waiting out the
+        /// menu timeout reports that as a hang, which is both wrong and expensive: it
+        /// lands mid-run with the player's profile staged.</para>
+        ///
+        /// <para>Two things are checked, because they fail differently. The probe says
+        /// outright whether <c>StartConversation</c> left a conversation running, which
+        /// catches the immediate fall-out; and a conversation that is running but never
+        /// reaches a menu is caught by the attempt's own timeout. Both lead to the same
+        /// remedy - settle, ask again - so both are retried the same way.</para>
+        ///
+        /// <para>Each attempt gets an equal share of the scenario's timeout, so retrying
+        /// cannot make a genuinely stuck run take three times as long to report.</para>
+        /// </remarks>
+        /// <summary>The share of a scenario's timeout that one attempt at opening gets.</summary>
+        /// <remarks>
+        /// Split rather than repeated, so that adding retries cannot multiply how long a
+        /// genuinely stuck scenario takes to report. The whole point is to rescue a run
+        /// that would have failed, not to spend three times as long failing.
+        /// </remarks>
+        /// <param name="total">The scenario's whole timeout.</param>
+        /// <returns>How long one attempt may wait for its menu.</returns>
+        public static TimeSpan AttemptTimeout(TimeSpan total)
+        {
+            return TimeSpan.FromTicks(total.Ticks / OpenAttempts);
+        }
+
+        /// <summary>
+        /// Whether an answer to <c>start-conversation</c> says the conversation ended as
+        /// soon as it began.
+        /// </summary>
+        /// <remarks>
+        /// Only an explicit false counts. A missing or non-Boolean <c>active</c> means
+        /// the probe could not ask the dialogue system, not that the conversation failed,
+        /// and treating "do not know" as "failed" would retry - and eventually fail -
+        /// scenarios that were about to draw their menu perfectly well.
+        /// </remarks>
+        /// <param name="started">The probe's answer to the command.</param>
+        /// <returns>True only when the probe said outright that nothing is running.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="started"/> is null.</exception>
+        public static bool FellStraightOut(ProbeEvent started)
+        {
+            if (started == null)
+            {
+                throw new ArgumentNullException(nameof(started));
+            }
+
+            return started.Boolean("active") == false;
+        }
+
+        private static ProbeEvent OpenConversation(
+            LookAheadScenario scenario,
+            string saveGames,
+            ProbeWatcher watcher,
+            TimeSpan timeout)
+        {
+            string what = $"a response menu in conversation {scenario.ConversationId}";
+            TimeSpan perAttempt = AttemptTimeout(timeout);
+
+            for (int attempt = 1; ; attempt++)
+            {
+                bool last = attempt == OpenAttempts;
+                if (attempt > 1)
+                {
+                    Console.WriteLine(
+                        $"        asking for conversation {scenario.ConversationId} again "
+                        + $"(attempt {attempt} of {OpenAttempts})");
+                }
+
+                ProbeCommand.SendStartConversation(saveGames, scenario.ConversationId);
+
+                // Read before the menu wait, not after: WaitFor consumes as it scans, so
+                // pressing Enter first would swallow the acknowledgement this turns on.
+                ProbeEvent started = watcher.WaitFor(
+                    e => e.Name == "command-finished"
+                        && e.Text("command") == "start-conversation",
+                    StartAcknowledgement,
+                    $"an answer to start-conversation {scenario.ConversationId}",
+                    Log);
+
+                if (FellStraightOut(started))
+                {
+                    if (last)
+                    {
+                        throw new TimeoutException(
+                            $"Asked for conversation {scenario.ConversationId} {OpenAttempts} "
+                            + "times and it never stayed open. It ends as soon as it starts, "
+                            + "so its first node's condition is false in this save.");
+                    }
+
+                    Console.WriteLine(
+                        "        it started and ended at once; letting the world settle");
+                    Thread.Sleep(BetweenOpenAttempts);
+                    continue;
+                }
+
+                // The conversation opens on narration, not on a menu: StartConversation
+                // puts the first line up and the game waits to be told to go on, exactly
+                // as it would for a player. Enter advances it until the options appear.
+                //
+                // "complete" only. The game composes each menu twice - once per
+                // response-UI path - so the recorder reports the first pass as superseded
+                // when the second begins. Both carry the same options, but only the
+                // completed one is tied to its conversation and its balance.
+                try
+                {
+                    return PressEnterUntil(
+                        watcher,
+                        e => e.Name == "menu"
+                            && e.Number("conversation") == scenario.ConversationId
+                            && e.Text("state") == "complete",
+                        perAttempt,
+                        what,
+                        "advancing dialogue");
+                }
+                catch (TimeoutException) when (!last)
+                {
+                    Console.WriteLine(
+                        "        it is open but drew no menu; letting the world settle");
+                    Thread.Sleep(BetweenOpenAttempts);
+                }
+            }
+        }
+
         private static void RunScenario(
             LookAheadScenario scenario,
             string saveGames,
@@ -483,24 +649,7 @@ namespace GlobalConversationTracker.Harness
         {
             watcher.WaitForEvent("load-finished", timeout, Log);
 
-            ProbeCommand.SendStartConversation(saveGames, scenario.ConversationId);
-
-            // The conversation opens on narration, not on a menu: StartConversation puts
-            // the first line up and the game waits to be told to go on, exactly as it
-            // would for a player. Enter advances it until the options appear.
-            //
-            // "complete" only. The game composes each menu twice - once per response-UI
-            // path - so the recorder reports the first pass as superseded when the second
-            // begins. Both carry the same options, but only the completed one is tied to
-            // its conversation and its balance.
-            ProbeEvent menu = PressEnterUntil(
-                watcher,
-                e => e.Name == "menu"
-                    && e.Number("conversation") == scenario.ConversationId
-                    && e.Text("state") == "complete",
-                timeout,
-                $"a response menu in conversation {scenario.ConversationId}",
-                "advancing dialogue");
+            ProbeEvent menu = OpenConversation(scenario, saveGames, watcher, timeout);
 
             // Taken from the menu rather than from load-finished, which is emitted when
             // the game's IsLoading flag falls - a poll boundary earlier than the loaded
