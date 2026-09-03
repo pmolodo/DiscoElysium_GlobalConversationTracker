@@ -12,6 +12,7 @@ namespace GlobalConversationTracker.DialogueExtract
         private const string ArticyIdsCommand = "articy-ids";
         private const string ConversationIndexCommand = "conversation-index";
         private const string CorpusCommand = "corpus";
+        private const string VariablesCommand = "variables";
         private const string WorstCaseStateCommand = "worst-case-state";
         private const int ExitFailure = 1;
 
@@ -31,6 +32,9 @@ namespace GlobalConversationTracker.DialogueExtract
               corpus              Every distinct guard and script the database contains,
                                   sorted, one per line, as distinct_guards.txt and
                                   distinct_scripts.txt.
+              variables           The database's variable table - name, declared type and
+                                  initial value, one JSON object per line - so a world can
+                                  tell a counter from a flag.
               worst-case-state    The global state that makes a look-ahead crawl as
                                   expensive as it can be: every entry of every
                                   conversation in the index recorded as WasDisplayed.
@@ -107,6 +111,8 @@ namespace GlobalConversationTracker.DialogueExtract
                     return ConversationIndex(ParseOptions(args, command));
                 case CorpusCommand:
                     return Corpus(ParseOptions(args, command));
+                case VariablesCommand:
+                    return Variables(ParseOptions(args, command));
                 case WorstCaseStateCommand:
                     return WorstCaseState(ParseOptions(args, command));
                 default:
@@ -156,6 +162,41 @@ namespace GlobalConversationTracker.DialogueExtract
 
             Console.WriteLine($"{corpus.Guards.Count,6} distinct guards  -> {guardPath}");
             Console.WriteLine($"{corpus.Scripts.Count,6} distinct scripts -> {scriptPath}");
+            return 0;
+        }
+
+        /// <summary>
+        /// Writes the database's variable table, so a world can tell a counter from a flag.
+        /// </summary>
+        /// <remarks>
+        /// The one thing the conversation index never carried and every world has had to
+        /// guess at. A variable nobody has written reads boolean false - right for the
+        /// great majority of guards, and wrong for the 142 counters, whose ordering
+        /// comparisons then cannot be evaluated at all. See de-sze.5.4.
+        /// </remarks>
+        private static int Variables(Dictionary<string, string> options)
+        {
+            string asset = Option(options, "--asset", DefaultAsset);
+            string outDir = Option(options, "--out-dir", DefaultDerived);
+            RejectUnknownOptions(options);
+            Directory.CreateDirectory(outDir);
+
+            IReadOnlyList<DialogueVariable> variables = VariableTableExtractor.Extract(asset);
+            string outPath = Path.Combine(outDir, VariableTableFile.FileName);
+            VariableTableFile.Write(outPath, variables);
+
+            int numbers = 0;
+            foreach (DialogueVariable variable in variables)
+            {
+                if (variable.Type == "Number")
+                {
+                    numbers++;
+                }
+            }
+
+            Console.WriteLine(
+                $"wrote {variables.Count} variables ({numbers} numbers, "
+                + $"{variables.Count - numbers} other) to {outPath}");
             return 0;
         }
 

@@ -88,6 +88,106 @@ pub fn read_index(path: &Path) -> anyhow::Result<Index> {
     Ok(index)
 }
 
+/// One variable, as the database declares it.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct VariableRecord {
+    pub name: String,
+    /// "Boolean", "Number", or empty where the database declares none.
+    #[serde(rename = "type")]
+    pub declared: String,
+    /// The value it starts at, as the database writes it.
+    pub initial: String,
+}
+
+/// What the database says its variables are, so a world need not guess.
+///
+/// ## Why guessing was not good enough
+///
+/// A variable nobody has written reads BOOLEAN FALSE, which is what the game does - an
+/// unset Lua variable is nil and nil is falsy - and is right for the great majority of
+/// guards, including the 5,994 of 13,059 distinct ones ending in `== false`. It is wrong
+/// for a counter: `>= 3` against a boolean cannot be evaluated at all, because
+/// `try_as_number` gives nothing for one, so the guard turns undecidable and the branch
+/// stays open. Answering number zero for everything instead is a worse bug, since
+/// `GuardValue::equals` is kind-sensitive and all 5,994 of those would start answering
+/// false.
+///
+/// The declared type settles it, and there are only 142 numbers among 10,645 variables -
+/// so the guessing was wrong about one variable in seventy-five, and undecidable on
+/// exactly the comparisons that count things.
+///
+/// THE INITIAL VALUE MATTERS TOO, and is not always zero: `apt.smoker_second_departure`
+/// starts at 9999 and `apt.apt_for_rent_door_closed_counter` at -1. A fixture that
+/// assumed zero was wrong about those before it was wrong about anything else.
+#[derive(Debug, Clone, Default)]
+pub struct VariableTable {
+    initial: HashMap<String, crate::core::guard_value::GuardValue>,
+    numbers: usize,
+}
+
+impl VariableTable {
+    /// What the extractor calls the file.
+    pub const FILE_NAME: &'static str = "variables.jsonl";
+
+    /// Reads `variables.jsonl`, as `dotnet run --project tools/DialogueExtract -- variables`
+    /// writes it.
+    pub fn read(path: &Path) -> anyhow::Result<Self> {
+        let mut table = Self::default();
+        for line in BufReader::new(File::open(path)?).lines() {
+            let line = line?;
+            if line.trim().is_empty() {
+                continue;
+            }
+
+            let record: VariableRecord = serde_json::from_str(&line)?;
+            table.add(&record);
+        }
+
+        Ok(table)
+    }
+
+    /// Records one variable at its declared type.
+    fn add(&mut self, record: &VariableRecord) {
+        use crate::core::guard_value::GuardValue;
+
+        let value = match record.declared.as_str() {
+            "Number" => {
+                self.numbers += 1;
+                // A declared number whose initial value will not parse is still a number;
+                // zero is the honest reading of "it starts unset", and it keeps the KIND
+                // right, which is the half that decides whether a comparison can be
+                // answered at all.
+                GuardValue::from_number(record.initial.trim().parse::<f64>().unwrap_or(0.0))
+            }
+            "Boolean" => GuardValue::from_boolean(record.initial.trim().eq_ignore_ascii_case("true")),
+            // Anything else is carried as text rather than guessed at. Nothing in the
+            // shipped database is anything else, so this is a door rather than a path.
+            _ => GuardValue::from_text(record.initial.clone()),
+        };
+
+        self.initial.insert(record.name.clone(), value);
+    }
+
+    /// What the database says this variable starts as, if it declares it at all.
+    pub fn initial(&self, name: &str) -> Option<&crate::core::guard_value::GuardValue> {
+        self.initial.get(name)
+    }
+
+    /// How many variables the table holds.
+    pub fn len(&self) -> usize {
+        self.initial.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.initial.is_empty()
+    }
+
+    /// How many of them are declared numbers - the counters.
+    pub fn numbers(&self) -> usize {
+        self.numbers
+    }
+}
+
 /// Every conversation reachable from `start` by following links, `start` included.
 ///
 /// Sorted, and that is not cosmetic: the order conversations are visited decides the

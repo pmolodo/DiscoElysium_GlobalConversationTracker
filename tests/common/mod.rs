@@ -159,6 +159,33 @@ pub fn conversation_index() -> Option<PathBuf> {
     )
 }
 
+/// What to run to rebuild the variable table.
+const VARIABLES_COMMAND: [&str; 5] =
+    ["run", "--project", "tools/DialogueExtract", "--", "variables"];
+
+/// The database's variable table, read once and shared.
+///
+/// Once, because every world built in a run wants the same 10,645 entries and reading
+/// them per fixture would be the measurement measuring its own setup. `None` where the
+/// game data cannot be had, in which case a world falls back to the old guess - which is
+/// what it had always done, so nothing gets worse where the table is missing.
+fn variable_table() -> Option<std::sync::Arc<lookahead_engine::index::VariableTable>> {
+    use std::sync::OnceLock;
+    static TABLE: OnceLock<Option<std::sync::Arc<lookahead_engine::index::VariableTable>>> =
+        OnceLock::new();
+
+    TABLE
+        .get_or_init(|| {
+            let path = derived(
+                lookahead_engine::index::VariableTable::FILE_NAME,
+                &VARIABLES_COMMAND,
+                lookahead_engine::index::VariableTable::FILE_NAME,
+            )?;
+            lookahead_engine::index::VariableTable::read(&path).ok().map(std::sync::Arc::new)
+        })
+        .clone()
+}
+
 /// A world shaped like a real save, for measuring the guard corpus against.
 ///
 /// Shared rather than written twice. Two measurements are only comparable if they run
@@ -198,6 +225,12 @@ pub struct SaveWorld {
     /// names the counters it needs, which is honest as long as it is understood as a
     /// fixture rather than as a model.
     numeric: HashSet<String>,
+    /// What the database declares its variables to be, where it has been extracted.
+    ///
+    /// Supersedes [`SaveWorld::numeric`], which was the same idea done by hand: a
+    /// measurement had to name each counter it needed and be wrong about the rest. The
+    /// table names all 10,645, of which 142 are numbers.
+    declared: Option<std::sync::Arc<lookahead_engine::index::VariableTable>>,
     /// What the character is wearing, by `CheckEquipped` name.
     equipped: HashSet<String>,
     /// Thoughts in the cabinet, by `IsTHCPresent` name.
@@ -228,6 +261,7 @@ impl SaveWorld {
     pub fn new() -> Self {
         Self {
             numeric: HashSet::new(),
+            declared: variable_table(),
             equipped: HashSet::new(),
             gained: HashSet::new(),
             cooking: HashSet::new(),
@@ -303,9 +337,20 @@ impl ILookAheadWorld for SaveWorld {
     }
 
     fn get_variable(&self, name: &str) -> GuardValue {
+        // The declared type first, where the database has one. That is the whole of
+        // de-sze.5.4: a counter answered as a boolean makes every ordering comparison over
+        // it undecidable, and there is no way to tell a counter from a flag by looking at
+        // its name.
+        if let Some(declared) = self.declared.as_ref().and_then(|table| table.initial(name)) {
+            return declared.clone();
+        }
+
         if self.numeric.contains(name) {
             GuardValue::from_number(0.0)
         } else {
+            // Unset reads false, which is what the game does - an unset Lua variable is
+            // nil and nil is falsy. Reached now only for a name the database does not
+            // declare at all.
             GuardValue::from_boolean(false)
         }
     }
