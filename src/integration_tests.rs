@@ -439,3 +439,91 @@ fn a_flag_guard_stays_shut_when_nothing_sets_it() {
 
     assert_eq!(result.best, Novelty::SeenThisGame);
 }
+
+// ---- the reachable-only short circuit ------------------------------------------
+
+/// The case the group-wide check cannot see: something unseen, in the group, unreachable.
+///
+/// `has_potential_improvement` answers yes here and a whole crawl runs to find nothing.
+/// Following links from the option answers no without touching a single crawl state.
+#[test]
+fn an_unseen_entry_no_path_leads_to_does_not_justify_a_crawl() {
+    let start = DialogueNodeId::new(1, 1);
+    let nearby = DialogueNodeId::new(1, 2);
+    let marooned = DialogueNodeId::new(1, 3);
+
+    let graph = LookAheadGraph::new(
+        vec![
+            plain(start, vec![nearby], false),
+            plain(nearby, vec![], false),
+            // In the group and linked to by nothing.
+            plain(marooned, vec![], false),
+        ],
+        StateSymbols::new(),
+    )
+    .unwrap();
+
+    let novelty = |id: DialogueNodeId| {
+        if id == marooned { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
+    };
+
+    // The coarse question sees it and says a crawl is worth running.
+    assert!(LookAheadEngine::has_potential_improvement(
+        &graph,
+        Novelty::SeenThisGame,
+        novelty,
+    ));
+
+    // The reachable question knows better.
+    assert!(!LookAheadEngine::reaches_potential_improvement(
+        &graph,
+        start,
+        Novelty::SeenThisGame,
+        novelty,
+    ));
+}
+
+/// And it must still say yes when the unseen entry IS reachable, however far away.
+#[test]
+fn an_unseen_entry_down_a_long_path_still_justifies_a_crawl() {
+    let chain: Vec<DialogueNodeId> = (1..=6).map(|i| DialogueNodeId::new(1, i)).collect();
+    let nodes = chain
+        .iter()
+        .enumerate()
+        .map(|(at, &id)| {
+            let links = chain.get(at + 1).copied().into_iter().collect();
+            plain(id, links, false)
+        })
+        .collect();
+
+    let graph = LookAheadGraph::new(nodes, StateSymbols::new()).unwrap();
+    let far = *chain.last().unwrap();
+
+    assert!(LookAheadEngine::reaches_potential_improvement(
+        &graph,
+        chain[0],
+        Novelty::SeenThisGame,
+        |id| if id == far { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame },
+    ));
+}
+
+/// A cycle must not make the walk loop, and the start must not count as its own reason.
+#[test]
+fn the_walk_terminates_on_a_cycle_and_ignores_the_start_itself() {
+    let a = DialogueNodeId::new(1, 1);
+    let b = DialogueNodeId::new(1, 2);
+    let graph = LookAheadGraph::new(
+        vec![plain(a, vec![b], false), plain(b, vec![a], false)],
+        StateSymbols::new(),
+    )
+    .unwrap();
+
+    // Only the START is unseen. It is what `own_novelty` already describes, so it is no
+    // reason to crawl - and the cycle back to it must not be read as finding something.
+    assert!(!LookAheadEngine::reaches_potential_improvement(
+        &graph,
+        a,
+        Novelty::SeenThisGame,
+        |id| if id == a { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame },
+    ));
+}

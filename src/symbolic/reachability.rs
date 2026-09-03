@@ -290,6 +290,13 @@ impl<'a> Reachability<'a> {
             for &child_id in &node.links {
                 let Some(child) = graph.get(child_id) else { continue };
                 let arriving = this.enter(child, &delta, compiler, world, &mut image);
+                // The image gave up for want of nodes, so what it just returned is the
+                // image of nothing in particular and everything after it would be built
+                // on that. Stop here and say so.
+                if image.out_of_memory() {
+                    this.stats.out_of_memory = true;
+                    break 'search;
+                }
                 if !arriving.satisfiable() {
                     continue;
                 }

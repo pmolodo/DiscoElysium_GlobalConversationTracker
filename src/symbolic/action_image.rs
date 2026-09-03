@@ -36,11 +36,39 @@ pub struct ActionImage<'a> {
     counter_cap: u32,
     /// Actions that changed nothing because this layout does not carry what they touch.
     ignored: usize,
+    /// Whether a diagram operation could not complete for want of nodes.
+    out_of_memory: bool,
 }
 
 impl<'a> ActionImage<'a> {
     pub fn new(vars: &'a DataVars<'a>, counter_cap: u32) -> Self {
-        Self { vars, counter_cap, ignored: 0 }
+        Self { vars, counter_cap, ignored: 0, out_of_memory: false }
+    }
+
+    /// Whether the manager ran out of nodes part way through.
+    ///
+    /// A caller that sees this MUST STOP: once it is set, every set this has produced
+    /// since is the image of nothing in particular. It is reported rather than unwrapped
+    /// because running out of room is a RESULT - the most decisive one a measurement of a
+    /// representation can get - and a panic destroys the numbers that show how it got
+    /// there. Conversation 14's group reaches it.
+    pub fn out_of_memory(&self) -> bool {
+        self.out_of_memory
+    }
+
+    /// Takes the result of a diagram operation, or records that there was no room.
+    ///
+    /// The fallback is returned only so the types stay simple; it is not a meaningful
+    /// answer and nothing downstream should be trusted once [`Self::out_of_memory`] is
+    /// set.
+    fn or_no_room<E>(&mut self, attempt: Result<BDDFunction, E>, fallback: &BDDFunction) -> BDDFunction {
+        match attempt {
+            Ok(function) => function,
+            Err(_) => {
+                self.out_of_memory = true;
+                fallback.clone()
+            }
+        }
     }
 
     /// How many actions were skipped because the layout does not carry their subject.
@@ -69,10 +97,11 @@ impl<'a> ActionImage<'a> {
                 // Only the states that have not fired it yet are changed; the rest carry
                 // through untouched. Splitting the set is what keeps a once action from
                 // firing twice round a loop.
-                let fresh = current.and(&once_already_fired.not().expect("negation"))
-                    .expect("and");
-                let spent = current.and(once_already_fired).expect("and");
-                self.apply_one(&fresh, action).or(&spent).expect("or")
+                let unspent = self.or_no_room(once_already_fired.not(), &current);
+                let fresh = self.or_no_room(current.and(&unspent), &current);
+                let spent = self.or_no_room(current.and(once_already_fired), &current);
+                let changed = self.apply_one(&fresh, action);
+                self.or_no_room(changed.or(&spent), &current)
             } else {
                 self.apply_one(&current, action)
             };
@@ -124,7 +153,8 @@ impl<'a> ActionImage<'a> {
             return states.clone();
         };
 
-        states.exists(&cube).expect("exists").and(&equals).expect("and")
+        let forgotten = self.or_no_room(states.exists(&cube), states);
+        self.or_no_room(forgotten.and(&equals), states)
     }
 
     /// `slot := min(slot + amount, cap)`, over a whole set.
@@ -142,15 +172,22 @@ impl<'a> ActionImage<'a> {
 
         for value in 0..=ceiling {
             let holding = self.vars.slot_equals(slot, value).expect("in the layout");
-            let matching = states.and(&holding).expect("and");
+            let matching = self.or_no_room(states.and(&holding), states);
+            if self.out_of_memory {
+                return states.clone();
+            }
             if !matching.satisfiable() {
                 continue;
             }
 
             let raised = (value as i64 + amount as i64).clamp(0, cap as i64) as u32;
             let becomes = self.vars.slot_equals(slot, raised).expect("in the layout");
-            let moved = matching.exists(&cube).expect("exists").and(&becomes).expect("and");
-            result = result.or(&moved).expect("or");
+            let forgotten = self.or_no_room(matching.exists(&cube), states);
+            let moved = self.or_no_room(forgotten.and(&becomes), states);
+            result = self.or_no_room(result.or(&moved), states);
+            if self.out_of_memory {
+                return states.clone();
+            }
         }
 
         result

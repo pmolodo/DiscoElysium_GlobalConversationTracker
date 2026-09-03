@@ -101,11 +101,21 @@ fn main() -> anyhow::Result<()> {
         }
 
         // The same question the plugin asks before it builds any crawl state, asked here
-        // for the same reason: if nothing in the group outranks this option, no walk can
-        // produce a marker. Asking it keeps this tool and the game agreeing about which
-        // options are worth crawling - without it the tool reports crawls, and costs,
-        // that the game never pays.
-        if !LookAheadEngine::has_potential_improvement(&graph, novelty(node.id), novelty) {
+        // for the same reason: if nothing outranks this option, no walk can produce a
+        // marker. Asking it keeps this tool and the game agreeing about which options are
+        // worth crawling - without it the tool reports crawls, and costs, that the game
+        // never pays.
+        //
+        // Asked of what this option can REACH rather than of the whole loaded group. A
+        // group runs to 16,558 entries while a start reaches 1,144 on average, so the
+        // group version answers yes for a great many options whose own corner of the
+        // graph holds nothing worth finding.
+        if !LookAheadEngine::reaches_potential_improvement(
+            &graph,
+            node.id,
+            novelty(node.id),
+            novelty,
+        ) {
             skipped += 1;
             continue;
         }
