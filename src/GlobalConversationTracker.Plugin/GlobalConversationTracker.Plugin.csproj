@@ -94,6 +94,29 @@
     </Target>
 
     <!--
+    The conversation index the look-ahead reads, trimmed to what a crawl consults - 47.7 MB
+    down to 14.3 MB, and about 1.2 MB inside a release archive. Named to match the payload
+    predicate for the same reason the native library is, so nothing about deployment has to
+    learn it exists.
+
+    Conditional again: a checkout without the extracted game data still builds, and the
+    plugin says at load that it has no index to open rather than failing here. The
+    extractor's "shipped-index" command produces it; the message below spells out the
+    invocation, which an XML comment cannot.
+  -->
+    <Target Name="CopyConversationIndex" AfterTargets="Build">
+        <PropertyGroup>
+            <ConversationIndexSource>$(MSBuildThisFileDirectory)..\..\.game_reference_copies\derived\conversation_index.trimmed.jsonl</ConversationIndexSource>
+        </PropertyGroup>
+        <Copy Condition="Exists('$(ConversationIndexSource)')"
+            SourceFiles="$(ConversationIndexSource)"
+            DestinationFiles="$(OutDir)GlobalConversationTracker.Index.jsonl"
+            SkipUnchangedFiles="true" />
+        <Message Condition="!Exists('$(ConversationIndexSource)')" Importance="high"
+            Text="No trimmed conversation index found; the look-ahead will have nothing to open. Run: dotnet run --project tools/DialogueExtract -- shipped-index" />
+    </Target>
+
+    <!--
     This project references assemblies out of a Disco Elysium install. Saying so here
     is the whole of it: Directory.Build.props resolves the install and
     Directory.Build.targets does the checking, for every project that needs one.

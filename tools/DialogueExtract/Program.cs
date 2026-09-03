@@ -13,6 +13,7 @@ namespace GlobalConversationTracker.DialogueExtract
         private const string ConversationIndexCommand = "conversation-index";
         private const string CorpusCommand = "corpus";
         private const string VariablesCommand = "variables";
+        private const string ShippedIndexCommand = "shipped-index";
         private const string WorstCaseStateCommand = "worst-case-state";
         private const int ExitFailure = 1;
 
@@ -35,6 +36,9 @@ namespace GlobalConversationTracker.DialogueExtract
               variables           The database's variable table - name, declared type and
                                   initial value, one JSON object per line - so a world can
                                   tell a counter from a flag.
+              shipped-index       The index as the mod ships it: the same records with
+                                  everything no crawl reads removed. Reads the index that
+                                  conversation-index wrote.
               worst-case-state    The global state that makes a look-ahead crawl as
                                   expensive as it can be: every entry of every
                                   conversation in the index recorded as WasDisplayed.
@@ -113,6 +117,8 @@ namespace GlobalConversationTracker.DialogueExtract
                     return Corpus(ParseOptions(args, command));
                 case VariablesCommand:
                     return Variables(ParseOptions(args, command));
+                case ShippedIndexCommand:
+                    return TrimmedIndex(ParseOptions(args, command));
                 case WorstCaseStateCommand:
                     return WorstCaseState(ParseOptions(args, command));
                 default:
@@ -197,6 +203,34 @@ namespace GlobalConversationTracker.DialogueExtract
             Console.WriteLine(
                 $"wrote {variables.Count} variables ({numbers} numbers, "
                 + $"{variables.Count - numbers} other) to {outPath}");
+            return 0;
+        }
+
+        /// <summary>
+        /// Writes the index as the mod ships it: everything a crawl reads and nothing else.
+        /// </summary>
+        /// <remarks>
+        /// Reads the full index back rather than re-scanning the 170 MB asset, so the two
+        /// cannot disagree about anything but the trimming - which is the only difference
+        /// there is meant to be.
+        /// </remarks>
+        private static int TrimmedIndex(Dictionary<string, string> options)
+        {
+            string index = Option(options, "--index", DefaultIndex);
+            string outPath = Option(options, "--out",
+                Path.Combine(DefaultDerived, ShippedIndex.FileName));
+            RejectUnknownOptions(options);
+            PrepareOutput(outPath);
+
+            int written = ConversationIndexFile.Write(
+                outPath, ShippedIndex.Trim(ConversationIndexFile.Read(index)));
+
+            long before = new FileInfo(index).Length;
+            long after = new FileInfo(outPath).Length;
+            Console.WriteLine(
+                $"wrote {written} conversations to {outPath} "
+                + $"({after / 1048576.0:N1} MB, {100.0 * after / before:N0}% of "
+                + $"{before / 1048576.0:N1} MB)");
             return 0;
         }
 

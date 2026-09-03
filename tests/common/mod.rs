@@ -159,6 +159,24 @@ pub fn conversation_index() -> Option<PathBuf> {
     )
 }
 
+/// What to run to rebuild the trimmed index the mod ships.
+const SHIPPED_INDEX_COMMAND: [&str; 5] =
+    ["run", "--project", "tools/DialogueExtract", "--", "shipped-index"];
+
+/// The index as the mod ships it, regenerated if absent.
+///
+/// Depends on the full index, which `shipped-index` reads rather than re-scanning the
+/// asset - so this asks for that one first, and a checkout with neither builds both in
+/// order.
+pub fn shipped_index() -> Option<PathBuf> {
+    conversation_index()?;
+    derived(
+        "conversation_index.trimmed.jsonl",
+        &SHIPPED_INDEX_COMMAND,
+        "conversation_index.trimmed.jsonl",
+    )
+}
+
 /// What to run to rebuild the variable table.
 const VARIABLES_COMMAND: [&str; 5] =
     ["run", "--project", "tools/DialogueExtract", "--", "variables"];

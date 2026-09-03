@@ -37,6 +37,38 @@ const CLICK_COST_FIELD: &str = "ClickCost";
 const COST_ONCE_FIELD: &str = "CostOnce";
 const HIDDEN_NOT_ENOUGH_FIELD: &str = "HiddenNotEnough";
 
+/// Every field this module reads out of an entry, and the only ones a shipped index needs
+/// to carry.
+///
+/// ## Why this is public
+///
+/// The index the mod ships is TRIMMED - the full one is 50 MB and nine tenths of it is
+/// prose, titles and articy ids that no crawl consults. Trimming means someone, somewhere,
+/// deciding which fields survive, and that list has to be this list.
+///
+/// It is not a hypothetical risk. The first attempt at the trim guessed these names -
+/// `IsPassiveCheck`, `IsRedCheck`, `IsWhiteCheck` and so on - and every one was wrong. A
+/// trimmed index built on that guess would have dropped every check kind, and NOTHING
+/// WOULD HAVE FAILED: entries would simply have stopped being checks, the crawl would have
+/// walked straight through them, and the markers would have been quietly wrong.
+///
+/// The extractor is C# and cannot share a constant with this, so `tests/shipped_index.rs`
+/// checks the two against each other instead: for every name here, an entry that has it in
+/// the full index must still have it in the trimmed one.
+pub const ENTRY_FIELDS_READ: [&str; 11] = [
+    PASSIVE_FIELD,
+    RED_FIELD,
+    WHITE_FIELD,
+    FAKE_FIELD,
+    TEST_FIELD,
+    KIM_WATCH_FIELD,
+    BOOLEAN_ONLY_FIELD,
+    FLAG_NAME_FIELD,
+    CLICK_COST_FIELD,
+    COST_ONCE_FIELD,
+    HIDDEN_NOT_ENOUGH_FIELD,
+];
+
 /// One conversation, as one line of the index.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationRecord {

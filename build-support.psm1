@@ -173,7 +173,11 @@ $PluginFolderName = $AssemblyName
 # install (see Get-PluginPayloadFile) - so the files a deploy removes are exactly
 # the files it writes. It does mean a .pdb an older build installed is left where
 # it is, on the handful of development installs that have one.
-$PluginPayloadExtensions = @(".dll")
+# .jsonl is here for the conversation index the look-ahead reads - see de-i5xj.9. It rides
+# the same predicate as the assemblies, so deploy, release packaging and the uninstaller
+# all handle it without being told it exists, which is the same trick the native library
+# uses by being named GlobalConversationTracker.Native.dll.
+$PluginPayloadExtensions = @(".dll", ".jsonl")
 # Appended to the commit hash the build stamps into the plugin assembly when the
 # tree it was built from differed from that commit in a way the build could see.
 # Written by Get-SourceRevisionId and read back by Get-PluginBuildStamp, which is

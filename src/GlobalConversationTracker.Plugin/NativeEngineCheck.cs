@@ -40,7 +40,13 @@ namespace GlobalConversationTracker
         internal const string LogPrefix = "Native look-ahead:";
 
         /// <summary>The conversation index, if it was deployed beside the plugin.</summary>
-        internal const string IndexFileName = "conversation_index.jsonl";
+        /// <remarks>
+        /// Named to match the deployment predicate rather than after the file it is built
+        /// from: only <c>GlobalConversationTracker*</c> is installed, so a
+        /// <c>conversation_index.jsonl</c> would be built, ignored, and never noticed
+        /// missing.
+        /// </remarks>
+        internal const string IndexFileName = "GlobalConversationTracker.Index.jsonl";
 
         /// <summary>
         /// Reports what the native library says about itself, and about the index if one
