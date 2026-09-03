@@ -267,10 +267,31 @@ fn translate_call(call: Invocation, symbols: &mut StateSymbols, actions: &mut Ve
         // Not scorekeeping, whatever the name suggests: conversation 631's guards read
         // `Variable["reputation.apocalypse_cop"] >= 2`, so leaving these unmodelled holds
         // shut a branch that reputation opens. 71 calls in that group alone.
-        "ReputationGrows" | "ReputationLowers" => {
+        //
+        // `Reputation(name, amount)` is the same function with the step spelled out, and
+        // the decompiled source says so rather than the name suggesting it:
+        //
+        //     Reputation(name, value)  -> ModifyRep(name, (int)value)
+        //     ModifyOnce(name, value)  -> ModifyRep(name, (int)value)
+        //     ModifyRep                -> ReputationAlterant.ReputationOption(name, value)
+        //     ReputationOption         -> if (Once(value) != 0) Modify...(name, value)
+        //
+        // So all three run the same path, all three are wrapped in the same `once()`, and
+        // ReputationGrows is exactly `Reputation(name, 1)`. It was the last unmodelled
+        // action in the whole script corpus - twelve calls - and was left undecided
+        // precisely because guessing between Modify and ModifyOnce would have been a
+        // guess. It is ModifyOnce.
+        "ReputationGrows" | "ReputationLowers" | "Reputation" => {
             let subject = unquote(call.args.first().unwrap_or(&String::new()));
             let slot = symbols.variable(&format!("{REPUTATION_PREFIX}{subject}"));
-            let step = if call.name == "ReputationGrows" { 1 } else { -1 };
+            let step = match call.name.as_str() {
+                "ReputationGrows" => 1,
+                "ReputationLowers" => -1,
+                // The amount is the second argument, and the game reads it as an int.
+                // An amount that will not parse is a script this cannot read, so it moves
+                // nothing rather than moving by a guessed step.
+                _ => call.args.get(1).and_then(|a| a.trim().parse::<i32>().ok()).unwrap_or(0),
+            };
             actions.push(DialogueAction::increment(slot, step, true, call.name));
         }
         // Awarding experience the first time and recording that it has been awarded.

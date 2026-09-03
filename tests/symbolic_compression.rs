@@ -108,7 +108,33 @@ const MEASUREMENT_STACK: usize = 2 << 30;
 /// each holding a diagram manager and a half-gigabyte stack - run the process out of
 /// stack during teardown, after the numbers have been printed. Sequential is also how
 /// they want to be read: the second exists to qualify the first.
+///
+/// ## Why this is `#[ignore]`d, which is de-sze.13's answer
+///
+/// It is a MEASUREMENT, and every other measurement here is run the same way - the two
+/// heavy ones in `symbolic_reachability`, all three in `backward_cost`, the one in
+/// `backward_support`. This one was the exception: seventy-five seconds inside every
+/// `cargo test`, and intermittently fatal.
+///
+/// Fatal because releasing a decision diagram is recursive, so the stack it needs is
+/// proportional to the diagram's DEPTH - which depends on the variable order and on which
+/// states the crawl happened to visit, and the crawl visits them in hash-map order, which
+/// varies between runs. So it overflowed on some runs and not others, and the threshold
+/// moves every time the model gets better: teaching the parser one more action
+/// (`Reputation`, de-p95) was enough to push it from occasional to reliable.
+///
+/// A bigger stack only moves that threshold again, and forgetting the sets instead - which
+/// was tried - leaks a diagram manager per measurement and quietly breaks the one-live-
+/// manager rule the code above depends on. Running it deliberately is the honest answer,
+/// and `tools/measure-symbolic.sh` already treats a crashed measurement as a result rather
+/// than as a failure:
+///
+/// ```text
+/// TEST_BINARY=symbolic_compression tools/measure-symbolic.sh \
+///     how_well_a_crawls_state_set_compresses
+/// ```
 #[test]
+#[ignore = "a measurement, not a test: tools/measure-symbolic.sh runs it one per process"]
 fn how_well_a_crawls_state_set_compresses() {
     std::thread::Builder::new()
         .name("measurement".to_string())
@@ -165,8 +191,8 @@ fn measure() {
             assert!(set.contains(&bits), "state on {node} went missing from the set");
         }
 
-        // One diagram at a time: two live managers over sets this size overflow the
-        // stack when the first is dropped, because releasing a diagram walks it.
+        // One diagram at a time: two live managers over sets this size overflow the stack
+        // when the first is dropped, because releasing a diagram walks it.
         drop(set);
 
         // The same states under a reversed variable numbering. If the set has structure

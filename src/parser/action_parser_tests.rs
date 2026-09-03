@@ -232,6 +232,44 @@ fn gaining_a_thought_sets_the_thought_slot() {
     assert_eq!(again.get(slot), 1);
 }
 
+/// `Reputation(name, amount)` is ReputationGrows with the step written out.
+///
+/// Settled from the decompiled game rather than guessed: `Reputation`, `ModifyOnce`,
+/// `ReputationGrows` and `ReputationLowers` all reach `ReputationAlterant.ReputationOption`,
+/// which wraps the change in the same `once()` the parser already models. Which is why
+/// this was left undecided until the source could be read - the difference between Modify
+/// and ModifyOnce is a counter that climbs in a loop and one that does not.
+#[test]
+fn reputation_moves_by_its_own_amount_and_only_once() {
+    let mut symbols = StateSymbols::new();
+    let actions = parse_actions("Reputation(\"kim\", 2)", &mut symbols);
+
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].kind(), DialogueActionKind::Increment);
+    assert_eq!(actions[0].value(), 2);
+    assert!(actions[0].is_once(), "the game gates it on once()");
+
+    let slot = symbols.find("reputation.kim").expect("a reputation slot is interned");
+    let once = symbols.once(DialogueNodeId::new(1, 0)) as i32;
+    let before = empty(&symbols, 0);
+
+    let after = DialogueAction::apply(&actions, &before, once, &caps(), false);
+    assert_eq!(after.get(slot), 2);
+
+    // And a second visit does not move it, which is the half that matters in a loop.
+    let again = DialogueAction::apply(&actions, &after, once, &caps(), false);
+    assert_eq!(again.get(slot), 2);
+}
+
+/// A negative amount lowers it, which is how the database writes a penalty.
+#[test]
+fn a_negative_reputation_amount_lowers_it() {
+    let mut symbols = StateSymbols::new();
+    let actions = parse_actions("Reputation(\"kim\", -2)", &mut symbols);
+
+    assert_eq!(actions[0].value(), -2);
+}
+
 /// A call nobody has decided about stays UNKNOWN, and looks nothing like a stub.
 ///
 /// The distinction this whole arrangement exists for. A stub is work finished and an

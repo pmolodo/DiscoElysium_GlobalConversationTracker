@@ -68,6 +68,35 @@ impl Decision {
     }
 }
 
+/// Questions the crawl treats as constant because NOTHING CAN WRITE THEM.
+///
+/// Not decisions at all, which is why they are here rather than in [`DECISIONS`]: there is
+/// no approximation to justify. The game registers 171 Lua functions for dialogue to call,
+/// and among them these have readers and no writer whatsoever - so their answer at the
+/// start of a crawl is their answer at the end of it, and asking the world once is exact.
+///
+/// Worth writing down because it does not LOOK exact. An action that gains an item could
+/// plausibly change what `CheckEquipped` answers - putting the thing on - and the audit in
+/// de-p95 raised precisely that doubt. The registry settles it: there is no equip
+/// function, no wear function, nothing that dresses the player. Equipping is the inventory
+/// screen, which no conversation can reach.
+///
+/// The same shape of answer as the thought cabinet's, and found the same way: read what
+/// the game lets dialogue call, rather than reasoning about what it might.
+pub const CONSTANT_BY_CONSTRUCTION: &[&str] = &[
+    "CheckEquipped",
+    "CheckEquippedGroup",
+    "CheckHeldLeftGroup",
+    "CheckHeldRightGroup",
+    "HasHat",
+    "HasJacket",
+    "HasNecktie",
+    "HasPants",
+    "HasShirt",
+    "HasShoes",
+    "WeirdClothing",
+];
+
 /// Every decision taken so far.
 pub const DECISIONS: &[Decision] = &[
     Decision {
