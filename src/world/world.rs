@@ -104,6 +104,15 @@ impl IGuardContext for BoundContext<'_> {
             return ClockTime::answer(name, arguments, day_minutes, day_counter);
         }
 
+        // The day, which is not the clock. A crawl's `PassTime` moves the time of day and
+        // never the day counter, so these need no state and are exact with or without
+        // one. Answered here rather than by each world because they are a comparison
+        // against `day_counter`, which the world already supplies - see
+        // `ClockTime::owns_day`.
+        if ClockTime::owns_day(name) {
+            return ClockTime::day_answer(name, arguments, self.world.day_counter());
+        }
+
         match name {
             // `FlagSet(name)` asks whether a flag is set, and a flag is a dialogue
             // variable - so this is `Variable[name]` written another way, and is answered

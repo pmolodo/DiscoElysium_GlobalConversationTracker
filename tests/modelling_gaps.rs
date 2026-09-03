@@ -11,6 +11,14 @@
 //! So this names the gaps rather than counting them. `guard_coverage` reports HOW MANY
 //! sub-expressions fell back; this reports WHICH, so they can be modelled one at a time
 //! and the list can be watched shrinking.
+//!
+//! ## It asks the compiler rather than reimplementing it
+//!
+//! The first version of this file carried its own copy of the compiler's reading rules,
+//! and the copy drifted immediately: it called every untracked `CheckItem` unreadable
+//! when the compiler answers those from the world, and so reported 58 gaps where there
+//! were 22. `GuardCompiler::fallback_subjects` exists to make that mistake impossible -
+//! the report can only say what the compiler actually did.
 
 use std::collections::HashMap;
 
@@ -18,13 +26,18 @@ use lookahead_engine::core::action::DialogueActionKind;
 use lookahead_engine::core::guard::GuardExpression;
 use lookahead_engine::core::guard_value::GuardValue;
 use lookahead_engine::core::types::{DialogueNodeId, Ternary};
-use lookahead_engine::index::{build_group_graph, read_index};
+use lookahead_engine::index::{build_group_graph, read_index, Index};
+use lookahead_engine::symbolic::data_layout::DataLayout;
+use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::world::world::ILookAheadWorld;
 
 mod common;
 
 /// The conversation the epic turns on.
 const SUBJECT: i32 = 631;
+const COUNTER_CAP: i32 = 16;
+const NODE_CAPACITY: usize = 1 << 20;
+const CACHE_CAPACITY: usize = 1 << 18;
 
 /// A world shaped like a real save: a variable nothing set reads false, not unknown.
 ///
@@ -51,92 +64,6 @@ impl ILookAheadWorld for SaveWorld {
     fn is_seen(&self, _node: DialogueNodeId) -> bool { false }
 }
 
-/// Every sub-expression the compiler would have to give up on, rendered.
-///
-/// Mirrors `GuardCompiler::compile`'s reading rules rather than calling it, because the
-/// compiler reports reasons and counts and what is wanted here is the text - the actual
-/// guard fragment somebody has to sit down and model.
-fn unreadable(
-    guard: &GuardExpression,
-    world: &dyn ILookAheadWorld,
-    known: &dyn Fn(&str) -> bool,
-    out: &mut Vec<String>,
-) {
-    match guard {
-        GuardExpression::Literal(_) => {}
-
-        GuardExpression::Variable(name) => {
-            if !known(name) && world.get_variable(name).as_condition() == Ternary::Unknown {
-                out.push(guard.to_string());
-            }
-        }
-
-        GuardExpression::Not(inner) => unreadable(inner, world, known, out),
-
-        GuardExpression::And(a, b) | GuardExpression::Or(a, b) => {
-            unreadable(a, world, known, out);
-            unreadable(b, world, known, out);
-        }
-
-        GuardExpression::Comparison(op, a, b) => {
-            if op == "==" || op == "~=" {
-                unreadable(a, world, known, out);
-                unreadable(b, world, known, out);
-            } else {
-                out.push(guard.to_string());
-            }
-        }
-
-        GuardExpression::Call(name, args) => {
-            let subject = match &args[..] {
-                [GuardExpression::Literal(value)] => Some(value.text().to_string()),
-                _ => None,
-            };
-
-            let readable = match name.as_str() {
-                // Answered from a slot when the group touches the item or task, and from
-                // the world when it does not.
-                "CheckItem" => subject.as_deref().is_some_and(|s| known(&format!("item:{s}"))),
-                "IsTaskActive" => subject.as_deref().is_some_and(|s| known(&format!("task:{s}"))),
-                _ if lookahead_engine::core::clock::ClockTime::owns(name) => {
-                    let values: Vec<GuardValue> = args
-                        .iter()
-                        .filter_map(|a| match a {
-                            GuardExpression::Literal(v) => Some(v.clone()),
-                            _ => None,
-                        })
-                        .collect();
-                    values.len() == args.len()
-                        && lookahead_engine::core::clock::ClockTime::answer(
-                            name,
-                            &values,
-                            world.day_minutes(),
-                            world.day_counter(),
-                        )
-                        .as_condition()
-                            != Ternary::Unknown
-                }
-                "MoneyAmount" => false,
-                _ => {
-                    let values: Vec<GuardValue> = args
-                        .iter()
-                        .filter_map(|a| match a {
-                            GuardExpression::Literal(v) => Some(v.clone()),
-                            _ => None,
-                        })
-                        .collect();
-                    values.len() == args.len()
-                        && world.query(name, &values).as_condition() != Ternary::Unknown
-                }
-            };
-
-            if !readable {
-                out.push(guard.to_string());
-            }
-        }
-    }
-}
-
 /// Groups strings by how often they occur, most common first.
 fn by_frequency(items: &[String]) -> Vec<(String, usize)> {
     let mut counts: HashMap<&str, usize> = HashMap::new();
@@ -150,80 +77,8 @@ fn by_frequency(items: &[String]) -> Vec<(String, usize)> {
     rows
 }
 
-#[test]
-fn what_is_still_unmodelled_in_the_subject_conversation() {
-    let Some(path) = common::conversation_index() else { return };
-    let index = read_index(&path).expect("the index reads");
-    let (graph, group) =
-        build_group_graph(&index, SUBJECT).expect("the subject group builds");
-    let symbols = graph.symbols();
-    let world = SaveWorld;
-    let known = |name: &str| symbols.find(name).is_some();
-
-    println!(
-        "conversation {SUBJECT}: {} conversations, {} entries, {} slots",
-        group.len(),
-        graph.count(),
-        symbols.count()
-    );
-
-    let mut guard_gaps: Vec<String> = Vec::new();
-    let mut action_gaps: Vec<String> = Vec::new();
-    let mut modelled_actions = 0;
-    let mut entries_with_a_guard = 0;
-
-    for node in graph.nodes() {
-        if !matches!(&node.guard, GuardExpression::Literal(_)) {
-            entries_with_a_guard += 1;
-            unreadable(&node.guard, &world, &known, &mut guard_gaps);
-        }
-
-        for action in &node.actions {
-            if action.kind() == DialogueActionKind::Unmodelled {
-                action_gaps.push(action.name().to_string());
-            } else {
-                modelled_actions += 1;
-            }
-        }
-    }
-
-    println!(
-        "\n{} entries carry a guard; {} sub-expressions in them cannot be read:",
-        entries_with_a_guard,
-        guard_gaps.len()
-    );
-    for (text, count) in by_frequency(&guard_gaps) {
-        let shown: String = text.chars().take(110).collect();
-        println!("  x{count:<4} {shown}");
-    }
-
-    println!(
-        "\n{} actions modelled, {} not:",
-        modelled_actions,
-        action_gaps.len()
-    );
-    for (name, count) in by_frequency(&action_gaps) {
-        println!("  x{count:<4} {name}");
-    }
-
-    // The question that decides whether an unmodelled action matters: does the group's
-    // own guards ask about the subject it writes? A world query the crawl cannot change
-    // is a constant and the world answers it, so an action nothing here reads is a gap
-    // only on paper. One the guards DO read is a branch held shut.
-    let asked: Vec<String> = raw_scripts(&index, &group)
-        .iter()
-        .flat_map(|script| subjects_of(script, "GainThought"))
-        .collect();
-    println!("\nthoughts this group gains: {:?}", by_frequency(&asked));
-
-    assert!(graph.count() > 0, "the subject group has no entries");
-}
-
 /// Every userScript in the group, as written.
-fn raw_scripts(
-    index: &lookahead_engine::index::Index,
-    group: &[i32],
-) -> Vec<String> {
+fn raw_scripts(index: &Index, group: &[i32]) -> Vec<String> {
     group
         .iter()
         .filter_map(|id| index.get(id))
@@ -245,4 +100,89 @@ fn subjects_of(script: &str, name: &str) -> Vec<String> {
     }
 
     found
+}
+
+#[test]
+fn what_is_still_unmodelled_in_the_subject_conversation() {
+    let Some(path) = common::conversation_index() else { return };
+    let index = read_index(&path).expect("the index reads");
+    let (graph, group) =
+        build_group_graph(&index, SUBJECT).expect("the subject group builds");
+    let symbols = graph.symbols().clone();
+    let world = SaveWorld;
+
+    println!(
+        "conversation {SUBJECT}: {} conversations, {} entries, {} slots",
+        group.len(),
+        graph.count(),
+        symbols.count()
+    );
+
+    let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
+    let mut compiler = GuardCompiler::new(&layout, &symbols, NODE_CAPACITY, CACHE_CAPACITY)
+        .with_world(&world)
+        .with_constant_clock(DataLayout::group_passes_time(&graph));
+
+    let mut action_gaps: Vec<String> = Vec::new();
+    let mut modelled_actions = 0;
+    let mut entries_with_a_guard = 0;
+
+    for node in graph.nodes() {
+        // An always-true guard is not evidence either way, and most entries have one.
+        if !matches!(&node.guard, GuardExpression::Literal(_)) {
+            entries_with_a_guard += 1;
+            let _ = compiler.compile(&node.guard);
+        }
+
+        for action in &node.actions {
+            if action.kind() == DialogueActionKind::Unmodelled {
+                action_gaps.push(action.name().to_string());
+            } else {
+                modelled_actions += 1;
+            }
+        }
+    }
+
+    let total = compiler.compiled() + compiler.fallbacks();
+    println!(
+        "\n{entries_with_a_guard} entries carry a guard, holding {total} sub-expressions; \
+         {} compiled ({:.1}%), {} did not:",
+        compiler.compiled(),
+        100.0 * compiler.compiled() as f64 / total as f64,
+        compiler.fallbacks(),
+    );
+
+    // Grouped by reason, because the reason is what says whose gap it is: the compiler's,
+    // or a world that will not answer a question the compiler was right to ask it.
+    let mut by_reason: HashMap<&str, Vec<String>> = HashMap::new();
+    for (reason, subject) in compiler.fallback_subjects() {
+        by_reason.entry(reason).or_default().push(subject.clone());
+    }
+
+    let mut reasons: Vec<(&&str, &Vec<String>)> = by_reason.iter().collect();
+    reasons.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then(a.0.cmp(b.0)));
+    for (reason, subjects) in reasons {
+        println!("  {} x{}", reason, subjects.len());
+        for (text, count) in by_frequency(subjects) {
+            let shown: String = text.chars().take(100).collect();
+            println!("      x{count:<4} {shown}");
+        }
+    }
+
+    println!("\n{modelled_actions} actions modelled, {} not:", action_gaps.len());
+    for (name, count) in by_frequency(&action_gaps) {
+        println!("  x{count:<4} {name}");
+    }
+
+    // The question that decides whether an unmodelled action matters: do the group's own
+    // guards ask about the subject it writes? A world query the crawl cannot change is a
+    // constant and the world answers it, so an action nothing here reads is a gap only on
+    // paper. One the guards DO read is a branch held shut.
+    let gained: Vec<String> = raw_scripts(&index, &group)
+        .iter()
+        .flat_map(|script| subjects_of(script, "GainThought"))
+        .collect();
+    println!("\nthoughts this group gains: {:?}", by_frequency(&gained));
+
+    assert!(graph.count() > 0, "the subject group has no entries");
 }

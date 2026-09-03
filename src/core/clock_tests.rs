@@ -172,3 +172,46 @@ fn owns_claims_the_hour_queries() {
         assert!(ClockTime::owns(name), "{name} should be the clock's");
     }
 }
+
+/// The day questions are held apart from the hour ones, and the separation is the point.
+///
+/// `owns` marks what a crawl's own `PassTime` can change, which is what makes holding the
+/// clock still an approximation. The day cannot change within a conversation at all, so
+/// these are exact - answered, but never through `owns`.
+#[test]
+fn the_day_questions_are_owned_separately_from_the_hour_ones() {
+    for name in ["DayCount", "IsDayFrom", "IsDayUntil"] {
+        assert!(ClockTime::owns_day(name), "{name} reads the day counter");
+        assert!(!ClockTime::owns(name), "{name} is not the hour clock's");
+    }
+
+    for name in ["IsMorning", "HourCount", "IsKimHere", "CheckItem"] {
+        assert!(!ClockTime::owns_day(name), "{name} does not read the day counter");
+    }
+}
+
+/// `IsDayFrom(d)` is `DayCounter >= d` and `IsDayUntil(d)` is `DayCounter < d`, which is
+/// how `DaytimeLuaFunctions` defines them. The boundary is where the two must not agree.
+#[test]
+fn the_day_questions_answer_from_the_day_counter() {
+    let day = |value: f64| [GuardValue::from_number(value)];
+
+    assert_eq!(ClockTime::day_answer("DayCount", &[], 3).number(), 3.0);
+
+    // On day 2 exactly: `from 2` holds, `until 2` does not.
+    assert!(ClockTime::day_answer("IsDayFrom", &day(2.0), 2).boolean());
+    assert!(!ClockTime::day_answer("IsDayUntil", &day(2.0), 2).boolean());
+
+    // On day 1, the case conversation 631 actually asks.
+    assert!(!ClockTime::day_answer("IsDayFrom", &day(2.0), 1).boolean());
+    assert!(ClockTime::day_answer("IsDayUntil", &day(2.0), 1).boolean());
+}
+
+/// A day question with no day to compare against is unknown, not a guess.
+#[test]
+fn a_day_question_without_its_argument_is_unknown() {
+    assert_eq!(
+        ClockTime::day_answer("IsDayFrom", &[], 1).kind(),
+        GuardValueKind::Unknown,
+    );
+}

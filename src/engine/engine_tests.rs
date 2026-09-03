@@ -276,19 +276,32 @@ fn pass_time_does_nothing_while_the_clock_is_locked() {
     assert_eq!(run(&graph, &locked, &[3]).best, Novelty::SeenThisGame);
 }
 
-/// DayCount is the story's counter, which PassTime does not touch, so it stays the host's
-/// answer however much time a path burns.
+/// The day is the story's counter, which PassTime does not touch, so it stays the world's
+/// answer however much time a path burns - and burning time to midnight does not roll it.
+///
+/// The crawl answers the day questions itself, from `world.day_counter()`, rather than
+/// leaving each world to reimplement a comparison against a number it already supplies.
 #[test]
 fn pass_time_does_not_advance_the_day() {
-    let graph = GraphBuilder::new()
+    let shut = GraphBuilder::new()
         .add(Entry::new(0).links(&[1]))
         .add(Entry::new(1).script("PassTime()").links(&[2]))
-        .add(Entry::new(2).guard("DayCount()"))
+        // Day 2 has not arrived and no amount of PassTime brings it.
+        .add(Entry::new(2).guard("IsDayFrom(2)"))
         .build();
 
-    // The world answers nothing for DayCount, so it stays unknown - permissive - rather
-    // than being answered by a clock that has moved.
-    assert_eq!(run(&graph, &at_time(23, 55), &[2]).best, Novelty::UnseenAnyGame);
+    let midnight = at_time(23, 55).with_day_counter(1);
+    assert_eq!(run(&shut, &midnight, &[2]).best, Novelty::SeenThisGame);
+
+    // The same guard on day 2 is open, so the refusal above is the day and not a
+    // question the crawl simply declined to answer.
+    let open = GraphBuilder::new()
+        .add(Entry::new(0).links(&[1]))
+        .add(Entry::new(1).script("PassTime()").links(&[2]))
+        .add(Entry::new(2).guard("IsDayFrom(2)"))
+        .build();
+    let tomorrow = at_time(23, 55).with_day_counter(2);
+    assert_eq!(run(&open, &tomorrow, &[2]).best, Novelty::UnseenAnyGame);
 }
 
 // ---- links and conversations ---------------------------------------------------

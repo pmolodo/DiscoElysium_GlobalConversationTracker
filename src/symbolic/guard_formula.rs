@@ -77,6 +77,7 @@ pub struct GuardCompiler<'a> {
     fallbacks: usize,
     compiled: usize,
     reasons: HashMap<&'static str, usize>,
+    subjects: Vec<(&'static str, String)>,
 }
 
 impl<'a> GuardCompiler<'a> {
@@ -97,7 +98,7 @@ impl<'a> GuardCompiler<'a> {
         Self {
             manager, vars, layout, symbols, world: None,
             constant_clock: false, clock_approximated: false,
-            fallbacks: 0, compiled: 0, reasons: HashMap::new(),
+            fallbacks: 0, compiled: 0, reasons: HashMap::new(), subjects: Vec::new(),
         }
     }
 
@@ -172,10 +173,22 @@ impl<'a> GuardCompiler<'a> {
         rows
     }
 
+    /// Every sub-expression that fell back, with the reason, in the order met.
+    ///
+    /// The counts from [`Self::fallback_reasons`] say how big the gap is; these say what
+    /// it consists of, which is what somebody closing it needs. Worth carrying rather
+    /// than re-deriving in a report: a second copy of these rules is a copy that drifts,
+    /// and the first version of the 631 diagnostic did drift - it called every untracked
+    /// `CheckItem` unreadable when the compiler answers them from the world.
+    pub fn fallback_subjects(&self) -> &[(&'static str, String)] {
+        &self.subjects
+    }
+
     /// A guard that is undecided everywhere: the permissive answer.
-    fn undecided(&mut self, reason: &'static str) -> MayBe {
+    fn undecided(&mut self, reason: &'static str, subject: String) -> MayBe {
         self.fallbacks += 1;
         *self.reasons.entry(reason).or_default() += 1;
+        self.subjects.push((reason, subject));
         MayBe { may_be_true: self.top(), may_be_false: self.top() }
     }
 
@@ -197,7 +210,7 @@ impl<'a> GuardCompiler<'a> {
                     let f = self.bottom();
                     self.decided(f)
                 }
-                Ternary::Unknown => self.undecided("literal is unknown"),
+                Ternary::Unknown => self.undecided("literal is unknown", guard.to_string()),
             },
 
             GuardExpression::Variable(name) => match self.slot_is_set(name) {
@@ -213,7 +226,7 @@ impl<'a> GuardCompiler<'a> {
                         let f = self.bottom();
                         self.decided(f)
                     }
-                    None => self.undecided("variable untracked and world cannot say"),
+                    None => self.undecided("variable untracked and world cannot say", guard.to_string()),
                 },
             },
 
@@ -287,11 +300,11 @@ impl<'a> GuardCompiler<'a> {
                                     let f = if held { self.top() } else { self.bottom() };
                                     self.decided(f)
                                 }
-                                None => self.undecided("call: untracked and no world"),
+                                None => self.undecided("call: untracked and no world", guard.to_string()),
                             },
                         }
                     }
-                    None => self.undecided("call: subject is not a literal"),
+                    None => self.undecided("call: subject is not a literal", guard.to_string()),
                 }
             }
 
@@ -310,7 +323,7 @@ impl<'a> GuardCompiler<'a> {
                         let f = self.bottom();
                         self.decided(f)
                     }
-                    None => self.undecided("call: clock, world cannot say"),
+                    None => self.undecided("call: clock, world cannot say", guard.to_string()),
                 }
             }
 
@@ -335,7 +348,7 @@ impl<'a> GuardCompiler<'a> {
                         let f = self.bottom();
                         self.decided(f)
                     }
-                    None => self.undecided("call: world cannot say"),
+                    None => self.undecided("call: world cannot say", guard.to_string()),
                 }
             }
 
@@ -348,7 +361,7 @@ impl<'a> GuardCompiler<'a> {
                     | "IsEvening" | "IsNight" | "IsMidnight" | "IsHour" => "call: clock",
                     _ => "call: other world query",
                 };
-                self.undecided(reason)
+                self.undecided(reason, guard.to_string())
             }
         }
     }
@@ -393,10 +406,20 @@ impl<'a> GuardCompiler<'a> {
             {
                 return self.comparison(Self::mirrored(op), &name, literal);
             }
-            return self.undecided("comparison: neither side a known variable");
+            return self.undecided("comparison: neither side a known variable", format!("({left} {op} {right})"));
         };
 
         self.comparison(op, &name, literal)
+    }
+
+    /// A comparison written out, for reporting one the compiler could not read.
+    ///
+    /// Rebuilt from the parts rather than carried down, because by the time a comparison
+    /// is being decided the expression it came from has been taken apart. It renders the
+    /// way [`GuardExpression`] does, so a reported gap can be found in the database by
+    /// searching for it.
+    fn rendered(op: &str, name: &str, literal: &GuardValue) -> String {
+        format!("(Variable[\"{name}\"] {op} {literal})")
     }
 
     /// The operator that means the same thing with its operands swapped.
@@ -461,12 +484,12 @@ impl<'a> GuardCompiler<'a> {
         // mention of the same variable did not, which was an inconsistency in this
         // compiler rather than anything about the content.
         let Some(world) = self.world else {
-            return self.undecided("comparison: variable untracked and no world");
+            return self.undecided("comparison: variable untracked and no world", Self::rendered(op, name, literal));
         };
 
         let actual = world.get_variable(name);
         if actual.kind() == GuardValueKind::Unknown {
-            return self.undecided("comparison: variable untracked and world cannot say");
+            return self.undecided("comparison: variable untracked and world cannot say", Self::rendered(op, name, literal));
         }
 
         let holds = if equality {
@@ -476,14 +499,14 @@ impl<'a> GuardCompiler<'a> {
             // Ordering on values, the way `GuardExpression::evaluate` does it: both sides
             // through `try_as_number`, and undecided where either will not convert.
             let (Some(a), Some(b)) = (actual.try_as_number(), literal.try_as_number()) else {
-                return self.undecided("comparison: ordering on a non-numeric value");
+                return self.undecided("comparison: ordering on a non-numeric value", Self::rendered(op, name, literal));
             };
             match op {
                 ">=" => a >= b,
                 "<=" => a <= b,
                 ">" => a > b,
                 "<" => a < b,
-                _ => return self.undecided("comparison: unknown operator"),
+                _ => return self.undecided("comparison: unknown operator", Self::rendered(op, name, literal)),
             }
         };
 
@@ -620,7 +643,20 @@ impl<'a> GuardCompiler<'a> {
             values.push(value.clone());
         }
 
-        match self.world?.query(name, &values).as_condition() {
+        let world = self.world?;
+
+        // The day, which the crawl cannot move and the world need not be asked about -
+        // it is a comparison against `day_counter`, and `BoundContext::query` answers it
+        // the same way. Mirroring the engine here is the whole requirement: a compiler
+        // that refused a question the crawl answers would leave a branch open the crawl
+        // closes, and one that answered differently would be worse than either.
+        let answer = if crate::core::clock::ClockTime::owns_day(name) {
+            crate::core::clock::ClockTime::day_answer(name, &values, world.day_counter())
+        } else {
+            world.query(name, &values)
+        };
+
+        match answer.as_condition() {
             Ternary::True => Some(true),
             Ternary::False => Some(false),
             Ternary::Unknown => None,
