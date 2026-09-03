@@ -1044,6 +1044,15 @@ Options:
                     loaded,
                     loadDetail);
 
+                // Whether the plugin could reach the Rust look-ahead from inside the game,
+                // which is the one thing no test outside the game can answer - see
+                // de-i5xj.5. Reported rather than checked while the look-ahead still runs
+                // on the managed engine: a contributor who has not run `cargo build` has a
+                // mod that works, and failing their run would be telling them off for
+                // something that is not yet a requirement.
+                NativeEngineReport native = NativeEngineReport.FromLog(logPath);
+                Console.WriteLine($"  NOTE  {native}");
+
                 GameScreen.SaveCapture(window.Handle, Path.Combine(artifacts, "after-load.png"));
 
                 Console.WriteLine();
