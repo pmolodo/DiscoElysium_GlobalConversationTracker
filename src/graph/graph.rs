@@ -15,11 +15,22 @@ pub struct LookAheadGraph {
 }
 
 impl LookAheadGraph {
-    pub fn new(nodes: Vec<LookAheadNode>, symbols: StateSymbols) -> Result<Self, String> {
+    /// Builds a graph, assigning the once slots and then freezing the symbol table.
+    ///
+    /// Interning happens HERE and nowhere later. A crawl reads slots by index and never
+    /// creates one, which is what lets the symbol table be shared as `&StateSymbols`
+    /// throughout the search, keeps the state vector's width fixed before the first
+    /// state exists, and is a precondition for any symbolic encoding: a decision diagram
+    /// has to fix its variable order up front, and cannot if a new variable can appear
+    /// halfway through.
+    pub fn new(nodes: Vec<LookAheadNode>, mut symbols: StateSymbols) -> Result<Self, String> {
         let mut map = HashMap::new();
-        for node in nodes {
+        for mut node in nodes {
             if map.contains_key(&node.id) {
                 return Err(format!("Duplicate dialogue entry {}", node.id));
+            }
+            if node.needs_once_slot() {
+                node.once_slot = symbols.once(node.id) as i32;
             }
             map.insert(node.id, node);
         }

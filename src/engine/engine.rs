@@ -140,11 +140,11 @@ impl LookAheadEngine {
         F: Fn(DialogueNodeId) -> Novelty,
     {
         let start_node = graph.get(start).expect("start node not in graph");
-        let mut context = CrawlContext::new(graph.symbols(), world);
+        let context = CrawlContext::new(graph.symbols(), world);
         let initial = Self::seed(graph, world);
 
         // Enter the start node (pay cost, apply actions)
-        let entered = match self.try_enter(start_node, &initial, &mut context, graph.symbols()) {
+        let entered = match self.try_enter(start_node, &initial, &context) {
             Some(s) => s,
             None => {
                 return LookAheadResult {
@@ -216,12 +216,11 @@ impl LookAheadEngine {
             }
 
             let node = graph.get(current.node).unwrap();
-            context.bind(&current.state);
 
             for &child_id in &node.links {
                 let Some(child) = graph.get(child_id) else { continue; };
 
-                for next_state in self.enter(child, &current.state, &mut context, graph.symbols()) {
+                for next_state in self.enter(child, &current.state, &context) {
                     if !child.is_group {
                         let score = novelty(child_id);
                         if score > best {
@@ -300,81 +299,84 @@ impl LookAheadEngine {
         &self,
         node: &LookAheadNode,
         state: &LookAheadState,
-        context: &mut CrawlContext,
-        symbols: &StateSymbols,
+        context: &CrawlContext,
     ) -> Option<LookAheadState> {
-        context.bind(state);
-        if !TernaryLogic::can_pass(node.guard.test(context)) {
+        if !TernaryLogic::can_pass(node.guard.test(&context.bound(state))) {
             return None;
         }
-        if !self.can_afford(node, state, symbols) {
+        if !self.can_afford(node, state) {
             return None;
         }
-        self.enter(node, state, context, symbols).next()
+        self.enter(node, state, context).into_iter().next()
     }
 
-    fn can_afford(&self, node: &LookAheadNode, state: &LookAheadState, symbols: &StateSymbols) -> bool {
+    fn can_afford(&self, node: &LookAheadNode, state: &LookAheadState) -> bool {
         if !node.is_cost_option() { return true; }
-        if node.cost_once && state.is_set(symbols.once(node.id)) { return true; }
+        if node.cost_once && node.once_slot >= 0 && state.is_set(node.once_slot as usize) {
+            return true;
+        }
         node.cost <= state.money()
     }
 
+    /// The states entering this node can leave the crawl in: none if it is closed,
+    /// one for an ordinary entry, two where a rolled check can go either way.
+    ///
+    /// Returns an owned `Vec` rather than an iterator borrowing the caller's state. The
+    /// caller enqueues these and moves on, so nothing is gained by streaming them, and
+    /// an iterator would tie the results' lifetime to a state the search wants to drop.
     fn enter(
         &self,
         node: &LookAheadNode,
         state: &LookAheadState,
-        context: &mut CrawlContext,
-        symbols: &StateSymbols,
-    ) -> impl Iterator<Item = LookAheadState> {
+        context: &CrawlContext,
+    ) -> Vec<LookAheadState> {
         let mut results = Vec::new();
 
-        context.bind(state);
-        if !TernaryLogic::can_pass(node.guard.test(context)) {
-            return results.into_iter();
+        if !TernaryLogic::can_pass(node.guard.test(&context.bound(state))) {
+            return results;
         }
-        if !self.can_afford(node, state, symbols) {
-            return results.into_iter();
+        if !self.can_afford(node, state) {
+            return results;
         }
 
         match node.kind {
             DialogueCheckKind::Test => {}
             DialogueCheckKind::Fake => {
                 if !self.has_been_seen(node, state) {
-                    results.push(self.charge(node, state, symbols, context.world.is_clock_locked()));
+                    results.push(self.charge(node, state, context.world.is_clock_locked()));
                 }
             }
             DialogueCheckKind::KimSwitch => {
                 if node.boolean_only || !self.has_been_seen(node, state) {
-                    results.push(self.charge(node, state, symbols, context.world.is_clock_locked()));
+                    results.push(self.charge(node, state, context.world.is_clock_locked()));
                 }
             }
             DialogueCheckKind::Red | DialogueCheckKind::White => {
-                for s in self.enter_rolled(node, state, symbols, context.world.is_clock_locked()) {
+                for s in self.enter_rolled(node, state, context.world.is_clock_locked()) {
                     results.push(s);
                 }
             }
             DialogueCheckKind::Passive => {
                 let passes = context.world.check_passes(node.id);
                 if passes != Ternary::False {
-                    results.push(self.charge(node, state, symbols, context.world.is_clock_locked()));
+                    results.push(self.charge(node, state, context.world.is_clock_locked()));
                 }
                 if passes != Ternary::True && self.options.failed_checks_pass_through {
                     results.push(state.clone());
                 }
             }
             _ => {
-                results.push(self.charge(node, state, symbols, context.world.is_clock_locked()));
+                results.push(self.charge(node, state, context.world.is_clock_locked()));
             }
         }
 
-        results.into_iter()
+        results
     }
 
     fn enter_rolled(
         &self,
         node: &LookAheadNode,
         state: &LookAheadState,
-        symbols: &StateSymbols,
         clock_locked: bool,
     ) -> Vec<LookAheadState> {
         let mut results = Vec::new();
@@ -386,12 +388,16 @@ impl LookAheadEngine {
             return results;
         }
 
-        let entered = self.charge(node, state, symbols, clock_locked);
+        let entered = self.charge(node, state, clock_locked);
 
-        // Success branch
+        // Both branches start from the same charged state, so the success branch takes a
+        // copy and leaves the original for the failure branch below. Moving it into the
+        // success branch would leave nothing to build the failure from.
         let success = if node.flag_slot >= 0 {
             entered.with(node.flag_slot as usize, 1)
-        } else { entered };
+        } else {
+            entered.clone()
+        };
         results.push(success);
 
         // Failure branch
@@ -413,17 +419,17 @@ impl LookAheadEngine {
         &self,
         node: &LookAheadNode,
         state: &LookAheadState,
-        symbols: &StateSymbols,
         clock_locked: bool,
     ) -> LookAheadState {
         let mut paid = state.clone();
         if node.is_cost_option() {
-            let once_slot = symbols.once(node.id);
-            let already_paid = node.cost_once && state.is_set(once_slot);
+            let already_paid = node.cost_once
+                && node.once_slot >= 0
+                && state.is_set(node.once_slot as usize);
             if !already_paid {
                 paid = paid.with_money(paid.money() - node.cost);
-                if node.cost_once {
-                    paid = paid.with(once_slot, 1);
+                if node.cost_once && node.once_slot >= 0 {
+                    paid = paid.with(node.once_slot as usize, 1);
                 }
             }
         }
@@ -432,7 +438,7 @@ impl LookAheadEngine {
             paid = paid.with(node.seen_slot as usize, 1);
         }
 
-        DialogueAction::apply(&node.actions, &paid, symbols.once(node.id), self.options.counter_cap, clock_locked)
+        DialogueAction::apply(&node.actions, &paid, node.once_slot, self.options.counter_cap, clock_locked)
     }
 
     fn build_trace(

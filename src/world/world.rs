@@ -21,22 +21,48 @@ pub trait ILookAheadWorld: Send + Sync {
     fn is_seen(&self, node: DialogueNodeId) -> bool;
 }
 
-/// Context that answers guards from crawl state where tracked, world otherwise.
-pub struct CrawlContext<'a> {
-    pub symbols: &'a StateSymbols,
-    pub world: &'a dyn ILookAheadWorld,
-    state: Option<&'a LookAheadState>,
+/// What a crawl consults that outlives any one state: the symbol table and the world.
+///
+/// Deliberately holds NO state. An earlier version stored the state being evaluated and
+/// had a `bind` method, which cannot be made to typecheck: the stored reference took the
+/// same lifetime as the symbols and the world, so binding one of the crawl's own
+/// short-lived states required it to outlive the whole search. Handing out a short-lived
+/// [`BoundContext`] instead lets each state be borrowed for exactly the guard evaluation
+/// that reads it, and leaves this shareable as `&CrawlContext`.
+pub struct CrawlContext<'w> {
+    pub symbols: &'w StateSymbols,
+    pub world: &'w dyn ILookAheadWorld,
 }
 
-impl<'a> CrawlContext<'a> {
-    pub fn new(symbols: &'a StateSymbols, world: &'a dyn ILookAheadWorld) -> Self {
-        Self { symbols, world, state: None }
+impl<'w> CrawlContext<'w> {
+    pub fn new(symbols: &'w StateSymbols, world: &'w dyn ILookAheadWorld) -> Self {
+        Self { symbols, world }
     }
 
-    pub fn bind(&mut self, state: &'a LookAheadState) {
-        self.state = Some(state);
+    /// A view that answers guards from `state` where the crawl tracks a slot, and from
+    /// the world otherwise.
+    pub fn bound<'s>(&self, state: &'s LookAheadState) -> BoundContext<'s>
+    where
+        'w: 's,
+    {
+        BoundContext { symbols: self.symbols, world: self.world, state: Some(state) }
     }
 
+    /// A view with no state behind it, for the seeding pass that runs before the first
+    /// state exists.
+    pub fn unbound(&self) -> BoundContext<'_> {
+        BoundContext { symbols: self.symbols, world: self.world, state: None }
+    }
+}
+
+/// A [`CrawlContext`] looking at one particular state, for the length of one evaluation.
+pub struct BoundContext<'s> {
+    pub symbols: &'s StateSymbols,
+    pub world: &'s dyn ILookAheadWorld,
+    state: Option<&'s LookAheadState>,
+}
+
+impl BoundContext<'_> {
     fn get_slot_value(&self, slot: usize) -> i32 {
         self.state.map(|s| s.get(slot)).unwrap_or(0)
     }
@@ -46,7 +72,7 @@ impl<'a> CrawlContext<'a> {
     }
 }
 
-impl IGuardContext for CrawlContext<'_> {
+impl IGuardContext for BoundContext<'_> {
     fn get_variable(&self, name: &str) -> GuardValue {
         if let Some(slot) = self.symbols.find(name) {
             if let Some(state) = self.state {
@@ -80,7 +106,10 @@ impl IGuardContext for CrawlContext<'_> {
             }
             "CheckItem" => {
                 if let Some(state) = self.state {
-                    if let Some(&GuardValue { kind: GuardValueKind::Text, ref text, .. }) = arguments.get(0) {
+                    if let Some(text) = arguments.get(0)
+                        .filter(|v| v.kind() == GuardValueKind::Text)
+                        .map(|v| v.text())
+                    {
                         if let Some(slot) = self.symbols.find(&format!("item:{}", text)) {
                             return GuardValue::from_boolean(state.is_set(slot));
                         }
@@ -90,7 +119,10 @@ impl IGuardContext for CrawlContext<'_> {
             }
             "IsTaskActive" => {
                 if let Some(state) = self.state {
-                    if let Some(&GuardValue { kind: GuardValueKind::Text, ref text, .. }) = arguments.get(0) {
+                    if let Some(text) = arguments.get(0)
+                        .filter(|v| v.kind() == GuardValueKind::Text)
+                        .map(|v| v.text())
+                    {
                         if let Some(slot) = self.symbols.find(&format!("task:{}", text)) {
                             return GuardValue::from_boolean(state.is_set(slot));
                         }

@@ -66,8 +66,12 @@ mod integration_tests {
         });
 
         assert_eq!(result.best, Novelty::UnseenAnyGame);
-        assert_eq!(result.states_explored, 3); // A, B, C
-        assert_eq!(result.nodes_reached, 3);
+        // Two, not three. The crawl returns the moment it scores an UnseenAnyGame child,
+        // because nothing outranks it and exploring further cannot improve the answer -
+        // so C is counted as REACHED but its state is never added to the visited set.
+        // The C# engine reports the same pair here, for the same reason.
+        assert_eq!(result.states_explored, 2); // A and B; C ended the search
+        assert_eq!(result.nodes_reached, 3); // A, B, C
     }
 
     #[test]
@@ -155,12 +159,19 @@ mod integration_tests {
         let world = TestWorld::new().set_check_result(id_a, Ternary::Unknown); // Both branches
         let engine = LookAheadEngine::default();
 
+        // Deliberately UnseenThisGame rather than UnseenAnyGame: the strongest novelty
+        // ends the search on sight, which would stop the crawl at its first child and
+        // measure nothing about how far it got.
         let result = engine.evaluate(&graph, id_a, &world, |id| {
-            if id == id_b { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
+            if id == id_b { Novelty::UnseenThisGame } else { Novelty::SeenThisGame }
         });
 
-        // Should explore both branches
-        assert!(result.states_explored >= 3);
+        assert_eq!(result.best, Novelty::UnseenThisGame);
+        // A, B and C. The start node is entered by try_enter, which takes the FIRST of a
+        // rolled check's two outcomes rather than both - the marker answers "what follows
+        // from picking this option", and picking it is a single act. The two-outcome
+        // branching applies to rolled checks met further down, as children.
+        assert_eq!(result.states_explored, 3);
     }
 
     #[test]
@@ -246,9 +257,13 @@ mod integration_tests {
             if id == id_b || id == id_c { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
         });
 
-        // Should not re-enter A (closes once seen), but still reaches B and C from start
-        // Actually, since A is the start node, it's entered once and then closes
-        // The children should still be reachable
-        assert!(result.nodes_reached >= 2);
+        // Nothing is reachable, and that is the point. A fake check that has already been
+        // displayed is CLOSED: the game stops offering it, so no path runs through it and
+        // B and C are not reachable by way of it at all. The seed puts A's seen slot in
+        // the state - matching the C# engine, which seeds every SeenSlot from
+        // world.IsSeen - so entering A yields no state and the crawl ends at once.
+        assert_eq!(result.nodes_reached, 0);
+        assert_eq!(result.states_explored, 0);
+        assert_eq!(result.best, Novelty::SeenThisGame);
     }
 }

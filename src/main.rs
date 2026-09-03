@@ -112,7 +112,9 @@ fn main() -> anyhow::Result<()> {
     let mut nodes = Vec::new();
 
     for entry in &conv.entries {
-        let node_id = DialogueNodeId::new(entry.conversation_id, entry.id);
+        // The conversation id comes from the conversation, not the entry: entries carry
+        // only their own id, which restarts at 0 in every conversation.
+        let node_id = DialogueNodeId::new(conv.conversation_id, entry.id);
 
         // Parse guard
         let guard = parse_guard(&entry.conditions_string).unwrap_or_else(|_| GuardExpression::always_true());
@@ -142,7 +144,7 @@ fn main() -> anyhow::Result<()> {
         ));
     }
 
-    let graph = LookAheadGraph::new(nodes, symbols)?;
+    let graph = LookAheadGraph::new(nodes, symbols).map_err(anyhow::Error::msg)?;
     println!("Built graph: {} nodes, {} slots", graph.count(), graph.symbols().count());
 
     // Create world

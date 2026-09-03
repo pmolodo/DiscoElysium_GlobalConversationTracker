@@ -83,7 +83,10 @@ impl ClockTime {
             "IsEvening" => GuardValue::from_boolean(matches!(daytime, Daytime::Dusk | Daytime::Evening)),
             "IsMidnight" => GuardValue::from_boolean(daytime == Daytime::Midnight),
             "IsHour" => {
-                if let Some(&GuardValue { kind: GuardValueKind::Number, number: h, .. }) = arguments.get(0) {
+                if let Some(h) = arguments.get(0)
+                    .filter(|v| v.kind() == GuardValueKind::Number)
+                    .map(|v| v.number())
+                {
                     GuardValue::from_boolean(hours == h as i32)
                 } else {
                     GuardValue::unknown()

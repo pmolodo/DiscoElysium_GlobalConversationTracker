@@ -26,6 +26,14 @@ pub struct DialogueAction {
 }
 
 impl DialogueAction {
+    /// Whether this action fires only the first time its entry is reached.
+    ///
+    /// Read when the graph decides which entries need a once slot; the fields stay
+    /// private so an action is still built only through the constructors below.
+    pub fn is_once(&self) -> bool {
+        self.once
+    }
+
     pub fn assign(slot: usize, value: i32, name: String) -> Self {
         Self { kind: DialogueActionKind::Assign, slot: slot as i32, value, once: false, name }
     }
@@ -62,7 +70,7 @@ impl DialogueAction {
     pub fn apply(
         actions: &[DialogueAction],
         state: &LookAheadState,
-        once_slot: usize,
+        once_slot: i32,
         counter_cap: i32,
         clock_locked: bool,
     ) -> LookAheadState {
@@ -70,7 +78,10 @@ impl DialogueAction {
             return state.clone();
         }
 
-        let already_fired = state.is_set(once_slot);
+        // -1 means the node has no once slot, which the graph assigns only where
+        // something actually fires once. Nothing has fired if there is nowhere to
+        // record that it did.
+        let already_fired = once_slot >= 0 && state.is_set(once_slot as usize);
         let mut fired_something_once = false;
         let mut changes = Vec::with_capacity(actions.len() + 1);
         let mut money = state.money();
@@ -106,8 +117,8 @@ impl DialogueAction {
             }
         }
 
-        if fired_something_once {
-            changes.push((once_slot, 1));
+        if fired_something_once && once_slot >= 0 {
+            changes.push((once_slot as usize, 1));
         }
 
         if changes.is_empty() && money == state.money() && day_minutes == state.day_minutes() {

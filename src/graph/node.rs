@@ -23,6 +23,17 @@ pub struct LookAheadNode {
     pub failed_flag_slot: i32,   // -1 if none
     pub boolean_only: bool,
     pub seen_slot: i32,          // -1 if none
+    /// The slot recording that this entry's once-only effects have fired, or -1.
+    ///
+    /// Two different things share it, because they ask the same question - has this
+    /// entry already had its one-time effect: a `cost_once` charge, and any action
+    /// marked `once`. A node needing neither has no slot, which is most of them.
+    ///
+    /// Assigned by [`crate::graph::graph::LookAheadGraph::new`] rather than passed to
+    /// [`LookAheadNode::new`], because interning a name mutates the symbol table and the
+    /// graph is what owns it. Doing it there is what lets the table be FROZEN before a
+    /// crawl starts: the crawl only ever reads slots, never creates them.
+    pub once_slot: i32,          // -1 if none
 }
 
 impl LookAheadNode {
@@ -55,7 +66,17 @@ impl LookAheadNode {
             failed_flag_slot,
             boolean_only,
             seen_slot,
+            once_slot: -1,
         }
+    }
+
+    /// Whether this entry has a one-time effect worth a slot to remember.
+    ///
+    /// Asked once, when the graph is built. Interning a slot for every node instead
+    /// would widen the state vector by one bit per entry - 4,514 of them in the largest
+    /// conversation group - to answer a question almost none of them ask.
+    pub fn needs_once_slot(&self) -> bool {
+        self.cost_once || self.actions.iter().any(|action| action.is_once())
     }
 
     pub fn closes_once_seen(&self) -> bool {

@@ -69,7 +69,11 @@ fn invocations(script: &str) -> Vec<Invocation> {
         if i >= chars.len() || chars[i] != '(' { continue; }
         let mut args = Vec::new();
         let mut current = String::new();
-        let mut depth = 0;
+        // One, not zero: the call's own opening bracket is consumed just below, so the
+        // scan starts already inside it. Starting at zero made the matching ')' take the
+        // depth to -1 instead of 0, so the loop never broke and the first call in a
+        // script swallowed every one after it - three statements parsed as one action.
+        let mut depth = 1;
         let mut in_string = false;
         i += 1; // skip '('
         while i < chars.len() {
@@ -88,7 +92,6 @@ fn invocations(script: &str) -> Vec<Invocation> {
             }
             if c == '(' {
                 depth += 1;
-                if depth == 1 { i += 1; continue; }
             } else if c == ')' {
                 depth -= 1;
                 if depth == 0 {

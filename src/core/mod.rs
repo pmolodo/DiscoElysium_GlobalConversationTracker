@@ -10,6 +10,7 @@ pub mod clock;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::state::{LookAheadState, StateSymbols};
 
     #[test]
     fn test_dialogue_node_id() {
