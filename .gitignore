@@ -11,6 +11,7 @@ _venv/
 .mypy_cache/
 .bash_history
 .conan
+uv.lock
 
 # IDEs
 .idea/
