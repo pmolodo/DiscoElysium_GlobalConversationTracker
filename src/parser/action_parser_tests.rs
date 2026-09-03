@@ -226,3 +226,86 @@ fn an_empty_script_produces_no_actions() {
     assert!(parse_actions("", &mut symbols).is_empty());
     assert!(parse_actions("   ", &mut symbols).is_empty());
 }
+
+/// The separator between statements is a literal backslash and the letter `n`, not a
+/// newline, and every statement after the first depends on it being read as one.
+///
+/// Verbatim from the database. Read wrong, the scan starts at the `n` - a backslash is
+/// no name start and a letter is - and the second and third calls become
+/// `nGainTask` and `nSetVariableValue`, which match nothing and land as unmodelled.
+#[test]
+fn every_statement_after_the_first_is_read() {
+    let mut symbols = StateSymbols::new();
+    let actions = parse_actions(
+        "FinishTask(\"TASK.advanced_ballistics_analysis_done\");\
+         \\nGainTask(\"TASK.locate_the_firearm\");\
+         \\nSetVariableValue(\"tc.belle_magrave\", true) --[[ Variable[ ]]",
+        &mut symbols,
+    );
+
+    assert_eq!(actions.len(), 3);
+    assert!(
+        actions.iter().all(|a| a.kind() != DialogueActionKind::Unmodelled),
+        "every call should be modelled, got {actions:?}",
+    );
+
+    let done = symbols.find("task:TASK.advanced_ballistics_analysis_done").unwrap();
+    let firearm = symbols.find("task:TASK.locate_the_firearm").unwrap();
+    let belle = symbols.find("tc.belle_magrave").unwrap();
+
+    // The task the entry finishes starts active, so clearing it is visible.
+    let before = empty(&symbols, 0).with(done, 1);
+    let after = DialogueAction::apply(&actions, &before, -1, &caps(), false);
+
+    assert_eq!(after.get(done), 0);
+    assert_eq!(after.get(firearm), 1);
+    assert_eq!(after.get(belle), 1);
+}
+
+/// Prose inside a string argument does not end it, however many quotes it escapes.
+///
+/// Shortened from the newspaper text of `NewspaperEndgame`, which runs to two kilobytes
+/// of reported speech. A scan that reads `\"` as the closing quote resumes tokenizing in
+/// the middle of a sentence, where any word followed by a bracket becomes a call.
+#[test]
+fn an_escaped_quote_does_not_end_a_string() {
+    let mut symbols = StateSymbols::new();
+    let actions = parse_actions(
+        "NewspaperEndgame(\"GIVING_UP\",\"COP GIVES UP\",\
+         \"He shouted, \\\"I never loved that woman!\\\" GainItem(\\\"x\\\")\");\
+         \\nGainItem(\"white_envelope\")",
+        &mut symbols,
+    );
+
+    // The newspaper itself is not modelled; the point is that it is ONE action and the
+    // item after it survives, rather than the prose fragmenting into several.
+    assert_eq!(actions.len(), 2, "got {actions:?}");
+    assert_eq!(actions[0].kind(), DialogueActionKind::Unmodelled);
+    assert_eq!(actions[0].name(), "NewspaperEndgame");
+
+    let envelope = symbols.find("item:white_envelope").unwrap();
+    let after = DialogueAction::apply(&actions, &empty(&symbols, 0), -1, &caps(), false);
+    assert_eq!(after.get(envelope), 1);
+}
+
+/// A line comment ends at the separator, not at the end of the script.
+///
+/// There is no newline in a script to end it at, so looking for one swallowed everything
+/// that followed. Only two scripts in the database write a bare `--`, both of them
+/// em-dashes in prose, but where it happens nothing after it is read at all.
+#[test]
+fn a_line_comment_ends_at_the_separator() {
+    let mut symbols = StateSymbols::new();
+    let actions = parse_actions(
+        "GainItem(\"badge\") -- he kept it after all\\nGainTask(\"TASK.find_the_body\")",
+        &mut symbols,
+    );
+
+    assert_eq!(actions.len(), 2, "got {actions:?}");
+    let badge = symbols.find("item:badge").unwrap();
+    let body = symbols.find("task:TASK.find_the_body").unwrap();
+    let after = DialogueAction::apply(&actions, &empty(&symbols, 0), -1, &caps(), false);
+
+    assert_eq!(after.get(badge), 1);
+    assert_eq!(after.get(body), 1);
+}

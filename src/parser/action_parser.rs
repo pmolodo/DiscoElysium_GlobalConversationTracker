@@ -4,9 +4,12 @@ use crate::core::state::StateSymbols;
 
 const ONCE_FN: &str = "once";
 
+/// The letter that follows a backslash where a script separates two statements.
+const SEPARATOR_ESCAPE: char = 'n';
+
 /// Parse a userScript into DialogueActions.
 pub fn parse_actions(script: &str, symbols: &mut StateSymbols) -> Vec<DialogueAction> {
-    let stripped = strip_comments(script);
+    let stripped = normalize(script);
     let mut actions = Vec::new();
     for call in invocations(&stripped) {
         translate_call(call, symbols, &mut actions);
@@ -14,38 +17,110 @@ pub fn parse_actions(script: &str, symbols: &mut StateSymbols) -> Vec<DialogueAc
     actions
 }
 
-fn strip_comments(text: &str) -> String {
+/// Strips comments and turns the statement separator into a real newline.
+///
+/// ## The separator is two characters, not one
+///
+/// The database stores a userScript as ONE LINE whose statements are separated by a
+/// literal backslash followed by the letter `n` - two characters, not a newline. There
+/// are 6,760 of them across the index.
+///
+/// Left as they stand, the name scanner in [`invocations`] starts one character late: a
+/// backslash is not a name start and a letter is, so the separator is read into the name
+/// of the call that follows it. `Start();\nSetVariableValue("x", true)` yields a call
+/// named `nSetVariableValue`, which matches nothing in [`translate_call`] and lands as
+/// unmodelled - and so does every statement after the first in every script. In
+/// conversation 631's group that was 78 actions.
+///
+/// ## One pass, because Lua's rules interleave
+///
+/// A quote inside a comment opens no string and a `--` inside a string opens no comment,
+/// so neither can be decided without tracking the other. Two passes get both wrong: the
+/// prose these scripts carry is full of escaped quotes and the occasional em-dash.
+fn normalize(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
     let mut out = String::with_capacity(text.len());
-    let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '-' {
-            if let Some(&'-') = chars.peek() {
-                chars.next();
-                if let Some(&'[') = chars.peek() {
-                    chars.next();
-                    if let Some(&'[') = chars.peek() {
-                        chars.next();
-                        let mut depth = 1;
-                        while let Some(c) = chars.next() {
-                            if c == ']' && chars.next() == Some(']') {
-                                depth -= 1;
-                                if depth == 0 { break; }
-                            } else if c == '[' && chars.next() == Some('[') {
-                                depth += 1;
-                            }
-                        }
-                        out.push(' ');
-                        continue;
+    let mut i = 0;
+    let mut in_string = false;
+
+    while i < chars.len() {
+        let c = chars[i];
+
+        if in_string {
+            out.push(c);
+            if c == '\\' {
+                // Whatever it escapes, quote included: a scan that read `\"` as the
+                // closing quote would end the string in the middle of a sentence and
+                // tokenize the rest of the prose as code.
+                if let Some(&escaped) = chars.get(i + 1) {
+                    out.push(escaped);
+                    i += 1;
+                }
+            } else if c == '"' {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        if c == '"' {
+            in_string = true;
+            out.push(c);
+            i += 1;
+            continue;
+        }
+
+        if c == '\\' {
+            // Outside a string an escape is the statement separator, which becomes the
+            // newline it stands for. Anything else escaped out here is not Lua the
+            // parser can read, so it goes the same way rather than being left to start
+            // a name.
+            out.push(if chars.get(i + 1) == Some(&SEPARATOR_ESCAPE) { '\n' } else { ' ' });
+            i += if i + 1 < chars.len() { 2 } else { 1 };
+            continue;
+        }
+
+        if c == '-' && chars.get(i + 1) == Some(&'-') {
+            i += 2;
+            if chars.get(i) == Some(&'[') && chars.get(i + 1) == Some(&'[') {
+                i += 2;
+                let mut depth = 1;
+                while i < chars.len() {
+                    if chars[i] == ']' && chars.get(i + 1) == Some(&']') {
+                        i += 2;
+                        depth -= 1;
+                        if depth == 0 { break; }
+                    } else if chars[i] == '[' && chars.get(i + 1) == Some(&'[') {
+                        i += 2;
+                        depth += 1;
+                    } else {
+                        i += 1;
                     }
                 }
-                while let Some(c) = chars.next() {
-                    if c == '\n' { break; }
-                }
+                out.push(' ');
                 continue;
             }
+
+            // A line comment, which ends at the separator. Looking for a real newline -
+            // which no script contains - made one `--` eat the whole remainder.
+            while i < chars.len() {
+                if chars[i] == '\n' {
+                    break;
+                }
+                if chars[i] == '\\' && chars.get(i + 1) == Some(&SEPARATOR_ESCAPE) {
+                    i += 2;
+                    break;
+                }
+                i += 1;
+            }
+            out.push('\n');
+            continue;
         }
+
         out.push(c);
+        i += 1;
     }
+
     out
 }
 
@@ -80,7 +155,17 @@ fn invocations(script: &str) -> Vec<Invocation> {
             let c = chars[i];
             if in_string {
                 current.push(c);
-                if c == '"' { in_string = false; }
+                // An escape carries its next character with it, so `\"` stays inside the
+                // string instead of closing it - see `normalize`, which does the same for
+                // the same reason.
+                if c == '\\' {
+                    if let Some(&escaped) = chars.get(i + 1) {
+                        current.push(escaped);
+                        i += 1;
+                    }
+                } else if c == '"' {
+                    in_string = false;
+                }
                 i += 1;
                 continue;
             }
