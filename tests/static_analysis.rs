@@ -142,6 +142,18 @@ fn analysis_path(name: &str) -> PathBuf {
     path.join(name)
 }
 
+/// Writes a committed answer, with the trailing newline the repo's hooks insist on.
+///
+/// Without it `end-of-file-fixer` adds one at commit time and the next regeneration takes
+/// it away again, so the file shows as changed on every run whether or not the answer
+/// did. A committed artefact is only useful if regenerating it is a no-op when nothing
+/// has moved.
+fn write_answer(name: &str, body: &str) {
+    let out = analysis_path(name);
+    std::fs::write(&out, format!("{body}\n")).expect("writing the answer");
+    println!("wrote {} ({} bytes)", out.display(), body.len() + 1);
+}
+
 #[test]
 #[ignore = "regenerates committed analysis files; run deliberately"]
 fn partition_the_database_into_conversation_groups() {
@@ -178,9 +190,7 @@ fn partition_the_database_into_conversation_groups() {
     let by_root: BTreeMap<String, &Vec<i32>> =
         groups.iter().map(|g| (g[0].to_string(), g)).collect();
     let written = serde_json::to_string_pretty(&by_root).expect("the groups serialise");
-    let out = analysis_path("conversation_groups.json");
-    std::fs::write(&out, written).expect("writing the groups");
-    println!("wrote {}", out.display());
+    write_answer("conversation_groups.json", &written);
 
     assert!(!groups.is_empty(), "the database yielded no groups");
 }
@@ -218,10 +228,7 @@ fn measure_link_reachability_from_every_entry() {
     );
 
     let written = serde_json::to_string(&summary).expect("the summary serialises");
-    println!("the summary is {} bytes", written.len());
-    let out = analysis_path("link_reachability.json");
-    std::fs::write(&out, written).expect("writing the summary");
-    println!("wrote {}", out.display());
+    write_answer("link_reachability.json", &written);
 
     assert!(!links.is_empty(), "the database yielded no entries");
 }
