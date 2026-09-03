@@ -1,9 +1,24 @@
 {
     "[bat]": {
-        "files.eol": "\r\n"
+        "editor.formatOnSave": true,
+        "editor.insertSpaces": true,
+        "editor.tabSize": 4,
+        "files.eol": "\r\n",
+        "files.trimTrailingWhitespace": true
+    },
+    "[c][cpp][csharp][json][jsonc][rust][shellscript][toml][yaml]": {
+        "editor.formatOnSave": true,
+        "editor.insertSpaces": true,
+        "editor.tabSize": 4,
+        "files.eol": "\n",
+        "files.trimTrailingWhitespace": true
     },
     "[powershell]": {
-        "files.eol": "\r\n"
+        "editor.formatOnSave": true,
+        "editor.insertSpaces": true,
+        "editor.tabSize": 4,
+        "files.eol": "\r\n",
+        "files.trimTrailingWhitespace": true
     },
     "[python]": {
         "editor.codeActionsOnSave": {
@@ -14,14 +29,16 @@
         // no generic equivalent - defaultFormatter takes an extension id.
         // Ruff's fixes run first via codeActionsOnSave, then black formats.
         "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.formatOnSave": true,
+        "editor.insertSpaces": true,
         "editor.rulers": [
             80,
             120
-        ]
+        ],
+        "editor.tabSize": 4,
+        "files.eol": "\n",
+        "files.trimTrailingWhitespace": true
     },
-    "editor.formatOnSave": true,
-    "editor.insertSpaces": true,
-    "editor.tabSize": 4,
     "editor.wordWrapColumn": 120,
     "files.exclude": {
         "**/.DS_Store": true,
@@ -30,7 +47,6 @@
         "**/.svn": true,
         "**/CVS": true
     },
-    "files.trimTrailingWhitespace": true,
     "python.analysis.typeCheckingMode": "off", // use ty for typing, not pylance
     "rewrap.wrappingColumn": 120
 }
