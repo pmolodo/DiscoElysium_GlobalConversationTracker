@@ -6,6 +6,7 @@ pub mod state;
 pub mod action;
 pub mod guard;
 pub mod clock;
+pub mod modelling;
 pub mod passive_check;
 
 /// The ported C# clock suite. In a file of its own rather than inline only because of its

@@ -148,31 +148,40 @@ fn every_action_in_the_database_parses() {
 
     let mut symbols = StateSymbols::new();
     let mut modelled = 0;
+    let mut declared = 0;
     let mut unmodelled = 0;
     let mut by_name: HashMap<String, usize> = HashMap::new();
 
     for line in &corpus {
         for action in parse_actions(&unescape(line), &mut symbols) {
-            if action.kind() == DialogueActionKind::Unmodelled {
-                unmodelled += 1;
-                *by_name.entry(action.name().to_string()).or_default() += 1;
-            } else {
-                modelled += 1;
+            match action.kind() {
+                // Recognised and deliberately doing nothing - see
+                // `lookahead_engine::core::modelling`. Counted apart from the unknowns
+                // because the whole point of declaring one is that it stops being a name
+                // on this list.
+                DialogueActionKind::Declared => declared += 1,
+                DialogueActionKind::Unmodelled => {
+                    unmodelled += 1;
+                    *by_name.entry(action.name().to_string()).or_default() += 1;
+                }
+                _ => modelled += 1,
             }
         }
     }
 
     println!(
-        "{} scripts: {modelled} modelled actions, {unmodelled} unmodelled, {} slots",
+        "{} scripts: {modelled} modelled actions, {declared} declared, \
+         {unmodelled} unknown, {} slots",
         corpus.len(),
         symbols.count()
     );
 
-    // The unmodelled ones by name, which is the audit de-p95 wants for the action side.
+    // The unknown ones by name, which is the audit de-p95 wants for the action side.
+    // Every one of these is either something to model or something to decide about.
     let mut rows: Vec<(&String, &usize)> = by_name.iter().collect();
     rows.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
-    println!("unmodelled action functions, most common first:");
-    for (name, count) in rows.iter().take(20) {
+    println!("undecided action functions, most common first:");
+    for (name, count) in &rows {
         println!("  {count:>6}  {name}");
     }
 

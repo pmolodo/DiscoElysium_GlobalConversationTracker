@@ -83,6 +83,15 @@ pub struct GuardCompiler<'a> {
     compiled: usize,
     reasons: HashMap<&'static str, usize>,
     subjects: Vec<(&'static str, String)>,
+    /// Queries answered as constants that a DECLARED decision writes.
+    ///
+    /// A world query is answered once and reused at every state, which is exact only
+    /// while nothing moves it. `crawl_can_change` names the ones the crawl moves through
+    /// slots; [`crate::core::modelling`] names the ones something moves through an action
+    /// the model has decided to skip. Those compile cleanly and so appear nowhere in the
+    /// fallback counts - which is right, they are not gaps - but they are approximations,
+    /// and an approximation nobody can see is the kind that gets forgotten.
+    declared_constants: Vec<(&'static str, String)>,
 }
 
 impl<'a> GuardCompiler<'a> {
@@ -92,6 +101,7 @@ impl<'a> GuardCompiler<'a> {
             vars, world: None,
             constant_clock: false, clock_approximated: false,
             fallbacks: 0, compiled: 0, reasons: HashMap::new(), subjects: Vec::new(),
+            declared_constants: Vec::new(),
         }
     }
 
@@ -180,6 +190,21 @@ impl<'a> GuardCompiler<'a> {
     /// `CheckItem` unreadable when the compiler answers them from the world.
     pub fn fallback_subjects(&self) -> &[(&'static str, String)] {
         &self.subjects
+    }
+
+    /// Every question answered from the world that a declared decision writes.
+    ///
+    /// Not fallbacks - these compiled, and to a literal. They are the places where the
+    /// answer is only as good as the decision behind it, listed so a report can say so.
+    pub fn declared_constants(&self) -> &[(&'static str, String)] {
+        &self.declared_constants
+    }
+
+    /// A query name as the registry spells it, so it can be kept without allocating.
+    fn declared_name(name: &str) -> &'static str {
+        crate::core::modelling::for_query(name)
+            .and_then(|decision| decision.readers.iter().copied().find(|r| *r == name))
+            .unwrap_or("declared reader")
     }
 
     /// A guard that is undecided everywhere: the permissive answer.
@@ -337,6 +362,16 @@ impl<'a> GuardCompiler<'a> {
             GuardExpression::Call(name, args)
                 if !Self::crawl_can_change(name) && self.world.is_some() =>
             {
+                // Constant for the CRAWL, which is not the same as constant. Something
+                // the model has decided to skip may write it, and where that is so the
+                // question is noted rather than passed over silently.
+                if crate::core::modelling::for_query(name).is_some() {
+                    self.declared_constants.push((
+                        Self::declared_name(name),
+                        guard.to_string(),
+                    ));
+                }
+
                 match self.constant_query(name, args) {
                     Some(true) => {
                         let t = self.top();

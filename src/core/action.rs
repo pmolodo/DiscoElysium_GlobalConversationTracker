@@ -13,6 +13,12 @@ pub enum DialogueActionKind {
     GainMoney = 3,
     LoseMoney = 4,
     PassTime = 5,
+    /// Recognised, and deliberately doing nothing - see [`crate::core::modelling`].
+    ///
+    /// Applies exactly as `Unmodelled` does, which is the point: the difference between
+    /// the two is not what the crawl does with them but whether anybody has decided.
+    /// One is a stub somebody argued for; the other is a gap nobody has looked at.
+    Declared = 6,
 }
 
 /// One state change a dialogue entry's userScript makes.
@@ -96,6 +102,26 @@ impl DialogueAction {
         Self { kind: DialogueActionKind::Unmodelled, slot: -1, value: 0, once: false, name }
     }
 
+    /// An action the model recognises and deliberately does not apply.
+    ///
+    /// The decision itself is not stored: it is looked up from the name, so there is one
+    /// copy of it and a report cannot quote a reason that has since been revised.
+    pub fn declared(name: String) -> Self {
+        debug_assert!(
+            crate::core::modelling::for_action(&name).is_some(),
+            "no decision covers {name}",
+        );
+        Self { kind: DialogueActionKind::Declared, slot: -1, value: 0, once: false, name }
+    }
+
+    /// The decision that made this a stub, for an action that is one.
+    pub fn decision(&self) -> Option<&'static crate::core::modelling::Decision> {
+        match self.kind {
+            DialogueActionKind::Declared => crate::core::modelling::for_action(&self.name),
+            _ => None,
+        }
+    }
+
     pub fn kind(&self) -> DialogueActionKind { self.kind }
     pub fn slot(&self) -> i32 { self.slot }
     pub fn value(&self) -> i32 { self.value }
@@ -157,7 +183,10 @@ impl DialogueAction {
                         day_minutes = LookAheadState::wrap_minutes(day_minutes + action.value);
                     }
                 }
-                DialogueActionKind::Unmodelled => {}
+                // Both write nothing, and for the same reason from the crawl's point of
+                // view: there is no slot to put anything in. What separates them is
+                // whether that was decided or merely not yet looked at.
+                DialogueActionKind::Unmodelled | DialogueActionKind::Declared => {}
             }
         }
 
@@ -182,6 +211,10 @@ impl fmt::Display for DialogueAction {
             DialogueActionKind::LoseMoney => write!(f, "{}: money -= {}{}", self.name, self.value, if self.once { " (once)" } else { "" }),
             DialogueActionKind::PassTime => write!(f, "{}: clock += {}m", self.name, self.value),
             DialogueActionKind::Unmodelled => write!(f, "{}: not modelled", self.name),
+            DialogueActionKind::Declared => match self.decision() {
+                Some(decision) => write!(f, "{}: declared, {}", self.name, decision.verdict()),
+                None => write!(f, "{}: declared", self.name),
+            },
         }
     }
 }

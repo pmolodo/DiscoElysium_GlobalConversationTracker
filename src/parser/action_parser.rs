@@ -311,8 +311,14 @@ fn translate_call(call: Invocation, symbols: &mut StateSymbols, actions: &mut Ve
         "PassTime" => {
             actions.push(DialogueAction::pass_time(call.name));
         }
-        _ => {
-            actions.push(DialogueAction::unmodelled(call.name));
+        // Everything else either has a decision behind it or does not. A decision makes
+        // it a stub that does nothing on purpose; the absence of one makes it a gap
+        // nobody has looked at, and those are what the modelling-gaps report is for.
+        name => {
+            actions.push(match crate::core::modelling::for_action(name) {
+                Some(_) => DialogueAction::declared(call.name),
+                None => DialogueAction::unmodelled(call.name),
+            });
         }
     }
 }

@@ -118,7 +118,8 @@ impl<'a> ActionImage<'a> {
 
         let slot = action.slot();
         let Ok(slot) = usize::try_from(slot) else {
-            // Money, the clock, and anything unmodelled: no slot to write.
+            // Money, the clock, and anything the model does not apply - whether declared
+            // or unknown: no slot to write.
             self.ignored += 1;
             return states.clone();
         };
@@ -131,8 +132,9 @@ impl<'a> ActionImage<'a> {
             DialogueActionKind::Increment => {
                 self.increment(states, slot, action.value())
             }
-            // GainMoney, LoseMoney, PassTime and Unmodelled write no slot. Money and the
-            // clock are deliberately outside this layout - see DataLayout and de-sze.10.
+            // GainMoney, LoseMoney, PassTime, Declared and Unmodelled write no slot.
+            // Money and the clock are deliberately outside this layout - see DataLayout
+            // and de-sze.10.
             _ => {
                 self.ignored += 1;
                 states.clone()

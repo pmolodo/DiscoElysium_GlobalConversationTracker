@@ -12,6 +12,19 @@
 //! sub-expressions fell back; this reports WHICH, so they can be modelled one at a time
 //! and the list can be watched shrinking.
 //!
+//! ## Three buckets, not two
+//!
+//! MODELLED, DECLARED, UNKNOWN. The middle one is what keeps the list honest: an action
+//! somebody looked at and decided to skip - see [`lookahead_engine::core::modelling`] -
+//! parses to a stub that does nothing on purpose, so it stops sitting in the same list as
+//! the ones nobody has read. Without that separation the report has to be re-read from
+//! scratch every time, because it cannot say which of its entries are already settled.
+//!
+//! What a decision does not do is stop mattering. Where it holds something constant that
+//! the group's own guards ask about, the model is answering from a save the group has
+//! already made stale - so the report measures that too, per decision, rather than
+//! leaving the reader to take the decision's word for it.
+//!
 //! ## It asks the compiler rather than reimplementing it
 //!
 //! The first version of this file carried its own copy of the compiler's reading rules,
@@ -24,6 +37,7 @@ use std::collections::HashMap;
 
 use lookahead_engine::core::action::DialogueActionKind;
 use lookahead_engine::core::guard::GuardExpression;
+use lookahead_engine::core::modelling::{self, Decision};
 use lookahead_engine::index::{build_group_graph, read_index, Index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
@@ -47,6 +61,33 @@ fn subject() -> i32 {
 const COUNTER_CAP: i32 = 16;
 const NODE_CAPACITY: usize = 1 << 20;
 const CACHE_CAPACITY: usize = 1 << 18;
+
+/// How wide a decision's reasoning is printed.
+const WHY_WIDTH: usize = 88;
+
+/// Text broken into lines of at most `width`, on word boundaries.
+///
+/// A decision's reasoning is stored as one long string - it is prose, and prose that is
+/// pre-broken to a width is prose that has to be re-broken every time somebody edits it.
+/// The report is the only thing that cares how wide it looks.
+fn wrapped(text: &str, width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    for word in text.split_whitespace() {
+        if !line.is_empty() && line.len() + 1 + word.len() > width {
+            lines.push(std::mem::take(&mut line));
+        }
+        if !line.is_empty() {
+            line.push(' ');
+        }
+        line.push_str(word);
+    }
+    if !line.is_empty() {
+        lines.push(line);
+    }
+
+    lines
+}
 
 /// Groups strings by how often they occur, most common first.
 fn by_frequency(items: &[String]) -> Vec<(String, usize)> {
@@ -110,6 +151,7 @@ fn what_is_still_unmodelled_in_the_subject_conversation() {
         .with_constant_clock(DataLayout::group_passes_time(&graph));
 
     let mut action_gaps: Vec<String> = Vec::new();
+    let mut declared_actions: Vec<String> = Vec::new();
     let mut modelled_actions = 0;
     let mut entries_with_a_guard = 0;
 
@@ -121,10 +163,10 @@ fn what_is_still_unmodelled_in_the_subject_conversation() {
         }
 
         for action in &node.actions {
-            if action.kind() == DialogueActionKind::Unmodelled {
-                action_gaps.push(action.name().to_string());
-            } else {
-                modelled_actions += 1;
+            match action.kind() {
+                DialogueActionKind::Unmodelled => action_gaps.push(action.name().to_string()),
+                DialogueActionKind::Declared => declared_actions.push(action.name().to_string()),
+                _ => modelled_actions += 1,
             }
         }
     }
@@ -155,20 +197,169 @@ fn what_is_still_unmodelled_in_the_subject_conversation() {
         }
     }
 
-    println!("\n{modelled_actions} actions modelled, {} not:", action_gaps.len());
+    // Nothing above this line is a gap: these compiled. They are the questions whose
+    // answers are only as good as a decision, and they belong in a gaps report for the
+    // same reason a declared action does - so that "100% compiled" is read as what it is.
+    println!("\napproximations in force on the guard side:");
+    println!(
+        "  the clock is held at the world's time: {}",
+        if compiler.clock_is_approximated() {
+            "AN APPROXIMATION here - this group passes time"
+        } else {
+            "exact here - nothing in this group passes time"
+        },
+    );
+    let declared_questions: Vec<String> = compiler
+        .declared_constants()
+        .iter()
+        .map(|(query, _)| (*query).to_string())
+        .collect();
+    println!(
+        "  {} questions answered from the world that a declared decision writes: {:?}",
+        declared_questions.len(),
+        by_frequency(&declared_questions),
+    );
+
+    println!(
+        "\n{modelled_actions} actions modelled, {} declared, {} unknown.",
+        declared_actions.len(),
+        action_gaps.len(),
+    );
+
+    // The declared ones first, because they are the shorter story: somebody decided, the
+    // reason is on file, and nothing here needs doing.
+    println!("\ndeclared - recognised, deliberately doing nothing:");
+    for (name, count) in by_frequency(&declared_actions) {
+        let verdict = modelling::for_action(&name)
+            .map(Decision::verdict)
+            .unwrap_or("no decision found");
+        println!("  x{count:<4} {name} - {verdict}");
+    }
+
+    // And then the ones that are actually open. This list is the point of the file.
+    println!("\nunknown - nobody has decided:");
+    if action_gaps.is_empty() {
+        println!("  (none)");
+    }
     for (name, count) in by_frequency(&action_gaps) {
         println!("  x{count:<4} {name}");
     }
 
-    // The question that decides whether an unmodelled action matters: do the group's own
-    // guards ask about the subject it writes? A world query the crawl cannot change is a
-    // constant and the world answers it, so an action nothing here reads is a gap only on
-    // paper. One the guards DO read is a branch held shut.
-    let gained: Vec<String> = raw_scripts(&index, &group)
-        .iter()
-        .flat_map(|script| subjects_of(script, "GainThought"))
-        .collect();
-    println!("\nthoughts this group gains: {:?}", by_frequency(&gained));
+    report_exposure(&index, &group, &declared_actions, &compiler);
+
+    // A declared no-op is a decision, not a licence to stop looking - but an UNKNOWN in
+    // the conversation the epic turns on is a measurement running on a model nobody has
+    // read. Asserted only for the subject the file is about; any other group is being
+    // surveyed, and its unknowns are the survey's result rather than a failure.
+    if subject == SUBJECT {
+        assert!(
+            action_gaps.is_empty(),
+            "conversation {SUBJECT} has undecided actions: {:?}",
+            by_frequency(&action_gaps),
+        );
+    }
 
     assert!(graph.count() > 0, "the subject group has no entries");
+}
+
+/// What each decision in force here actually costs THIS group.
+///
+/// A decision to hold something constant is exact until the group both writes it and
+/// reads it back. Whether it does is not a matter of opinion, so it is measured rather
+/// than assumed: the writers come from the group's own scripts and the readers from the
+/// questions the compiler answered out of the world, and where the two name the same
+/// subject the model is judging a branch against an answer its own actions have staled.
+fn report_exposure(
+    index: &Index,
+    group: &[i32],
+    declared_actions: &[String],
+    compiler: &GuardCompiler<'_>,
+) {
+    println!("\nwhat the decisions in force cost this group:");
+
+    let scripts = raw_scripts(index, group);
+    for decision in modelling::DECISIONS {
+        let written: Vec<String> = declared_actions
+            .iter()
+            .filter(|name| decision.writers.contains(&name.as_str()))
+            .cloned()
+            .collect();
+        if written.is_empty() {
+            continue;
+        }
+
+        // Named by the calls this group actually makes rather than by the decision's
+        // first entry, which would name a family after whichever member happened to be
+        // written down first.
+        println!(
+            "\n  {} - {} calls, {}",
+            by_frequency(&written)
+                .iter()
+                .map(|(name, count)| format!("{name} x{count}"))
+                .collect::<Vec<_>>()
+                .join(", "),
+            written.len(),
+            decision.verdict(),
+        );
+
+        for line in wrapped(decision.why, WHY_WIDTH) {
+            println!("      | {line}");
+        }
+
+        if !decision.is_held_constant() {
+            println!("      no guard in the database reads what it writes");
+            continue;
+        }
+
+        // How often the group asks one of the questions this decision answers out of the
+        // world, and about what. Both are needed: some of these queries name a subject -
+        // WHICH thought - and some, like `HasVolitionDamage`, ask about the character
+        // and take no argument at all.
+        let asked: Vec<&(&str, String)> = compiler
+            .declared_constants()
+            .iter()
+            .filter(|(query, _)| decision.readers.contains(query))
+            .collect();
+
+        let mut writes: Vec<String> = Vec::new();
+        for name in decision.writers {
+            for script in &scripts {
+                writes.extend(subjects_of(script, name));
+            }
+        }
+
+        let mut reads: Vec<String> = Vec::new();
+        for (query, text) in &asked {
+            reads.extend(subjects_of(text, query));
+        }
+
+        if writes.is_empty() {
+            println!("      writes: nothing this can name - no call here takes a quoted subject");
+        } else {
+            println!("      writes: {:?}", by_frequency(&writes));
+        }
+        println!(
+            "      the group's guards ask {} times: {:?}",
+            asked.len(),
+            by_frequency(&reads),
+        );
+
+        // Matched by subject where both sides name one, and by bare co-occurrence where
+        // they do not. The second is the weaker statement and is reported as such - it
+        // says the group writes this and asks about this, not that it is the same this.
+        let mut both: Vec<&String> = writes.iter().filter(|w| reads.contains(w)).collect();
+        both.sort();
+        both.dedup();
+        if !both.is_empty() {
+            println!("      EXPOSED - written and asked about here: {both:?}");
+        } else if writes.is_empty() && !asked.is_empty() {
+            println!(
+                "      EXPOSED, unmatched - no subject to match on, and the group does both"
+            );
+        } else if asked.is_empty() {
+            println!("      the group asks none of these questions: no exposure");
+        } else {
+            println!("      no subject is both written and asked about here: no exposure");
+        }
+    }
 }

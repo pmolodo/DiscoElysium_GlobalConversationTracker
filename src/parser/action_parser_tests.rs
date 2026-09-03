@@ -177,24 +177,49 @@ fn money_never_goes_negative() {
 ///
 /// That is what makes the unmodelled-action audit possible at all - see de-p95, and
 /// de-6i8g, which was one of these turning out to matter.
+///
+/// Kept with the DECISION that says which of the two it is, rather than as a bare name:
+/// see `crate::core::modelling`.
 #[test]
-fn unmodelled_calls_are_recorded_but_change_nothing() {
+fn declared_calls_are_recorded_but_change_nothing() {
     let mut symbols = StateSymbols::new();
     // Both write state the crawl does not carry: one the character sheet's morale, the
-    // other the screen. Neither is read by any guard.
+    // other the screen. Both have a decision on file saying so, so both parse to a stub
+    // rather than to an unknown.
     let actions = parse_actions(
         "DamageVolition(1);\nShowDialogueImage(\"darkness\")",
         &mut symbols,
     );
 
     assert_eq!(actions.len(), 2);
-    assert!(actions.iter().all(|a| a.kind() == DialogueActionKind::Unmodelled));
+    assert!(actions.iter().all(|a| a.kind() == DialogueActionKind::Declared));
     assert!(actions.iter().any(|a| a.name() == "ShowDialogueImage"));
+    assert!(
+        actions.iter().all(|a| a.decision().is_some()),
+        "a declared action carries the decision that declared it, got {actions:?}",
+    );
 
     let before = LookAheadState::empty(symbols.count(), 250, 8 * 60);
     let after = DialogueAction::apply(&actions, &before, -1, &caps(), false);
     assert_eq!(after.money(), 250);
     assert_eq!(after.day_minutes(), 8 * 60);
+}
+
+/// A call nobody has decided about stays UNKNOWN, and looks nothing like a stub.
+///
+/// The distinction this whole arrangement exists for. A stub is work finished and an
+/// unknown is work outstanding, and they apply identically - so if the parser stopped
+/// telling them apart, nothing else would notice and the outstanding list would quietly
+/// read as empty.
+#[test]
+fn a_call_with_no_decision_behind_it_is_unknown() {
+    let mut symbols = StateSymbols::new();
+    let actions = parse_actions("EatTheRadio(\"loud\")", &mut symbols);
+
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].kind(), DialogueActionKind::Unmodelled);
+    assert_eq!(actions[0].name(), "EatTheRadio");
+    assert!(actions[0].decision().is_none());
 }
 
 /// Reputation is a dialogue variable, and the guards read it as one.
@@ -308,7 +333,10 @@ fn every_statement_after_the_first_is_read() {
 
     assert_eq!(actions.len(), 3);
     assert!(
-        actions.iter().all(|a| a.kind() != DialogueActionKind::Unmodelled),
+        actions.iter().all(|a| !matches!(
+            a.kind(),
+            DialogueActionKind::Unmodelled | DialogueActionKind::Declared
+        )),
         "every call should be modelled, got {actions:?}",
     );
 
@@ -343,7 +371,7 @@ fn an_escaped_quote_does_not_end_a_string() {
     // The newspaper itself is not modelled; the point is that it is ONE action and the
     // item after it survives, rather than the prose fragmenting into several.
     assert_eq!(actions.len(), 2, "got {actions:?}");
-    assert_eq!(actions[0].kind(), DialogueActionKind::Unmodelled);
+    assert_eq!(actions[0].kind(), DialogueActionKind::Declared);
     assert_eq!(actions[0].name(), "NewspaperEndgame");
 
     let envelope = symbols.find("item:white_envelope").unwrap();
