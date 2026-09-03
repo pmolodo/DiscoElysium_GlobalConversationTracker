@@ -8,6 +8,11 @@ pub mod guard;
 pub mod clock;
 pub mod passive_check;
 
+/// The ported C# clock suite. In a file of its own rather than inline only because of its
+/// size; small unit tests stay beside what they test.
+#[cfg(test)]
+mod clock_tests;
+
 #[cfg(test)]
 mod tests {
     use super::*;
