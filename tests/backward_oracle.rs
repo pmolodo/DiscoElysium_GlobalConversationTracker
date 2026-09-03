@@ -36,6 +36,7 @@ use lookahead_engine::symbolic::backward::Backward;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::novelty_search::{best_novelty, Budget as SearchBudget};
+use lookahead_engine::symbolic::portfolio;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::world::world::ILookAheadWorld;
@@ -320,6 +321,28 @@ fn the_driver_answers_what_the_engine_answers() {
             "conversation {conversation}: the driver said {:?} where the engine said \
              {:?}, which is a marker lost",
             answer.best,
+            expected.best,
+        );
+
+        // And the portfolio, which is what a caller would actually run. It may fall back
+        // to the crawl, so it can never do worse than the crawl - that is the whole
+        // point of it - and this is where that would show if it did.
+        let portfolio = portfolio::best_novelty(
+            &graph,
+            start,
+            &seed,
+            &mut compiler,
+            &world,
+            COUNTER_CAP as u32,
+            &novelty,
+            &portfolio::Budget::default(),
+            &engine,
+        );
+        assert!(
+            portfolio.best >= expected.best,
+            "conversation {conversation}: the portfolio said {:?} where the engine said \
+             {:?}, and falling back should have made that impossible",
+            portfolio.best,
             expected.best,
         );
 

@@ -276,3 +276,81 @@ fn what_one_backward_pass_costs() {
 
 /// How many targets to time per group.
 const TARGETS_SAMPLED: usize = 40;
+
+/// The portfolio end to end, against each of its halves.
+///
+/// A portfolio that falls back most of the time is the crawl plus an overhead, and the
+/// only way to know which it is here is to run it and see who answered.
+#[test]
+#[ignore = "a measurement, not a test: tools/measure-symbolic.sh runs it one per process"]
+fn what_the_portfolio_costs() {
+    let Some(path) = common::conversation_index() else { return };
+    let index = read_index(&path).expect("the index reads");
+    let world = common::measurement_save();
+
+    println!(
+        "{:>6} {:>8} {:>14} {:>8} {:>16} {:>8} {:>18}",
+        "conv", "entries", "crawl", "ms", "portfolio", "ms", "answered by"
+    );
+
+    for conversation in conversations(&EXPENSIVE) {
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        let start = DialogueNodeId::new(conversation, 0);
+        if graph.get(start).is_none() {
+            continue;
+        }
+
+        let one: HashSet<DialogueNodeId> = deepest(&graph, start, 1).into_iter().collect();
+        let novelty = |id: DialogueNodeId| {
+            if one.contains(&id) {
+                Novelty::UnseenAnyGame
+            } else {
+                Novelty::SeenThisGame
+            }
+        };
+
+        let engine = LookAheadEngine::new(LookAheadOptions {
+            counter_cap: COUNTER_CAP,
+            ..Default::default()
+        });
+        let began = std::time::Instant::now();
+        let crawled = engine.evaluate(&graph, start, &world, &novelty);
+        let crawl_ms = began.elapsed().as_millis();
+
+        let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
+        let symbols = graph.symbols().clone();
+        let vars = DataVars::new(&layout, &symbols, NODE_CAPACITY, CACHE_CAPACITY);
+        let mut compiler = GuardCompiler::new(&vars)
+            .with_world(&world)
+            .with_constant_clock(DataLayout::group_passes_time(&graph));
+        let seed = seed_of(&graph, &world, &vars);
+
+        let answer = lookahead_engine::symbolic::portfolio::best_novelty(
+            &graph,
+            start,
+            &seed,
+            &mut compiler,
+            &world,
+            COUNTER_CAP as u32,
+            &novelty,
+            &lookahead_engine::symbolic::portfolio::Budget::default(),
+            &engine,
+        );
+
+        println!(
+            "{conversation:>6} {:>8} {:>14} {:>8} {:>16} {:>8} {:>18}",
+            graph.count(),
+            format!(
+                "{:?}{}",
+                crawled.best,
+                if crawled.budget_exhausted() { "*" } else { "" }
+            ),
+            crawl_ms,
+            format!("{:?}", answer.best),
+            answer.elapsed.as_millis(),
+            format!("{:?}", answer.by),
+        );
+    }
+
+    println!("\n* the crawl gave up, so its answer is a lower bound rather than an answer");
+}
