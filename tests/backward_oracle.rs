@@ -35,6 +35,7 @@ use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::backward::Backward;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
+use lookahead_engine::symbolic::novelty_search::{best_novelty, Budget as SearchBudget};
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::world::world::ILookAheadWorld;
@@ -216,4 +217,114 @@ fn the_backward_search_finds_what_the_explicit_crawl_reaches() {
     }
 
     assert!(compared > 0, "no conversation could be checked both ways");
+}
+
+/// The whole driver against the whole engine, on real conversations.
+///
+/// The test above checks one target at a time, which is the part that can be wrong
+/// quietly. This checks the thing the plugin would actually call, and against the thing it
+/// calls today.
+///
+/// ## The question is asked the hard way round
+///
+/// Against a fresh save everything is unseen, the first entry reached answers it, and both
+/// engines return instantly having proved nothing. So the novelty function here says
+/// almost everything is SEEN, leaving a handful of entries deep in the group unseen -
+/// which is the shape that costs, and the one de-sze.14 is about.
+#[test]
+fn the_driver_answers_what_the_engine_answers() {
+    let Some(path) = common::conversation_index() else { return };
+    let index = read_index(&path).expect("the index reads");
+    let world = common::measurement_save();
+
+    println!(
+        "{:>6} {:>8} {:>10} {:>10} {:>7} {:>9} {:>8} {:>7}",
+        "conv", "entries", "engine", "driver", "asked", "of", "witness", "ms"
+    );
+
+    let mut compared = 0;
+
+    for conversation in conversations(&CHECKABLE) {
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        let start = DialogueNodeId::new(conversation, 0);
+        if graph.get(start).is_none() {
+            continue;
+        }
+
+        // The deepest few entries are the unseen ones: far from the start, so the answer
+        // cannot be had by glancing at the first link.
+        let depths = structural_depths(&graph, start);
+        let mut by_depth: Vec<(usize, DialogueNodeId)> =
+            depths.iter().map(|(id, d)| (*d, *id)).collect();
+        by_depth.sort_by_key(|(depth, id)| {
+            (std::cmp::Reverse(*depth), id.conversation_id, id.entry_id)
+        });
+        let unseen: HashSet<DialogueNodeId> =
+            by_depth.iter().take(3).map(|(_, id)| *id).collect();
+
+        let novelty = |id: DialogueNodeId| {
+            if unseen.contains(&id) {
+                Novelty::UnseenAnyGame
+            } else {
+                Novelty::SeenThisGame
+            }
+        };
+
+        let engine = LookAheadEngine::new(LookAheadOptions {
+            counter_cap: COUNTER_CAP,
+            state_budget: 400_000,
+            time_budget: std::time::Duration::from_secs(60),
+            ..Default::default()
+        });
+        let expected = engine.evaluate(&graph, start, &world, &novelty);
+        if expected.budget_exhausted() {
+            println!("{conversation:>6}  the engine ran out of budget; skipped");
+            continue;
+        }
+
+        let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
+        let symbols = graph.symbols().clone();
+        let vars = DataVars::new(&layout, &symbols, NODE_CAPACITY, CACHE_CAPACITY);
+        let mut compiler = GuardCompiler::new(&vars)
+            .with_world(&world)
+            .with_constant_clock(DataLayout::group_passes_time(&graph));
+        let seed = seed_of(&graph, &world, &vars);
+
+        let answer = best_novelty(
+            &graph,
+            start,
+            &seed,
+            &mut compiler,
+            &world,
+            COUNTER_CAP as u32,
+            &novelty,
+            &SearchBudget::default(),
+        );
+
+        println!(
+            "{conversation:>6} {:>8} {:>10} {:>10} {:>7} {:>9} {:>8} {:>7}",
+            graph.count(),
+            format!("{:?}", expected.best),
+            format!("{:?}", answer.best),
+            answer.targets_asked,
+            answer.candidates,
+            answer
+                .witness
+                .map(|w| format!("{}", w.entry_id))
+                .unwrap_or_else(|| "-".to_string()),
+            answer.elapsed.as_millis(),
+        );
+
+        assert!(
+            answer.best >= expected.best,
+            "conversation {conversation}: the driver said {:?} where the engine said \
+             {:?}, which is a marker lost",
+            answer.best,
+            expected.best,
+        );
+
+        compared += 1;
+    }
+
+    assert!(compared > 0, "no conversation could be compared");
 }

@@ -24,6 +24,7 @@ pub mod action_image;
 pub mod backward;
 pub mod data_layout;
 pub mod guard_formula;
+pub mod novelty_search;
 pub mod reachability;
 pub mod vars;
 
