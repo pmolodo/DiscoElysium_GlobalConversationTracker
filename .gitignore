@@ -11,6 +11,7 @@ _venv/
 .mypy_cache/
 .bash_history
 .conan
+uv.lock
 
 # C# / .NET build output
 # Directory.Build.props redirects bin/ and obj/ into .build/; the PowerShell
