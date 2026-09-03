@@ -180,8 +180,10 @@ fn money_never_goes_negative() {
 #[test]
 fn unmodelled_calls_are_recorded_but_change_nothing() {
     let mut symbols = StateSymbols::new();
+    // Both write state the crawl does not carry: one the character sheet's morale, the
+    // other the screen. Neither is read by any guard.
     let actions = parse_actions(
-        "ReputationGrows(\"honour\");\nShowDialogueImage(\"darkness\")",
+        "DamageVolition(1);\nShowDialogueImage(\"darkness\")",
         &mut symbols,
     );
 
@@ -193,6 +195,67 @@ fn unmodelled_calls_are_recorded_but_change_nothing() {
     let after = DialogueAction::apply(&actions, &before, -1, &caps(), false);
     assert_eq!(after.money(), 250);
     assert_eq!(after.day_minutes(), 8 * 60);
+}
+
+/// Reputation is a dialogue variable, and the guards read it as one.
+///
+/// `ReputationGrows("x")` is `Variable["reputation.x"] = Variable["reputation.x"] + 1`
+/// under a `once`, which is what `KarmaLuaFunctions` reduces to through
+/// `ReputationAlterant.ModifyReputation`.
+#[test]
+fn reputation_grows_by_one_under_the_variable_the_guards_read() {
+    let mut symbols = StateSymbols::new();
+    let actions = parse_actions("ReputationGrows(\"apocalypse_cop\")", &mut symbols);
+
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].kind(), DialogueActionKind::Increment);
+    let slot = symbols.find("reputation.apocalypse_cop").expect("interned under its real name");
+
+    let once_slot = symbols.once(DialogueNodeId::new(1, 0)) as i32;
+    let before = LookAheadState::empty(symbols.count(), 0, 0);
+    let after = DialogueAction::apply(&actions, &before, once_slot, &caps(), false);
+    assert_eq!(after.get(slot), 1);
+
+    // Once, so walking the same entry again does not raise it further.
+    let again = DialogueAction::apply(&actions, &after, once_slot, &caps(), false);
+    assert_eq!(again.get(slot), 1);
+}
+
+/// Losing reputation subtracts, and a slot has nowhere below zero to go.
+///
+/// The floor is not the game's - reputation can go negative there - it is what a state
+/// can represent, and the symbolic image floors it the same way so the two agree.
+#[test]
+fn reputation_lowers_and_stops_at_zero() {
+    let mut symbols = StateSymbols::new();
+    let actions = parse_actions("ReputationLowers(\"honour\")", &mut symbols);
+    let slot = symbols.find("reputation.honour").unwrap();
+
+    let before = LookAheadState::empty(symbols.count(), 0, 0).with(slot, 2);
+    let after = DialogueAction::apply(&actions, &before, -1, &caps(), false);
+    assert_eq!(after.get(slot), 1);
+
+    let floor = DialogueAction::apply(&actions, &LookAheadState::empty(symbols.count(), 0, 0), -1, &caps(), false);
+    assert_eq!(floor.get(slot), 0);
+}
+
+/// The experience is not crawl state; the variable recording it was awarded is.
+#[test]
+fn an_xp_award_sets_the_variable_it_records_itself_in() {
+    let mut symbols = StateSymbols::new();
+    let actions = parse_actions(
+        "XPPicoSetBool(\"XP.butter_sign_i_did_this\");\\nXPTinySetBool(\"XP.tree_kicked\")",
+        &mut symbols,
+    );
+
+    assert_eq!(actions.len(), 2);
+    assert!(actions.iter().all(|a| a.kind() == DialogueActionKind::Assign));
+
+    let sign = symbols.find("XP.butter_sign_i_did_this").unwrap();
+    let tree = symbols.find("XP.tree_kicked").unwrap();
+    let after = DialogueAction::apply(&actions, &empty(&symbols, 0), -1, &caps(), false);
+    assert_eq!(after.get(sign), 1);
+    assert_eq!(after.get(tree), 1);
 }
 
 /// Every use in the database is the bare call, which moves the clock a quarter hour.

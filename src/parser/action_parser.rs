@@ -7,6 +7,13 @@ const ONCE_FN: &str = "once";
 /// The letter that follows a backslash where a script separates two statements.
 const SEPARATOR_ESCAPE: char = 'n';
 
+/// What the game prefixes a reputation's dialogue variable with.
+///
+/// Not one of `StateSymbols`' synthetic namespaces. This is the real variable name the
+/// guards read - `Variable["reputation.apocalypse_cop"]` - so it is interned as an
+/// ordinary variable and the prefix only says how to build the name.
+const REPUTATION_PREFIX: &str = "reputation.";
+
 /// Parse a userScript into DialogueActions.
 pub fn parse_actions(script: &str, symbols: &mut StateSymbols) -> Vec<DialogueAction> {
     let stripped = normalize(script);
@@ -247,6 +254,37 @@ fn translate_call(call: Invocation, symbols: &mut StateSymbols, actions: &mut Ve
             let raised = call.name == "SetFlag";
             let slot = symbols.variable(&unquote(call.args.first().unwrap_or(&String::new())));
             actions.push(DialogueAction::assign(slot, i32::from(raised), call.name));
+        }
+        // Reputation is a dialogue variable under a prefix, and the game says so plainly.
+        // `KarmaLuaFunctions.ReputationGrows` calls `ModifyOnce(name, 1)`, which reaches
+        // `ReputationAlterant.ModifyReputation`, whose whole body is
+        //
+        //     Lua.Run("Variable[\"reputation.<name>\"] = Variable[\"reputation.<name>\"] + 1")
+        //
+        // wrapped in the same `once()` the crawl already models. `ReputationLowers` is the
+        // same with -1.
+        //
+        // Not scorekeeping, whatever the name suggests: conversation 631's guards read
+        // `Variable["reputation.apocalypse_cop"] >= 2`, so leaving these unmodelled holds
+        // shut a branch that reputation opens. 71 calls in that group alone.
+        "ReputationGrows" | "ReputationLowers" => {
+            let subject = unquote(call.args.first().unwrap_or(&String::new()));
+            let slot = symbols.variable(&format!("{REPUTATION_PREFIX}{subject}"));
+            let step = if call.name == "ReputationGrows" { 1 } else { -1 };
+            actions.push(DialogueAction::increment(slot, step, true, call.name));
+        }
+        // Awarding experience the first time and recording that it has been awarded.
+        // `TaskLuaFunctions.XPSetBool` is
+        //
+        //     if not Variable[var] then Variable[var] = true; xp = xp + amount end
+        //
+        // The experience is not crawl state and the crawl has no use for it. The VARIABLE
+        // is, and guards read it like any other. Assigning 1 unconditionally rather than
+        // only when unset comes to the same thing, because the value is only ever 1.
+        "XPPicoSetBool" | "XPTinySetBool" | "XPMinorSetBool" | "XPStandardSetBool"
+        | "XPMajorSetBool" => {
+            let slot = symbols.variable(&unquote(call.args.first().unwrap_or(&String::new())));
+            actions.push(DialogueAction::assign(slot, 1, call.name));
         }
         "GainItem" => {
             let slot = symbols.item(&unquote(call.args.get(0).unwrap_or(&String::new())));

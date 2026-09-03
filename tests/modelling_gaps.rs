@@ -206,5 +206,43 @@ fn what_is_still_unmodelled_in_the_subject_conversation() {
         println!("  x{count:<4} {name}");
     }
 
+    // The question that decides whether an unmodelled action matters: does the group's
+    // own guards ask about the subject it writes? A world query the crawl cannot change
+    // is a constant and the world answers it, so an action nothing here reads is a gap
+    // only on paper. One the guards DO read is a branch held shut.
+    let asked: Vec<String> = raw_scripts(&index, &group)
+        .iter()
+        .flat_map(|script| subjects_of(script, "GainThought"))
+        .collect();
+    println!("\nthoughts this group gains: {:?}", by_frequency(&asked));
+
     assert!(graph.count() > 0, "the subject group has no entries");
+}
+
+/// Every userScript in the group, as written.
+fn raw_scripts(
+    index: &lookahead_engine::index::Index,
+    group: &[i32],
+) -> Vec<String> {
+    group
+        .iter()
+        .filter_map(|id| index.get(id))
+        .flat_map(|conversation| conversation.entries.iter().map(|e| e.script.clone()))
+        .collect()
+}
+
+/// The quoted first argument of every call to `name` in a script.
+fn subjects_of(script: &str, name: &str) -> Vec<String> {
+    let needle = format!("{name}(\"");
+    let mut found = Vec::new();
+    let mut rest = script;
+    while let Some(at) = rest.find(&needle) {
+        rest = &rest[at + needle.len()..];
+        match rest.find('"') {
+            Some(end) => found.push(rest[..end].to_string()),
+            None => break,
+        }
+    }
+
+    found
 }

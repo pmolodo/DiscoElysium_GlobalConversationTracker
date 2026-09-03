@@ -359,6 +359,62 @@ de-p95. Most are scorekeeping - XP, reputation, health - and cost the look-ahead
 
 ---
 
+## 11. The action parser reads the statement separator into the next call's name
+
+**This one is a bug, not a refinement, and it is the largest single thing on this list.**
+It costs roughly a third of every script's actions.
+
+**C# today.** `ActionParser.Invocations` finds the next call by skipping to the first
+character `IsNameStart` accepts:
+
+```csharp
+while (index < script.Length && !IsNameStart(script[index]))
+{
+    index++;
+}
+```
+
+A userScript is stored as ONE LINE. Its statements are separated by a literal backslash
+followed by the letter `n` - two characters, not a newline - and there are **6,760 of them
+across the shipped database**. A backslash is not a name start; a letter is. So the scan
+stops one character late and reads the separator into the name:
+
+```
+FinishTask("TASK.advanced_ballistics_analysis_done");\nGainTask("TASK.locate_the_firearm")
+```
+
+yields a second call named `nGainTask`, which matches no case in `TranslateCall` and falls
+through to `DialogueAction.Unmodelled`. **Every statement after the first in every script
+is lost this way.**
+
+**How much.** In conversation 631's group, 208 of 672 actions were unmodelled and 78 of
+those were purely this: `nSetVariableValue` x23, `nFinishTask` x13, `nReputationGrows` x12,
+`nGainTask` x11, `nXPPicoSetBool` x7, `nGainMoneyOnce` x6, `nCancelTask` x4,
+`nXPTinySetBool` x2. Fixing it moved that group from 464 modelled actions to 521 and
+interned 31 more variable slots. The lost calls are not scorekeeping - they are the
+`GainTask`, `FinishTask` and `SetVariableValue` calls that later guards are gated on, so
+this is the same failure mode as entry 10 and at four times the size.
+
+**Two smaller ones in the same code.** `StripComments` ends a line comment at `'\n'`, a
+character no script contains, so a bare `--` eats the entire remainder (2 scripts in the
+database, both prose em-dashes, but total where it happens). And the string scanner treats
+`\"` as the closing quote, so an argument carrying reported speech - `NewspaperEndgame`
+runs to two kilobytes of it - ends mid-sentence and the rest of the prose tokenizes as
+code.
+
+**Rust instead.** One pass replaces `StripComments`, tracking strings and comments
+together, because Lua's rules interleave: a quote inside a comment opens no string and a
+`--` inside a string opens no comment, so neither can be decided without the other. Outside
+a string the separator becomes the newline it stands for; inside one, an escape carries its
+next character with it.
+
+**Cost of adopting.** One rewritten private method, no signature changes. Test it on a real
+multi-statement script from the database and assert the LAST statement took effect -
+asserting the count of actions would pass against a parser that produced three unmodelled
+ones.
+
+---
+
 *Entries are appended as they are found. Nothing here is applied to the C# side.*
 
 *Nor does anything belong here that the C# does not need. Bugs the Rust port had and the

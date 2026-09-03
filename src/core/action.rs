@@ -140,7 +140,15 @@ impl DialogueAction {
                         .map(|(_, v)| *v)
                         .unwrap_or_else(|| state.get(idx));
                     let raised = current + action.value;
-                    changes.push((idx, raised.min(counter_cap.for_slot(idx))));
+                    // Floored as well as capped. The cap is what makes a counter in a
+                    // loop finite; the floor is what keeps a slot inside what a state can
+                    // represent, now that an increment can be negative -
+                    // `ReputationLowers` subtracts one. A slot's decision-diagram
+                    // encoding is an unsigned run of bits, so a negative value has
+                    // nowhere to go and the symbolic image floors it at zero; the two
+                    // have to agree or the oracle comparison measures the disagreement
+                    // rather than the diagrams.
+                    changes.push((idx, raised.clamp(0, counter_cap.for_slot(idx))));
                 }
                 DialogueActionKind::GainMoney => money += action.value,
                 DialogueActionKind::LoseMoney => money -= action.value,

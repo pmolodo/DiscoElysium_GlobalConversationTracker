@@ -385,15 +385,30 @@ impl<'a> GuardCompiler<'a> {
         let (Some(name), Some(literal)) = (Self::variable_of(left), Self::literal_of(right))
         else {
             // Also try the other way round: a guard may be written `1 == Variable[..]`.
+            // The operator has to turn with the operands - `3 <= x` is `x >= 3`, and
+            // reading it as `x <= 3` would answer the opposite question everywhere the
+            // two disagree.
             if let (Some(name), Some(literal)) =
                 (Self::variable_of(right), Self::literal_of(left))
             {
-                return self.equality(op, &name, literal);
+                return self.comparison(Self::mirrored(op), &name, literal);
             }
             return self.undecided("comparison: neither side a known variable");
         };
 
-        self.equality(op, &name, literal)
+        self.comparison(op, &name, literal)
+    }
+
+    /// The operator that means the same thing with its operands swapped.
+    fn mirrored(op: &str) -> &str {
+        match op {
+            "<" => ">",
+            "<=" => ">=",
+            ">" => "<",
+            ">=" => "<=",
+            // Equality reads the same either way round.
+            other => other,
+        }
     }
 
     /// `expression == truth`, compiled by compiling the expression and, when comparing
@@ -417,17 +432,21 @@ impl<'a> GuardCompiler<'a> {
     }
 
     /// `Variable[name] op literal`, where `op` is an equality.
-    fn equality(&mut self, op: &str, name: &str, literal: &GuardValue) -> MayBe {
-        if op != "==" && op != "~=" {
-            return self.undecided("comparison: ordering operator");
-        }
-
-        let negated = op == "~=";
+    fn comparison(&mut self, op: &str, name: &str, literal: &GuardValue) -> MayBe {
+        let equality = op == "==" || op == "~=";
 
         // Tracked: pin the slot's bits against the value.
         if let Some(value) = Self::whole_number(literal) {
-            if let Some(equals) = self.slot_equals(name, value) {
-                let holds = if negated { equals.not().expect("negation") } else { equals };
+            if equality {
+                if let Some(equals) = self.slot_equals(name, value) {
+                    let holds = if op == "~=" {
+                        equals.not().expect("negation")
+                    } else {
+                        equals
+                    };
+                    return self.decided(holds);
+                }
+            } else if let Some(holds) = self.slot_ordered(name, op, value) {
                 return self.decided(holds);
             }
         }
@@ -450,9 +469,66 @@ impl<'a> GuardCompiler<'a> {
             return self.undecided("comparison: variable untracked and world cannot say");
         }
 
-        let same = actual.equals(literal);
-        let holds = if same != negated { self.top() } else { self.bottom() };
-        self.decided(holds)
+        let holds = if equality {
+            let same = actual.equals(literal);
+            same != (op == "~=")
+        } else {
+            // Ordering on values, the way `GuardExpression::evaluate` does it: both sides
+            // through `try_as_number`, and undecided where either will not convert.
+            let (Some(a), Some(b)) = (actual.try_as_number(), literal.try_as_number()) else {
+                return self.undecided("comparison: ordering on a non-numeric value");
+            };
+            match op {
+                ">=" => a >= b,
+                "<=" => a <= b,
+                ">" => a > b,
+                "<" => a < b,
+                _ => return self.undecided("comparison: unknown operator"),
+            }
+        };
+
+        let formula = if holds { self.top() } else { self.bottom() };
+        self.decided(formula)
+    }
+
+    /// `Variable[name] op value` for an ordering operator, over a tracked slot.
+    ///
+    /// ## Why this is not the blowup the epic expected
+    ///
+    /// Magnitude comparison on bit-blasted integers is the classic way to make a decision
+    /// diagram explode, and it is named in de-sze as the likely failure. It is not, for
+    /// these slots, because THE COUNTER CAP BOUNDS THE WIDTH: a slot saturates at 16 by
+    /// default, so it is five bits and holds 32 values. The set of values satisfying the
+    /// comparison is enumerated and unioned, which costs at most one diagram operation
+    /// per value and reuses [`Self::slot_equals`] rather than open-coding a comparator.
+    ///
+    /// What the warning was really about is MONEY and the CLOCK - a thirteen-bit balance
+    /// and an eleven-bit minute count, compared against arbitrary constants. Neither is
+    /// in this layout, and when one arrives it should get a proper ripple comparator
+    /// rather than this.
+    fn slot_ordered(&mut self, name: &str, op: &str, value: i32) -> Option<BDDFunction> {
+        let slot = self.symbols.find(name)?;
+        let (_, bits) = self.layout.slot(slot)?;
+        let ceiling: i64 = if bits >= 32 { u32::MAX as i64 } else { (1i64 << bits) - 1 };
+
+        let mut holds = self.bottom();
+        for candidate in 0..=ceiling {
+            let satisfies = match op {
+                ">=" => candidate >= value as i64,
+                "<=" => candidate <= value as i64,
+                ">" => candidate > value as i64,
+                "<" => candidate < value as i64,
+                _ => return None,
+            };
+            if !satisfies {
+                continue;
+            }
+
+            let at = self.slot_equals(name, candidate as i32)?;
+            holds = holds.or(&at).expect("or");
+        }
+
+        Some(holds)
     }
 
     /// The name a `Variable` node carries, if the expression is one.
@@ -758,10 +834,34 @@ mod tests {
         assert_eq!(compiler.fallbacks(), 0);
     }
 
+    /// Which values of a slot a compiled formula admits, by trying them all.
+    fn admitted(
+        compiler: &GuardCompiler,
+        layout: &DataLayout,
+        slot: usize,
+        formula: &BDDFunction,
+    ) -> Vec<u32> {
+        let (base, bits) = layout.slot(slot).unwrap();
+        let ceiling = (1u32 << bits) - 1;
+        let _ = compiler;
+        (0..=ceiling)
+            .filter(|value| {
+                let assignment: Vec<(u32, bool)> =
+                    (0..bits as u32).map(|b| (base + b, (value >> b) & 1 == 1)).collect();
+                formula.eval(assignment.iter().copied())
+            })
+            .collect()
+    }
+
+    /// The comparison the epic named as the likely blowup, and it compiles.
+    ///
+    /// It is affordable here because the counter cap bounds the slot to five bits. Money
+    /// and the clock, which are not in this layout, are the case the warning was about.
     #[test]
-    fn an_ordering_comparison_falls_back_rather_than_guessing() {
+    fn an_ordering_comparison_admits_exactly_the_values_that_satisfy_it() {
         let (graph, symbols) = fixture(&["counter"], Some("counter"));
         let layout = DataLayout::for_graph(&graph, 16, None, false);
+        let slot = symbols.find("counter").unwrap();
 
         let mut compiler = GuardCompiler::new(&layout, &symbols, NODES, CACHE);
         let compiled = compiler.compile(&GuardExpression::Comparison(
@@ -770,8 +870,67 @@ mod tests {
             Box::new(number(3.0)),
         ));
 
-        assert!(!compiled.is_decided());
-        assert_eq!(compiler.fallbacks(), 1);
+        assert!(compiled.is_decided());
+        assert_eq!(compiler.fallbacks(), 0);
+        assert_eq!(
+            admitted(&compiler, &layout, slot, &compiled.may_be_true),
+            (3..=31).collect::<Vec<u32>>()
+        );
+        // The other rail is its complement, which is what makes it decided.
+        assert_eq!(
+            admitted(&compiler, &layout, slot, &compiled.may_be_false),
+            (0..=2).collect::<Vec<u32>>()
+        );
+    }
+
+    /// `3 <= x` is `x >= 3`, so the operator has to turn with the operands.
+    ///
+    /// Reading it as `x <= 3` would answer the opposite question on every value but 3,
+    /// and it would still look decided - the failure would be silent.
+    #[test]
+    fn an_ordering_comparison_written_backwards_keeps_its_meaning() {
+        let (graph, symbols) = fixture(&["counter"], Some("counter"));
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+        let slot = symbols.find("counter").unwrap();
+
+        let mut compiler = GuardCompiler::new(&layout, &symbols, NODES, CACHE);
+        let compiled = compiler.compile(&GuardExpression::Comparison(
+            "<=".to_string(),
+            Box::new(number(3.0)),
+            Box::new(GuardExpression::Variable("counter".to_string())),
+        ));
+
+        assert_eq!(
+            admitted(&compiler, &layout, slot, &compiled.may_be_true),
+            (3..=31).collect::<Vec<u32>>()
+        );
+    }
+
+    /// An ordering comparison on a variable no action writes is a constant, and the
+    /// world answers it - the same rule equality already followed.
+    #[test]
+    fn an_ordering_comparison_on_an_untracked_variable_is_answered_by_the_world() {
+        let (graph, symbols) = fixture(&["a"], None);
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+        let world = crate::world::test_world::TestWorld::new()
+            .set_variable("untracked", GuardValue::from_number(5.0));
+
+        let mut compiler =
+            GuardCompiler::new(&layout, &symbols, NODES, CACHE).with_world(&world);
+        let holds = compiler.compile(&GuardExpression::Comparison(
+            ">=".to_string(),
+            Box::new(GuardExpression::Variable("untracked".to_string())),
+            Box::new(number(3.0)),
+        ));
+        let fails = compiler.compile(&GuardExpression::Comparison(
+            ">=".to_string(),
+            Box::new(GuardExpression::Variable("untracked".to_string())),
+            Box::new(number(9.0)),
+        ));
+
+        assert_eq!(compiler.fallbacks(), 0);
+        assert!(holds.may_be_true.valid());
+        assert!(!fails.may_be_true.satisfiable());
     }
 
     /// The rule that makes the whole approximation safe.
