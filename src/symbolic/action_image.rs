@@ -110,6 +110,131 @@ impl<'a> ActionImage<'a> {
         current
     }
 
+    /// The states from which entering a node whose actions are `actions` LANDS IN
+    /// `states`.
+    ///
+    /// The exact inverse of [`Self::apply`], and it has to stay exact: a backward search
+    /// built on a pre-image that loses states reports an entry unreachable that the crawl
+    /// walks to, which is the one error direction nothing here is allowed.
+    ///
+    /// Actions compose in reverse. Forward they apply in order and the last write is the
+    /// one that lands, so backwards the last is undone first.
+    pub fn pre_apply(
+        &mut self,
+        states: &BDDFunction,
+        actions: &[DialogueAction],
+        once_already_fired: &BDDFunction,
+    ) -> BDDFunction {
+        let mut current = states.clone();
+        for action in actions.iter().rev() {
+            current = if action.is_once() {
+                // Forward, a once action leaves a spent state alone and changes a fresh
+                // one. So a state reaches `current` either by being spent and already
+                // there, or by being fresh and landing there - and the two cases are
+                // disjoint on the once slot, exactly as forward splits them.
+                let spent = self.or_no_room(current.and(once_already_fired), &current);
+                let unspent = self.or_no_room(once_already_fired.not(), &current);
+                let changed = self.pre_one(&current, action);
+                let fresh = self.or_no_room(changed.and(&unspent), &current);
+                self.or_no_room(fresh.or(&spent), &current)
+            } else {
+                self.pre_one(&current, action)
+            };
+        }
+
+        current
+    }
+
+    /// One action's pre-image over a set.
+    fn pre_one(&mut self, states: &BDDFunction, action: &DialogueAction) -> BDDFunction {
+        let slot = action.slot();
+        let Ok(slot) = usize::try_from(slot) else {
+            self.ignored += 1;
+            return states.clone();
+        };
+
+        match action.kind() {
+            DialogueActionKind::Assign => {
+                let value = action.value().max(0) as u32;
+                self.pre_assign(states, slot, value)
+            }
+            DialogueActionKind::Increment => self.pre_increment(states, slot, action.value()),
+            _ => {
+                self.ignored += 1;
+                states.clone()
+            }
+        }
+    }
+
+    /// The states from which `slot := value` lands in `states`.
+    ///
+    /// ## Why this is the cheap direction
+    ///
+    /// Select the states that hold the assigned value, then FORGET the slot. Forward, an
+    /// assignment forgets and then asserts; backwards it asserts and then forgets, and
+    /// the difference matters more than the symmetry suggests: forward, a write
+    /// constrains the slot in everything downstream, so every slot any action touches
+    /// ends up in the diagram. Backwards, a write ERASES the constraint on its slot, so a
+    /// slot written on the way to the target and never read again leaves no trace.
+    ///
+    /// That is where the backward search gets its variable pruning: not from a cone
+    /// somebody computed, but from the pre-image itself.
+    pub fn pre_assign(&mut self, states: &BDDFunction, slot: usize, value: u32) -> BDDFunction {
+        let (Some(cube), Some(equals)) =
+            (self.vars.slot_cube(slot), self.vars.slot_equals(slot, value))
+        else {
+            self.ignored += 1;
+            return states.clone();
+        };
+
+        let landed = self.or_no_room(states.and(&equals), states);
+        self.or_no_room(landed.exists(&cube), states)
+    }
+
+    /// The states from which `slot := min(slot + amount, cap)` lands in `states`.
+    ///
+    /// By cases over the slot's values, the way [`Self::increment`] is, and for the same
+    /// reason. Saturation makes this many-to-one - every value at or above the cap lands
+    /// on the cap - so the pre-image of the cap is a range rather than a point, which the
+    /// case split handles without any special pleading.
+    pub fn pre_increment(
+        &mut self,
+        states: &BDDFunction,
+        slot: usize,
+        amount: i32,
+    ) -> BDDFunction {
+        let Some(ceiling) = self.vars.slot_ceiling(slot) else {
+            self.ignored += 1;
+            return states.clone();
+        };
+
+        let cap = self.counter_cap.min(ceiling);
+        let cube = self.vars.slot_cube(slot).expect("a slot in the layout has a cube");
+        let mut result = self.vars.bottom();
+
+        for value in 0..=ceiling {
+            let raised = (value as i64 + amount as i64).clamp(0, cap as i64) as u32;
+            let becomes = self.vars.slot_equals(slot, raised).expect("in the layout");
+            let landed = self.or_no_room(states.and(&becomes), states);
+            if self.out_of_memory {
+                return states.clone();
+            }
+            if !landed.satisfiable() {
+                continue;
+            }
+
+            let holding = self.vars.slot_equals(slot, value).expect("in the layout");
+            let forgotten = self.or_no_room(landed.exists(&cube), states);
+            let came_from = self.or_no_room(forgotten.and(&holding), states);
+            result = self.or_no_room(result.or(&came_from), states);
+            if self.out_of_memory {
+                return states.clone();
+            }
+        }
+
+        result
+    }
+
     /// One action applied to a set.
     fn apply_one(&mut self, states: &BDDFunction, action: &DialogueAction) -> BDDFunction {
         if !states.satisfiable() {
