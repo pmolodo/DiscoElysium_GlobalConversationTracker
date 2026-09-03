@@ -6,6 +6,7 @@ pub mod state;
 pub mod action;
 pub mod guard;
 pub mod clock;
+pub mod passive_check;
 
 #[cfg(test)]
 mod tests {

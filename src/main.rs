@@ -2,7 +2,7 @@
 use std::path::PathBuf;
 use clap::Parser;
 
-use lookahead_engine::core::types::Novelty;
+use lookahead_engine::core::types::{DialogueNodeId, Novelty};
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::world::test_world::TestWorld;
 use lookahead_engine::engine::engine::{LookAheadEngine, LookAheadOptions};
@@ -84,23 +84,45 @@ fn main() -> anyhow::Result<()> {
     });
 
     let mut results = Vec::new();
+    let mut skipped = 0usize;
+
+    // Simplified novelty: unseen if not in the conversation being crawled.
+    let novelty = |id: DialogueNodeId| {
+        if id.conversation_id == args.conversation_id {
+            Novelty::SeenThisGame
+        } else {
+            Novelty::UnseenAnyGame
+        }
+    };
 
     for node in graph.nodes() {
         if node.is_group || node.links.is_empty() {
             continue; // Skip groups and terminal nodes
         }
 
-        let result = engine.evaluate(&graph, node.id, &world, |id| {
-            // Simplified novelty: unseen if not in current conversation
-            if id.conversation_id == args.conversation_id {
-                Novelty::SeenThisGame
-            } else {
-                Novelty::UnseenAnyGame
-            }
-        });
+        // The same question the plugin asks before it builds any crawl state, asked here
+        // for the same reason: if nothing in the group outranks this option, no walk can
+        // produce a marker. Asking it keeps this tool and the game agreeing about which
+        // options are worth crawling - without it the tool reports crawls, and costs,
+        // that the game never pays.
+        if !LookAheadEngine::has_potential_improvement(&graph, novelty(node.id), novelty) {
+            skipped += 1;
+            continue;
+        }
 
+        let result = engine.evaluate(&graph, node.id, &world, novelty);
         results.push((node.id, result));
     }
+
+    // The graph holds its nodes in a hash map, so iteration order varies between runs.
+    // Sort before reporting: this is a tool whose output people diff against a previous
+    // run, and a shuffled list would look like a change every time.
+    results.sort_by_key(|(id, _)| (id.conversation_id, id.entry_id));
+    eprintln!(
+        "{} option(s) crawled, {} skipped with no novelty headroom",
+        results.len(),
+        skipped
+    );
 
     // Output
     if args.json {

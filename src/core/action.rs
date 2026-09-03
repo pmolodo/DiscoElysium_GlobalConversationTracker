@@ -25,6 +25,42 @@ pub struct DialogueAction {
     name: String,
 }
 
+/// How high a counter may climb before it stops moving.
+///
+/// The cap is what keeps a counter inside a dialogue loop finite: without it a loop that
+/// increments something has no repeated state and the search never terminates.
+///
+/// One knob with an override, rather than the C#'s two. There, `CounterCapForSlot`
+/// SUPPLANTS `CounterCap` instead of falling back to it - it is consulted for every slot
+/// once supplied - so a caller wanting to special-case one variable has to answer for all
+/// of them and re-state the default itself. The offline crawler duplicates the literal
+/// 16 to do it. Here the per-slot function answers `None` for anything it has no opinion
+/// about and the default applies, so there is one place the default lives.
+pub struct CounterCaps<'a> {
+    default: i32,
+    per_slot: Option<&'a (dyn Fn(usize) -> Option<i32> + Send + Sync)>,
+}
+
+impl<'a> CounterCaps<'a> {
+    /// The same cap for every slot.
+    pub fn flat(default: i32) -> Self {
+        Self { default, per_slot: None }
+    }
+
+    /// A cap that may be overridden per slot; `None` from `per_slot` means the default.
+    pub fn with_overrides(
+        default: i32,
+        per_slot: &'a (dyn Fn(usize) -> Option<i32> + Send + Sync),
+    ) -> Self {
+        Self { default, per_slot: Some(per_slot) }
+    }
+
+    /// The cap that applies to one slot.
+    pub fn for_slot(&self, slot: usize) -> i32 {
+        self.per_slot.and_then(|f| f(slot)).unwrap_or(self.default)
+    }
+}
+
 impl DialogueAction {
     /// Whether this action fires only the first time its entry is reached.
     ///
@@ -71,7 +107,7 @@ impl DialogueAction {
         actions: &[DialogueAction],
         state: &LookAheadState,
         once_slot: i32,
-        counter_cap: i32,
+        counter_cap: &CounterCaps<'_>,
         clock_locked: bool,
     ) -> LookAheadState {
         if actions.is_empty() {
@@ -104,7 +140,7 @@ impl DialogueAction {
                         .map(|(_, v)| *v)
                         .unwrap_or_else(|| state.get(idx));
                     let raised = current + action.value;
-                    changes.push((idx, raised.min(counter_cap)));
+                    changes.push((idx, raised.min(counter_cap.for_slot(idx))));
                 }
                 DialogueActionKind::GainMoney => money += action.value,
                 DialogueActionKind::LoseMoney => money -= action.value,

@@ -1,6 +1,6 @@
 use crate::core::types::{DialogueNodeId, Novelty, DialogueCheckKind, Ternary, LookAheadLimit};
 use crate::core::state::LookAheadState;
-use crate::core::action::DialogueAction;
+use crate::core::action::{CounterCaps, DialogueAction};
 use crate::graph::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
 use crate::world::world::{ILookAheadWorld, CrawlContext};
@@ -18,6 +18,12 @@ pub struct LookAheadOptions {
     pub on_state_reached: Option<Box<dyn Fn(DialogueNodeId, &LookAheadState, usize) + Send + Sync>>,
     pub state_sample_interval: usize,
     pub counter_cap: i32,
+    /// A per-slot override for [`Self::counter_cap`]; `None` from it means the default.
+    ///
+    /// For an experimental crawl that has PROVEN a particular variable saturates lower
+    /// than the blanket cap - the offline crawler's `counterCaps` block supplies these.
+    #[allow(clippy::type_complexity)]
+    pub counter_cap_for_slot: Option<Box<dyn Fn(usize) -> Option<i32> + Send + Sync>>,
     pub failed_checks_pass_through: bool,
     pub collect_trace: bool,
     pub trace_node_limit: usize,
@@ -34,6 +40,7 @@ impl Default for LookAheadOptions {
             on_state_reached: None,
             state_sample_interval: 0,
             counter_cap: 16,
+            counter_cap_for_slot: None,
             failed_checks_pass_through: true,
             collect_trace: false,
             trace_node_limit: 15,
@@ -50,6 +57,13 @@ impl LookAheadOptions {
     pub fn on_state_reached<F>(mut self, f: F) -> Self where F: Fn(DialogueNodeId, &LookAheadState, usize) + Send + Sync + 'static { self.on_state_reached = Some(Box::new(f)); self }
     pub fn state_sample_interval(mut self, interval: usize) -> Self { self.state_sample_interval = interval; self }
     pub fn counter_cap(mut self, cap: i32) -> Self { self.counter_cap = cap; self }
+    pub fn counter_cap_for_slot<F>(mut self, f: F) -> Self
+    where
+        F: Fn(usize) -> Option<i32> + Send + Sync + 'static,
+    {
+        self.counter_cap_for_slot = Some(Box::new(f));
+        self
+    }
     pub fn failed_checks_pass_through(mut self, v: bool) -> Self { self.failed_checks_pass_through = v; self }
     pub fn collect_trace(mut self, v: bool) -> Self { self.collect_trace = v; self }
     pub fn trace_node_limit(mut self, limit: usize) -> Self { self.trace_node_limit = limit; self }
@@ -126,6 +140,35 @@ impl LookAheadEngine {
 
     pub fn default() -> Self {
         Self::new(LookAheadOptions::default())
+    }
+
+    /// Whether this conversation group holds any scoreable entry that could improve an
+    /// option already showing `own_novelty`.
+    ///
+    /// A structural upper bound: it does not ask whether such an entry is REACHABLE in
+    /// the current world, only whether one exists. That makes its positive answer weak
+    /// and its negative answer exact - if nothing in the whole group outranks the
+    /// option, no walk can produce a marker, so the caller can skip building any crawl
+    /// state at all.
+    ///
+    /// Free-standing rather than folded into [`Self::evaluate`], matching the C#, because
+    /// the caller is what decides whether to crawl: the plugin asks this before composing
+    /// a marker, and the offline crawler asks it before reporting a cost. Answering it
+    /// inside `evaluate` would hide from callers the fact that no crawl happened.
+    pub fn has_potential_improvement<F>(
+        graph: &LookAheadGraph,
+        own_novelty: Novelty,
+        novelty: F,
+    ) -> bool
+    where
+        F: Fn(DialogueNodeId) -> Novelty,
+    {
+        graph.nodes().any(|node| {
+            // Groups are expanded in place and the game never writes their SimStatus, so
+            // treating one as an unseen candidate would make this check useless - 36.6%
+            // of the database is groups and every one of them reads as never displayed.
+            !node.is_group && novelty(node.id) > own_novelty
+        })
     }
 
     /// Find the most novel entry reachable beyond `start`.
@@ -438,7 +481,19 @@ impl LookAheadEngine {
             paid = paid.with(node.seen_slot as usize, 1);
         }
 
-        DialogueAction::apply(&node.actions, &paid, node.once_slot, self.options.counter_cap, clock_locked)
+        DialogueAction::apply(&node.actions, &paid, node.once_slot, &self.counter_caps(), clock_locked)
+    }
+
+    /// The counter caps this engine's options describe.
+    ///
+    /// Built per call rather than stored, because it borrows the options' override
+    /// closure and so cannot outlive them; it is two pointers, and the alternative is a
+    /// self-referential struct to save nothing.
+    fn counter_caps(&self) -> CounterCaps<'_> {
+        match &self.options.counter_cap_for_slot {
+            Some(f) => CounterCaps::with_overrides(self.options.counter_cap, f.as_ref()),
+            None => CounterCaps::flat(self.options.counter_cap),
+        }
     }
 
     fn build_trace(

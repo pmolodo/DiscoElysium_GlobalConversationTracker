@@ -268,4 +268,105 @@ mod integration_tests {
         assert_eq!(result.states_explored, 0);
         assert_eq!(result.best, Novelty::SeenThisGame);
     }
+
+    // ---------------------------------------------------------------------
+    // The short-circuit
+    // ---------------------------------------------------------------------
+
+    /// A plain entry with the given links.
+    fn plain(id: DialogueNodeId, links: Vec<DialogueNodeId>, is_group: bool) -> LookAheadNode {
+        LookAheadNode::new(
+            id, is_group, DialogueCheckKind::None, GuardExpression::always_true(),
+            vec![], links, 0, false, false, -1, -1, false, -1,
+        )
+    }
+
+    #[test]
+    fn no_potential_improvement_when_every_scoreable_node_is_already_seen() {
+        let a = DialogueNodeId::new(1, 1);
+        let b = DialogueNodeId::new(1, 2);
+        let c = DialogueNodeId::new(1, 3);
+        let graph = LookAheadGraph::new(
+            vec![
+                plain(a, vec![b], false),
+                // A GROUP, and unseen. It must not count: the game never writes a
+                // group's SimStatus, so every group reads as never displayed and
+                // counting them would make the check useless.
+                plain(b, vec![c], true),
+                plain(c, vec![], false),
+            ],
+            StateSymbols::new(),
+        )
+        .unwrap();
+
+        assert!(!LookAheadEngine::has_potential_improvement(
+            &graph,
+            Novelty::SeenThisGame,
+            |id| if id == b { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame },
+        ));
+    }
+
+    #[test]
+    fn no_potential_improvement_when_everything_matches_the_options_novelty() {
+        let a = DialogueNodeId::new(1, 1);
+        let b = DialogueNodeId::new(1, 2);
+        let graph = LookAheadGraph::new(
+            vec![plain(a, vec![b], false), plain(b, vec![], false)],
+            StateSymbols::new(),
+        )
+        .unwrap();
+
+        // Strictly better, not as good as: an option already drawn unseen-this-save
+        // gains nothing from another node in the same state.
+        assert!(!LookAheadEngine::has_potential_improvement(
+            &graph,
+            Novelty::UnseenThisGame,
+            |_| Novelty::UnseenThisGame,
+        ));
+    }
+
+    /// The check is structural, so an unreachable candidate still passes it.
+    ///
+    /// That is the whole shape of the thing: a cheap exact NO, and a YES that only means
+    /// the crawl has to run. Here the crawl then finds nothing, and both are correct.
+    #[test]
+    fn an_unreachable_candidate_is_left_for_the_crawler() {
+        let a = DialogueNodeId::new(1, 1);
+        let b = DialogueNodeId::new(1, 2);
+        let orphan = DialogueNodeId::new(1, 3);
+        let graph = LookAheadGraph::new(
+            vec![
+                plain(a, vec![b], false),
+                plain(b, vec![], false),
+                // Nothing links to it.
+                plain(orphan, vec![], false),
+            ],
+            StateSymbols::new(),
+        )
+        .unwrap();
+        let novelty =
+            |id: DialogueNodeId| if id == orphan { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame };
+
+        assert!(LookAheadEngine::has_potential_improvement(
+            &graph,
+            Novelty::SeenThisGame,
+            novelty,
+        ));
+
+        let result = LookAheadEngine::default().evaluate(&graph, a, &TestWorld::new(), novelty);
+        assert_eq!(result.best, Novelty::SeenThisGame);
+    }
+
+    #[test]
+    fn nothing_outranks_the_strongest_novelty_there_is() {
+        let a = DialogueNodeId::new(1, 1);
+        let graph =
+            LookAheadGraph::new(vec![plain(a, vec![], false)], StateSymbols::new()).unwrap();
+
+        assert!(!LookAheadEngine::has_potential_improvement(
+            &graph,
+            Novelty::UnseenAnyGame,
+            |_| Novelty::UnseenAnyGame,
+        ));
+    }
 }
