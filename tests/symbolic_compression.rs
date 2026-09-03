@@ -111,6 +111,7 @@ const MEASUREMENT_STACK: usize = 2 << 30;
 #[test]
 fn how_well_a_crawls_state_set_compresses() {
     std::thread::Builder::new()
+        .name("measurement".to_string())
         .stack_size(MEASUREMENT_STACK)
         .spawn(|| {
             measure();
