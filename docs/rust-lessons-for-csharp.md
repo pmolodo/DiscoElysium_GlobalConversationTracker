@@ -312,4 +312,55 @@ name is read once and the slot lookup is tried before falling back to the world.
 
 ---
 
+## 10. Dialogue flags are not modelled at all, and they are variables
+
+**A BUG, not a refinement** - the only entry here that costs correct answers rather than
+precision.
+
+**C# today.** `ActionParser` has no `SetFlag` case, so it becomes
+`DialogueActionKind.Unmodelled` and writes nothing. `CrawlContext.Query` has no `FlagSet`
+case, so it falls through to the world and answers unknown.
+
+**What a flag actually is.** The Final Cut adds three functions in
+`Sunshine.Dialogue.FELDLuaFunctions`, and the declarations settle it:
+
+```csharp
+public static void SetFlag(string variableName)
+public static void UnsetFlag(string variableName)
+public static bool FlagSet(string variableName)
+```
+
+The parameter is called `variableName`. A flag is a dialogue variable, written and read
+through different names.
+
+The database bears it out: **62 scripts call `SetFlag`, 9 guards call `FlagSet`, and 56
+guard lines read the very names `SetFlag` writes as `Variable[...]`.** Note the reader is
+`FlagSet`, not `GetFlag` - searching for the obvious name finds nothing and gives the
+false impression that flags are write-only.
+
+**Why it costs answers.** A path that opens only after a flag is set stays closed for the
+crawl. The crawl then misses reachable states, reports a lower novelty than the truth, and
+the option loses its marker - the failure mode that shows the player nothing rather than
+showing something wrong, which is the harder one to notice.
+
+**Rust instead.** `SetFlag` assigns 1 to the variable's slot, `UnsetFlag` assigns 0, and
+`FlagSet` reads that slot exactly as `Variable[name]` does. Over the database that moves 63
+actions from unmodelled to modelled and interns the 61 distinct flag names.
+
+**Cost of adopting.** One case in `ActionParser` beside `SetVariableValue`, one in
+`CrawlContext.Query` beside `CheckItem`. Test it through the ENGINE rather than the parser
+- a node sets a flag, a later node is gated on it, the crawl must reach the gated node -
+with a companion test that the gate stays shut when nothing sets it, or the first passes
+just as well against a guard that is never evaluated.
+
+**Worth checking while you are there.** The other unmodelled action names are listed in
+de-p95. Most are scorekeeping - XP, reputation, health - and cost the look-ahead nothing.
+`SetFlag` was the one that was not, and nothing had checked which was which.
+
+---
+
 *Entries are appended as they are found. Nothing here is applied to the C# side.*
+
+*Nor does anything belong here that the C# does not need. Bugs the Rust port had and the
+C# did not are recorded on the issue that found them and in the code that fixed them - a
+list of changes to make is useless if it also contains changes not to make.*
