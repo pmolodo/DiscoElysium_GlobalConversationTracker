@@ -86,30 +86,6 @@ pub const DECISIONS: &[Decision] = &[
               write them; 6 guards in the whole database read them back.",
     },
     Decision {
-        writers: &["GainThought"],
-        // IsTHCPresent ALONE, and the omissions are the point. A thought has three states
-        // the guards ask about separately, and conversation 636 forks on all three in a
-        // row - Fixed, then Cooking, then Present. Only the last is something a script
-        // can reach.
-        //
-        // `Sunshine.Dialogue.THCLuaFunctions` in the decompiled game settles it. It
-        // registers exactly five Lua functions - GainThought and the four readers - so
-        // the dialogue's entire vocabulary for thoughts is one writer. That writer runs
-        // `CharacterThoughts.GainThought`, which is `gainedThoughts.Add(project)`, and
-        // `IsTHCPresent` is `gainedThoughts.Contains(project)`: the same set, written and
-        // read synchronously. COOKING and FIXED live in `cookingEffects`/`fixedEffects`,
-        // which only `ThoughtSlotsTree` - the cabinet screen - and save loading write. So
-        // `IsTHCCooking` and `IsTHCFixed` cannot move during a crawl at any price, and
-        // naming them here would report an exposure that cannot happen.
-        readers: &["IsTHCPresent"],
-        why: "A thought should be tracked the way an item is - a `thought:` slot written by \
-              GainThought and read by IsTHCPresent - and the game makes that a fair model: \
-              the gain is synchronous and idempotent (`Inventory.CanBeGained` refuses a \
-              thought already gained), so it is an assign of 1 and nothing subtler. It is \
-              not modelled yet, so the cabinet is whatever the save says. 48 conversations \
-              gain a thought and 183 read one, and 28 do both.",
-    },
-    Decision {
         writers: &["UseSubstanceInHand"],
         readers: &["SubstanceUsedOnce", "SubstanceUsedMore"],
         why: "Substance use is inventory plus a per-substance counter the crawl has no \

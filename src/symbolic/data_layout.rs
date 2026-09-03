@@ -26,7 +26,9 @@ use crate::core::action::DialogueActionKind;
 use std::collections::HashSet;
 
 use crate::core::guard::GuardExpression;
-use crate::core::state::{StateSymbols, ITEM_PREFIX, ONCE_PREFIX, SEEN_PREFIX, TASK_PREFIX};
+use crate::core::state::{
+    StateSymbols, ITEM_PREFIX, ONCE_PREFIX, SEEN_PREFIX, TASK_PREFIX, THOUGHT_PREFIX,
+};
 use crate::graph::graph::LookAheadGraph;
 
 /// Minutes in a day; the clock is wrapped into `0..MINUTES_IN_DAY`.
@@ -293,6 +295,7 @@ impl DataLayout {
                 let prefix = match function.as_str() {
                     "CheckItem" => Some(ITEM_PREFIX),
                     "IsTaskActive" => Some(TASK_PREFIX),
+                    "IsTHCPresent" => Some(THOUGHT_PREFIX),
                     // FlagSet(name) is Variable[name] written another way.
                     "FlagSet" => Some(""),
                     _ => None,

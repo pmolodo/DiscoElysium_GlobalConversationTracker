@@ -200,6 +200,14 @@ pub struct SaveWorld {
     numeric: HashSet<String>,
     /// What the character is wearing, by `CheckEquipped` name.
     equipped: HashSet<String>,
+    /// Thoughts in the cabinet, by `IsTHCPresent` name.
+    ///
+    /// The widest of the three sets and the only one a crawl can add to. The game keeps
+    /// `gainedThoughts` apart from the cooking and fixed effects, and internalising a
+    /// thought never leaves that set - so anything cooking or fixed is present too, which
+    /// [`SaveWorld::cooking`] and [`SaveWorld::internalised`] maintain rather than leave
+    /// to the caller to remember.
+    gained: HashSet<String>,
     /// Thoughts being internalised, by `IsTHCCooking` name.
     cooking: HashSet<String>,
     /// Thoughts already internalised, by `IsTHCFixed` name.
@@ -221,6 +229,7 @@ impl SaveWorld {
         Self {
             numeric: HashSet::new(),
             equipped: HashSet::new(),
+            gained: HashSet::new(),
             cooking: HashSet::new(),
             fixed: HashSet::new(),
             money: 0,
@@ -240,14 +249,20 @@ impl SaveWorld {
         self
     }
 
+    /// A thought in the cabinet, not internalised.
+    pub fn gained(mut self, name: &str) -> Self {
+        self.gained.insert(name.to_string());
+        self
+    }
+
     pub fn cooking(mut self, name: &str) -> Self {
         self.cooking.insert(name.to_string());
-        self
+        self.gained(name)
     }
 
     pub fn internalised(mut self, name: &str) -> Self {
         self.fixed.insert(name.to_string());
-        self
+        self.gained(name)
     }
 
     pub fn with_money(mut self, centimes: i32) -> Self {
@@ -303,6 +318,15 @@ impl ILookAheadWorld for SaveWorld {
         false
     }
 
+    /// What the save says is in the thought cabinet.
+    ///
+    /// Answered here rather than in [`Self::query`] because `IsTHCPresent` is now
+    /// slot-backed: `BoundContext::query` and the guard compiler both ask this for a
+    /// thought the group does not gain, and ask the crawl's own state for one it does.
+    fn initially_has_thought(&self, name: &str) -> bool {
+        self.gained.contains(name)
+    }
+
     /// The facts a save settles. Everything else stays unknown, and says so by falling
     /// back rather than by guessing.
     fn query(&self, name: &str, arguments: &[GuardValue]) -> GuardValue {
@@ -318,10 +342,15 @@ impl ILookAheadWorld for SaveWorld {
             "CheckEquipped" => membership(&self.equipped),
             "IsTHCCooking" => membership(&self.cooking),
             "IsTHCFixed" => membership(&self.fixed),
-            // Present is cooking or fixed - `THCLuaFunctions.IsTHCPresent` returns true
-            // when the thought is cooking and otherwise falls through to whether it is
-            // fixed.
-            "IsTHCPresent" => Self::subject(arguments)
+            // Cooking or fixed, which is a NARROWER question than IsTHCPresent - that one
+            // asks whether the thought is in the cabinet at all, is answered from
+            // `initially_has_thought` because a crawl can change it, and used to be
+            // answered here as cooking-or-fixed. That was this function's semantics given
+            // to that one's name: `THCLuaFunctions.IsTHCCookingOrFixed` is the cooking
+            // fallthrough to fixed, while `IsTHCPresent` is `gainedThoughts.Contains`.
+            // Read that way, a thought the player had gained but not internalised
+            // answered false, which is the opposite of what the game says.
+            "IsTHCCookingOrFixed" => Self::subject(arguments)
                 .map(|s| {
                     GuardValue::from_boolean(
                         self.cooking.contains(s) || self.fixed.contains(s),

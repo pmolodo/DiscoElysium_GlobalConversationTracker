@@ -205,6 +205,33 @@ fn declared_calls_are_recorded_but_change_nothing() {
     assert_eq!(after.day_minutes(), 8 * 60);
 }
 
+/// A thought joins the cabinet, which is a slot like an item's.
+///
+/// `THCLuaFunctions.GainThought` runs `CharacterThoughts.GainThought`, which is
+/// `gainedThoughts.Add(project)` - and `IsTHCPresent` is `gainedThoughts.Contains`, so
+/// this is the same shape as GainItem and CheckItem. Assigning 1 rather than incrementing
+/// is what the game does too: `Inventory.CanBeGained` refuses a thought already gained,
+/// so gaining twice is gaining once.
+#[test]
+fn gaining_a_thought_sets_the_thought_slot() {
+    let mut symbols = StateSymbols::new();
+    let actions = parse_actions("GainThought(\"jamais_vu\")", &mut symbols);
+
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].kind(), DialogueActionKind::Assign);
+
+    let slot = symbols.find("thought:jamais_vu").expect("a thought slot is interned");
+    let before = empty(&symbols, 0);
+    assert!(!before.is_set(slot));
+
+    let after = DialogueAction::apply(&actions, &before, -1, &caps(), false);
+    assert!(after.is_set(slot));
+
+    // Twice is once, the way the game has it.
+    let again = DialogueAction::apply(&actions, &after, -1, &caps(), false);
+    assert_eq!(again.get(slot), 1);
+}
+
 /// A call nobody has decided about stays UNKNOWN, and looks nothing like a stub.
 ///
 /// The distinction this whole arrangement exists for. A stub is work finished and an

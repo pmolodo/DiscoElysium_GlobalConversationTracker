@@ -35,6 +35,7 @@ use oxidd::BooleanFunction;
 
 use crate::core::guard::GuardExpression;
 use crate::core::guard_value::{GuardValue, GuardValueKind};
+use crate::core::state::{ITEM_PREFIX, TASK_PREFIX, THOUGHT_PREFIX};
 use crate::core::types::Ternary;
 use crate::symbolic::vars::DataVars;
 use crate::world::world::ILookAheadWorld;
@@ -284,23 +285,22 @@ impl<'a> GuardCompiler<'a> {
             // other thing the crawl asks the game rather than its own state. Undecided
             // here, which is the permissive answer, and counted so the fallback rate can
             // be measured against real content.
-            // Inventory and journal questions, which the crawl DOES change - GainItem
-            // and LoseItem write an `item:` slot, GainTask and FinishTask a `task:` one,
-            // and `BoundContext::query` answers these from exactly those slots. This
+            // Inventory, journal and thought-cabinet questions, which the crawl DOES
+            // change - GainItem and LoseItem write an `item:` slot, GainTask and
+            // FinishTask a `task:` one, GainThought a `thought:` one, and
+            // `BoundContext::query` answers all three from exactly those slots. This
             // mirrors that.
             //
-            // Where the group has no such slot, the item or task is one no action here
+            // Where the group has no such slot, the subject is one no action here
             // touches, so it is constant for the crawl and the world answers it - the
             // same rule as an untracked variable. That is also what keeps the variable
             // count down: a slot exists only for something the group actually
             // manipulates, not for every item in the game.
-            GuardExpression::Call(name, args)
-                if name == "CheckItem" || name == "IsTaskActive" =>
-            {
-                let is_item = name == "CheckItem";
+            GuardExpression::Call(name, args) if Self::slot_backed_query(name).is_some() => {
+                let prefix = Self::slot_backed_query(name).expect("just matched");
                 match Self::text_argument(args) {
                     Some(subject) => {
-                        let slot = format!("{}{subject}", if is_item { "item:" } else { "task:" });
+                        let slot = format!("{prefix}{subject}");
                         match self.slot_is_set(&slot) {
                             Some(holds) => self.decided(holds),
                             // Untracked, so nothing in this group can change it: the
@@ -315,10 +315,10 @@ impl<'a> GuardCompiler<'a> {
                             // and the starting inventory is stale.
                             None => match self.world {
                                 Some(world) => {
-                                    let held = if is_item {
-                                        world.initially_has_item(&subject)
-                                    } else {
-                                        world.initially_task_active(&subject)
+                                    let held = match prefix {
+                                        ITEM_PREFIX => world.initially_has_item(&subject),
+                                        TASK_PREFIX => world.initially_task_active(&subject),
+                                        _ => world.initially_has_thought(&subject),
                                     };
                                     let f = if held { self.top() } else { self.bottom() };
                                     self.decided(f)
@@ -389,6 +389,7 @@ impl<'a> GuardCompiler<'a> {
                 let reason: &'static str = match name.as_str() {
                     "CheckItem" => "call: CheckItem",
                     "IsTaskActive" => "call: IsTaskActive",
+                    "IsTHCPresent" => "call: IsTHCPresent",
                     "MoneyAmount" => "call: MoneyAmount",
                     "DayCount" | "HourCount" | "IsDayFrom" | "IsMorning" | "IsAfternoon"
                     | "IsEvening" | "IsNight" | "IsMidnight" | "IsHour" => "call: clock",
@@ -634,8 +635,24 @@ impl<'a> GuardCompiler<'a> {
     /// from crawl state and so varies between states; anything else is answered by the
     /// world and is the same at every state.
     fn crawl_can_change(name: &str) -> bool {
-        matches!(name, "MoneyAmount" | "CheckItem" | "IsTaskActive")
+        matches!(name, "MoneyAmount")
+            || Self::slot_backed_query(name).is_some()
             || crate::core::clock::ClockTime::owns(name)
+    }
+
+    /// The slot prefix a query is answered from, for the queries that have one.
+    ///
+    /// One list, read by both the compiler and `crawl_can_change`, because a query
+    /// answered from a slot in one place and from the world in the other would give two
+    /// different answers for the same state. `BoundContext::query` intercepts exactly
+    /// these three.
+    fn slot_backed_query(name: &str) -> Option<&'static str> {
+        match name {
+            "CheckItem" => Some(ITEM_PREFIX),
+            "IsTaskActive" => Some(TASK_PREFIX),
+            "IsTHCPresent" => Some(THOUGHT_PREFIX),
+            _ => None,
+        }
     }
 
     /// What a clock question answers at the world's time, with the conversation ignored.
@@ -1180,6 +1197,82 @@ mod tests {
         ));
 
         assert!(compiled.may_be_true.eval([(base, true)]));
+        assert_eq!(compiler.fallbacks(), 0);
+    }
+
+    /// A thought the group gains is tracked, and the guard reads its slot rather than the
+    /// save.
+    ///
+    /// The whole point of modelling the thought cabinet. Conversation 631's group gains
+    /// `jamais_vu` and then forks on `IsTHCPresent("jamais_vu")`, and while the query was
+    /// answered from the save that branch was held shut - the save says no, and the save
+    /// never hears about the gain.
+    #[test]
+    fn a_gained_thought_compiles_against_its_slot() {
+        let mut symbols = StateSymbols::new();
+        let actions = crate::parser::action_parser::parse_actions(
+            r#"GainThought("jamais_vu")"#,
+            &mut symbols,
+        );
+        let node = LookAheadNode::new(
+            DialogueNodeId::new(1, 0), false, DialogueCheckKind::None,
+            GuardExpression::always_true(), actions, vec![], 0, false, false, -1, -1, false, -1,
+        );
+        let snapshot = symbols.clone();
+        let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+
+        let slot = snapshot
+            .find("thought:jamais_vu")
+            .expect("GainThought interns a thought slot");
+        let base = layout.slot(slot).unwrap().0;
+
+        // The save says the thought is NOT in the cabinet, which is the case that used to
+        // decide the guard. The slot must win.
+        let world = crate::world::test_world::TestWorld::new().set_thought("jamais_vu", false);
+        let vars = DataVars::new(&layout, &snapshot, NODES, CACHE);
+        let mut compiler = GuardCompiler::new(&vars).with_world(&world);
+        let compiled = compiler.compile(&GuardExpression::Call(
+            "IsTHCPresent".to_string(),
+            vec![GuardExpression::Literal(GuardValue::from_text("jamais_vu".to_string()))],
+        ));
+
+        assert!(compiled.may_be_true.eval([(base, true)]));
+        assert!(!compiled.may_be_true.eval([(base, false)]));
+        assert_eq!(compiler.fallbacks(), 0);
+    }
+
+    /// A thought nothing here gains is constant, and comes from the save.
+    ///
+    /// And the states it cannot be in stay constant whatever happens: internalising is
+    /// the cabinet screen and hours of game time, so `IsTHCCooking` and `IsTHCFixed` are
+    /// world queries with no slot behind them, now as before.
+    #[test]
+    fn an_ungained_thought_is_answered_from_the_save() {
+        let (graph, symbols) = fixture(&["a"], None);
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+        let world = crate::world::test_world::TestWorld::new()
+            .set_thought("guillaume_le_million", true)
+            .set_query_bool("IsTHCFixed", false);
+
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let mut compiler = GuardCompiler::new(&vars).with_world(&world);
+        let present = compiler.compile(&GuardExpression::Call(
+            "IsTHCPresent".to_string(),
+            vec![GuardExpression::Literal(GuardValue::from_text(
+                "guillaume_le_million".to_string(),
+            ))],
+        ));
+        let internalised = compiler.compile(&GuardExpression::Call(
+            "IsTHCFixed".to_string(),
+            vec![GuardExpression::Literal(GuardValue::from_text(
+                "guillaume_le_million".to_string(),
+            ))],
+        ));
+
+        assert!(present.may_be_true.valid());
+        assert!(present.is_decided());
+        assert!(!internalised.may_be_true.satisfiable());
         assert_eq!(compiler.fallbacks(), 0);
     }
 

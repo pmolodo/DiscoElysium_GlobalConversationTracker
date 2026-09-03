@@ -14,6 +14,8 @@ pub struct TestWorld {
     pub variables: HashMap<String, GuardValue>,
     pub items: HashMap<String, bool>,
     pub tasks: HashMap<String, bool>,
+    /// Thoughts already in the cabinet, which is what `IsTHCPresent` asks about.
+    pub thoughts: HashMap<String, bool>,
     pub check_results: HashMap<DialogueNodeId, Ternary>,
     pub seen: HashMap<DialogueNodeId, bool>,
     /// Answers to named world queries, keyed by function name.
@@ -24,10 +26,10 @@ pub struct TestWorld {
     /// world queries the five biggest conversations' guards make, more than half.
     ///
     /// Only the name is keyed, not the arguments. Every query worth answering this way is
-    /// one the crawl cannot change and that takes no argument - IsKimHere, IsTHCPresent,
-    /// IsCunoInParty and the rest of the party and character facts. The ones that DO take
-    /// an argument, CheckItem and IsTaskActive, are answered from `items` and `tasks`
-    /// instead, by the crawl, because a crawl's own actions can change them.
+    /// one the crawl cannot change and that takes no argument - IsKimHere, IsCunoInParty
+    /// and the rest of the party and character facts. The three that DO take an argument
+    /// and that a crawl's own actions move - CheckItem, IsTaskActive and IsTHCPresent -
+    /// are answered from `items`, `tasks` and `thoughts` instead.
     pub queries: HashMap<String, GuardValue>,
 }
 
@@ -71,6 +73,11 @@ impl TestWorld {
         self
     }
 
+    pub fn set_thought(mut self, name: &str, gained: bool) -> Self {
+        self.thoughts.insert(name.to_string(), gained);
+        self
+    }
+
     pub fn set_check_result(mut self, node: DialogueNodeId, result: Ternary) -> Self {
         self.check_results.insert(node, result);
         self
@@ -103,6 +110,7 @@ impl ILookAheadWorld for TestWorld {
     }
     fn initially_has_item(&self, name: &str) -> bool { self.items.get(name).copied().unwrap_or(false) }
     fn initially_task_active(&self, name: &str) -> bool { self.tasks.get(name).copied().unwrap_or(false) }
+    fn initially_has_thought(&self, name: &str) -> bool { self.thoughts.get(name).copied().unwrap_or(false) }
     fn query(&self, name: &str, _arguments: &[GuardValue]) -> GuardValue {
         self.queries.get(name).cloned().unwrap_or(GuardValue::unknown())
     }

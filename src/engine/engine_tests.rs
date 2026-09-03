@@ -85,6 +85,46 @@ fn actions_unlock_their_own_downstream_guards() {
     assert_eq!(run(&graph, &TestWorld::new(), &[2]).best, Novelty::UnseenAnyGame);
 }
 
+/// A thought gained on the path opens the fork that asks for it.
+///
+/// The shape conversation 636 is built out of: Joyce grants `jamais_vu`, and later the
+/// conversation forks on whether it is in the cabinet. While `IsTHCPresent` was answered
+/// from the save, the crawl took the "not present" side forever, because a save cannot
+/// hear about a gain the crawl has just made.
+#[test]
+fn a_gained_thought_opens_the_fork_that_asks_for_it() {
+    let graph = GraphBuilder::new()
+        .add(Entry::new(0).links(&[1]))
+        .add(Entry::new(1).script(r#"GainThought("jamais_vu")"#).links(&[2, 3]))
+        .add(Entry::new(2).guard(r#"IsTHCPresent("jamais_vu")"#))
+        .add(Entry::new(3).guard(r#"IsTHCPresent("jamais_vu") == false"#))
+        .build();
+
+    // The save says the cabinet is empty, which is what the fork used to be judged on.
+    let world = TestWorld::new().set_thought("jamais_vu", false);
+    assert_eq!(run(&graph, &world, &[2]).best, Novelty::UnseenAnyGame);
+
+    // And the other side of the same fork closes, which is the half that says the slot is
+    // being read rather than everything simply being let through.
+    assert_eq!(run(&graph, &world, &[3]).best, Novelty::SeenThisGame);
+}
+
+/// A thought nothing on the path gains is the save's business, and stays it.
+#[test]
+fn an_ungained_thought_is_the_saves_answer() {
+    let graph = GraphBuilder::new()
+        .add(Entry::new(0).links(&[1]))
+        .add(Entry::new(1).guard(r#"IsTHCPresent("guillaume_le_million")"#).links(&[2]))
+        .add(Entry::new(2))
+        .build();
+
+    let carried = TestWorld::new().set_thought("guillaume_le_million", true);
+    assert_eq!(run(&graph, &carried, &[2]).best, Novelty::UnseenAnyGame);
+
+    let without = TestWorld::new().set_thought("guillaume_le_million", false);
+    assert_eq!(run(&graph, &without, &[2]).best, Novelty::SeenThisGame);
+}
+
 #[test]
 fn the_start_node_is_not_scored() {
     // The marker says what lies BEYOND an option, so the option's own novelty is not it.

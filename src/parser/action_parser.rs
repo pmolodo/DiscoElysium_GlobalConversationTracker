@@ -294,6 +294,19 @@ fn translate_call(call: Invocation, symbols: &mut StateSymbols, actions: &mut Ve
             let slot = symbols.item(&unquote(call.args.get(0).unwrap_or(&String::new())));
             actions.push(DialogueAction::assign(slot, 0, call.name));
         }
+        // The only way dialogue writes the thought cabinet, and it writes exactly one
+        // thing: the thought joins `gainedThoughts`, which is what `IsTHCPresent` reads.
+        //
+        // Assigning 1 unconditionally is exact rather than convenient.
+        // `Inventory.CanBeGained` refuses a thought already gained, so a second call
+        // changes nothing - and a thought the player has FORGOTTEN can never be regained,
+        // which this does not model. That direction is safe: forgetting costs a skill
+        // point and no crawl can do it, so a thought the save says is forgotten is one
+        // the crawl was never going to be told about anyway.
+        "GainThought" => {
+            let slot = symbols.thought(&unquote(call.args.first().unwrap_or(&String::new())));
+            actions.push(DialogueAction::assign(slot, 1, call.name));
+        }
         "GainTask" => {
             let slot = symbols.task(&unquote(call.args.get(0).unwrap_or(&String::new())));
             actions.push(DialogueAction::assign(slot, 1, call.name));

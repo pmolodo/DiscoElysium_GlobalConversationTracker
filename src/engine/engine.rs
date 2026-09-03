@@ -386,6 +386,10 @@ impl LookAheadEngine {
                     if world.initially_task_active(stripped) {
                         state = state.with(slot, 1);
                     }
+                } else if let Some(stripped) = name.strip_prefix("thought:") {
+                    if world.initially_has_thought(stripped) {
+                        state = state.with(slot, 1);
+                    }
                 } else if !name.starts_with("once:") && !name.starts_with("seen:") {
                     let val = world.get_variable(name);
                     if val.kind() == crate::core::guard_value::GuardValueKind::Boolean && val.boolean() {

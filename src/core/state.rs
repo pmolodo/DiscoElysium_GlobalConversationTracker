@@ -9,6 +9,16 @@ use crate::core::types::DialogueNodeId;
 /// Prefix constants for different slot types
 pub const ITEM_PREFIX: &str = "item:";
 pub const TASK_PREFIX: &str = "task:";
+/// A thought the player has gained, which is what `IsTHCPresent` asks about.
+///
+/// GAINED, not internalised. The game keeps three sets - `gainedThoughts`,
+/// `cookingEffects` and `fixedEffects` - and `Sunshine.Dialogue.THCLuaFunctions` exposes
+/// a reader for each. Only the first is reachable from dialogue: the Lua surface has
+/// exactly one thought writer, `GainThought`, and it adds to `gainedThoughts` and nothing
+/// else. Internalising is the player spending a cabinet slot and hours of game time, and
+/// forgetting costs a skill point, so `IsTHCCooking` and `IsTHCFixed` are constants for
+/// the length of any crawl and get no slot.
+pub const THOUGHT_PREFIX: &str = "thought:";
 pub const ONCE_PREFIX: &str = "once:";
 pub const SEEN_PREFIX: &str = "seen:";
 
@@ -51,6 +61,10 @@ impl StateSymbols {
 
     pub fn task(&mut self, name: &str) -> usize {
         self.intern(format!("{TASK_PREFIX}{name}"))
+    }
+
+    pub fn thought(&mut self, name: &str) -> usize {
+        self.intern(format!("{THOUGHT_PREFIX}{name}"))
     }
 
     pub fn once(&mut self, node: DialogueNodeId) -> usize {

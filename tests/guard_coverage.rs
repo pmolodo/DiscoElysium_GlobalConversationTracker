@@ -177,9 +177,10 @@ fn how_much_of_the_guard_corpus_compiles() {
             layout.total_vars(),
         );
         println!(
-            "         slots: {} item, {} task, {} total",
+            "         slots: {} item, {} task, {} thought, {} total",
             DataLayout::slots_named(&symbols, "item:"),
             DataLayout::slots_named(&symbols, "task:"),
+            DataLayout::slots_named(&symbols, "thought:"),
             symbols.count(),
         );
         for (reason, count) in compiler.fallback_reasons() {

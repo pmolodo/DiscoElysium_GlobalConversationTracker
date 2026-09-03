@@ -5,6 +5,7 @@ use crate::core::guard::IGuardContext;
 use crate::core::clock::ClockTime;
 use crate::core::state::StateSymbols;
 use crate::core::state::LookAheadState;
+use crate::core::state::{ITEM_PREFIX, TASK_PREFIX, THOUGHT_PREFIX};
 
 /// Everything outside the dialogue graph that the look-ahead needs to know.
 pub trait ILookAheadWorld: Send + Sync {
@@ -34,6 +35,13 @@ pub trait ILookAheadWorld: Send + Sync {
     ///
     /// The same two callers and the same restriction as [`Self::initially_has_item`].
     fn initially_task_active(&self, name: &str) -> bool;
+
+    /// Whether a thought is in the cabinet WHEN THE CRAWL STARTS.
+    ///
+    /// What `IsTHCPresent` asks, and the same two callers again. GAINED, not
+    /// internalised: see [`crate::core::state::THOUGHT_PREFIX`] for why those are
+    /// different questions, and why only this one moves.
+    fn initially_has_thought(&self, name: &str) -> bool;
     fn query(&self, name: &str, arguments: &[GuardValue]) -> GuardValue;
     fn check_passes(&self, node: DialogueNodeId) -> Ternary;
     fn is_seen(&self, node: DialogueNodeId) -> bool;
@@ -78,6 +86,41 @@ pub struct BoundContext<'s> {
     pub symbols: &'s StateSymbols,
     pub world: &'s dyn ILookAheadWorld,
     state: Option<&'s LookAheadState>,
+}
+
+impl BoundContext<'_> {
+    /// A query about a named subject, answered from the slot that tracks it if there is
+    /// one and from the world otherwise.
+    ///
+    /// Shared by the three queries shaped this way. TRACKED means the crawl's own actions
+    /// have been moving it, so the state is the truth and the world is stale. UNTRACKED
+    /// means no action in this group touches it, so its starting value is its only value
+    /// and the world can simply be asked - falling through to `query` instead, which most
+    /// worlds answer unknown, would throw away an answer already in hand and leave the
+    /// branch open for no reason.
+    fn tracked_or_world(
+        &self,
+        prefix: &str,
+        name: &str,
+        arguments: &[GuardValue],
+        from_world: &dyn Fn(&dyn ILookAheadWorld, &str) -> bool,
+    ) -> GuardValue {
+        let Some(subject) = arguments
+            .first()
+            .filter(|v| v.kind() == GuardValueKind::Text)
+            .map(|v| v.text())
+        else {
+            return self.world.query(name, arguments);
+        };
+
+        if let Some(state) = self.state {
+            if let Some(slot) = self.symbols.find(&format!("{prefix}{subject}")) {
+                return GuardValue::from_boolean(state.is_set(slot));
+            }
+        }
+
+        GuardValue::from_boolean(from_world(self.world, subject))
+    }
 }
 
 impl IGuardContext for BoundContext<'_> {
@@ -133,45 +176,23 @@ impl IGuardContext for BoundContext<'_> {
                     self.world.query(name, arguments)
                 }
             }
+            // The three questions the crawl's own actions can change the answer to:
+            // inventory, journal, thought cabinet. Each is answered from a slot where
+            // this group moves the subject and from the world where it does not.
             "CheckItem" => {
-                if let Some(text) = arguments.first()
-                    .filter(|v| v.kind() == GuardValueKind::Text)
-                    .map(|v| v.text())
-                {
-                    // Tracked: the crawl's own actions have been moving it, so the state
-                    // is the truth.
-                    if let Some(state) = self.state {
-                        if let Some(slot) = self.symbols.find(&format!("item:{}", text)) {
-                            return GuardValue::from_boolean(state.is_set(slot));
-                        }
-                    }
-
-                    // Untracked: no action in this group gains or loses it, so its
-                    // starting value is its only value and the world can simply be asked.
-                    // Falling through to `query` instead - which most worlds answer
-                    // unknown - would throw away an answer already in hand and leave the
-                    // branch open for no reason.
-                    return GuardValue::from_boolean(self.world.initially_has_item(text));
-                }
-
-                self.world.query(name, arguments)
+                self.tracked_or_world(ITEM_PREFIX, name, arguments, &|world, subject| {
+                    world.initially_has_item(subject)
+                })
             }
-            // The same two cases as CheckItem above, for the journal.
             "IsTaskActive" => {
-                if let Some(text) = arguments.first()
-                    .filter(|v| v.kind() == GuardValueKind::Text)
-                    .map(|v| v.text())
-                {
-                    if let Some(state) = self.state {
-                        if let Some(slot) = self.symbols.find(&format!("task:{}", text)) {
-                            return GuardValue::from_boolean(state.is_set(slot));
-                        }
-                    }
-
-                    return GuardValue::from_boolean(self.world.initially_task_active(text));
-                }
-
-                self.world.query(name, arguments)
+                self.tracked_or_world(TASK_PREFIX, name, arguments, &|world, subject| {
+                    world.initially_task_active(subject)
+                })
+            }
+            "IsTHCPresent" => {
+                self.tracked_or_world(THOUGHT_PREFIX, name, arguments, &|world, subject| {
+                    world.initially_has_thought(subject)
+                })
             }
             _ => self.world.query(name, arguments),
         }
