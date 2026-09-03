@@ -194,6 +194,30 @@ fn the_siileng_speakers_are_not_offered_twice() {
     assert_eq!(run(&siileng(), &world, &[11]).best, Novelty::SeenThisGame);
 }
 
+/// A cost marked once is charged once however many times the crawl walks back over it.
+///
+/// The cycle is what makes it a real test: entry 2 links back to 1, so a per-visit charge
+/// would drain the balance on the second pass and close the guard.
+#[test]
+fn a_cost_marked_once_is_charged_only_once() {
+    let graph = GraphBuilder::new()
+        .add(Entry::new(0).links(&[1]))
+        .add(Entry::new(1).cost(2000).cost_once().links(&[2]))
+        .add(Entry::new(2).links(&[1, 3]))
+        .add(Entry::new(3).guard("MoneyAmount() >= 1000"))
+        .build();
+
+    // 2,000 pays for the room once and leaves 0; a second charge would be refused, but
+    // once-only means there is no second charge - and the balance still cannot reach
+    // 1,000, so nothing downstream of the guard is found.
+    let poor = TestWorld::new().with_money(2000);
+    assert_eq!(run(&graph, &poor, &[3]).best, Novelty::SeenThisGame);
+
+    // With 3,000 the balance after the single charge is 1,000, which clears it.
+    let rich = TestWorld::new().with_money(3000);
+    assert_eq!(run(&graph, &rich, &[3]).best, Novelty::UnseenAnyGame);
+}
+
 /// A repeatable purchase inside a cycle must run out of money rather than run forever.
 #[test]
 fn a_repeatable_purchase_in_a_cycle_terminates_on_money() {

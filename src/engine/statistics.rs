@@ -247,4 +247,54 @@ mod tests {
         assert_eq!(two.stopped_by_time, 1);
         assert_eq!(two.max_milliseconds, 5.0);
     }
+
+    /// Every crawl lands in exactly one of the three tallies, so they sum to the count.
+    #[test]
+    fn what_was_found_is_tallied_by_novelty() {
+        let mut stats = LookAheadStatistics::new();
+        let start = DialogueNodeId::new(1, 1);
+
+        for best in [
+            Novelty::UnseenAnyGame,
+            Novelty::UnseenAnyGame,
+            Novelty::UnseenThisGame,
+            Novelty::SeenThisGame,
+        ] {
+            stats.record(start, &result(1, 1, LookAheadLimit::None, best), 1.0);
+        }
+
+        assert_eq!(stats.found_unseen_any_game, 2);
+        assert_eq!(stats.found_unseen_this_game, 1);
+        assert_eq!(stats.found_nothing, 1);
+
+        let tallied = stats.found_unseen_any_game + stats.found_unseen_this_game
+            + stats.found_nothing;
+        assert_eq!(tallied, stats.overall.crawls);
+    }
+
+    /// The histogram is the point of keeping statistics at all: a mean hides the one menu
+    /// in a thousand that costs a hundred times the rest.
+    #[test]
+    fn buckets_separate_the_tail_from_the_bulk() {
+        let mut stats = LookAheadStatistics::new();
+        let start = DialogueNodeId::new(1, 1);
+
+        for _ in 0..99 {
+            stats.record(start, &result(5, 1, LookAheadLimit::None, Novelty::SeenThisGame), 0.1);
+        }
+        stats.record(
+            start,
+            &result(50_000, 1, LookAheadLimit::None, Novelty::SeenThisGame),
+            500.0,
+        );
+
+        assert_eq!(stats.buckets[0], 99);
+        assert_eq!(stats.buckets[4], 1);
+        assert_eq!(stats.overall.max_states, 50_000);
+
+        // And the mean is the thing the histogram exists to contradict: it lands near 505,
+        // a number no single crawl came close to.
+        let mean = stats.overall.mean_states();
+        assert!(mean > 500.0 && mean < 510.0, "mean was {mean}");
+    }
 }

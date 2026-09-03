@@ -6,8 +6,6 @@
 //! tests exercise the parsers on the same syntax the game ships and a fixture can be
 //! pasted straight out of the asset.
 
-use crate::core::action::DialogueAction;
-use crate::core::guard::GuardExpression;
 use crate::core::state::StateSymbols;
 use crate::core::types::{DialogueCheckKind, DialogueNodeId};
 use crate::graph::graph::LookAheadGraph;
