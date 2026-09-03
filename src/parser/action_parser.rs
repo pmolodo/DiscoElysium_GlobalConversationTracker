@@ -133,8 +133,16 @@ fn translate_call(call: Invocation, symbols: &mut StateSymbols, actions: &mut Ve
             let var_name = unquote(&call.args[0]);
             let slot = symbols.variable(&var_name);
             let value = call.args[1].trim();
-            if try_read_increment(value, &var_name, &mut 0, &mut false) {
-                let (amount, once) = parse_increment(value);
+
+            // Read the increment ONCE, keeping what it reports. This previously called
+            // try_read_increment with throwaway temporaries to ask whether the value was
+            // an increment, then called a helper that re-read it with an EMPTY variable
+            // name - so the self-reference it looks for, Variable[""], was never found,
+            // and every counter in the database became an increment of zero that had
+            // also lost its once flag.
+            let mut amount = 0;
+            let mut once = false;
+            if try_read_increment(value, &var_name, &mut amount, &mut once) {
                 actions.push(DialogueAction::increment(slot, amount, once, call.name));
                 return;
             }
@@ -205,13 +213,6 @@ fn try_read_increment(value: &str, variable: &str, amount: &mut i32, once: &mut 
         *amount = v;
         true
     } else { false }
-}
-
-fn parse_increment(value: &str) -> (i32, bool) {
-    let mut amount = 0;
-    let mut once = false;
-    try_read_increment(value, "", &mut amount, &mut once);
-    (amount, once)
 }
 
 fn read_assigned_value(value: &str) -> i32 {
