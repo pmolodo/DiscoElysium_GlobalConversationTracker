@@ -380,78 +380,12 @@ namespace GlobalConversationTracker.Harness
         /// A crawl that runs out of budget shows nothing, and says where it stopped.
         /// </summary>
         /// <remarks>
-        /// <para>The same save and the same global state as the money suite's first
-        /// scenario, which marks three options - with one setting changed. That makes it
-        /// a clean discriminator: if the markers still appear, the budget is not being
-        /// honoured; if they vanish for any other reason, the money suite would have
-        /// caught it.</para>
-        ///
-        /// <para>A budget of one is exhausted before the search dequeues anything, so
-        /// LookAheadResult.Best stays at SeenThisGame and no option can beat its own
-        /// state. That is the feature's deliberate failure mode: it costs a marker rather
-        /// than a slow menu, and until now nothing checked that it does.</para>
-        ///
-        /// <para>IT IS A STATE BUDGET, and since de-7z0f a TEST-ONLY one: the player
-        /// setting that used to spell it is gone, and this reaches the mod through the
-        /// probe's prepare-suite command instead. The memory budget cannot take the job
-        /// over, which was tried - it is checked when a node is dequeued, so a crawl that
-        /// finds its answer in the first expansion outruns any budget a player could
-        /// express. See <see cref="TestStateBudgetSetting"/>.</para>
-        ///
-        /// <para>The overflow log is the only other evidence, since saying nothing is
-        /// exactly what an exhausted crawl does. Writing it also exercises the traced
-        /// re-walk - a second engine that only runs on an overflow, so that menus which
-        /// stay within budget pay nothing for a report they will never produce.</para>
+        /// DEFINED IN <c>testing/scenarios/suites.json</c>, which is also what
+        /// <c>tests/scenario_suites.rs</c> runs. The four options and why leaving is the
+        /// one that must NOT read as uncertain are stated there, as is why the overflow
+        /// log stays an in-game check.
         /// </remarks>
-        public static LookAheadSuite Budget { get; } = new LookAheadSuite(
-            "budget",
-            "a crawl that runs out of budget shows nothing and says where",
-            MoneyState,
-            new[]
-            {
-                new LookAheadScenario(
-                    "afford-both",
-                    SiilengConversation,
-                    "the balance that marks three options, with a budget of one megabyte",
-                    new[]
-                    {
-                        // The three the money suite marks at this balance. With a
-                        // megabyte the crawl cannot reach any of them, and de-pvq is that this
-                        // must read as "did not finish" rather than as "nothing there" -
-                        // the two used to draw identically, which told the player the
-                        // stronger of the two things on the strength of neither.
-                        Uncertain(BuySneakersEntry, "the crawl gave up before it could look"),
-                        Uncertain(InspectSneakersEntry, "and before it could look here"),
-                        Uncertain(InspectSpeakersEntry, "and here"),
-                        // LEAVING IS NOT UNCERTAIN, and that is the point rather than an
-                        // oversight. It used to be: when the marker came from the managed
-                        // engine, a starved budget stopped the crawl before it could
-                        // establish anything about any option, this one included.
-                        //
-                        // The engine refuses a search it can prove cannot find anything -
-                        // reaches_potential_improvement, applied at the bridge - and that
-                        // refusal builds no state, so no budget can cut it short. Nothing
-                        // this option reaches outranks it, which is established here as
-                        // firmly at a megabyte as at two hundred and fifty-six. So it draws
-                        // plain, which is what "there is nothing down there" looks like.
-                        Unmarked(LeaveEntry, "nothing it reaches outranks it, and no budget "
-                            + "is needed to know that"),
-                    },
-                    money: 5100,
-                    advances: SiilengAdvances),
-            },
-            pluginSettings: new Dictionary<string, string>
-            {
-                [TestStateBudgetSetting] = "1",
-                ["LogLookAheadBudgetExceeded"] = "true",
-            },
-            artefacts: new[]
-            {
-                new SuiteArtefact(
-                    "look-ahead-budget-overflows.log",
-                    "the overflow log names the option that ran out",
-                    CheckOverflowLog),
-            });
+        public static LookAheadSuite Budget => FromDefinition("budget");
 
         /// <summary>
         /// Turning the feature off leaves the options alone and the tracking working.
@@ -463,6 +397,15 @@ namespace GlobalConversationTracker.Harness
         /// <para>Unmarked options are paired with the harness's suite-prepared
         /// acknowledgement, which reports the runtime setting it applied. The tracking
         /// hook line remains an independent check that tracking stayed active.</para>
+        ///
+        /// <para>THE ONE SUITE STILL DECLARED HERE, and the only one that should be. What
+        /// it stages is a MOD SETTING, and there is no such thing to stage without a mod:
+        /// the offline engine has no switch to turn off, so from the same fixture it
+        /// answers exactly what the money suite's first scenario answers - three options
+        /// marked. A row saying every option is unmarked would therefore be a definition
+        /// only one side could execute, which is worse than an honest declaration because
+        /// it reads as shared. Everything the two executors can BOTH run is in
+        /// <c>testing/scenarios/suites.json</c>.</para>
         /// </remarks>
         public static LookAheadSuite SwitchedOff { get; } = new LookAheadSuite(
             "switched-off",
@@ -991,11 +934,14 @@ namespace GlobalConversationTracker.Harness
         private static OptionExpectation Unmarked(int entryId, string why) =>
             new OptionExpectation(entryId, Marker.None, why);
 
-        /// <summary>Every option the hub offers, expected to carry nothing.</summary>
-        /// <summary>An option whose crawl is expected to give up before it can answer.</summary>
-        private static OptionExpectation Uncertain(int entryId, string why) =>
-            new OptionExpectation(entryId, Marker.Uncertain, why);
-
+        /// <summary>Every option Siileng's hub offers, expected to carry nothing.</summary>
+        /// <remarks>
+        /// The last of these helpers, and the only suite left that needs one. Every other
+        /// scenario's options are written out in
+        /// <c>testing/scenarios/suites.json</c>; <see cref="SwitchedOff"/> is not, because
+        /// what it stages is a mod setting and there is no such thing to stage without a
+        /// mod - see the remarks there.
+        /// </remarks>
         private static OptionExpectation[] AllUnmarked(string why) => new[]
         {
             Unmarked(BuySneakersEntry, why),
