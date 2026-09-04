@@ -162,7 +162,7 @@ fn every_shape_the_suites_arrange_is_reached_offline() {
 
     let table = table();
     let start = NodeRef { conversation: table.conversation, entry: table.entry };
-    let (graph, _) = build_group_graph(&index, table.conversation)
+    let (graph, group) = build_group_graph(&index, table.conversation)
         .expect("the fan's group builds");
     let everything: Vec<NodeRef> =
         graph.nodes().map(|node| NodeRef::from(node.id)).collect();
@@ -170,9 +170,26 @@ fn every_shape_the_suites_arrange_is_reached_offline() {
     let mut failures: Vec<String> = Vec::new();
 
     for row in &table.rows {
-        let recorded: HashSet<i32> =
-            fixtures::recorded_elsewhere(&row.state, table.conversation);
-        let read_here = fixtures::read_in_save(&row.save, table.conversation);
+        // OVER THE WHOLE GROUP, not the conversation the row names. The engine loads
+        // everything reachable from it, so every entry it might walk to has to be
+        // classified; matching entry ids against one conversation's records lets the rest
+        // fall through to "never seen anywhere", which invents the top rung wherever a
+        // group spans more than one conversation. The fan's does not, today - it is the
+        // one conversation - so this changes no answer here, and it is what the reading
+        // means rather than what this fixture happens to allow.
+        let recorded: HashSet<(i32, i32)> =
+            fixtures::recorded_elsewhere_in_group(&row.state, &group);
+        let read_here = fixtures::read_in_save_group(&row.save, &group);
+        let rung_of = |node: &NodeRef| {
+            let key = (node.conversation, node.entry);
+            if read_here.contains(&key) {
+                0
+            } else if recorded.contains(&key) {
+                1
+            } else {
+                2
+            }
+        };
 
         // The three rungs, exactly as the plugin builds them: read in THIS save wins,
         // then recorded in some other save, then never seen anywhere.
@@ -182,12 +199,12 @@ fn every_shape_the_suites_arrange_is_reached_offline() {
             unseen_any_game: everything
                 .iter()
                 .copied()
-                .filter(|n| !recorded.contains(&n.entry) && !read_here.contains(&n.entry))
+                .filter(|node| rung_of(node) == 2)
                 .collect(),
-            unseen_this_game: recorded
+            unseen_this_game: everything
                 .iter()
-                .filter(|entry| !read_here.contains(entry))
-                .map(|entry| NodeRef { conversation: table.conversation, entry: *entry })
+                .copied()
+                .filter(|node| rung_of(node) == 1)
                 .collect(),
             state_budget: row.state_budget,
             world: WorldSnapshot { day_minutes: 720, day_counter: 1, ..Default::default() },

@@ -248,30 +248,53 @@ struct Recorded {
     was_displayed: std::collections::HashMap<String, Vec<i32>>,
 }
 
-/// What some other save has read of one conversation, per a staged global state file.
+/// What some other save has read, per a staged global state file, over a whole group.
+///
+/// ## Why a group and not a conversation
+///
+/// A LOOK-AHEAD IS ASKED OF A GROUP, and a group is several conversations: the engine
+/// loads everything reachable from the one that is open, and Joyce's runs to 2,857 entries
+/// across many. Classifying only the open conversation's entries and letting the rest fall
+/// through to "never seen anywhere" is not a small inaccuracy - it invents the top rung
+/// almost everywhere, so a crawl that should be refused finds something to walk towards.
+/// Measured: it made 2,629 of Joyce's 2,857 entries look worth crawling under a fixture
+/// that records every entry in the game.
+///
+/// A conversation the state says nothing about contributes nothing, which is the same
+/// answer the mod's own state gives for it.
+pub fn recorded_elsewhere_in_group(
+    state_file: &str,
+    conversations: &[i32],
+) -> HashSet<(i32, i32)> {
+    let state = read_state(state_file);
+    let mut recorded = HashSet::new();
+
+    for conversation in conversations {
+        let Some(entries) = state.conversations.was_displayed.get(&conversation.to_string())
+        else {
+            continue;
+        };
+
+        recorded.extend(entries.iter().map(|entry| (*conversation, *entry)));
+    }
+
+    recorded
+}
+
+/// A staged global state file, read as the mod reads it.
 ///
 /// # Panics
 ///
-/// If the file is missing or is not a global state. Both mean the fixture the in-game run
-/// would stage is not there, which is not something to pass over quietly.
-pub fn recorded_elsewhere(state_file: &str, conversation: i32) -> HashSet<i32> {
+/// If it is missing or is not a global state.
+fn read_state(state_file: &str) -> GlobalState {
     let path = scenarios().join(state_file);
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("{} does not read: {e}", path.display()));
-    let state: GlobalState = serde_json::from_str(&text)
-        .unwrap_or_else(|e| panic!("{} is not a global state: {e}", path.display()));
-
-    state
-        .conversations
-        .was_displayed
-        .get(&conversation.to_string())
-        .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .collect()
+    serde_json::from_str(&text)
+        .unwrap_or_else(|e| panic!("{} is not a global state: {e}", path.display()))
 }
 
-/// What a scenario save has already displayed, of one conversation.
+/// What a scenario save has already displayed, over a whole group.
 ///
 /// READ FROM THE SAVE THE IN-GAME RUN LOADS, rather than copied into the definition beside
 /// it. A row names its save and nothing more, so the two executors cannot come to disagree
@@ -280,31 +303,43 @@ pub fn recorded_elsewhere(state_file: &str, conversation: i32) -> HashSet<i32> {
 ///
 /// A scenario save is a diff over a base, and only the entries it CHANGES are written
 /// down. THE WHOLE CHAIN IS WALKED, base-most first, and the last folder to say anything
-/// about this conversation wins - which is what a diff means.
+/// about a conversation wins - which is what a diff means. It used to read the leaf alone,
+/// on the documented grounds that no base in this repository records a displayed entry.
+/// That was true, and it was an assumption where walking the chain is a fact; the chain has
+/// to be resolved for the variables anyway (see [`variables_in_save`]), so there is nothing
+/// left to buy by assuming it.
 ///
-/// It used to read the leaf alone, on the documented grounds that no base in this
-/// repository records a displayed entry. That was true, and it was an assumption where
-/// walking the chain is a fact; the chain has to be resolved for the variables anyway
-/// (see [`variables_in_save`]), so there is nothing left to buy by assuming it.
+/// ONE WALK FOR EVERY CONVERSATION OF THE GROUP: the base writes out the whole Conversation
+/// table, and re-reading it once per conversation would be re-parsing a megabyte per
+/// question. See [`recorded_elsewhere_in_group`] for why the group rather than the open
+/// conversation is what a look-ahead is asked about.
 ///
 /// # Panics
 ///
 /// If the save is not there, or a Conversation part will not parse.
-pub fn read_in_save(save: &str, conversation: i32) -> HashSet<i32> {
-    let mut displayed = HashSet::new();
+pub fn read_in_save_group(save: &str, conversations: &[i32]) -> HashSet<(i32, i32)> {
+    let mut displayed: HashSet<(i32, i32)> = HashSet::new();
 
     for folder in chain(save) {
         let Some(document) = part(&folder, "Conversation.json") else { continue };
-        let Some(runs) = changes(&document)
-            .and_then(|entries| entries.get(&conversation.to_string()))
-            .and_then(|entry| entry.get("Dialog"))
-            .and_then(|dialog| dialog.get("WasDisplayed"))
-            .and_then(|runs| runs.as_str())
-        else {
-            continue;
-        };
+        let Some(entries) = changes(&document) else { continue };
 
-        displayed = parse_runs(runs);
+        for conversation in conversations {
+            let Some(runs) = entries
+                .get(&conversation.to_string())
+                .and_then(|entry| entry.get("Dialog"))
+                .and_then(|dialog| dialog.get("WasDisplayed"))
+                .and_then(|runs| runs.as_str())
+            else {
+                continue;
+            };
+
+            // THE LAST FOLDER TO SAY ANYTHING WINS, per conversation, which is what a
+            // diff means: a later save replacing the list replaces it, and says nothing
+            // about the conversations it left alone.
+            displayed.retain(|(had, _)| had != conversation);
+            displayed.extend(parse_runs(runs).into_iter().map(|entry| (*conversation, entry)));
+        }
     }
 
     displayed

@@ -33,6 +33,12 @@
 /// shared scenario definition exists to prevent.
 pub mod fixtures;
 
+/// The shared scenario definition, typed for the tests that execute it.
+///
+/// Its own module for the same reason `fixtures` is: two test binaries read the same rows,
+/// and a second copy of the types is a second thing to keep agreeing with the file.
+pub mod suites;
+
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;

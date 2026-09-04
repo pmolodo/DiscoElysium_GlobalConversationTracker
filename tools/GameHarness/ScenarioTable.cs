@@ -112,6 +112,21 @@ namespace GlobalConversationTracker.Harness
         [JsonPropertyName("settings")]
         public Dictionary<string, string>? Settings { get; set; }
 
+        /// <summary>Why those settings, where it is not obvious. For a reader.</summary>
+        [JsonPropertyName("settingsWhy")]
+        public string SettingsWhy { get; set; } = string.Empty;
+
+        /// <summary>What only the offline executor can check.</summary>
+        /// <remarks>
+        /// THE MIRROR OF <see cref="InGame"/>, and read by nobody here. Some claims are
+        /// about every entry in a group rather than about the options a menu turned out to
+        /// offer, and only the executor that needs no menu can make them - so the suite
+        /// names one and <c>tests/scenario_suites.rs</c> runs it. Declared on this side so
+        /// that a reader of the definition, and this parser, both know the key is meant.
+        /// </remarks>
+        [JsonPropertyName("offline")]
+        public OfflineClaim? Offline { get; set; }
+
         /// <summary>The state budget to run at, or 0 for no such limit.</summary>
         /// <remarks>
         /// <para>What a suite starves a crawl with, so that a shape only an unfinished
@@ -193,6 +208,24 @@ namespace GlobalConversationTracker.Harness
         /// <summary>What the mod should, and should not, have logged.</summary>
         [JsonPropertyName("log")]
         public List<LogDefinition>? Log { get; set; }
+    }
+
+    /// <summary>A claim only a run without a game can make.</summary>
+    /// <remarks>
+    /// Under a key naming the executor, exactly as <see cref="InGameExtras"/> is. What
+    /// goes here is a claim about EVERY entry in a group - that no search worth running
+    /// exists anywhere in it - which the in-game run cannot make, because it can only see
+    /// the handful of options a menu composed.
+    /// </remarks>
+    public sealed class OfflineClaim
+    {
+        /// <summary>Which claim, by name; the offline executor knows the names.</summary>
+        [JsonPropertyName("claim")]
+        public string Claim { get; set; } = string.Empty;
+
+        /// <summary>Why it holds, and why it is worth asking that way.</summary>
+        [JsonPropertyName("why")]
+        public string Why { get; set; } = string.Empty;
     }
 
     /// <summary>A file the run should leave behind, and the predicate that reads it.</summary>

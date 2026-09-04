@@ -124,6 +124,136 @@
           ]
         }
       ]
+    },
+
+    {
+      "suite": "pristine",
+      "what": "an option that is itself unread anywhere is never marked, and never crawled",
+      "why": "The rule that gives the feature its shape: nothing outranks where such an option already leads, so a marker would say nothing. On a profile that has recorded nothing at all - a first playthrough - no option in the game is ever marked, which is a strong claim and worth holding to. And it is decided WITHOUT crawling: the engine answers from the option's own novelty and returns before it builds a state, so a first playthrough pays nothing at all for the feature. That is why the statistics artefact asserts no STATE was built rather than no crawl was asked for. The four conversations are named for their shapes rather than at random: the ceiling fan has no purchase in it, Klaasje's note is small and heavily gated, the smoker is mid-sized, and Garte is one of the largest in the game.",
+      "state": "global-state-empty.json",
+      "settings": { "KeepLookAheadStates": "true" },
+      "inGame": {
+        "artefacts": [
+          {
+            "file": "look-ahead-stats.json",
+            "what": "no crawl ran at all, because none could have said anything",
+            "check": "noCrawls"
+          }
+        ]
+      },
+      "offline": {
+        "claim": "unseenAnywhereIsNeverCrawled",
+        "why": "The suite's own claim, asked of every entry in the group rather than of the four an opened menu happened to offer - which is the stronger form and the one that needs no game. Restricted to the entries that are themselves unseen anywhere, because that is what the rule is about: these saves are real playthroughs, so an entry may be read in the SAVE while the global state is empty, and an option on the bottom rung can legitimately reach something that outranks it."
+      },
+      "scenarios": [
+        {
+          "save": "at-the-fan",
+          "conversation": 9,
+          "what": "the ceiling fan, in the player's own room, on a profile that has recorded nothing",
+          "advances": 0,
+          "markers": "noneAnywhere",
+          "branches": "everyCheck",
+          "pass": { "colour": "orange" },
+          "fail": { "colour": "orange" },
+          "branchesWhy": "nothing has been read anywhere, so both outcomes land on unread text and neither can reach anything that outranks it"
+        },
+        {
+          "save": "at-klaasjes-note",
+          "conversation": 717,
+          "what": "Klaasje's note, in her room, on a profile that has recorded nothing",
+          "advances": 1,
+          "markers": "noneAnywhere",
+          "branches": "everyCheck",
+          "pass": { "colour": "orange" },
+          "fail": { "colour": "orange" },
+          "branchesWhy": "nothing has been read anywhere, so both outcomes land on unread text and neither can reach anything that outranks it"
+        },
+        {
+          "save": "at-the-smoker",
+          "conversation": 892,
+          "what": "the smoker on the balcony, on a profile that has recorded nothing",
+          "advances": 0,
+          "markers": "noneAnywhere",
+          "branches": "everyCheck",
+          "pass": { "colour": "orange" },
+          "fail": { "colour": "orange" },
+          "branchesWhy": "nothing has been read anywhere, so both outcomes land on unread text and neither can reach anything that outranks it"
+        },
+        {
+          "save": "at-garte",
+          "conversation": 28,
+          "what": "Garte, behind the cafeteria counter, on a profile that has recorded nothing",
+          "advances": 1,
+          "markers": "noneAnywhere",
+          "branches": "everyCheck",
+          "pass": { "colour": "orange" },
+          "fail": { "colour": "orange" },
+          "branchesWhy": "nothing has been read anywhere, so both outcomes land on unread text and neither can reach anything that outranks it"
+        }
+      ]
+    },
+
+    {
+      "suite": "all-seen",
+      "what": "the biggest conversations cost nothing when every entry is already recorded",
+      "why": "This suite used to be called headroom and used to be a measurement: the staged global state records every entry of every conversation, which was once the most expensive shape a crawl could take, because no option's own novelty is unseen-anywhere - so the early exit did not fire - and nothing reachable is unseen-anywhere either, so a crawl could not stop the instant it found something and had to explore everything. The no-potential-improvement short-circuit ended that: when every entry is recorded, nothing can outrank the option being asked about, so no walk can produce a marker and the crawl is skipped before any state is built. The expensive shape is now the near-opposite - a group with one unseen node, or a handful - and is measured elsewhere. What these five conversations are for now is the strongest available statement of the cheap case: they are the largest in the game, so if a crawl were going to run anywhere it would run here, and the claim is that not one does.",
+      "_size": "The five are ranks two to six of the game's 1,501 conversations by entry count - 368, 14, 631, 28 and 1030, from 1,770 entries down to 1,476 - and tests/all_seen.rs holds them to that against the shipped index rather than taking it on trust. The largest, 362, is not among them. ENTRY COUNT IS NOT THE COST: the budget counts entry-and-state pairs, so what blows up is the state slots a conversation touches multiplied by its reachable entries, and the count turns out to be a poor proxy - 1030 is the sixth largest and its crawls peak at 201 states, a thousandth of Joyce's. It is still the only ordering available without running them.",
+      "state": "global-state-worst-case.json",
+      "settings": {
+        "KeepLookAheadStates": "true",
+        "LogLookAheadBudgetExceeded": "true"
+      },
+      "settingsWhy": "Kept on so that a crawl WOULD leave a trace. The claim is that the files say nothing happened; that means nothing unless the run was configured to write them.",
+      "inGame": {
+        "artefacts": [
+          {
+            "file": "look-ahead-stats.json",
+            "what": "no crawl ran, because nothing here can outrank any option",
+            "check": "noCrawls"
+          },
+          {
+            "file": "look-ahead-budget-overflows.log",
+            "what": "and so no crawl spent a budget either",
+            "check": "reportOverflows"
+          }
+        ]
+      },
+      "offline": {
+        "claim": "nothingIsWorthCrawling",
+        "why": "Every entry is recorded, so nothing outranks anything and no option in the group is worth a step. Asked of every entry rather than of the ones a menu offered, which is what makes it a claim about the algorithm rather than about five menus - and the reason this suite is not in the default in-game run."
+      },
+      "scenarios": [
+        {
+          "save": "at-noid",
+          "conversation": 368,
+          "what": "Noid, under the mural",
+          "markers": "ignored"
+        },
+        {
+          "save": "at-the-hanged-man",
+          "conversation": 14,
+          "what": "the hanged man, in the yard",
+          "markers": "ignored"
+        },
+        {
+          "save": "at-joyce",
+          "conversation": 631,
+          "what": "Joyce, on her sloop at the pier",
+          "markers": "ignored"
+        },
+        {
+          "save": "at-garte",
+          "conversation": 28,
+          "what": "Garte, behind the cafeteria counter",
+          "markers": "ignored"
+        },
+        {
+          "save": "at-the-doom-spiral",
+          "conversation": 1030,
+          "what": "the doom spiral, in the village",
+          "markers": "ignored"
+        }
+      ]
     }
   ]
 }

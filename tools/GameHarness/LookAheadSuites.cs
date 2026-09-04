@@ -185,10 +185,6 @@ namespace GlobalConversationTracker.Harness
         public static Somewhere CeilingFan { get; } =
             new Somewhere("at-the-fan", 9, "the ceiling fan, in the player's own room", 0);
 
-        /// <summary>Klaasje's room on the Whirling's second floor.</summary>
-        public static Somewhere KlaasjesNote { get; } =
-            new Somewhere("at-klaasjes-note", 717, "Klaasje's note, in her room", 1);
-
         /// <summary>The cafeteria on the Whirling's ground floor.</summary>
         public static Somewhere Garte { get; } =
             new Somewhere("at-garte", 28, "Garte, behind the cafeteria counter", 1);
@@ -223,15 +219,6 @@ namespace GlobalConversationTracker.Harness
         /// find something no save has read.
         /// </remarks>
         private const string MoneyState = "global-conversation-state.json";
-
-        /// <summary>Nothing recorded, so every option is itself unseen anywhere.</summary>
-        private const string EmptyState = "global-state-empty.json";
-
-        /// <summary>
-        /// Every entry of the biggest conversations recorded, which is the most
-        /// expensive shape a crawl can have.
-        /// </summary>
-        private const string WorstCaseState = "global-state-worst-case.json";
 
         /// <summary>Where PASSING the fan's check lands, and nothing else.</summary>
         /// <remarks>
@@ -294,21 +281,6 @@ namespace GlobalConversationTracker.Harness
         /// headroom the crawl needs.</para>
         /// </remarks>
         private const string FanBranchState = "global-state-fan-pass-recorded.json";
-
-        /// <summary>
-        /// The largest conversations that can be reached from a place the player can
-        /// stand, by entry count.
-        /// </summary>
-        /// <remarks>
-        /// Entry count is not the cost - the budget counts (entry, state) pairs, so what
-        /// blows up is the state slots a conversation touches multiplied by its reachable
-        /// entries - and it turns out to be a poor proxy: 1030 is the sixth largest
-        /// conversation in the game and its crawls peak at 201 states, a thousandth of
-        /// Joyce's. It is still the only ordering available without running them, and it
-        /// is what these six are: the six largest of the game's 1,501 conversations.
-        /// </remarks>
-        public static IReadOnlyList<Somewhere> BiggestConversations =>
-            new[] { Noid, HangedMan, Joyce, Garte, DoomSpiral };
 
         /// <summary>Every suite that exists, in the order a full run would do them.</summary>
         /// <remarks>
@@ -556,78 +528,13 @@ namespace GlobalConversationTracker.Harness
         /// An option that is itself unread anywhere is never marked, and never crawled.
         /// </summary>
         /// <remarks>
-        /// <para>The rule that gives the feature its shape: nothing outranks where such
-        /// an option already leads, so a marker would say nothing. On a profile that has
-        /// recorded nothing at all - a first playthrough - no option in the game is ever
-        /// marked, which is a strong claim and worth holding to.</para>
-        ///
-        /// <para>And it is decided WITHOUT crawling. MarkerFor answers from the option's
-        /// own novelty and returns before it builds a graph, so a first playthrough pays
-        /// nothing at all for the feature. That is why this suite asserts the statistics
-        /// record no crawl rather than crawls that found nothing - the difference between
-        /// the two is the whole of the optimisation.</para>
+        /// DEFINED IN <c>testing/scenarios/suites.json</c>, which is also what
+        /// <c>tests/scenario_suites.rs</c> runs. The four conversations, why each was
+        /// picked, and why the statistics artefact asserts no STATE rather than no crawl
+        /// are stated there.
         /// </remarks>
-        public static LookAheadSuite Pristine { get; } = new LookAheadSuite(
-            "pristine",
-            "an option that is itself unread anywhere is never marked, and never crawled",
-            EmptyState,
-            PristineScenarios,
-            pluginSettings: KeepStatistics,
-            artefacts: new[]
-            {
-                new SuiteArtefact(
-                    "look-ahead-stats.json",
-                    "no crawl ran at all, because none could have said anything",
-                    NoCrawls),
-            });
+        public static LookAheadSuite Pristine => FromDefinition("pristine");
 
-        /// <summary>
-        /// The same fresh profile, put to several conversations of different shapes.
-        /// </summary>
-        /// <remarks>
-        /// The claim is about the whole game rather than one stall, so it is worth asking
-        /// it of more than one conversation - and this is the suite that can, since it
-        /// needs no global state and no save of its own. The probe opens any conversation
-        /// by id wherever the player is standing, so five cost one launch and about five
-        /// seconds each.
-        ///
-        /// Named for their shapes rather than at random: the ceiling fan has no purchase
-        /// in it, Klaasje's note is small and heavily gated, the smoker is mid-sized, and
-        /// Garte is one of the largest conversations in the game.
-        /// </remarks>
-        private static LookAheadScenario[] PristineScenarios =>
-            new[] { CeilingFan, KlaasjesNote, Smoker, Garte }
-                .Select(Nothing)
-                .ToArray();
-
-        /// <summary>A scenario that says nothing in the menu should be marked.</summary>
-        /// <remarks>
-        /// It says something about the Pass / Fail lines all the same, and can, because
-        /// the claim is a rule rather than a list: on a profile that has recorded nothing,
-        /// every outcome of every check lands on text no save has read, so both words are
-        /// orange - and nothing can outrank the top rung, so neither carries an asterisk.
-        /// Every option that rolls nothing gets no line at all, which is the half that
-        /// catches a line invented for an option with one outcome.
-        ///
-        /// A FAILURE HERE IS WORTH READING BEFORE IT IS BELIEVED. These saves are real
-        /// playthroughs, so an entry may be read in the SAVE while the global state is
-        /// empty; a check whose outcome lands on one of those would draw that word dark
-        /// red, correctly. The run prints every line it read, so the log says which.
-        /// </remarks>
-        private static LookAheadScenario Nothing(Somewhere where) =>
-            new LookAheadScenario(
-                where.Save,
-                where.Conversation,
-                $"{where.What}, on a profile that has recorded nothing",
-                Array.Empty<OptionExpectation>(),
-                markers: MarkerPolicy.NoneAnywhere,
-                advances: where.Advances,
-                branchPolicy: BranchPolicy.EveryCheck,
-                branches: new BranchExpectation(
-                    new BranchHalf(BranchColour.Orange),
-                    new BranchHalf(BranchColour.Orange),
-                    "nothing has been read anywhere, so both outcomes land on unread text "
-                        + "and neither can reach anything that outranks it"));
 
     /// <summary>
     /// Checks that nothing was actually searched.
@@ -685,55 +592,12 @@ namespace GlobalConversationTracker.Harness
         /// nothing at all.
         /// </summary>
         /// <remarks>
-        /// <para>This suite used to be called "headroom" and used to be a measurement:
-        /// the staged global state records every entry of every conversation, which was
-        /// once the most expensive shape a crawl could take, because no option's own
-        /// novelty is unseen-anywhere - so the early exit in MarkerFor did not fire - and
-        /// nothing reachable is unseen-anywhere either, so a crawl could not stop the
-        /// instant it found something and had to explore everything.</para>
-        ///
-        /// <para>The no-potential-improvement short-circuit ended that. When every entry
-        /// is recorded, nothing can outrank the option that is being asked about, so no
-        /// walk can produce a marker and the crawl is skipped before any state is built.
-        /// The expensive shape is now the near-opposite - a group with one unseen node,
-        /// or a handful - and that is measured elsewhere.</para>
-        ///
-        /// <para>So what these five conversations are for now is the strongest available
-        /// statement of the cheap case. They are the largest in the game, so if a crawl
-        /// were going to run anywhere it would run here, and the claim is that not one
-        /// does. That is why the biggest conversations are still the right scenarios for
-        /// it even though nothing is being timed.</para>
+        /// DEFINED IN <c>testing/scenarios/suites.json</c>, which is also what
+        /// <c>tests/scenario_suites.rs</c> runs. What this suite used to measure, why the
+        /// short-circuit ended that, and why the five biggest conversations are still the
+        /// right scenarios for the claim are stated there.
         /// </remarks>
-        public static LookAheadSuite AllSeen { get; } = new LookAheadSuite(
-            "all-seen",
-            "the biggest conversations cost nothing when every entry is already recorded",
-            WorstCaseState,
-            BiggestConversations
-                .Select(where => new LookAheadScenario(
-                    where.Save,
-                    where.Conversation,
-                    where.What,
-                    Array.Empty<OptionExpectation>(),
-                    markers: MarkerPolicy.Ignored))
-                .ToArray(),
-            pluginSettings: new Dictionary<string, string>
-            {
-                // Kept on so that a crawl WOULD leave a trace. The claim is that the file
-                // is absent; that means nothing unless the run was configured to write it.
-                ["KeepLookAheadStates"] = "true",
-                ["LogLookAheadBudgetExceeded"] = "true",
-            },
-            artefacts: new[]
-            {
-                new SuiteArtefact(
-                    "look-ahead-stats.json",
-                    "no crawl ran, because nothing here can outrank any option",
-                    NoCrawls),
-                new SuiteArtefact(
-                    "look-ahead-budget-overflows.log",
-                    "and so no crawl spent a budget either",
-                    ReportOverflows),
-            });
+        public static LookAheadSuite AllSeen => FromDefinition("all-seen");
 
     /// <summary>
     /// Prints what the crawls cost, and checks the figures account for themselves.
@@ -1123,13 +987,6 @@ namespace GlobalConversationTracker.Harness
                         : null))
                 .ToArray();
         }
-
-        /// <summary>Asking the mod to keep the statistics a suite reads back.</summary>
-        private static Dictionary<string, string> KeepStatistics =>
-            new Dictionary<string, string> { ["KeepLookAheadStates"] = "true" };
-
-        private static OptionExpectation Orange(int entryId, string why) =>
-            new OptionExpectation(entryId, Marker.Orange, why);
 
         private static OptionExpectation Unmarked(int entryId, string why) =>
             new OptionExpectation(entryId, Marker.None, why);

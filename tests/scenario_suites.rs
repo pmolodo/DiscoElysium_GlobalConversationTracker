@@ -5,9 +5,9 @@
 //!
 //! NOT a second set of examples that happen to cover the same rules. The suites come from
 //! `testing/scenarios/suites.json`, and each scenario names the SAME fixture the in-game
-//! run stages - the same global state file, the same save's read entries, the same
-//! balance, the same conversation - so this runs the scenario rather than something like
-//! it. `tools/GameHarness` builds its runs from the same file, so a scenario cannot
+//! run stages - the same global state file, the same save's read entries and variables, the
+//! same balance, the same conversation - so this runs the scenario rather than something
+//! like it. `tools/GameHarness` builds its runs from the same file, so a scenario cannot
 //! describe a run that is not happening.
 //!
 //! `branch_shapes.rs` is the same argument for a check's two outcomes, over the table that
@@ -26,76 +26,41 @@
 //! - A best ABOVE it draws the colour of what was found. That is definite even under a
 //!   budget, because a witness is a witness.
 //!
+//! ## The two things it checks, and why they are different
+//!
+//! MARKERS, for the scenarios that name options. Those are claims about a menu, and this
+//! checks the options a row names.
+//!
+//! CLAIMS, for the suites whose subject is a rule rather than a menu. Those are asked of
+//! every entry in the conversation's group, which no in-game run can do - it only ever sees
+//! what a menu composed - and which is the stronger form of what the suite is for.
+//!
 //! ## What the in-game run still earns, and this cannot
 //!
 //! That the Harmony patch is installed, that a real response menu was composed, and that
 //! the marker reached the text the game drew. It also earns the NEGATIVE half of a `named`
-//! policy - that no OTHER option in the menu is marked - because only the game can say
-//! what else the menu offered. This checks the options a scenario names and says so.
+//! policy - that no OTHER option in the menu is marked - because only the game can say what
+//! else the menu offered. This checks the options a scenario names and says so.
 
 use std::collections::HashSet;
 
 use lookahead_engine::bridge::{answer, LookAheadAnswer, LookAheadRequest, NodeRef, WorldSnapshot};
+use lookahead_engine::core::types::{DialogueNodeId, Novelty};
+use lookahead_engine::engine::engine::LookAheadEngine;
 use lookahead_engine::index::{build_group_graph, read_index};
-use serde::Deserialize;
 
 mod common;
 
 use common::fixtures;
-
-/// The definition both sides read.
-const TABLE: &str = "testing/scenarios/suites.json";
+use common::suites::{self, Scenario, Suite, TABLE};
 
 /// The clock every scenario that does not name one runs at: midday, day one.
 ///
 /// The same default `branch_shapes.rs` uses, and it has to be A default rather than
 /// nothing: a guard comparing the time answers differently at midnight, so leaving it at
-/// zero would be choosing an hour rather than declining to. A scenario whose answer
-/// depends on the clock names its own.
+/// zero would be choosing an hour rather than declining to. A scenario whose answer depends
+/// on the clock names its own.
 const NOON: i32 = 720;
-
-#[derive(Debug, Deserialize)]
-struct Table {
-    suites: Vec<Suite>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Suite {
-    suite: String,
-    state: String,
-    /// The state budget to run at, or 0 for no such limit. Suite-wide, as it is in game.
-    #[serde(default, rename = "stateBudget")]
-    state_budget: usize,
-    scenarios: Vec<Scenario>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Scenario {
-    save: String,
-    conversation: i32,
-    what: String,
-    #[serde(default)]
-    money: Option<i32>,
-    #[serde(default, rename = "dayMinutes")]
-    day_minutes: Option<i32>,
-    /// How much the scenario claims about the markers: named, noneAnywhere or ignored.
-    #[serde(default = "named")]
-    markers: String,
-    #[serde(default)]
-    options: Vec<Option_>,
-}
-
-fn named() -> String {
-    "named".to_string()
-}
-
-/// What one option must carry. `Option_` because `Option` is taken and this is a row.
-#[derive(Debug, Deserialize)]
-struct Option_ {
-    entry: i32,
-    marker: String,
-    why: String,
-}
 
 /// The three rungs as the engine numbers them.
 const SEEN_THIS_GAME: i32 = 0;
@@ -121,12 +86,109 @@ fn drawn(own: i32, answer: &LookAheadAnswer) -> &'static str {
     }
 }
 
-fn table() -> Table {
-    let path = common::repo_root().join(TABLE);
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("{} does not read: {error}", path.display()));
-    serde_json::from_str(&text)
-        .unwrap_or_else(|error| panic!("{} is not a scenario table: {error}", path.display()))
+/// One scenario's world, staged from the same two files the in-game run loads.
+struct Staged {
+    /// The group's graph, and every conversation in it.
+    graph: lookahead_engine::graph::graph::LookAheadGraph,
+    /// What some other save has read, per the suite's global state fixture.
+    recorded: HashSet<(i32, i32)>,
+    /// What this save has read, per the save itself.
+    read_here: HashSet<(i32, i32)>,
+    /// The request, with no starts on it yet.
+    request: LookAheadRequest,
+}
+
+impl Staged {
+    /// Which rung an entry sits on, by the same order the plugin applies.
+    ///
+    /// READ HERE WINS. An entry recorded in the global state AND read in this save is on
+    /// the bottom rung, not the middle one - the state records what some save has
+    /// displayed, and this save is one of them.
+    fn novelty_of(&self, node: NodeRef) -> i32 {
+        let key = (node.conversation, node.entry);
+        if self.read_here.contains(&key) {
+            SEEN_THIS_GAME
+        } else if self.recorded.contains(&key) {
+            UNSEEN_THIS_GAME
+        } else {
+            UNSEEN_ANY_GAME
+        }
+    }
+
+    /// The same, as the engine spells it.
+    fn novelty(&self, id: DialogueNodeId) -> Novelty {
+        match self.novelty_of(NodeRef::from(id)) {
+            UNSEEN_ANY_GAME => Novelty::UnseenAnyGame,
+            UNSEEN_THIS_GAME => Novelty::UnseenThisGame,
+            _ => Novelty::SeenThisGame,
+        }
+    }
+
+    /// The request, asking about these starts.
+    fn asking(&self, starts: Vec<NodeRef>) -> LookAheadRequest {
+        LookAheadRequest { starts, ..self.request.clone() }
+    }
+}
+
+/// Stages one scenario.
+///
+/// The whole of what "the same fixture" means, in one place: the recorded entries from the
+/// staged global state, the displayed entries and the dialogue variables from the save, and
+/// the balance and clock the row names.
+///
+/// OVER THE WHOLE GROUP, not the one conversation the scenario opens. The engine loads
+/// everything reachable from it, so every entry it might walk to has to be classified - see
+/// `fixtures::recorded_elsewhere_in_group`, which is where the mistake this cost is written
+/// down.
+fn stage(
+    index: &lookahead_engine::index::Index,
+    suite: &Suite,
+    scenario: &Scenario,
+) -> Option<Staged> {
+    let conversation = scenario.conversation;
+    let (graph, group) = build_group_graph(index, conversation).ok()?;
+
+    let recorded = fixtures::recorded_elsewhere_in_group(&suite.state, &group);
+    let read_here = fixtures::read_in_save_group(&scenario.save, &group);
+
+    let mut staged = Staged {
+        graph,
+        recorded,
+        read_here,
+        request: LookAheadRequest {
+            conversation,
+            state_budget: suite.state_budget,
+            world: WorldSnapshot {
+                money: scenario.money.unwrap_or_default(),
+                day_minutes: scenario.day_minutes.unwrap_or(NOON),
+                day_counter: 1,
+                // FROM THE SAVE, and the difference between a run and no run. An ordinary
+                // option is often guarded on a dialogue variable - 451:86 is guarded on
+                // whether Siileng has the sneakers to sell - and a world that cannot answer
+                // stops the crawl before it builds a state, so the option draws nothing
+                // where the game draws a marker.
+                variables: fixtures::variables_in_save(&scenario.save),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    };
+
+    // The three rungs, exactly as the plugin builds them.
+    let everything: Vec<NodeRef> =
+        staged.graph.nodes().map(|node| NodeRef::from(node.id)).collect();
+    staged.request.unseen_any_game = everything
+        .iter()
+        .copied()
+        .filter(|node| staged.novelty_of(*node) == UNSEEN_ANY_GAME)
+        .collect();
+    staged.request.unseen_this_game = everything
+        .iter()
+        .copied()
+        .filter(|node| staged.novelty_of(*node) == UNSEEN_THIS_GAME)
+        .collect();
+
+    Some(staged)
 }
 
 #[test]
@@ -137,7 +199,7 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
     };
     let index = read_index(&path).expect("the shipped index reads");
 
-    let table = table();
+    let table = suites::table();
     let mut failures: Vec<String> = Vec::new();
     let mut checked = 0usize;
 
@@ -145,60 +207,28 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
         for scenario in &suite.scenarios {
             // NOTHING TO ASK OFFLINE. Both of the other policies are claims about the
             // options a scenario did NOT name - that nothing else in the menu is marked -
-            // and only a composed menu knows what else there was.
+            // and only a composed menu knows what else there was. What those suites are
+            // really for is checked by their offline claim instead.
             if scenario.markers != "named" {
                 continue;
             }
 
             let conversation = scenario.conversation;
-            let recorded = fixtures::recorded_elsewhere(&suite.state, conversation);
-            let read_here = fixtures::read_in_save(&scenario.save, conversation);
-
-            let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            let Some(staged) = stage(&index, suite, scenario) else {
                 failures.push(format!(
                     "{}/{}: conversation {conversation}'s group does not build",
                     suite.suite, scenario.save,
                 ));
                 continue;
             };
-            let everything: Vec<NodeRef> =
-                graph.nodes().map(|node| NodeRef::from(node.id)).collect();
 
-            // The three rungs, exactly as the plugin builds them: read in THIS save wins,
-            // then recorded in some other save, then never seen anywhere.
-            let request = LookAheadRequest {
-                conversation,
-                starts: scenario
+            let request = staged.asking(
+                scenario
                     .options
                     .iter()
                     .map(|option| NodeRef { conversation, entry: option.entry })
                     .collect(),
-                unseen_any_game: everything
-                    .iter()
-                    .copied()
-                    .filter(|n| !recorded.contains(&n.entry) && !read_here.contains(&n.entry))
-                    .collect(),
-                unseen_this_game: recorded
-                    .iter()
-                    .filter(|entry| !read_here.contains(entry))
-                    .map(|entry| NodeRef { conversation, entry: *entry })
-                    .collect(),
-                state_budget: suite.state_budget,
-                world: WorldSnapshot {
-                    money: scenario.money.unwrap_or_default(),
-                    day_minutes: scenario.day_minutes.unwrap_or(NOON),
-                    day_counter: 1,
-                    // FROM THE SAVE, and the difference between a run and no run. An
-                    // ordinary option is often guarded on a dialogue variable - 451:86 is
-                    // guarded on whether Siileng has the sneakers to sell - and a world
-                    // that cannot answer stops the crawl before it builds a state, so the
-                    // option draws nothing where the game draws a marker.
-                    variables: fixtures::variables_in_save(&scenario.save),
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-
+            );
             let response = answer(&index, None, &request);
             assert!(
                 response.error.is_none(),
@@ -223,7 +253,7 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
                     continue;
                 };
 
-                let own = novelty_of(option.entry, &recorded, &read_here);
+                let own = staged.novelty_of(NodeRef { conversation, entry: option.entry });
                 let got = drawn(own, reply);
                 checked += 1;
 
@@ -254,30 +284,186 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
     eprintln!("{checked} markers reached offline");
 }
 
-/// Which rung an entry sits on, by the same order the plugin applies.
+/// The claims a suite makes about every entry in a group, rather than about a menu.
 ///
-/// READ HERE WINS. An entry recorded in the global state AND read in this save is on the
-/// bottom rung, not the middle one - the state records what some save has displayed, and
-/// this save is one of them.
-fn novelty_of(entry: i32, recorded: &HashSet<i32>, read_here: &HashSet<i32>) -> i32 {
-    if read_here.contains(&entry) {
-        SEEN_THIS_GAME
-    } else if recorded.contains(&entry) {
-        UNSEEN_THIS_GAME
-    } else {
-        UNSEEN_ANY_GAME
+/// ## Why these are not marker rows
+///
+/// A row can only name options somebody knows are in the menu, and pristine and all-seen
+/// are not about a menu at all - they are about a rule holding everywhere. The in-game run
+/// states them as "nothing anywhere in this menu is marked", which is as much as it can
+/// see; here the whole conversation is in hand, so the same claim can be put to every entry
+/// of it. That is the stronger reading, and it is the one the suites were written for.
+///
+/// ## Why this asks the prefilter and not the bridge
+///
+/// Both claims are that NO SEARCH IS WORTH RUNNING, and that is one question, asked in one
+/// place: `reaches_potential_improvement`, which the bridge puts to every option and to
+/// each outcome of every check. Asking it directly is the claim.
+///
+/// Putting all 1,770 entries of Joyce's group through `answer` instead was tried and
+/// abandoned - it did not finish in twenty minutes. THE REASON IS WORTH KEEPING: a rolled
+/// check reports its two outcomes even when the option itself is refused, and an outcome
+/// that lands on an entry THIS SAVE HAS READ has the bottom rung as its baseline, from
+/// where an unseen-this-game entry does outrank it. So the branch crawls run, in their
+/// hundreds, over the largest conversations in the game. Those crawls are correct and are
+/// not what these suites are about.
+#[test]
+fn every_offline_claim_holds_over_the_whole_group() {
+    let Some(path) = common::shipped_index() else {
+        eprintln!("no shipped index; skipping.");
+        return;
+    };
+    let index = read_index(&path).expect("the shipped index reads");
+
+    let table = suites::table();
+    let mut failures: Vec<String> = Vec::new();
+    let mut asked = 0usize;
+
+    for suite in &table.suites {
+        let Some(claim) = &suite.offline else { continue };
+
+        let known = ["nothingIsWorthCrawling", "unseenAnywhereIsNeverCrawled"];
+        if !known.contains(&claim.claim.as_str()) {
+            failures.push(format!(
+                "{}: '{}' is not a claim; the ones there are {}",
+                suite.suite,
+                claim.claim,
+                known.join(" and "),
+            ));
+            continue;
+        }
+
+        for scenario in &suite.scenarios {
+            let conversation = scenario.conversation;
+            let Some(staged) = stage(&index, suite, scenario) else {
+                failures.push(format!(
+                    "{}/{}: conversation {conversation}'s group does not build",
+                    suite.suite, scenario.save,
+                ));
+                continue;
+            };
+
+            // Which entries the claim is about, and it is not the same set.
+            //
+            // all-seen records every entry, so nothing outranks anything ANYWHERE and the
+            // claim covers the group. pristine records nothing, so it holds only of the
+            // entries that are themselves unseen anywhere - these saves are real
+            // playthroughs, and an entry read in the SAVE sits on the bottom rung, from
+            // where something can legitimately outrank it.
+            let about: Vec<NodeRef> = staged
+                .graph
+                .nodes()
+                // A group is expanded in place and never scored, so it is not an option.
+                .filter(|node| !node.is_group)
+                .map(|node| NodeRef::from(node.id))
+                .filter(|node| {
+                    claim.claim == "nothingIsWorthCrawling"
+                        || staged.novelty_of(*node) == UNSEEN_ANY_GAME
+                })
+                .collect();
+
+            let examined = about.len();
+            asked += examined;
+
+            if examined == 0 {
+                failures.push(format!(
+                    "{}/{} ({}): the claim covers no entry of conversation {conversation}, \
+                     so it says nothing",
+                    suite.suite, scenario.save, claim.claim,
+                ));
+                continue;
+            }
+
+            let refused = match claim.claim.as_str() {
+                // THROUGH THE BRIDGE, because the claim is about what the mod DRAWS as
+                // well as about what it spends, and because deciding it from the option's
+                // own novelty here would be restating the rule rather than testing it.
+                // Affordable at this size: an empty global state puts nearly every entry
+                // on the top rung, so the searches that would be expensive are the ones
+                // being refused.
+                "unseenAnywhereIsNeverCrawled" => {
+                    let response = answer(&index, None, &staged.asking(about.clone()));
+                    assert!(
+                        response.error.is_none(),
+                        "{}/{}: {:?}",
+                        suite.suite,
+                        scenario.save,
+                        response.error,
+                    );
+
+                    response
+                        .answers
+                        .iter()
+                        .filter(|reply| {
+                            reply.states_explored > 0
+                                || drawn(staged.novelty_of(reply.start), reply) != "none"
+                        })
+                        .map(|reply| {
+                            format!(
+                                "{}:{} drew {} over {} states",
+                                reply.start.conversation,
+                                reply.start.entry,
+                                drawn(staged.novelty_of(reply.start), reply),
+                                reply.states_explored,
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                }
+
+                // THROUGH THE PREFILTER, which is the one place a search is refused, for
+                // an option and for each outcome of a check alike. The bridge was tried
+                // here and did not finish in twenty minutes, and the reason is worth
+                // keeping: a rolled check reports its two outcomes even when the option is
+                // refused, and an outcome landing on an entry THIS SAVE HAS READ has the
+                // bottom rung as its baseline, from where an unseen-this-game entry does
+                // outrank it - so the branch crawls run, in their hundreds, over the
+                // largest conversations in the game. Those crawls are correct and are not
+                // what this suite is about.
+                _ => about
+                    .iter()
+                    .filter(|node| {
+                        let id = DialogueNodeId::from(**node);
+                        let own = staged.novelty(id);
+                        own < Novelty::UnseenAnyGame
+                            && LookAheadEngine::reaches_potential_improvement(
+                                &staged.graph,
+                                id,
+                                own,
+                                |id| staged.novelty(id),
+                            )
+                    })
+                    .map(|node| format!("{}:{} is still worth a crawl", node.conversation, node.entry))
+                    .collect::<Vec<_>>(),
+            };
+
+            if !refused.is_empty() {
+                failures.push(format!(
+                    "{}/{} ({}): {} of {examined} entries should have been refused and \
+                     were not: {}",
+                    suite.suite,
+                    scenario.save,
+                    claim.claim,
+                    refused.len(),
+                    refused.iter().take(10).cloned().collect::<Vec<_>>().join(", "),
+                ));
+            }
+        }
     }
+
+    assert!(failures.is_empty(), "\n{}", failures.join("\n"));
+    assert!(asked > 0, "{TABLE} makes no offline claim, so this checked nothing");
+    eprintln!("{asked} entries refused a crawl, as claimed");
 }
 
-/// The definition names a marker the mod can draw, and an option the conversation has.
+/// The definition names a marker the mod can draw, and says something in every suite.
 ///
-/// Worth asking separately, and cheaply: the test above only checks the rows that are
-/// there, so a row that named a marker nobody draws - or an entry that is not in the
-/// conversation at all - would be a fixture describing a menu the game will not compose,
+/// Worth asking separately, and cheaply: the tests above only check the rows that are
+/// there, so a row naming a marker nobody draws - or a suite that claims its markers are
+/// named and names none - would be a fixture describing a menu the game will not compose,
 /// and it would fail with a message about the engine rather than about the row.
 #[test]
 fn the_definition_names_markers_that_can_be_drawn() {
-    let table = table();
+    let table = suites::table();
     let allowed = ["none", "orange", "red", "gaveUp"];
     let mut wrong: Vec<String> = Vec::new();
 
@@ -287,6 +473,21 @@ fn the_definition_names_markers_that_can_be_drawn() {
             "{} names no scenario, so it would run and claim nothing",
             suite.suite,
         );
+
+        // A SUITE HAS TO CLAIM SOMETHING SOMEWHERE. One whose every scenario waives its
+        // markers and which names no offline claim would run, cost a launch, and assert
+        // nothing an offline reader can see - which is how a suite quietly stops testing.
+        let names_options = suite
+            .scenarios
+            .iter()
+            .any(|scenario| scenario.markers == "named");
+        if !names_options && suite.offline.is_none() {
+            wrong.push(format!(
+                "{}: no scenario names an option and there is no offline claim, so nothing \
+                 here is checked without a game",
+                suite.suite,
+            ));
+        }
 
         for scenario in &suite.scenarios {
             if scenario.markers == "named" && scenario.options.is_empty() {

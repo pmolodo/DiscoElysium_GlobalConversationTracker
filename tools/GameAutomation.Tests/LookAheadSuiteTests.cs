@@ -178,17 +178,27 @@ namespace GlobalConversationTracker.Automation.Tests
         }
 
         /// <summary>
-        /// It keeps the biggest conversations, because "not even here" is a stronger
-        /// statement of the cheap case than "not in some small conversation".
+        /// It puts the claim to five different conversations, and asks the mod to leave a
+        /// trace so that "nothing happened" means something.
         /// </summary>
+        /// <remarks>
+        /// IT NO LONGER CHECKS WHICH FIVE, and that is not a gap. They used to be listed
+        /// in C# beside the suite that used them, so a test comparing the two was
+        /// comparing a definition with a copy of itself; the list now lives once, in
+        /// <c>testing/scenarios/suites.json</c>. The claim those five were chosen for -
+        /// that they are the largest conversations in the game, so a crawl would run here
+        /// if it ran anywhere - is checked in <c>tests/all_seen.rs</c> against the shipped
+        /// index, which is the only place it can be checked rather than restated.
+        /// </remarks>
         [Fact]
-        public void AllSeenStillUsesTheBiggestConversations()
+        public void AllSeenAsksSeveralConversationsAndKeepsTheStatistics()
         {
             LookAheadSuite suite = LookAheadSuites.AllSeen;
 
+            Assert.Equal(5, suite.Scenarios.Count);
             Assert.Equal(
-                LookAheadSuites.BiggestConversations.Select(where => where.Conversation),
-                suite.Scenarios.Select(scenario => scenario.ConversationId));
+                suite.Scenarios.Count,
+                suite.Scenarios.Select(scenario => scenario.ConversationId).Distinct().Count());
             Assert.Equal("true", suite.PluginSettings["KeepLookAheadStates"]);
         }
 

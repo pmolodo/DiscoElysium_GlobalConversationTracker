@@ -1,21 +1,30 @@
 // SPDX-License-Identifier: MIT
-//! When every entry is already recorded, is any option worth crawling?
+//! The two things about the all-seen suite that the shared executor cannot say.
 //!
-//! It should not be, and the claim is about the ALGORITHM rather than about the game, so
-//! it does not need one. An in-game run of the same claim costs a launch, five save loads
-//! and several minutes of driving the response screen; this costs the time to read the
-//! index.
+//! ## What moved out of here
 //!
-//! ## Where this came from
+//! This file used to hold the all-seen claim itself - that no option is worth crawling once
+//! every entry is recorded - and its own list of five conversations to ask it of. Both are
+//! gone. The claim is now `nothingIsWorthCrawling` in `testing/scenarios/suites.json` and
+//! is run by `scenario_suites.rs`, over the same rows `tools/GameHarness` builds the
+//! in-game suite from; the list is the suite's scenarios.
 //!
-//! Ported from the C# `AllSeenOfflineTests`, which asked it of the C# engine through
-//! `tools/LookAheadOffline`. Both are being retired with the C# look-ahead - see de-i5xj -
-//! and the claim is worth keeping, so it moves here rather than going with them.
+//! That is the point of the shared definition, and this file was the clearest case of what
+//! it is for: an offline test written separately from the run it stood in for, agreeing
+//! with it only for as long as whoever edited one remembered the other.
 //!
-//! ## What the in-game suite still earns, and this cannot
+//! ## What is left, and why it is here
 //!
-//! That the Harmony patch is wired up at all, that a real response menu is composed, and
-//! that the marker reaches the text the game draws. Those need the game and stay there.
+//! Two claims that are about these particular conversations rather than about a fixture:
+//!
+//! - THE FIVE ARE THE BIGGEST, which is the whole reason they were chosen - "not even here"
+//!   is a stronger statement of the cheap case than "not in some small conversation". It
+//!   can only be checked against the index, so it could not live in C# beside the suite,
+//!   where it used to be a comment.
+//! - THE WHOLE ENGINE AGREES WITH THE PREFILTER. `scenario_suites.rs` asks
+//!   `reaches_potential_improvement`, which is a prefilter and could refuse for the wrong
+//!   reason; `evaluate` is what the plugin's marker actually comes from. If the two ever
+//!   disagree, the prefilter is either wrong or pointless.
 
 use lookahead_engine::core::types::{DialogueNodeId, Novelty};
 use lookahead_engine::engine::engine::LookAheadEngine;
@@ -23,64 +32,75 @@ use lookahead_engine::index::{build_group_graph, read_index};
 
 mod common;
 
-/// The conversations the in-game all-seen suite opens.
-const BIGGEST: [i32; 5] = [368, 14, 631, 28, 1030];
+use common::suites;
+
+/// The suite whose rows these claims are about.
+const SUITE: &str = "all-seen";
+
+/// How far down the game's conversations, by entry count, the suite is allowed to reach.
+///
+/// SIX, and measured rather than chosen: the five are ranks two to six of 1,501, from
+/// 1,770 entries down to 1,476. The largest, 362, is not among them. A bound rather than an
+/// exact list because the exact list is the definition's job and repeating it here would be
+/// the drift this file exists to have removed - what is worth holding is that nobody has
+/// quietly swapped in a small conversation, which is what would make the claim weak without
+/// making it fail.
+const BIGGEST: usize = 6;
 
 #[test]
-fn no_option_is_worth_crawling_when_every_entry_is_recorded() {
+fn the_suite_still_asks_the_biggest_conversations() {
     let Some(path) = common::conversation_index() else { return };
     let index = read_index(&path).expect("the index reads");
 
-    let mut options = 0;
-    let mut crawlable: Vec<DialogueNodeId> = Vec::new();
+    let mut sizes: Vec<(i32, usize)> = index
+        .iter()
+        .map(|(id, conversation)| (*id, conversation.entries.len()))
+        .collect();
+    sizes.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
 
-    for conversation in BIGGEST {
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+    let biggest: Vec<i32> = sizes.iter().take(BIGGEST).map(|(id, _)| *id).collect();
+    println!(
+        "the {BIGGEST} biggest: {:?}",
+        sizes.iter().take(BIGGEST).collect::<Vec<_>>()
+    );
 
-        for node in graph.nodes() {
-            // A group is expanded in place and never scored, so it is not an option.
-            if node.is_group {
-                continue;
-            }
+    let table = suites::table();
+    let suite = table.suite(SUITE);
 
-            options += 1;
+    let small: Vec<String> = suite
+        .scenarios
+        .iter()
+        .filter(|scenario| !biggest.contains(&scenario.conversation))
+        .map(|scenario| {
+            let rank = sizes
+                .iter()
+                .position(|(id, _)| *id == scenario.conversation)
+                .map(|at: usize| (at + 1).to_string())
+                .unwrap_or_else(|| "not in the index".to_string());
+            format!("{} ({}) is rank {rank}", scenario.conversation, scenario.save)
+        })
+        .collect();
 
-            // Everything seen, which is what makes this the all-seen claim: nothing
-            // outranks anything, so nothing is worth walking towards.
-            if LookAheadEngine::reaches_potential_improvement(
-                &graph,
-                node.id,
-                Novelty::SeenThisGame,
-                |_| Novelty::SeenThisGame,
-            ) {
-                crawlable.push(node.id);
-            }
-        }
-    }
-
-    println!("{options} options across {} conversations", BIGGEST.len());
-
-    assert!(options > 0, "no options were examined; the index may be empty");
     assert!(
-        crawlable.is_empty(),
-        "{} options would still be crawled with everything seen: {:?}",
-        crawlable.len(),
-        crawlable.iter().take(10).collect::<Vec<_>>(),
+        small.is_empty(),
+        "{SUITE} is meant to ask the biggest conversations in the game, and {}",
+        small.join(", "),
     );
 }
 
 /// And the whole engine agrees, not just the short-circuit in front of it.
-///
-/// Worth asking separately. `reaches_potential_improvement` is a prefilter and could
-/// refuse for the wrong reason; `evaluate` is what the plugin's marker comes from. If the
-/// two ever disagree the prefilter is either wrong or pointless.
 #[test]
 fn the_engine_finds_nothing_either() {
     let Some(path) = common::conversation_index() else { return };
     let index = read_index(&path).expect("the index reads");
     let world = common::measurement_save();
 
-    for conversation in BIGGEST {
+    let table = suites::table();
+    let suite = table.suite(SUITE);
+    let mut asked = 0;
+
+    for scenario in &suite.scenarios {
+        let conversation = scenario.conversation;
         let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
         let start = DialogueNodeId::new(conversation, 0);
         if graph.get(start).is_none() {
@@ -93,7 +113,12 @@ fn the_engine_finds_nothing_either() {
         assert_eq!(
             result.best,
             Novelty::SeenThisGame,
-            "conversation {conversation} found novelty where everything is seen",
+            "conversation {conversation} ({}) found novelty where everything is seen",
+            scenario.save,
         );
+        asked += 1;
     }
+
+    assert!(asked > 0, "{SUITE} named no conversation the index carries");
+    println!("{asked} conversations searched and nothing found, as claimed");
 }
