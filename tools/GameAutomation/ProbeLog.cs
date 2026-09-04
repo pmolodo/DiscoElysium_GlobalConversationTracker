@@ -37,6 +37,14 @@ namespace GlobalConversationTracker.Automation
             return ProbeLog.HasMarker(Text, colourHtml);
         }
 
+        /// <summary>Whether the option carries a marker of this colour and glyph.</summary>
+        /// <param name="colourHtml">The colour.</param>
+        /// <param name="glyph">The marker itself.</param>
+        public bool HasMarker(string colourHtml, string glyph)
+        {
+            return ProbeLog.HasMarker(Text, colourHtml, glyph);
+        }
+
         /// <inheritdoc/>
         public override string ToString()
         {
@@ -155,6 +163,17 @@ namespace GlobalConversationTracker.Automation
         public const string MarkerGlyph = "*";
 
         /// <summary>
+        /// The marker for an option whose look-ahead ran out of budget.
+        /// </summary>
+        /// <remarks>
+        /// A different GLYPH as well as a different colour, and both halves have to be
+        /// matched. Looking only for the colour would be looser than the mod is, and
+        /// looking only for the asterisk read this as an ordinary marker - which is how a
+        /// suite reported a plain option while the game had drawn a grey '*?' on it.
+        /// </remarks>
+        public const string UncertainMarkerGlyph = "*?";
+
+        /// <summary>
         /// Every probe event in a log file, in order, or none if it is not there yet.
         /// </summary>
         /// <remarks>
@@ -246,14 +265,31 @@ namespace GlobalConversationTracker.Automation
         /// <exception cref="ArgumentNullException"><paramref name="colourHtml"/> is null.</exception>
         public static bool HasMarker(string? optionText, string colourHtml)
         {
+            return HasMarker(optionText, colourHtml, MarkerGlyph);
+        }
+
+        /// <summary>
+        /// Whether an option's text carries a marker of a given colour AND glyph.
+        /// </summary>
+        /// <param name="optionText">An option's final text.</param>
+        /// <param name="colourHtml">The colour, as the mod's config spells it.</param>
+        /// <param name="glyph">The marker itself.</param>
+        /// <exception cref="ArgumentNullException">An argument is null.</exception>
+        public static bool HasMarker(string? optionText, string colourHtml, string glyph)
+        {
             if (colourHtml == null)
             {
                 throw new ArgumentNullException(nameof(colourHtml));
             }
 
+            if (glyph == null)
+            {
+                throw new ArgumentNullException(nameof(glyph));
+            }
+
             return optionText != null
                 && optionText.IndexOf(
-                    "<color=" + colourHtml + ">" + MarkerGlyph + "</color>",
+                    "<color=" + colourHtml + ">" + glyph + "</color>",
                     StringComparison.OrdinalIgnoreCase) >= 0;
         }
 

@@ -116,14 +116,41 @@ namespace GlobalConversationTracker.Automation
         /// <summary>Whether both engines ran and said the same thing throughout.</summary>
         public bool Agreed => Reported && Compared > 0 && Disagreed == 0;
 
+        /// <summary>
+        /// How many summaries a log holds, so a caller can tell a later one from an earlier.
+        /// </summary>
+        /// <param name="logPath">The log file.</param>
+        public static int CountIn(string logPath)
+        {
+            return File.Exists(logPath) ? SummaryPattern.Matches(Read(logPath)).Count : 0;
+        }
+
         /// <summary>Reads the report out of a BepInEx log.</summary>
         /// <param name="logPath">The log file.</param>
-        public static BridgeComparisonReport FromLog(string logPath)
+        /// <param name="alreadySeen">
+        /// How many summaries the log already held before the thing being asked about
+        /// started. Anything at or below this belongs to something earlier, and reporting it
+        /// would answer a question about the wrong suite.
+        /// </param>
+        /// <remarks>
+        /// The count matters because the plugin writes a summary only when something ran.
+        /// A suite with the look-ahead switched off writes none - and without this, the
+        /// previous suite's summary was read as that one's, so a suite that compared nothing
+        /// inherited another's verdict.
+        /// </remarks>
+        public static BridgeComparisonReport FromLog(string logPath, int alreadySeen = 0)
         {
             if (!File.Exists(logPath))
             {
                 return NotReported();
             }
+
+            return FromText(Read(logPath), alreadySeen);
+        }
+
+        /// <summary>The log's text, read while the game still has it open.</summary>
+        private static string Read(string logPath)
+        {
 
             // Shared read-write-delete: the game still has this open, and on Windows an
             // exclusive open would simply fail while it runs.
@@ -131,24 +158,31 @@ namespace GlobalConversationTracker.Automation
                 logPath, FileMode.Open, FileAccess.Read,
                 FileShare.ReadWrite | FileShare.Delete);
             using var reader = new StreamReader(stream);
-            return FromText(reader.ReadToEnd());
+            return reader.ReadToEnd();
         }
 
         /// <summary>The same, over log text already in hand.</summary>
         /// <param name="text">The log's contents.</param>
-        public static BridgeComparisonReport FromText(string text)
+        /// <param name="alreadySeen">How many summaries belong to something earlier.</param>
+        public static BridgeComparisonReport FromText(string text, int alreadySeen = 0)
         {
             if (text == null)
             {
                 throw new ArgumentNullException(nameof(text));
             }
 
-            // The LAST summary, not the first: a suite run writes one per suite and the
-            // caller is asking about the one that just finished.
+            // The last summary that is NEW. A suite run writes one per suite, and a suite
+            // that ran no crawls writes none - so taking the last one in the file would
+            // report the previous suite's verdict as this one's.
             Match summary = Match.Empty;
+            int seen = 0;
             foreach (Match candidate in SummaryPattern.Matches(text))
             {
-                summary = candidate;
+                seen++;
+                if (seen > alreadySeen)
+                {
+                    summary = candidate;
+                }
             }
 
             if (!summary.Success)

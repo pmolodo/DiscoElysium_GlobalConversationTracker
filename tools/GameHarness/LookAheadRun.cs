@@ -340,6 +340,10 @@ namespace GlobalConversationTracker.Harness
                     // that flush so files from the prior suite cannot satisfy this one.
                     ClearArtefacts(suite, saveGames);
 
+                    // Where the log had got to, so this suite's bridge summary can be told
+                    // from the previous suite's - a suite that runs no crawls writes none.
+                    int bridgeSummariesBefore = BridgeComparisonReport.CountIn(logPath);
+
                     foreach (LookAheadScenario scenario in suite.Scenarios)
                     {
                         Console.WriteLine();
@@ -373,7 +377,7 @@ namespace GlobalConversationTracker.Harness
                     watcher.WaitForEvent("look-ahead-suite-finished", timeout, Log);
                     CheckArtefacts(suite, saveGames, report);
                     CheckLog(suite, logPath, report);
-                    CheckBridge(suite, logPath, report);
+                    CheckBridge(suite, logPath, bridgeSummariesBefore, report);
                 }
 
                 // Closed here, not in the finally, and asked rather than killed: the
@@ -852,9 +856,11 @@ namespace GlobalConversationTracker.Harness
         /// compared nothing is a different matter, and the report distinguishes them by
         /// whether it appeared at all.</para>
         /// </remarks>
-        private static void CheckBridge(LookAheadSuite suite, string logPath, Report report)
+        private static void CheckBridge(
+            LookAheadSuite suite, string logPath, int alreadySeen, Report report)
         {
-            BridgeComparisonReport bridge = BridgeComparisonReport.FromLog(logPath);
+            BridgeComparisonReport bridge =
+                BridgeComparisonReport.FromLog(logPath, alreadySeen);
             if (!bridge.Reported)
             {
                 Console.WriteLine(
@@ -863,6 +869,20 @@ namespace GlobalConversationTracker.Harness
             }
 
             Console.WriteLine($"  NOTE  {suite.Name}: {bridge}");
+
+            // A suite that STARVES one engine cannot be asked whether the two agree. The
+            // budget suite exists to make the managed crawl give up, and the bridge runs
+            // its own search unbudgeted - so they disagree there by construction, and a
+            // check that failed on it would be reporting the suite doing its job.
+            if (suite.PluginSettings.ContainsKey("LookAheadStateBudget")
+                || suite.PluginSettings.ContainsKey("LookAheadTimeBudgetMs"))
+            {
+                Console.WriteLine(
+                    $"  NOTE  {suite.Name}: not asking the two engines to agree - this suite "
+                    + "sets a budget, which starves one of them on purpose.");
+                return;
+            }
+
             report.Check(
                 bridge.Disagreed == 0,
                 $"{suite.Name}: the two look-ahead engines agree",
@@ -917,7 +937,7 @@ namespace GlobalConversationTracker.Harness
         private static Marker MarkerOn(ProbeOption option) =>
             option.HasMarker(OrangeHtml) ? Marker.Orange
             : option.HasMarker(RedHtml) ? Marker.Red
-            : option.HasMarker(UncertainHtml) ? Marker.Uncertain
+            : option.HasMarker(UncertainHtml, ProbeLog.UncertainMarkerGlyph) ? Marker.Uncertain
             : Marker.None;
 
         private static string Describe(Marker marker) => marker switch

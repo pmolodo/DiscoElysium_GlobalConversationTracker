@@ -341,9 +341,11 @@ namespace GlobalConversationTracker.Harness
                         Uncertain(BuySneakersEntry, "the crawl gave up before it could look"),
                         Uncertain(InspectSneakersEntry, "and before it could look here"),
                         Uncertain(InspectSpeakersEntry, "and here"),
-                        // Nothing to reach even with an unlimited budget, so the pre-check
-                        // settles it without a crawl and there is nothing to be unsure of.
-                        Unmarked(LeaveEntry, "leaving reaches nothing at all, budget or no"),
+                        // Leaving too, and that is the point rather than an oversight. With
+                        // a budget of one, nothing can be established about ANY option -
+                        // including that this one reaches nothing, which is what it is
+                        // unmarked for at a normal budget.
+                        Uncertain(LeaveEntry, "and it could not establish even this"),
                     },
                     money: 5100),
             },

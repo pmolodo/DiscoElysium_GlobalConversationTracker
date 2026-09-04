@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using GlobalConversationTracker.Engine;
 using GlobalConversationTracker.LookAhead;
 using GlobalConversationTracker.Session;
+using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using HarmonyLib;
 using PixelCrushers.DialogueSystem;
 using UnityEngine;
@@ -230,7 +231,7 @@ namespace GlobalConversationTracker
         /// about is a menu with no bridge answers to compare, which the comparison counts
         /// and reports.</para>
         /// </remarks>
-        private static void PrepareMenu(Response[] responses)
+        private static void PrepareMenu(Il2CppReferenceArray<Response> responses)
         {
             _menuAnswers.Clear();
 
@@ -606,7 +607,7 @@ namespace GlobalConversationTracker
             /// has to stay <c>responses</c>.
             /// </summary>
             [HarmonyPrefix]
-            private static void Prefix(Response[] responses)
+            private static void Prefix(Il2CppReferenceArray<Response> responses)
             {
                 HookFailureLimiter? failures = _failures;
                 if (failures == null || failures.HasGivenUp || !_enabled)
