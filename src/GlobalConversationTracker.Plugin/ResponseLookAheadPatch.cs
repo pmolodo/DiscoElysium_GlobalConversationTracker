@@ -35,6 +35,8 @@ namespace GlobalConversationTracker
         private static HookFailureLimiter? _failures;
         private static string _unseenAnyGameHtml = NovelResponseColorPatch.DefaultNovelColorHtml;
         private static string _unseenThisGameHtml = DefaultUnseenThisGameColorHtml;
+        private static string _uncertainHtml = DefaultUncertainColorHtml;
+        private static bool _markUncertain = true;
         private static LookAheadEngine _engine = new LookAheadEngine();
         private static LookAheadEngine? _tracingEngine;
         private static LookAheadDiagnosticsWriter? _diagnostics;
@@ -83,6 +85,25 @@ namespace GlobalConversationTracker
         internal const string DefaultUnseenThisGameColorHtml = "#C4453C";
 
         /// <summary>
+        /// The colour for "the search gave up before it could tell you".
+        /// </summary>
+        /// <remarks>
+        /// Deliberately drab, and deliberately not either of the other two. The other
+        /// markers are a promise - there IS something through here - and this one is the
+        /// absence of a promise, so a colour that reads as a weaker version of either would
+        /// be saying the wrong thing quietly.
+        /// </remarks>
+        internal const string DefaultUncertainColorHtml = "#7A7A7A";
+
+        /// <summary>The marker for an option whose crawl finished and found something.</summary>
+        private const string FoundMarker = "*";
+
+        /// <summary>
+        /// The marker for an option whose crawl ran out of budget without finding anything.
+        /// </summary>
+        private const string UncertainMarker = "*?";
+
+        /// <summary>
         /// Applies the patch. Call once, from plugin load, after the session exists.
         /// </summary>
         /// <param name="harmony">The plugin's Harmony instance.</param>
@@ -93,6 +114,8 @@ namespace GlobalConversationTracker
         /// </param>
         /// <param name="unseenAnyGameHtml">Colour for reaching never-seen-anywhere text.</param>
         /// <param name="unseenThisGameHtml">Colour for reaching unseen-this-save text.</param>
+        /// <param name="uncertainHtml">Colour for a crawl that gave up before it could say.</param>
+        /// <param name="markUncertain">Whether a crawl that gave up says so at all.</param>
         /// <param name="stateBudget">The most search states one option may cost.</param>
         /// <param name="timeBudgetMs">
         /// The longest one option's crawl may run for, in milliseconds; 0 for no limit.
@@ -110,6 +133,8 @@ namespace GlobalConversationTracker
             string modDirectory,
             string unseenAnyGameHtml,
             string unseenThisGameHtml,
+            string uncertainHtml,
+            bool markUncertain,
             int stateBudget,
             int timeBudgetMs,
             bool enabled,
@@ -133,6 +158,8 @@ namespace GlobalConversationTracker
                 "marking options that still lead somewhere unread", log);
             _unseenAnyGameHtml = Validate(unseenAnyGameHtml, nameof(unseenAnyGameHtml));
             _unseenThisGameHtml = Validate(unseenThisGameHtml, nameof(unseenThisGameHtml));
+            _uncertainHtml = Validate(uncertainHtml, nameof(uncertainHtml));
+            _markUncertain = markUncertain;
             Configure(enabled, stateBudget, timeBudgetMs, diagnostics);
 
             // Two hooks, and they are not interchangeable. The menu one is where the whole
@@ -475,14 +502,27 @@ namespace GlobalConversationTracker
 
             if (result.Best <= own)
             {
-                return null;
+                // NOT FINDING SOMETHING IS PROVISIONAL; FINDING IT IS NOT. The crawl's best
+                // is a lower bound, so a search that ran out of budget has not established
+                // that nothing is reachable - only that it did not get there. Drawing
+                // nothing says the first, which is a claim the search did not make.
+                return _markUncertain && result.BudgetExhausted
+                    ? Draw(_uncertainHtml, UncertainMarker)
+                    : null;
             }
 
+            // Above the option's own novelty, so something was actually reached. That is
+            // definite even under a budget - a witness is a witness - so an incomplete
+            // search that found one still draws the ordinary marker.
             string colour = result.Best == Novelty.UnseenAnyGame
                 ? _unseenAnyGameHtml
                 : _unseenThisGameHtml;
-            return "<color=" + colour + ">*</color>";
+            return Draw(colour, FoundMarker);
         }
+
+        /// <summary>One marker, in one colour, as the game's text markup.</summary>
+        private static string Draw(string colourHtml, string marker) =>
+            "<color=" + colourHtml + ">" + marker + "</color>";
 
         /// <summary>
         /// Walks an overflowed crawl a second time, keeping the tally that says where it

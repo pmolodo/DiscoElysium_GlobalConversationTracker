@@ -16,6 +16,17 @@ namespace GlobalConversationTracker.Harness
 
         /// <summary>Red: it can still reach a line this save has not read.</summary>
         Red = 2,
+
+        /// <summary>
+        /// Grey: the search gave up before it could say, so nothing is claimed either way.
+        /// </summary>
+        /// <remarks>
+        /// Distinct from <see cref="None"/> on purpose. None is an answer - nothing
+        /// reachable outranks the option - and this is the absence of one, which the mod
+        /// used to draw identically. A suite that could not tell them apart would read a
+        /// crawl that ran out of budget as a crawl that found nothing.
+        /// </remarks>
+        Uncertain = 3,
     }
 
     /// <summary>How much a scenario claims about the markers in its menu.</summary>

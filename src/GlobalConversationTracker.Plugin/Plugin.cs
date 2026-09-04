@@ -249,8 +249,27 @@ namespace GlobalConversationTracker
                 "Display",
                 "LookAheadStateBudget",
                 200_000,
-                "The most search states one option's look-ahead may explore before giving up and "
-                + "showing no asterisk. Lower it if response menus feel slow.");
+                "The most search states one option's look-ahead may explore before giving up. "
+                + "Lower it if response menus feel slow; an option whose search gives up is "
+                + "marked with MarkUncertainLookAhead rather than left blank.");
+
+            // On, because the alternative is worse than it looks. A search that gives up
+            // draws nothing, and nothing is what an option with genuinely nothing behind it
+            // also draws - so without this the two are indistinguishable and the player is
+            // told "there is nothing here" on the strength of a search that never finished.
+            var markUncertainLookAhead = Config.Bind(
+                "Display",
+                "MarkUncertainLookAhead",
+                true,
+                "Mark an option whose look-ahead ran out of budget with a grey '*?', meaning "
+                + "the search did not finish rather than that nothing is reachable. With the "
+                + "default budgets this is rare. Switch it off to go back to showing nothing, "
+                + "which reads as 'nothing there'.");
+            var uncertainLookAheadColor = Config.Bind(
+                "Display",
+                "UncertainLookAheadColor",
+                ResponseLookAheadPatch.DefaultUncertainColorHtml,
+                "Colour for the '*?' marker, as #RRGGBB, #RRGGBBAA, or a colour name.");
 
             // Beside the state budget rather than instead of it. States are what makes a
             // marker reproducible - the same menu on the same save marks the same way
@@ -378,6 +397,8 @@ namespace GlobalConversationTracker
                     store.DirectoryPath,
                     novelOptionColor.Value,
                     ResponseLookAheadPatch.DefaultUnseenThisGameColorHtml,
+                    uncertainLookAheadColor.Value,
+                    markUncertainLookAhead.Value,
                     lookAheadBudget.Value,
                     lookAheadTimeBudget.Value,
                     markLookAhead.Value,

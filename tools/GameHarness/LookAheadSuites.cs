@@ -331,7 +331,20 @@ namespace GlobalConversationTracker.Harness
                     "afford-both",
                     SiilengConversation,
                     "the balance that marks three options, with a budget of one",
-                    AllUnmarked("the crawl gave up before it could reach anything"),
+                    new[]
+                    {
+                        // The three the money suite marks at this balance. With a budget of
+                        // one the crawl cannot reach any of them, and de-pvq is that this
+                        // must read as "did not finish" rather than as "nothing there" -
+                        // the two used to draw identically, which told the player the
+                        // stronger of the two things on the strength of neither.
+                        Uncertain(BuySneakersEntry, "the crawl gave up before it could look"),
+                        Uncertain(InspectSneakersEntry, "and before it could look here"),
+                        Uncertain(InspectSpeakersEntry, "and here"),
+                        // Nothing to reach even with an unlimited budget, so the pre-check
+                        // settles it without a crawl and there is nothing to be unsure of.
+                        Unmarked(LeaveEntry, "leaving reaches nothing at all, budget or no"),
+                    },
                     money: 5100),
             },
             pluginSettings: new Dictionary<string, string>
@@ -792,6 +805,10 @@ namespace GlobalConversationTracker.Harness
             new OptionExpectation(entryId, Marker.None, why);
 
         /// <summary>Every option the hub offers, expected to carry nothing.</summary>
+        /// <summary>An option whose crawl is expected to give up before it can answer.</summary>
+        private static OptionExpectation Uncertain(int entryId, string why) =>
+            new OptionExpectation(entryId, Marker.Uncertain, why);
+
         private static OptionExpectation[] AllUnmarked(string why) => new[]
         {
             Unmarked(BuySneakersEntry, why),
