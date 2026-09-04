@@ -21,8 +21,8 @@ namespace GlobalConversationTracker.Persistence.Tests
             string converted = Convert(legacy);
 
             Assert.Equal(
-                "{\"version\":3,\"conversations\":{\"WasOffered\":{\"2\":[9]},"
-                + "\"WasDisplayed\":{\"10\":[5]}},\"orbs\":[]}",
+                "{\"version\":4,\"conversations\":{\"WasOffered\":{\"2\":\"9\"},"
+                + "\"WasDisplayed\":{\"10\":\"5\"}},\"orbs\":[]}",
                 converted);
         }
 
@@ -36,8 +36,8 @@ namespace GlobalConversationTracker.Persistence.Tests
             string converted = Convert(legacy);
 
             Assert.Equal(
-                "{\"version\":3,\"conversations\":{\"WasOffered\":{\"3\":[18]},"
-                + "\"WasDisplayed\":{\"3\":[17]}},\"orbs\":[\"Church\",\"Whirling-In-Rags\"]}",
+                "{\"version\":4,\"conversations\":{\"WasOffered\":{\"3\":\"18\"},"
+                + "\"WasDisplayed\":{\"3\":\"17\"}},\"orbs\":[\"Church\",\"Whirling-In-Rags\"]}",
                 converted);
         }
 

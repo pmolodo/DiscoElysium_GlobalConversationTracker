@@ -64,8 +64,8 @@ namespace GlobalConversationTracker.Session.Tests
             // 18 stays untouched while entry 17 loads.
             File.WriteAllText(
                 store.LivePath,
-                "{\"version\":3,\"conversations\":{\"WasDisplayed\":{\"3\":[17]},"
-                + "\"Nonsense\":{\"3\":[18]}},\"orbs\":[]}",
+                "{\"version\":4,\"conversations\":{\"WasDisplayed\":{\"3\":\"17\"},"
+                + "\"Nonsense\":{\"3\":\"18\"}},\"orbs\":[]}",
                 new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
 
             var log = new RecordingLog();

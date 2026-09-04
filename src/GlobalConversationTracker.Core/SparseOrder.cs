@@ -1,15 +1,40 @@
 // SPDX-License-Identifier: MIT
+using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Text;
 
-namespace NtwtfDecode;
+namespace GlobalConversationTracker.Core;
 
-/// <summary>Compact text for the runs of numbers the sparse form carries.</summary>
+/// <summary>Compact text for the runs of numbers this repository's files carry.</summary>
 /// <remarks>
-/// A grouped table names its entries by value rather than by key, so it has to say
+/// <para>A grouped table names its entries by value rather than by key, so it has to say
 /// separately which keys it stands for, and which keys carry each value. Those are
 /// key ranges. They are strings rather than arrays so that an indented writer cannot
-/// spread a few hundred numbers over a few hundred lines.
+/// spread a few hundred numbers over a few hundred lines.</para>
+///
+/// <para>IN CORE, AND NOT IN THE TOOL THAT FIRST NEEDED IT. Every file this repository
+/// writes that carries a dense run of integers spells it the same way, and it can only
+/// stay that way if there is one implementation to be the same as. It began in
+/// <c>tools/NtwtfDecode</c>, for the sparse saves; the global state file now writes its
+/// entry sets with it too (format 4), and that file is written by the shipped plugin,
+/// which cannot reference a tool. Moving it here costs nothing - NtwtfDecode already
+/// references Persistence, which references this - and it is the difference between one
+/// spelling and two that agree until they do not.</para>
+///
+/// <para>THE HYPHEN, AND WHY IT IS NOT THE WIRE'S <c>..</c>. The engine's own
+/// <c>NodeSet</c> spells a run <c>0..40</c>, on the stated grounds that a hyphen becomes
+/// ambiguous the first time a negative id appears. That reasoning does not survive this
+/// implementation, which has always handled negative bounds by looking for the separator
+/// past the first character - a leading <c>-</c> is a sign, not a separator. So the
+/// argument for two spellings is gone, and what is left is that the hyphen is what every
+/// file already uses and what was asked for. The wire has not moved yet: doing so breaks
+/// the contract with the plugin, and there is a second wire change queued (de-8hh2.6)
+/// that should break it in the same act rather than twice.</para>
+///
+/// <para>A RANGE MAY COUNT DOWN, which the wire's cannot. The saves write their dialogue
+/// variables newest first, so a backwards run is as common here as a forwards one and
+/// costs the same to say.</para>
 /// </remarks>
 public static class SparseOrder
 {
@@ -65,10 +90,15 @@ public static class SparseOrder
         }
         foreach (string part in text.Split(GroupSeparator))
         {
-            // A leading '-' is a negative bound, not a separator, so look past it.
+            // A leading '-' is a negative bound, not a separator, so look past it. This is
+            // the whole of what the wire's `..` was chosen to avoid, and it is four
+            // characters - see the remarks on this class.
+            //
+            // Substring rather than a range expression: this compiles into the shipped
+            // plugin, whose target framework has no System.Range.
             int dash = part.IndexOf(RangeSeparator, 1);
-            long first = ParseBound(dash < 0 ? part : part[..dash], part, context);
-            long last = ParseBound(dash < 0 ? part : part[(dash + 1)..], part, context);
+            long first = ParseBound(dash < 0 ? part : part.Substring(0, dash), part, context);
+            long last = ParseBound(dash < 0 ? part : part.Substring(dash + 1), part, context);
             long step = last < first ? -1 : 1;
             for (long key = first; ; key += step)
             {

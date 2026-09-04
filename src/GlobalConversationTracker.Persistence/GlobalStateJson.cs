@@ -6,6 +6,8 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 
+using GlobalConversationTracker.Core;
+
 namespace GlobalConversationTracker.Persistence
 {
     /// <summary>
@@ -13,15 +15,30 @@ namespace GlobalConversationTracker.Persistence
     /// bytes-to-state conversion with no file IO.
     /// </summary>
     /// <remarks>
-    /// <para>Shape (format version 3):</para>
+    /// <para>Shape (format version 4):</para>
+    /// <code>
+    /// {"version":4,"conversations":{"WasDisplayed":{"3":"17,19"},"WasOffered":{"3":"18"}},"orbs":[]}
+    /// </code>
+    /// <para>Grouped by status, then by conversation, then the entry IDs as a RUN-ENCODED
+    /// STRING - <c>"3,5,7-25"</c> - written by <see cref="SparseOrder"/>, which is the one
+    /// implementation every file in this repository shares.</para>
+    ///
+    /// <para>WHY IT IS WORTH A FORMAT VERSION. What this file records is what a player has
+    /// READ, and a player reads a conversation by walking through it, so the entry IDs it
+    /// holds are clustered rather than scattered. Measured on
+    /// <c>testing/scenarios/global-state-worst-case.json</c>, which records every entry of
+    /// every conversation in the game: 423 KB as arrays, and the run form is a fraction of
+    /// it. The worst case for a run encoding is a perfectly alternating set, where it costs
+    /// what the array costs; that is not what a playthrough produces.</para>
+    ///
+    /// <para>Shape (format version 3), no longer read at runtime:</para>
     /// <code>
     /// {"version":3,"conversations":{"WasDisplayed":{"3":[17,19]},"WasOffered":{"3":[18]}},"orbs":[]}
     /// </code>
-    /// <para>Grouped by status, then by conversation, then a plain array of entry IDs.
-    /// A status string is written once per conversation that has entries in it rather
-    /// than once per entry, and an entry costs the digits of its ID: a state recording
-    /// every one of the game's ~113,000 entries is about 0.4 MB this way against 2.3 MB
-    /// spelled out per entry.</para>
+    /// <para>The same grouping with a plain array of entry IDs. A status string is written
+    /// once per conversation that has entries in it rather than once per entry, and an
+    /// entry costs the digits of its ID: a state recording every one of the game's ~113,000
+    /// entries is about 0.4 MB this way against 2.3 MB spelled out per entry.</para>
     ///
     /// <para>Shape (format versions 1 and 2), still read:</para>
     /// <code>
@@ -55,9 +72,11 @@ namespace GlobalConversationTracker.Persistence
         /// Version 2 added <see cref="OrbsPropertyName"/>. A version 1 file is a version
         /// 2 file with no orbs. Version 3 regrouped
         /// <see cref="ConversationsPropertyName"/> by status, which is a different shape
-        /// rather than another optional property, so it has a reader of its own.
+        /// rather than another optional property, so it has a reader of its own. Version 4
+        /// keeps that grouping and run-encodes each conversation's entry IDs, so the value
+        /// is a string where 3 wrote an array.
         /// </remarks>
-        public const int FormatVersion = 3;
+        public const int FormatVersion = 4;
 
         /// <summary>
         /// The oldest version <see cref="Deserialize(byte[], string)"/> accepts.
@@ -125,13 +144,12 @@ namespace GlobalConversationTracker.Persistence
                     foreach (KeyValuePair<int, List<int>> conversation in status.Value)
                     {
                         writer.WritePropertyName(ToKey(conversation.Key));
-                        writer.WriteStartArray();
-                        foreach (int dialogueEntryId in conversation.Value)
-                        {
-                            writer.WriteNumberValue(dialogueEntryId);
-                        }
 
-                        writer.WriteEndArray();
+                        // RUN-ENCODED, through the one encoder every file here shares.
+                        // The list is already ascending - GroupByStatus appends in ID
+                        // order - which is what lets a run be recognised at all.
+                        writer.WriteStringValue(SparseOrder.PackRange(
+                            conversation.Value.ConvertAll(id => (long)id)));
                     }
 
                     writer.WriteEndObject();
@@ -478,24 +496,41 @@ namespace GlobalConversationTracker.Persistence
                         continue;
                     }
 
-                    if (conversation.Value.ValueKind != JsonValueKind.Array)
+                    if (conversation.Value.ValueKind != JsonValueKind.String)
                     {
                         skippedRowCount++;
                         AddWarning(
                             warnings,
-                            $"Conversation {conversationId} in '{status.Name}' is {conversation.Value.ValueKind}, expected an array; skipped.");
+                            $"Conversation {conversationId} in '{status.Name}' is {conversation.Value.ValueKind}, expected a run-encoded string; skipped.");
                         continue;
                     }
 
-                    foreach (JsonElement dialogueEntry in conversation.Value.EnumerateArray())
+                    List<long> dialogueEntryIds;
+                    try
                     {
-                        if (dialogueEntry.ValueKind != JsonValueKind.Number
-                            || !dialogueEntry.TryGetInt32(out int dialogueEntryId))
+                        dialogueEntryIds = SparseOrder.UnpackRange(
+                            conversation.Value.GetString() ?? string.Empty,
+                            $"Conversation {conversationId} in '{status.Name}'");
+                    }
+                    catch (InvalidDataException malformed)
+                    {
+                        // ONE WARNING FOR THE WHOLE RUN, and one skipped row, because a
+                        // malformed run is not a list with a bad element in it - nothing
+                        // in it can be trusted to mean what it says. Counting the entries
+                        // it might have held would be inventing a number.
+                        skippedRowCount++;
+                        AddWarning(warnings, malformed.Message + " skipped.");
+                        continue;
+                    }
+
+                    foreach (long dialogueEntryId in dialogueEntryIds)
+                    {
+                        if (dialogueEntryId < int.MinValue || dialogueEntryId > int.MaxValue)
                         {
                             skippedRowCount++;
                             AddWarning(
                                 warnings,
-                                $"Dialogue entry ID in conversation {conversationId} of '{status.Name}' is not an integer; skipped.");
+                                $"Dialogue entry ID {dialogueEntryId} in conversation {conversationId} of '{status.Name}' is out of range; skipped.");
                             continue;
                         }
 
@@ -503,7 +538,7 @@ namespace GlobalConversationTracker.Persistence
                         // status already in memory cannot be pulled back down by a file.
                         // The name is known good by here, so a false return is impossible
                         // and is not treated as a skipped row.
-                        state.TryMerge(conversationId, dialogueEntryId, status.Name, out _);
+                        state.TryMerge(conversationId, (int)dialogueEntryId, status.Name, out _);
                     }
                 }
             }
@@ -663,24 +698,34 @@ namespace GlobalConversationTracker.Persistence
         }
 
         /// <summary>
-        /// How many rows one conversation's ID array holds. Anything that is not an array
-        /// is one unusable row rather than none, so a malformed file cannot report that it
-        /// skipped nothing.
+        /// How many rows one conversation's run-encoded entry list holds.
         /// </summary>
+        /// <remarks>
+        /// Anything that is not a readable run is ONE unusable row rather than none, so a
+        /// malformed file cannot report that it skipped nothing. That covers a value of
+        /// the wrong kind - a format 3 array, say - and a string that will not parse: in
+        /// neither case is there a count to be had, and inventing one would be worse than
+        /// under-reporting by a known amount.
+        /// </remarks>
         private static int CountIds(JsonElement conversationValue)
         {
-            if (conversationValue.ValueKind != JsonValueKind.Array)
+            if (conversationValue.ValueKind != JsonValueKind.String)
             {
                 return 1;
             }
 
-            int count = 0;
-            foreach (JsonElement _ in conversationValue.EnumerateArray())
+            try
             {
-                count++;
+                return Math.Max(
+                    1,
+                    SparseOrder.UnpackRange(
+                        conversationValue.GetString() ?? string.Empty, "A skipped row")
+                        .Count);
             }
-
-            return count;
+            catch (InvalidDataException)
+            {
+                return 1;
+            }
         }
 
         private static string ToKey(int id) => id.ToString(CultureInfo.InvariantCulture);

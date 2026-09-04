@@ -242,10 +242,13 @@ struct GlobalState {
     conversations: Recorded,
 }
 
+/// Format 4 writes each conversation's entries as a RUN-ENCODED STRING where format 3 wrote
+/// an array - see `GlobalStateJson`, and `parse_runs` for the spelling. On the worst-case
+/// fixture, which records every entry in the game, that took 423 KB to 22.5 KB.
 #[derive(Debug, Default, Deserialize)]
 struct Recorded {
     #[serde(rename = "WasDisplayed", default)]
-    was_displayed: std::collections::HashMap<String, Vec<i32>>,
+    was_displayed: std::collections::HashMap<String, String>,
 }
 
 /// What some other save has read, per a staged global state file, over a whole group.
@@ -270,12 +273,12 @@ pub fn recorded_elsewhere_in_group(
     let mut recorded = HashSet::new();
 
     for conversation in conversations {
-        let Some(entries) = state.conversations.was_displayed.get(&conversation.to_string())
+        let Some(runs) = state.conversations.was_displayed.get(&conversation.to_string())
         else {
             continue;
         };
 
-        recorded.extend(entries.iter().map(|entry| (*conversation, *entry)));
+        recorded.extend(parse_runs(runs).into_iter().map(|entry| (*conversation, entry)));
     }
 
     recorded
@@ -345,19 +348,57 @@ pub fn read_in_save_group(save: &str, conversations: &[i32]) -> HashSet<(i32, i3
     displayed
 }
 
-/// An entry list as a save writes it: ids and `a-b` ranges, comma separated.
+/// A run-encoded list of numbers, as every file in this repository writes one.
+///
+/// ## The spelling, which is shared and not invented here
+///
+/// `3,5,7-25`: comma-separated pieces, each a number or a `first-last` range. The one
+/// implementation that writes it is `SparseOrder` in `GlobalConversationTracker.Core`, and
+/// this reads exactly what that writes - the sparse saves, and since format 4 the global
+/// state file's entry sets too.
+///
+/// TWO THINGS IT HAS THAT A NAIVE SPLIT ON `-` DOES NOT, both of which the writer produces:
+///
+/// - A NEGATIVE BOUND. A leading `-` is a sign, not a separator, so the separator is looked
+///   for past the first character. This is the whole of what the wire's `..` was chosen to
+///   avoid, and it is one condition.
+/// - A DESCENDING RANGE. `25-7` counts down. The saves write their dialogue variables
+///   newest first, so a backwards run is as common as a forwards one and says the same
+///   thing in the same space.
+///
+/// # Panics
+///
+/// If a piece is not a number or a range of them. A fixture that has stopped being readable
+/// is a thing to stop for.
 pub fn parse_runs(text: &str) -> HashSet<i32> {
     let mut entries = HashSet::new();
+
     for piece in text.split(',').map(str::trim).filter(|piece| !piece.is_empty()) {
-        match piece.split_once('-') {
-            Some((first, last)) => {
-                let first: i32 = first.trim().parse().expect("a range starts at a number");
-                let last: i32 = last.trim().parse().expect("and ends at one");
-                entries.extend(first..=last);
-            }
-            None => {
-                entries.insert(piece.parse().expect("an entry list holds numbers"));
-            }
+        // Past the first character, so a leading minus reads as a sign.
+        let split = piece
+            .char_indices()
+            .skip(1)
+            .find(|(_, c)| *c == '-')
+            .map(|(at, _)| at);
+
+        let (first, last) = match split {
+            Some(at) => (&piece[..at], &piece[at + 1..]),
+            None => (piece, piece),
+        };
+
+        let first: i32 = first
+            .trim()
+            .parse()
+            .unwrap_or_else(|_| panic!("'{piece}' is not a run: '{first}' is not a number"));
+        let last: i32 = last
+            .trim()
+            .parse()
+            .unwrap_or_else(|_| panic!("'{piece}' is not a run: '{last}' is not a number"));
+
+        if first <= last {
+            entries.extend(first..=last);
+        } else {
+            entries.extend(last..=first);
         }
     }
 

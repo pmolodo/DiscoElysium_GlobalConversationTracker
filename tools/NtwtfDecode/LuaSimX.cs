@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 using System.Text;
 
+using GlobalConversationTracker.Core;
+
 namespace NtwtfDecode;
 
 /// <summary>

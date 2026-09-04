@@ -29,6 +29,15 @@
     -->
     <ProjectReference
       Include="..\..\src\GlobalConversationTracker.Engine\GlobalConversationTracker.Engine.csproj" />
+
+    <!--
+      For SparseOrder, and for the same reason as the reference above. The worst-case
+      global state is a second writer of the format GlobalStateJson writes, and its entry
+      sets are run-encoded; two implementations of a run encoding are two that agree until
+      they do not. One routine, in the assembly the plugin already compiles in.
+    -->
+    <ProjectReference
+      Include="..\..\src\GlobalConversationTracker.Core\GlobalConversationTracker.Core.csproj" />
   </ItemGroup>
 
 </Project>

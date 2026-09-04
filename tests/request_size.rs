@@ -175,10 +175,17 @@ fn seen_elsewhere(entries: &[NodeRef]) -> Vec<NodeRef> {
     let group: HashSet<NodeRef> = entries.iter().copied().collect();
 
     let mut found = Vec::new();
-    for (conversation, ids) in shown.as_object().expect("WasDisplayed is an object") {
+    for (conversation, runs) in shown.as_object().expect("WasDisplayed is an object") {
         let conversation: i32 = conversation.parse().expect("a conversation id");
-        for id in ids.as_array().expect("entry ids are an array") {
-            let node = NodeRef { conversation, entry: id.as_i64().expect("an entry id") as i32 };
+
+        // RUN-ENCODED since format 4, by the same encoder the wire's NodeSet is measured
+        // against below. The file is now a twentieth of what it was - 423 KB to 22.5 KB on
+        // this fixture - which does not change what this measures: the wire has always
+        // carried runs, and this is the input to it.
+        for entry in common::fixtures::parse_runs(
+            runs.as_str().expect("entry ids are a run-encoded string"),
+        ) {
+            let node = NodeRef { conversation, entry };
             if group.contains(&node) {
                 found.push(node);
             }

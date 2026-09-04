@@ -4,6 +4,8 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 
+using GlobalConversationTracker.Core;
+
 namespace GlobalConversationTracker.DialogueAsset
 {
     /// <summary>
@@ -37,14 +39,18 @@ namespace GlobalConversationTracker.DialogueAsset
     {
         /// <summary>
         /// The format version the state is written in: grouped by status, then by
-        /// conversation, then an array of entry ids.
+        /// conversation, then the entry ids run-encoded.
         /// </summary>
         /// <remarks>
         /// The same version GlobalStateJson writes, and deliberately the same bytes but
         /// for one property: no "orbs" is written here, since the reader treats an absent
         /// "orbs" as no orbs and a worst-case crawl does not look at them.
+        ///
+        /// Version 4 run-encodes the entry ids, and it is where this file earns the change
+        /// most: recording every entry of every conversation in the game, it went from
+        /// 423 KB to 22.5 KB - a state made of whole conversations is nothing but runs.
         /// </remarks>
-        public const int FormatVersion = 3;
+        public const int FormatVersion = 4;
 
         /// <summary>What the game calls an entry the player has been shown.</summary>
         /// <remarks>
@@ -117,18 +123,14 @@ namespace GlobalConversationTracker.DialogueAsset
                 }
 
                 firstConversation = false;
-                json.Append('"').Append(conversation.Key.ToString(CultureInfo.InvariantCulture)).Append("\":[");
-                for (int i = 0; i < conversation.Value.Count; i++)
-                {
-                    if (i > 0)
-                    {
-                        json.Append(',');
-                    }
+                json.Append('"').Append(conversation.Key.ToString(CultureInfo.InvariantCulture));
 
-                    json.Append(conversation.Value[i].ToString(CultureInfo.InvariantCulture));
-                }
-
-                json.Append(']');
+                // RUN-ENCODED, through the encoder GlobalStateJson uses, so the two writers
+                // of this format cannot come to spell a run differently. Nothing to escape
+                // still: the encoding is digits, commas and hyphens.
+                json.Append("\":\"")
+                    .Append(SparseOrder.PackRange(conversation.Value.ConvertAll(id => (long)id)))
+                    .Append('"');
             }
 
             json.Append("}}}");
