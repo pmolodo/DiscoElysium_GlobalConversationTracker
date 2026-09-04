@@ -69,6 +69,71 @@ namespace GlobalConversationTracker.LookAhead.Tests
             Assert.Equal(forwards.Finish(), backwards.Finish());
         }
 
+        /// <summary>
+        /// The two ways the statement separator is written hash the same.
+        /// </summary>
+        /// <remarks>
+        /// <para>Found in the game, not reasoned about. The extractor reads the database's
+        /// YAML, where a script's statement separator is the two literal characters
+        /// backslash and n; the plugin reads the live PixelCrushers objects, where the
+        /// Dialogue System has already made it a real newline. Conversation 451's entries
+        /// 16 and 80 differ in exactly that and in nothing else, and it was enough to make
+        /// the plugin rebuild a 15 MB index on launch.</para>
+        ///
+        /// <para>The action parser turns the escape into a newline before reading anything,
+        /// so the two are the same script to everything downstream - and a hash that
+        /// separates what the engine cannot tell apart reports a difference that does not
+        /// exist.</para>
+        /// </remarks>
+        [Fact]
+        public void TheTwoSpellingsOfTheStatementSeparatorHashTheSame()
+        {
+            const string Escaped =
+                "GainItem(\"shoes_faln\");\\nSetVariableValue(\"jam.bought\", true)";
+            string real = Escaped.Replace("\\n", "\n");
+            Assert.NotEqual(Escaped, real);
+
+            var fromTheAsset = new ConversationHasher(451);
+            fromTheAsset.Add(16, false, string.Empty, Escaped, Links(), Fields());
+
+            var fromTheGame = new ConversationHasher(451);
+            fromTheGame.Add(16, false, string.Empty, real, Links(), Fields());
+
+            Assert.Equal(fromTheAsset.Finish(), fromTheGame.Finish());
+        }
+
+        /// <summary>A guard's separator is normalised too, for the same reason.</summary>
+        [Fact]
+        public void AGuardsSeparatorIsNormalisedAsWell()
+        {
+            var escaped = new ConversationHasher(1);
+            escaped.Add(0, false, "a\\nb", string.Empty, Links(), Fields());
+
+            var real = new ConversationHasher(1);
+            real.Add(0, false, "a\nb", string.Empty, Links(), Fields());
+
+            Assert.Equal(escaped.Finish(), real.Finish());
+        }
+
+        /// <summary>
+        /// Normalising the separator does not make two different scripts look alike.
+        /// </summary>
+        /// <remarks>
+        /// The risk of any normalisation, and worth pinning: it must collapse the two
+        /// spellings of one thing and nothing else.
+        /// </remarks>
+        [Fact]
+        public void NormalisingTheSeparatorDoesNotMergeDifferentScripts()
+        {
+            var one = new ConversationHasher(1);
+            one.Add(0, false, string.Empty, "A()\nB()", Links(), Fields());
+
+            var other = new ConversationHasher(1);
+            other.Add(0, false, string.Empty, "A()\nC()", Links(), Fields());
+
+            Assert.NotEqual(one.Finish(), other.Finish());
+        }
+
         /// <summary>A field the engine never reads does not change the hash.</summary>
         /// <remarks>
         /// A patch that rewrites dialogue text changes nothing a crawl can observe, and a

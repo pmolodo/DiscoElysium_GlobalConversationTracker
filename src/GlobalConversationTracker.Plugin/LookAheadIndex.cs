@@ -201,9 +201,40 @@ namespace GlobalConversationTracker
 
             _log.Warning(
                 $"{LogPrefix} conversation {disagreed} is not what the index says it is "
-                + $"({elapsed:N0} ms). The game's dialogue database has changed; rebuilding.");
+                + $"({elapsed:N0} ms). {Explain(disagreed.Value)} Rebuilding.");
 
             return Rebuild();
+        }
+
+        /// <summary>
+        /// As much as can be said cheaply about WHY a conversation disagreed.
+        /// </summary>
+        /// <remarks>
+        /// A hash that differs says only that something differs, and the two sides cannot
+        /// be diffed here - the index carries the extractor's hash and not the string it
+        /// was taken over. What CAN be compared is the shape, and the shape is where the
+        /// difference usually is: a conversation the two disagree about the size of is a
+        /// different conversation, and nothing about field formatting need be suspected.
+        /// </remarks>
+        private string Explain(int conversation)
+        {
+            int stored = _engine.EntryCount(conversation);
+            int live = LiveDialogueDatabase.EntryCountOf(conversation);
+
+            if (stored < 0)
+            {
+                return "The index does not hold that conversation at all.";
+            }
+
+            if (live < 0)
+            {
+                return "The loaded database does not hold that conversation at all.";
+            }
+
+            return stored == live
+                ? $"Both hold {stored} entries, so the difference is in their content - a "
+                    + "guard, a script, a link or a field."
+                : $"The index holds {stored} entries and the loaded database holds {live}.";
         }
 
         /// <summary>

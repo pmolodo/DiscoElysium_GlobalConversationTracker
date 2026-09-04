@@ -122,8 +122,8 @@ namespace GlobalConversationTracker.Engine
             var canonical = new StringBuilder();
             Append(canonical, id.ToString(CultureInfo.InvariantCulture));
             Append(canonical, group ? "1" : "0");
-            Append(canonical, guard);
-            Append(canonical, script);
+            Append(canonical, Normalised(guard));
+            Append(canonical, Normalised(script));
 
             var destinations = new List<KeyValuePair<int, int>>(links);
             destinations.Sort(CompareLinks);
@@ -191,6 +191,42 @@ namespace GlobalConversationTracker.Engine
 
             return canonical.ToString();
         }
+
+        /// <summary>
+        /// One text, with the statement separator written the same way whichever source it
+        /// came from.
+        /// </summary>
+        /// <remarks>
+        /// <para>THE TWO SOURCES SPELL IT DIFFERENTLY, and this is not a detail. A script
+        /// separates its statements with a backslash and the letter n. The extractor reads
+        /// the database's YAML, where those are two literal characters; the plugin reads
+        /// the live PixelCrushers objects, where the Dialogue System has already turned
+        /// them into a real newline. Measured in the game: conversation 451's entries 16
+        /// and 80 differ in exactly that and nothing else.</para>
+        ///
+        /// <para>Left alone, every conversation with a two-statement script anywhere in it
+        /// hashes differently from itself, the cache misses, and the plugin rebuilds a 15 MB
+        /// index on first launch for no reason at all. Normalising is the correct fix rather
+        /// than a convenience: the ACTION PARSER already turns the escape into a newline
+        /// before it reads anything, so the two forms are the same script as far as anything
+        /// downstream is concerned - and a hash that separates things the engine cannot tell
+        /// apart is reporting a difference that does not exist.</para>
+        /// </remarks>
+        private static string Normalised(string text)
+        {
+            return text.IndexOf(SeparatorEscape, StringComparison.Ordinal) < 0
+                ? text
+                : text.Replace(SeparatorEscape, "\n");
+        }
+
+        /// <summary>
+        /// How a script separates two statements, as the database's own text spells it.
+        /// </summary>
+        /// <remarks>
+        /// Two characters, a backslash and an n, and not an escape sequence in this source
+        /// file - which is why it is written with a doubled backslash.
+        /// </remarks>
+        private const string SeparatorEscape = "\\n";
 
         /// <summary>By destination conversation, then by destination entry.</summary>
         private static int CompareLinks(KeyValuePair<int, int> left, KeyValuePair<int, int> right)

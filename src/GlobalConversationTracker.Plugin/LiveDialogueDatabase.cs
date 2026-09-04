@@ -58,6 +58,44 @@ namespace GlobalConversationTracker
         }
 
         /// <summary>
+        /// How many entries the loaded database holds for a conversation, or -1 if it holds
+        /// no such conversation.
+        /// </summary>
+        /// <remarks>
+        /// For explaining a cache miss. Comparing this against the index's own count is the
+        /// cheapest question worth asking when the two disagree, and it separates "a
+        /// different conversation" from "the same conversation written differently" - which
+        /// need quite different investigations.
+        /// </remarks>
+        /// <param name="conversationId">The conversation id.</param>
+        internal static int EntryCountOf(int conversationId)
+        {
+            try
+            {
+                DialogueDatabase database = DialogueManager.masterDatabase;
+                Conversation? conversation = database == null
+                    ? null
+                    : database.GetConversation(conversationId);
+                if (conversation == null)
+                {
+                    return -1;
+                }
+
+                int count = 0;
+                foreach (DialogueEntry _ in Entries(conversation))
+                {
+                    count++;
+                }
+
+                return count;
+            }
+            catch (Exception)
+            {
+                return -1;
+            }
+        }
+
+        /// <summary>
         /// One live conversation, as an index carries it.
         /// </summary>
         /// <remarks>
