@@ -42,6 +42,14 @@ namespace GlobalConversationTracker.Harness
         /// <summary>The colour meaning "leads somewhere this save has not".</summary>
         public const string RedHtml = "#C4453C";
 
+        /// <summary>The colour meaning "the search did not finish".</summary>
+        /// <remarks>
+        /// Must match <c>ResponseLookAheadPatch.DefaultUncertainColorHtml</c>. The plugin
+        /// and this cannot share a constant - one is compiled against the game's runtime -
+        /// so the suites are what check they agree.
+        /// </remarks>
+        public const string UncertainHtml = "#7A7A7A";
+
         /// <summary>What a packed save archive is called.</summary>
         private const string SaveExtension = ".ntwtf.zip";
 
@@ -51,6 +59,13 @@ namespace GlobalConversationTracker.Harness
         /// loading screen is not hammered.
         /// </summary>
         private static readonly TimeSpan BetweenPresses = TimeSpan.FromSeconds(2);
+
+        /// <summary>How long to spend trying to wake the display before giving up.</summary>
+        /// <remarks>
+        /// Short. A display that is going to come back does so in a second or two; one that
+        /// does not is a locked session, and no amount of waiting changes that.
+        /// </remarks>
+        private static readonly TimeSpan DisplayWakeTimeout = TimeSpan.FromSeconds(10);
 
         /// <summary>
         /// How many times a scenario will ask for its conversation before giving up.
@@ -124,6 +139,24 @@ namespace GlobalConversationTracker.Harness
                     + $"state budget {stateBudget?.ToString() ?? "as declared"}, "
                     + $"time budget {timeBudgetMs?.ToString() ?? "as declared"}ms. "
                     + "Marker expectations may no longer hold.");
+            }
+
+            // Every check this run makes is a screenshot, and a screenshot of a sleeping
+            // display is blank - as is the window it wants in front. Woken FIRST and then
+            // held: keeping a display awake does nothing for one that is already off, and a
+            // run started on an idle machine meets exactly that. Checked rather than
+            // assumed, and reported here rather than five minutes later as a timeout on the
+            // main-menu match.
+            using DisplayAwake awake = DisplayAwake.Keep();
+            if (!DisplayAwake.WakeAndCheck(
+                message => Console.WriteLine($"display:   {message}"),
+                DisplayWakeTimeout))
+            {
+                Console.Error.WriteLine();
+                Console.Error.WriteLine(
+                    "FAILED: the screen cannot be read, so nothing this run checks can be "
+                    + "checked. Unlock the machine and run it again.");
+                return 1;
             }
 
             RunSuites(
@@ -884,12 +917,14 @@ namespace GlobalConversationTracker.Harness
         private static Marker MarkerOn(ProbeOption option) =>
             option.HasMarker(OrangeHtml) ? Marker.Orange
             : option.HasMarker(RedHtml) ? Marker.Red
+            : option.HasMarker(UncertainHtml) ? Marker.Uncertain
             : Marker.None;
 
         private static string Describe(Marker marker) => marker switch
         {
             Marker.Orange => "orange",
             Marker.Red => "red",
+            Marker.Uncertain => "grey (the search gave up)",
             _ => "plain",
         };
 

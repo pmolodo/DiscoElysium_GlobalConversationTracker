@@ -46,11 +46,38 @@ namespace GlobalConversationTracker.Automation
         /// <summary>How long the wait took.</summary>
         public TimeSpan Elapsed { get; }
 
+        /// <summary>
+        /// Whether the screen this waited on had essentially nothing on it.
+        /// </summary>
+        /// <remarks>
+        /// The difference between "the run is looking at the wrong screen" and "the run is
+        /// not looking at a screen at all". A wrong screen has plenty of detail and simply
+        /// does not match; a blank capture is what a display that has gone to sleep gives,
+        /// and it is a fault of the machine rather than of the game.
+        /// </remarks>
+        public bool LooksBlank => !Succeeded && Detail < GameSession.BlankDetailFloor;
+
         /// <inheritdoc/>
         public override string ToString()
         {
-            return $"{(Succeeded ? "ok" : "TIMED OUT")} after {Elapsed.TotalSeconds:N0}s "
+            string reading =
+                $"{(Succeeded ? "ok" : "TIMED OUT")} after {Elapsed.TotalSeconds:N0}s "
                 + $"(difference {Difference:N5}, detail {Detail:N3}, saw motion: {SawMotion})";
+
+            if (!LooksBlank)
+            {
+                return reading;
+            }
+
+            // Named rather than left to be worked out from a number nobody looks up. A run
+            // that failed this way has almost certainly been reading a sleeping display,
+            // and the remedies - wake it, or unlock the session - are nothing like the ones
+            // for a run that landed on the wrong screen.
+            return reading
+                + ". Almost nothing was on screen, which is what a display that has gone to "
+                + "sleep looks like rather than what a wrong screen looks like. The run holds "
+                + "the display awake while it works, so if this persists the session is "
+                + "probably LOCKED - which nothing running inside it can undo.";
         }
     }
 
