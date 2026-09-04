@@ -3,8 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using BepInEx.Logging;
 using GlobalConversationTracker.Engine;
+using GlobalConversationTracker.Session;
 using PixelCrushers.DialogueSystem;
 
 namespace GlobalConversationTracker
@@ -50,7 +50,7 @@ namespace GlobalConversationTracker
         /// </remarks>
         internal const string RebuiltFileName = "GlobalConversationTracker.Index.rebuilt.jsonl";
 
-        private readonly ManualLogSource _log;
+        private readonly IGlobalStateLog _log;
         private readonly string _rebuiltPath;
         private readonly string? _variablesPath;
 
@@ -68,7 +68,7 @@ namespace GlobalConversationTracker
         private LookAheadLibrary _engine;
 
         private LookAheadIndex(
-            LookAheadLibrary engine, string rebuiltPath, string? variablesPath, ManualLogSource log)
+            LookAheadLibrary engine, string rebuiltPath, string? variablesPath, IGlobalStateLog log)
         {
             _engine = engine;
             _rebuiltPath = rebuiltPath;
@@ -84,6 +84,18 @@ namespace GlobalConversationTracker
         internal LookAheadLibrary Engine => _engine;
 
         /// <summary>
+        /// Which index this is, counting from zero and incremented by every rebuild.
+        /// </summary>
+        /// <remarks>
+        /// So a caller that CACHES anything derived from the index can tell when to throw
+        /// it away. The patch keeps a questions list per conversation, which is safe because
+        /// the questions cannot change while the game runs - but a rebuild changes the file
+        /// they came from, and a cached list from the old one would be answered positionally
+        /// against the new one's.
+        /// </remarks>
+        internal int Generation { get; private set; }
+
+        /// <summary>
         /// Opens the best index available, or null if none of them opens.
         /// </summary>
         /// <param name="pluginDirectory">Where the shipped index was deployed.</param>
@@ -95,7 +107,7 @@ namespace GlobalConversationTracker
         /// already known to have been wrong.
         /// </remarks>
         internal static LookAheadIndex? Open(
-            string pluginDirectory, string modDirectory, ManualLogSource log)
+            string pluginDirectory, string modDirectory, IGlobalStateLog log)
         {
             string rebuiltPath = Path.Combine(modDirectory, RebuiltFileName);
             string shippedPath = Path.Combine(pluginDirectory, NativeEngineCheck.IndexFileName);
@@ -116,20 +128,20 @@ namespace GlobalConversationTracker
                 try
                 {
                     LookAheadLibrary engine = LookAheadLibrary.Open(candidate, variablesPath);
-                    log.LogMessage(
+                    log.Info(
                         $"{LogPrefix} opened {Path.GetFileName(candidate)}, "
                         + $"{engine.ConversationCount} conversations, format {engine.IndexFormat}.");
                     return new LookAheadIndex(engine, rebuiltPath, variablesPath, log);
                 }
                 catch (Exception error)
                 {
-                    log.LogWarning(
+                    log.Warning(
                         $"{LogPrefix} {candidate} would not open "
                         + $"({error.GetType().Name}: {error.Message}).");
                 }
             }
 
-            log.LogWarning($"{LogPrefix} no index could be opened; the look-ahead has no graph.");
+            log.Warning($"{LogPrefix} no index could be opened; the look-ahead has no graph.");
             return null;
         }
 
@@ -174,7 +186,7 @@ namespace GlobalConversationTracker
                 // is a build intermediate rather than a cache. Nothing can be said about
                 // it, and it is trusted - which is exactly what the mod did before there
                 // was any such thing as validation.
-                _log.LogMessage(
+                _log.Info(
                     $"{LogPrefix} {key} cannot be checked - the index carries no hashes. "
                     + "Using it as it is.");
                 return true;
@@ -182,12 +194,12 @@ namespace GlobalConversationTracker
 
             if (disagreed == null)
             {
-                _log.LogMessage(
+                _log.Info(
                     $"{LogPrefix} {key} matches the loaded database ({elapsed:N0} ms).");
                 return true;
             }
 
-            _log.LogWarning(
+            _log.Warning(
                 $"{LogPrefix} conversation {disagreed} is not what the index says it is "
                 + $"({elapsed:N0} ms). The game's dialogue database has changed; rebuilding.");
 
@@ -256,12 +268,13 @@ namespace GlobalConversationTracker
                 LookAheadLibrary rebuilt = LookAheadLibrary.Open(_rebuiltPath, _variablesPath);
                 _engine.Dispose();
                 _engine = rebuilt;
+                Generation++;
 
                 // Everything decided against the old file is now about a file that no
                 // longer exists, including groups that had matched it.
                 _checked.Clear();
 
-                _log.LogMessage(
+                _log.Info(
                     $"{LogPrefix} rebuilt {written} conversations from the loaded database "
                     + $"in {writing:N0} ms, at {_rebuiltPath}. It will be used from now on, "
                     + "and found on the next launch.");
@@ -272,7 +285,7 @@ namespace GlobalConversationTracker
                 // A rebuild that fails leaves the old index open and in use. That is the
                 // honest fallback: its answers are about a database that has moved, which
                 // costs a wrong marker, where refusing to answer at all costs the feature.
-                _log.LogWarning(
+                _log.Warning(
                     $"{LogPrefix} could not rebuild the index "
                     + $"({error.GetType().Name}: {error.Message}). "
                     + "The look-ahead will keep using the one it has.");

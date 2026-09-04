@@ -2,7 +2,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using BepInEx.Logging;
 using GlobalConversationTracker.Engine;
 using GlobalConversationTracker.LookAhead;
 using GlobalConversationTracker.Session;
@@ -51,7 +50,7 @@ namespace GlobalConversationTracker
         /// <param name="modDirectory">Where the mod keeps its own files.</param>
         /// <param name="conversation">Any conversation in the group to compare over.</param>
         internal static void Report(
-            ManualLogSource log,
+            IGlobalStateLog log,
             GlobalStateSession session,
             string modDirectory,
             int conversation)
@@ -65,7 +64,7 @@ namespace GlobalConversationTracker
                 NativeEngineCheck.PluginDirectory, modDirectory, log);
             if (index == null)
             {
-                log.LogWarning(
+                log.Warning(
                     $"{LogPrefix} no index could be opened; there is nothing to compare "
                     + "against.");
                 return;
@@ -89,17 +88,17 @@ namespace GlobalConversationTracker
 
                 if (differences.Count == 0)
                 {
-                    log.LogMessage($"{LogPrefix} conversation {conversation}: {report}");
+                    log.Info($"{LogPrefix} conversation {conversation}: {report}");
                     return;
                 }
 
-                log.LogWarning(
+                log.Warning(
                     $"{LogPrefix} conversation {conversation}: {report} "
                     + $"FIRST DIFFERENCES: {string.Join("; ", differences)}");
             }
             catch (Exception error)
             {
-                log.LogWarning(
+                log.Warning(
                     $"{LogPrefix} conversation {conversation} could not be compared "
                     + $"({error.GetType().Name}: {error.Message}).");
             }

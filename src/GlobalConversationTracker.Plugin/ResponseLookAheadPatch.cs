@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 using System;
+using System.Collections.Generic;
+using GlobalConversationTracker.Engine;
 using GlobalConversationTracker.LookAhead;
 using GlobalConversationTracker.Session;
 using HarmonyLib;
@@ -41,6 +43,39 @@ namespace GlobalConversationTracker
         private static bool _enabled = true;
         private static IGlobalStateLog? _log;
 
+        /// <summary>The native engine and the index it reads, or null if there is none.</summary>
+        /// <remarks>
+        /// Opened once, lazily, at the first response menu rather than at plugin load: the
+        /// index is tens of megabytes and the cache check it enables needs a loaded
+        /// dialogue database, neither of which belongs in the frame that draws the main
+        /// menu. Null afterwards means the library or the index is not there, and the
+        /// managed engine simply carries on.
+        /// </remarks>
+        private static LookAheadIndex? _bridge;
+        private static bool _bridgeOpened;
+
+        /// <summary>What the bridge said about the options of the menu being drawn.</summary>
+        /// <remarks>
+        /// Filled once per menu, read once per option. This is the whole reason the bridge
+        /// takes a list of starts: the world is the same for every option drawn at once and
+        /// it is the world that is expensive to send, so one call amortises the marshalling
+        /// over the menu instead of paying it per option.
+        /// </remarks>
+        private static readonly Dictionary<DialogueNodeId, LookAheadAnswer> _menuAnswers =
+            new Dictionary<DialogueNodeId, LookAheadAnswer>();
+
+        /// <summary>What the engine asks about a group, cached because it cannot change.</summary>
+        private static readonly Dictionary<int, LookAheadQuestions> _questions =
+            new Dictionary<int, LookAheadQuestions>();
+
+        private static BridgeComparison? _comparison;
+
+        /// <summary>Which index the cached questions came from.</summary>
+        private static int _questionsGeneration = -1;
+
+        /// <summary>Where the mod keeps its own files, for a rebuilt index.</summary>
+        private static string? _modDirectory;
+
         /// <summary>
         /// The colour for "leads to something no save has reached", matching the option
         /// colour the mod already paints such an option in.
@@ -53,6 +88,9 @@ namespace GlobalConversationTracker
         /// <param name="harmony">The plugin's Harmony instance.</param>
         /// <param name="session">The session novelty is read from.</param>
         /// <param name="log">Where hook failures are reported.</param>
+        /// <param name="modDirectory">
+        /// Where the mod keeps its own files, so a stale index can be rebuilt into it.
+        /// </param>
         /// <param name="unseenAnyGameHtml">Colour for reaching never-seen-anywhere text.</param>
         /// <param name="unseenThisGameHtml">Colour for reaching unseen-this-save text.</param>
         /// <param name="stateBudget">The most search states one option may cost.</param>
@@ -69,6 +107,7 @@ namespace GlobalConversationTracker
             Harmony harmony,
             GlobalStateSession session,
             IGlobalStateLog log,
+            string modDirectory,
             string unseenAnyGameHtml,
             string unseenThisGameHtml,
             int stateBudget,
@@ -88,12 +127,19 @@ namespace GlobalConversationTracker
 
             _session = session ?? throw new ArgumentNullException(nameof(session));
             _log = log;
+            _modDirectory = modDirectory
+                ?? throw new ArgumentNullException(nameof(modDirectory));
             _failures = new HookFailureLimiter(
                 "marking options that still lead somewhere unread", log);
             _unseenAnyGameHtml = Validate(unseenAnyGameHtml, nameof(unseenAnyGameHtml));
             _unseenThisGameHtml = Validate(unseenThisGameHtml, nameof(unseenThisGameHtml));
             Configure(enabled, stateBudget, timeBudgetMs, diagnostics);
 
+            // Two hooks, and they are not interchangeable. The menu one is where the whole
+            // list of options exists, which is the only place a single bridge call can
+            // cover all of them; the text one is where a marker can be attached to an
+            // option's own string.
+            harmony.PatchAll(typeof(ResponseMenuPatch));
             harmony.PatchAll(typeof(ChooseResponseTextPatch));
         }
 
@@ -105,6 +151,13 @@ namespace GlobalConversationTracker
             LookAheadDiagnosticsWriter? diagnostics)
         {
             _diagnostics?.Flush();
+
+            // One comparison per suite, reported and then started again. Accumulating
+            // across suites would make every summary include the last one's options, and
+            // the summary is what a run asserts on.
+            _comparison?.Report();
+            _comparison = _log == null ? null : new BridgeComparison(_log);
+
             _enabled = enabled;
             _budget = stateBudget;
             _timeBudgetMs = timeBudgetMs;
@@ -129,6 +182,168 @@ namespace GlobalConversationTracker
                     CollectTrace = true,
                 })
                 : null;
+        }
+
+        /// <summary>
+        /// Asks the bridge about every option of a menu at once, before any of them is
+        /// drawn.
+        /// </summary>
+        /// <remarks>
+        /// <para>ONE CALL PER MENU, not one per option. <c>OnConversationResponseMenu</c> is
+        /// where the whole list exists - it is the loop that calls
+        /// <c>ChooseResponseText</c> for each - so this is the only place the batching can
+        /// happen at all.</para>
+        ///
+        /// <para>Grouped by conversation, which is almost always one group and one call: a
+        /// link can leave its conversation, and the engine loads a group from the
+        /// conversation it is given, so options that come from somewhere else have to be
+        /// asked about separately or be answered as though nothing were reachable.</para>
+        ///
+        /// <para>NOTHING HERE MAY THROW INTO THE GAME. A menu the bridge could not be asked
+        /// about is a menu with no bridge answers to compare, which the comparison counts
+        /// and reports.</para>
+        /// </remarks>
+        private static void PrepareMenu(Response[] responses)
+        {
+            _menuAnswers.Clear();
+
+            GlobalStateSession? session = _session;
+            LookAheadIndex? bridge = Bridge();
+            if (bridge == null || session == null || responses == null)
+            {
+                return;
+            }
+
+            var byConversation = new Dictionary<int, List<DialogueNodeId>>();
+            foreach (Response response in responses)
+            {
+                DialogueEntry? entry = response?.destinationEntry;
+                if (entry == null)
+                {
+                    continue;
+                }
+
+                if (!byConversation.TryGetValue(entry.conversationID, out List<DialogueNodeId>? starts))
+                {
+                    starts = new List<DialogueNodeId>();
+                    byConversation[entry.conversationID] = starts;
+                }
+
+                starts.Add(new DialogueNodeId(entry.conversationID, entry.id));
+            }
+
+            foreach (KeyValuePair<int, List<DialogueNodeId>> group in byConversation)
+            {
+                AskAbout(bridge, session, group.Key, group.Value);
+            }
+        }
+
+        /// <summary>Asks one conversation group about the options that start in it.</summary>
+        private static void AskAbout(
+            LookAheadIndex bridge,
+            GlobalStateSession session,
+            int conversation,
+            List<DialogueNodeId> starts)
+        {
+            long began = System.Diagnostics.Stopwatch.GetTimestamp();
+            try
+            {
+                // A rebuild replaced the index, so anything cached against the old one is
+                // about a file that no longer exists. The questions matter especially: the
+                // world is answered BY POSITION against them, so a stale list would put
+                // every answer on the wrong question rather than simply being out of date.
+                if (_questionsGeneration != bridge.Generation)
+                {
+                    _questions.Clear();
+                    _questionsGeneration = bridge.Generation;
+                }
+
+                if (!_questions.TryGetValue(conversation, out LookAheadQuestions? questions))
+                {
+                    questions = bridge.Engine.QuestionsFor(conversation);
+
+                    // The index is a cache of the dialogue database; this is where it is
+                    // checked, on first use of the group, and where a rebuild happens if it
+                    // turns out to describe a different game. A rebuild replaces the engine,
+                    // so the questions are asked again afterwards.
+                    if (!bridge.IsValidFor(questions.Conversations))
+                    {
+                        return;
+                    }
+
+                    // Asked again, because a rebuild replaced the engine underneath the
+                    // first answer.
+                    _questionsGeneration = bridge.Generation;
+                    questions = bridge.Engine.QuestionsFor(conversation);
+                    _questions[conversation] = questions;
+                }
+
+                LookAheadRequest request =
+                    GameWorldSnapshot.Build(conversation, questions, session);
+                foreach (DialogueNodeId start in starts)
+                {
+                    request.Starts.Add(new NodeRef(start.ConversationId, start.EntryId));
+                }
+
+                LookAheadResponse answered = bridge.Engine.Ask(request);
+                if (answered.Error != null)
+                {
+                    _log?.Warning(
+                        $"{BridgeComparison.LogPrefix} conversation {conversation} was "
+                        + $"refused: {answered.Error}");
+                    return;
+                }
+
+                foreach (LookAheadAnswer answer in answered.Answers)
+                {
+                    _menuAnswers[new DialogueNodeId(
+                        answer.Start.Conversation, answer.Start.Entry)] = answer;
+                }
+
+                _comparison?.RecordMenu(Milliseconds(began));
+            }
+            catch (Exception error)
+            {
+                // The whole point of running both engines is that this one is not yet
+                // trusted. A failure costs the comparison for this menu and nothing else.
+                _log?.Warning(
+                    $"{BridgeComparison.LogPrefix} conversation {conversation} could not be "
+                    + $"asked ({error.GetType().Name}: {error.Message}).");
+            }
+        }
+
+        /// <summary>The bridge, opened on first use, or null where there is none.</summary>
+        private static LookAheadIndex? Bridge()
+        {
+            if (_bridgeOpened)
+            {
+                return _bridge;
+            }
+
+            _bridgeOpened = true;
+            IGlobalStateLog? log = _log;
+            if (log == null || _modDirectory == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                _bridge = LookAheadIndex.Open(
+                    NativeEngineCheck.PluginDirectory, _modDirectory, log);
+            }
+            catch (Exception error)
+            {
+                // A missing native library arrives here as a DllNotFoundException from the
+                // first call rather than from anything this file does.
+                log.Warning(
+                    $"{BridgeComparison.LogPrefix} the native look-ahead is unavailable "
+                    + $"({error.GetType().Name}: {error.Message}). "
+                    + "The managed engine is answering on its own.");
+                _bridge = null;
+            }
+
+            return _bridge;
         }
 
         /// <summary>
@@ -159,6 +374,7 @@ namespace GlobalConversationTracker
         internal static void FlushDiagnostics()
         {
             _diagnostics?.Flush();
+            _comparison?.Report();
         }
 
         /// <summary>
@@ -204,6 +420,9 @@ namespace GlobalConversationTracker
             Novelty own = NoveltyOf(session, entry.conversationID, entry.id);
             if (own == Novelty.UnseenAnyGame)
             {
+                // Already the most novel thing there is, so nothing can outrank it and no
+                // crawl runs. Counted rather than compared: see BridgeComparison.NotCrawled.
+                _comparison?.NotCrawled();
                 return null;
             }
 
@@ -218,6 +437,9 @@ namespace GlobalConversationTracker
             if (!LookAheadEngine.HasPotentialImprovement(
                 graph, own, node => NoveltyOf(session, node.ConversationId, node.EntryId)))
             {
+                // No entry in the graph outranks what this option already shows, so the
+                // crawl is skipped and there is no best-reachable figure to compare.
+                _comparison?.NotCrawled();
                 return null;
             }
 
@@ -230,13 +452,26 @@ namespace GlobalConversationTracker
                 start,
                 world,
                 node => NoveltyOf(session, node.ConversationId, node.EntryId));
+            double managedMilliseconds = Milliseconds(ticks);
 
             if (_diagnostics != null)
             {
                 _diagnostics.Record(
-                    start, result, Milliseconds(ticks), _budget,
+                    start, result, managedMilliseconds, _budget,
                     TraceOverflow(graph, start, world, session, result));
             }
+
+            // BOTH ENGINES RAN; the managed one's answer is the one drawn. Comparing them
+            // over real play is what turns "the crossing looks right" into evidence, and it
+            // costs a dictionary lookup on top of a crawl that was happening anyway. The
+            // marker switches to the bridge once the log goes quiet - see de-i5xj.8.
+            _comparison?.Record(
+                start,
+                result.Best,
+                managedMilliseconds,
+                _menuAnswers.TryGetValue(start, out LookAheadAnswer answer)
+                    ? answer
+                    : (LookAheadAnswer?)null);
 
             if (result.Best <= own)
             {
@@ -291,6 +526,7 @@ namespace GlobalConversationTracker
         internal static void Flush()
         {
             _diagnostics?.Flush();
+            _comparison?.Report();
         }
 
         /// <summary>
@@ -309,6 +545,46 @@ namespace GlobalConversationTracker
             return global == SimStatus.WasDisplayed
                 ? Novelty.UnseenThisGame
                 : Novelty.UnseenAnyGame;
+        }
+
+        /// <summary>
+        /// The one place a whole response menu exists before any of it is drawn.
+        /// </summary>
+        /// <remarks>
+        /// <c>OnConversationResponseMenu</c> is the loop that calls
+        /// <c>ChooseResponseText</c> for each option, so a prefix here runs once per menu
+        /// with every option in hand - which is what lets the bridge be asked one question
+        /// instead of one per option.
+        /// </remarks>
+        [HarmonyPatch(
+            typeof(Sunshine.ConversationLogger),
+            nameof(Sunshine.ConversationLogger.OnConversationResponseMenu))]
+        private static class ResponseMenuPatch
+        {
+            /// <summary>
+            /// The parameter name is matched against the patched method by Harmony, so it
+            /// has to stay <c>responses</c>.
+            /// </summary>
+            [HarmonyPrefix]
+            private static void Prefix(Response[] responses)
+            {
+                HookFailureLimiter? failures = _failures;
+                if (failures == null || failures.HasGivenUp || !_enabled)
+                {
+                    return;
+                }
+
+                try
+                {
+                    PrepareMenu(responses);
+                }
+                catch (Exception ex)
+                {
+                    // Never fatal to the menu. Without bridge answers the managed engine
+                    // draws exactly what it drew before any of this existed.
+                    failures.Report(ex);
+                }
+            }
         }
 
         /// <summary>The one place every response's displayed text is composed.</summary>

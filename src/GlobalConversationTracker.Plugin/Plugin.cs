@@ -81,7 +81,6 @@ namespace GlobalConversationTracker
         private static GlobalStateSession? _session;
         private static GlobalStateStore? _store;
         private static IGlobalStateLog? _globalStateLog;
-        private static ManualLogSource? _log;
 
         /// <summary>Prepares suite-scoped state and look-ahead settings.</summary>
         /// <param name="sourcePath">The staged global-state fixture.</param>
@@ -137,8 +136,8 @@ namespace GlobalConversationTracker
         /// <param name="conversation">Any conversation in the group to compare over.</param>
         public static void CheckLookAheadSnapshot(int conversation)
         {
-            ManualLogSource log = _log
-                ?? throw new InvalidOperationException("The plugin log is unavailable.");
+            IGlobalStateLog log = _globalStateLog
+                ?? throw new InvalidOperationException("The global state log is unavailable.");
             GlobalStateStore store = _store
                 ?? throw new InvalidOperationException("The global state store is unavailable.");
             SnapshotAgreementCheck.Report(log, Session, store.DirectoryPath, conversation);
@@ -154,9 +153,6 @@ namespace GlobalConversationTracker
         /// </summary>
         public override void Load()
         {
-            // Kept so the static seams a harness invokes by reflection can write to the
-            // same log as everything else here; BasePlugin.Log is an instance property.
-            _log = Log;
             Log.LogMessage($"{PluginName} v{PluginVersion} loaded.");
 
             // Whether the native look-ahead can be reached from inside the game is the one
@@ -379,6 +375,7 @@ namespace GlobalConversationTracker
                     harmony,
                     session,
                     log,
+                    store.DirectoryPath,
                     novelOptionColor.Value,
                     ResponseLookAheadPatch.DefaultUnseenThisGameColorHtml,
                     lookAheadBudget.Value,
