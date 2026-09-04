@@ -46,7 +46,20 @@ const CACHE_CAPACITY: usize = 1 << 20;
 const CHECKABLE: [i32; 6] = [1123, 484, 1066, 1147, 949, 511];
 
 /// The groups that drive the cost.
-const EXPENSIVE: [i32; 5] = [368, 631, 14, 28, 1030];
+///
+/// 362 IS FIRST BECAUSE IT IS THE LARGEST AND WAS THE LAST ONE UNMEASURED. At 1,860
+/// entries it is the biggest conversation in the game, and it was left out of every
+/// measurement because the IN-GAME harness cannot open it - the conversation starts, the
+/// mod logs it, and no menu is ever drawn (de-i60.17). That is a harness problem and not a
+/// property of the data: nothing here needs a save, a scene or a menu, so the group builds
+/// and crawls like any other.
+///
+/// Worth the place because entry count predicts cost almost not at all - the second
+/// largest finishes in 55,889 states while the fourth does not finish in 1,600,000 - so
+/// the largest of all was genuinely unknown. Measured 2026-09-04, and it is the hardest
+/// group in the game by a distance: on the one-unseen-entry question BOTH engines give up,
+/// the crawl exhausting 200,000 states in 316ms and the symbolic side timing out at 60s.
+const EXPENSIVE: [i32; 6] = [362, 368, 631, 14, 28, 1030];
 
 /// Which conversations this process should measure.
 ///
