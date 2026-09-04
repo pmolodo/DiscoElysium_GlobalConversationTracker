@@ -813,11 +813,23 @@ fn collect(
 
 /// Answers one request.
 ///
-/// Runs the ordinary crawl rather than the symbolic portfolio. That is deliberate for the
-/// first crossing: the crawl is the engine both sides already agree about, so a wrong
-/// answer here is a marshalling bug rather than a question of which search was right. The
-/// portfolio - which is what makes this migration worth doing - goes in once the crossing
-/// itself is trusted, and de-i5xj.2 says so.
+/// Runs the ordinary crawl rather than the symbolic portfolio.
+///
+/// THE CROSSING IS TRUSTED AS OF 2026-09-04, so that is no longer why. It was the original
+/// reason - the crawl is the engine both sides already agree about, so a wrong answer here
+/// was a marshalling bug rather than a question of which search was right - and the
+/// evidence has since accumulated: `tests/bridge_contract.rs` puts the same world through
+/// JSON and in-process and requires the identical crawl to agree, over real groups; the
+/// in-game suites check snapshot agreement per suite and report zero differences across
+/// variables, items, tasks, checks and entries; and the wire's shape is pinned by
+/// `tests/request_size.rs`.
+///
+/// WHAT KEEPS THE PORTFOLIO OUT NOW IS THE PORTFOLIO, not the bridge, and none of it is
+/// about marshalling: the symbolic search is the engine with the unexplained stack overflow
+/// (de-fpax, de-8hh2.13), it commits its whole memory budget up front through an allocation
+/// that aborts rather than fails (de-0a3a), and on every profile a real save actually has it
+/// is slower than the crawl it would replace - so it needs the forward-or-backward heuristic
+/// (de-a1wb) before it is an improvement at all. See de-bnjy.2.
 ///
 /// `declared` is the database's variable table where it has been deployed beside the
 /// index; see [`SnapshotWorld`] for what it is for and what its absence costs.
