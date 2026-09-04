@@ -43,14 +43,13 @@ use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::novelty_search::{best_novelty, Budget};
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
+use lookahead_engine::symbolic::budget::DiagramBudget;
 
 mod common;
 
 /// The counter cap every symbolic measurement here uses.
 const COUNTER_CAP: i32 = 16;
 
-const NODE_CAPACITY: usize = 1 << 24;
-const CACHE_CAPACITY: usize = 1 << 20;
 
 /// What a balance is allowed to reach before it saturates.
 ///
@@ -218,7 +217,7 @@ fn compile_every_guard(
 ) -> Asked {
     let layout = DataLayout::for_graph(graph, COUNTER_CAP, money, clock);
     let symbols = graph.symbols().clone();
-    let vars = DataVars::new(&layout, &symbols, NODE_CAPACITY, CACHE_CAPACITY);
+    let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
 
     let mut compiler = GuardCompiler::new(&vars).with_world(world);
     if !clock {
@@ -320,7 +319,7 @@ fn ask(
 ) -> (Asked, DataLayout) {
     let layout = DataLayout::for_graph(graph, COUNTER_CAP, money, clock);
     let symbols = graph.symbols().clone();
-    let vars = DataVars::new(&layout, &symbols, NODE_CAPACITY, CACHE_CAPACITY);
+    let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
 
     let mut compiler = GuardCompiler::new(&vars).with_world(world);
     if !clock {

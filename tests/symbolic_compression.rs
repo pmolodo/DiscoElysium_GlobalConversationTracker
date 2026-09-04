@@ -24,6 +24,7 @@ use lookahead_engine::engine::engine::{LookAheadEngine, LookAheadOptions};
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::{Profile, StateEncoding, StateSet};
 use lookahead_engine::world::test_world::TestWorld;
+use lookahead_engine::symbolic::budget::DiagramBudget;
 
 /// The conversations the C# all-seen suite opens, biggest first by group size.
 mod common;
@@ -41,18 +42,20 @@ const BIGGEST: [i32; 5] = [368, 631, 14, 28, 1030];
 /// larger sample.
 const SAMPLE_LIMIT: usize = 10_000;
 
-/// Manager capacities, one pair per measurement, each the value that measurement was
-/// actually observed to survive at.
+/// One allowance per measurement, each the size that measurement was observed to survive.
 ///
-/// Not one shared number, because the failure is not monotonic in it: the 20,000-state
-/// prefixes need the larger table and overflow the stack with the smaller one, while the
-/// complete sets are the other way round and overflow during teardown with the larger.
-/// A manager is torn down by walking what it holds, and how deep that walk goes depends
-/// on the table as well as on the diagram. Sized by measurement rather than guessed.
-const PREFIX_NODE_CAPACITY: usize = 1 << 22;
-const PREFIX_CACHE_CAPACITY: usize = 1 << 20;
-const COMPLETE_NODE_CAPACITY: usize = 1 << 18;
-const COMPLETE_CACHE_CAPACITY: usize = 1 << 16;
+/// NOT THE SHARED ONE, and not one number for both, because THE FAILURE IS NOT MONOTONIC
+/// IN IT: the 20,000-state prefixes need the larger table and overflow the stack with the
+/// smaller one, while the complete sets are the other way round and overflow during
+/// TEARDOWN with the larger. A manager is torn down by walking what it holds, and how deep
+/// that walk goes depends on the table as well as on the diagram (see de-fpax).
+///
+/// So this is a file where the budget is the subject, and it says so rather than taking
+/// the shared allowance the other measurements use. The sizes are the ones the capacities
+/// they replaced worked out to: 1 << 22 nodes and 1 << 18.
+const PREFIX_BUDGET: DiagramBudget = DiagramBudget::new(128 * 1024 * 1024);
+const COMPLETE_BUDGET: DiagramBudget = DiagramBudget::new(8 * 1024 * 1024);
+
 
 /// The conversation index, regenerating it if it is not there.
 fn index_path() -> Option<PathBuf> {
@@ -174,7 +177,7 @@ fn measure() {
 
         let encoding = StateEncoding::for_profile(&profile);
         let started = Instant::now();
-        let mut set = StateSet::new(encoding.total_vars(), PREFIX_NODE_CAPACITY, PREFIX_CACHE_CAPACITY);
+        let mut set = StateSet::new(encoding.total_vars(), PREFIX_BUDGET);
         let mut distinct = HashMap::new();
         for (node, state) in &states {
             let bits = encoding.encode(*node, state).expect("a profiled state encodes");
@@ -200,7 +203,7 @@ fn measure() {
         // they agree, the set is close to an arbitrary subset and no order will save it.
         let flipped = StateEncoding::for_profile(&profile).reversed();
         let mut flipped_set =
-            StateSet::new(flipped.total_vars(), PREFIX_NODE_CAPACITY, PREFIX_CACHE_CAPACITY);
+            StateSet::new(flipped.total_vars(), PREFIX_BUDGET);
         for (node, state) in &states {
             flipped_set.insert(&flipped.encode(*node, state).expect("a profiled state encodes"));
         }
@@ -278,7 +281,7 @@ fn ratio_of(states: &[(DialogueNodeId, LookAheadState)]) -> (usize, usize) {
 
     let encoding = StateEncoding::for_profile(&profile);
     let mut set =
-        StateSet::new(encoding.total_vars(), COMPLETE_NODE_CAPACITY, COMPLETE_CACHE_CAPACITY);
+        StateSet::new(encoding.total_vars(), COMPLETE_BUDGET);
     let mut distinct = HashMap::new();
     for (node, state) in states {
         let bits = encoding.encode(*node, state).expect("a profiled state encodes");

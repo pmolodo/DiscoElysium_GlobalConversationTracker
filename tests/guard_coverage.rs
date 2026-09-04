@@ -24,13 +24,12 @@ use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::vars::DataVars;
+use lookahead_engine::symbolic::budget::DiagramBudget;
 
 mod common;
 
 const BIGGEST: [i32; 5] = [368, 631, 14, 28, 1030];
 const COUNTER_CAP: i32 = 16;
-const NODE_CAPACITY: usize = 1 << 20;
-const CACHE_CAPACITY: usize = 1 << 18;
 
 /// The conversation index, regenerating it if it is not there.
 fn index_path() -> Option<PathBuf> {
@@ -126,7 +125,7 @@ fn how_much_of_the_guard_corpus_compiles() {
         // nothing has set is false - which is exactly the case a real save is in for most
         // of the database. That is what makes an untracked variable decidable.
         let world = common::measurement_save();
-        let vars = DataVars::new(&layout, &symbols, NODE_CAPACITY, CACHE_CAPACITY);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(&world)
             .with_constant_clock(DataLayout::group_passes_time(&graph));

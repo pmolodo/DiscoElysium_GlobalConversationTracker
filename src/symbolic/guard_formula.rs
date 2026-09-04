@@ -972,6 +972,7 @@ impl<'a> GuardCompiler<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::symbolic::budget::DiagramBudget;
     use crate::core::action::DialogueAction;
     use crate::core::guard::GuardExpression;
     use crate::core::state::StateSymbols;
@@ -980,8 +981,6 @@ mod tests {
     use crate::graph::node::LookAheadNode;
     use crate::symbolic::data_layout::DataLayout;
 
-    const NODES: usize = 1 << 16;
-    const CACHE: usize = 1 << 14;
 
     /// A graph whose symbol table holds `names`, with `counter` incremented so it is wide.
     fn fixture(names: &[&str], counter: Option<&str>) -> (LookAheadGraph, StateSymbols) {
@@ -1023,7 +1022,7 @@ mod tests {
     fn a_comparison_against_a_constant_query_is_decided_by_the_world() {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let world = crate::world::test_world::TestWorld::new().with_day_counter(1);
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
 
@@ -1051,7 +1050,7 @@ mod tests {
     fn a_constant_query_on_the_right_compares_the_same_way() {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let world = crate::world::test_world::TestWorld::new().with_day_counter(1);
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
 
@@ -1076,7 +1075,7 @@ mod tests {
     fn a_money_comparison_is_undecided_and_says_it_is_about_money() {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let world = crate::world::test_world::TestWorld::new();
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
 
@@ -1102,7 +1101,7 @@ mod tests {
     fn a_money_comparison_is_decided_once_money_has_a_register() {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, Some(1000), false);
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let world = crate::world::test_world::TestWorld::new();
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
 
@@ -1130,7 +1129,7 @@ mod tests {
     fn a_true_literal_holds_everywhere_and_fails_nowhere() {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
 
         let compiled = compiler.compile(&boolean(true));
@@ -1143,7 +1142,7 @@ mod tests {
     fn an_unreadable_guard_is_undecided_everywhere_rather_than_false() {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
 
         // A world query the compiler cannot read.
@@ -1164,7 +1163,7 @@ mod tests {
         let (base, bits) = layout.slot(slot).unwrap();
         assert_eq!(bits, 1);
 
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Variable("met_kim".to_string()));
 
@@ -1181,7 +1180,7 @@ mod tests {
         let (base, bits) = layout.slot(slot).unwrap();
         assert_eq!(bits, 5);
 
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Variable("counter".to_string()));
 
@@ -1201,7 +1200,7 @@ mod tests {
         let slot = symbols.find("counter").unwrap();
         let (base, bits) = layout.slot(slot).unwrap();
 
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Comparison(
             "==".to_string(),
@@ -1224,7 +1223,7 @@ mod tests {
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let base = layout.slot(symbols.find("a").unwrap()).unwrap().0;
 
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Comparison(
             "~=".to_string(),
@@ -1242,7 +1241,7 @@ mod tests {
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let base = layout.slot(symbols.find("a").unwrap()).unwrap().0;
 
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Comparison(
             "==".to_string(),
@@ -1283,7 +1282,7 @@ mod tests {
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let slot = symbols.find("counter").unwrap();
 
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Comparison(
             ">=".to_string(),
@@ -1314,7 +1313,7 @@ mod tests {
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let slot = symbols.find("counter").unwrap();
 
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Comparison(
             "<=".to_string(),
@@ -1337,7 +1336,7 @@ mod tests {
         let world = crate::world::test_world::TestWorld::new()
             .set_variable("untracked", GuardValue::from_number(5.0));
 
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler =
             GuardCompiler::new(&vars).with_world(&world);
         let holds = compiler.compile(&GuardExpression::Comparison(
@@ -1367,7 +1366,7 @@ mod tests {
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let base = layout.slot(symbols.find("a").unwrap()).unwrap().0;
 
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::And(
             Box::new(GuardExpression::Variable("a".to_string())),
@@ -1388,7 +1387,7 @@ mod tests {
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let base = layout.slot(symbols.find("a").unwrap()).unwrap().0;
 
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Not(Box::new(
             GuardExpression::Variable("a".to_string()),
@@ -1404,7 +1403,7 @@ mod tests {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
 
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Not(Box::new(
             GuardExpression::Call("IsKimHere".to_string(), vec![]),
@@ -1435,7 +1434,7 @@ mod tests {
         let slot = snapshot.find("item:shoes_faln").expect("GainItem interns an item slot");
         let base = layout.slot(slot).unwrap().0;
 
-        let vars = DataVars::new(&layout, &snapshot, NODES, CACHE);
+        let vars = DataVars::new(&layout, &snapshot, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Call(
             "CheckItem".to_string(),
@@ -1460,7 +1459,7 @@ mod tests {
         // Deliberately answers no query, to show that is not what settles it.
         let world = crate::world::test_world::TestWorld::new().set_item("ledger", true);
 
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler =
             GuardCompiler::new(&vars).with_world(&world);
         let held = compiler.compile(&GuardExpression::Call(
@@ -1503,7 +1502,7 @@ mod tests {
         // The world says the player does NOT have them. The slot must still decide, so
         // that a path which buys them is seen.
         let world = crate::world::test_world::TestWorld::new().set_item("shoes_faln", false);
-        let vars = DataVars::new(&layout, &snapshot, NODES, CACHE);
+        let vars = DataVars::new(&layout, &snapshot, DiagramBudget::modest());
         let mut compiler =
             GuardCompiler::new(&vars).with_world(&world);
         let compiled = compiler.compile(&GuardExpression::Call(
@@ -1533,7 +1532,7 @@ mod tests {
         let slot = snapshot.find("task:TASK.find_ruby").expect("GainTask interns a task slot");
         let base = layout.slot(slot).unwrap().0;
 
-        let vars = DataVars::new(&layout, &snapshot, NODES, CACHE);
+        let vars = DataVars::new(&layout, &snapshot, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Call(
             "IsTaskActive".to_string(),
@@ -1574,7 +1573,7 @@ mod tests {
         // The save says the thought is NOT in the cabinet, which is the case that used to
         // decide the guard. The slot must win.
         let world = crate::world::test_world::TestWorld::new().set_thought("jamais_vu", false);
-        let vars = DataVars::new(&layout, &snapshot, NODES, CACHE);
+        let vars = DataVars::new(&layout, &snapshot, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
         let compiled = compiler.compile(&GuardExpression::Call(
             "IsTHCPresent".to_string(),
@@ -1599,7 +1598,7 @@ mod tests {
             .set_thought("guillaume_le_million", true)
             .set_query_bool("IsTHCFixed", false);
 
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
         let present = compiler.compile(&GuardExpression::Call(
             "IsTHCPresent".to_string(),
@@ -1628,7 +1627,7 @@ mod tests {
         // Two in the morning.
         let night = crate::world::test_world::TestWorld::new().with_day_minutes(2 * 60);
 
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(&night)
             .with_constant_clock(false);
@@ -1646,7 +1645,7 @@ mod tests {
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let night = crate::world::test_world::TestWorld::new().with_day_minutes(2 * 60);
 
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler =
             GuardCompiler::new(&vars).with_world(&night);
         let compiled =
@@ -1663,13 +1662,13 @@ mod tests {
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let world = crate::world::test_world::TestWorld::new();
 
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let exact = GuardCompiler::new(&vars)
             .with_world(&world)
             .with_constant_clock(false);
         assert!(!exact.clock_is_approximated());
 
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let approximate = GuardCompiler::new(&vars)
             .with_world(&world)
             .with_constant_clock(true);
@@ -1703,7 +1702,7 @@ mod tests {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
 
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&GuardExpression::Variable("never_heard_of_it".to_string()));
 
@@ -1733,7 +1732,7 @@ mod tests {
         let snapshot = symbols.clone();
         let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
         let layout = DataLayout::for_graph(&graph, 16, None, false);
-        let vars = DataVars::new(&layout, &snapshot, NODES, CACHE);
+        let vars = DataVars::new(&layout, &snapshot, DiagramBudget::modest());
 
         // The guard: the gate must be open.
         let mut compiler = GuardCompiler::new(&vars);

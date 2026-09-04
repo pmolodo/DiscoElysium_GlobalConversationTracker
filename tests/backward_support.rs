@@ -35,12 +35,11 @@ use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::vars::DataVars;
 use oxidd::{BooleanFunctionQuant, Function};
+use lookahead_engine::symbolic::budget::DiagramBudget;
 
 mod common;
 
 const COUNTER_CAP: i32 = 16;
-const NODE_CAPACITY: usize = 1 << 24;
-const CACHE_CAPACITY: usize = 1 << 22;
 
 const EXPENSIVE: [i32; 5] = [368, 631, 14, 28, 1030];
 
@@ -106,7 +105,7 @@ fn what_the_biggest_backward_sets_constrain() {
 
         let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
         let symbols = graph.symbols().clone();
-        let vars = DataVars::new(&layout, &symbols, NODE_CAPACITY, CACHE_CAPACITY);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(&world)
             .with_constant_clock(DataLayout::group_passes_time(&graph));

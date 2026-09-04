@@ -239,6 +239,7 @@ fn link_distances(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::symbolic::budget::DiagramBudget;
 
     use std::collections::HashSet;
 
@@ -250,8 +251,6 @@ mod tests {
     use crate::world::test_world::TestWorld;
 
     const CAP: i32 = 16;
-    const NODES: usize = 1 << 18;
-    const CACHE: usize = 1 << 16;
 
     /// The novelty function the engine's own tests use: everything named is unseen.
     fn novel(unseen: &[i32], best: Novelty) -> impl Fn(DialogueNodeId) -> Novelty + '_ {
@@ -271,7 +270,7 @@ mod tests {
     {
         let symbols = graph.symbols().clone();
         let layout = DataLayout::for_graph(graph, CAP, None, false);
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(world);
         let seed = seed_of(graph, world, &vars);
 

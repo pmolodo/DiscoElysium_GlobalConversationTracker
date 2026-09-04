@@ -22,6 +22,7 @@
 
 pub mod action_image;
 pub mod backward;
+pub mod budget;
 pub mod data_layout;
 pub mod guard_formula;
 pub mod novelty_search;
@@ -32,7 +33,7 @@ pub mod vars;
 
 use std::collections::HashMap;
 
-use oxidd::bdd::{new_manager, BDDFunction, BDDManagerRef};
+use oxidd::bdd::{BDDFunction, BDDManagerRef};
 use oxidd::{BooleanFunction, Function, Manager, ManagerRef};
 
 use crate::core::state::LookAheadState;
@@ -298,9 +299,9 @@ pub struct StateSet {
 }
 
 impl StateSet {
-    /// An empty set over `total_vars` variables.
-    pub fn new(total_vars: usize, node_capacity: usize, cache_capacity: usize) -> Self {
-        let manager = new_manager(node_capacity, cache_capacity, 1);
+    /// An empty set over `total_vars` variables, within a memory budget.
+    pub fn new(total_vars: usize, budget: crate::symbolic::budget::DiagramBudget) -> Self {
+        let manager = budget.manager();
         let (vars, empty) = manager.with_manager_exclusive(|m| {
             let range = m.add_vars(total_vars as u32);
             let vars: Vec<BDDFunction> = range
@@ -347,6 +348,7 @@ impl StateSet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::symbolic::budget::DiagramBudget;
 
     fn state(slots: &[i32], money: i32, minutes: i32) -> LookAheadState {
         let mut s = LookAheadState::empty(slots.len(), money, minutes);
@@ -408,7 +410,7 @@ mod tests {
         }
 
         let encoding = StateEncoding::for_profile(&profile);
-        let mut set = StateSet::new(encoding.total_vars(), 1 << 16, 1 << 16);
+        let mut set = StateSet::new(encoding.total_vars(), DiagramBudget::modest());
         for (n, s) in &members {
             set.insert(&encoding.encode(*n, s).expect("a profiled state encodes"));
         }
@@ -424,7 +426,7 @@ mod tests {
 
     #[test]
     fn an_empty_set_holds_nothing() {
-        let set = StateSet::new(4, 1 << 12, 1 << 12);
+        let set = StateSet::new(4, DiagramBudget::modest());
         assert!(!set.contains(&[(0, false), (1, false), (2, false), (3, false)]));
     }
 }

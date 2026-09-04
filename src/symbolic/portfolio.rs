@@ -169,6 +169,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::symbolic::budget::DiagramBudget;
 
     use std::collections::HashSet;
 
@@ -181,8 +182,6 @@ mod tests {
     use crate::world::test_world::TestWorld;
 
     const CAP: i32 = 16;
-    const NODES: usize = 1 << 18;
-    const CACHE: usize = 1 << 16;
 
     fn run<F>(graph: &LookAheadGraph, world: &TestWorld, novelty: F, budget: &Budget)
         -> PortfolioAnswer
@@ -191,7 +190,7 @@ mod tests {
     {
         let symbols = graph.symbols().clone();
         let layout = DataLayout::for_graph(graph, CAP, None, false);
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(world);
         let seed = seed_of(graph, world, &vars);
         let engine = LookAheadEngine::new(LookAheadOptions {

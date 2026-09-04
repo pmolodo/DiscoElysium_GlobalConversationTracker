@@ -7,10 +7,11 @@
 //! means combine into nonsense - so the manager, the variables and the layout travel
 //! together.
 
-use oxidd::bdd::{new_manager, BDDFunction, BDDManagerRef};
+use oxidd::bdd::{BDDFunction, BDDManagerRef};
 use oxidd::{BooleanFunction, Manager, ManagerRef};
 
 use crate::core::state::StateSymbols;
+use crate::symbolic::budget::DiagramBudget;
 use crate::symbolic::data_layout::DataLayout;
 use crate::symbolic::register::{Register, RegisterOps};
 
@@ -24,13 +25,16 @@ pub struct DataVars<'a> {
 
 impl<'a> DataVars<'a> {
     /// Declares one variable per bit of the layout.
+    ///
+    /// A MEMORY BUDGET, not a node count. How many nodes and how many cache entries that
+    /// works out to is [`DiagramBudget`]'s business, so that every caller states the one
+    /// quantity a budget is actually spent in and no caller has to know what a node costs.
     pub fn new(
         layout: &'a DataLayout,
         symbols: &'a StateSymbols,
-        node_capacity: usize,
-        cache_capacity: usize,
+        budget: DiagramBudget,
     ) -> Self {
-        let manager = new_manager(node_capacity, cache_capacity, 1);
+        let manager = budget.manager();
         let vars = manager.with_manager_exclusive(|m| {
             m.add_vars(layout.total_vars())
                 .map(|v| BDDFunction::var(m, v).expect("a freshly added variable"))
@@ -52,21 +56,15 @@ impl<'a> DataVars<'a> {
         self.manager.with_manager_shared(|m| m.num_inner_nodes())
     }
 
-    /// What one diagram node costs, in bytes.
-    ///
-    /// AN ESTIMATE, and stated here so the two budgets can be read against each other. A
-    /// binary decision diagram node carries a level and two child edges, and the unique
-    /// table that finds it again carries a slot per node; 32 bytes is the round figure that
-    /// covers both without pretending to an accuracy nothing here needs.
-    ///
-    /// It backs a budget, which has to be the right size and to move the right way. It is
-    /// not an accounting of the process and nothing should read it as one - the same
-    /// caveat, for the same reason, as `state_bytes` on the forward side.
-    pub const NODE_BYTES: usize = 32;
-
     /// What the manager is holding, in bytes.
+    ///
+    /// Priced at [`DiagramBudget::BYTES_PER_NODE`], which is the same figure the budget
+    /// was divided by to decide how many nodes it could hold - so "used" and "allowed" are
+    /// in the same currency and can be compared. It is not an accounting of the process
+    /// and nothing should read it as one; the same caveat, for the same reason, as
+    /// `state_bytes` on the forward side.
     pub fn memory_used(&self) -> usize {
-        self.node_count() * Self::NODE_BYTES
+        self.node_count() * DiagramBudget::BYTES_PER_NODE
     }
 
     pub fn layout(&self) -> &DataLayout {
@@ -182,8 +180,6 @@ pub(crate) mod tests {
     use crate::graph::graph::LookAheadGraph;
     use crate::graph::node::LookAheadNode;
 
-    const NODES: usize = 1 << 16;
-    const CACHE: usize = 1 << 14;
 
     /// A graph whose symbol table holds `names`, with `counter` incremented so it is wide.
     pub(crate) fn fixture(
@@ -211,7 +207,7 @@ pub(crate) mod tests {
     fn a_slot_equals_only_the_value_it_was_given() {
         let (graph, symbols) = fixture(&["counter"], Some("counter"));
         let layout = DataLayout::for_graph(&graph, 16, None, false);
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let slot = symbols.find("counter").unwrap();
         let (base, bits) = layout.slot(slot).unwrap();
 
@@ -229,7 +225,7 @@ pub(crate) mod tests {
     fn a_value_too_wide_for_the_slot_is_false_everywhere() {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let slot = symbols.find("a").unwrap();
 
         // One bit, so it cannot hold 2.
@@ -241,7 +237,7 @@ pub(crate) mod tests {
     fn a_cube_covers_every_bit_of_its_slot() {
         let (graph, symbols) = fixture(&["counter"], Some("counter"));
         let layout = DataLayout::for_graph(&graph, 16, None, false);
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let slot = symbols.find("counter").unwrap();
         let (base, bits) = layout.slot(slot).unwrap();
 
@@ -258,7 +254,7 @@ pub(crate) mod tests {
     fn a_slot_is_set_when_any_bit_is() {
         let (graph, symbols) = fixture(&["counter"], Some("counter"));
         let layout = DataLayout::for_graph(&graph, 16, None, false);
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let slot = symbols.find("counter").unwrap();
         let (base, bits) = layout.slot(slot).unwrap();
 

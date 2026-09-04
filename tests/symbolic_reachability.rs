@@ -33,21 +33,12 @@ use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::reachability::{Budget, Reachability};
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::world::world::ILookAheadWorld;
+use lookahead_engine::symbolic::budget::DiagramBudget;
 
 mod common;
 
 const COUNTER_CAP: i32 = 16;
-/// How many nodes the diagram manager may hold, derived from the shared allowance.
-///
-/// WAS A HAND-PICKED 2^22, and that quietly made this comparison unequal in the same way it
-/// made the performance matrix unequal. The manager preallocates its capacity and refuses to
-/// grow past it, so 4,194,304 nodes is a hard ceiling of about 134 MB - half what the
-/// forward crawl gets. A row reading "NO ROOM" was then reporting the harness rationing the
-/// diagram, not the diagram failing to fit, and the two are entirely different findings.
-const NODE_CAPACITY: usize = COMPARISON_MEMORY / DataVars::NODE_BYTES;
 
-/// The operation cache, kept at the quarter of the node capacity it was before.
-const CACHE_CAPACITY: usize = NODE_CAPACITY / 4;
 
 /// Small enough that the explicit crawl can exhaust them, which is what makes them usable
 /// as an oracle. A conversation the explicit crawl gives up on proves nothing when the
@@ -194,7 +185,12 @@ fn the_symbolic_search_reaches_what_the_explicit_crawl_reaches() {
 
         let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
         let symbols = graph.symbols().clone();
-        let vars = DataVars::new(&layout, &symbols, NODE_CAPACITY, CACHE_CAPACITY);
+        // THE COMPARISON'S OWN ALLOWANCE, not the measurement one. This test is about
+        // the two searches agreeing, and they can only be compared if they were rationed
+        // alike - so the diagram gets exactly what the crawl it is checked against gets.
+        // It is also an ordinary test rather than a measurement, and handing every run of
+        // the suite six gigabytes to prove an agreement would be its own kind of wrong.
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::new(COMPARISON_MEMORY));
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(&world)
             .with_constant_clock(DataLayout::group_passes_time(&graph));
@@ -361,7 +357,7 @@ fn finding_one_unseen_entry_in_a_group_that_is_otherwise_seen() {
         let symbols = graph.symbols().clone();
         let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false)
             .keeping_only_read(&symbols, &DataLayout::read_by(&graph));
-        let vars = DataVars::new(&layout, &symbols, NODE_CAPACITY, CACHE_CAPACITY);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::measurement());
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(&world)
             .with_constant_clock(DataLayout::group_passes_time(&graph));
@@ -477,7 +473,7 @@ fn what_the_expensive_conversations_cost() {
             layout.total_vars(),
             full.total_vars(),
         );
-        let vars = DataVars::new(&layout, &symbols, NODE_CAPACITY, CACHE_CAPACITY);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::measurement());
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(&world)
             .with_constant_clock(DataLayout::group_passes_time(&graph));

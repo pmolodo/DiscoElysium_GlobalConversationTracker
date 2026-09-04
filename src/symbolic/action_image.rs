@@ -426,12 +426,11 @@ impl<'a> ActionImage<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::symbolic::budget::DiagramBudget;
     use crate::core::state::StateSymbols;
     use crate::symbolic::data_layout::DataLayout;
     use crate::symbolic::vars::tests::fixture;
 
-    const NODES: usize = 1 << 16;
-    const CACHE: usize = 1 << 14;
     const CAP: u32 = 16;
 
     /// Reads back which values of `slot` a set allows, by trying them all.
@@ -453,7 +452,7 @@ mod tests {
     fn an_assignment_replaces_whatever_was_there() {
         let (graph, symbols) = fixture(&["counter"], Some("counter"));
         let layout = DataLayout::for_graph(&graph, CAP as i32, None, false);
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let slot = symbols.find("counter").unwrap();
         let mut image = ActionImage::new(&vars, CAP);
 
@@ -470,7 +469,7 @@ mod tests {
     fn an_assignment_does_not_merely_select_states_already_holding_the_value() {
         let (graph, symbols) = fixture(&["counter"], Some("counter"));
         let layout = DataLayout::for_graph(&graph, CAP as i32, None, false);
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let slot = symbols.find("counter").unwrap();
         let mut image = ActionImage::new(&vars, CAP);
 
@@ -486,7 +485,7 @@ mod tests {
     fn an_increment_moves_every_value_in_the_set() {
         let (graph, symbols) = fixture(&["counter"], Some("counter"));
         let layout = DataLayout::for_graph(&graph, CAP as i32, None, false);
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let slot = symbols.find("counter").unwrap();
         let mut image = ActionImage::new(&vars, CAP);
 
@@ -504,7 +503,7 @@ mod tests {
     fn an_increment_saturates_at_the_cap() {
         let (graph, symbols) = fixture(&["counter"], Some("counter"));
         let layout = DataLayout::for_graph(&graph, CAP as i32, None, false);
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let slot = symbols.find("counter").unwrap();
         let mut image = ActionImage::new(&vars, CAP);
 
@@ -521,7 +520,7 @@ mod tests {
     fn repeated_increments_reach_a_fixed_point() {
         let (graph, symbols) = fixture(&["counter"], Some("counter"));
         let layout = DataLayout::for_graph(&graph, CAP as i32, None, false);
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let slot = symbols.find("counter").unwrap();
         let mut image = ActionImage::new(&vars, CAP);
 
@@ -548,7 +547,7 @@ mod tests {
         let snapshot = symbols.clone();
         let graph = crate::graph::graph::LookAheadGraph::new(vec![node], symbols).unwrap();
         let layout = DataLayout::for_graph(&graph, CAP as i32, None, false);
-        let vars = DataVars::new(&layout, &snapshot, NODES, CACHE);
+        let vars = DataVars::new(&layout, &snapshot, DiagramBudget::modest());
         let mut image = ActionImage::new(&vars, CAP);
 
         let spent = vars.slot_is_set(fired).unwrap();
@@ -569,7 +568,7 @@ mod tests {
     fn an_action_the_layout_cannot_carry_is_counted_rather_than_dropped_silently() {
         let (graph, symbols) = fixture(&["a"], None);
         let layout = DataLayout::for_graph(&graph, CAP as i32, None, false);
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut image = ActionImage::new(&vars, CAP);
 
         let money = vec![DialogueAction::money(true, 50, false, "GainMoney".to_string())];

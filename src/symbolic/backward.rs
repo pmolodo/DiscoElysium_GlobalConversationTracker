@@ -544,6 +544,7 @@ impl<'a> Backward<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::symbolic::budget::DiagramBudget;
 
     use crate::core::guard_value::GuardValue;
     use crate::symbolic::data_layout::DataLayout;
@@ -552,8 +553,6 @@ mod tests {
     use crate::world::test_world::TestWorld;
 
     const CAP: i32 = 16;
-    const NODES: usize = 1 << 18;
-    const CACHE: usize = 1 << 16;
 
     /// Both searches over one graph: does the forward one reach `target`, and does the
     /// backward one say it can be reached from the seed?
@@ -577,7 +576,7 @@ mod tests {
         let symbols = graph.symbols().clone();
 
         let layout = DataLayout::for_graph(&graph, CAP, None, false);
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(world);
         let seed = seed_of(&graph, world, &vars);
         let start = node(0);
@@ -747,7 +746,7 @@ mod tests {
 
         let world = TestWorld::new();
         let layout = DataLayout::for_graph(&graph, CAP, None, false);
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
         let backward =
             Backward::reaching(&graph, node(3), &mut compiler, &world, CAP as u32);
@@ -889,7 +888,7 @@ mod tests {
         let walked = walked.lock().expect("the sink").clone();
 
         let layout = DataLayout::for_graph(&graph, CAP, None, false);
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
         let seed = seed_of(&graph, &world, &vars);
 
@@ -928,7 +927,7 @@ mod tests {
 
         let world = TestWorld::new();
         let layout = DataLayout::for_graph(&graph, CAP, None, false);
-        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
 
         let backward =

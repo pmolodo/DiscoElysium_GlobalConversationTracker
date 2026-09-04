@@ -40,12 +40,11 @@ use lookahead_engine::symbolic::portfolio;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::world::world::ILookAheadWorld;
+use lookahead_engine::symbolic::budget::DiagramBudget;
 
 mod common;
 
 const COUNTER_CAP: i32 = 16;
-const NODE_CAPACITY: usize = 1 << 22;
-const CACHE_CAPACITY: usize = 1 << 20;
 
 /// Small enough that the explicit crawl can exhaust them, which is what makes them an
 /// oracle at all. The same six `symbolic_reachability` uses, deliberately: the two tests
@@ -160,7 +159,7 @@ fn the_backward_search_finds_what_the_explicit_crawl_reaches() {
 
         let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
         let symbols = graph.symbols().clone();
-        let vars = DataVars::new(&layout, &symbols, NODE_CAPACITY, CACHE_CAPACITY);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(&world)
             .with_constant_clock(DataLayout::group_passes_time(&graph));
@@ -285,7 +284,7 @@ fn the_driver_answers_what_the_engine_answers() {
 
         let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
         let symbols = graph.symbols().clone();
-        let vars = DataVars::new(&layout, &symbols, NODE_CAPACITY, CACHE_CAPACITY);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(&world)
             .with_constant_clock(DataLayout::group_passes_time(&graph));

@@ -128,15 +128,14 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use lookahead_engine::core::state::StateSymbols;
 use lookahead_engine::core::types::{DialogueNodeId, Novelty};
-use lookahead_engine::engine::engine::{
-    LookAheadEngine, LookAheadOptions, DEFAULT_MEMORY_BUDGET,
-};
+use lookahead_engine::engine::engine::{LookAheadEngine, LookAheadOptions};
 use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::reachability::{seed_of, Budget, Reachability};
 use lookahead_engine::symbolic::vars::DataVars;
+use lookahead_engine::symbolic::budget::DiagramBudget;
 
 mod common;
 
@@ -144,25 +143,25 @@ mod common;
 const HEAVIEST: [i32; 6] = [362, 368, 631, 14, 28, 1030];
 
 /// The same allowance for both engines, so the two columns can be read against each other.
-const MEMORY: usize = DEFAULT_MEMORY_BUDGET;
+///
+/// THE MEASUREMENT ALLOWANCE, NOT THE SHIPPED ONE. This used to be
+/// `DEFAULT_MEMORY_BUDGET`, which is a product decision about what a player's machine
+/// should give a response menu - a fine ceiling to ship and the wrong one to measure
+/// against, because a row that says "no room" then reports the ration rather than the
+/// algorithm. What is wanted here is where the search actually stops, so it gets the
+/// shared measurement budget and the shipped default is left alone.
+///
+/// Both engines take it: the crawl in bytes directly, the diagram through
+/// [`DiagramBudget`], which turns it into a node capacity and a cache capacity. A hand-
+/// picked capacity is what made this unequal before - 2^22 nodes is a hard ceiling of
+/// about 134 MB, half what the crawl was allowed, and conversations 631 and 14 reported
+/// "no room" at exactly 4,194,304 nodes, which was that ceiling and not the budget.
+const MEMORY: usize = DiagramBudget::measurement().memory();
 const TIME: std::time::Duration = std::time::Duration::from_secs(60);
 
 const COUNTER_CAP: i32 = 16;
 
-/// How many nodes the diagram manager may hold, derived from the memory budget.
-///
-/// NOT A ROUND POWER OF TWO PICKED BY HAND, which is what it was and which quietly made the
-/// comparison unequal: the manager preallocates its capacity and refuses to grow past it, so
-/// a hand-picked 2^22 nodes is a hard ceiling of about 134 MB - half what the forward crawl
-/// was allowed. Conversations 631 and 14 reported "no room" at exactly 4,194,304 nodes,
-/// which is that ceiling rather than the budget, and it read as the diagram failing when it
-/// was the harness rationing it.
-///
-/// Derived, the two engines get the same allowance and the budget is what decides.
-const NODE_CAPACITY: usize = MEMORY / DataVars::NODE_BYTES;
 
-/// The operation cache, kept proportional to the node capacity as it was before.
-const CACHE_CAPACITY: usize = NODE_CAPACITY / 4;
 
 /// How much of a group a profile has read.
 #[derive(Debug, Clone, Copy)]
@@ -388,7 +387,9 @@ fn backward(
 
     let layout = DataLayout::for_graph(graph, COUNTER_CAP, None, false)
         .keeping_only_read(symbols, &DataLayout::read_by(graph));
-    let vars = DataVars::new(&layout, symbols, NODE_CAPACITY, CACHE_CAPACITY);
+    // From MEMORY, so the diagram and the crawl are held to one number rather than two
+    // that happen to agree.
+    let vars = DataVars::new(&layout, symbols, DiagramBudget::new(MEMORY));
     let mut compiler = GuardCompiler::new(&vars)
         .with_world(world)
         .with_constant_clock(DataLayout::group_passes_time(graph));
