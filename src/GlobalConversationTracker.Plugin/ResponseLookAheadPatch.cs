@@ -132,6 +132,16 @@ namespace GlobalConversationTracker
         /// against 7.34:1 - because the two check backgrounds sit on opposite sides of a
         /// mid grey, and only a colour at one extreme clears both. It is still neutral, and
         /// the '*?' glyph is what says "did not finish" in any case.</para>
+        ///
+        /// <para>THAT REASONING IS SUPERSEDED AND THIS COLOUR MAY NOT NEED TO EXIST. It
+        /// rests on the line being drawn on the check's own background, and since the line
+        /// brings its own backdrop (see <c>BranchLine.Backdrop</c>) both kinds of check
+        /// land within a few per cent of black. Measured on the backdrop, the OPTION's own
+        /// grey reads at 4.21:1 on a red check and 4.09:1 on a white one, against 4.89:1 on
+        /// an option - so one grey would now serve both places, and "grey means the search
+        /// gave up" could be one thing everywhere rather than two settings that have to
+        /// agree. Not done here: dropping a colour is a deliberate simplification rather
+        /// than part of making the line readable. See de-8hh2.15.</para>
         /// </remarks>
         internal const string DefaultBranchUncertainColorHtml = "#F2F2F2";
 

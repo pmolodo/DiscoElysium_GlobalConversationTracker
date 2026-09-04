@@ -98,12 +98,73 @@ namespace GlobalConversationTracker.Engine
             LookAheadAnswer pass, LookAheadAnswer fail, MarkerPalette palette)
         {
             var line = new StringBuilder("\n");
+
+            // THE LINE BRINGS ITS OWN BACKGROUND, which is what lets it keep the mod's
+            // colours. See the remarks on <see cref="Backdrop"/>: without it the three
+            // word colours are drawn on whatever the check is painted, and on a RED check
+            // that measured 1.10:1 - the same colour twice over.
+            line.Append(Mark(Backdrop));
             line.Append(' ', Math.Max(0, (LineWidth / 3) - (PassWord.Length / 2)));
             line.Append(Half(PassWord, pass, palette));
             line.Append(' ', Math.Max(1, (LineWidth / 3) - PassWord.Length));
             line.Append(Half(FailWord, fail, palette));
+            line.Append(MarkEnd);
             return line.ToString();
         }
+
+        /// <summary>What the Pass / Fail line is drawn on, whatever the check is.</summary>
+        /// <remarks>
+        /// <para>BLACK AT FOUR FIFTHS, and the alpha is the point of it: solid black would
+        /// be a bar across a check the game drew deliberately, and no background at all is
+        /// what the measurement below says is unreadable. Four fifths puts the words on
+        /// something near enough black to keep the mod's three colours meaning what they
+        /// mean everywhere else, while the check's own colour still shows through as the
+        /// frame it is.</para>
+        ///
+        /// <para>WHY THIS RATHER THAN A SECOND PALETTE. The alternative was a darker set of
+        /// word colours for a red check, which breaks the one thing the design is built on
+        /// - that orange means the same thing wherever it appears - and which de-8hh2.4
+        /// refused for the uncertain marker on exactly those grounds. Giving the line a
+        /// background of its own makes the question go away instead of answering it twice.
+        /// </para>
+        ///
+        /// <para>MEASURED, off the first screenshot of a red check with the line on it, and
+        /// the estimate de-8hh2.4 worked from was wrong: the background is #D7431B, a
+        /// bright red-orange, not a maroon. The whole table, in contrast ratios:</para>
+        ///
+        /// <code>
+        ///                              orange   red   darkRed   grey
+        ///   an option, on black          9.08  4.26      2.52  18.76
+        ///   a RED check, bare            1.93  1.10      1.87   3.98
+        ///   a WHITE check, bare          1.72  1.24      2.09   3.56
+        ///   a RED check, backdropped     7.81  3.67      2.17  16.14
+        ///   a WHITE check, backdropped   7.59  3.56      2.10  15.67
+        /// </code>
+        ///
+        /// <para>Bare, every word on a check is at or under 2.1:1 - 1.10:1 is the same
+        /// colour twice over. Backdropped, both kinds of check land within a few per cent
+        /// of the black an option is drawn on, which is the background every one of these
+        /// colours was chosen against. That is the claim this makes: not that the palette
+        /// is good, but that the line is now drawn where the palette already applies.</para>
+        ///
+        /// <para>THE DARK RED IS LOW EVERYWHERE, including on an option's own black, and
+        /// that is not what this fixes. It says "already read", the one word on the line
+        /// that means there is nothing to go and see, and a colour that recedes is doing
+        /// its job - the game fades a spent option for the same reason. Left alone
+        /// deliberately; the numbers are here so the next person can disagree on purpose.
+        /// </para>
+        /// </remarks>
+        internal const string Backdrop = "#000000CC";
+
+        /// <summary>Opens a highlight behind everything up to <see cref="MarkEnd"/>.</summary>
+        /// <remarks>
+        /// TextMeshPro's own tag, which the game's dialogue text renders - the same rich
+        /// text that makes <c>&lt;color&gt;</c> work here.
+        /// </remarks>
+        private static string Mark(string colourHtml) => "<mark=" + colourHtml + ">";
+
+        /// <summary>And closes it.</summary>
+        private const string MarkEnd = "</mark>";
 
         /// <summary>One half of the line: the word, in its colour, and its asterisk.</summary>
         /// <remarks>
