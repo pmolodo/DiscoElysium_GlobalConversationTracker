@@ -369,7 +369,9 @@ namespace GlobalConversationTracker.Harness
                             watcher.WaitForEvent("save-applied", timeout, Log);
                         }
 
-                        RunScenario(scenario, saveGames, watcher, timeout, report);
+                        RunScenario(
+                            scenario, saveGames, watcher, timeout, report, window,
+                            artifacts, suite.Name);
 
                         if (!snapshotCompared)
                         {
@@ -827,7 +829,10 @@ namespace GlobalConversationTracker.Harness
             string saveGames,
             ProbeWatcher watcher,
             TimeSpan timeout,
-            Report report)
+            Report report,
+            GameWindow window,
+            string artifacts,
+            string suiteName)
         {
             watcher.WaitForEvent("load-finished", timeout, Log);
 
@@ -891,6 +896,8 @@ namespace GlobalConversationTracker.Harness
                 }
             }
 
+            CaptureMenu(scenario, options, window, artifacts, suiteName);
+
             if (scenario.Markers == MarkerPolicy.Ignored)
             {
                 return;
@@ -934,6 +941,57 @@ namespace GlobalConversationTracker.Harness
             }
 
             CheckBranchLines(scenario, options, report);
+        }
+
+        /// <summary>Where a run's menu pictures go, under its artifacts folder.</summary>
+        private const string MenuPictures = "menus";
+
+        /// <summary>
+        /// Photographs a menu that carries a Pass / Fail line, while it is still up.
+        /// </summary>
+        /// <remarks>
+        /// <para>THE ONE CLAIM THE PROBE CANNOT MAKE. Everything else this run checks is
+        /// read from the text the game was about to draw, which says the line is composed
+        /// and coloured correctly and says nothing at all about whether the player can see
+        /// it: the response menu could lay its options out in fixed-height boxes and clip
+        /// the second line, and every check here would still pass. A picture is what
+        /// separates those two worlds, so one is taken.</para>
+        ///
+        /// <para>Only menus that actually carry a line, which is a handful per run - a
+        /// picture of a menu with nothing to show costs the same and proves nothing. Taken
+        /// here rather than at the end because the menu is up NOW; the run moves on to the
+        /// next save as soon as this scenario returns.</para>
+        ///
+        /// <para>Not a check. Nothing automatic can look at the picture and say whether
+        /// two lines were drawn, so a failed capture is reported and the run carries on -
+        /// the markers are what pass or fail a run, and they have already been read.</para>
+        /// </remarks>
+        private static void CaptureMenu(
+            LookAheadScenario scenario,
+            ProbeOption[] options,
+            GameWindow window,
+            string artifacts,
+            string suiteName)
+        {
+            if (!options.Any(option => option.Branches() != null))
+            {
+                return;
+            }
+
+            string folder = Path.Combine(artifacts, MenuPictures);
+            string path = Path.Combine(
+                folder,
+                $"{suiteName}-{scenario.SaveName}-{scenario.ConversationId}.png");
+            try
+            {
+                Directory.CreateDirectory(folder);
+                GameScreen.SaveCapture(window.Handle, path);
+                Console.WriteLine($"        a check is on screen; picture in {path}");
+            }
+            catch (Exception error)
+            {
+                Console.WriteLine($"        could not photograph the menu: {error.Message}");
+            }
         }
 
         /// <summary>
