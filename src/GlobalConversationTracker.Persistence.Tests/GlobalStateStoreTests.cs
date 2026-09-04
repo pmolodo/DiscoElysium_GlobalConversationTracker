@@ -2,6 +2,8 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace GlobalConversationTracker.Persistence.Tests
@@ -503,6 +505,128 @@ namespace GlobalConversationTracker.Persistence.Tests
             store.Save(NewGeneration());
 
             AssertSameEntries(NewGeneration(), store.Load().RequireState());
+        }
+
+        // -------------------------------------------------------------------
+        // Retrying a lock that clears (de-zexr).
+        // -------------------------------------------------------------------
+
+        /// <summary>
+        /// A save whose live file is briefly held by something else still lands.
+        /// </summary>
+        /// <remarks>
+        /// <para>The real failure, produced with a real lock rather than an injected
+        /// exception. A save is three filesystem operations on the same directory, and on
+        /// Windows any of them can come back as a sharing violation because a virus
+        /// scanner, the search indexer or a backup agent held the file for an instant.
+        /// Before this, one such moment put an ERROR in the player's log and made
+        /// <c>TrySave</c> report failure for a save that was never going to be wrong -
+        /// which is also what made the deferred-write soak fail intermittently, twice, five
+        /// months apart (de-wqs).</para>
+        ///
+        /// <para>The lock is released on a timer well inside the retry budget, so the test
+        /// turns on the retry existing rather than on how fast the machine is: ten attempts
+        /// fifty milliseconds apart against a hold of one hundred.</para>
+        /// </remarks>
+        [Fact]
+        public void SaveWhoseFileIsBrieflyHeldElsewhere_RetriesAndLands()
+        {
+            using var temp = new TempDirectory();
+            GlobalStateStore store = temp.CreateStore();
+
+            // A first generation, so the save under test has a live file to rotate - which
+            // is the step the lock below blocks.
+            store.Save(OldGeneration());
+
+            using var locked = new ManualResetEventSlim(false);
+            var holder = Task.Run(() =>
+            {
+                using var hold = new FileStream(
+                    store.LivePath, FileMode.Open, FileAccess.Read, FileShare.None);
+                locked.Set();
+                Thread.Sleep(100);
+            });
+
+            Assert.True(locked.Wait(TimeSpan.FromSeconds(5)), "the holder never took the file");
+
+            // Would throw without the retry: the rotation cannot move a file another
+            // handle holds with FileShare.None.
+            store.Save(NewGeneration());
+            holder.GetAwaiter().GetResult();
+
+            AssertSameEntries(NewGeneration(), store.Load().RequireState());
+        }
+
+        /// <summary>
+        /// The generation the rotation moved aside survives a retry of the promotion.
+        /// </summary>
+        /// <remarks>
+        /// The reason the retry is per STEP rather than around the whole save. The rotation
+        /// - moving the live file onto the backup - is not idempotent: running the sequence
+        /// again after it had already succeeded would rotate the new backup away as well,
+        /// and a transient lock would have become real data loss. Retrying only the step
+        /// that failed cannot do that, and this says so out loud.
+        /// </remarks>
+        [Fact]
+        public void RetryAfterTheRotation_DoesNotRotateASecondTime()
+        {
+            using var temp = new TempDirectory();
+            GlobalStateStore store = temp.CreateStore();
+
+            store.Save(OldGeneration());
+
+            using var locked = new ManualResetEventSlim(false);
+            var holder = Task.Run(() =>
+            {
+                using var hold = new FileStream(
+                    store.LivePath, FileMode.Open, FileAccess.Read, FileShare.None);
+                locked.Set();
+                Thread.Sleep(100);
+            });
+
+            Assert.True(locked.Wait(TimeSpan.FromSeconds(5)), "the holder never took the file");
+            store.Save(NewGeneration());
+            holder.GetAwaiter().GetResult();
+
+            // One rotation happened, so the backup holds the generation that was live -
+            // not the one before it, and not the new one.
+            Assert.True(File.Exists(store.BackupPath), "the previous generation should be kept");
+            AssertSameEntries(
+                OldGeneration(),
+                GlobalStateJson.Deserialize(
+                    File.ReadAllBytes(store.BackupPath), store.BackupPath).RequireState());
+        }
+
+        /// <summary>Only a lock that clears is retried; everything else is reported.</summary>
+        /// <remarks>
+        /// Retrying a permission error would turn an immediate honest failure into a slow
+        /// one, and retrying a crash-point test's exception would quietly complete a save
+        /// that test exists to stop.
+        /// </remarks>
+        [Theory]
+        [InlineData(32, true)]   // ERROR_SHARING_VIOLATION
+        [InlineData(33, true)]   // ERROR_LOCK_VIOLATION
+        [InlineData(5, false)]   // ERROR_ACCESS_DENIED
+        [InlineData(112, false)] // ERROR_DISK_FULL
+        [InlineData(0, false)]
+        public void OnlyASharingOrLockViolationIsRetried(int win32Code, bool expected)
+        {
+            var error = new IOException("something") { HResult = unchecked((int)0x80070000) | win32Code };
+            Assert.Equal(expected, GlobalStateStore.IsTransient(error));
+        }
+
+        /// <summary>A failure that is not IO at all is never retried.</summary>
+        /// <remarks>
+        /// The crash-point tests throw their own exception type, and the mid-write hook is
+        /// the one hook inside a retried step - so "not an IOException" is what keeps a
+        /// simulated crash from being retried into a completed save.
+        /// </remarks>
+        [Fact]
+        public void AFailureThatIsNotIoIsNeverRetried()
+        {
+            Assert.False(GlobalStateStore.IsTransient(new InvalidOperationException("no")));
+            Assert.False(GlobalStateStore.IsTransient(
+                new UnauthorizedAccessException("denied")));
         }
     }
 }

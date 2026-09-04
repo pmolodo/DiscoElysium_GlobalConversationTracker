@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 using System;
 using System.IO;
+using System.Threading;
 
 namespace GlobalConversationTracker.Persistence
 {
@@ -301,14 +302,14 @@ namespace GlobalConversationTracker.Persistence
             }
 
             Directory.CreateDirectory(DirectoryPath);
-            WriteTempFile(payload);
+            Retrying(() => WriteTempFile(payload));
             SaveStepHook?.Invoke(GlobalStateSaveStep.AfterTempFlushed);
 
             if (File.Exists(LivePath))
             {
                 // Single overwriting rename rather than delete-then-move: there is no
                 // instant where both the old backup and the live file are gone.
-                File.Move(LivePath, BackupPath, overwrite: true);
+                Retrying(() => File.Move(LivePath, BackupPath, overwrite: true));
                 SaveStepHook?.Invoke(GlobalStateSaveStep.AfterLiveRotatedToBackup);
             }
 
@@ -316,8 +317,89 @@ namespace GlobalConversationTracker.Persistence
             // away or because this is the first save (or a previous crash landed in the
             // window above, in which case the backup still holds the older generation
             // and is deliberately left alone).
-            File.Move(TempPath, LivePath);
+            Retrying(() => File.Move(TempPath, LivePath));
             SaveStepHook?.Invoke(GlobalStateSaveStep.AfterTempPromoted);
+        }
+
+        /// <summary>
+        /// How many times one step of a save is attempted before its failure is reported.
+        /// </summary>
+        /// <remarks>
+        /// The whole budget is well under a second, against a write that costs about 40 ms
+        /// at the largest constructible file and a caller that waits 30 seconds for one. It
+        /// is sized for a scanner holding a newly created file for a moment, which is what
+        /// this is for - not for a network share that has gone away.
+        /// </remarks>
+        internal const int SaveAttempts = 10;
+
+        /// <summary>How long to wait between attempts, in milliseconds.</summary>
+        internal static int SaveRetryDelayMilliseconds { get; set; } = 50;
+
+        /// <summary>
+        /// Runs one step of a save, trying again while the failure is one that clears.
+        /// </summary>
+        /// <remarks>
+        /// <para>PER STEP, NOT PER SAVE, and that is the whole design. A save writes the
+        /// temporary file, rotates the live file onto the backup, then promotes the
+        /// temporary one - and the rotation is NOT IDEMPOTENT. Retrying the sequence after
+        /// the rotation had already succeeded would rotate a second time and throw away a
+        /// generation, turning a transient lock into real data loss.</para>
+        ///
+        /// <para>ONLY WHAT CLEARS IS RETRIED. A permission error on the directory is not
+        /// going to go away, and retrying it turns an immediate honest failure into a slow
+        /// one. See <see cref="IsTransient"/> for what counts.</para>
+        ///
+        /// <para>The save-step hooks are deliberately OUTSIDE this, so a test that stops a
+        /// save dead at a chosen step is not quietly retried into completing. The one hook
+        /// that is inside - the mid-write one - throws something this does not consider
+        /// transient, so it is not retried either.</para>
+        /// </remarks>
+        private static void Retrying(Action step)
+        {
+            for (int attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    step();
+                    return;
+                }
+                catch (Exception error) when (attempt < SaveAttempts && IsTransient(error))
+                {
+                    Thread.Sleep(SaveRetryDelayMilliseconds);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether a failure is the kind that goes away on its own.
+        /// </summary>
+        /// <remarks>
+        /// <para>A sharing or lock violation, and nothing else. Something else on the
+        /// machine held the file for an instant - a virus scanner or a search indexer
+        /// noticing a newly created one, a backup agent reading it - and a moment later it
+        /// will not. Every other IO failure is either permanent or means something is wrong
+        /// that a retry would only delay finding out about.</para>
+        ///
+        /// <para>The codes are read out of the low half of the HRESULT, which is where
+        /// Windows puts the Win32 error: 32 is ERROR_SHARING_VIOLATION and 33 is
+        /// ERROR_LOCK_VIOLATION. Neither has a named constant in the BCL.</para>
+        /// </remarks>
+        /// <param name="error">The failure.</param>
+        internal static bool IsTransient(Exception error)
+        {
+            const int SharingViolation = 32;
+            const int LockViolation = 33;
+
+            // Only IOException: an UnauthorizedAccessException here is a permission
+            // problem, and the one case where Windows raises it for a file pending
+            // deletion is not one a retry of the same operation recovers from.
+            if (error is not IOException)
+            {
+                return false;
+            }
+
+            int code = error.HResult & 0xFFFF;
+            return code == SharingViolation || code == LockViolation;
         }
 
         private void WriteTempFile(byte[] payload)

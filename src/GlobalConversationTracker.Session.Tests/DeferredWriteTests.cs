@@ -527,14 +527,21 @@ namespace GlobalConversationTracker.Session.Tests
         /// again. The soak's assertion was simply stricter than the contract, and it is
         /// the assertion rather than the session that the two failures were about.</para>
         ///
-        /// <para>THE FAILURE HAS TO HIT THE WRITE THIS CALL ASKED FOR. `TrySave` bumps the
-        /// dirty version unconditionally, so it always waits on a write of its own, and an
-        /// earlier failure that a later clean write has already superseded does not make it
-        /// return false. That is why one unlucky moment in the soak's hundreds of write
+        /// <para>THE FAILURE HAS TO HIT THE WRITE THIS CALL ASKED FOR. <c>TrySave</c> bumps
+        /// the dirty version unconditionally, so it always waits on a write of its own, and
+        /// an earlier failure that a later clean write has already superseded does not make
+        /// it return false. That is why one unlucky moment in the soak's hundreds of write
         /// cycles is what it takes, and why five immediate reruns passed both times.</para>
+        ///
+        /// <para>WHAT IS SIMULATED HERE IS NO LONGER THE SHARING VIOLATION ITSELF. de-zexr
+        /// retries that inside the store, so a real one now clears and the save lands - and
+        /// this test would no longer see a refusal if it raised one. What it raises instead
+        /// is an IO failure that does NOT clear, which is the case that still reaches the
+        /// session, and the path from there to a refused <c>TrySave</c> is the one the two
+        /// soak failures took.</para>
         /// </remarks>
         [Fact]
-        public void TrySave_WhenOneWriteHitsATransientIoError_ReportsFalseAndKeepsTheState()
+        public void TrySave_WhenAWriteHitsAnIoErrorThatDoesNotClear_ReportsFalseAndKeepsTheState()
         {
             using var dir = new TempDirectory();
             GlobalStateStore store = dir.CreateStore();
@@ -547,10 +554,10 @@ namespace GlobalConversationTracker.Session.Tests
             {
                 if (failing.IsSet)
                 {
-                    // What a sharing violation looks like from inside the save.
-                    throw new IOException(
-                        "The process cannot access the file because it is being used by "
-                        + "another process.");
+                    // A disk that is full, rather than a file somebody is holding. The
+                    // store retries a sharing violation and would swallow one; this is the
+                    // shape that still gets through, and the shape a retry SHOULD not hide.
+                    throw new IOException("There is not enough space on the disk.");
                 }
             };
 
