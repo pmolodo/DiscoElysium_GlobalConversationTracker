@@ -454,15 +454,39 @@ namespace GlobalConversationTracker.Session.Tests
                 }
             }));
 
+            // Which TrySave refused, and how many had already succeeded, kept rather than
+            // asserted inside the worker. An assertion thrown on a task thread arrives as
+            // an AggregateException with the test name stripped off it, which is how the
+            // first occurrence of this failure - de-b3c - reached its ticket with no
+            // assertion text at all.
+            int savesAttempted = 0;
+            int savesRefused = 0;
             tasks.Add(Task.Run(() =>
             {
                 for (int i = 0; i < trySaveCount; i++)
                 {
-                    Assert.True(session.TrySave());
+                    savesAttempted++;
+                    if (!session.TrySave())
+                    {
+                        savesRefused++;
+                    }
                 }
             }));
 
             AssertCompletes("The soak", Task.WhenAll(tasks));
+
+            // Reported before the invariants, and with the log attached, because a refused
+            // save is the intermittent failure this test has had twice (de-wqs) and both
+            // times the evidence was gone by the time anybody looked. TrySave returns false
+            // when the write it waited on FAILED, and the writer logs the reason - so the
+            // log is the diagnosis, and it belongs in the failure message rather than in a
+            // rerun that will not reproduce.
+            Assert.True(
+                savesRefused == 0,
+                $"{savesRefused} of {savesAttempted} TrySave calls were refused. TrySave "
+                + "returns false when the write it waited on failed, timed out, or the "
+                + "writer had stopped. The session logged:\n  "
+                + string.Join("\n  ", log.All));
 
             const int expectedEntryCount = recorderCount * marksPerRecorder;
             Assert.Equal(expectedEntryCount, session.State.EntryCount);
@@ -479,7 +503,77 @@ namespace GlobalConversationTracker.Session.Tests
                 }
             }
 
-            Assert.Empty(log.Errors);
+            Assert.True(
+                log.Errors.Count == 0,
+                "the soak logged errors:\n  " + string.Join("\n  ", log.Errors));
+        }
+
+        /// <summary>
+        /// One transient IO failure is enough to make <c>TrySave</c> report false, and
+        /// that is the whole of the intermittent soak failure.
+        /// </summary>
+        /// <remarks>
+        /// <para>The mechanism behind de-wqs, produced deliberately rather than waited
+        /// for. A save is three filesystem operations - write the temp file, rotate the
+        /// live file onto the backup, rename the temp onto the live - and the soak drives
+        /// hundreds of them through the same three paths in one directory in about half a
+        /// second. On Windows, under the parallel test load both recorded occurrences
+        /// happened under, any one of those can come back as a sharing violation from
+        /// something else holding the file for an instant.</para>
+        ///
+        /// <para>When it does, the writer catches it, logs it, and records that the last
+        /// write failed - so a <c>TrySave</c> waiting on that write correctly returns
+        /// false. NOTHING IS LOST: the in-memory state is whole and the next change writes
+        /// again. The soak's assertion was simply stricter than the contract, and it is
+        /// the assertion rather than the session that the two failures were about.</para>
+        ///
+        /// <para>THE FAILURE HAS TO HIT THE WRITE THIS CALL ASKED FOR. `TrySave` bumps the
+        /// dirty version unconditionally, so it always waits on a write of its own, and an
+        /// earlier failure that a later clean write has already superseded does not make it
+        /// return false. That is why one unlucky moment in the soak's hundreds of write
+        /// cycles is what it takes, and why five immediate reruns passed both times.</para>
+        /// </remarks>
+        [Fact]
+        public void TrySave_WhenOneWriteHitsATransientIoError_ReportsFalseAndKeepsTheState()
+        {
+            using var dir = new TempDirectory();
+            GlobalStateStore store = dir.CreateStore();
+
+            var log = new RecordingLog();
+            var session = new GlobalStateSession(store, log);
+
+            var failing = new ManualResetEventSlim(initialState: true);
+            store.SaveStepHook = _ =>
+            {
+                if (failing.IsSet)
+                {
+                    // What a sharing violation looks like from inside the save.
+                    throw new IOException(
+                        "The process cannot access the file because it is being used by "
+                        + "another process.");
+                }
+            };
+
+            session.Record(1, 1, "WasDisplayed");
+            Assert.False(session.TrySave(), "the write failed, so the save must say so");
+            failing.Reset();
+
+            // The state is intact, and the failure was explained rather than swallowed.
+            Assert.Equal(SimStatus.WasDisplayed, session.State.GetStatus(1, 1));
+            Assert.NotEmpty(log.Errors);
+            Assert.All(
+                log.Errors,
+                error => Assert.Contains("Failed to write the global state", error));
+
+            // And the next change writes again, which is what "the next change will try
+            // again" in that log line promises.
+            session.Record(1, 2, "WasDisplayed");
+            Assert.True(session.TrySave(), "the retry should land");
+
+            session.Dispose();
+            GlobalConversationState saved = store.Load().RequireState();
+            Assert.Equal(SimStatus.WasDisplayed, saved.GetStatus(1, 1));
+            Assert.Equal(SimStatus.WasDisplayed, saved.GetStatus(1, 2));
         }
 
         [Fact]
