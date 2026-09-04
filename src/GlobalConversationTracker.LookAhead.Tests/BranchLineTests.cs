@@ -34,28 +34,71 @@ namespace GlobalConversationTracker.LookAhead.Tests
         private static MarkerPalette Palette(bool markUncertain = true) =>
             new MarkerPalette(Any, This, Seen, GaveOnAnOption, Gave, markUncertain);
 
-        private static LookAheadAnswer Answer(BranchAnswers? branches) =>
-            new LookAheadAnswer(
-                new NodeRef(451, 12), 0, true, 0, 0, 0, "none", branches);
+        /// <summary>The line for a pair of outcomes.</summary>
+        private static string Line(Outcomes both, MarkerPalette palette) =>
+            BranchLine.For(both.Pass, both.Fail, palette);
 
-        private static BranchAnswers Both(
+        /// <summary>One outcome, as the engine now answers for it.</summary>
+        /// <remarks>
+        /// AN ORDINARY ANSWER WITH AN OUTCOME NAMED, which is the whole of de-8hh2.6: a
+        /// check is two options wearing one line of text, and each half is answered like
+        /// any other start rather than as a field inside one answer for the option.
+        /// </remarks>
+        private static LookAheadAnswer Outcome(
+            string branch, int destination, int best, bool complete = true) =>
+            new LookAheadAnswer(
+                new NodeRef(451, 12), best, complete, 0, 0, 0, "none", branch, destination);
+
+        /// <summary>Both outcomes of one check.</summary>
+        private static Outcomes Both(
             int passDestination, int passBest, int failDestination, int failBest,
             bool passComplete = true, bool failComplete = true) =>
-            new BranchAnswers(
-                new BranchAnswer(passDestination, passBest, passComplete),
-                new BranchAnswer(failDestination, failBest, failComplete));
+            new Outcomes(
+                Outcome(LookAheadAnswer.Pass, passDestination, passBest, passComplete),
+                Outcome(LookAheadAnswer.Fail, failDestination, failBest, failComplete));
 
         /// <summary>
         /// An option with one outcome gets no line.
         /// </summary>
         /// <remarks>
-        /// The absence is load bearing: the engine fills the branches only for a white or
-        /// red check, and that is exactly how the mod decides which options earn a line.
+        /// THE ABSENCE IS LOAD BEARING, and it has moved one level out. It used to be a
+        /// null pair inside the option's answer; a check now comes back as two answers and
+        /// an ordinary option as one that names no outcome, so "is this a roll" is a
+        /// question about the RESPONSE. `BranchLine.For` is handed the two halves and
+        /// composes a line unconditionally, which is why this asks `OutcomesOf` instead.
         /// </remarks>
         [Fact]
         public void AnOptionThatDoesNotRollGetsNoLine()
         {
-            Assert.Null(BranchLine.For(Answer(null), Palette()));
+            var plain = new NodeRef(451, 12);
+            LookAheadResponse response = LookAheadResponse.Parse(
+                "{\"answers\":[{\"start\":{\"conversation\":451,\"entry\":12},"
+                + "\"best\":0,\"complete\":true,\"elapsed_ms\":0}]}");
+
+            Assert.Null(response.OutcomesOf(plain));
+            Assert.NotNull(response.Find(plain, null));
+        }
+
+        /// <summary>And a rolled check's two answers are found as a pair.</summary>
+        [Fact]
+        public void ARolledCheckIsFoundAsItsTwoOutcomes()
+        {
+            var check = new NodeRef(451, 12);
+            LookAheadResponse response = LookAheadResponse.Parse(
+                "{\"answers\":["
+                + "{\"start\":{\"conversation\":451,\"entry\":12},\"branch\":\"pass\","
+                + "\"destination\":0,\"best\":2,\"complete\":true,\"elapsed_ms\":0},"
+                + "{\"start\":{\"conversation\":451,\"entry\":12},\"branch\":\"fail\","
+                + "\"destination\":1,\"best\":1,\"complete\":true,\"elapsed_ms\":0}]}");
+
+            Outcomes both = Assert.NotNull(response.OutcomesOf(check));
+            Assert.Equal(2, both.Pass.Best);
+            Assert.Equal(1, both.Fail.Destination);
+
+            // Asking for the option itself finds nothing, which is the point: an entry no
+            // longer names one answer, so a lookup that forgot the outcome would otherwise
+            // get whichever half happened to be first.
+            Assert.Null(response.Find(check, null));
         }
 
         /// <summary>A rolled check names both outcomes, in that order.</summary>
@@ -63,7 +106,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public void ARolledCheckNamesBothOutcomes()
         {
             string line = Assert.IsType<string>(
-                BranchLine.For(Answer(Both(0, 0, 0, 0)), Palette()));
+                Line(Both(0, 0, 0, 0), Palette()));
 
             Assert.StartsWith("\n", line);
             Assert.Contains(BranchLine.PassWord, line);
@@ -88,7 +131,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public void EachWordTakesTheColourOfItsOwnDestination(int novelty, string expected)
         {
             string line = Assert.IsType<string>(
-                BranchLine.For(Answer(Both(novelty, novelty, 0, 0)), Palette()));
+                Line(Both(novelty, novelty, 0, 0), Palette()));
 
             Assert.Contains($"<color={expected}>{BranchLine.PassWord}</color>", line);
             Assert.Contains($"<color={Seen}>{BranchLine.FailWord}</color>", line);
@@ -106,7 +149,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
         {
             // Passing leads to something already read, but something unread lies beyond it.
             string line = Assert.IsType<string>(
-                BranchLine.For(Answer(Both(0, 2, 0, 0)), Palette()));
+                Line(Both(0, 2, 0, 0), Palette()));
 
             Assert.Contains($"<color={Seen}>{BranchLine.PassWord}</color>", line);
             Assert.Contains($"<color={Any}>{BranchLine.FoundMarker}</color>", line);
@@ -117,7 +160,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public void AnOutcomeThatReachesNoFurtherEarnsNoAsterisk()
         {
             string line = Assert.IsType<string>(
-                BranchLine.For(Answer(Both(2, 2, 2, 2)), Palette()));
+                Line(Both(2, 2, 2, 2), Palette()));
 
             Assert.DoesNotContain(BranchLine.FoundMarker, line);
         }
@@ -134,7 +177,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public void AnOutcomeWhoseSearchGaveUpSaysSo()
         {
             string line = Assert.IsType<string>(
-                BranchLine.For(Answer(Both(0, 0, 0, 0, failComplete: false)), Palette()));
+                Line(Both(0, 0, 0, 0, failComplete: false), Palette()));
 
             Assert.Contains($"<color={Gave}>{BranchLine.UncertainMarker}</color>", line);
         }
@@ -144,9 +187,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public void AnUncertainOutcomeIsSilentWhenTheSwitchIsOff()
         {
             string line = Assert.IsType<string>(
-                BranchLine.For(
-                    Answer(Both(0, 0, 0, 0, failComplete: false)),
-                    Palette(markUncertain: false)));
+                Line(Both(0, 0, 0, 0, failComplete: false), Palette(markUncertain: false)));
 
             Assert.DoesNotContain(BranchLine.UncertainMarker, line);
             Assert.DoesNotContain(Gave, line);
@@ -164,7 +205,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public void AnIncompleteSearchThatFoundSomethingStillSaysSo()
         {
             string line = Assert.IsType<string>(
-                BranchLine.For(Answer(Both(0, 2, 0, 0, passComplete: false)), Palette()));
+                Line(Both(0, 2, 0, 0, passComplete: false), Palette()));
 
             Assert.Contains($"<color={Any}>{BranchLine.FoundMarker}</color>", line);
             Assert.DoesNotContain(BranchLine.UncertainMarker, line);
@@ -214,16 +255,16 @@ namespace GlobalConversationTracker.LookAhead.Tests
         }
 
         /// <summary>The answer that produces one shape.</summary>
-        private static BranchAnswer AnswerFor(Shape shape) => shape switch
+        private static LookAheadAnswer AnswerFor(Shape shape, string branch) => shape switch
         {
-            Shape.OrangeAlone => new BranchAnswer(2, 2, true),
-            Shape.RedAlone => new BranchAnswer(1, 1, true),
-            Shape.RedThenOrange => new BranchAnswer(1, 2, true),
-            Shape.RedThenGaveUp => new BranchAnswer(1, 1, false),
-            Shape.DarkRedAlone => new BranchAnswer(0, 0, true),
-            Shape.DarkRedThenRed => new BranchAnswer(0, 1, true),
-            Shape.DarkRedThenOrange => new BranchAnswer(0, 2, true),
-            _ => new BranchAnswer(0, 0, false),
+            Shape.OrangeAlone => Outcome(branch, 2, 2),
+            Shape.RedAlone => Outcome(branch, 1, 1),
+            Shape.RedThenOrange => Outcome(branch, 1, 2),
+            Shape.RedThenGaveUp => Outcome(branch, 1, 1, false),
+            Shape.DarkRedAlone => Outcome(branch, 0, 0),
+            Shape.DarkRedThenRed => Outcome(branch, 0, 1),
+            Shape.DarkRedThenOrange => Outcome(branch, 0, 2),
+            _ => Outcome(branch, 0, 0, false),
         };
 
         /// <summary>The markup one shape must be drawn as, for a given word.</summary>
@@ -270,7 +311,8 @@ namespace GlobalConversationTracker.LookAhead.Tests
         {
             string line = Assert.IsType<string>(
                 BranchLine.For(
-                    Answer(new BranchAnswers(AnswerFor(pass), AnswerFor(fail))),
+                    AnswerFor(pass, LookAheadAnswer.Pass),
+                    AnswerFor(fail, LookAheadAnswer.Fail),
                     Palette()));
 
             Assert.Contains(MarkupFor(pass, BranchLine.PassWord), line);
@@ -294,8 +336,8 @@ namespace GlobalConversationTracker.LookAhead.Tests
         {
             string line = Assert.IsType<string>(
                 BranchLine.For(
-                    Answer(new BranchAnswers(
-                        new BranchAnswer(2, 2, complete), new BranchAnswer(2, 2, complete))),
+                    Outcome(LookAheadAnswer.Pass, 2, 2, complete),
+                    Outcome(LookAheadAnswer.Fail, 2, 2, complete),
                     Palette()));
 
             Assert.DoesNotContain(BranchLine.FoundMarker, line);
@@ -307,7 +349,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public void TheTwoWordsAreSetApart()
         {
             string line = Assert.IsType<string>(
-                BranchLine.For(Answer(Both(0, 0, 0, 0)), Palette()));
+                Line(Both(0, 0, 0, 0), Palette()));
 
             int between = line.IndexOf(BranchLine.FailWord)
                 - (line.IndexOf(BranchLine.PassWord) + BranchLine.PassWord.Length);

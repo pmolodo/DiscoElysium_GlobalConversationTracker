@@ -42,19 +42,6 @@ namespace GlobalConversationTracker
         /// </remarks>
         internal const string LogPrefix = "Look-ahead bridge:";
 
-        /// <summary>
-        /// The world the current menu's crawls ran in, for the overflow report.
-        /// </summary>
-        /// <remarks>
-        /// The snapshot that was SENT, not one taken later. An overflow is explained by the
-        /// money and the clock the crawl actually saw, and a second reading of the game
-        /// after the menu is drawn is not guaranteed to be the same one.
-        /// </remarks>
-        private static WorldSnapshot? _menuWorld;
-
-        /// <summary>How many entries the current menu's group has, for the same report.</summary>
-        private static int _menuGroupEntryCount;
-
         private static GlobalStateSession? _session;
         private static HookFailureLimiter? _failures;
         private static string _unseenAnyGameHtml = NovelResponseColorPatch.DefaultNovelColorHtml;
@@ -84,13 +71,18 @@ namespace GlobalConversationTracker
 
         /// <summary>What the bridge said about the options of the menu being drawn.</summary>
         /// <remarks>
-        /// Filled once per menu, read once per option. This is the whole reason the bridge
-        /// takes a list of starts: the world is the same for every option drawn at once and
-        /// it is the world that is expensive to send, so one call amortises the marshalling
-        /// over the menu instead of paying it per option.
+        /// <para>Filled once per menu, read once per option. This is the whole reason the
+        /// bridge takes a list of starts: the world is the same for every option drawn at
+        /// once and it is the world that is expensive to send, so one call amortises the
+        /// marshalling over the menu instead of paying it per option.</para>
+        ///
+        /// <para>THE WHOLE RESPONSE RATHER THAN A DICTIONARY KEYED BY ENTRY, since
+        /// de-8hh2.6. A rolled check comes back as TWO answers - one per outcome - so an
+        /// entry no longer names one answer, and a dictionary keyed by entry would have
+        /// kept whichever arrived last. Looking one up takes the entry AND the outcome,
+        /// which is what <see cref="LookAheadResponse.Find"/> does.</para>
         /// </remarks>
-        private static readonly Dictionary<NodeRef, LookAheadAnswer> _menuAnswers =
-            new Dictionary<NodeRef, LookAheadAnswer>();
+        private static LookAheadResponse? _menuAnswers;
 
         /// <summary>What the engine asks about a group, cached because it cannot change.</summary>
         private static readonly Dictionary<int, LookAheadQuestions> _questions =
@@ -283,7 +275,7 @@ namespace GlobalConversationTracker
         /// </remarks>
         private static void PrepareMenu(Il2CppReferenceArray<Response> responses)
         {
-            _menuAnswers.Clear();
+            _menuAnswers = null;
 
             GlobalStateSession? session = _session;
             LookAheadIndex? bridge = Bridge();
@@ -382,17 +374,23 @@ namespace GlobalConversationTracker
                     return;
                 }
 
-                foreach (LookAheadAnswer answer in answered.Answers)
+                _menuAnswers = answered;
+
+                // RECORDED HERE RATHER THAN WHERE AN OPTION IS DRAWN, and it is the first
+                // time a rolled check's crawls are recorded at all. They used to reach the
+                // diagnostics through MarkerFor, as the one combined answer a check had -
+                // and that answer reported ZERO states and zero entries, because the pair
+                // it was derived from carried no cost figures. Every outcome is an ordinary
+                // answer now, with its own, so recording the response is recording the
+                // truth.
+                if (_diagnostics != null)
                 {
-                    _menuAnswers[answer.Start] = answer;
+                    foreach (LookAheadAnswer recorded in answered.Answers)
+                    {
+                        _diagnostics.Record(
+                            recorded, _memoryBudgetMb, questions.Entries.Count, request.World);
+                    }
                 }
-
-                // Kept for the overflow report, which is written when an option is drawn
-                // rather than here - it names the world the crawl ran in, and by then the
-                // request is gone.
-                _menuWorld = request.World;
-                _menuGroupEntryCount = questions.Entries.Count;
-
             }
             catch (Exception error)
             {
@@ -525,16 +523,15 @@ namespace GlobalConversationTracker
                 return null;
             }
 
+            // THE ANSWER THAT NAMES NO OUTCOME, which is what an ordinary option gets.
+            // A rolled check has none - it came back as two, one per outcome - so this
+            // finds nothing for one and it draws no marker, which is what it already did:
+            // the Pass / Fail line replaces the marker on a check, and a marker taken from
+            // the better of two outcomes was a weaker restatement of it.
             var start = new NodeRef(entry.conversationID, entry.id);
-            if (!_menuAnswers.TryGetValue(start, out LookAheadAnswer answer))
+            if (_menuAnswers?.Find(start, null) is not LookAheadAnswer answer)
             {
                 return null;
-            }
-
-            if (_diagnostics != null && _menuWorld != null)
-            {
-                _diagnostics.Record(
-                    answer, _memoryBudgetMb, _menuGroupEntryCount, _menuWorld);
             }
 
             if (answer.Best <= (int)own)
@@ -586,9 +583,15 @@ namespace GlobalConversationTracker
                 return null;
             }
 
-            return _menuAnswers.TryGetValue(
-                new NodeRef(entry.conversationID, entry.id), out LookAheadAnswer answer)
-                ? BranchLine.For(answer, Palette())
+            // NO PAIR MEANS NO LINE, exactly as an absent nested pair used to. An
+            // ordinary option is answered once and names no outcome, so there is nothing
+            // here to find - which is the same answer, arrived at from the shape of the
+            // response rather than from a field inside one answer.
+            Outcomes? outcomes = _menuAnswers?.OutcomesOf(
+                new NodeRef(entry.conversationID, entry.id));
+
+            return outcomes is Outcomes both
+                ? BranchLine.For(both.Pass, both.Fail, Palette())
                 : null;
         }
 
@@ -689,9 +692,6 @@ namespace GlobalConversationTracker
                         return;
                     }
 
-                    // ASKED FOR EVEN WHERE IT IS NOT DRAWN. MarkerFor is what records an
-                    // option in the diagnostics, so skipping the call for rolled checks
-                    // would quietly drop them out of every statistic the mod keeps.
                     string? marker = MarkerFor(response.destinationEntry);
                     string? branches = BranchLineFor(response.destinationEntry);
 

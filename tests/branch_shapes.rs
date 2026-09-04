@@ -30,7 +30,9 @@
 
 use std::collections::HashSet;
 
-use lookahead_engine::bridge::{answer, BranchAnswer, LookAheadRequest, NodeRef, WorldSnapshot};
+use lookahead_engine::bridge::{
+    answer, LookAheadAnswer, LookAheadRequest, NodeRef, WorldSnapshot,
+};
 use lookahead_engine::index::{build_group_graph, read_index};
 use serde::Deserialize;
 
@@ -94,7 +96,7 @@ impl Half {
     /// against the markup: the word takes the destination's colour, and an asterisk is
     /// drawn in the best's colour when the best outranks the destination, or grey when the
     /// search did not finish.
-    fn matches(&self, branch: &BranchAnswer) -> bool {
+    fn matches(&self, branch: &LookAheadAnswer) -> bool {
         if branch.destination != rung(&self.colour) {
             return false;
         }
@@ -111,7 +113,7 @@ impl Half {
         }
     }
 
-    fn describe(branch: &BranchAnswer) -> String {
+    fn describe(branch: &LookAheadAnswer) -> String {
         let colour = match branch.destination {
             2 => "orange",
             1 => "red",
@@ -214,15 +216,17 @@ fn every_shape_the_suites_arrange_is_reached_offline() {
         let response = answer(&index, None, &request);
         assert!(response.error.is_none(), "{}: {:?}", row.suite, response.error);
 
-        let reply = response.answers.first().expect("one start, one answer");
-        let branches = reply.branches.as_ref().unwrap_or_else(|| {
-            panic!("{}: {}:{} came back with no branches", row.suite, table.conversation, table.entry)
+        // TWO ANSWERS, ONE PER OUTCOME. A check is two options wearing one line of
+        // text, and since de-8hh2.6 the engine says so directly rather than nesting a
+        // pair inside one answer for the option.
+        let (pass, fail) = response.outcomes(start).unwrap_or_else(|| {
+            panic!(
+                "{}: {}:{} did not come back as two outcomes",
+                row.suite, table.conversation, table.entry,
+            )
         });
 
-        for (name, want, got) in [
-            ("Pass", &row.pass, &branches.pass),
-            ("Fail", &row.fail, &branches.fail),
-        ] {
+        for (name, want, got) in [("Pass", &row.pass, pass), ("Fail", &row.fail, fail)] {
             if !want.matches(got) {
                 let wanted = match want.marker.as_deref() {
                     None => want.colour.clone(),

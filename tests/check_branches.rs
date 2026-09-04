@@ -87,25 +87,27 @@ fn a_rolled_check_comes_back_with_both_outcomes() {
 
     let response = answer(&index, None, &request);
     assert!(response.error.is_none(), "{:?}", response.error);
-    assert_eq!(response.answers.len(), 2);
+    // THREE ANSWERS FROM TWO STARTS: the roll is two options wearing one line of text,
+    // so it is answered once per outcome, and the ordinary entry once.
+    assert_eq!(response.answers.len(), 3);
 
-    let for_roll = response.answers.iter().find(|a| a.start == rolled).expect("the roll");
-    let branches = for_roll
-        .branches
-        .as_ref()
-        .unwrap_or_else(|| panic!("{conversation}:{} is a roll and carried no branches", rolled.entry));
+    let (pass, fail) = response
+        .outcomes(rolled)
+        .unwrap_or_else(|| panic!("{conversation}:{} is a roll and came back with one answer", rolled.entry));
 
-    // Each half is an answer in its own right, and the option's own figure is the better of
-    // the two - which is what makes the combined number safe for a reader that ignores them.
-    assert!((0..=2).contains(&branches.pass.best), "{:?}", branches.pass);
-    assert!((0..=2).contains(&branches.fail.best), "{:?}", branches.fail);
-    assert_eq!(for_roll.best, branches.pass.best.max(branches.fail.best));
+    // Each outcome is an answer in its own right, with its own cost figures - which the
+    // combined answer this replaced could not carry and reported as zero.
+    assert!((0..=2).contains(&pass.best), "{pass:?}");
+    assert!((0..=2).contains(&fail.best), "{fail:?}");
 
-    let for_plain = response.answers.iter().find(|a| a.start == plain).expect("the plain entry");
+    let for_plain = response
+        .find(plain, None)
+        .expect("the plain entry");
     assert!(
-        for_plain.branches.is_none(),
-        "an ordinary entry came back with branches, which would give it a Pass/Fail line",
+        response.outcomes(plain).is_none(),
+        "an ordinary entry came back with outcomes, which would give it a Pass/Fail line",
     );
+    assert_eq!(for_plain.branch, None);
 }
 
 /// Every rolled check in the corpus answers, and answers within its own bounds.
@@ -148,21 +150,21 @@ fn every_rolled_check_in_the_corpus_answers() {
         assert!(response.error.is_none(), "{conversation}: {:?}", response.error);
 
         for reply in &response.answers {
-            let branches = reply.branches.as_ref().unwrap_or_else(|| {
-                panic!("{conversation}:{} is a roll and carried no branches", reply.start.entry)
+            let branch = reply.branch.as_deref().unwrap_or_else(|| {
+                panic!("{conversation}:{} is a roll and named no outcome", reply.start.entry)
             });
 
-            // A branch cannot reach less than the entry it leads to: the destination is
+            // An outcome cannot reach less than the entry it leads to: the destination is
             // itself reachable down that branch, so `best` is at least `destination`.
+            //
+            // ONE ASSERTION FOR BOTH HALVES NOW, because the loop is over the halves.
+            // This used to check pass and fail separately from one answer, and the second
+            // check was a copy of the first with the field name changed - which is the
+            // shape of thing that gets edited on one side only.
             assert!(
-                branches.pass.best >= branches.pass.destination,
-                "{conversation}:{} pass reaches {} but leads to {}",
-                reply.start.entry, branches.pass.best, branches.pass.destination,
-            );
-            assert!(
-                branches.fail.best >= branches.fail.destination,
-                "{conversation}:{} fail reaches {} but leads to {}",
-                reply.start.entry, branches.fail.best, branches.fail.destination,
+                reply.best >= reply.destination,
+                "{conversation}:{} {branch} reaches {} but leads to {}",
+                reply.start.entry, reply.best, reply.destination,
             );
 
             asked += 1;
@@ -170,7 +172,7 @@ fn every_rolled_check_in_the_corpus_answers() {
     }
 
     assert!(asked > 0, "no rolled check was asked about at all");
-    eprintln!("asked about {asked} rolled checks");
+    eprintln!("asked about {asked} check outcomes");
 }
 
 /// Both kinds of rolled check answer, not just whichever the corpus offers first.
@@ -204,10 +206,10 @@ fn a_red_check_and_a_white_check_both_answer() {
             let response = answer(&index, None, &request);
             assert!(response.error.is_none(), "{conversation}: {:?}", response.error);
 
-            let reply = response.answers.first().expect("one start, one answer");
+            let reply = response.answers.first().expect("one start, at least one answer");
             assert!(
-                reply.branches.is_some(),
-                "{conversation}:{} is a {kind:?} check and carried no branches",
+                response.outcomes(reply.start).is_some(),
+                "{conversation}:{} is a {kind:?} check and did not come back as two outcomes",
                 reply.start.entry,
             );
 
@@ -255,10 +257,9 @@ fn an_outcome_on_the_top_rung_is_not_searched() {
     let response = answer(&index, None, &request);
     assert!(response.error.is_none(), "{:?}", response.error);
 
-    let reply = response.answers.first().expect("one start, one answer");
-    let branches = reply.branches.as_ref().expect("a roll carries branches");
+    let (pass, fail) = response.outcomes(rolled).expect("a roll comes back as two");
 
-    for (name, branch) in [("pass", &branches.pass), ("fail", &branches.fail)] {
+    for (name, branch) in [("pass", pass), ("fail", fail)] {
         // Where it lands is read off the graph and costs nothing; what it says about
         // BEYOND has to be the destination itself, unsearched and not in doubt.
         assert_eq!(
@@ -271,11 +272,16 @@ fn an_outcome_on_the_top_rung_is_not_searched() {
             "{conversation}:{} {name} reported a search that gave up, but none should have run",
             rolled.entry,
         );
-    }
 
-    assert_eq!(
-        reply.states_explored, 0,
-        "{conversation}:{} built search states for two outcomes that could not be improved on",
-        rolled.entry,
-    );
+        // PER OUTCOME NOW, and it says something it could not before. This used to read
+        // the combined answer's count, which was hard-coded to zero for a rolled check
+        // whatever its outcomes did - so the assertion held by construction rather than by
+        // measurement. Each outcome carries its own figures, so this is now a fact about
+        // the search.
+        assert_eq!(
+            branch.states_explored, 0,
+            "{conversation}:{} {name} built search states for an outcome nothing can improve on",
+            rolled.entry,
+        );
+    }
 }

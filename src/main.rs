@@ -3,7 +3,9 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use clap::Parser;
 
-use lookahead_engine::bridge::{answer, BranchAnswer, LookAheadRequest, NodeRef, WorldSnapshot};
+use lookahead_engine::bridge::{
+    answer, LookAheadAnswer, LookAheadRequest, NodeRef, WorldSnapshot,
+};
 use lookahead_engine::core::types::{DialogueNodeId, Novelty};
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::world::test_world::TestWorld;
@@ -100,7 +102,7 @@ fn rung(novelty: i32) -> &'static str {
 }
 
 /// One half of the line the mod would draw: the word's colour, then its asterisk.
-fn half(branch: &BranchAnswer) -> String {
+fn half(branch: &LookAheadAnswer) -> String {
     let asterisk = if !branch.complete {
         " with a grey '*?' - its search gave up".to_string()
     } else if branch.best > branch.destination {
@@ -202,15 +204,17 @@ fn main() -> anyhow::Result<()> {
             anyhow::bail!("the bridge refused the request: {error}");
         }
 
+        // ONE ANSWER PER OUTCOME, so the report is per answer. An entry that does not
+        // roll comes back once, naming no outcome, which is what says it has one.
         for option in &response.answers {
-            match &option.branches {
-                Some(branches) => {
-                    println!("option itself: best {}", rung(option.best));
-                    println!("Pass: {}", half(&branches.pass));
-                    println!("Fail: {}", half(&branches.fail));
-                }
+            match option.branch.as_deref() {
+                Some(outcome) => println!(
+                    "{}: {}",
+                    if outcome == "pass" { "Pass" } else { "Fail" },
+                    half(option),
+                ),
                 None => println!(
-                    "{}:{} came back with no branches, so it does not roll",
+                    "{}:{} came back naming no outcome, so it does not roll",
                     option.start.conversation, option.start.entry
                 ),
             }

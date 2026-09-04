@@ -240,15 +240,104 @@ namespace GlobalConversationTracker.LookAhead.Tests
 
             LookAheadResponse response = engine.Ask(request);
             Assert.Null(response.Error);
-            Assert.Equal(request.Starts.Count, response.Answers.Count);
+
+            // AT LEAST ONE PER START, not exactly one. A rolled check is two options
+            // wearing one line of text and comes back as two answers (de-8hh2.6), so a
+            // menu of n options with k checks is answered by n + k. This used to demand
+            // equality and passed only because the four entries it happens to take are
+            // not checks - which is a property of the ordering, not of the claim.
+            Assert.True(
+                response.Answers.Count >= request.Starts.Count,
+                $"{request.Starts.Count} starts came back with {response.Answers.Count} answers");
+
             foreach (LookAheadAnswer answer in response.Answers)
             {
                 _output.WriteLine(
-                    $"{answer.Start}: best {answer.Best}, complete {answer.Complete}, "
+                    $"{answer.Start}{(answer.Branch is null ? "" : " " + answer.Branch)}: "
+                    + $"best {answer.Best}, complete {answer.Complete}, "
                     + $"{answer.ElapsedMs} ms");
                 Assert.Contains(answer.Start, request.Starts);
             }
+
+            // And every start is accounted for, once as an option or twice as a check.
+            foreach (NodeRef start in request.Starts)
+            {
+                bool answered = response.Find(start, null) is not null
+                    || response.OutcomesOf(start) is not null;
+                Assert.True(answered, $"{start} was asked about and not answered");
+            }
         }
+
+        /// <summary>
+        /// A rolled check crosses as TWO answers, one per outcome.
+        /// </summary>
+        /// <remarks>
+        /// <para>THE SHAPE OF THE WIRE, asked of the real library rather than of a parser
+        /// over a hand-written document. Nothing here did: the menu test above takes
+        /// whatever entries come first, and none of them rolls, so the two sides could have
+        /// disagreed about what a check looks like and every managed test would still have
+        /// passed - the parser reads an absent outcome name as "ordinary option", which is
+        /// exactly what an old library's answer looks like.</para>
+        ///
+        /// <para>9:50 is the ceiling fan's "Grab the tie", the one rolled check the harness
+        /// relies on being on screen, and the same entry the branch-shape scenarios are
+        /// built around.</para>
+        /// </remarks>
+        [Fact]
+        public void ARolledCheckCrossesAsTwoAnswers()
+        {
+            string? index = NativeLookAhead.Index;
+            if (NativeLookAhead.Library == null || index == null)
+            {
+                _output.WriteLine("the library or the index is missing; skipping.");
+                return;
+            }
+
+            using LookAheadLibrary engine = LookAheadLibrary.Open(
+                index, NativeLookAhead.Variables);
+            LookAheadQuestions questions = engine.QuestionsFor(FanConversation);
+
+            var world = new WorldSnapshot { DayMinutes = 720, DayCounter = 1 };
+            foreach (string _ in questions.Variables)
+            {
+                world.VariableValues.Add(WireValue.Unknown);
+            }
+
+            foreach (string _ in questions.Queries)
+            {
+                world.QueryValues.Add(WireValue.FromBoolean(true));
+            }
+
+            var request = new LookAheadRequest(FanConversation, world);
+            foreach (NodeRef entry in questions.Entries)
+            {
+                request.UnseenAnyGame.Add(entry);
+            }
+
+            var check = new NodeRef(FanConversation, GrabTheTieEntry);
+            request.Starts.Add(check);
+
+            LookAheadResponse response = engine.Ask(request);
+            Assert.Null(response.Error);
+
+            Outcomes both = Assert.NotNull(response.OutcomesOf(check));
+            Assert.Equal(LookAheadAnswer.Pass, both.Pass.Branch);
+            Assert.Equal(LookAheadAnswer.Fail, both.Fail.Branch);
+
+            // The option itself is not an answer any more, which is what stops a caller
+            // that forgot the outcome from silently getting one half.
+            Assert.Null(response.Find(check, null));
+
+            _output.WriteLine(
+                $"pass: destination {both.Pass.Destination}, best {both.Pass.Best}; "
+                + $"fail: destination {both.Fail.Destination}, best {both.Fail.Best}");
+        }
+
+        /// <summary>The conversation the fan's check lives in.</summary>
+        private const int FanConversation = 9;
+
+        /// <summary>The white check in it: "Grab the tie".</summary>
+        private const int GrabTheTieEntry = 50;
 
         /// <summary>
         /// Answering a DIFFERENT number of questions is refused, not zipped as far as it

@@ -30,11 +30,17 @@ namespace GlobalConversationTracker.Engine
     /// budgets needs - a crawl out of STATES wants a bigger state budget, one out of TIME
     /// on the same states wants a longer clock.
     /// </param>
-    /// <param name="Branches">
-    /// The option's two outcomes, where it is a white or red check, and null on everything
-    /// else. The absence is what the mod reads to decide whether an option earns a
-    /// Pass/Fail line at all - see de-fes. The fields above are the two combined, so a
-    /// caller that ignores this still gets the right answer for the option as a whole.
+    /// <param name="Branch">
+    /// Which outcome of a rolled check this answers for, <see cref="LookAheadAnswer.Pass"/>
+    /// or <see cref="LookAheadAnswer.Fail"/>, and null on an ordinary option. The absence
+    /// is what the mod reads to decide whether an option earns a Pass / Fail line at all -
+    /// see de-fes - and an older library that has never named an outcome reads as exactly
+    /// that.
+    /// </param>
+    /// <param name="Destination">
+    /// The best novelty already known about this start before any search: the option's own
+    /// novelty, or for an outcome the best among the entries it leads to DIRECTLY. What the
+    /// mod colours the word by, and the baseline a crawl has to beat to be worth running.
     /// </param>
     public readonly record struct LookAheadAnswer(
         NodeRef Start,
@@ -44,25 +50,20 @@ namespace GlobalConversationTracker.Engine
         long StatesExplored,
         long NodesReached,
         string StoppedBy,
-        BranchAnswers? Branches = null);
+        string? Branch = null,
+        int Destination = 0)
+    {
+        /// <summary>What the outcome where a check succeeds is called on the wire.</summary>
+        public const string Pass = "pass";
 
-    /// <summary>What the search found down one outcome of a rolled check.</summary>
-    /// <param name="Destination">
-    /// The best novelty among the entries this outcome leads to DIRECTLY - what the mod
-    /// colours the word "Pass" or "Fail" by.
-    /// </param>
-    /// <param name="Best">
-    /// The best novelty anywhere down this outcome, which earns it an asterisk when it
-    /// beats <paramref name="Destination"/> - the same rule an option's own marker follows.
-    /// </param>
-    /// <param name="Complete">
-    /// Whether this outcome's search settled. An outcome that gave up draws the uncertain
-    /// marker rather than nothing, for the reason de-pvq gives.
-    /// </param>
-    public readonly record struct BranchAnswer(int Destination, int Best, bool Complete);
+        /// <summary>And the one where it fails.</summary>
+        public const string Fail = "fail";
+    }
 
-    /// <summary>Both outcomes of a rolled check.</summary>
-    public readonly record struct BranchAnswers(BranchAnswer Pass, BranchAnswer Fail);
+    /// <summary>Both answers a rolled check came back as.</summary>
+    /// <param name="Pass">The outcome where the check succeeds.</param>
+    /// <param name="Fail">The one where it fails.</param>
+    public readonly record struct Outcomes(LookAheadAnswer Pass, LookAheadAnswer Fail);
 
     /// <summary>What the library said about a whole menu.</summary>
     /// <remarks>
@@ -79,11 +80,63 @@ namespace GlobalConversationTracker.Engine
             Error = error;
         }
 
-        /// <summary>One per start, in the order they were asked about.</summary>
+        /// <summary>
+        /// One per thing that can be chosen, in the order the starts were asked about.
+        /// </summary>
+        /// <remarks>
+        /// NOT ONE PER START. A rolled check is two options wearing one line of text, so it
+        /// comes back as TWO of these - see <see cref="LookAheadAnswer.Branch"/> - and a
+        /// menu of n options with k checks is answered by n + k. Indexing this against the
+        /// starts that were sent will not line up; look an answer up by what it is for,
+        /// with <see cref="Find"/> or <see cref="OutcomesOf"/>.
+        /// </remarks>
         public IReadOnlyList<LookAheadAnswer> Answers { get; }
 
         /// <summary>Why the whole request failed, or null if it did not.</summary>
         public string? Error { get; }
+
+        /// <summary>The answer for one start, or for one outcome of it.</summary>
+        /// <remarks>
+        /// Getting it wrong is quiet rather than wrong: asking for a rolled check with no
+        /// outcome named matches nothing, which is the honest answer rather than the pass
+        /// half by accident.
+        /// </remarks>
+        /// <param name="start">The entry.</param>
+        /// <param name="branch">
+        /// <see cref="LookAheadAnswer.Pass"/>, <see cref="LookAheadAnswer.Fail"/>, or null
+        /// for an ordinary option.
+        /// </param>
+        /// <returns>The answer, or null if there is none.</returns>
+        public LookAheadAnswer? Find(NodeRef start, string? branch)
+        {
+            foreach (LookAheadAnswer answer in Answers)
+            {
+                if (answer.Start.Equals(start)
+                    && string.Equals(answer.Branch, branch, StringComparison.Ordinal))
+                {
+                    return answer;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>Both outcomes of a rolled check, or null where the start is not one.</summary>
+        /// <remarks>
+        /// The null is what the mod reads to decide whether an option earns a Pass / Fail
+        /// line at all, which is the job the absent nested pair used to do.
+        /// </remarks>
+        /// <param name="start">The entry.</param>
+        /// <returns>The pair, or null.</returns>
+        public Outcomes? OutcomesOf(NodeRef start)
+        {
+            LookAheadAnswer? pass = Find(start, LookAheadAnswer.Pass);
+            LookAheadAnswer? fail = Find(start, LookAheadAnswer.Fail);
+
+            return pass is LookAheadAnswer passed && fail is LookAheadAnswer failed
+                ? new Outcomes(passed, failed)
+                : null;
+        }
 
         /// <summary>Reads what <c>gct_look_ahead</c> returned.</summary>
         /// <param name="json">The library's answer.</param>
@@ -123,7 +176,8 @@ namespace GlobalConversationTracker.Engine
                             Number(answer, "states_explored"),
                             Number(answer, "nodes_reached"),
                             Text(answer, "stopped_by"),
-                            Branches(answer)));
+                            Branch(answer),
+                            (int)Number(answer, "destination")));
                     }
                 }
 
@@ -144,38 +198,19 @@ namespace GlobalConversationTracker.Engine
         /// refuse them.
         /// </remarks>
         /// <summary>
-        /// A rolled check's two outcomes, or null where the option has only one.
+        /// Which outcome an answer is for, or null where the start has only one.
         /// </summary>
         /// <remarks>
-        /// A MISSING PAIR IS NOT A MALFORMED ANSWER. The engine writes this only for a
-        /// white or red check, so its absence carries meaning - the option is not a roll -
-        /// and an older library that has never heard of branches reads as exactly that.
+        /// A MISSING NAME IS NOT A MALFORMED ANSWER. The engine writes it only for a white
+        /// or red check, so its absence carries meaning - the start is not a roll - and an
+        /// older library that never named an outcome reads as exactly that.
         /// </remarks>
-        private static BranchAnswers? Branches(JsonElement answer)
+        private static string? Branch(JsonElement answer)
         {
-            if (!answer.TryGetProperty("branches", out JsonElement pair)
-                || pair.ValueKind != JsonValueKind.Object)
-            {
-                return null;
-            }
-
-            return new BranchAnswers(Branch(pair, "pass"), Branch(pair, "fail"));
-        }
-
-        /// <summary>One outcome, read defensively: a missing half reads as reaching nothing.</summary>
-        private static BranchAnswer Branch(JsonElement pair, string name)
-        {
-            if (!pair.TryGetProperty(name, out JsonElement branch)
-                || branch.ValueKind != JsonValueKind.Object)
-            {
-                return new BranchAnswer(0, 0, true);
-            }
-
-            return new BranchAnswer(
-                (int)Number(branch, "destination"),
-                (int)Number(branch, "best"),
-                !branch.TryGetProperty("complete", out JsonElement complete)
-                    || complete.ValueKind != JsonValueKind.False);
+            return answer.TryGetProperty("branch", out JsonElement branch)
+                && branch.ValueKind == JsonValueKind.String
+                ? branch.GetString()
+                : null;
         }
 
         private static long Number(JsonElement answer, string name)

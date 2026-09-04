@@ -77,28 +77,31 @@ namespace GlobalConversationTracker.Engine
         public const int LineWidth = 48;
 
         /// <summary>
-        /// The line for one option, or null where the option is not a rolled check.
+        /// The line for one rolled check, from the two answers its outcomes came back as.
         /// </summary>
-        /// <param name="answer">What the engine said about the option.</param>
+        /// <remarks>
+        /// TWO ANSWERS RATHER THAN ONE WITH A PAIR INSIDE IT, since de-8hh2.6. A check is
+        /// two options wearing one line of text, and the engine now says so directly:
+        /// asking about it returns one answer per outcome, each an ordinary answer with its
+        /// own baseline and its own cost. The caller finds the pair - see
+        /// <see cref="LookAheadResponse.OutcomesOf"/> - and there being no pair is what says
+        /// the option is not a roll, which is the check the caller makes instead of this
+        /// one.
+        /// </remarks>
+        /// <param name="pass">What the engine said about the outcome where the check succeeds.</param>
+        /// <param name="fail">And about the one where it fails.</param>
         /// <param name="palette">The colours to paint it in.</param>
         /// <returns>
-        /// Markup beginning with a newline, so a caller appends it to the option's own text;
-        /// or null, which is what an option with one outcome gets.
+        /// Markup beginning with a newline, so a caller appends it to the option's own text.
         /// </returns>
-        public static string? For(LookAheadAnswer answer, MarkerPalette palette)
+        public static string For(
+            LookAheadAnswer pass, LookAheadAnswer fail, MarkerPalette palette)
         {
-            if (answer.Branches is not BranchAnswers branches)
-            {
-                // Not a roll. The engine fills this only for white and red checks, so its
-                // absence is the answer rather than a gap - see de-fes.1.
-                return null;
-            }
-
             var line = new StringBuilder("\n");
             line.Append(' ', Math.Max(0, (LineWidth / 3) - (PassWord.Length / 2)));
-            line.Append(Half(PassWord, branches.Pass, palette));
+            line.Append(Half(PassWord, pass, palette));
             line.Append(' ', Math.Max(1, (LineWidth / 3) - PassWord.Length));
-            line.Append(Half(FailWord, branches.Fail, palette));
+            line.Append(Half(FailWord, fail, palette));
             return line.ToString();
         }
 
@@ -109,7 +112,7 @@ namespace GlobalConversationTracker.Engine
         /// does, so there is not - and a search that gave up says so rather than claiming
         /// the second, for the reason de-pvq gives.
         /// </remarks>
-        private static string Half(string word, BranchAnswer branch, MarkerPalette palette)
+        private static string Half(string word, LookAheadAnswer branch, MarkerPalette palette)
         {
             string coloured = Draw(ColourOf((Novelty)branch.Destination, palette), word);
 
