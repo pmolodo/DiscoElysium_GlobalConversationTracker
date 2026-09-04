@@ -465,3 +465,78 @@ fn a_crawl_the_allocator_refuses_reports_it_rather_than_aborting() {
     );
     assert_eq!(finished.stopped_by, LookAheadLimit::None);
 }
+
+/// A crawl gives up before it takes the last of the MACHINE'S memory.
+///
+/// ## Why this is a separate guard from every other limit
+///
+/// Because the others are promises about the search and this is a promise about the box. A
+/// 256 MB budget is honoured perfectly on a machine with 100 MB free, right up to the
+/// allocation that ends the process - and the step before that is worse, because a process
+/// that takes a machine to its last page makes everything on it wait on a disk, this game
+/// included.
+///
+/// ## How it is provoked without provoking it
+///
+/// THE RESERVE IS THE DIAL, so a test turns it up instead of filling memory. Asking a crawl
+/// to leave 99.9% of the machine alone means the machine is already below its reserve
+/// before the first state, and the guard fires immediately - the same code path a full
+/// machine would take, on a machine that is not full. Nothing here allocates anything
+/// unusual, and nothing on the system is disturbed.
+#[test]
+fn a_crawl_leaves_the_machine_something_and_says_when_it_cannot() {
+    use lookahead_engine::core::types::LookAheadLimit;
+    use lookahead_engine::engine::engine::{LookAheadEngine, LookAheadOptions};
+    use lookahead_engine::engine::system_memory;
+    use lookahead_engine::world::test_world::TestWorld;
+
+    let _alone = alone();
+
+    if system_memory::read().is_none() {
+        eprintln!("this platform cannot be asked what it has; the reserve is off. Skipping.");
+        return;
+    }
+
+    let graph = branching(12);
+    let world = TestWorld::new();
+    let start = DialogueNodeId::new(1, 0);
+    let unseen = |_: DialogueNodeId| Novelty::UnseenThisGame;
+
+    let starved = LookAheadEngine::new(LookAheadOptions {
+        memory_budget: usize::MAX,
+        state_budget: usize::MAX,
+        time_budget: std::time::Duration::ZERO,
+        // Leave the machine 99.9% of itself, which no machine running this has spare.
+        system_reserve: 0.999,
+        // Read on every state, so the verdict lands on the first one rather than after a
+        // runway's worth. The cadence is what the reserve is measured through, not part of
+        // what it means.
+        system_check_interval: 1,
+        ..Default::default()
+    });
+
+    let result = starved.evaluate(&graph, start, &world, unseen);
+    assert_eq!(
+        result.stopped_by,
+        LookAheadLimit::NoMemory,
+        "a crawl told to leave the whole machine alone reported {:?}",
+        result.stopped_by,
+    );
+
+    // AND THE DEFAULT LETS IT RUN, which is the half that says the guard is a guard rather
+    // than a switch that turns the feature off. A twentieth of a machine that is running a
+    // test suite is spare, or the suite would not be running.
+    let ordinary = LookAheadEngine::new(LookAheadOptions {
+        memory_budget: usize::MAX,
+        state_budget: usize::MAX,
+        time_budget: std::time::Duration::ZERO,
+        ..Default::default()
+    });
+
+    let finished = ordinary.evaluate(&graph, start, &world, unseen);
+    assert_eq!(
+        finished.stopped_by,
+        LookAheadLimit::None,
+        "the default reserve stopped an ordinary crawl on a machine with room",
+    );
+}

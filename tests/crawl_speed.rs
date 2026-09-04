@@ -82,43 +82,86 @@ fn branching(depth: u32) -> LookAheadGraph {
     LookAheadGraph::new(nodes, symbols).expect("a binary tree is a graph")
 }
 
-#[test]
-#[ignore = "a measurement; run it deliberately"]
-fn what_a_state_costs_the_forward_crawl() {
-    let graph = branching(DEPTH);
+/// The fastest of [`RUNS`] crawls with this reserve, in nanoseconds per state.
+fn crawl(graph: &LookAheadGraph, reserve: f64) -> (f64, usize) {
     let world = TestWorld::new();
-
     let engine = LookAheadEngine::new(LookAheadOptions {
         // NOTHING MAY STOP IT EARLY, or the measurement is of the budget.
         memory_budget: usize::MAX,
         state_budget: usize::MAX,
         time_budget: std::time::Duration::ZERO,
+        system_reserve: reserve,
         ..Default::default()
     });
 
     let mut best = f64::MAX;
     let mut states = 0;
 
-    for run in 1..=RUNS {
+    for _ in 0..RUNS {
         let began = Instant::now();
         let result = engine.evaluate(
-            &graph,
+            graph,
             DialogueNodeId::new(1, 0),
             &world,
             // Everything unseen THIS game and nothing unseen anywhere, so the crawl can
             // never stop early on a find and has to walk the whole tree.
             |_| Novelty::UnseenThisGame,
         );
-        let seconds = began.elapsed().as_secs_f64();
-
+        best = best.min(began.elapsed().as_secs_f64());
         states = result.states_explored;
-        let per_state = seconds * 1e9 / states as f64;
-        println!("  run {run}: {states} states in {seconds:.3}s, {per_state:.0} ns/state");
-        best = best.min(seconds);
     }
 
-    let per_state = best * 1e9 / states as f64;
-    println!("\nBEST: {states} states in {best:.3}s, {per_state:.0} ns per state");
+    (best * 1e9 / states as f64, states)
+}
+
+/// What the guards cost, measured with and without them in ONE process.
+///
+/// ## Why both in one binary
+///
+/// Because comparing two builds on a desktop compares the machine's mood as much as the
+/// code. Across builds this measurement moved between 894 and 941 nanoseconds a state for
+/// configurations that should have been identical - a spread wider than the thing being
+/// measured. The reserve is a runtime option, so both arms run here, interleaved, against
+/// the same graph in the same process, and the DIFFERENCE is what is reported.
+///
+/// The frontier's fallible growth cannot be switched off that way, and is not measured
+/// here. It was measured across builds when it landed: 907 nanoseconds a state before,
+/// 909 after, with an unconditional `try_reserve` costing 941 - which is why the
+/// spare-capacity check is in `room_for`.
+#[test]
+#[ignore = "a measurement; run it deliberately"]
+fn what_a_state_costs_the_forward_crawl() {
+    let graph = branching(DEPTH);
+
+    // INTERLEAVED, so a machine that gets busier partway through spoils both arms rather
+    // than the second one.
+    let mut with = f64::MAX;
+    let mut without = f64::MAX;
+    let mut states = 0;
+
+    for pass in 1..=3 {
+        let (guarded, seen) = crawl(&graph, lookahead_engine::engine::system_memory::DEFAULT_RESERVE);
+        let (bare, _) = crawl(&graph, 0.0);
+        println!("  pass {pass}: {guarded:.0} ns/state with the reserve, {bare:.0} without");
+        with = with.min(guarded);
+        without = without.min(bare);
+        states = seen;
+    }
+
+    let overhead = 100.0 * (with - without) / without;
+    println!(
+        "\nBEST over {states} states: {with:.0} ns/state with the reserve, \
+         {without:.0} without - {overhead:+.1}%"
+    );
 
     assert!(states > 100_000, "only {states} states; the tree is not the size it should be");
+
+    // A GUARD ON THE GUARD. The reserve exists so a crawl cannot wedge the machine, and it
+    // is worth a few per cent for that; it is not worth a menu the player can feel. Loose
+    // enough not to fire on a busy desktop, tight enough to catch a syscall wandering into
+    // the hot loop, which is what this would look like.
+    assert!(
+        overhead < 25.0,
+        "the system reserve costs {overhead:.1}% a state, which is too much for a guard",
+    );
 }

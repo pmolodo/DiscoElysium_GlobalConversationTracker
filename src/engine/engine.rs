@@ -50,6 +50,30 @@ pub struct LookAheadOptions {
     pub failed_checks_pass_through: bool,
     pub collect_trace: bool,
     pub trace_node_limit: usize,
+
+    /// How much of the MACHINE a crawl must leave alone, as a fraction of the total.
+    ///
+    /// A DIFFERENT KIND OF LIMIT FROM THE OTHERS, and the reason it is here rather than in
+    /// a caller's hands. [`Self::memory_budget`] is a promise about this search; this is a
+    /// promise about the box, and no budget can make it - 256 MB is honoured perfectly on
+    /// a machine with 100 MB free, right up until the allocation that ends the process.
+    ///
+    /// Worse than ending it, first: a search that takes a machine to its last page makes
+    /// everything on it wait on a disk, this game included, and an operating system in
+    /// that state can be hard to get back. A twentieth left alone costs a crawl almost
+    /// nothing where there is room, and is the difference where there is not.
+    ///
+    /// Zero turns it off. [`crate::engine::system_memory`] says what happens on a platform
+    /// that cannot be asked: nothing, and it says so rather than assuming the best.
+    pub system_reserve: f64,
+
+    /// How many states pass between readings of the machine's memory.
+    ///
+    /// A reading is a system call, and the loop this sits in runs once per state, so the
+    /// truth is read on a cadence and estimated in between - see
+    /// [`crate::engine::system_memory::Runway`]. The estimate can bring a reading forward
+    /// and can never end a crawl by itself.
+    pub system_check_interval: usize,
 }
 
 impl Default for LookAheadOptions {
@@ -68,6 +92,8 @@ impl Default for LookAheadOptions {
             failed_checks_pass_through: true,
             collect_trace: false,
             trace_node_limit: 15,
+            system_reserve: crate::engine::system_memory::DEFAULT_RESERVE,
+            system_check_interval: crate::engine::system_memory::Runway::READINGS_EVERY,
         }
     }
 }
@@ -92,6 +118,8 @@ impl LookAheadOptions {
     pub fn failed_checks_pass_through(mut self, v: bool) -> Self { self.failed_checks_pass_through = v; self }
     pub fn collect_trace(mut self, v: bool) -> Self { self.collect_trace = v; self }
     pub fn trace_node_limit(mut self, limit: usize) -> Self { self.trace_node_limit = limit; self }
+    pub fn system_reserve(mut self, fraction: f64) -> Self { self.system_reserve = fraction; self }
+    pub fn system_check_interval(mut self, states: usize) -> Self { self.system_check_interval = states; self }
 }
 
 /// Result of a look-ahead crawl.
@@ -440,6 +468,17 @@ impl LookAheadEngine {
         let bytes_per_state = state_bytes(graph.symbols().count());
         let mut frontier_bytes = 0usize;
 
+        // THE MACHINE'S OWN LIMIT, beside the caller's. None where this build cannot ask,
+        // or where the caller turned it off, and then the reserve is simply not enforced.
+        let mut runway = if self.options.system_reserve > 0.0 {
+            crate::engine::system_memory::Runway::every(
+                self.options.system_reserve,
+                self.options.system_check_interval,
+            )
+        } else {
+            None
+        };
+
         // ROOM FOR THE SEED FIRST. A crawl that cannot even hold what entering the start
         // produced has not been stopped by its budget, and saying so is the difference
         // between a verdict and a dead process - see `room_for`.
@@ -549,6 +588,19 @@ impl LookAheadEngine {
                         out_of_memory = true;
                         stopped_by = LookAheadLimit::NoMemory;
                         break;
+                    }
+
+                    // AND WHETHER THE MACHINE STILL HAS ROOM TO SPARE. The allocator has
+                    // not refused anything yet; this is the crawl declining to be the
+                    // process that takes the last of it. Same verdict, because a caller
+                    // can do nothing different about either: the budget is not the
+                    // problem and no marker is worth a wedged machine.
+                    if let Some(runway) = runway.as_mut() {
+                        if runway.is_low(bytes_per_state as u64) {
+                            out_of_memory = true;
+                            stopped_by = LookAheadLimit::NoMemory;
+                            break;
+                        }
                     }
 
                     let key = StateKey { node: child_id, state: next_state.clone() };
