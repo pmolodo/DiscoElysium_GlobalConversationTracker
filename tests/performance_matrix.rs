@@ -1,0 +1,427 @@
+// SPDX-License-Identifier: MIT
+//! Both engines, six conversations, eleven profiles: the whole grid.
+//!
+//! The measurements this repository already has each ask one question well. This asks the
+//! same question of every combination, because the thing that is actually wanted - a rule
+//! for choosing FORWARD OR BACKWARD per option (de-a1wb) - cannot be drawn from a handful of
+//! points. It needs a surface.
+//!
+//! ## The grid
+//!
+//! Six conversations - the five heaviest plus 362, the largest in the game - against eleven
+//! profiles describing how much of the group the player has read:
+//!
+//! - everything seen, which the no-improvement shortcut should refuse outright;
+//! - the deepest 1, 5 and 10 entries unseen, which are the deliberately hard cases;
+//! - 95, 90, 75, 50, 25, 10 and 5 per cent seen, drawn at random, which are the shapes a
+//!   real save actually has.
+//!
+//! ## Why "deepest" for the small counts and "random" for the percentages
+//!
+//! They are asking different things and the difference is the point.
+//!
+//! DEEPEST IS THE ADVERSARIAL CASE. An entry at the end of the longest chain is the one the
+//! search reaches last, so seeding it and nothing else poses the hardest question the group
+//! can pose. Depth here is by EDGE ANALYSIS ALONE - links followed, guards ignored - which
+//! makes it an upper bound on reachability: an entry it cannot find is unreachable for
+//! certain, so a quarry drawn from it is at least structurally fair.
+//!
+//! What it is NOT is a question the search can necessarily answer. Entries that deep are
+//! often ones the guards shut, so these rows frequently read "explore everything, find
+//! nothing" - and that is exactly the worst case for cost, which is what these rows are for.
+//! A separate measurement, tests/unseen_falloff.rs, exists for the falloff CURVE and seeds
+//! by reach order instead, because a flat "found nothing" series measures nothing about
+//! falloff.
+//!
+//! RANDOM IS THE TYPICAL CASE. A save does not read a conversation depth-first; it reads
+//! whatever the conversation led it to. Drawing uniformly from the structurally reachable
+//! entries is the closest thing to a real profile that needs no real profile.
+//!
+//! The seed is the percentage, so a row is reproducible and two rows are not accidentally
+//! the same draw.
+//!
+//! ## What the all-seen row is NOT
+//!
+//! It is not what the mod costs on a fully-read save. This calls `evaluate` directly, and
+//! the no-improvement shortcut that makes that case free lives one level up, in the bridge's
+//! `answer` - so these rows show the raw engine being asked a question the mod would never
+//! put to it, and the numbers are large. On conversation 28 the row reads 222,400 states and
+//! half a second; through the bridge the same profile costs zero states.
+//!
+//! Kept anyway, and deliberately: it is the CEILING for the group. Every other row on the
+//! same conversation is a search that can stop early, so the all-seen row says how much
+//! there was to explore in the first place, which is what makes the rest legible as
+//! fractions of something.
+//!
+//! ## Running it
+//!
+//! One conversation per process, because a diagram manager that runs out of nodes takes the
+//! whole process with it and a crash in the fourth row should not cost the other five:
+//!
+//!     CONVERSATION=368 cargo test --release --test performance_matrix -- --ignored --nocapture
+//!
+//! The rows are printed as TAB-SEPARATED VALUES with a stable header, so a run can be piped
+//! straight into a file and read by something else later - which is what de-raed asks for
+//! when it says the logs should be kept for analysis.
+
+use std::collections::{HashMap, HashSet, VecDeque};
+
+use lookahead_engine::core::state::StateSymbols;
+use lookahead_engine::core::types::{DialogueNodeId, Novelty};
+use lookahead_engine::engine::engine::{
+    LookAheadEngine, LookAheadOptions, DEFAULT_MEMORY_BUDGET,
+};
+use lookahead_engine::graph::graph::LookAheadGraph;
+use lookahead_engine::index::{build_group_graph, read_index};
+use lookahead_engine::symbolic::data_layout::DataLayout;
+use lookahead_engine::symbolic::guard_formula::GuardCompiler;
+use lookahead_engine::symbolic::reachability::{seed_of, Budget, Reachability};
+use lookahead_engine::symbolic::vars::DataVars;
+
+mod common;
+
+/// The six heaviest groups, 362 included.
+const HEAVIEST: [i32; 6] = [362, 368, 631, 14, 28, 1030];
+
+/// The same allowance for both engines, so the two columns can be read against each other.
+const MEMORY: usize = DEFAULT_MEMORY_BUDGET;
+const TIME: std::time::Duration = std::time::Duration::from_secs(60);
+
+const COUNTER_CAP: i32 = 16;
+const NODE_CAPACITY: usize = 1 << 22;
+const CACHE_CAPACITY: usize = 1 << 20;
+
+/// How much of a group a profile has read.
+#[derive(Debug, Clone, Copy)]
+enum Profile {
+    /// Everything seen. Nothing to find, and the shortcut should say so without searching.
+    AllSeen,
+    /// The n structurally deepest entries unseen: the adversarial case.
+    DeepestUnseen(usize),
+    /// This percentage of entries seen, the rest unseen, drawn at random: the typical case.
+    PercentSeen(u32),
+}
+
+impl Profile {
+    fn label(self) -> String {
+        match self {
+            Profile::AllSeen => "all-seen".to_string(),
+            Profile::DeepestUnseen(n) => format!("deepest-{n}"),
+            Profile::PercentSeen(p) => format!("{p}pc-seen"),
+        }
+    }
+}
+
+const PROFILES: [Profile; 11] = [
+    Profile::AllSeen,
+    Profile::DeepestUnseen(1),
+    Profile::DeepestUnseen(5),
+    Profile::DeepestUnseen(10),
+    Profile::PercentSeen(95),
+    Profile::PercentSeen(90),
+    Profile::PercentSeen(75),
+    Profile::PercentSeen(50),
+    Profile::PercentSeen(25),
+    Profile::PercentSeen(10),
+    Profile::PercentSeen(5),
+];
+
+fn conversations(default: &[i32]) -> Vec<i32> {
+    match std::env::var("CONVERSATION") {
+        Ok(named) => named.split(',').filter_map(|id| id.trim().parse().ok()).collect(),
+        Err(_) => default.to_vec(),
+    }
+}
+
+/// Which profiles this process should measure, by label.
+///
+/// ONE ROW PER PROCESS is the intended way to run this, driven by `tools/measure-matrix.sh`.
+/// A row can take the whole process down - measured: conversation 28 with its five deepest
+/// entries unseen overflows the stack inside a recursive diagram operation - and with every
+/// row in one process the first crash destroys every row after it. The 28 run reported two
+/// rows out of eleven and lost the rest.
+///
+/// Answering the whole list when nothing is named keeps the test runnable on its own; the
+/// script is what makes the results survivable.
+fn profiles() -> Vec<Profile> {
+    match std::env::var("PROFILE") {
+        Ok(named) => {
+            let wanted: Vec<&str> = named.split(',').map(str::trim).collect();
+            PROFILES
+                .into_iter()
+                .filter(|profile| wanted.contains(&profile.label().as_str()))
+                .collect()
+        }
+        Err(_) => PROFILES.to_vec(),
+    }
+}
+
+/// Which entries are reachable from `start` by following links alone, and how far.
+///
+/// Guards ignored entirely, which is what de-raed means by "determined by edge analysis
+/// alone". It is the loosest notion of reachable there is, and that is why it is the right
+/// one for choosing a question: an entry missing from it is unreachable for certain, so
+/// seeding it would make a row meaningless.
+fn structurally_reachable(
+    graph: &LookAheadGraph,
+    start: DialogueNodeId,
+) -> HashMap<DialogueNodeId, usize> {
+    let mut depth = HashMap::new();
+    let mut queue = VecDeque::new();
+    depth.insert(start, 0usize);
+    queue.push_back(start);
+
+    while let Some(id) = queue.pop_front() {
+        let here = depth[&id];
+        let Some(node) = graph.get(id) else { continue };
+        for &child in &node.links {
+            if graph.get(child).is_some() && !depth.contains_key(&child) {
+                depth.insert(child, here + 1);
+                queue.push_back(child);
+            }
+        }
+    }
+
+    depth
+}
+
+/// The entries a profile can be built from: reachable, not the start, and not groups.
+///
+/// GROUPS ARE EXCLUDED because the game never writes a group's SimStatus, so every group in
+/// the database reads as never displayed and the crawl refuses to score one. Seeding a group
+/// as unseen would add an entry that cannot end a search, which would quietly make a row
+/// harder than it claims to be.
+///
+/// Returned deepest first, ties broken by id, so a run repeats exactly.
+fn candidates(graph: &LookAheadGraph, start: DialogueNodeId) -> Vec<DialogueNodeId> {
+    let depths = structurally_reachable(graph, start);
+    let mut all: Vec<(DialogueNodeId, usize)> = depths
+        .into_iter()
+        .filter(|(id, _)| *id != start)
+        .filter(|(id, _)| graph.get(*id).is_some_and(|node| !node.is_group))
+        .collect();
+
+    all.sort_unstable_by_key(|(id, depth)| {
+        (std::cmp::Reverse(*depth), id.conversation_id, id.entry_id)
+    });
+    all.into_iter().map(|(id, _)| id).collect()
+}
+
+/// A small deterministic generator, so a row is the same row on every machine.
+///
+/// Written out rather than taken from a crate: what is wanted is repeatability across runs
+/// and platforms, and a named algorithm with the arithmetic in view gives that without a
+/// dependency whose version could change the draw underneath a recorded measurement.
+/// This is xorshift64*, which is more than good enough for choosing which entries to mark.
+struct Rng(u64);
+
+impl Rng {
+    fn new(seed: u64) -> Self {
+        // Zero is a fixed point of xorshift, so it can never be the state.
+        Self(seed.wrapping_mul(2685821657736338717).max(1))
+    }
+
+    fn next(&mut self) -> u64 {
+        let mut x = self.0;
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        self.0 = x;
+        x.wrapping_mul(2685821657736338717)
+    }
+}
+
+/// The entries a profile leaves unseen.
+fn unseen_for(
+    profile: Profile,
+    candidates: &[DialogueNodeId],
+) -> HashSet<DialogueNodeId> {
+    match profile {
+        Profile::AllSeen => HashSet::new(),
+        Profile::DeepestUnseen(n) => candidates.iter().take(n).copied().collect(),
+        Profile::PercentSeen(percent) => {
+            // The seed IS the percentage, as de-raed asks: reproducible, and different for
+            // every row so two rows are not accidentally the same draw.
+            let mut rng = Rng::new(percent as u64);
+            let mut shuffled = candidates.to_vec();
+
+            // Fisher-Yates, so every subset of the right size is equally likely. Taking the
+            // first n of a sorted list after a partial shuffle would not be.
+            for i in (1..shuffled.len()).rev() {
+                let j = (rng.next() % (i as u64 + 1)) as usize;
+                shuffled.swap(i, j);
+            }
+
+            let seen = (shuffled.len() * percent as usize) / 100;
+            shuffled.into_iter().skip(seen).collect()
+        }
+    }
+}
+
+/// What one engine did with one profile.
+struct Row {
+    verdict: &'static str,
+    millis: u128,
+    /// States for the forward crawl; diagram nodes actually held for the backward one.
+    size: usize,
+    /// The backward search's per-set sum, which is a different and larger number.
+    ///
+    /// Zero for the forward crawl, which has nothing analogous.
+    set_sum: usize,
+}
+
+fn forward(
+    graph: &LookAheadGraph,
+    start: DialogueNodeId,
+    world: &dyn lookahead_engine::world::world::ILookAheadWorld,
+    unseen: &HashSet<DialogueNodeId>,
+) -> Row {
+    let novelty = |id: DialogueNodeId| {
+        if unseen.contains(&id) { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
+    };
+
+    let began = std::time::Instant::now();
+    let result = LookAheadEngine::new(LookAheadOptions {
+        state_budget: usize::MAX,
+        memory_budget: MEMORY,
+        time_budget: TIME,
+        counter_cap: COUNTER_CAP,
+        ..Default::default()
+    })
+    .evaluate(graph, start, world, novelty);
+
+    Row {
+        verdict: if result.best == Novelty::UnseenAnyGame {
+            "found"
+        } else if result.budget_exhausted() {
+            "gave-up"
+        } else {
+            "not-there"
+        },
+        millis: began.elapsed().as_millis(),
+        size: result.states_explored,
+        set_sum: 0,
+    }
+}
+
+fn backward(
+    graph: &LookAheadGraph,
+    start: DialogueNodeId,
+    world: &dyn lookahead_engine::world::world::ILookAheadWorld,
+    symbols: &StateSymbols,
+    unseen: &HashSet<DialogueNodeId>,
+) -> Row {
+    let began = std::time::Instant::now();
+
+    let layout = DataLayout::for_graph(graph, COUNTER_CAP, None, false)
+        .keeping_only_read(symbols, &DataLayout::read_by(graph));
+    let vars = DataVars::new(&layout, symbols, NODE_CAPACITY, CACHE_CAPACITY);
+    let mut compiler = GuardCompiler::new(&vars)
+        .with_world(world)
+        .with_constant_clock(DataLayout::group_passes_time(graph));
+
+    let seed = seed_of(graph, world, &vars);
+    let quarry: HashSet<DialogueNodeId> = unseen.clone();
+    let budget = Budget {
+        steps: usize::MAX,
+        time: TIME,
+        memory: MEMORY,
+        report_every: 20_000,
+        on_progress: None,
+        // The same early exit the forward crawl has: the question is whether ANY unseen
+        // entry is reachable, not what the whole reachable set is.
+        halt_on: Some(Box::new(move |id| quarry.contains(&id))),
+    };
+
+    let found = Reachability::explore_within(
+        graph, start, &seed, &mut compiler, world, COUNTER_CAP as u32, &budget,
+    );
+    let stats = found.stats();
+
+    Row {
+        verdict: if stats.halted_at.is_some() {
+            "found"
+        } else if stats.out_of_memory {
+            "no-room"
+        } else if stats.reached_fixed_point {
+            "not-there"
+        } else {
+            "gave-up"
+        },
+        millis: began.elapsed().as_millis(),
+        // TWO DIFFERENT QUANTITIES, and they are both here because neither bounds the
+        // other and one of them alone would mislead.
+        //
+        // `size` is what the MANAGER holds: every node allocated for anything - the
+        // reachable sets, the compiled guards, the transition relations, the intermediate
+        // results of every operation, and whatever has not been reclaimed yet. That is
+        // memory in use, so it is what the budget watches.
+        //
+        // `set_sum` is the size of the ANSWER: each entry's set counted separately, so a
+        // node shared between two entries is counted twice.
+        //
+        // On conversation 368 the sum is much the larger (19.3 million against a budget of
+        // 8), because a great many entries hold big overlapping sets. On 28 the manager is
+        // the larger (562,880 against 255,443), because the answer is small and most of the
+        // allocation went on machinery. A column showing only one of them would suggest the
+        // budget had failed to fire in the first case and that the search was cheap in the
+        // second.
+        size: vars.node_count(),
+        set_sum: stats.diagram_nodes,
+    }
+}
+
+#[test]
+#[ignore = "a long measurement, not a test: run it with --ignored --release"]
+fn both_engines_over_every_profile() {
+    let Some(path) = common::conversation_index() else { return };
+    let index = read_index(&path).expect("the index reads");
+    let world = common::measurement_save();
+
+    // Tab separated with a stable header, so a run pipes straight into a file that
+    // something else can read - see the note at the top about keeping the logs.
+    //
+    // SUPPRESSIBLE, because the driver script runs one row per process and wants one header
+    // in the file rather than one per row.
+    if std::env::var("NO_HEADER").is_err() {
+        println!(
+            "conv\tentries\tprofile\tunseen\tfwd_verdict\tfwd_ms\tfwd_states\t\
+             bwd_verdict\tbwd_ms\tbwd_nodes\tbwd_setsum"
+        );
+    }
+
+    for conversation in conversations(&HEAVIEST) {
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        let start = DialogueNodeId::new(conversation, 0);
+        if graph.get(start).is_none() {
+            continue;
+        }
+
+        let symbols = graph.symbols().clone();
+        let reachable = candidates(&graph, start);
+        if reachable.is_empty() {
+            continue;
+        }
+
+        for profile in profiles() {
+            let unseen = unseen_for(profile, &reachable);
+
+            let fwd = forward(&graph, start, &world, &unseen);
+            let bwd = backward(&graph, start, &world, &symbols, &unseen);
+
+            println!(
+                "{conversation}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                graph.count(),
+                profile.label(),
+                unseen.len(),
+                fwd.verdict,
+                fwd.millis,
+                fwd.size,
+                bwd.verdict,
+                bwd.millis,
+                bwd.size,
+                bwd.set_sum,
+            );
+        }
+    }
+}

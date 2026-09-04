@@ -49,3 +49,6 @@ uv.lock
 # Added by cargo
 
 /target
+
+# Raw output from the measurement runs; the TSVs beside them are what is kept.
+/measurements/logs/
