@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
+use std::collections::HashSet;
 use std::path::PathBuf;
 use clap::Parser;
 
+use lookahead_engine::bridge::{answer, BranchAnswer, LookAheadRequest, NodeRef, WorldSnapshot};
 use lookahead_engine::core::types::{DialogueNodeId, Novelty};
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::world::test_world::TestWorld;
-use lookahead_engine::engine::engine::{LookAheadEngine, LookAheadOptions};
+use lookahead_engine::engine::engine::{LookAheadEngine, LookAheadOptions, StartBranch};
 
 #[derive(Parser, Debug)]
 #[command(name = "lookahead-offline")]
@@ -50,6 +52,59 @@ struct Args {
     /// Clock locked
     #[arg(long)]
     clock_locked: bool,
+
+    /// Report where each outcome of this entry's roll leads, and crawl nothing.
+    ///
+    /// What an in-game fixture needs and cannot read off the index by hand: both
+    /// branches of a check link into the same group, and which of its children are
+    /// live is decided by guards on the check's own flag. Naming the entry here asks
+    /// the engine the same question the mod's Pass / Fail line is answering.
+    #[arg(long)]
+    branches_of: Option<i32>,
+
+    /// Entries a global state fixture records, as conv:entry, for --branches-of.
+    ///
+    /// The middle rung: recorded somewhere, so unseen THIS game rather than unseen
+    /// anywhere. Everything the graph holds that is named by neither this nor
+    /// --seen-here is unseen in any game, which is what an empty fixture means.
+    #[arg(long, value_delimiter = ',')]
+    recorded: Vec<String>,
+
+    /// Entries the save has already displayed, as conv:entry, for --branches-of.
+    #[arg(long, value_delimiter = ',')]
+    seen_here: Vec<String>,
+}
+
+/// Reads a conv:entry pair, which is how the report writes a node and how a person
+/// reading that report would type one back.
+fn node_ref(text: &str) -> anyhow::Result<NodeRef> {
+    let (conversation, entry) = text
+        .split_once(':')
+        .ok_or_else(|| anyhow::anyhow!("'{text}' is not a conv:entry pair"))?;
+
+    Ok(NodeRef { conversation: conversation.trim().parse()?, entry: entry.trim().parse()? })
+}
+
+/// A novelty as the mod's colours name it, since that is what a fixture is arranging.
+fn rung(novelty: i32) -> &'static str {
+    match novelty {
+        2 => "orange (unseen in any game)",
+        1 => "red (unseen this game)",
+        _ => "dark red (already seen this game)",
+    }
+}
+
+/// One half of the line the mod would draw: the word's colour, then its asterisk.
+fn half(branch: &BranchAnswer) -> String {
+    let asterisk = if !branch.complete {
+        " with a grey '*?' - its search gave up".to_string()
+    } else if branch.best > branch.destination {
+        format!(" with an asterisk in {}", rung(branch.best))
+    } else {
+        String::new()
+    };
+
+    format!("{}{}", rung(branch.destination), asterisk)
 }
 
 fn main() -> anyhow::Result<()> {
@@ -82,6 +137,77 @@ fn main() -> anyhow::Result<()> {
         collect_trace: args.trace,
         ..Default::default()
     });
+
+    if let Some(entry_id) = args.branches_of {
+        let start = DialogueNodeId::new(args.conversation_id, entry_id);
+        for branch in [StartBranch::Pass, StartBranch::Fail] {
+            let destinations = engine.branch_destinations(&graph, start, &world, branch);
+            let names: Vec<String> =
+                destinations.iter().map(|id| format!("{}", id)).collect();
+            println!(
+                "{:?} leads to {}",
+                branch,
+                if names.is_empty() { "nowhere".to_string() } else { names.join(", ") }
+            );
+        }
+
+        // The whole Pass / Fail line, from the same call the mod makes, so a fixture can
+        // be checked before it costs an in-game run rather than after.
+        let recorded: HashSet<NodeRef> = args
+            .recorded
+            .iter()
+            .map(|text| node_ref(text))
+            .collect::<anyhow::Result<_>>()?;
+        let seen_here: HashSet<NodeRef> = args
+            .seen_here
+            .iter()
+            .map(|text| node_ref(text))
+            .collect::<anyhow::Result<_>>()?;
+
+        let request = LookAheadRequest {
+            conversation: args.conversation_id,
+            starts: vec![NodeRef::from(start)],
+            unseen_any_game: graph
+                .nodes()
+                .map(|node| NodeRef::from(node.id))
+                .filter(|node| !recorded.contains(node) && !seen_here.contains(node))
+                .collect(),
+            unseen_this_game: recorded
+                .iter()
+                .copied()
+                .filter(|node| !seen_here.contains(node))
+                .collect(),
+            state_budget: args.state_budget,
+            time_budget_ms: args.time_budget_ms,
+            world: WorldSnapshot {
+                day_minutes: args.day_minutes,
+                day_counter: args.day_counter,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let response = answer(&index, None, &request);
+        if let Some(error) = response.error {
+            anyhow::bail!("the bridge refused the request: {error}");
+        }
+
+        for option in &response.answers {
+            match &option.branches {
+                Some(branches) => {
+                    println!("option itself: best {}", rung(option.best));
+                    println!("Pass: {}", half(&branches.pass));
+                    println!("Fail: {}", half(&branches.fail));
+                }
+                None => println!(
+                    "{}:{} came back with no branches, so it does not roll",
+                    option.start.conversation, option.start.entry
+                ),
+            }
+        }
+
+        return Ok(());
+    }
 
     let mut results = Vec::new();
     let mut skipped = 0usize;

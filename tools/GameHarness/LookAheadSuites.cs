@@ -32,6 +32,26 @@ namespace GlobalConversationTracker.Harness
         /// <summary>Siileng's stall, where a 0.50 purchase sits behind a 50.00 one.</summary>
         public const int SiilengConversation = 451;
 
+        /// <summary>The white check in the ceiling fan menu: "Grab the tie."</summary>
+        /// <remarks>
+        /// The only rolled check the harness can rely on being on screen. The fan opens on
+        /// 31/64/126/50 every run since de-yzex, and 9:50 is the 50.
+        /// </remarks>
+        public const int GrabTheTieEntry = 50;
+
+        /// <summary>Where succeeding at <see cref="GrabTheTieEntry"/> leads.</summary>
+        /// <remarks>
+        /// ASKED OF THE ENGINE, not read off the index: both outcomes of a check link into
+        /// the same group and the guards on the check's own flag decide which children are
+        /// live, so this is not something a person can work out by hand. The offline tool
+        /// answers it - see <c>--branches-of</c> in src/main.rs - and that is how the
+        /// fixture below was built.
+        /// </remarks>
+        public const int GrabTheTiePassEntry = 82;
+
+        /// <summary>Where failing it leads. A different entry, which is the whole point.</summary>
+        public const int GrabTheTieFailEntry = 42;
+
         /// <summary>
         /// The one line Siileng's stall has to be told to go on from, before its menu.
         /// </summary>
@@ -182,6 +202,28 @@ namespace GlobalConversationTracker.Harness
         private const string WorstCaseState = "global-state-worst-case.json";
 
         /// <summary>
+        /// The ceiling fan's check, and where PASSING it lands - and nothing else.
+        /// </summary>
+        /// <remarks>
+        /// <para>TWO ENTRIES, EACH RECORDED FOR ITS OWN REASON, and between them they put
+        /// the two outcomes of one check on two different rungs - which is the one thing
+        /// no other fixture arranges.</para>
+        ///
+        /// <para>9:82 is where the roll SUCCEEDING leads, so recording it makes the word
+        /// "Pass" red - a line read in some other save. 9:42, where FAILING leads, is
+        /// deliberately absent, so "Fail" stays orange. Both halves are drawn from the same
+        /// answer for the same option, so if the two were wired to one outcome they could
+        /// not differ, however the fixture was arranged.</para>
+        ///
+        /// <para>9:50 is the check itself, and it is here to make the search RUN. The
+        /// engine refuses a crawl when nothing reachable can outrank the option, so a check
+        /// that is itself unseen anywhere - the top rung - is answered without a search and
+        /// neither half can carry an asterisk. Recording it drops it a rung and leaves the
+        /// headroom the crawl needs.</para>
+        /// </remarks>
+        private const string FanBranchState = "global-state-fan-pass-recorded.json";
+
+        /// <summary>
         /// The largest conversations that can be reached from a place the player can
         /// stand, by entry count.
         /// </summary>
@@ -209,7 +251,8 @@ namespace GlobalConversationTracker.Harness
         public static IReadOnlyList<LookAheadSuite> All =>
             new[]
             {
-                Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff, AllSeen,
+                Money, SeenElsewhere, SeenHere, Pristine, BranchOutcomes, BranchGivesUp,
+                Budget, SwitchedOff, AllSeen,
             };
 
         /// <summary>The suites a run does when it is not told which to do.</summary>
@@ -228,7 +271,8 @@ namespace GlobalConversationTracker.Harness
         public static IReadOnlyList<LookAheadSuite> Default =>
             new[]
             {
-                Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff,
+                Money, SeenElsewhere, SeenHere, Pristine, BranchOutcomes, BranchGivesUp,
+                Budget, SwitchedOff,
             };
 
         /// <summary>
@@ -895,6 +939,108 @@ namespace GlobalConversationTracker.Harness
                 ? Default
                 : SelectMany(new[] { name });
         }
+
+        /// <summary>The ceiling fan, with one outcome of its check recorded elsewhere.</summary>
+        /// <remarks>
+        /// <para>THE CLAIM THE FEATURE EXISTS FOR, and the one every other suite stops
+        /// short of: Pass saying one thing while Fail says another, on one option, in the
+        /// running game. The pristine suite has both halves orange, the switched-off suite
+        /// has no line at all, and neither could tell a line whose two halves are wired to
+        /// the two outcomes from one that draws the same answer twice.</para>
+        ///
+        /// <para>Everything the fixture arranges is described on
+        /// <see cref="FanBranchState"/>. What it produces, which is what is asserted here:
+        /// Pass red because 9:82 is recorded, with an orange asterisk because the pass
+        /// branch runs on into entries nothing has recorded; Fail orange, on the top rung,
+        /// where nothing can outrank it and no asterisk is possible. Both the colour and
+        /// the asterisk differ, so a line built from one outcome twice fails this twice
+        /// over.</para>
+        ///
+        /// <para>PREDICTED BEFORE IT WAS RUN. The offline tool was asked what the mod
+        /// would draw from this exact fixture - the same bridge call, over the shipped
+        /// index - and the in-game run then agreed with it. That is worth knowing because
+        /// it is how the next fixture of this kind should be built: arranging a state by
+        /// hand and running the game to see what happens costs minutes per guess.</para>
+        /// </remarks>
+        public static LookAheadSuite BranchOutcomes { get; } = new LookAheadSuite(
+            "branch-outcomes",
+            "a check's two outcomes are drawn from their own answers, and can differ",
+            FanBranchState,
+            new[]
+            {
+                new LookAheadScenario(
+                    CeilingFan.Save,
+                    CeilingFan.Conversation,
+                    "the ceiling fan, with the check's PASS outcome recorded elsewhere and "
+                        + "its FAIL outcome recorded nowhere",
+                    new[]
+                    {
+                        Orange(
+                            GrabTheTieEntry,
+                            "the check is itself recorded, so the unread text down its "
+                                + "pass branch outranks it"),
+                    },
+                    advances: CeilingFan.Advances,
+                    branchPolicy: BranchPolicy.EveryCheck,
+                    branches: new BranchExpectation(
+                        new BranchHalf(BranchColour.Red, Marker.Orange),
+                        new BranchHalf(BranchColour.Orange),
+                        $"passing lands on {CeilingFan.Conversation}:{GrabTheTiePassEntry}, "
+                            + "which is recorded, and can still reach text that is not; "
+                            + $"failing lands on {CeilingFan.Conversation}:"
+                            + $"{GrabTheTieFailEntry}, which nothing has recorded and which "
+                            + "nothing can outrank")),
+            },
+            pluginSettings: KeepStatistics);
+
+        /// <summary>The same check, with a budget too small to answer either outcome.</summary>
+        /// <remarks>
+        /// <para>de-pvq's grey '*?' ON A HALF OF THE LINE rather than on an option. The
+        /// budget suite covers the uncertain marker, but it runs at Siileng's stall, whose
+        /// menu holds no rolled check - so until this suite nothing in game had ever seen a
+        /// Pass or Fail word give up.</para>
+        ///
+        /// <para>The distinction being protected is the same one: "the search did not
+        /// finish" and "the search found nothing" are different answers, and a half that
+        /// drew them alike would tell the player the stronger of the two on the strength of
+        /// neither. Here the previous suite's run is the control - the same fixture, the
+        /// same menu, and the only difference is the budget - so a grey half can only be
+        /// the budget.</para>
+        ///
+        /// <para>THE SAME BUDGET THE BUDGET SUITE USES, and for the same reason: a state
+        /// count is the only limit that gives up at exactly the same point on every
+        /// machine. When de-7z0f replaces that setting, this suite and that one need the
+        /// replacement together.</para>
+        /// </remarks>
+        public static LookAheadSuite BranchGivesUp { get; } = new LookAheadSuite(
+            "branch-gives-up",
+            "each half of a check's line can say it gave up, rather than saying nothing",
+            FanBranchState,
+            new[]
+            {
+                new LookAheadScenario(
+                    CeilingFan.Save,
+                    CeilingFan.Conversation,
+                    "the same check, with a budget of one",
+                    new[]
+                    {
+                        Uncertain(
+                            GrabTheTieEntry,
+                            "the crawl gave up before it could establish anything"),
+                    },
+                    advances: CeilingFan.Advances,
+                    branchPolicy: BranchPolicy.EveryCheck,
+                    branches: new BranchExpectation(
+                        new BranchHalf(BranchColour.Red, Marker.Uncertain),
+                        new BranchHalf(BranchColour.Orange, Marker.Uncertain),
+                        "where each outcome LANDS is read off the graph and costs no "
+                            + "search, so both words keep their colours; what lies beyond "
+                            + "each is what the budget stopped, so both asterisks are grey")),
+            },
+            pluginSettings: new Dictionary<string, string>
+            {
+                ["LookAheadStateBudget"] = "1",
+            });
 
         /// <summary>Asking the mod to keep the statistics a suite reads back.</summary>
         private static Dictionary<string, string> KeepStatistics =>
