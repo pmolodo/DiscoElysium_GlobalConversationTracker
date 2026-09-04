@@ -2,6 +2,8 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
+
+using GlobalConversationTracker.Core;
 using System.Text;
 using System.Text.Json;
 
@@ -34,20 +36,11 @@ namespace GlobalConversationTracker.Engine
     ///
     /// <para>The written form, which the Rust side reads back:</para>
     /// <code>
-    /// {"631":"0..40,42,50..99","636":"3"}
+    /// {"631":"0-40,42,50-99","636":"3"}
     /// </code>
     /// </remarks>
     public sealed class NodeSet : IEnumerable<NodeRef>
     {
-        /// <summary>
-        /// What separates the ends of a run.
-        /// </summary>
-        /// <remarks>
-        /// <c>..</c> rather than <c>-</c> so a negative id could never be read as a range
-        /// boundary. Must match <c>RUN_SEPARATOR</c> in the Rust bridge.
-        /// </remarks>
-        internal const string RunSeparator = "..";
-
         private readonly HashSet<NodeRef> _nodes = new HashSet<NodeRef>();
 
         /// <summary>How many entries are in the set.</summary>
@@ -129,37 +122,17 @@ namespace GlobalConversationTracker.Engine
             return grouped;
         }
 
-        /// <summary>Ascending ids as <c>0..3,5,9..10</c>.</summary>
+        /// <summary>Ascending ids as <c>0-3,5,9-10</c>.</summary>
+        /// <remarks>
+        /// THROUGH THE ROUTINE EVERY FILE HERE USES, rather than the copy this class kept.
+        /// The encoding is the same idea in both places, and it had three implementations -
+        /// one on each side of the bridge and one for the files - which is three chances
+        /// for a run to come to mean something slightly different. The spelling moved with
+        /// it, from <c>..</c> to the hyphen; see <c>RUN_SEPARATOR</c> in the Rust bridge
+        /// for why the reason behind the old one did not hold.
+        /// </remarks>
         /// <param name="entries">The ids, ascending and without duplicates.</param>
-        private static string Runs(List<int> entries)
-        {
-            var text = new StringBuilder();
-            int index = 0;
-            while (index < entries.Count)
-            {
-                int first = entries[index];
-                int last = first;
-                while (index + 1 < entries.Count && entries[index + 1] == last + 1)
-                {
-                    index++;
-                    last = entries[index];
-                }
-
-                if (text.Length > 0)
-                {
-                    text.Append(',');
-                }
-
-                text.Append(first.ToString(CultureInfo.InvariantCulture));
-                if (last != first)
-                {
-                    text.Append(RunSeparator).Append(last.ToString(CultureInfo.InvariantCulture));
-                }
-
-                index++;
-            }
-
-            return text.ToString();
-        }
+        private static string Runs(List<int> entries) =>
+            SparseOrder.PackRange(entries.ConvertAll(id => (long)id));
     }
 }

@@ -45,7 +45,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
 
             set.Add(new NodeRef(636, 7));
 
-            Assert.Equal(@"{""631"":""0..3,5,9..10"",""636"":""7""}", set.ToJson());
+            Assert.Equal(@"{""631"":""0-3,5,9-10"",""636"":""7""}", set.ToJson());
         }
 
         /// <summary>An empty set is an empty object, not an absent one.</summary>

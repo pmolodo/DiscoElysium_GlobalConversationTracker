@@ -73,10 +73,19 @@ impl From<NodeRef> for DialogueNodeId {
 
 /// The run separator inside a [`NodeSet`]'s entry list.
 ///
-/// `..` rather than `-` so a negative id could never be read as a range boundary. The
-/// shipped database has none, and a wire format that becomes ambiguous the first time one
-/// appears is not worth the character it saves.
-const RUN_SEPARATOR: &str = "..";
+/// ## The same one every file in this repository uses
+///
+/// `3,5,7-25`, which is what `SparseOrder` writes on the C# side - the sparse saves, their
+/// diffs, and the global state file's entry sets since format 4. The wire is the last
+/// thing here that spelled a run its own way, and it had one implementation of its own on
+/// each side of the bridge: three encoders for one idea.
+///
+/// IT USED TO BE `..`, on the stated grounds that a hyphen becomes ambiguous the first
+/// time an id is negative. That reasoning does not survive the other implementation, which
+/// has always looked for the separator PAST THE FIRST CHARACTER so a leading `-` reads as
+/// a sign - one condition, and the ambiguity is gone. What was left was a second spelling
+/// with nothing behind it.
+const RUN_SEPARATOR: &str = "-";
 
 /// A set of entries, in the shape it crosses the bridge in.
 ///
@@ -116,7 +125,7 @@ const RUN_SEPARATOR: &str = "..";
 /// ## What it looks like
 ///
 /// ```json
-/// {"631": "0..40,42,50..99", "636": "3"}
+/// {"631": "0-40,42,50-99", "636": "3"}
 /// ```
 ///
 /// A list of `[{"conversation":631,"entry":12}]` objects is still ACCEPTED, so a
@@ -206,7 +215,7 @@ impl<'de> Deserialize<'de> for NodeSet {
     }
 }
 
-/// Sorted ids as `0..40,42,50..99`.
+/// Sorted ids as `0-40,42,50-99`.
 fn write_runs(entries: &[i32]) -> String {
     let mut runs: Vec<String> = Vec::new();
     let mut index = 0;
@@ -244,8 +253,12 @@ fn read_runs(text: &str) -> Result<Vec<i32>, String> {
             continue;
         }
 
-        let (first, last) = match run.split_once(RUN_SEPARATOR) {
-            Some((first, last)) => (first, last),
+        // PAST THE FIRST CHARACTER, so a leading '-' reads as a sign rather than as a
+        // separator. That one condition is the whole of what the old `..` was chosen to
+        // avoid, and it is why the wire could join the files on a spelling - see
+        // RUN_SEPARATOR.
+        let (first, last) = match run.char_indices().skip(1).find(|(_, c)| *c == '-') {
+            Some((at, _)) => (&run[..at], &run[at + 1..]),
             None => (run, run),
         };
 
@@ -1480,14 +1493,35 @@ mod tests {
 
         assert_eq!(
             serde_json::to_string(&set).expect("it serialises"),
-            r#"{"631":"0..3,5,9..10","636":"7"}"#,
+            r#"{"631":"0-3,5,9-10","636":"7"}"#,
         );
+    }
+
+    /// A negative id survives the hyphen, which is the whole reason it can BE a hyphen.
+    ///
+    /// The separator was `..` on the stated grounds that a hyphen becomes ambiguous the
+    /// first time an id is negative. It does not: the separator is looked for past the
+    /// first character, so a leading `-` is a sign. That argument is what let the wire
+    /// join every file in this repository on one spelling, so it is asserted here rather
+    /// than left as a claim in a comment - including the case that would actually be
+    /// ambiguous, a negative id at BOTH ends of a run.
+    #[test]
+    fn a_negative_id_survives_the_hyphen_at_either_end_of_a_run() {
+        let set = NodeSet::from_iter(
+            [-5, -4, -3, -1, 2, 3].map(|entry| NodeRef { conversation: 9, entry }),
+        );
+
+        let written = serde_json::to_string(&set).expect("it serialises");
+        assert_eq!(written, r#"{"9":"-5--3,-1,2-3"}"#);
+
+        let back: NodeSet = serde_json::from_str(&written).expect("it reads");
+        assert_eq!(back, set);
     }
 
     #[test]
     fn an_entry_set_comes_back_from_its_runs() {
         let set: NodeSet =
-            serde_json::from_str(r#"{"631":"0..3,5","636":"7"}"#).expect("it reads");
+            serde_json::from_str(r#"{"631":"0-3,5","636":"7"}"#).expect("it reads");
 
         assert_eq!(set.len(), 6);
         assert!(set.contains(&NodeRef { conversation: 631, entry: 3 }));
@@ -1524,7 +1558,7 @@ mod tests {
     /// so.
     #[test]
     fn a_run_list_that_makes_no_sense_is_refused() {
-        for bad in [r#"{"631":"0..x"}"#, r#"{"631":"9..3"}"#, r#"{"nope":"1"}"#] {
+        for bad in [r#"{"631":"0-x"}"#, r#"{"631":"9-3"}"#, r#"{"nope":"1"}"#] {
             assert!(
                 serde_json::from_str::<NodeSet>(bad).is_err(),
                 "'{bad}' was accepted",

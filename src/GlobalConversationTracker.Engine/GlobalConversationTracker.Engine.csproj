@@ -26,4 +26,16 @@
     <AssemblyName>GlobalConversationTracker.Engine</AssemblyName>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!--
+      For SparseOrder. A NodeSet writes its entry ids as runs, which is the same
+      encoding every file this repository writes uses, and it had a copy of its
+      own - so the wire and the files could come to spell a run differently
+      without anything noticing. One routine. Core is already compiled into the
+      plugin beside this, so it costs no shipped dependency.
+    -->
+    <ProjectReference
+      Include="..\GlobalConversationTracker.Core\GlobalConversationTracker.Core.csproj" />
+  </ItemGroup>
+
 </Project>
