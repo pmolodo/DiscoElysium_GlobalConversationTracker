@@ -28,8 +28,8 @@
 #                    \$_.CommandLine -like '*performance_matrix*' } |
 #     ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }"
 #
-# Writes one TSV per conversation into measurements/, plus one folder per run under
-# measurements/logs holding a log per row.
+# Writes one folder per run under measurements/logs, holding a log per row AND the TSV
+# each conversation's rows were collected into.
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -39,6 +39,13 @@ OUT="$ROOT/measurements"
 # one measurement, and its sixty-six row logs only mean anything as a set. Flat files
 # named for the row were overwritten by the next run, which left every recorded TSV with
 # no logs behind it except the newest one's.
+#
+# THE TSVs GO IN HERE TOO, rather than into measurements/ where they were committed. A row
+# is a wall-clock time on one machine and it moves whenever anything about the search does,
+# so a committed one is a baseline that is wrong more often than it is right - and one that
+# is wrong silently, because nothing re-runs it. Keeping the summary beside the logs it was
+# drawn from is what makes a run readable later; comparing two runs means comparing two
+# folders, which is the honest shape of the comparison anyway.
 LOGS="$(RUN_LOG_DIR="$OUT/logs" "$ROOT/tools/run-logged.sh" --folder-only measure matrix)"
 mkdir -p "$LOGS"
 
@@ -69,7 +76,7 @@ echo "building..."
 cargo build --release --tests --manifest-path "$ROOT/Cargo.toml" >/dev/null 2>&1
 
 for conversation in "${CONVERSATIONS[@]}"; do
-    tsv="$OUT/performance-matrix-$conversation.tsv"
+    tsv="$LOGS/performance-matrix-$conversation.tsv"
     echo "$HEADER" > "$tsv"
     echo "=== $conversation -> $tsv"
 
@@ -98,5 +105,5 @@ done
 
 echo
 echo "wrote:"
-ls -1 "$OUT"/performance-matrix-*.tsv
+ls -1 "$LOGS"/performance-matrix-*.tsv
 echo "logs for this run: $LOGS"
