@@ -48,6 +48,26 @@ namespace GlobalConversationTracker.Engine
         /// <summary>Entries unseen this save but seen in a previous one.</summary>
         public NodeSet UnseenThisGame { get; } = new NodeSet();
 
+        /// <summary>
+        /// The most search states one option may cost, or 0 for the engine's own default.
+        /// </summary>
+        /// <remarks>
+        /// The player's <c>LookAheadStateBudget</c>, and it has to cross. Once the marker
+        /// comes from the engine on the other side, a budget configured here and ignored
+        /// there would be a dial connected to nothing.
+        /// </remarks>
+        public int StateBudget { get; set; }
+
+        /// <summary>
+        /// The longest one option may run for, in milliseconds; 0 for no limit.
+        /// </summary>
+        /// <remarks>
+        /// Zero means NO LIMIT rather than a default, which is what
+        /// <c>LookAheadTimeBudgetMs</c> documents it as. The state budget's zero means the
+        /// opposite - use the default - because that setting has no "off".
+        /// </remarks>
+        public int TimeBudgetMs { get; set; }
+
         /// <summary>The request as the JSON the library reads.</summary>
         public string ToJson()
         {
@@ -73,6 +93,9 @@ namespace GlobalConversationTracker.Engine
                 UnseenAnyGame.Write(writer);
                 writer.WritePropertyName("unseen_this_game");
                 UnseenThisGame.Write(writer);
+
+                writer.WriteNumber("state_budget", Math.Max(0, StateBudget));
+                writer.WriteNumber("time_budget_ms", Math.Max(0, TimeBudgetMs));
 
                 writer.WritePropertyName("world");
                 World.Write(writer);

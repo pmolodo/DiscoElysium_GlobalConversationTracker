@@ -2,8 +2,14 @@
 using System;
 using System.Collections.Generic;
 
-namespace GlobalConversationTracker.LookAhead
+namespace GlobalConversationTracker.Engine
 {
+    /// <remarks>
+    /// Moved here from the managed look-ahead when that engine was deleted (de-i5xj.6).
+    /// The numbers are the same numbers - states, entries, time, why a crawl stopped - and
+    /// they now arrive in a <see cref="LookAheadAnswer"/> from the Rust engine rather than
+    /// in a result object from a crawl in this process.
+    /// </remarks>
     /// <summary>What one conversation's crawls have cost so far.</summary>
     public sealed class ConversationStatistics
     {
@@ -126,32 +132,28 @@ namespace GlobalConversationTracker.LookAhead
         /// <param name="start">The option it began at.</param>
         /// <param name="result">What it found.</param>
         /// <param name="milliseconds">How long it took.</param>
-        /// <exception cref="ArgumentNullException"><paramref name="result"/> is null.</exception>
-        public void Record(DialogueNodeId start, LookAheadResult result, double milliseconds)
+        public void Record(NodeRef start, LookAheadAnswer result, double milliseconds)
         {
-            if (result == null)
-            {
-                throw new ArgumentNullException(nameof(result));
-            }
-
+            // No null check: an answer is a value now, where the managed engine's result
+            // was a reference. There is nothing to guard against.
             Crawls++;
-            TotalStates += result.StatesExplored;
-            TotalNodes += result.NodesReached;
+            TotalStates += (int)result.StatesExplored;
+            TotalNodes += (int)result.NodesReached;
             TotalMilliseconds += milliseconds;
 
-            if (result.StatesExplored < MinStates)
+            if ((int)result.StatesExplored < MinStates)
             {
-                MinStates = result.StatesExplored;
+                MinStates = (int)result.StatesExplored;
             }
 
-            if (result.StatesExplored > MaxStates)
+            if ((int)result.StatesExplored > MaxStates)
             {
-                MaxStates = result.StatesExplored;
+                MaxStates = (int)result.StatesExplored;
             }
 
-            if (result.NodesReached > MaxNodes)
+            if ((int)result.NodesReached > MaxNodes)
             {
-                MaxNodes = result.NodesReached;
+                MaxNodes = (int)result.NodesReached;
             }
 
             if (milliseconds > MaxMilliseconds)
@@ -159,16 +161,16 @@ namespace GlobalConversationTracker.LookAhead
                 MaxMilliseconds = milliseconds;
             }
 
-            if (result.BudgetExhausted)
+            if (!result.Complete)
             {
                 BudgetExhausted++;
-                if (result.StoppedBy == LookAheadLimit.Time)
+                if (result.StoppedBy == "time")
                 {
                     TimeExhausted++;
                 }
             }
 
-            switch (result.Best)
+            switch ((Novelty)result.Best)
             {
                 case Novelty.UnseenAnyGame:
                     FoundUnseenAnyGame++;
@@ -181,20 +183,20 @@ namespace GlobalConversationTracker.LookAhead
                     break;
             }
 
-            _buckets[BucketOf(result.StatesExplored)]++;
+            _buckets[BucketOf((int)result.StatesExplored)]++;
 
-            if (!_byConversation.TryGetValue(start.ConversationId, out ConversationStatistics? row))
+            if (!_byConversation.TryGetValue(start.Conversation, out ConversationStatistics? row))
             {
                 row = new ConversationStatistics();
-                _byConversation.Add(start.ConversationId, row);
+                _byConversation.Add(start.Conversation, row);
             }
 
             row.Crawls++;
-            row.TotalStates += result.StatesExplored;
+            row.TotalStates += (int)result.StatesExplored;
             row.TotalMilliseconds += milliseconds;
-            if (result.StatesExplored > row.MaxStates)
+            if ((int)result.StatesExplored > row.MaxStates)
             {
-                row.MaxStates = result.StatesExplored;
+                row.MaxStates = (int)result.StatesExplored;
             }
 
             if (milliseconds > row.MaxMilliseconds)
@@ -202,10 +204,10 @@ namespace GlobalConversationTracker.LookAhead
                 row.MaxMilliseconds = milliseconds;
             }
 
-            if (result.BudgetExhausted)
+            if (!result.Complete)
             {
                 row.BudgetExhausted++;
-                if (result.StoppedBy == LookAheadLimit.Time)
+                if (result.StoppedBy == "time")
                 {
                     row.TimeExhausted++;
                 }

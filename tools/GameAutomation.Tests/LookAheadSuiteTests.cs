@@ -168,8 +168,13 @@ namespace GlobalConversationTracker.Automation.Tests
                 suite.Artefacts,
                 artefact => artefact.FileName == "look-ahead-stats.json");
 
+            // An absent file is the pristine case and passes; a file saying a state was
+            // built is the failure. Asks are NOT the failure - the engine records one for
+            // every option it is handed, including the ones it refuses to search - so the
+            // fixture reads states rather than crawls. See LookAheadSuites.NoCrawls.
             Assert.Null(statistics.Check(null));
-            Assert.NotNull(statistics.Check("{\"crawls\":1}"));
+            Assert.Null(statistics.Check(Statistics(crawls: 4, states: 0)));
+            Assert.NotNull(statistics.Check(Statistics(crawls: 1, states: 1)));
         }
 
         /// <summary>
@@ -201,7 +206,7 @@ namespace GlobalConversationTracker.Automation.Tests
             Assert.Equal(MarkerPolicy.Named, scenario.Markers);
             Assert.Equal("true", suite.PluginSettings["KeepLookAheadStates"]);
             Assert.Null(statistics.Check(null));
-            Assert.NotNull(statistics.Check("{\"crawls\":1}"));
+            Assert.NotNull(statistics.Check(Statistics(crawls: 1, states: 1)));
         }
 
         [Fact]
@@ -316,5 +321,9 @@ namespace GlobalConversationTracker.Automation.Tests
             // An option whose entry the probe could not read is named by nothing.
             Assert.False(scenario.Names(null));
         }
+
+        /// <summary>The part of a statistics file the no-crawl fixture reads.</summary>
+        private static string Statistics(int crawls, int states) =>
+            $"{{\"crawls\":{crawls},\"states\":{{\"total\":{states}}}}}";
     }
 }

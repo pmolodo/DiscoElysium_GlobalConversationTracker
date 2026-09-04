@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 using System.Collections.Generic;
 using System.Globalization;
-using GlobalConversationTracker.LookAhead;
+using GlobalConversationTracker.Engine;
 using PixelCrushers.DialogueSystem;
 using Voidforge;
 

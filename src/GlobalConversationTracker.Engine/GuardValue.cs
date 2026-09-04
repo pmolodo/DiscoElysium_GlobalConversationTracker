@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 using System.Globalization;
 
-namespace GlobalConversationTracker.LookAhead
+namespace GlobalConversationTracker.Engine
 {
     /// <summary>What a guard sub-expression evaluated to, or that it could not be.</summary>
     public enum GuardValueKind

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-namespace GlobalConversationTracker.LookAhead
+namespace GlobalConversationTracker.Engine
 {
     /// <summary>A truth value that admits "we cannot tell".</summary>
     /// <remarks>

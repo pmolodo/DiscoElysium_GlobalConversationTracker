@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 using System.Collections.Generic;
 
-namespace GlobalConversationTracker.LookAhead
+namespace GlobalConversationTracker.Engine
 {
     /// <summary>
     /// The game's clock, as far as a dialogue guard can see it.

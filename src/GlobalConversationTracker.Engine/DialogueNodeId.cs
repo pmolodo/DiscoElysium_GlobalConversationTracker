@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 using System;
 
-namespace GlobalConversationTracker.LookAhead
+namespace GlobalConversationTracker.Engine
 {
     /// <summary>
     /// Identifies one dialogue entry: the conversation it belongs to, and its id

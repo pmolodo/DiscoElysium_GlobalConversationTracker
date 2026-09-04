@@ -342,7 +342,6 @@ namespace GlobalConversationTracker.Harness
 
                     // Where the log had got to, so this suite's bridge summary can be told
                     // from the previous suite's - a suite that runs no crawls writes none.
-                    int bridgeSummariesBefore = BridgeComparisonReport.CountIn(logPath);
 
                     foreach (LookAheadScenario scenario in suite.Scenarios)
                     {
@@ -377,7 +376,6 @@ namespace GlobalConversationTracker.Harness
                     watcher.WaitForEvent("look-ahead-suite-finished", timeout, Log);
                     CheckArtefacts(suite, saveGames, report);
                     CheckLog(suite, logPath, report);
-                    CheckBridge(suite, logPath, bridgeSummariesBefore, report);
                 }
 
                 // Closed here, not in the finally, and asked rather than killed: the
@@ -839,54 +837,6 @@ namespace GlobalConversationTracker.Harness
                     $"the engine's query keys run in the game, over {conversationId}",
                     $"{agreement.QueriesAnswered} of {agreement.QueriesAsked} answered");
             }
-        }
-
-        /// <summary>
-        /// Checks that the two look-ahead engines said the same thing about this suite.
-        /// </summary>
-        /// <remarks>
-        /// <para>Both run while the look-ahead moves from C# to Rust; the managed one's
-        /// answer is what the player sees, and the bridge's is compared against it. The
-        /// plugin writes a summary when the suite's diagnostics flush, which is why this
-        /// runs after SendFinishLookAheadSuite rather than beside the option checks.</para>
-        ///
-        /// <para>SKIPPED where the bridge never ran, and the two cases are told apart. A
-        /// contributor who has not run <c>cargo build</c> has a mod that works on the
-        /// managed engine and should not be failed for it; a bridge that WAS there and
-        /// compared nothing is a different matter, and the report distinguishes them by
-        /// whether it appeared at all.</para>
-        /// </remarks>
-        private static void CheckBridge(
-            LookAheadSuite suite, string logPath, int alreadySeen, Report report)
-        {
-            BridgeComparisonReport bridge =
-                BridgeComparisonReport.FromLog(logPath, alreadySeen);
-            if (!bridge.Reported)
-            {
-                Console.WriteLine(
-                    $"  NOTE  {suite.Name}: no bridge comparison - {bridge}");
-                return;
-            }
-
-            Console.WriteLine($"  NOTE  {suite.Name}: {bridge}");
-
-            // A suite that STARVES one engine cannot be asked whether the two agree. The
-            // budget suite exists to make the managed crawl give up, and the bridge runs
-            // its own search unbudgeted - so they disagree there by construction, and a
-            // check that failed on it would be reporting the suite doing its job.
-            if (suite.PluginSettings.ContainsKey("LookAheadStateBudget")
-                || suite.PluginSettings.ContainsKey("LookAheadTimeBudgetMs"))
-            {
-                Console.WriteLine(
-                    $"  NOTE  {suite.Name}: not asking the two engines to agree - this suite "
-                    + "sets a budget, which starves one of them on purpose.");
-                return;
-            }
-
-            report.Check(
-                bridge.Disagreed == 0,
-                $"{suite.Name}: the two look-ahead engines agree",
-                bridge.ToString());
         }
 
         /// <summary>Checks what a suite says the mod should have written to the log.</summary>

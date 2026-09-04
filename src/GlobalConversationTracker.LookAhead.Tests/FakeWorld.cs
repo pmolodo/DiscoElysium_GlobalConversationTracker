@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 using System.Collections.Generic;
-using GlobalConversationTracker.LookAhead;
+using GlobalConversationTracker.Engine;
 
 namespace GlobalConversationTracker.LookAhead.Tests
 {

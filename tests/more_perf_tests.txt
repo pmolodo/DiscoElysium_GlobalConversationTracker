@@ -1,0 +1,32 @@
+I'd like to gather more performance data, in order to:
+
+- identify possible performance gaps / bugs / worst cases
+- make more informed decisions when tuning our forward-or-backward crawl
+  heuristics
+
+I'm thinking, that for each of the 6 heaviest conversations (including 362), we
+have tests measuring both forward and backward crawls, with:
+
+- all options seen
+- 1 option unseen (picked to be deepest)
+- 5 options unseen (picked to be deepest)
+- 10 options unseen (picked to be deepest)
+- 95% of options seen
+- 90% of options seen
+- 75% of options seen
+- 50% of options seen
+- 25% of options seen
+- 10% of options seen
+- 5% of options seen
+
+By "options", I mean the list of all nodes possibly reachable for that
+conversation group, determined by edge analysis alone. for the X% tests, the
+tests should be picked using a random generator, but with a fixed seed for
+repeatability, and the seed varying for each test.  (For simplicity - make the
+seed the % we're picking?)
+
+This should give us a large set of data from which we should hopefully be able
+to draw conclusions.
+
+IMPORTANT: for all these tests, the logs should be collected and stored
+somewhere for possible later analysis.

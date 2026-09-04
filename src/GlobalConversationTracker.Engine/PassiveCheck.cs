@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-namespace GlobalConversationTracker.LookAhead
+namespace GlobalConversationTracker.Engine
 {
     /// <summary>
     /// Whether a passive skill check fires, given the numbers.

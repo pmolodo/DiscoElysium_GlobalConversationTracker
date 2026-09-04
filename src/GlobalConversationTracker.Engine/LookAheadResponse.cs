@@ -18,8 +18,26 @@ namespace GlobalConversationTracker.Engine
     /// from an incomplete answer is not wrong, only possibly too modest.
     /// </param>
     /// <param name="ElapsedMs">How long the crawl for this option took.</param>
+    /// <param name="StatesExplored">
+    /// How many search states it explored. What the diagnostics are really about: a time
+    /// alone cannot say whether a menu was slow because the search was large or because the
+    /// machine was busy, and this is the half that is the same on both.
+    /// </param>
+    /// <param name="NodesReached">How many entries it reached.</param>
+    /// <param name="StoppedBy">
+    /// What stopped it: "none", "states" or "time". More than
+    /// <paramref name="Complete"/> says, and the difference is the one a player tuning the
+    /// budgets needs - a crawl out of STATES wants a bigger state budget, one out of TIME
+    /// on the same states wants a longer clock.
+    /// </param>
     public readonly record struct LookAheadAnswer(
-        NodeRef Start, int Best, bool Complete, long ElapsedMs);
+        NodeRef Start,
+        int Best,
+        bool Complete,
+        long ElapsedMs,
+        long StatesExplored,
+        long NodesReached,
+        string StoppedBy);
 
     /// <summary>What the library said about a whole menu.</summary>
     /// <remarks>
@@ -76,7 +94,10 @@ namespace GlobalConversationTracker.Engine
                                 start.GetProperty("entry").GetInt32()),
                             answer.GetProperty("best").GetInt32(),
                             answer.GetProperty("complete").GetBoolean(),
-                            answer.GetProperty("elapsed_ms").GetInt64()));
+                            answer.GetProperty("elapsed_ms").GetInt64(),
+                            Number(answer, "states_explored"),
+                            Number(answer, "nodes_reached"),
+                            Text(answer, "stopped_by")));
                     }
                 }
 
@@ -88,6 +109,29 @@ namespace GlobalConversationTracker.Engine
                     "the look-ahead library's answer could not be read: " + error.Message,
                     error);
             }
+        }
+
+        /// <summary>One optional number, or zero where the library did not send it.</summary>
+        /// <remarks>
+        /// Absent reads as zero rather than as a parse failure. These are diagnostics, and a
+        /// library built before they existed should still answer questions rather than
+        /// refuse them.
+        /// </remarks>
+        private static long Number(JsonElement answer, string name)
+        {
+            return answer.TryGetProperty(name, out JsonElement value)
+                && value.ValueKind == JsonValueKind.Number
+                ? value.GetInt64()
+                : 0;
+        }
+
+        /// <summary>One optional string, or empty where the library did not send it.</summary>
+        private static string Text(JsonElement answer, string name)
+        {
+            return answer.TryGetProperty(name, out JsonElement value)
+                && value.ValueKind == JsonValueKind.String
+                ? value.GetString() ?? string.Empty
+                : string.Empty;
         }
     }
 }

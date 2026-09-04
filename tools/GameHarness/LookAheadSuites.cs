@@ -341,11 +341,19 @@ namespace GlobalConversationTracker.Harness
                         Uncertain(BuySneakersEntry, "the crawl gave up before it could look"),
                         Uncertain(InspectSneakersEntry, "and before it could look here"),
                         Uncertain(InspectSpeakersEntry, "and here"),
-                        // Leaving too, and that is the point rather than an oversight. With
-                        // a budget of one, nothing can be established about ANY option -
-                        // including that this one reaches nothing, which is what it is
-                        // unmarked for at a normal budget.
-                        Uncertain(LeaveEntry, "and it could not establish even this"),
+                        // LEAVING IS NOT UNCERTAIN, and that is the point rather than an
+                        // oversight. It used to be: when the marker came from the managed
+                        // engine, a budget of one stopped the crawl before it could
+                        // establish anything about any option, this one included.
+                        //
+                        // The engine refuses a search it can prove cannot find anything -
+                        // reaches_potential_improvement, applied at the bridge - and that
+                        // refusal builds no state, so no budget can cut it short. Nothing
+                        // this option reaches outranks it, which is established here as
+                        // firmly at a budget of one as at two hundred thousand. So it draws
+                        // plain, which is what "there is nothing down there" looks like.
+                        Unmarked(LeaveEntry, "nothing it reaches outranks it, and no budget "
+                            + "is needed to know that"),
                     },
                     money: 5100),
             },
@@ -525,12 +533,19 @@ namespace GlobalConversationTracker.Harness
                 markers: MarkerPolicy.NoneAnywhere);
 
     /// <summary>
-    /// Checks that nothing was crawled.
+    /// Checks that nothing was actually searched.
     /// </summary>
     /// <remarks>
-    /// The statistics are written at shutdown only when a crawl was recorded, so on a
-    /// pristine profile the file is legitimately absent. A file that IS there must
-    /// report no crawl.
+    /// <para>The statistics are written at shutdown only when a crawl was recorded, so on
+    /// a pristine profile the file is legitimately absent. A file that IS there must
+    /// report that no state was ever built.</para>
+    ///
+    /// <para>STATES RATHER THAN CRAWLS, since the marker moved to the bridge (de-i5xj.6).
+    /// The shortcut that makes this suite's claim true now fires inside the engine, past
+    /// the point where the plugin has counted an ask - so the ask is recorded either way
+    /// and counting asks would fail a suite that is behaving perfectly. What the shortcut
+    /// still shows, and what this suite is really about, is that the search cost nothing:
+    /// zero states explored, over however many options were asked about.</para>
     /// </remarks>
     private static string? NoCrawls(string? json)
     {
@@ -540,8 +555,17 @@ namespace GlobalConversationTracker.Harness
         }
 
         using JsonDocument document = JsonDocument.Parse(json);
-        int crawls = document.RootElement.GetProperty("crawls").GetInt32();
-        return crawls == 0 ? null : $"{crawls} crawls ran, but none should have";
+        long states = document.RootElement
+            .GetProperty("states").GetProperty("total").GetInt64();
+        if (states == 0)
+        {
+            return null;
+        }
+
+        long crawls = document.RootElement.GetProperty("crawls").GetInt64();
+        return $"{states} states were explored over {crawls} crawls, but none should have "
+            + "been - nothing here outranks any option, so every search should have been "
+            + "refused before it built a state";
     }
 
     /// <summary>Checks the overflow log names the conversation that ran out.</summary>

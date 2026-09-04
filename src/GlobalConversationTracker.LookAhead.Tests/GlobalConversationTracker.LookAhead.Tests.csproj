@@ -15,8 +15,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference
-      Include="..\GlobalConversationTracker.LookAhead\GlobalConversationTracker.LookAhead.csproj" />
     <!--
       The managed side of the bridge to the Rust engine, so BridgeTests can prove the
       native library loads and answers - see de-i5xj.1.

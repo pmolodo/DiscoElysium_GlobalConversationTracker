@@ -1,0 +1,14 @@
+Before running the full suite of tests in de-raed (whose aim is to try to
+find performance gaps), I'd like to take a few passes at improving performance
+on our current known worst-case scenario, conv group 368.
+
+There are a couple ways I can think of tackling this:
+
+- profiling the run to find the slowest code paths, and optimizing (if most of
+  time is spent inside of Oxidd, may not be a lot of opportunity for this -
+  but worth taking a look to see if there are any potential "easy wins")
+- brainstorming ways to improve basic algorithm
+- looking for opportunities to pre-cache data in ways that might speed things up
+- try to analyze the BDD to see what is making it take so long, and see if
+  there are possible "cheats" we can use that will generally be right, but not
+  provably

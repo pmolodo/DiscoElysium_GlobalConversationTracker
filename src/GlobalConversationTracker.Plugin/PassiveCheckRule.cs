@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-using GlobalConversationTracker.LookAhead;
+using GlobalConversationTracker.Engine;
 using PixelCrushers.DialogueSystem;
 using Sunshine.Metric;
 

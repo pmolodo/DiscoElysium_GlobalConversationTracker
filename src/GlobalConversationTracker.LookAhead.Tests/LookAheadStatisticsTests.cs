@@ -1,18 +1,37 @@
 // SPDX-License-Identifier: MIT
 using System;
-using GlobalConversationTracker.LookAhead;
+using GlobalConversationTracker.Engine;
 using Xunit;
 
 namespace GlobalConversationTracker.LookAhead.Tests
 {
     public class LookAheadStatisticsTests
     {
-        private static LookAheadResult Result(
+        /// <summary>An answer of the shape the bridge returns, for one crawl.</summary>
+        /// <remarks>
+        /// A crawl the engine finished says so with <c>Complete</c> and names no limit; one
+        /// that ran out names the limit that stopped it. The two travel together - a
+        /// stopped crawl with no limit named would be the library contradicting itself -
+        /// so this builds them from the one argument rather than letting a test set them
+        /// apart.
+        /// </remarks>
+        private static LookAheadAnswer Result(
             int states, int nodes = 1, bool exhausted = false,
-            Novelty best = Novelty.SeenThisGame)
+            Novelty best = Novelty.SeenThisGame, string stoppedBy = "states",
+            long milliseconds = 0)
         {
-            return new LookAheadResult(best, states, nodes, exhausted);
+            return new LookAheadAnswer(
+                Node(1),
+                (int)best,
+                !exhausted,
+                milliseconds,
+                states,
+                nodes,
+                exhausted ? stoppedBy : "none");
         }
+
+        /// <summary>An entry of the conversation these tests use when they do not care.</summary>
+        private static NodeRef Node(int entry) => new NodeRef(1, entry);
 
         [Fact]
         public void EmptyStatistics_ReportZeroesRatherThanNonsense()
@@ -32,7 +51,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public void Record_TracksExtremesAndMeans()
         {
             var statistics = new LookAheadStatistics();
-            var node = GraphBuilder.Node(1);
+            var node = Node(1);
 
             statistics.Record(node, Result(10, nodes: 4), 1.0);
             statistics.Record(node, Result(30, nodes: 9), 3.0);
@@ -53,7 +72,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public void Record_CountsBudgetOverflows()
         {
             var statistics = new LookAheadStatistics();
-            var node = GraphBuilder.Node(1);
+            var node = Node(1);
 
             statistics.Record(node, Result(5), 1.0);
             statistics.Record(node, Result(200_000, exhausted: true), 900.0);
@@ -65,7 +84,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public void Record_TalliesWhatWasFound()
         {
             var statistics = new LookAheadStatistics();
-            var node = GraphBuilder.Node(1);
+            var node = Node(1);
 
             statistics.Record(node, Result(1, best: Novelty.UnseenAnyGame), 1.0);
             statistics.Record(node, Result(1, best: Novelty.UnseenAnyGame), 1.0);
@@ -108,7 +127,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public void Buckets_SeparateTheTailFromTheBulk()
         {
             var statistics = new LookAheadStatistics();
-            var node = GraphBuilder.Node(1);
+            var node = Node(1);
 
             for (int i = 0; i < 99; i++)
             {
@@ -127,9 +146,9 @@ namespace GlobalConversationTracker.LookAhead.Tests
         {
             var statistics = new LookAheadStatistics();
 
-            statistics.Record(new DialogueNodeId(825, 1), Result(10), 1.0);
-            statistics.Record(new DialogueNodeId(825, 2), Result(30), 2.0);
-            statistics.Record(new DialogueNodeId(28, 1), Result(5), 0.5);
+            statistics.Record(new NodeRef(825, 1), Result(10), 1.0);
+            statistics.Record(new NodeRef(825, 2), Result(30), 2.0);
+            statistics.Record(new NodeRef(28, 1), Result(5), 0.5);
 
             Assert.Equal(2, statistics.ByConversation.Count);
 
@@ -144,12 +163,5 @@ namespace GlobalConversationTracker.LookAhead.Tests
             Assert.Equal(5, garte.MaxStates);
         }
 
-        [Fact]
-        public void Record_RejectsANullResult()
-        {
-            var statistics = new LookAheadStatistics();
-            Assert.Throws<ArgumentNullException>(
-                () => statistics.Record(GraphBuilder.Node(1), null!, 1.0));
-        }
     }
 }

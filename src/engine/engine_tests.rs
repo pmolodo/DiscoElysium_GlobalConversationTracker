@@ -464,6 +464,191 @@ fn a_trace_records_the_state_the_crawl_started_from() {
     assert_eq!(trace.graph_node_count, 2);
 }
 
+/// The number of flags in the fan below. Sixteen gives 65,536 distinct states, which is
+/// more than any of these tests lets a crawl reach.
+const BURNER_FLAGS: i32 = 16;
+
+/// A graph with far more states than any of these tests will let a crawl explore.
+///
+/// A group fanning out to one entry per flag, each looping back to the group: every subset
+/// of the flags is a state of its own, so the space is 2^BURNER_FLAGS and a crawl over it
+/// stops because something stopped it rather than because it ran out of graph.
+///
+/// NOT A COUNTER. The obvious burner - one variable incremented round a loop - is bounded,
+/// because a counter is a fixed-width register and the walk stops making new states once
+/// it saturates. That is fine for a budget of three, which is what
+/// `exhausting_the_state_budget_is_reported` uses it for, and not enough for a budget of
+/// twenty or a clock.
+fn state_burner() -> LookAheadGraph {
+    const GROUP: i32 = 1;
+    const FIRST_FLAG_ENTRY: i32 = 10;
+
+    let mut fan: Vec<i32> = Vec::new();
+    let mut builder = GraphBuilder::new().add(Entry::new(0).links(&[GROUP]));
+
+    for index in 0..BURNER_FLAGS {
+        let id = FIRST_FLAG_ENTRY + index;
+        fan.push(id);
+        builder = builder.add(
+            Entry::new(id)
+                .script(&format!(r#"SetVariableValue("flag{index}", true)"#))
+                .links(&[GROUP]),
+        );
+    }
+
+    builder.add(Entry::new(GROUP).group().links(&fan)).build()
+}
+
+/// The trace names the entries the crawl built the most states at, worst first.
+///
+/// Ported from the C# `LookAheadEngineTests.Trace_NamesTheHottestEntriesWorstFirst` when
+/// that engine was deleted (de-i5xj.6). It is the whole point of the overflow report: an
+/// entry reached in a hundred distinct states is where a blow-up lives, and a list in any
+/// other order buries it.
+#[test]
+fn a_trace_names_the_hottest_entries_worst_first() {
+    let engine = LookAheadEngine::new(LookAheadOptions {
+        collect_trace: true,
+        state_budget: 50,
+        ..Default::default()
+    });
+    let result =
+        engine.evaluate(&state_burner(), node(0), &TestWorld::new(), |_| Novelty::SeenThisGame);
+    let trace = result.trace.expect("a trace was asked for");
+
+    assert!(!trace.hottest_nodes.is_empty(), "the trace named no entries at all");
+    let counts: Vec<usize> = trace.hottest_nodes.iter().map(|hot| hot.states).collect();
+    let mut descending = counts.clone();
+    descending.sort_unstable_by(|a, b| b.cmp(a));
+    assert_eq!(counts, descending, "the hottest entries are not worst first");
+}
+
+/// The trace stops at its limit, so a report stays readable.
+///
+/// Ported from `Trace_IsCappedSoAReportStaysReadable`. Without the cap, an overflow on a
+/// four-thousand-entry group writes four thousand lines into a log a person is reading to
+/// find out which option was slow.
+#[test]
+fn a_trace_is_capped_so_a_report_stays_readable() {
+    let mut builder = GraphBuilder::new();
+    for id in 0..20 {
+        builder = builder.add(Entry::new(id).links(&[id + 1]));
+    }
+
+    let graph = builder.add(Entry::new(20)).build();
+
+    let engine = LookAheadEngine::new(LookAheadOptions {
+        collect_trace: true,
+        trace_node_limit: 5,
+        ..Default::default()
+    });
+    let result = engine.evaluate(&graph, node(0), &TestWorld::new(), |_| Novelty::SeenThisGame);
+
+    let trace = result.trace.expect("a trace was asked for");
+    assert!(
+        trace.hottest_nodes.len() <= 5,
+        "the trace listed {} entries against a limit of 5",
+        trace.hottest_nodes.len(),
+    );
+}
+
+/// A crawl stops the moment it finds the strongest novelty there is.
+///
+/// Ported from `StopsAsSoonAsTheStrongestNoveltyIsFound`. Nothing can outrank
+/// unseen-anywhere, so continuing after finding one is work that cannot change the answer -
+/// and on the groups this feature is slow on, that early exit is most of why it is not
+/// slower.
+#[test]
+fn a_crawl_stops_as_soon_as_the_strongest_novelty_is_found() {
+    // A long tail after the unseen entry: were the crawl to carry on, it would visit it.
+    let mut builder = GraphBuilder::new().add(Entry::new(0).links(&[1]));
+    for id in 1..40 {
+        builder = builder.add(Entry::new(id).links(&[id + 1]));
+    }
+
+    let graph = builder.add(Entry::new(40)).build();
+    let result = LookAheadEngine::default().evaluate(
+        &graph,
+        node(0),
+        &TestWorld::new(),
+        novel(&[1]),
+    );
+
+    assert_eq!(result.best, Novelty::UnseenAnyGame);
+    assert!(
+        result.nodes_reached < 40,
+        "the crawl reached {} entries after already having its answer",
+        result.nodes_reached,
+    );
+}
+
+/// Running out of time is reported as time rather than as states.
+///
+/// Ported from `RunningOutOfTimeIsReportedAsTimeRatherThanStates`. The two limits want
+/// different things done about them - a bigger state budget against a longer clock - so a
+/// report that could not tell them apart would send a player to the wrong dial.
+#[test]
+fn running_out_of_time_is_reported_as_time_rather_than_states() {
+    let engine = LookAheadEngine::new(LookAheadOptions {
+        time_budget: Duration::from_millis(1),
+        time_check_interval: 1,
+        state_budget: usize::MAX,
+        ..Default::default()
+    });
+    let result =
+        engine.evaluate(&state_burner(), node(0), &TestWorld::new(), |_| Novelty::SeenThisGame);
+
+    assert_eq!(result.stopped_by, LookAheadLimit::Time);
+    assert!(result.budget_exhausted());
+}
+
+/// The state budget still applies when a time budget is set.
+///
+/// Ported from `TheStateBudgetStillAppliesWhenATimeBudgetIsSet`. The two are AND rather
+/// than OR: a generous clock must not let a runaway crawl past its state budget, which is
+/// the limit that makes a marker reproducible - the same menu on the same save marks the
+/// same way twice, which a clock cannot promise.
+#[test]
+fn the_state_budget_still_applies_when_a_time_budget_is_set() {
+    let engine = LookAheadEngine::new(LookAheadOptions {
+        state_budget: 20,
+        time_budget: Duration::from_secs(60),
+        ..Default::default()
+    });
+    let result =
+        engine.evaluate(&state_burner(), node(0), &TestWorld::new(), |_| Novelty::SeenThisGame);
+
+    assert_eq!(result.stopped_by, LookAheadLimit::States);
+    assert!(result.states_explored <= 21, "{} states", result.states_explored);
+}
+
+/// A crawl that runs long says so, once an interval.
+///
+/// Ported from `ALongCrawlReportsThatItIsStillGoing`. Silent in play; it exists for the
+/// runs that raise the limits deliberately, where the alternative to a line a second is a
+/// game indistinguishable from a hung one.
+#[test]
+fn a_long_crawl_reports_that_it_is_still_going() {
+    let reports = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&reports);
+
+    let engine = LookAheadEngine::new(LookAheadOptions {
+        // A NON-ZERO INTERVAL, and as short as one gets. Zero means no reports at all -
+        // that is how a crawl that nobody is listening to is expressed - so a zero here
+        // would be testing silence while claiming to test noise.
+        progress_interval: Duration::from_nanos(1),
+        time_check_interval: 1,
+        on_progress: Some(Box::new(move |_, _, _, _| {
+            counter.fetch_add(1, Ordering::Relaxed);
+        })),
+        state_budget: 500,
+        ..Default::default()
+    });
+    engine.evaluate(&state_burner(), node(0), &TestWorld::new(), |_| Novelty::SeenThisGame);
+
+    assert!(reports.load(Ordering::Relaxed) > 0, "a long crawl reported nothing");
+}
+
 /// Nothing is reported when nobody is listening - a crawl with no progress callback must
 /// not pay for one.
 #[test]

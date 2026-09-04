@@ -2,7 +2,6 @@
 using System;
 using System.Collections.Generic;
 using GlobalConversationTracker.Engine;
-using GlobalConversationTracker.LookAhead;
 using GlobalConversationTracker.Session;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using HarmonyLib;
@@ -32,16 +31,49 @@ namespace GlobalConversationTracker
     /// </remarks>
     internal static class ResponseLookAheadPatch
     {
+        /// <summary>
+        /// The state budget a crawl gets when nothing configures one.
+        /// </summary>
+        /// <remarks>
+        /// Was <c>LookAheadOptions.StateBudget</c>'s default, and moved here when that
+        /// engine was deleted (de-i5xj.6). The number is unchanged: measured over every
+        /// group in the game, it is comfortably above what any menu actually needs, and low
+        /// enough that a pathological one gives up rather than stalling a draw.
+        /// </remarks>
+        internal const int DefaultStateBudget = 200_000;
+
+        /// <summary>
+        /// What every line about the look-ahead starts with.
+        /// </summary>
+        /// <remarks>
+        /// Was <c>BridgeComparison.LogPrefix</c>. The comparison it named is gone - there is
+        /// only one engine to compare against now - but the prefix outlived it VERBATIM,
+        /// because the harness greps the game's log for this exact string to find out what
+        /// a run did. Changing the words breaks the runs, not the mod.
+        /// </remarks>
+        internal const string LogPrefix = "Look-ahead bridge:";
+
+        /// <summary>
+        /// The world the current menu's crawls ran in, for the overflow report.
+        /// </summary>
+        /// <remarks>
+        /// The snapshot that was SENT, not one taken later. An overflow is explained by the
+        /// money and the clock the crawl actually saw, and a second reading of the game
+        /// after the menu is drawn is not guaranteed to be the same one.
+        /// </remarks>
+        private static WorldSnapshot? _menuWorld;
+
+        /// <summary>How many entries the current menu's group has, for the same report.</summary>
+        private static int _menuGroupEntryCount;
+
         private static GlobalStateSession? _session;
         private static HookFailureLimiter? _failures;
         private static string _unseenAnyGameHtml = NovelResponseColorPatch.DefaultNovelColorHtml;
         private static string _unseenThisGameHtml = DefaultUnseenThisGameColorHtml;
         private static string _uncertainHtml = DefaultUncertainColorHtml;
         private static bool _markUncertain = true;
-        private static LookAheadEngine _engine = new LookAheadEngine();
-        private static LookAheadEngine? _tracingEngine;
         private static LookAheadDiagnosticsWriter? _diagnostics;
-        private static int _budget = new LookAheadOptions().StateBudget;
+        private static int _budget = DefaultStateBudget;
         private static int _timeBudgetMs;
         private static bool _enabled = true;
         private static IGlobalStateLog? _log;
@@ -64,14 +96,13 @@ namespace GlobalConversationTracker
         /// it is the world that is expensive to send, so one call amortises the marshalling
         /// over the menu instead of paying it per option.
         /// </remarks>
-        private static readonly Dictionary<DialogueNodeId, LookAheadAnswer> _menuAnswers =
-            new Dictionary<DialogueNodeId, LookAheadAnswer>();
+        private static readonly Dictionary<NodeRef, LookAheadAnswer> _menuAnswers =
+            new Dictionary<NodeRef, LookAheadAnswer>();
 
         /// <summary>What the engine asks about a group, cached because it cannot change.</summary>
         private static readonly Dictionary<int, LookAheadQuestions> _questions =
             new Dictionary<int, LookAheadQuestions>();
 
-        private static BridgeComparison? _comparison;
 
         /// <summary>Which index the cached questions came from.</summary>
         private static int _questionsGeneration = -1;
@@ -180,36 +211,14 @@ namespace GlobalConversationTracker
         {
             _diagnostics?.Flush();
 
-            // One comparison per suite, reported and then started again. Accumulating
-            // across suites would make every summary include the last one's options, and
-            // the summary is what a run asserts on.
-            _comparison?.Report();
-            _comparison = _log == null ? null : new BridgeComparison(_log);
-
             _enabled = enabled;
             _budget = stateBudget;
             _timeBudgetMs = timeBudgetMs;
             _diagnostics = diagnostics != null && diagnostics.Enabled ? diagnostics : null;
 
-            TimeSpan time = TimeBudgetOf(timeBudgetMs);
-            _engine = new LookAheadEngine(new LookAheadOptions
-            {
-                StateBudget = stateBudget,
-                TimeBudget = time,
-                OnProgress = ReportProgress,
-            });
-            _tracingEngine = _diagnostics != null && _diagnostics.RetriesOverflowsWithTrace
-                ? new LookAheadEngine(new LookAheadOptions
-                {
-                    StateBudget = stateBudget,
-                    // Deliberately untimed. The re-walk exists to explain an overflow that
-                    // has already happened, and it is slower than the crawl it explains -
-                    // it keeps a per-entry tally. Timing it would cut the explanation short
-                    // exactly when the crawl was expensive enough to need one.
-                    TimeBudget = TimeSpan.Zero,
-                    CollectTrace = true,
-                })
-                : null;
+            // The budgets are not applied to an engine here any more; they travel in the
+            // request, and the engine on the other side of the bridge applies them. See
+            // LookAheadRequest.StateBudget and TimeBudgetMs.
         }
 
         /// <summary>
@@ -308,6 +317,15 @@ namespace GlobalConversationTracker
 
                 LookAheadRequest request =
                     GameWorldSnapshot.Build(conversation, questions, session);
+
+                // THE BUDGETS THE PLAYER SET, sent rather than applied here. The crawl is
+                // on the other side of the bridge, so a budget that stays in this process
+                // limits nothing - which is exactly what happened when the marker was
+                // flipped over and this was left out: a budget of one still marked three
+                // options, because the engine never heard about it.
+                request.StateBudget = _budget;
+                request.TimeBudgetMs = _timeBudgetMs;
+
                 foreach (DialogueNodeId start in starts)
                 {
                     request.Starts.Add(new NodeRef(start.ConversationId, start.EntryId));
@@ -317,25 +335,29 @@ namespace GlobalConversationTracker
                 if (answered.Error != null)
                 {
                     _log?.Warning(
-                        $"{BridgeComparison.LogPrefix} conversation {conversation} was "
+                        $"{LogPrefix} conversation {conversation} was "
                         + $"refused: {answered.Error}");
                     return;
                 }
 
                 foreach (LookAheadAnswer answer in answered.Answers)
                 {
-                    _menuAnswers[new DialogueNodeId(
-                        answer.Start.Conversation, answer.Start.Entry)] = answer;
+                    _menuAnswers[answer.Start] = answer;
                 }
 
-                _comparison?.RecordMenu(Milliseconds(began));
+                // Kept for the overflow report, which is written when an option is drawn
+                // rather than here - it names the world the crawl ran in, and by then the
+                // request is gone.
+                _menuWorld = request.World;
+                _menuGroupEntryCount = questions.Entries.Count;
+
             }
             catch (Exception error)
             {
                 // The whole point of running both engines is that this one is not yet
                 // trusted. A failure costs the comparison for this menu and nothing else.
                 _log?.Warning(
-                    $"{BridgeComparison.LogPrefix} conversation {conversation} could not be "
+                    $"{LogPrefix} conversation {conversation} could not be "
                     + $"asked ({error.GetType().Name}: {error.Message}).");
             }
         }
@@ -365,7 +387,7 @@ namespace GlobalConversationTracker
                 // A missing native library arrives here as a DllNotFoundException from the
                 // first call rather than from anything this file does.
                 log.Warning(
-                    $"{BridgeComparison.LogPrefix} the native look-ahead is unavailable "
+                    $"{LogPrefix} the native look-ahead is unavailable "
                     + $"({error.GetType().Name}: {error.Message}). "
                     + "The managed engine is answering on its own.");
                 _bridge = null;
@@ -402,7 +424,6 @@ namespace GlobalConversationTracker
         internal static void FlushDiagnostics()
         {
             _diagnostics?.Flush();
-            _comparison?.Report();
         }
 
         /// <summary>
@@ -432,10 +453,20 @@ namespace GlobalConversationTracker
         /// The marker for one option, or null when it has earned none.
         /// </summary>
         /// <remarks>
-        /// The gate is "strictly better than what the option already shows". An option
+        /// <para>The gate is "strictly better than what the option already shows". An option
         /// drawn as unseen-anywhere is already the strongest state there is, so it never
         /// gains a marker; one drawn as unseen-this-save gains only the orange kind; a
-        /// spent option can gain either.
+        /// spent option can gain either.</para>
+        ///
+        /// <para>THE ANSWER IS ALREADY IN HAND. Every option of this menu was asked about in
+        /// one call before any of them was drawn - see <see cref="PrepareMenu"/> - so this
+        /// is a dictionary lookup rather than a search. That is the whole reason the bridge
+        /// takes a list of starts.</para>
+        ///
+        /// <para>NO ANSWER MEANS NO MARKER. The bridge could not be reached, the index would
+        /// not open, or the option is not in the group that was asked about. A marker that
+        /// says nothing is the honest reading of "nobody looked"; the alternative is one
+        /// that says "nothing there" on the strength of a search that never ran.</para>
         /// </remarks>
         private static string? MarkerFor(DialogueEntry entry)
         {
@@ -448,66 +479,28 @@ namespace GlobalConversationTracker
             Novelty own = NoveltyOf(session, entry.conversationID, entry.id);
             if (own == Novelty.UnseenAnyGame)
             {
-                // Already the most novel thing there is, so nothing can outrank it and no
-                // crawl runs. Counted rather than compared: see BridgeComparison.NotCrawled.
-                _comparison?.NotCrawled();
+                // Already the most novel thing there is, so nothing can outrank it.
                 return null;
             }
 
-            DialogueDatabase database = DialogueManager.masterDatabase;
-            LookAheadGraph? graph = LookAheadGraphBuilder.ForConversation(
-                database, entry.conversationID);
-            if (graph == null)
+            var start = new NodeRef(entry.conversationID, entry.id);
+            if (!_menuAnswers.TryGetValue(start, out LookAheadAnswer answer))
             {
                 return null;
             }
 
-            if (!LookAheadEngine.HasPotentialImprovement(
-                graph, own, node => NoveltyOf(session, node.ConversationId, node.EntryId)))
+            if (_diagnostics != null && _menuWorld != null)
             {
-                // No entry in the graph outranks what this option already shows, so the
-                // crawl is skipped and there is no best-reachable figure to compare.
-                _comparison?.NotCrawled();
-                return null;
+                _diagnostics.Record(answer, _budget, _menuGroupEntryCount, _menuWorld);
             }
 
-            var world = new GameLookAheadWorld();
-            var start = new DialogueNodeId(entry.conversationID, entry.id);
-
-            long ticks = System.Diagnostics.Stopwatch.GetTimestamp();
-            LookAheadResult result = _engine.Evaluate(
-                graph,
-                start,
-                world,
-                node => NoveltyOf(session, node.ConversationId, node.EntryId));
-            double managedMilliseconds = Milliseconds(ticks);
-
-            if (_diagnostics != null)
+            if (answer.Best <= (int)own)
             {
-                _diagnostics.Record(
-                    start, result, managedMilliseconds, _budget,
-                    TraceOverflow(graph, start, world, session, result));
-            }
-
-            // BOTH ENGINES RAN; the managed one's answer is the one drawn. Comparing them
-            // over real play is what turns "the crossing looks right" into evidence, and it
-            // costs a dictionary lookup on top of a crawl that was happening anyway. The
-            // marker switches to the bridge once the log goes quiet - see de-i5xj.8.
-            _comparison?.Record(
-                start,
-                result.Best,
-                managedMilliseconds,
-                _menuAnswers.TryGetValue(start, out LookAheadAnswer answer)
-                    ? answer
-                    : (LookAheadAnswer?)null);
-
-            if (result.Best <= own)
-            {
-                // NOT FINDING SOMETHING IS PROVISIONAL; FINDING IT IS NOT. The crawl's best
-                // is a lower bound, so a search that ran out of budget has not established
-                // that nothing is reachable - only that it did not get there. Drawing
-                // nothing says the first, which is a claim the search did not make.
-                return _markUncertain && result.BudgetExhausted
+                // NOT FINDING SOMETHING IS PROVISIONAL; FINDING IT IS NOT. The best is a
+                // lower bound, so a search that ran out of budget has not established that
+                // nothing is reachable - only that it did not get there. Drawing nothing
+                // says the first, which is a claim the search did not make.
+                return _markUncertain && !answer.Complete
                     ? Draw(_uncertainHtml, UncertainMarker)
                     : null;
             }
@@ -515,7 +508,7 @@ namespace GlobalConversationTracker
             // Above the option's own novelty, so something was actually reached. That is
             // definite even under a budget - a witness is a witness - so an incomplete
             // search that found one still draws the ordinary marker.
-            string colour = result.Best == Novelty.UnseenAnyGame
+            string colour = answer.Best == (int)Novelty.UnseenAnyGame
                 ? _unseenAnyGameHtml
                 : _unseenThisGameHtml;
             return Draw(colour, FoundMarker);
@@ -524,37 +517,6 @@ namespace GlobalConversationTracker
         /// <summary>One marker, in one colour, as the game's text markup.</summary>
         private static string Draw(string colourHtml, string marker) =>
             "<color=" + colourHtml + ">" + marker + "</color>";
-
-        /// <summary>
-        /// Walks an overflowed crawl a second time, keeping the tally that says where it
-        /// blew up.
-        /// </summary>
-        /// <remarks>
-        /// Only overflows are walked twice, and only when the overflow log is on. The
-        /// alternative - keeping the tally on every crawl - would make the common case
-        /// pay for a report it will never produce. The re-walk reaches the same place
-        /// because <see cref="GameLookAheadWorld"/> caches every read it makes, so the
-        /// second pass is answered from the snapshot the first one took.
-        /// </remarks>
-        private static LookAheadTrace? TraceOverflow(
-            LookAheadGraph graph,
-            DialogueNodeId start,
-            GameLookAheadWorld world,
-            GlobalStateSession session,
-            LookAheadResult result)
-        {
-            LookAheadEngine? tracing = _tracingEngine;
-            if (tracing == null || !result.BudgetExhausted)
-            {
-                return null;
-            }
-
-            return tracing.Evaluate(
-                graph,
-                start,
-                world,
-                node => NoveltyOf(session, node.ConversationId, node.EntryId)).Trace;
-        }
 
         /// <summary>Wall time since a stopwatch timestamp, in milliseconds.</summary>
         private static double Milliseconds(long since)
@@ -567,7 +529,6 @@ namespace GlobalConversationTracker
         internal static void Flush()
         {
             _diagnostics?.Flush();
-            _comparison?.Report();
         }
 
         /// <summary>

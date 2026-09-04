@@ -550,7 +550,36 @@ pub struct LookAheadRequest {
     /// Entries unseen this game but seen in a previous one.
     #[serde(default)]
     pub unseen_this_game: NodeSet,
+    /// The most search states one option may cost, or zero for this engine's default.
+    ///
+    /// The plugin's own setting, and it has to cross: once the marker comes from here, a
+    /// budget the caller configured and this engine ignored would be a dial connected to
+    /// nothing.
+    #[serde(default)]
+    pub state_budget: usize,
+    /// The longest one option may run for in milliseconds; zero for no limit.
+    ///
+    /// Zero means NO LIMIT rather than the default, matching the plugin's setting, where
+    /// zero is documented as no time limit.
+    #[serde(default)]
+    pub time_budget_ms: u64,
     pub world: WorldSnapshot,
+}
+
+impl LookAheadRequest {
+    /// The engine options this request asks for.
+    fn options(&self) -> crate::engine::engine::LookAheadOptions {
+        let default = crate::engine::engine::LookAheadOptions::default();
+        crate::engine::engine::LookAheadOptions {
+            state_budget: if self.state_budget == 0 {
+                default.state_budget
+            } else {
+                self.state_budget
+            },
+            time_budget: std::time::Duration::from_millis(self.time_budget_ms),
+            ..default
+        }
+    }
 }
 
 /// What one option scored.
@@ -564,6 +593,24 @@ pub struct LookAheadAnswer {
     /// Whether the search settled. False means `best` is a lower bound.
     pub complete: bool,
     pub elapsed_ms: u64,
+    /// How many states the crawl explored.
+    ///
+    /// Carried because the plugin's diagnostics are about what a crawl COSTS, and a time
+    /// alone cannot say whether a menu was slow because the search was large or because
+    /// the machine was busy. This is the number that is the same on both.
+    #[serde(default)]
+    pub states_explored: usize,
+    /// How many entries it reached.
+    #[serde(default)]
+    pub nodes_reached: usize,
+    /// What stopped it: "none", "states" or "time".
+    ///
+    /// More than [`Self::complete`] says, and the difference is what a player tuning the
+    /// budgets needs: a crawl that ran out of STATES wants a bigger state budget, and one
+    /// that ran out of TIME on the same states wants a slower machine or a longer clock.
+    /// A single "it gave up" cannot tell them which dial to turn.
+    #[serde(default)]
+    pub stopped_by: String,
 }
 
 /// What comes back.
@@ -754,7 +801,7 @@ pub fn answer(
         }
     };
 
-    let engine = LookAheadEngine::default();
+    let engine = LookAheadEngine::new(request.options());
     let mut answers = Vec::with_capacity(request.starts.len());
 
     for start in &request.starts {
@@ -769,6 +816,32 @@ pub fn answer(
                 witness: None,
                 complete: false,
                 elapsed_ms: 0,
+                states_explored: 0,
+                nodes_reached: 0,
+                stopped_by: "none".to_string(),
+            });
+            continue;
+        }
+
+        // NOTHING BETTER IS REACHABLE, so there is no crawl to run. The walk that
+        // decides this is a few thousand pointer-follows against a crawl budgeted at
+        // 200,000 states, and it stops early whenever the answer is yes - so the case it
+        // costs anything in is the case where it saves a whole crawl. See
+        // LookAheadEngine::reaches_potential_improvement.
+        //
+        // A COMPLETE ANSWER, not a gave-up one: this establishes that nothing outranks
+        // the option, which is exactly what a finished crawl finding nothing would.
+        let own = novelty(id);
+        if !LookAheadEngine::reaches_potential_improvement(&graph, id, own, &novelty) {
+            answers.push(LookAheadAnswer {
+                start: *start,
+                best: Novelty::SeenThisGame as i32,
+                witness: None,
+                complete: true,
+                elapsed_ms: 0,
+                states_explored: 0,
+                nodes_reached: 0,
+                stopped_by: "none".to_string(),
             });
             continue;
         }
@@ -781,6 +854,14 @@ pub fn answer(
             witness: None,
             complete: !result.budget_exhausted(),
             elapsed_ms: began.elapsed().as_millis() as u64,
+            states_explored: result.states_explored,
+            nodes_reached: result.nodes_reached,
+            stopped_by: match result.stopped_by {
+                crate::core::types::LookAheadLimit::States => "states",
+                crate::core::types::LookAheadLimit::Time => "time",
+                crate::core::types::LookAheadLimit::None => "none",
+            }
+            .to_string(),
         });
     }
 
@@ -1116,6 +1197,8 @@ mod tests {
             starts: vec![NodeRef { conversation: 631, entry: 4 }],
             unseen_any_game: NodeSet::from_iter([NodeRef { conversation: 631, entry: 9 }]),
             unseen_this_game: NodeSet::default(),
+            state_budget: 0,
+            time_budget_ms: 0,
             world,
         };
 
@@ -1129,6 +1212,52 @@ mod tests {
             back.world.queries.get("IsKimHere()"),
             Some(WireValue::Bool { value: true }),
         ));
+    }
+
+    /// A budget the caller sent is the budget the crawl runs under.
+    ///
+    /// Load-bearing once the marker comes from here rather than from the managed engine: a
+    /// `LookAheadStateBudget` the plugin configured and this engine ignored would be a dial
+    /// connected to nothing, and the in-game suite that sets it to one would stop testing
+    /// anything at all.
+    #[test]
+    fn a_state_budget_that_crosses_is_the_budget_the_crawl_runs_under() {
+        let request = LookAheadRequest {
+            conversation: 1,
+            starts: Vec::new(),
+            unseen_any_game: NodeSet::default(),
+            unseen_this_game: NodeSet::default(),
+            state_budget: 7,
+            time_budget_ms: 250,
+            world: WorldSnapshot::default(),
+        };
+
+        let options = request.options();
+        assert_eq!(options.state_budget, 7);
+        assert_eq!(options.time_budget, std::time::Duration::from_millis(250));
+    }
+
+    /// Zero means "this engine's default" for states and "no limit" for time.
+    ///
+    /// The two zeros mean different things because the plugin's two settings do: its state
+    /// budget has a default it always applies, and its time budget documents zero as no
+    /// limit. Reading either the other way would silently change what a player configured.
+    #[test]
+    fn a_budget_of_zero_means_what_the_plugins_setting_means() {
+        let request = LookAheadRequest {
+            conversation: 1,
+            starts: Vec::new(),
+            unseen_any_game: NodeSet::default(),
+            unseen_this_game: NodeSet::default(),
+            state_budget: 0,
+            time_budget_ms: 0,
+            world: WorldSnapshot::default(),
+        };
+
+        let options = request.options();
+        let default = crate::engine::engine::LookAheadOptions::default();
+        assert_eq!(options.state_budget, default.state_budget);
+        assert_eq!(options.time_budget, std::time::Duration::ZERO);
     }
 
     /// A value's wire form is what the other side has to write, so it is pinned here.

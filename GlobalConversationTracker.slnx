@@ -19,11 +19,9 @@
     -->
         <Project
             Path="src/GlobalConversationTracker.LookAhead.Tests/GlobalConversationTracker.LookAhead.Tests.csproj" />
-        <Project
-            Path="src/GlobalConversationTracker.LookAhead/GlobalConversationTracker.LookAhead.csproj" />
         <!--
-      The managed side of the bridge to the Rust look-ahead engine, which is
-      taking over from the assembly above - see de-i5xj. Marshals to a native
+      The managed side of the bridge to the Rust look-ahead engine, which draws
+      the marker - see de-i5xj. Marshals to a native
       library and back and touches nothing else, so it is testable without the
       game in the same way.
     -->

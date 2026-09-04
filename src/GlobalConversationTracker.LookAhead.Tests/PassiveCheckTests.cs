@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-using GlobalConversationTracker.LookAhead;
+using GlobalConversationTracker.Engine;
 using Xunit;
 
 namespace GlobalConversationTracker.LookAhead.Tests

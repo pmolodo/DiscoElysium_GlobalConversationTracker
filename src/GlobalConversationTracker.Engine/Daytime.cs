@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-namespace GlobalConversationTracker.LookAhead
+namespace GlobalConversationTracker.Engine
 {
     /// <summary>
     /// The part of the day an hour falls in, as <c>SunshineClockTime.GetDaytime</c>

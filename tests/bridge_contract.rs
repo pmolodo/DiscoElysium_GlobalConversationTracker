@@ -167,6 +167,8 @@ fn an_answer_survives_the_crossing() {
             starts: vec![NodeRef::from(start)],
             unseen_any_game: unseen.iter().copied().collect(),
             unseen_this_game: Default::default(),
+            state_budget: 0,
+            time_budget_ms: 0,
             world: snapshot.clone(),
         };
 

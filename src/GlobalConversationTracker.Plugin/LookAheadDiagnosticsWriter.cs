@@ -5,7 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.Json;
-using GlobalConversationTracker.LookAhead;
+using GlobalConversationTracker.Engine;
 using GlobalConversationTracker.Session;
 
 namespace GlobalConversationTracker
@@ -81,42 +81,26 @@ namespace GlobalConversationTracker
         /// <summary>Whether anything at all needs recording.</summary>
         internal bool Enabled => LogOverflows || KeepStatistics;
 
-        /// <summary>
-        /// Whether a crawl that overflowed should be walked a second time to find out
-        /// why.
-        /// </summary>
-        /// <remarks>
-        /// The tally that explains an overflow costs a dictionary write per state, in the
-        /// loop that decides what the feature costs. Rather than make every crawl pay for
-        /// a report almost none of them will produce, the normal walk keeps no tally and
-        /// an overflow is reproduced by walking again with one. The second walk sees the
-        /// same answer because the world it reads is a snapshot taken before the first.
-        /// </remarks>
-        internal bool RetriesOverflowsWithTrace => LogOverflows;
 
         /// <summary>Records one finished crawl.</summary>
-        /// <param name="start">The option it began at.</param>
-        /// <param name="result">What it found.</param>
-        /// <param name="milliseconds">How long it took.</param>
-        /// <param name="budget">The state budget it was given.</param>
-        /// <param name="trace">
-        /// Why it overflowed, from a second traced walk, or null if none was made.
+        /// <param name="answer">
+        /// What the bridge said about it: where it started, what it found, how big it got
+        /// and how long it took.
         /// </param>
+        /// <param name="budget">The state budget it was given.</param>
+        /// <param name="groupEntryCount">
+        /// How many entries the group has, so a reader can see how much of it was reached.
+        /// </param>
+        /// <param name="world">The world it crawled from.</param>
         internal void Record(
-            DialogueNodeId start,
-            LookAheadResult result,
-            double milliseconds,
+            LookAheadAnswer answer,
             int budget,
-            LookAheadTrace? trace = null)
+            int groupEntryCount,
+            WorldSnapshot world)
         {
-            if (result == null)
-            {
-                return;
-            }
-
             if (KeepStatistics)
             {
-                _statistics.Record(start, result, milliseconds);
+                _statistics.Record(answer.Start, answer, answer.ElapsedMs);
                 if (++_sinceLastWrite >= StatisticsWriteInterval)
                 {
                     _sinceLastWrite = 0;
@@ -124,9 +108,9 @@ namespace GlobalConversationTracker
                 }
             }
 
-            if (LogOverflows && result.BudgetExhausted)
+            if (LogOverflows && !answer.Complete)
             {
-                AppendOverflow(result, milliseconds, budget, trace);
+                AppendOverflow(answer, budget, groupEntryCount, world);
             }
         }
 
@@ -141,7 +125,7 @@ namespace GlobalConversationTracker
         }
 
         private void AppendOverflow(
-            LookAheadResult result, double milliseconds, int budget, LookAheadTrace? trace)
+            LookAheadAnswer answer, int budget, int groupEntryCount, WorldSnapshot world)
         {
             if (_overflowLogFailed)
             {
@@ -151,7 +135,8 @@ namespace GlobalConversationTracker
             try
             {
                 File.AppendAllText(
-                    OverflowLogPath, DescribeOverflow(result, milliseconds, budget, trace));
+                    OverflowLogPath,
+                    DescribeOverflow(answer, budget, groupEntryCount, world));
             }
             catch (Exception ex)
             {
@@ -167,47 +152,46 @@ namespace GlobalConversationTracker
         /// Renders one overflow. Plain text and one block per event, because this is read
         /// by a person hunting a slow menu, not by a program.
         /// </summary>
+        /// <remarks>
+        /// <para>WHAT THIS USED TO SAY AND NO LONGER CAN: the entries reached in the most
+        /// distinct states, and how many state slots the group tracked. Both came from a
+        /// second traced walk of the managed engine, which does not exist any more
+        /// (de-i5xj.6) - the crawl runs on the other side of the bridge now, and neither
+        /// the per-entry tally nor the symbol table crosses it.</para>
+        ///
+        /// <para>What is left is most of what the report was for. WHICH option blew up,
+        /// HOW BIG it got before it did, WHICH limit stopped it, and WHAT WORLD it was
+        /// crawling from - the last of those from the snapshot this plugin sent, which is
+        /// the same world the crawl saw. A reader hunting a slow menu wants the option and
+        /// the size; the tally was the refinement.</para>
+        /// </remarks>
         private static string DescribeOverflow(
-            LookAheadResult result, double milliseconds, int budget, LookAheadTrace? trace)
+            LookAheadAnswer answer, int budget, int groupEntryCount, WorldSnapshot world)
         {
             var text = new StringBuilder();
             text.Append("=== ")
                 .Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture))
                 .AppendLine(" budget exhausted ===");
 
-            if (trace == null)
-            {
-                text.AppendLine("  (the traced re-walk produced nothing)");
-                text.AppendLine();
-                return text.ToString();
-            }
-
-            text.Append("  option         ").Append(trace.Start.ConversationId)
-                .Append(':').Append(trace.Start.EntryId).AppendLine();
+            text.Append("  option         ").Append(answer.Start.Conversation)
+                .Append(':').Append(answer.Start.Entry).AppendLine();
+            text.Append("  stopped by     ")
+                .AppendLine(answer.StoppedBy.Length == 0 ? "(not said)" : answer.StoppedBy);
             text.Append("  budget         ").Append(budget).AppendLine();
-            text.Append("  states         ").Append(result.StatesExplored).AppendLine();
-            text.Append("  entries        ").Append(result.NodesReached)
-                .Append(" of ").Append(trace.GraphNodeCount).AppendLine(" in the group");
-            text.Append("  state slots    ").Append(trace.TrackedSlots).AppendLine();
+            text.Append("  states         ").Append(answer.StatesExplored).AppendLine();
+            text.Append("  entries        ").Append(answer.NodesReached)
+                .Append(" of ").Append(groupEntryCount).AppendLine(" in the group");
             text.Append("  elapsed        ")
-                .Append(milliseconds.ToString("F1", CultureInfo.InvariantCulture))
-                .AppendLine(" ms (the untraced walk; the re-walk is not counted)");
-            text.Append("  best found     ").Append(result.Best).AppendLine();
-            text.Append("  money          ").Append(trace.Money).AppendLine();
+                .Append(answer.ElapsedMs.ToString(CultureInfo.InvariantCulture))
+                .AppendLine(" ms");
+            text.Append("  best found     ").Append((Novelty)answer.Best).AppendLine();
+            text.Append("  money          ").Append(world.Money).AppendLine();
             text.Append("  clock          ")
-                .Append(ClockTime.HoursOf(trace.DayMinutes).ToString("00", CultureInfo.InvariantCulture))
+                .Append((world.DayMinutes / 60).ToString("00", CultureInfo.InvariantCulture))
                 .Append(':')
-                .Append((trace.DayMinutes % 60).ToString("00", CultureInfo.InvariantCulture))
-                .Append(" on day ").Append(trace.DayCounter)
-                .AppendLine(trace.ClockLocked ? " (locked)" : string.Empty);
-
-            text.AppendLine("  entries reached in the most distinct states:");
-            foreach (NodeStateCount hot in trace.HottestNodes)
-            {
-                text.Append("    ").Append(hot.Node.ConversationId).Append(':')
-                    .Append(hot.Node.EntryId).Append("  ").Append(hot.States)
-                    .AppendLine(" states");
-            }
+                .Append((world.DayMinutes % 60).ToString("00", CultureInfo.InvariantCulture))
+                .Append(" on day ").Append(world.DayCounter)
+                .AppendLine(world.ClockLocked ? " (locked)" : string.Empty);
 
             text.AppendLine();
             return text.ToString();

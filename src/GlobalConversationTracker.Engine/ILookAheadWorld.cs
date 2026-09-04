@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 using System.Collections.Generic;
 
-namespace GlobalConversationTracker.LookAhead
+namespace GlobalConversationTracker.Engine
 {
     /// <summary>
     /// Everything outside the dialogue graph that the look-ahead needs to know, read

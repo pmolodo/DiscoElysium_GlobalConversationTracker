@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-namespace GlobalConversationTracker.LookAhead
+namespace GlobalConversationTracker.Engine
 {
     /// <summary>
     /// Which of the game's special node types an entry is, as decided by

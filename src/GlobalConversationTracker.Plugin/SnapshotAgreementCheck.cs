@@ -3,7 +3,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using GlobalConversationTracker.Engine;
-using GlobalConversationTracker.LookAhead;
 using GlobalConversationTracker.Session;
 
 namespace GlobalConversationTracker

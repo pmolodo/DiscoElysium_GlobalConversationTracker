@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using GlobalConversationTracker.Core;
 using GlobalConversationTracker.Engine;
-using GlobalConversationTracker.LookAhead;
 using GlobalConversationTracker.Session;
 using PixelCrushers.DialogueSystem;
 using Voidforge;
