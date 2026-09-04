@@ -86,6 +86,21 @@
             SourceFiles="$(NativeLookAheadSource)"
             DestinationFiles="$(OutDir)GlobalConversationTracker.Native.dll"
             SkipUnchangedFiles="true" />
+        <!--
+        And the stamp beside it, saying which source the library was built from. Copied
+        as a pair, and never one without the other: a run compares the stamp against the
+        tree it is running from and refuses when they differ, so a stamp left behind from
+        an older library would be worse than none. See build.rs.
+      -->
+        <PropertyGroup>
+            <NativeLookAheadStamp>$([System.IO.Path]::ChangeExtension('$(NativeLookAheadSource)', '.built.json'))</NativeLookAheadStamp>
+        </PropertyGroup>
+        <Copy Condition="'$(NativeLookAheadSource)' != '' And Exists('$(NativeLookAheadStamp)')"
+            SourceFiles="$(NativeLookAheadStamp)"
+            DestinationFiles="$(OutDir)GlobalConversationTracker.Native.built.json"
+            SkipUnchangedFiles="true" />
+        <Delete Condition="'$(NativeLookAheadSource)' != '' And !Exists('$(NativeLookAheadStamp)')"
+            Files="$(OutDir)GlobalConversationTracker.Native.built.json" />
         <Message Condition="'$(NativeLookAheadSource)' == ''" Importance="high"
             Text="No Rust look-ahead library found; the plugin will report the bridge as unavailable. Run: cargo build --release" />
     </Target>
