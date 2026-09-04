@@ -2,6 +2,8 @@
 
 ## Git
 
+### Top-level agent
+
 **Commit to the branch that is checked out**, including when that branch is `main`. Do
 not create a branch first.
 
@@ -9,3 +11,7 @@ This is written down because Claude Code's built-in default is the opposite - "i
 default branch, branch first" - and it does not suit this repository, whose history is a
 single line of commits on `main`. A branch per change is noise here rather than
 isolation.
+
+### Sub-agents
+
+Always work on your own branch in your own worktree.
