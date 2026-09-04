@@ -426,7 +426,19 @@ fn backward(
         .keeping_only_read(symbols, &DataLayout::read_by(graph));
     // From MEMORY, so the diagram and the crawl are held to one number rather than two
     // that happen to agree.
-    let vars = DataVars::new(&layout, symbols, DiagramBudget::new(MEMORY));
+    //
+    // FALLIBLY, because the alternative is not a wrong number but a dead process: the
+    // manager preallocates its node store and that allocation aborts. A None here means the
+    // machine could not supply the budget, which is not a finding about the search - the
+    // row is NOT MEASURED and wants running again with the memory free.
+    let Some(vars) = DataVars::try_new(&layout, symbols, DiagramBudget::new(MEMORY)) else {
+        return Row {
+            verdict: NOT_MEASURED,
+            millis: began.elapsed().as_millis(),
+            size: 0,
+            set_sum: 0,
+        };
+    };
     let mut compiler = GuardCompiler::new(&vars)
         .with_world(world)
         .with_constant_clock(DataLayout::group_passes_time(graph));
@@ -523,6 +535,14 @@ fn both_engines_over_every_profile() {
             // and wants running again when the memory is free. Per row rather than once at
             // the top because what else is running on the machine changes underneath a run
             // that takes hours.
+            //
+            // AND `backward` ASKS AGAIN, through DataVars::try_new, which is not
+            // redundant. This decides the ROW - both engines are skipped, because a forward
+            // verdict measured beside a backward one that never ran is half a row, and the
+            // two are only comparable when they were rationed alike (de-e23q). That one is
+            // the backstop for the race this check openly cannot close: another process can
+            // take the memory between the answer here and the allocation there, and the
+            // allocation aborts rather than failing.
             if !DiagramBudget::measurement().can_be_supplied() {
                 eprintln!(
                     "NOT MEASURED: {conversation} {} - this machine could not supply the \

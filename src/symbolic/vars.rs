@@ -34,7 +34,37 @@ impl<'a> DataVars<'a> {
         symbols: &'a StateSymbols,
         budget: DiagramBudget,
     ) -> Self {
-        let manager = budget.manager();
+        Self::over(layout, symbols, budget.manager())
+    }
+
+    /// The same, or None where this machine cannot supply the allowance.
+    ///
+    /// FOR A BUDGET NOBODY CHECKED FIRST, which in practice means a large one: the manager
+    /// preallocates its node store and the allocation ABORTS rather than failing, so a
+    /// caller asking for six gigabytes on a machine that has four does not get a wrong
+    /// answer, it gets no process. [`DiagramBudget::try_manager`] asks before it spends and
+    /// this carries the answer out.
+    ///
+    /// A None is not a finding about anything being measured - the search never ran - so a
+    /// caller should report the row as NOT MEASURED rather than folding it in with results.
+    /// See `tests/performance_matrix.rs`, which does.
+    ///
+    /// [`Self::new`] stays for the many callers whose budget is a fixed small one chosen in
+    /// the same file; there is nothing for them to react to.
+    pub fn try_new(
+        layout: &'a DataLayout,
+        symbols: &'a StateSymbols,
+        budget: DiagramBudget,
+    ) -> Option<Self> {
+        Some(Self::over(layout, symbols, budget.try_manager()?))
+    }
+
+    /// Declares the layout's variables in a manager somebody else built.
+    fn over(
+        layout: &'a DataLayout,
+        symbols: &'a StateSymbols,
+        manager: BDDManagerRef,
+    ) -> Self {
         let vars = manager.with_manager_exclusive(|m| {
             m.add_vars(layout.total_vars())
                 .map(|v| BDDFunction::var(m, v).expect("a freshly added variable"))

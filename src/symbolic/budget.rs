@@ -123,6 +123,23 @@ impl DiagramBudget {
         new_manager(self.nodes(), self.cache_entries(), 1)
     }
 
+    /// A manager sized to this allowance, or None where the machine cannot supply it.
+    ///
+    /// ASKING AND SPENDING IN ONE PLACE, which is the point. [`Self::can_be_supplied`] and
+    /// [`Self::manager`] are two calls that have to happen in that order, and an order a
+    /// caller has to remember is one a caller can forget - at which point the failure is
+    /// not a wrong answer but a dead process, because the allocation the manager makes
+    /// ABORTS rather than returning an error. Everything that builds a manager for an
+    /// allowance it did not choose itself should come through here.
+    ///
+    /// Everything [`Self::can_be_supplied`] does not promise, this does not promise
+    /// either: another process can take the memory in between, and a reservation Windows
+    /// accepts may still be paid for in paging. It converts the common case from an abort
+    /// into a value.
+    pub fn try_manager(&self) -> Option<BDDManagerRef> {
+        self.can_be_supplied().then(|| self.manager())
+    }
+
     /// Whether this machine can supply the allowance at all, asked BEFORE spending it.
     ///
     /// ## Why the question has to be asked separately
