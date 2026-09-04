@@ -48,30 +48,38 @@ namespace GlobalConversationTracker
         /// </summary>
         /// <param name="log">Where the report goes.</param>
         /// <param name="session">The global state, for what other saves have shown.</param>
+        /// <param name="modDirectory">Where the mod keeps its own files.</param>
         /// <param name="conversation">Any conversation in the group to compare over.</param>
         internal static void Report(
-            ManualLogSource log, GlobalStateSession session, int conversation)
+            ManualLogSource log,
+            GlobalStateSession session,
+            string modDirectory,
+            int conversation)
         {
-            string? index = NativeEngineCheck.Deployed(NativeEngineCheck.IndexFileName);
+            // Opened per check rather than kept. This runs when a harness asks it to, and
+            // the index parse it costs is the price of not holding tens of megabytes for
+            // the whole of a playthrough that may never ask again. It stalls the frame it
+            // runs in for a second or two, which is a diagnostic being a diagnostic; the
+            // shipped path will keep one open (de-i5xj.8).
+            using LookAheadIndex? index = LookAheadIndex.Open(
+                NativeEngineCheck.PluginDirectory, modDirectory, log);
             if (index == null)
             {
                 log.LogWarning(
-                    $"{LogPrefix} no {NativeEngineCheck.IndexFileName} beside the plugin; "
-                    + "there is nothing to compare against.");
+                    $"{LogPrefix} no index could be opened; there is nothing to compare "
+                    + "against.");
                 return;
             }
 
             try
             {
-                // Opened per check rather than kept. This runs when a harness asks it to,
-                // and the index parse it costs is the price of not holding tens of
-                // megabytes for the whole of a playthrough that may never ask again. It
-                // stalls the frame it runs in for a second or two, which is a diagnostic
-                // being a diagnostic; the shipped path will keep one open (de-i5xj.8).
-                using LookAheadLibrary engine = LookAheadLibrary.Open(
-                    index, NativeEngineCheck.Deployed(NativeEngineCheck.VariablesFileName));
+                // The cache check, which reports its own cost and may rebuild the index
+                // from the loaded database. Asked BEFORE the questions are used, because
+                // a rebuild replaces the engine and the questions would be about a file
+                // that has been superseded.
+                index.IsValidFor(index.Engine.QuestionsFor(conversation).Conversations);
 
-                LookAheadQuestions questions = engine.QuestionsFor(conversation);
+                LookAheadQuestions questions = index.Engine.QuestionsFor(conversation);
                 LookAheadRequest request =
                     GameWorldSnapshot.Build(conversation, questions, session);
                 var managed = new GameLookAheadWorld();

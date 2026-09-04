@@ -224,6 +224,7 @@ namespace GlobalConversationTracker.DialogueExtract
             PrepareOutput(outPath);
 
             int written;
+            var trimming = System.Diagnostics.Stopwatch.StartNew();
             using (var writer = new StreamWriter(outPath, append: false, new UTF8Encoding(false)))
             {
                 // The header first, because the shipped index is a CACHE and a cache needs
@@ -233,12 +234,32 @@ namespace GlobalConversationTracker.DialogueExtract
                     writer, ShippedIndex.Trim(ConversationIndexFile.Read(index)));
             }
 
+            trimming.Stop();
+
             long before = new FileInfo(index).Length;
             long after = new FileInfo(outPath).Length;
             Console.WriteLine(
                 $"wrote {written} conversations to {outPath} "
                 + $"({after / 1048576.0:N1} MB, {100.0 * after / before:N0}% of "
                 + $"{before / 1048576.0:N1} MB)");
+
+            // Hashing every conversation again, on its own, so the plugin's per-group check
+            // can be argued about with a number rather than an estimate. It is only half
+            // the answer - the plugin walks a live object graph rather than parsed records -
+            // but it bounds the half that is the same on both sides.
+            var hashing = System.Diagnostics.Stopwatch.StartNew();
+            int hashed = 0;
+            foreach (ConversationRecord conversation in ConversationIndexFile.Read(outPath))
+            {
+                ShippedIndex.HashOf(conversation);
+                hashed++;
+            }
+
+            hashing.Stop();
+            Console.WriteLine(
+                $"read, trimmed, hashed and wrote in {trimming.ElapsedMilliseconds:N0} ms; "
+                + $"hashing all {hashed} again on its own took "
+                + $"{hashing.ElapsedMilliseconds:N0} ms");
             return 0;
         }
 

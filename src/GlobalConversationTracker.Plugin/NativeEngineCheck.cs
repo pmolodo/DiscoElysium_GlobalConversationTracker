@@ -110,12 +110,22 @@ namespace GlobalConversationTracker
             }
         }
 
+        /// <summary>
+        /// Where this assembly was installed, which is where the mod's payload sits.
+        /// </summary>
+        /// <remarks>
+        /// Empty rather than null where the runtime will not say - a plugin loaded from
+        /// memory has no location - so a caller combining paths gets a relative one rather
+        /// than an exception it has to think about.
+        /// </remarks>
+        internal static string PluginDirectory =>
+            Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? string.Empty;
+
         /// <summary>One deployed file beside this assembly, or null if it is not there.</summary>
         internal static string? Deployed(string fileName)
         {
-            string? directory = Path.GetDirectoryName(
-                Assembly.GetExecutingAssembly().Location);
-            if (string.IsNullOrEmpty(directory))
+            string directory = PluginDirectory;
+            if (directory.Length == 0)
             {
                 return null;
             }

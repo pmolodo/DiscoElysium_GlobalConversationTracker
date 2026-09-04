@@ -773,6 +773,17 @@ namespace GlobalConversationTracker.Harness
             ProbeCommand.SendCheckSnapshot(saveGames, conversationId);
             watcher.WaitForEvent("snapshot-checked", timeout, Log);
 
+            // What the index check cost, and whether it passed. Checked here and not only
+            // reported: on an unmodified install a rebuild would mean the extractor's
+            // canonicalisation and the plugin's disagree about a database neither of them
+            // changed, which is the drift the shared routine exists to prevent.
+            IndexCacheReport cache = IndexCacheReport.FromLog(logPath);
+            Console.WriteLine($"  NOTE  {cache}");
+            report.Check(
+                !cache.Rebuilt,
+                "the shipped index still describes the game's dialogue database",
+                cache.ToString());
+
             SnapshotAgreementReport agreement = SnapshotAgreementReport.FromLog(logPath);
             report.Check(
                 agreement.Agreed,

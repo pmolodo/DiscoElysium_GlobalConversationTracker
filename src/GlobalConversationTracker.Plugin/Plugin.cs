@@ -139,7 +139,9 @@ namespace GlobalConversationTracker
         {
             ManualLogSource log = _log
                 ?? throw new InvalidOperationException("The plugin log is unavailable.");
-            SnapshotAgreementCheck.Report(log, Session, conversation);
+            GlobalStateStore store = _store
+                ?? throw new InvalidOperationException("The global state store is unavailable.");
+            SnapshotAgreementCheck.Report(log, Session, store.DirectoryPath, conversation);
         }
 
         private Harmony? _harmony;

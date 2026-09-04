@@ -124,6 +124,84 @@ namespace GlobalConversationTracker.DialogueAsset.Tests
             }
         }
 
+        /// <summary>
+        /// The extractor's writer and the plugin's write the same line for the same
+        /// conversation.
+        /// </summary>
+        /// <remarks>
+        /// <para>There are two writers of this format and there is a reason for it: the
+        /// extractor's exists to produce byte-reproducible output for a 50 MB file that is
+        /// diffed against the last copy, while the plugin rebuilds an index from the live
+        /// database inside the game and cannot reach that assembly at all. What must not
+        /// happen is the two drifting, because the second one exists precisely for the case
+        /// where the first one's output was wrong.</para>
+        ///
+        /// <para>So they are compared, over a whole fixture database and byte for byte. A
+        /// difference in escaping, in key order, or in when <c>to_conversation</c> is
+        /// written would show up here rather than as an index the engine reads differently
+        /// from the one it was tested on.</para>
+        /// </remarks>
+        [Fact]
+        public void TheTwoWritersOfThisFormatAgree()
+        {
+            foreach (ConversationRecord full in Fixture())
+            {
+                string extractor = ConversationIndexFile.ToJson(ShippedIndex.Trim(full));
+                string plugin = ShippedIndexWriter.ToJson(AsIndexConversation(full));
+
+                Assert.Equal(extractor, plugin);
+            }
+        }
+
+        /// <summary>The two headers are the same line too.</summary>
+        [Fact]
+        public void TheTwoWritersOpenAFileTheSameWay()
+        {
+            Assert.Equal(ShippedIndex.Header(), ShippedIndexWriter.Header());
+            Assert.Equal(ShippedIndex.FormatVersion, ShippedIndexWriter.FormatVersion);
+        }
+
+        /// <summary>
+        /// The same conversation as the plugin would have built it from the live database.
+        /// </summary>
+        /// <remarks>
+        /// The plugin reads links that always name their destination conversation, so the
+        /// index's absent-means-this-conversation rule is resolved here, exactly as
+        /// <c>LiveDialogueDatabase</c> gets it resolved for free.
+        /// </remarks>
+        private static IndexConversation AsIndexConversation(ConversationRecord record)
+        {
+            var conversation = new IndexConversation(record.Id);
+            foreach (EntryRecord entry in record.Entries)
+            {
+                var built = new IndexEntry
+                {
+                    Id = entry.Id,
+                    Group = entry.Group,
+                    Guard = entry.Guard,
+                    Script = entry.Script,
+                };
+
+                for (int index = 0; index < entry.To.Count; index++)
+                {
+                    int destination =
+                        entry.ToConversation != null && index < entry.ToConversation.Count
+                            ? entry.ToConversation[index]
+                            : record.Id;
+                    built.Links.Add(new KeyValuePair<int, int>(destination, entry.To[index]));
+                }
+
+                foreach (KeyValuePair<string, string> field in entry.Fields)
+                {
+                    built.Fields.Add(field);
+                }
+
+                conversation.Entries.Add(built);
+            }
+
+            return conversation;
+        }
+
         private static List<ConversationRecord> Fixture()
         {
             string asset = Path.Combine(
