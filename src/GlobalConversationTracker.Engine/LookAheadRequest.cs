@@ -49,12 +49,18 @@ namespace GlobalConversationTracker.Engine
         public NodeSet UnseenThisGame { get; } = new NodeSet();
 
         /// <summary>
-        /// The most search states one option may cost, or 0 for the engine's own default.
+        /// The most search states one option may hold, or 0 for no such limit.
         /// </summary>
         /// <remarks>
-        /// The player's <c>LookAheadStateBudget</c>, and it has to cross. Once the marker
-        /// comes from the engine on the other side, a budget configured here and ignored
-        /// there would be a dial connected to nothing.
+        /// A TEST-ONLY KNOB, and the only budget here that is not a player's. No
+        /// configuration setting writes it: <c>LookAheadStateBudget</c> was removed in
+        /// de-7z0f because a count of search states is not a quantity anybody outside this
+        /// repository can reason about. What a player sets is memory and time.
+        ///
+        /// It survives because it is the only limit that gives an exactly reproducible
+        /// give-up, which the in-game suites that starve a crawl need. The memory budget
+        /// cannot do that job at the small end: it crosses in megabytes, and a megabyte is
+        /// more than a small group's whole crawl costs.
         /// </remarks>
         public int StateBudget { get; set; }
 
@@ -63,8 +69,9 @@ namespace GlobalConversationTracker.Engine
         /// </summary>
         /// <remarks>
         /// Zero means NO LIMIT rather than a default, which is what
-        /// <c>LookAheadTimeBudgetMs</c> documents it as. The state budget's zero means the
-        /// opposite - use the default - because that setting has no "off".
+        /// <c>LookAheadTimeBudgetMs</c> documents it as. <see cref="MemoryBudgetMb"/>'s
+        /// zero means the opposite - use the engine's default - because that setting has
+        /// no "off": a crawl always has some ceiling on what it may hold.
         /// </remarks>
         public int TimeBudgetMs { get; set; }
 

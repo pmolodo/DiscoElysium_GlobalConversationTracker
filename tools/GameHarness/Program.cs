@@ -177,7 +177,7 @@ namespace GlobalConversationTracker.Harness
                             TimeSpan.FromSeconds(options.TimeoutSeconds),
                             options.KeepOpen,
                             options.SuiteNames,
-                            options.StateBudget,
+                            options.MemoryBudgetMb,
                             options.TimeBudgetMs,
                             options.ScenarioNames);
                     default:
@@ -1498,15 +1498,18 @@ Options:
             public IReadOnlyList<string> ScenarioNames => _scenarioNames;
 
             /// <summary>
-            /// A state budget to run every suite at, overriding what they ask for; null
-            /// to leave them alone.
+            /// A memory budget in megabytes to run every suite at, overriding what they
+            /// ask for; null to leave them alone.
             /// </summary>
             /// <remarks>
             /// For asking how the cost behaves as the limit moves, which is a question
             /// about the conversations rather than about any suite. Editing the suite to
             /// ask it makes the answer unrepeatable and the tree dirty.
+            ///
+            /// Was --state-budget until de-7z0f, which took the state budget away: memory
+            /// and time are the two a player can set, so they are the two worth sweeping.
             /// </remarks>
-            public int? StateBudget { get; private set; }
+            public int? MemoryBudgetMb { get; private set; }
 
             /// <summary>A time budget to run every suite at, or null to leave them.</summary>
             public int? TimeBudgetMs { get; private set; }
@@ -1629,10 +1632,10 @@ Options:
                             options._scenarioNames.AddRange(names.Select(name => name.Trim()));
                             break;
                         }
-                        case "--state-budget":
-                            options.StateBudget = int.Parse(
+                        case "--memory-budget-mb":
+                            options.MemoryBudgetMb = int.Parse(
                                 Next() ?? throw new ArgumentException(
-                                    "--state-budget needs a number."),
+                                    "--memory-budget-mb needs a number."),
                                 CultureInfo.InvariantCulture);
                             break;
                         case "--time-budget-ms":

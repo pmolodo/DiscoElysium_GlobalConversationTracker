@@ -33,7 +33,7 @@ namespace GlobalConversationTracker.Harness
         /// moves. A suite whose markers depend on a crawl completing may fail under one,
         /// which is why the run says loudly that it is in force.
         /// </remarks>
-        private static int? _stateBudgetOverride;
+        private static int? _memoryBudgetOverride;
         private static int? _timeBudgetOverride;
 
         /// <summary>The colour meaning "leads somewhere no save has reached".</summary>
@@ -127,8 +127,9 @@ namespace GlobalConversationTracker.Harness
         /// <param name="timeout">How long any single wait may take.</param>
         /// <param name="keepOpen">Leave the last game running.</param>
         /// <param name="suiteNames">Suite names, or an empty list for every suite.</param>
-        /// <param name="stateBudget">
-        /// A state budget to force on every suite, or null to respect what they declare.
+        /// <param name="memoryBudgetMb">
+        /// A memory budget to force on every suite, or null to respect what they
+        /// declare.
         /// </param>
         /// <param name="timeBudgetMs">
         /// A time budget to force on every suite, or null to respect what they declare.
@@ -145,7 +146,7 @@ namespace GlobalConversationTracker.Harness
             TimeSpan timeout,
             bool keepOpen,
             IReadOnlyList<string> suiteNames,
-            int? stateBudget = null,
+            int? memoryBudgetMb = null,
             int? timeBudgetMs = null,
             IReadOnlyList<string>? scenarioNames = null)
         {
@@ -157,13 +158,13 @@ namespace GlobalConversationTracker.Harness
                 LookAheadSuites.SelectMany(suiteNames),
                 scenarioNames ?? Array.Empty<string>());
             var report = new Report();
-            _stateBudgetOverride = stateBudget;
+            _memoryBudgetOverride = memoryBudgetMb;
             _timeBudgetOverride = timeBudgetMs;
-            if (stateBudget != null || timeBudgetMs != null)
+            if (memoryBudgetMb != null || timeBudgetMs != null)
             {
                 Console.WriteLine(
                     "Overriding every suite's limits: "
-                    + $"state budget {stateBudget?.ToString() ?? "as declared"}, "
+                    + $"memory budget {memoryBudgetMb?.ToString() ?? "as declared"}MB, "
                     + $"time budget {timeBudgetMs?.ToString() ?? "as declared"}ms. "
                     + "Marker expectations may no longer hold.");
             }
@@ -397,19 +398,24 @@ namespace GlobalConversationTracker.Harness
                     ProbeEvent prepared = watcher.WaitForEvent(
                         "look-ahead-suite-prepared", timeout, Log);
                     bool enabled = Setting(suite, "MarkLookAhead", true);
-                    int stateBudget = Setting(suite, "LookAheadStateBudget", 200_000);
+                    int memoryBudgetMb = Setting(
+                        suite, "LookAheadMemoryBudgetMb", LookAheadSuites.TestMemoryBudgetMb);
                     int timeBudgetMs = Setting(
                         suite, "LookAheadTimeBudgetMs", LookAheadSuites.TestTimeBudgetMs);
+                    int stateBudget = Setting(
+                        suite, LookAheadSuites.TestStateBudgetSetting, 0);
                     report.Check(
                         prepared.Text("file") == stateFiles[suite.Name]
                             && prepared.Boolean("enabled") == enabled
-                            && prepared.Number("stateBudget") == stateBudget
-                            && prepared.Number("timeBudgetMs") == timeBudgetMs,
+                            && prepared.Number("memoryBudgetMb") == memoryBudgetMb
+                            && prepared.Number("timeBudgetMs") == timeBudgetMs
+                            && prepared.Number("stateBudget") == stateBudget,
                         $"{suite.Name}: its global state and settings were prepared",
                         $"the probe loaded {prepared.Text("file") ?? "nothing"} with enabled="
-                            + $"{prepared.Boolean("enabled")?.ToString() ?? "missing"}, budget="
-                            + $"{prepared.Number("stateBudget")?.ToString() ?? "missing"} and "
-                            + $"{prepared.Number("timeBudgetMs")?.ToString() ?? "missing"}ms");
+                            + $"{prepared.Boolean("enabled")?.ToString() ?? "missing"}, memory="
+                            + $"{prepared.Number("memoryBudgetMb")?.ToString() ?? "missing"}MB, "
+                            + $"{prepared.Number("timeBudgetMs")?.ToString() ?? "missing"}ms and "
+                            + $"states={prepared.Number("stateBudget")?.ToString() ?? "missing"}");
                     // Preparing flushes the preceding diagnostics writer. Clear after
                     // that flush so files from the prior suite cannot satisfy this one.
                     ClearArtefacts(suite, saveGames);
@@ -592,8 +598,11 @@ namespace GlobalConversationTracker.Harness
                 saveGames,
                 stateFile,
                 Setting(suite, "MarkLookAhead", true),
-                Setting(suite, "LookAheadStateBudget", 200_000),
+                // Zero unless a suite asks to be starved: this is the test-only knob, and
+                // no player setting corresponds to it.
+                Setting(suite, LookAheadSuites.TestStateBudgetSetting, 0),
                 Setting(suite, "LookAheadTimeBudgetMs", LookAheadSuites.TestTimeBudgetMs),
+                Setting(suite, "LookAheadMemoryBudgetMb", LookAheadSuites.TestMemoryBudgetMb),
                 Setting(suite, "LogLookAheadBudgetExceeded", false),
                 Setting(suite, "KeepLookAheadStates", false));
         }
@@ -607,7 +616,7 @@ namespace GlobalConversationTracker.Harness
         {
             int? forced = name switch
             {
-                "LookAheadStateBudget" => _stateBudgetOverride,
+                "LookAheadMemoryBudgetMb" => _memoryBudgetOverride,
                 "LookAheadTimeBudgetMs" => _timeBudgetOverride,
                 _ => null,
             };

@@ -21,9 +21,14 @@ struct Args {
     #[arg(short, long, default_value = "conversations.json")]
     input: PathBuf,
 
-    /// State budget (max states to explore)
-    #[arg(long, default_value = "200000")]
-    state_budget: usize,
+    /// Memory budget in megabytes, or 0 for the engine's own default
+    ///
+    /// The dial the player has, so the dial this tool has. It was a state budget until
+    /// de-7z0f: a count of search states costs between 136 and 455 megabytes depending on
+    /// which conversation it is counted in, which makes it a limit nobody can set
+    /// meaningfully.
+    #[arg(long, default_value = "0")]
+    memory_budget_mb: usize,
 
     /// Time budget in milliseconds
     #[arg(long, default_value = "1000")]
@@ -131,8 +136,13 @@ fn main() -> anyhow::Result<()> {
         .with_clock_locked(args.clock_locked);
 
     // Run look-ahead on each option node (non-group, has outgoing links)
+    let default_options = LookAheadOptions::default();
     let engine = LookAheadEngine::new(LookAheadOptions {
-        state_budget: args.state_budget,
+        memory_budget: if args.memory_budget_mb == 0 {
+            default_options.memory_budget
+        } else {
+            args.memory_budget_mb * 1024 * 1024
+        },
         time_budget: std::time::Duration::from_millis(args.time_budget_ms),
         collect_trace: args.trace,
         ..Default::default()
@@ -177,7 +187,7 @@ fn main() -> anyhow::Result<()> {
                 .copied()
                 .filter(|node| !seen_here.contains(node))
                 .collect(),
-            state_budget: args.state_budget,
+            memory_budget_mb: args.memory_budget_mb,
             time_budget_ms: args.time_budget_ms,
             world: WorldSnapshot {
                 day_minutes: args.day_minutes,

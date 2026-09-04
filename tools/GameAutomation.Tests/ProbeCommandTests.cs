@@ -72,7 +72,7 @@ namespace GlobalConversationTracker.Automation.Tests
         public void APrepareCommandCarriesSuiteStateAndSettings()
         {
             ProbeCommand.SendPrepareLookAheadSuite(
-                _saveGames, "suite-state.json", false, 17, 2500, true, false);
+                _saveGames, "suite-state.json", false, 9, 2500, 17, true, false);
 
             JsonElement body = Parsed();
             Assert.Equal(
@@ -80,8 +80,9 @@ namespace GlobalConversationTracker.Automation.Tests
                 body.GetProperty("command").GetString());
             Assert.Equal("suite-state.json", body.GetProperty("file").GetString());
             Assert.False(body.GetProperty("enabled").GetBoolean());
-            Assert.Equal(17, body.GetProperty("stateBudget").GetInt32());
+            Assert.Equal(9, body.GetProperty("stateBudget").GetInt32());
             Assert.Equal(2500, body.GetProperty("timeBudgetMs").GetInt32());
+            Assert.Equal(17, body.GetProperty("memoryBudgetMb").GetInt32());
             Assert.True(body.GetProperty("logBudgetExceeded").GetBoolean());
             Assert.False(body.GetProperty("keepStatistics").GetBoolean());
         }

@@ -32,17 +32,6 @@ namespace GlobalConversationTracker
     internal static class ResponseLookAheadPatch
     {
         /// <summary>
-        /// The state budget a crawl gets when nothing configures one.
-        /// </summary>
-        /// <remarks>
-        /// Was <c>LookAheadOptions.StateBudget</c>'s default, and moved here when that
-        /// engine was deleted (de-i5xj.6). The number is unchanged: measured over every
-        /// group in the game, it is comfortably above what any menu actually needs, and low
-        /// enough that a pathological one gives up rather than stalling a draw.
-        /// </remarks>
-        internal const int DefaultStateBudget = 200_000;
-
-        /// <summary>
         /// What every line about the look-ahead starts with.
         /// </summary>
         /// <remarks>
@@ -75,7 +64,8 @@ namespace GlobalConversationTracker
         private static string _seenHtml = DefaultSeenColorHtml;
         private static bool _markUncertain = true;
         private static LookAheadDiagnosticsWriter? _diagnostics;
-        private static int _budget = DefaultStateBudget;
+        /// <summary>Test-only, set by the probe and by no configuration setting.</summary>
+        private static int _stateBudget;
         private static int _timeBudgetMs;
         private static int _memoryBudgetMb;
         private static bool _enabled = true;
@@ -187,7 +177,10 @@ namespace GlobalConversationTracker
         /// <param name="uncertainHtml">Colour for a crawl that gave up before it could say.</param>
         /// <param name="branchUncertainHtml">The same, on a check's Pass / Fail line.</param>
         /// <param name="markUncertain">Whether a crawl that gave up says so at all.</param>
-        /// <param name="stateBudget">The most search states one option may cost.</param>
+        /// <param name="stateBudget">
+        /// The most search states one option may hold, or 0 for no such limit. TEST-ONLY:
+        /// no configuration setting writes it, and plugin load passes 0.
+        /// </param>
         /// <param name="timeBudgetMs">
         /// The longest one option's crawl may run for, in milliseconds; 0 for no limit.
         /// </param>
@@ -259,14 +252,14 @@ namespace GlobalConversationTracker
             _diagnostics?.Flush();
 
             _enabled = enabled;
-            _budget = stateBudget;
+            _stateBudget = stateBudget;
             _timeBudgetMs = timeBudgetMs;
             _memoryBudgetMb = memoryBudgetMb;
             _diagnostics = diagnostics != null && diagnostics.Enabled ? diagnostics : null;
 
             // The budgets are not applied to an engine here any more; they travel in the
             // request, and the engine on the other side of the bridge applies them. See
-            // LookAheadRequest.StateBudget and TimeBudgetMs.
+            // LookAheadRequest.MemoryBudgetMb and TimeBudgetMs.
         }
 
         /// <summary>
@@ -369,9 +362,9 @@ namespace GlobalConversationTracker
                 // THE BUDGETS THE PLAYER SET, sent rather than applied here. The crawl is
                 // on the other side of the bridge, so a budget that stays in this process
                 // limits nothing - which is exactly what happened when the marker was
-                // flipped over and this was left out: a budget of one still marked three
-                // options, because the engine never heard about it.
-                request.StateBudget = _budget;
+                // flipped over and one of these was left out: a budget of one still marked
+                // three options, because the engine never heard about it.
+                request.StateBudget = _stateBudget;
                 request.TimeBudgetMs = _timeBudgetMs;
                 request.MemoryBudgetMb = _memoryBudgetMb;
 
@@ -540,7 +533,8 @@ namespace GlobalConversationTracker
 
             if (_diagnostics != null && _menuWorld != null)
             {
-                _diagnostics.Record(answer, _budget, _menuGroupEntryCount, _menuWorld);
+                _diagnostics.Record(
+                    answer, _memoryBudgetMb, _menuGroupEntryCount, _menuWorld);
             }
 
             if (answer.Best <= (int)own)

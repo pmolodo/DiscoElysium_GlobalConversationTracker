@@ -112,7 +112,14 @@ namespace GlobalConversationTracker.Harness
         [JsonPropertyName("save")]
         public string Save { get; set; } = string.Empty;
 
-        /// <summary>The state budget to run at, or 0 for the suite default.</summary>
+        /// <summary>The state budget to run at, or 0 for no such limit.</summary>
+        /// <remarks>
+        /// What a row starves a crawl with, so that a shape only an unfinished search can
+        /// produce is reachable at all. TEST-ONLY, and since de-7z0f not a player setting:
+        /// the memory budget cannot do this job, because it is checked when a node is
+        /// dequeued and this group's whole crawl fits in a thousandth of the smallest
+        /// budget a player can express.
+        /// </remarks>
         [JsonPropertyName("stateBudget")]
         public int StateBudget { get; set; }
 

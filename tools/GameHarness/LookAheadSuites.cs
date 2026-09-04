@@ -22,13 +22,48 @@ namespace GlobalConversationTracker.Harness
         /// <remarks>
         /// Far above anything a crawl here takes - the worst measured over the largest
         /// conversations in the game is about three quarters of a second - so the clock
-        /// never fires and the state budget stays the only limit that decides anything.
+        /// never fires and the memory budget stays the only limit that decides anything.
         /// That is the point. A wall-clock limit is not reproducible: the same menu on
         /// the same save could mark differently on a machine that happened to be busy,
         /// and a suite that can flip on load is worse than no suite. The shipped default
         /// is a second, and testing that would be testing the clock.
         /// </remarks>
         public const int TestTimeBudgetMs = 30_000;
+
+        /// <summary>
+        /// The look-ahead memory budget every suite runs with, in megabytes.
+        /// </summary>
+        /// <remarks>
+        /// The shipped default, so what a suite measures is what a player gets. A suite
+        /// that wants a crawl to run out reaches for
+        /// <see cref="TestStateBudgetSetting"/> instead, which is the only budget that can
+        /// stop one before it has looked at anything.
+        /// </remarks>
+        public const int TestMemoryBudgetMb = 256;
+
+        /// <summary>
+        /// The suite key that starves a crawl: a state budget, and TEST-ONLY.
+        /// </summary>
+        /// <remarks>
+        /// <para>NOT A CONFIGURATION SETTING, and deliberately not spelled like one.
+        /// <c>LookAheadStateBudget</c> was a player setting and is gone (de-7z0f) - a count
+        /// of search states is not a quantity anybody outside this repository can reason
+        /// about. What remains is a knob that reaches the mod only through the probe's
+        /// prepare-suite command, which is where a suite's settings go; nothing here is
+        /// written into the player's config file.</para>
+        ///
+        /// <para>THE MEMORY BUDGET CANNOT REPLACE IT, which was tried. It is checked when
+        /// a node is dequeued, against a frontier that after seeding holds one state, and
+        /// the group behind these scenarios carries twelve slots - about 96 bytes a state,
+        /// so a megabyte holds eleven thousand of them and the crawl is finished long
+        /// before the first check. A megabyte is the smallest a player can express. A
+        /// state budget of one is compared against a frontier that already holds the seed,
+        /// so it stops the search having looked at nothing.</para>
+        ///
+        /// <para>What a starved suite has to distinguish is GAVE UP from FOUND NOTHING,
+        /// which is the whole point of the grey marker and of de-pvq.</para>
+        /// </remarks>
+        public const string TestStateBudgetSetting = "TestStateBudget";
 
         /// <summary>Siileng's stall, where a 0.50 purchase sits behind a 50.00 one.</summary>
         public const int SiilengConversation = 451;
@@ -441,6 +476,13 @@ namespace GlobalConversationTracker.Harness
         /// state. That is the feature's deliberate failure mode: it costs a marker rather
         /// than a slow menu, and until now nothing checked that it does.</para>
         ///
+        /// <para>IT IS A STATE BUDGET, and since de-7z0f a TEST-ONLY one: the player
+        /// setting that used to spell it is gone, and this reaches the mod through the
+        /// probe's prepare-suite command instead. The memory budget cannot take the job
+        /// over, which was tried - it is checked when a node is dequeued, so a crawl that
+        /// finds its answer in the first expansion outruns any budget a player could
+        /// express. See <see cref="TestStateBudgetSetting"/>.</para>
+        ///
         /// <para>The overflow log is the only other evidence, since saying nothing is
         /// exactly what an exhausted crawl does. Writing it also exercises the traced
         /// re-walk - a second engine that only runs on an overflow, so that menus which
@@ -455,11 +497,11 @@ namespace GlobalConversationTracker.Harness
                 new LookAheadScenario(
                     "afford-both",
                     SiilengConversation,
-                    "the balance that marks three options, with a budget of one",
+                    "the balance that marks three options, with a budget of one megabyte",
                     new[]
                     {
-                        // The three the money suite marks at this balance. With a budget of
-                        // one the crawl cannot reach any of them, and de-pvq is that this
+                        // The three the money suite marks at this balance. With a
+                        // megabyte the crawl cannot reach any of them, and de-pvq is that this
                         // must read as "did not finish" rather than as "nothing there" -
                         // the two used to draw identically, which told the player the
                         // stronger of the two things on the strength of neither.
@@ -468,14 +510,14 @@ namespace GlobalConversationTracker.Harness
                         Uncertain(InspectSpeakersEntry, "and here"),
                         // LEAVING IS NOT UNCERTAIN, and that is the point rather than an
                         // oversight. It used to be: when the marker came from the managed
-                        // engine, a budget of one stopped the crawl before it could
+                        // engine, a starved budget stopped the crawl before it could
                         // establish anything about any option, this one included.
                         //
                         // The engine refuses a search it can prove cannot find anything -
                         // reaches_potential_improvement, applied at the bridge - and that
                         // refusal builds no state, so no budget can cut it short. Nothing
                         // this option reaches outranks it, which is established here as
-                        // firmly at a budget of one as at two hundred thousand. So it draws
+                        // firmly at a megabyte as at two hundred and fifty-six. So it draws
                         // plain, which is what "there is nothing down there" looks like.
                         Unmarked(LeaveEntry, "nothing it reaches outranks it, and no budget "
                             + "is needed to know that"),
@@ -485,7 +527,7 @@ namespace GlobalConversationTracker.Harness
             },
             pluginSettings: new Dictionary<string, string>
             {
-                ["LookAheadStateBudget"] = "1",
+                [TestStateBudgetSetting] = "1",
                 ["LogLookAheadBudgetExceeded"] = "true",
             },
             artefacts: new[]
@@ -1127,7 +1169,7 @@ namespace GlobalConversationTracker.Harness
                     pluginSettings: row.StateBudget > 0
                         ? new Dictionary<string, string>
                         {
-                            ["LookAheadStateBudget"] =
+                            [TestStateBudgetSetting] =
                                 row.StateBudget.ToString(CultureInfo.InvariantCulture),
                         }
                         : null))

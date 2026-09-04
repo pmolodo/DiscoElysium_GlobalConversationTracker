@@ -170,9 +170,18 @@ namespace GlobalConversationTracker.Automation
         /// <param name="saveGamesFolder">The profile's SaveGames folder.</param>
         /// <param name="fileName">A file staged directly in that folder.</param>
         /// <param name="enabled">Whether look-ahead markers are enabled.</param>
-        /// <param name="stateBudget">The maximum search states per option.</param>
+        /// <param name="stateBudget">
+        /// The most search states one option may hold, or 0 for no such limit. TEST-ONLY:
+        /// there is no configuration setting for it, and this command is the only way it
+        /// reaches the mod.
+        /// </param>
         /// <param name="timeBudgetMs">
         /// The longest one option's crawl may run for, in milliseconds; 0 for no limit.
+        /// </param>
+        /// <param name="memoryBudgetMb">
+        /// The most memory one option's crawl may hold, in megabytes; 0 for the engine's
+        /// own default. What a suite that wants a crawl to give up sets, now that the
+        /// state budget is gone - see de-7z0f.
         /// </param>
         /// <param name="logBudgetExceeded">Whether to log budget overflows.</param>
         /// <param name="keepStatistics">Whether to retain crawl statistics.</param>
@@ -182,6 +191,7 @@ namespace GlobalConversationTracker.Automation
             bool enabled,
             int stateBudget,
             int timeBudgetMs,
+            int memoryBudgetMb,
             bool logBudgetExceeded,
             bool keepStatistics)
         {
@@ -197,6 +207,7 @@ namespace GlobalConversationTracker.Automation
                 "enabled", enabled,
                 "stateBudget", stateBudget,
                 "timeBudgetMs", timeBudgetMs,
+                "memoryBudgetMb", memoryBudgetMb,
                 "logBudgetExceeded", logBudgetExceeded,
                 "keepStatistics", keepStatistics);
         }

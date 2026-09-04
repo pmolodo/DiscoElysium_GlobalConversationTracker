@@ -3,6 +3,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using BepInEx;
+using BepInEx.Configuration;
 using BepInEx.Logging;
 using BepInEx.Unity.IL2CPP;
 using HarmonyLib;
@@ -85,30 +86,33 @@ namespace GlobalConversationTracker
         /// <summary>Prepares suite-scoped state and look-ahead settings.</summary>
         /// <param name="sourcePath">The staged global-state fixture.</param>
         /// <param name="enabled">Whether look-ahead markers are enabled.</param>
-        /// <param name="stateBudget">The maximum search states per option.</param>
+        /// <param name="stateBudget">
+        /// The most search states one option may hold, or 0 for no such limit. TEST-ONLY;
+        /// see <see cref="GlobalConversationTracker.Engine.LookAheadRequest.StateBudget"/>.
+        /// </param>
         /// <param name="timeBudgetMs">
         /// The longest one option's crawl may run for, in milliseconds; 0 for no limit.
         /// </param>
-        /// <param name="logBudgetExceeded">Whether to log budget overflows.</param>
-        /// <param name="keepStatistics">Whether to retain crawl statistics.</param>
         /// <param name="memoryBudgetMb">
         /// The memory budget in megabytes, or 0 for the engine's own default.
         /// </param>
+        /// <param name="logBudgetExceeded">Whether to log budget overflows.</param>
+        /// <param name="keepStatistics">Whether to retain crawl statistics.</param>
         /// <remarks>
-        /// The memory budget is LAST and OPTIONAL so that every suite written before it
-        /// existed keeps working and keeps getting the default, which is what those suites
-        /// mean by not mentioning a budget. A suite that wants to starve a crawl on purpose
-        /// still reaches for the state budget: it is the one that can be set to an exact
-        /// small number and give an exactly reproducible give-up. See de-e23q.
+        /// A SUITE THAT WANTS TO STARVE A CRAWL ON PURPOSE reaches for the memory budget
+        /// now that the state budget is gone (de-7z0f). It cannot promise a give-up after
+        /// an exact number of states, which the state budget could - how much memory a
+        /// state costs depends on the conversation - but a suite only ever needed "this
+        /// crawl gives up", and one megabyte is far below what any real group needs.
         /// </remarks>
         public static void PrepareLookAheadSuite(
             string sourcePath,
             bool enabled,
             int stateBudget,
             int timeBudgetMs,
+            int memoryBudgetMb,
             bool logBudgetExceeded,
-            bool keepStatistics,
-            int memoryBudgetMb = 0)
+            bool keepStatistics)
         {
             Session.ReloadFrom(sourcePath);
 
@@ -157,6 +161,75 @@ namespace GlobalConversationTracker
 
         private Harmony? _harmony;
 
+        /// <summary>What a search may spend: the two budgets, and nothing else.</summary>
+        private const string PerformanceSection = "Performance";
+
+        /// <summary>What the mod has been asked to do, or not do: the on/off switches.</summary>
+        private const string FeaturesSection = "Features";
+
+        /// <summary>How the things it draws look: the colours and the HUD offsets.</summary>
+        private const string DisplaySection = "Display";
+
+        /// <summary>
+        /// Binds a setting that has MOVED to another section, carrying the player's own
+        /// value across with it.
+        /// </summary>
+        /// <remarks>
+        /// <para>BepInEx keys an entry by section AND name, so a value the player set
+        /// under one heading is simply not found when the same key is bound under
+        /// another: they silently get the default back, and their old line stays in the
+        /// file looking authoritative. That is the worst of both, so the move is
+        /// migrated rather than left to chance.</para>
+        ///
+        /// <para>The order is what does it. Binding the OLD definition first is what
+        /// reads a value already in the file - an entry nobody binds is left orphaned and
+        /// cannot be read at all - and removing it afterwards is what takes the stale
+        /// line out. The value carried across is then only the DEFAULT for the new
+        /// binding, so a file that already has the setting in its new home wins, which is
+        /// what makes running this twice the same as running it once.</para>
+        /// </remarks>
+        /// <typeparam name="T">The setting's type.</typeparam>
+        /// <param name="oldSection">The heading it used to be under.</param>
+        /// <param name="newSection">The heading it belongs under now.</param>
+        /// <param name="key">The setting's name, which does not change.</param>
+        /// <param name="fallback">The default, for a player who never set it.</param>
+        /// <param name="description">The description, as for an ordinary binding.</param>
+        /// <returns>The entry under its new heading.</returns>
+        private ConfigEntry<T> Rehomed<T>(
+            string oldSection,
+            string newSection,
+            string key,
+            T fallback,
+            string description)
+        {
+            ConfigEntry<T> legacy = Config.Bind(oldSection, key, fallback, description);
+            T carried = legacy.Value;
+            Config.Remove(legacy.Definition);
+
+            return Config.Bind(newSection, key, carried, description);
+        }
+
+        /// <summary>
+        /// Takes a setting that no longer exists out of the player's file.
+        /// </summary>
+        /// <remarks>
+        /// Bound and immediately removed, for the same reason <see cref="Rehomed{T}"/>
+        /// binds before it removes: an entry nobody binds is orphaned, and BepInEx writes
+        /// orphaned entries straight back out. Left alone, a retired setting sits in the
+        /// file under a real heading, indistinguishable from one that still does
+        /// something.
+        /// </remarks>
+        /// <typeparam name="T">The type it used to have.</typeparam>
+        /// <param name="section">The heading it was under.</param>
+        /// <param name="key">Its name.</param>
+        /// <param name="fallback">Any value of the right type; it is never read.</param>
+        private void Retired<T>(string section, string key, T fallback)
+        {
+            ConfigEntry<T> gone = Config.Bind(
+                section, key, fallback, "Retired; this line is about to be removed.");
+            Config.Remove(gone.Definition);
+        }
+
         /// <summary>
         /// BepInEx's entry point, called once during chainload. Builds the session,
         /// installs each hook independently, and returns; nothing here reads the disk
@@ -198,22 +271,26 @@ namespace GlobalConversationTracker
             _store = store;
             _globalStateLog = log;
 
-            // One switch per thing the mod draws, all default on. Separate because they
-            // answer different questions - how far along this run is, how much has ever
-            // been seen, which options are new - and a player who wants one does not
-            // necessarily want the others. Switching a display off never stops tracking.
-            var showCurrentSaveCount = Config.Bind(
-                "Display",
+            // Everything the mod has been asked to do, or not do. Separate switches
+            // because they answer different questions - how far along this run is, how
+            // much has ever been seen, which options are new - and a player who wants one
+            // does not necessarily want the others. Switching a feature off never stops
+            // tracking.
+            var showCurrentSaveCount = Rehomed(
+                DisplaySection,
+                FeaturesSection,
                 "ShowCurrentSaveCount",
                 true,
                 "Show the this-save dialogue count on the main HUD.");
-            var showAllSavesCount = Config.Bind(
-                "Display",
+            var showAllSavesCount = Rehomed(
+                DisplaySection,
+                FeaturesSection,
                 "ShowAllSavesCount",
                 true,
                 "Show the across-all-saves dialogue count on the main HUD.");
-            var markNovelOptions = Config.Bind(
-                "Display",
+            var markNovelOptions = Rehomed(
+                DisplaySection,
+                FeaturesSection,
                 "MarkNovelOptions",
                 true,
                 "Colour dialogue options that have never been picked in any save. Switch off to play "
@@ -224,13 +301,13 @@ namespace GlobalConversationTracker
             // move it from there. Config rather than constants because how it looks is
             // the one thing the dumps cannot settle.
             var hudCountOffsetX = Config.Bind(
-                "Display",
+                DisplaySection,
                 "HudCountOffsetX",
                 MainHudDialogueCountPatch.DefaultOffsetX,
                 "How far left of the HUD's money/time panel the dialogue counts sit, in canvas units. "
                 + "Negative is left, towards the thought cabinet button.");
             var hudCountOffsetY = Config.Bind(
-                "Display",
+                DisplaySection,
                 "HudCountOffsetY",
                 MainHudDialogueCountPatch.DefaultOffsetY,
                 "How far above the money display's own line the pair of dialogue counts sits, in canvas "
@@ -238,7 +315,7 @@ namespace GlobalConversationTracker
 
             // Config for the same reason. Anything Unity's ColorUtility can read works.
             var novelOptionColor = Config.Bind(
-                "Display",
+                DisplaySection,
                 "NovelOptionColor",
                 NovelResponseColorPatch.DefaultNovelColorHtml,
                 "Colour for dialogue options that have never been picked in any save, as #RRGGBB, "
@@ -246,12 +323,14 @@ namespace GlobalConversationTracker
                 + "exhausted colour; options picked only in other saves keep the game's normal "
                 + "option colour.");
 
-            // On, like the other display features. It is the one that spends real time
-            // per response menu, so LookAheadStateBudget is the dial to turn if a menu
-            // ever feels slow, and this switch is how to leave the look-ahead out
-            // entirely - tracking is unaffected either way.
-            var markLookAhead = Config.Bind(
-                "Display",
+            // On, like the other features. It is the one that spends real time per
+            // response menu, so LookAheadMemoryBudgetMb and LookAheadTimeBudgetMs under
+            // Performance are the dials to turn if a menu ever feels slow, and this switch
+            // is how to leave the look-ahead out entirely - tracking is unaffected either
+            // way.
+            var markLookAhead = Rehomed(
+                DisplaySection,
+                FeaturesSection,
                 "MarkLookAhead",
                 true,
                 "Append a coloured asterisk to a dialogue option that can still lead to text you have "
@@ -263,8 +342,9 @@ namespace GlobalConversationTracker
             // conversation and 455 MB in another - a number that elastic protects nothing
             // in particular. 256 MB gives every conversation the same allowance and roughly
             // halves the worst case. See de-e23q.
-            var lookAheadMemoryBudget = Config.Bind(
-                "Display",
+            var lookAheadMemoryBudget = Rehomed(
+                DisplaySection,
+                PerformanceSection,
                 "LookAheadMemoryBudgetMb",
                 256,
                 "The most memory one option's look-ahead may use, in megabytes, before giving "
@@ -273,35 +353,35 @@ namespace GlobalConversationTracker
                 + "than left blank. A menu searches once per option, but one at a time, so this "
                 + "is the peak for the menu rather than per option.");
 
-            // Kept beside the memory budget rather than replaced by it, and OFF by default.
-            // It is the limit that can be set to an exact small number and give an exactly
-            // reproducible give-up, which a memory budget cannot promise - the size of a
-            // state depends on the conversation. That makes it the right dial for a test
-            // and the wrong one for a player.
-            var lookAheadBudget = Config.Bind(
-                "Display",
-                "LookAheadStateBudget",
-                0,
-                "The most search states one option's look-ahead may explore before giving up, "
-                + "or 0 for no such limit. Applies as well as LookAheadMemoryBudgetMb, "
-                + "whichever is reached first. Prefer the memory budget: the same number of "
-                + "states costs very different amounts of memory in different conversations, "
-                + "so this one is hard to set meaningfully.");
+            // LookAheadStateBudget WAS HERE, and is gone (de-7z0f). A count of search
+            // states is not a quantity anybody outside this repository can reason about:
+            // the same 200,000 states cost 136 MB in one conversation and 455 MB in
+            // another, which is why the memory budget exists. Between memory and time,
+            // the two that remain cover what a player would ever want to set.
+            //
+            // Bound and immediately dropped so the stale line goes from the file instead
+            // of sitting under a heading looking like a setting that still does something.
+            Retired(DisplaySection, "LookAheadStateBudget", 0);
 
             // On, because the alternative is worse than it looks. A search that gives up
             // draws nothing, and nothing is what an option with genuinely nothing behind it
             // also draws - so without this the two are indistinguishable and the player is
             // told "there is nothing here" on the strength of a search that never finished.
-            var markUncertainLookAhead = Config.Bind(
-                "Display",
+            var markUncertainLookAhead = Rehomed(
+                DisplaySection,
+                FeaturesSection,
                 "MarkUncertainLookAhead",
                 true,
                 "Mark an option whose look-ahead ran out of budget with a grey '*?', meaning "
                 + "the search did not finish rather than that nothing is reachable. With the "
                 + "default budgets this is rare. Switch it off to go back to showing nothing, "
                 + "which reads as 'nothing there'.");
+            // A COLOUR, so it stays under Display with the others. de-7z0f named only the
+            // HUD offsets and NovelOptionColor for this heading, which was written before
+            // either of these two existed; "Display is where the colours and the offsets
+            // live" is the reading that covers all five without a special case.
             var uncertainLookAheadColor = Config.Bind(
-                "Display",
+                DisplaySection,
                 "UncertainLookAheadColor",
                 ResponseLookAheadPatch.DefaultUncertainColorHtml,
                 "Colour for the '*?' marker on an option, as #RRGGBB, #RRGGBBAA, or a "
@@ -311,24 +391,25 @@ namespace GlobalConversationTracker
             // red one - where a colour chosen against black can be invisible. It was: the
             // option grey stood at 1.08:1 against the white check's #857F70.
             var branchUncertainLookAheadColor = Config.Bind(
-                "Display",
+                DisplaySection,
                 "BranchUncertainLookAheadColor",
                 ResponseLookAheadPatch.DefaultBranchUncertainColorHtml,
                 "Colour for the '*?' marker on a check's Pass / Fail line, which is drawn "
                 + "on the check's own background rather than on black.");
 
-            // Beside the state budget rather than instead of it. States are what makes a
-            // marker reproducible - the same menu on the same save marks the same way
-            // twice, which a clock cannot promise - but what a player notices is how long
-            // the menu takes to appear, and how many states fit in a second depends on
-            // the machine. Off by default so nothing changes until it is asked for.
-            var lookAheadTimeBudget = Config.Bind(
-                "Display",
+            // The second of the two dials a player has, and the one that answers the
+            // question they actually ask: how long the menu takes to appear. It is a
+            // backstop rather than the limit that normally decides - how many states fit
+            // in a second depends on the machine, so this cannot promise a reproducible
+            // give-up and the memory budget is what usually stops a crawl.
+            var lookAheadTimeBudget = Rehomed(
+                DisplaySection,
+                PerformanceSection,
                 "LookAheadTimeBudgetMs",
                 1000,
                 "The longest one option's look-ahead may run for, in milliseconds, before giving "
                 + "up and showing no asterisk. 0 means no time limit. Applies as well as "
-                + "LookAheadStateBudget, whichever is reached first; a menu draws one of these "
+                + "LookAheadMemoryBudgetMb, whichever is reached first; a menu draws one of these "
                 + "per option, so a menu's worst case is this times the number of options. The "
                 + "default is well above anything measured - the worst crawl over the largest "
                 + "conversations in the game took about three quarters of a second, and almost "
@@ -357,6 +438,12 @@ namespace GlobalConversationTracker
                 "Maintain " + LookAheadDiagnosticsWriter.StatisticsFileName + " in the SaveGames "
                 + "folder: how many states and how long each look-ahead takes, as totals, "
                 + "extremes, a histogram, and a per-conversation breakdown.");
+
+            // Every binding is done, so the file on disk can be brought into line with
+            // them. Without this the migration above is only in memory until something
+            // else happens to save, and a player who read their config between runs would
+            // see settings under two headings at once.
+            Config.Save();
 
             var harmony = new Harmony(PluginGuid);
             _harmony = harmony;
@@ -446,7 +533,9 @@ namespace GlobalConversationTracker
                     uncertainLookAheadColor.Value,
                     branchUncertainLookAheadColor.Value,
                     markUncertainLookAhead.Value,
-                    lookAheadBudget.Value,
+                    // No state budget from the config: there is no such setting
+                    // any more, and only a test ever sets one.
+                    0,
                     lookAheadTimeBudget.Value,
                     lookAheadMemoryBudget.Value,
                     markLookAhead.Value,

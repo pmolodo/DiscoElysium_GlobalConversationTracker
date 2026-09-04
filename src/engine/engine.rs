@@ -12,9 +12,16 @@ use std::fmt;
 pub struct LookAheadOptions {
     /// The most search states one crawl may hold, or `usize::MAX` for no such limit.
     ///
-    /// OFF BY DEFAULT, in favour of [`Self::memory_budget`]. Kept because it is the limit a
-    /// test can set to an exact small number and get an exactly reproducible give-up, which
-    /// a memory budget cannot promise - the size of a state depends on the group.
+    /// A TEST-ONLY KNOB SINCE de-7z0f, and no longer reachable from outside this crate: it
+    /// is not on the wire and there is no setting for it. What a player can set is memory
+    /// and time, which are quantities anybody can reason about; a count of search states is
+    /// not, because the same 200,000 of them cost 136 MB in one conversation and 455 MB in
+    /// another.
+    ///
+    /// Kept for the tests because it is the one limit that can be set to an exact small
+    /// number and give an exactly reproducible give-up, which a memory budget cannot
+    /// promise, and because holding the state count FIXED is what makes two versions of the
+    /// crawl comparable - see tests/slot_width_cost.rs.
     pub state_budget: usize,
 
     /// The most memory the search frontier may occupy, in bytes, or 0 for no such limit.

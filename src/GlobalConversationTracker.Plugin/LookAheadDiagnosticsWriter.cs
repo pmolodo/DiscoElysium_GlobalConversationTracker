@@ -87,14 +87,14 @@ namespace GlobalConversationTracker
         /// What the bridge said about it: where it started, what it found, how big it got
         /// and how long it took.
         /// </param>
-        /// <param name="budget">The state budget it was given.</param>
+        /// <param name="memoryBudgetMb">The memory budget it was given, in megabytes.</param>
         /// <param name="groupEntryCount">
         /// How many entries the group has, so a reader can see how much of it was reached.
         /// </param>
         /// <param name="world">The world it crawled from.</param>
         internal void Record(
             LookAheadAnswer answer,
-            int budget,
+            int memoryBudgetMb,
             int groupEntryCount,
             WorldSnapshot world)
         {
@@ -110,7 +110,7 @@ namespace GlobalConversationTracker
 
             if (LogOverflows && !answer.Complete)
             {
-                AppendOverflow(answer, budget, groupEntryCount, world);
+                AppendOverflow(answer, memoryBudgetMb, groupEntryCount, world);
             }
         }
 
@@ -125,7 +125,7 @@ namespace GlobalConversationTracker
         }
 
         private void AppendOverflow(
-            LookAheadAnswer answer, int budget, int groupEntryCount, WorldSnapshot world)
+            LookAheadAnswer answer, int memoryBudgetMb, int groupEntryCount, WorldSnapshot world)
         {
             if (_overflowLogFailed)
             {
@@ -136,7 +136,7 @@ namespace GlobalConversationTracker
             {
                 File.AppendAllText(
                     OverflowLogPath,
-                    DescribeOverflow(answer, budget, groupEntryCount, world));
+                    DescribeOverflow(answer, memoryBudgetMb, groupEntryCount, world));
             }
             catch (Exception ex)
             {
@@ -166,7 +166,7 @@ namespace GlobalConversationTracker
         /// the size; the tally was the refinement.</para>
         /// </remarks>
         private static string DescribeOverflow(
-            LookAheadAnswer answer, int budget, int groupEntryCount, WorldSnapshot world)
+            LookAheadAnswer answer, int memoryBudgetMb, int groupEntryCount, WorldSnapshot world)
         {
             var text = new StringBuilder();
             text.Append("=== ")
@@ -177,7 +177,7 @@ namespace GlobalConversationTracker
                 .Append(':').Append(answer.Start.Entry).AppendLine();
             text.Append("  stopped by     ")
                 .AppendLine(answer.StoppedBy.Length == 0 ? "(not said)" : answer.StoppedBy);
-            text.Append("  budget         ").Append(budget).AppendLine();
+            text.Append("  memory budget  ").Append(memoryBudgetMb).AppendLine(" MB");
             text.Append("  states         ").Append(answer.StatesExplored).AppendLine();
             text.Append("  entries        ").Append(answer.NodesReached)
                 .Append(" of ").Append(groupEntryCount).AppendLine(" in the group");

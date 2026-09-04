@@ -550,13 +550,33 @@ pub struct LookAheadRequest {
     /// Entries unseen this game but seen in a previous one.
     #[serde(default)]
     pub unseen_this_game: NodeSet,
-    /// The most search states one option may cost, or zero for this engine's default.
+    /// The most search states one option may hold, or zero for no such limit.
     ///
-    /// The plugin's own setting, and it has to cross: once the marker comes from here, a
-    /// budget the caller configured and this engine ignored would be a dial connected to
-    /// nothing.
+    /// A TEST-ONLY KNOB, and the only budget here that is not a player's. NO CONFIGURATION
+    /// SETTING WRITES IT: `LookAheadStateBudget` was removed in de-7z0f because a count of
+    /// search states is not a quantity anybody outside this repository can reason about -
+    /// the same 200,000 of them cost 136 MB in one conversation and 455 MB in another. What
+    /// a player sets is memory and time.
+    ///
+    /// It survives on the wire because it is the only limit that can stop a crawl BEFORE
+    /// ITS FIRST EXPANSION, and the in-game suites need one that does. A suite that starves
+    /// a crawl is checking that giving up is distinguishable from finding nothing (de-pvq),
+    /// which needs the crawl to reliably not finish.
+    ///
+    /// THE MEMORY BUDGET CANNOT DO THAT JOB, and measuring says why. It is checked when a
+    /// node is dequeued, against what the frontier holds - which after seeding is one
+    /// state. The ceiling fan's group, which is what the branch-shape scenarios stand in,
+    /// carries TWELVE SLOTS: about 96 bytes a state, so a megabyte holds some eleven
+    /// thousand of them and the whole crawl is over long before the first check fires. A
+    /// megabyte is the smallest a player can express, and it is four orders of magnitude
+    /// too coarse. A state budget of one, by contrast, is compared against a frontier that
+    /// already holds the seed, so it stops the search having looked at nothing.
+    ///
+    /// Reaches the engine only through the harness's `prepare-look-ahead-suite` probe
+    /// command, never through the config file.
     #[serde(default)]
     pub state_budget: usize,
+
     /// The longest one option may run for in milliseconds; zero for no limit.
     ///
     /// Zero means NO LIMIT rather than the default, matching the plugin's setting, where
@@ -571,10 +591,12 @@ pub struct LookAheadRequest {
     /// head where 268435456 is not. The conversion is one multiplication at the only place
     /// the two units meet.
     ///
-    /// The limit that governs by default, in place of the state budget: a state carries one
-    /// slot per tracked variable in its group, so a budget counted in states buys between
-    /// 136 and 455 megabytes depending on which conversation the player is standing in.
-    /// See de-e23q and tests/crawl_memory.rs.
+    /// THE ONE THAT GOVERNS, and since de-7z0f the only budget on the wire that counts
+    /// what a search HOLDS. There used to be a state budget beside it and it is gone: a
+    /// state carries one slot per tracked variable in its group, so a budget counted in
+    /// states bought between 136 and 455 megabytes depending on which conversation the
+    /// player was standing in - which is not a quantity anybody outside this repository
+    /// can set meaningfully. See de-e23q and tests/crawl_memory.rs.
     #[serde(default)]
     pub memory_budget_mb: usize,
 
@@ -1529,13 +1551,12 @@ mod tests {
         ));
     }
 
-    /// A budget the caller sent is the budget the crawl runs under.
-    ///
-    /// Load-bearing once the marker comes from here rather than from the managed engine: a
-    /// `LookAheadStateBudget` the plugin configured and this engine ignored would be a dial
-    /// connected to nothing, and the in-game suite that sets it to one would stop testing
-    /// anything at all.
     /// A memory budget in megabytes reaches the engine as bytes.
+    ///
+    /// Load-bearing, because the marker comes from here rather than from the managed
+    /// engine: a budget the plugin configured and this engine ignored would be a dial
+    /// connected to nothing, and the in-game suite that starves a crawl would stop
+    /// testing anything at all.
     ///
     /// The one place the two units meet, and a factor of a million is the kind of mistake
     /// that turns a 256 MB allowance into a 256 byte one - which would stop every crawl
@@ -1582,29 +1603,32 @@ mod tests {
         assert!(request.options().memory_budget > 0, "the default turned the budget off");
     }
 
+    /// A time budget on the wire is the one the crawl runs under.
     #[test]
-    fn a_state_budget_that_crosses_is_the_budget_the_crawl_runs_under() {
+    fn a_time_budget_that_crosses_is_the_budget_the_crawl_runs_under() {
         let request = LookAheadRequest {
             conversation: 1,
             starts: Vec::new(),
             unseen_any_game: NodeSet::default(),
             unseen_this_game: NodeSet::default(),
-            state_budget: 7,
+            state_budget: 0,
             time_budget_ms: 250,
             memory_budget_mb: 0,
             world: WorldSnapshot::default(),
         };
 
-        let options = request.options();
-        assert_eq!(options.state_budget, 7);
-        assert_eq!(options.time_budget, std::time::Duration::from_millis(250));
+        assert_eq!(
+            request.options().time_budget,
+            std::time::Duration::from_millis(250),
+        );
     }
 
-    /// Zero means "this engine's default" for states and "no limit" for time.
+    /// Zero means "this engine's default" for memory and "no limit" for time.
     ///
-    /// The two zeros mean different things because the plugin's two settings do: its state
-    /// budget has a default it always applies, and its time budget documents zero as no
-    /// limit. Reading either the other way would silently change what a player configured.
+    /// The two zeros mean different things because the plugin's two settings do: the
+    /// memory budget has a default it always applies, and the time budget documents zero
+    /// as no limit. Reading either the other way would silently change what a player
+    /// configured.
     #[test]
     fn a_budget_of_zero_means_what_the_plugins_setting_means() {
         let request = LookAheadRequest {
@@ -1620,7 +1644,7 @@ mod tests {
 
         let options = request.options();
         let default = crate::engine::engine::LookAheadOptions::default();
-        assert_eq!(options.state_budget, default.state_budget);
+        assert_eq!(options.memory_budget, default.memory_budget);
         assert_eq!(options.time_budget, std::time::Duration::ZERO);
     }
 

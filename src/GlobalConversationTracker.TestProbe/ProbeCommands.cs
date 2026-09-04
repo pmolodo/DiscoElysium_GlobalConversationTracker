@@ -459,10 +459,9 @@ namespace GlobalConversationTracker.TestProbe
 
             bool enabled = BoolMember(root, "enabled")
                 ?? throw new ArgumentException("No enabled setting was given.");
-            int stateBudget = NumberMember(root, "stateBudget")
-                ?? throw new ArgumentException("No state budget was given.");
-            // Absent means no limit, so an older harness that does not send it keeps
-            // working and gets the behaviour it had.
+            // Absent means no limit for both, so an older harness that does not send
+            // them keeps working and gets the behaviour it had.
+            int stateBudget = NumberMember(root, "stateBudget") ?? 0;
             int timeBudgetMs = NumberMember(root, "timeBudgetMs") ?? 0;
             // Absent means the engine's own default rather than no limit, which is what
             // zero means for this one - see de-e23q. A suite that does not mention a memory
@@ -486,8 +485,8 @@ namespace GlobalConversationTracker.TestProbe
                 "PrepareLookAheadSuite",
                 new object[]
                 {
-                    sourcePath, enabled, stateBudget, timeBudgetMs, logBudgetExceeded,
-                    keepStatistics, memoryBudgetMb,
+                    sourcePath, enabled, stateBudget, timeBudgetMs, memoryBudgetMb,
+                    logBudgetExceeded, keepStatistics,
                 });
             ProbeLog.Write(
                 "look-ahead-suite-prepared",

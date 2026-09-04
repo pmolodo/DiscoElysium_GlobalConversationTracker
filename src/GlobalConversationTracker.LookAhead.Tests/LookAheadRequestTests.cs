@@ -28,12 +28,10 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public void TheBudgetsCross()
         {
             LookAheadRequest request = Request();
-            request.StateBudget = 7;
             request.TimeBudgetMs = 250;
             request.MemoryBudgetMb = 64;
 
             JsonElement sent = Sent(request);
-            Assert.Equal(7, sent.GetProperty("state_budget").GetInt32());
             Assert.Equal(250, sent.GetProperty("time_budget_ms").GetInt32());
             Assert.Equal(64, sent.GetProperty("memory_budget_mb").GetInt32());
         }
@@ -42,8 +40,8 @@ namespace GlobalConversationTracker.LookAhead.Tests
         /// An unset budget crosses as zero rather than not at all.
         /// </summary>
         /// <remarks>
-        /// Zero is a value the engine understands - the default for memory and states, no
-        /// limit for time - so sending it says what the plugin means. Omitting the field
+        /// Zero is a value the engine understands - the default for memory, no limit
+        /// for time - so sending it says what the plugin means. Omitting the field
         /// would mean the same thing only by accident of the deserialiser's defaults, and
         /// would stop saying it the moment one of them changed.
         /// </remarks>
@@ -52,7 +50,6 @@ namespace GlobalConversationTracker.LookAhead.Tests
         {
             JsonElement sent = Sent(Request());
 
-            Assert.Equal(0, sent.GetProperty("state_budget").GetInt32());
             Assert.Equal(0, sent.GetProperty("time_budget_ms").GetInt32());
             Assert.Equal(0, sent.GetProperty("memory_budget_mb").GetInt32());
         }
@@ -67,12 +64,10 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public void ANegativeBudgetCrossesAsZero()
         {
             LookAheadRequest request = Request();
-            request.StateBudget = -1;
             request.TimeBudgetMs = -1;
             request.MemoryBudgetMb = -1;
 
             JsonElement sent = Sent(request);
-            Assert.Equal(0, sent.GetProperty("state_budget").GetInt32());
             Assert.Equal(0, sent.GetProperty("time_budget_ms").GetInt32());
             Assert.Equal(0, sent.GetProperty("memory_budget_mb").GetInt32());
         }

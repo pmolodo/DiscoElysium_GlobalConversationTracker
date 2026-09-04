@@ -31,7 +31,7 @@ namespace GlobalConversationTracker.Automation.Tests
             + "## The most search states one option's look-ahead may explore ...\n"
             + "# Setting type: Int32\n"
             + "# Default value: 200000\n"
-            + "LookAheadStateBudget = 200000\n";
+            + "LookAheadMemoryBudgetMb = 256\n";
 
         private readonly string _root;
         private readonly string _game;
@@ -66,10 +66,10 @@ namespace GlobalConversationTracker.Automation.Tests
         [Fact]
         public void ASettingIsChangedForTheLengthOfTheScope()
         {
-            using (StagedPluginConfig.Apply(_game, Settings("LookAheadStateBudget", "2")))
+            using (StagedPluginConfig.Apply(_game, Settings("LookAheadMemoryBudgetMb", "2")))
             {
                 Assert.Equal(
-                    "2", StagedPluginConfig.Get(File.ReadAllText(_config), "LookAheadStateBudget"));
+                    "2", StagedPluginConfig.Get(File.ReadAllText(_config), "LookAheadMemoryBudgetMb"));
             }
 
             Assert.Equal(Original, File.ReadAllText(_config));
@@ -78,7 +78,7 @@ namespace GlobalConversationTracker.Automation.Tests
         [Fact]
         public void EverythingElseInTheFileIsLeftAlone()
         {
-            using (StagedPluginConfig.Apply(_game, Settings("LookAheadStateBudget", "2")))
+            using (StagedPluginConfig.Apply(_game, Settings("LookAheadMemoryBudgetMb", "2")))
             {
                 string updated = File.ReadAllText(_config);
 
@@ -97,14 +97,14 @@ namespace GlobalConversationTracker.Automation.Tests
         {
             var settings = new Dictionary<string, string>
             {
-                ["LookAheadStateBudget"] = "1",
+                ["LookAheadMemoryBudgetMb"] = "1",
                 ["LogLookAheadBudgetExceeded"] = "true",
             };
 
             using (StagedPluginConfig.Apply(_game, settings))
             {
                 string updated = File.ReadAllText(_config);
-                Assert.Equal("1", StagedPluginConfig.Get(updated, "LookAheadStateBudget"));
+                Assert.Equal("1", StagedPluginConfig.Get(updated, "LookAheadMemoryBudgetMb"));
                 Assert.Equal(
                     "true", StagedPluginConfig.Get(updated, "LogLookAheadBudgetExceeded"));
             }
@@ -117,7 +117,7 @@ namespace GlobalConversationTracker.Automation.Tests
         {
             Assert.Throws<InvalidOperationException>((Action)(() =>
             {
-                using (StagedPluginConfig.Apply(_game, Settings("LookAheadStateBudget", "2")))
+                using (StagedPluginConfig.Apply(_game, Settings("LookAheadMemoryBudgetMb", "2")))
                 {
                     throw new InvalidOperationException("the run failed");
                 }
@@ -132,9 +132,9 @@ namespace GlobalConversationTracker.Automation.Tests
             // Appending it would be ignored by the game while the test believed it had
             // taken, so a name the file does not carry is a misspelling worth saying so.
             InvalidDataException error = Assert.Throws<InvalidDataException>(
-                () => StagedPluginConfig.Apply(_game, Settings("LookAheadStateBudgett", "2")));
+                () => StagedPluginConfig.Apply(_game, Settings("LookAheadMemoryBudgetMbb", "2")));
 
-            Assert.Contains("LookAheadStateBudgett", error.Message);
+            Assert.Contains("LookAheadMemoryBudgetMbb", error.Message);
             Assert.Equal(Original, File.ReadAllText(_config));
         }
 
@@ -143,11 +143,11 @@ namespace GlobalConversationTracker.Automation.Tests
         {
             // Every setting in the file is preceded by "# Default value: ...", which
             // contains an equals sign and would match a careless parser.
-            using (StagedPluginConfig.Apply(_game, Settings("LookAheadStateBudget", "7")))
+            using (StagedPluginConfig.Apply(_game, Settings("LookAheadMemoryBudgetMb", "7")))
             {
                 string updated = File.ReadAllText(_config);
                 Assert.Contains("# Default value: 200000", updated);
-                Assert.Equal("7", StagedPluginConfig.Get(updated, "LookAheadStateBudget"));
+                Assert.Equal("7", StagedPluginConfig.Get(updated, "LookAheadMemoryBudgetMb"));
             }
         }
 
@@ -155,7 +155,7 @@ namespace GlobalConversationTracker.Automation.Tests
         public void RestoringTwiceIsHarmless()
         {
             StagedPluginConfig staged = StagedPluginConfig.Apply(
-                _game, Settings("LookAheadStateBudget", "2"));
+                _game, Settings("LookAheadMemoryBudgetMb", "2"));
 
             staged.Restore();
             staged.Restore();
@@ -170,7 +170,7 @@ namespace GlobalConversationTracker.Automation.Tests
             File.Delete(_config);
 
             Assert.Throws<FileNotFoundException>(
-                () => StagedPluginConfig.Apply(_game, Settings("LookAheadStateBudget", "2")));
+                () => StagedPluginConfig.Apply(_game, Settings("LookAheadMemoryBudgetMb", "2")));
         }
 
         [Fact]
