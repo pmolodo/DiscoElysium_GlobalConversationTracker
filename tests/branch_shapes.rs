@@ -29,13 +29,14 @@
 //! `look-ahead --suite <name>`.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
 
 use lookahead_engine::bridge::{answer, BranchAnswer, LookAheadRequest, NodeRef, WorldSnapshot};
 use lookahead_engine::index::{build_group_graph, read_index};
 use serde::Deserialize;
 
 mod common;
+
+use common::fixtures;
 
 /// The table both sides read.
 const TABLE: &str = "testing/scenarios/branch-shapes.json";
@@ -135,86 +136,13 @@ impl Half {
     }
 }
 
-/// What a scenario's global state fixture records, by entry, for one conversation.
+/// What a scenario's global state fixture records, and what its save has already read,
+/// both come from `common::fixtures` - the same reader `scenario_suites.rs` uses.
 ///
-/// The mod's own state file, read as the mod reads it. Format 3 keys the entries by
-/// conversation under `conversations.WasDisplayed`.
-#[derive(Debug, Deserialize)]
-struct GlobalState {
-    #[serde(default)]
-    conversations: Recorded,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct Recorded {
-    #[serde(rename = "WasDisplayed", default)]
-    was_displayed: std::collections::HashMap<String, Vec<i32>>,
-}
-
-/// What a scenario save has already displayed, of one conversation.
-///
-/// READ FROM THE SAVE THE IN-GAME RUN LOADS, rather than copied into the definition beside
-/// it. A row names its save and nothing more, so the two executors cannot come to disagree
-/// about what that save holds - which they would the first time a save was edited and the
-/// copy was not.
-///
-/// A scenario save is a diff over a base, and only the entries it CHANGES are written
-/// down; a save with no Conversation part has changed none. That is read here as "this
-/// conversation has been displayed by nothing", which is true of every base in this repo -
-/// checked: save_template's conversation 9 carries entry keys and no WasDisplayed at all.
-/// A base that acquired one would need the chain resolving, and this would quietly start
-/// modelling a different save, so it is asserted rather than assumed.
-fn read_in_save(save: &str, conversation: i32) -> HashSet<i32> {
-    let folder = scenarios().join(format!("{save}.ntwtf"));
-    assert!(folder.is_dir(), "{save} is not a scenario save at {}", folder.display());
-
-    let part = folder
-        .join(format!("{save}.ntwtf.lua.parts"))
-        .join("Conversation.json");
-    if !part.exists() {
-        return HashSet::new();
-    }
-
-    let text = std::fs::read_to_string(&part)
-        .unwrap_or_else(|e| panic!("{}: {e}", part.display()));
-    let document: serde_json::Value = serde_json::from_str(&text)
-        .unwrap_or_else(|e| panic!("{} is not a sparse diff: {e}", part.display()));
-
-    let Some(displayed) = document
-        .get("_changes")
-        .and_then(|changes| changes.get(conversation.to_string()))
-        .and_then(|entry| entry.get("Dialog"))
-        .and_then(|dialog| dialog.get("WasDisplayed"))
-        .and_then(|runs| runs.as_str())
-    else {
-        return HashSet::new();
-    };
-
-    parse_runs(displayed)
-}
-
-/// An entry list as a save writes it: ids and `a-b` ranges, comma separated.
-fn parse_runs(text: &str) -> HashSet<i32> {
-    let mut entries = HashSet::new();
-    for piece in text.split(',').map(str::trim).filter(|piece| !piece.is_empty()) {
-        match piece.split_once('-') {
-            Some((first, last)) => {
-                let first: i32 = first.trim().parse().expect("a range starts at a number");
-                let last: i32 = last.trim().parse().expect("and ends at one");
-                entries.extend(first..=last);
-            }
-            None => {
-                entries.insert(piece.parse().expect("an entry list holds numbers"));
-            }
-        }
-    }
-
-    entries
-}
-
-fn scenarios() -> PathBuf {
-    common::repo_root().join("testing").join("scenarios")
-}
+/// SHARED RATHER THAN COPIED, and it was copied first. Assembling "what has this save
+/// read" is the fiddly half of standing a scenario up offline, and two copies of it is
+/// two things to keep agreeing - which is the drift the shared definition exists to
+/// remove, reappearing one level down in the executors.
 
 fn table() -> Table {
     let path = common::repo_root().join(TABLE);
@@ -242,21 +170,9 @@ fn every_shape_the_suites_arrange_is_reached_offline() {
     let mut failures: Vec<String> = Vec::new();
 
     for row in &table.rows {
-        let state_path = scenarios().join(&row.state);
-        let text = std::fs::read_to_string(&state_path)
-            .unwrap_or_else(|e| panic!("{}: {} does not read: {e}", row.suite, row.state));
-        let state: GlobalState = serde_json::from_str(&text)
-            .unwrap_or_else(|e| panic!("{}: {} is not a global state: {e}", row.suite, e));
-
-        let recorded: HashSet<i32> = state
-            .conversations
-            .was_displayed
-            .get(&table.conversation.to_string())
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .collect();
-        let read_here = read_in_save(&row.save, table.conversation);
+        let recorded: HashSet<i32> =
+            fixtures::recorded_elsewhere(&row.state, table.conversation);
+        let read_here = fixtures::read_in_save(&row.save, table.conversation);
 
         // The three rungs, exactly as the plugin builds them: read in THIS save wins,
         // then recorded in some other save, then never seen anywhere.

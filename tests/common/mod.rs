@@ -25,6 +25,14 @@
 //! That case skips - and says so in terms nobody will mistake for success. Every other
 //! failure, including the extractor running and not producing the file, is a hard error.
 
+/// Reading the committed scenario fixtures - the staged global state, and what a scenario
+/// save has already displayed.
+///
+/// Its own module because more than one test binary assembles the same world now, and the
+/// two copies of "what has this save read" were the beginning of exactly the drift the
+/// shared scenario definition exists to prevent.
+pub mod fixtures;
+
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;

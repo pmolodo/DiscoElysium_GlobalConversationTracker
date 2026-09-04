@@ -1,0 +1,129 @@
+{
+  "_what": "Every look-ahead scenario that is not a check's Pass / Fail shape, as the fixture that makes it and the markers that must come out. THE DEFINITION, not a description of one: tools/GameHarness turns each suite into an in-game run, and tests/scenario_suites.rs puts the same scenarios to the engine over the shipped index. Adding a suite adds a test to both; neither side declares anything of its own.",
+
+  "_why_a_suite_and_not_a_row": "A suite is what fixes a launch. The mod reads the global state file once, when it first needs it, and BepInEx reads its configuration at chainload - so scenarios that disagree about either cannot share a game, however much else they have in common. What can vary inside a suite is the save, which the probe loads in place, and the conversation, which it opens on command.",
+
+  "_markers": "none = nothing reachable outranks the option itself, orange = it can still reach a line no save has read, red = it can still reach a line this save has not read, gaveUp = the search ran out before it could say. The mod's own rule, which both executors apply: an option that is itself unseen anywhere is never marked, since nothing outranks the top rung.",
+
+  "_policies": "markers is one of named - the listed options must match and every other option in the menu must be unmarked - noneAnywhere, for a menu whose option ids are not known until it has been opened, and ignored, where the markers are not the subject. branches is ignored, noneAnywhere, or everyCheck with a pass and a fail half; see branch-shapes.json for what a half may hold.",
+
+  "_two_files": "This one and branch-shapes.json, and the split is by SHAPE rather than by executor. A branch shape varies along one axis - what the two outcomes of one check land on - so its definition is a table with the conversation and entry named once and eight rows under them, and the eight-shape coverage argument is only readable in that form. Everything else varies along all of them at once, so it is written out. Both are shared definitions and both build the same in-game suite type.",
+
+  "_executor_specific": "What only one side can run goes under a key naming the executor, offline or inGame, rather than in a scenario's own fields - a definition that reads as shared and is not is worse than two honest declarations. The artefact and log checks are the standing case: they read files the game wrote over a whole launch, they are C# predicates, and they are named here and resolved there.",
+
+  "suites": [
+    {
+      "suite": "money",
+      "what": "the forward scan spends as it walks",
+      "why": "Conversation 451 gates a 0.50 real purchase behind a 50.00 one, and the staged global state leaves entry 80 - the only one a speaker buyer reaches - unseen. An option is therefore orange exactly when the crawl could afford both, which is what the three balances separate. The middle one is the point: a scan that checked an option's price without subtracting what the path already spent would mark it.",
+      "state": "global-conversation-state.json",
+      "settings": { "KeepLookAheadStates": "true" },
+      "inGame": {
+        "artefacts": [
+          {
+            "file": "look-ahead-stats.json",
+            "what": "the statistics account for every crawl",
+            "check": "statisticsAddUp"
+          }
+        ]
+      },
+      "scenarios": [
+        {
+          "save": "afford-both",
+          "conversation": 451,
+          "what": "100 centimes left after the sneakers, so the speakers are still affordable",
+          "money": 5100,
+          "advances": 1,
+          "options": [
+            { "entry": 86, "marker": "orange", "why": "buying the sneakers leads on to the speakers" },
+            { "entry": 33, "marker": "orange", "why": "looking returns to the hub, which still can" },
+            { "entry": 67, "marker": "orange", "why": "and so does looking at the other" },
+            { "entry": 85, "marker": "none", "why": "leaving reaches nothing at all" }
+          ],
+          "branches": "noneAnywhere",
+          "branchesWhy": "Nothing in this conversation rolls anything, so nothing in it may carry a Pass / Fail line - including the option that leads to a purchase, which is a choice with two outcomes in every sense except the one the line is about."
+        },
+        {
+          "save": "afford-only-sneakers",
+          "conversation": 451,
+          "what": "25 centimes left after the sneakers, so the speakers are not affordable",
+          "money": 5025,
+          "advances": 1,
+          "options": [
+            { "entry": 86, "marker": "none", "why": "the speakers are out of reach once the sneakers are paid for" },
+            { "entry": 33, "marker": "none", "why": "the speakers are out of reach once the sneakers are paid for" },
+            { "entry": 67, "marker": "none", "why": "the speakers are out of reach once the sneakers are paid for" },
+            { "entry": 85, "marker": "none", "why": "the speakers are out of reach once the sneakers are paid for" }
+          ]
+        },
+        {
+          "save": "afford-neither",
+          "conversation": 451,
+          "what": "the sneakers cannot be bought at all",
+          "money": 4900,
+          "advances": 1,
+          "options": [
+            { "entry": 86, "marker": "none", "why": "nothing on the path is affordable" },
+            { "entry": 33, "marker": "none", "why": "nothing on the path is affordable" },
+            { "entry": 67, "marker": "none", "why": "nothing on the path is affordable" },
+            { "entry": 85, "marker": "none", "why": "nothing on the path is affordable" }
+          ]
+        }
+      ]
+    },
+
+    {
+      "suite": "seen-elsewhere",
+      "what": "an option this save has read, leading somewhere only another save has, is red",
+      "why": "The rung that had never run in game. It needs both halves of the ladder at once: the option's own entry read in THIS save, so its own novelty is the lowest rung, and everything the crawl reaches recorded in the global state but not in the save, so the best it can find is the middle one. 86 is the one that makes it more than a colour check - not read here, so its own novelty already equals the best thing it can reach, and the rule says leave it alone. That is the ordering rule failing to fire, in the same menu as it fires twice.",
+      "state": "global-state-all-seen-elsewhere.json",
+      "scenarios": [
+        {
+          "save": "seen-here-some",
+          "conversation": 451,
+          "what": "two options read in this save, everything recorded in another",
+          "money": 5100,
+          "advances": 1,
+          "options": [
+            { "entry": 33, "marker": "red", "why": "read here, and it leads on to lines only another save has read" },
+            { "entry": 67, "marker": "red", "why": "and so does the other" },
+            { "entry": 86, "marker": "none", "why": "not read here, so it already ranks as high as anything it reaches" },
+            { "entry": 85, "marker": "none", "why": "leaving reaches nothing at all" }
+          ]
+        }
+      ]
+    },
+
+    {
+      "suite": "seen-here",
+      "what": "a conversation read to the end earns no marker and needs no crawl",
+      "why": "The bottom rung. Every entry is read in this save, so every option's own novelty and everything it can reach are both the lowest, and nothing can outrank anything. The global state and local save are both exhaustive, so the structural scan can prove that before any crawl state is built - which is what the statistics artefact distinguishes from crawls that ran and found nothing.",
+      "state": "global-state-all-seen-elsewhere.json",
+      "settings": { "KeepLookAheadStates": "true" },
+      "inGame": {
+        "artefacts": [
+          {
+            "file": "look-ahead-stats.json",
+            "what": "no crawl ran because every scoreable entry is already seen here",
+            "check": "noCrawls"
+          }
+        ]
+      },
+      "scenarios": [
+        {
+          "save": "seen-here-all",
+          "conversation": 451,
+          "what": "every entry read in this save",
+          "money": 5100,
+          "advances": 1,
+          "options": [
+            { "entry": 86, "marker": "none", "why": "there is nothing here this save has not read" },
+            { "entry": 33, "marker": "none", "why": "there is nothing here this save has not read" },
+            { "entry": 67, "marker": "none", "why": "there is nothing here this save has not read" },
+            { "entry": 85, "marker": "none", "why": "there is nothing here this save has not read" }
+          ]
+        }
+      ]
+    }
+  ]
+}

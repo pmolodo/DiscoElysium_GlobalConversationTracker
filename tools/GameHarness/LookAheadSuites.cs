@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text.Json;
 
@@ -223,11 +224,6 @@ namespace GlobalConversationTracker.Harness
         /// </remarks>
         private const string MoneyState = "global-conversation-state.json";
 
-        /// <summary>
-        /// Every entry recorded, so nothing the crawl reaches is unseen anywhere.
-        /// </summary>
-        private const string AllSeenElsewhereState = "global-state-all-seen-elsewhere.json";
-
         /// <summary>Nothing recorded, so every option is itself unseen anywhere.</summary>
         private const string EmptyState = "global-state-empty.json";
 
@@ -353,64 +349,11 @@ namespace GlobalConversationTracker.Harness
         /// The forward scan spends as it walks.
         /// </summary>
         /// <remarks>
-        /// Conversation 451 gates a 0.50 real purchase behind a 50.00 one, and the staged
-        /// global state leaves entry 80 - the only one a speaker buyer reaches - unseen.
-        /// An option is therefore orange exactly when the crawl could afford both, which
-        /// is what the three balances separate. The middle one is the point: a scan that
-        /// checked an option's price without subtracting what the path already spent
-        /// would mark it.
+        /// DEFINED IN <c>testing/scenarios/suites.json</c>, which is also what
+        /// <c>tests/scenario_suites.rs</c> runs. The three balances, the entries and the
+        /// argument for them are all there; what is left here is the name.
         /// </remarks>
-        public static LookAheadSuite Money { get; } = new LookAheadSuite(
-            "money",
-            "the forward scan spends as it walks",
-            MoneyState,
-            new[]
-            {
-                new LookAheadScenario(
-                    "afford-both",
-                    SiilengConversation,
-                    "100 centimes left after the sneakers, so the speakers are still affordable",
-                    new[]
-                    {
-                        Orange(BuySneakersEntry, "buying the sneakers leads on to the speakers"),
-                        Orange(InspectSneakersEntry, "looking returns to the hub, which still can"),
-                        Orange(InspectSpeakersEntry, "and so does looking at the other"),
-                        Unmarked(LeaveEntry, "leaving reaches nothing at all"),
-                    },
-                    money: 5100,
-                    advances: SiilengAdvances,
-                    // Nothing in this conversation rolls anything, so nothing in it may
-                    // carry a Pass / Fail line - including the option that leads to a
-                    // purchase, which is a choice with two outcomes in every sense except
-                    // the one the line is about.
-                    branchPolicy: BranchPolicy.NoneAnywhere),
-                new LookAheadScenario(
-                    "afford-only-sneakers",
-                    SiilengConversation,
-                    "25 centimes left after the sneakers, so the speakers are not affordable",
-                    AllUnmarked("the speakers are out of reach once the sneakers are paid for"),
-                    money: 5025,
-                    advances: SiilengAdvances),
-                new LookAheadScenario(
-                    "afford-neither",
-                    SiilengConversation,
-                    "the sneakers cannot be bought at all",
-                    AllUnmarked("nothing on the path is affordable"),
-                    money: 4900,
-                    advances: SiilengAdvances),
-            },
-            // Costs this suite nothing - it makes the mod write a summary it would
-            // otherwise keep to itself - and this is the suite with the most crawls to
-            // summarise, so it is the cheapest place to check the summary is right
-            // rather than paying for another launch.
-            pluginSettings: KeepStatistics,
-            artefacts: new[]
-            {
-                new SuiteArtefact(
-                    "look-ahead-stats.json",
-                    "the statistics account for every crawl",
-                    CheckStatistics),
-            });
+        public static LookAheadSuite Money => FromDefinition("money");
 
     /// <summary>
     /// Reads look-ahead-stats.json and checks it adds up.
@@ -592,72 +535,22 @@ namespace GlobalConversationTracker.Harness
         /// Reaching a line another save has read, from an option this one has, is red.
         /// </summary>
         /// <remarks>
-        /// <para>The rung that has never run in game. It needs both halves of the ladder
-        /// at once: the option's own entry read in THIS save, so its own novelty is the
-        /// lowest rung, and everything the crawl reaches recorded in the global state but
-        /// not in the save, so the best it can find is the middle one.</para>
-        ///
-        /// <para>Entries 33 and 67 are read in the save and so should be marked; 85 is
-        /// not read and reaches nothing anyway; 86 is not read either, so its own novelty
-        /// already equals the best thing it can reach and the rule says leave it alone.
-        /// That last one is what makes this more than a colour check - it is the ordering
-        /// rule failing to fire, in the same menu as it fires twice.</para>
+        /// DEFINED IN <c>testing/scenarios/suites.json</c>, which is also what
+        /// <c>tests/scenario_suites.rs</c> runs. The ladder this needs both halves of, and
+        /// why 86 is the entry that makes it more than a colour check, are stated there.
         /// </remarks>
-        public static LookAheadSuite SeenElsewhere { get; } = new LookAheadSuite(
-            "seen-elsewhere",
-            "an option this save has read, leading somewhere only another save has, is red",
-            AllSeenElsewhereState,
-            new[]
-            {
-                new LookAheadScenario(
-                    "seen-here-some",
-                    SiilengConversation,
-                    "two options read in this save, everything recorded in another",
-                    new[]
-                    {
-                        Marked(InspectSneakersEntry, Marker.Red,
-                            "read here, and it leads on to lines only another save has read"),
-                        Marked(InspectSpeakersEntry, Marker.Red, "and so does the other"),
-                        Unmarked(BuySneakersEntry,
-                            "not read here, so it already ranks as high as anything it reaches"),
-                        Unmarked(LeaveEntry, "leaving reaches nothing at all"),
-                    },
-                    money: 5100,
-                    advances: SiilengAdvances),
-            });
+        public static LookAheadSuite SeenElsewhere => FromDefinition("seen-elsewhere");
 
         /// <summary>
         /// A conversation this save has read to the end earns nothing.
         /// </summary>
         /// <remarks>
-        /// The bottom rung. Every entry is read in this save, so every option's own
-        /// novelty and everything it can reach are both the lowest, and nothing can
-        /// outrank anything. The global state and local save are both exhaustive, so the
-        /// structural scan can prove that before any crawl state is built. Statistics
-        /// distinguish that shortcut from crawls that ran and found nothing.
+        /// DEFINED IN <c>testing/scenarios/suites.json</c>, which is also what
+        /// <c>tests/scenario_suites.rs</c> runs. The bottom rung, and why the statistics
+        /// artefact is what separates the shortcut from a crawl that found nothing, are
+        /// stated there.
         /// </remarks>
-        public static LookAheadSuite SeenHere { get; } = new LookAheadSuite(
-            "seen-here",
-            "a conversation read to the end earns no marker and needs no crawl",
-            AllSeenElsewhereState,
-            new[]
-            {
-                new LookAheadScenario(
-                    "seen-here-all",
-                    SiilengConversation,
-                    "every entry read in this save",
-                    AllUnmarked("there is nothing here this save has not read"),
-                    money: 5100,
-                    advances: SiilengAdvances),
-            },
-            pluginSettings: KeepStatistics,
-            artefacts: new[]
-            {
-                new SuiteArtefact(
-                    "look-ahead-stats.json",
-                    "no crawl ran because every scoreable entry is already seen here",
-                    NoCrawls),
-            });
+        public static LookAheadSuite SeenHere => FromDefinition("seen-here");
 
         /// <summary>
         /// An option that is itself unread anywhere is never marked, and never crawled.
@@ -1140,6 +1033,61 @@ namespace GlobalConversationTracker.Harness
         /// </remarks>
         public static IReadOnlyList<LookAheadSuite> BranchShapes => _branchShapes.Value;
 
+        /// <summary>One suite out of <c>testing/scenarios/suites.json</c>, by name.</summary>
+        /// <remarks>
+        /// <para>THE DEFINITION IS THE FILE. What a suite stages, which saves it opens and
+        /// what each option must carry are all written there, and
+        /// <c>tests/scenario_suites.rs</c> reads the same rows - so a fixture cannot drift
+        /// between the run and the offline check, because there is only one of it.</para>
+        ///
+        /// <para>Read once and cached, because a suite is asked for repeatedly - the
+        /// selection code walks <see cref="All"/> - and re-parsing per ask would also mean
+        /// re-throwing per ask, which turns one clear failure at startup into a scatter of
+        /// them.</para>
+        /// </remarks>
+        /// <param name="name">The suite's name, as the file spells it.</param>
+        /// <returns>The suite.</returns>
+        /// <exception cref="InvalidDataException">There is no such suite.</exception>
+        public static LookAheadSuite FromDefinition(string name)
+        {
+            if (!_defined.Value.TryGetValue(name, out LookAheadSuite? suite))
+            {
+                throw new InvalidDataException(
+                    $"'{name}' is not a suite in {ScenarioTable.FileName}. The ones there "
+                    + "are: "
+                    + string.Join(", ", _defined.Value.Keys.OrderBy(k => k, StringComparer.Ordinal))
+                    + ".");
+            }
+
+            return suite;
+        }
+
+        private static readonly Lazy<IReadOnlyDictionary<string, LookAheadSuite>> _defined =
+            new Lazy<IReadOnlyDictionary<string, LookAheadSuite>>(BuildDefined);
+
+        private static IReadOnlyDictionary<string, LookAheadSuite> BuildDefined() =>
+            ScenarioTable.Read().Suites.ToDictionary(
+                definition => definition.Suite,
+                definition => definition.Build(ArtefactChecks),
+                StringComparer.Ordinal);
+
+        /// <summary>The artefact predicates a suite may name, by the name it uses.</summary>
+        /// <remarks>
+        /// THE HALF OF A SUITE THAT CANNOT BE WRITTEN DOWN. Each of these parses a file the
+        /// mod left behind and says whether it adds up, which is code and belongs in code;
+        /// what a definition can carry is which one to run. A name with nothing behind it
+        /// is refused when the table is read rather than when the run reaches the check,
+        /// so a typo costs a message and not a launch.
+        /// </remarks>
+        private static IReadOnlyDictionary<string, Func<string?, string?>> ArtefactChecks =>
+            new Dictionary<string, Func<string?, string?>>(StringComparer.Ordinal)
+            {
+                ["statisticsAddUp"] = CheckStatistics,
+                ["noCrawls"] = NoCrawls,
+                ["overflowNamesTheConversation"] = CheckOverflowLog,
+                ["reportOverflows"] = ReportOverflows,
+            };
+
         private static readonly Lazy<IReadOnlyList<LookAheadSuite>> _branchShapes =
             new Lazy<IReadOnlyList<LookAheadSuite>>(BuildBranchShapes);
 
@@ -1179,9 +1127,6 @@ namespace GlobalConversationTracker.Harness
         /// <summary>Asking the mod to keep the statistics a suite reads back.</summary>
         private static Dictionary<string, string> KeepStatistics =>
             new Dictionary<string, string> { ["KeepLookAheadStates"] = "true" };
-
-        private static OptionExpectation Marked(int entryId, Marker marker, string why) =>
-            new OptionExpectation(entryId, marker, why);
 
         private static OptionExpectation Orange(int entryId, string why) =>
             new OptionExpectation(entryId, Marker.Orange, why);
