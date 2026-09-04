@@ -197,3 +197,44 @@ fn a_failed_parse_falls_back_to_always_true() {
         .unwrap_or_else(|_| crate::core::guard::GuardExpression::always_true());
     assert_eq!(fallback.test(&WorldContext(&TestWorld::new())), Ternary::True);
 }
+
+/// A negative number is a number, not an operator followed by one.
+///
+/// Found by a generated guard rather than by the corpus, which never produced one: no guard
+/// in the shipped database has a negative literal, so nothing had ever asked. What it cost
+/// was the whole guard - a refused parse becomes `always_true`, which leaves a branch open
+/// that the comparison was there to close.
+#[test]
+fn a_negative_number_is_read_as_one() {
+    let parsed = parse_guard(r#"Variable["a"] > -1"#).expect("a negative literal parses");
+    assert_eq!(parsed.to_string(), r#"(Variable["a"] > -1)"#);
+
+    // And on its own, and in a call argument.
+    assert!(parse_guard("-42").is_ok());
+    assert!(parse_guard("Thing(-1)").is_ok());
+}
+
+/// Running out of tokens mid-expression is an error, not a panic.
+///
+/// The parser used to report end-of-input as a Name token and then index past the end of
+/// the token list. Guards come out of a dialogue database that a game patch or another mod
+/// can change, so unparseable input has to be answered - it becomes `always_true` and the
+/// branch stays open - and must never take the process with it.
+#[test]
+fn input_that_stops_mid_expression_is_refused_rather_than_crashing() {
+    for truncated in [
+        "not",
+        r#"Variable["a"] and"#,
+        r#"Variable["a"] or"#,
+        r#"Variable["a"] =="#,
+        "Thing(",
+        "(",
+        r#"Thing(Variable["a"],"#,
+        "-",
+    ] {
+        assert!(
+            parse_guard(truncated).is_err(),
+            "{truncated:?} should be refused, not accepted",
+        );
+    }
+}

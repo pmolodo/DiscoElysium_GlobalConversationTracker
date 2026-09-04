@@ -92,6 +92,14 @@ enum TokenKind {
     CloseParen,
     Comma,
     Name,
+    /// Past the last token.
+    ///
+    /// A kind of its own rather than `Name`, which is what it used to report. A parser that
+    /// runs out of input in the middle of an expression - `not`, `x and`, `f(` - then took
+    /// the Name branch and indexed past the end of the token list, which PANICKED. A guard
+    /// comes out of a dialogue database a game patch or another mod can change, so an
+    /// unparseable one has to be an error and never a crash.
+    End,
 }
 
 #[derive(Debug, Clone)]
@@ -148,6 +156,27 @@ impl Parser {
             let inner = self.parse_unary()?;
             return Ok(GuardExpression::Not(Box::new(inner)));
         }
+
+        // A NEGATIVE NUMBER. The tokeniser reads `-` as an operator, so `x > -1` arrived
+        // here as an operator where a value was wanted and the whole guard was refused -
+        // which for a guard means Unknown, which means permissive, which means a marker
+        // that is wrong with nothing to say so.
+        //
+        // No guard in the shipped database has one, which is why the corpus never found
+        // this; a generated guard found it immediately. Folded into the literal rather than
+        // given a Negate node, because the language has no arithmetic and the only thing a
+        // minus can be here is part of a number.
+        if self.peek() == TokenKind::Operator && self.peek_value() == "-" {
+            if self.peek_at(1) == TokenKind::Number {
+                self.take();
+                let raw = self.take().value;
+                let number = raw.parse::<f64>().map_err(|_| {
+                    GuardParseError::new(format!("bad number '-{raw}'"), self.source.clone())
+                })?;
+                return Ok(GuardExpression::Literal(GuardValue::from_number(-number)));
+            }
+        }
+
         self.parse_primary()
     }
 
@@ -196,14 +225,35 @@ impl Parser {
         }
     }
 
-    fn peek(&self) -> TokenKind {
-        self.tokens.get(self.pos).map(|t| t.kind.clone()).unwrap_or(TokenKind::Name)
+    /// The kind `offset` tokens ahead, for the one decision that needs to look past the
+    /// next token: whether a minus begins a negative number or is something else.
+    fn peek_at(&self, offset: usize) -> TokenKind {
+        self.tokens.get(self.pos + offset).map(|t| t.kind.clone()).unwrap_or(TokenKind::End)
     }
 
+    /// The next token's text, or empty at the end of the input.
+    fn peek_value(&self) -> &str {
+        self.tokens.get(self.pos).map(|t| t.value.as_str()).unwrap_or("")
+    }
+
+    fn peek(&self) -> TokenKind {
+        self.tokens.get(self.pos).map(|t| t.kind.clone()).unwrap_or(TokenKind::End)
+    }
+
+    /// The next token, consumed.
+    ///
+    /// Only ever called where [`Self::peek`] has already said what is there, so the end is
+    /// unreachable - but it returns an End token rather than indexing, because "unreachable"
+    /// and "indexes a vector" together is how this panicked on `not` with nothing after it.
     fn take(&mut self) -> Token {
-        let t = self.tokens[self.pos].clone();
-        self.pos += 1;
-        t
+        match self.tokens.get(self.pos) {
+            Some(token) => {
+                let token = token.clone();
+                self.pos += 1;
+                token
+            }
+            None => Token { kind: TokenKind::End, value: String::new() },
+        }
     }
 
     fn expect(&mut self, kind: TokenKind) -> Result<(), GuardParseError> {
