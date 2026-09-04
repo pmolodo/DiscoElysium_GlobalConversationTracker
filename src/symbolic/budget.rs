@@ -116,7 +116,83 @@ impl DiagramBudget {
     ///
     /// SINGLE THREADED, as every caller here has always built it. The searches are one
     /// diagram at a time and a worker pool would be a second thing to hold to a budget.
+    ///
+    /// ASK [`Self::can_be_supplied`] FIRST if the allowance is a large one. This cannot
+    /// fail; it aborts. See that method for why.
     pub fn manager(&self) -> BDDManagerRef {
         new_manager(self.nodes(), self.cache_entries(), 1)
+    }
+
+    /// Whether this machine can supply the allowance at all, asked BEFORE spending it.
+    ///
+    /// ## Why the question has to be asked separately
+    ///
+    /// Because the spending itself has no failure path. The manager preallocates its node
+    /// store up front and cannot grow past it - node ids are four-byte indices into a
+    /// fixed slice - and oxidd builds that slice with `Vec::with_capacity` followed by
+    /// `set_len`. `with_capacity` does not return an error when the allocator says no: it
+    /// ABORTS THE PROCESS. So by the time anything here could react, there is no process
+    /// left to react in, and from outside it is indistinguishable from a crash.
+    ///
+    /// This reserves the same number of bytes fallibly and drops them again, which turns
+    /// "the machine cannot do this" from a dead process into a value a caller can act on.
+    ///
+    /// ## What a false answer means, and what it does not
+    ///
+    /// It means the RUN is invalid, not that the row is a result. The machine failing to
+    /// supply a budget says nothing whatever about the algorithm being measured, so there
+    /// is nothing to record: the row is NOT MEASURED and wants running again when the
+    /// machine has the memory free. That is a different thing from `no-room`, which is a
+    /// real finding - the search had every byte it was allowed and still had no answer.
+    ///
+    /// ## What it is not
+    ///
+    /// NOT A GUARANTEE. Another process can take the memory between this answer and the
+    /// allocation, and on Windows a reservation that succeeds may still be paid for in
+    /// paging rather than in RAM - a row that swaps for ten minutes is honestly neither
+    /// verdict. It converts the common case from an abort into a value, which is all it
+    /// claims to do.
+    ///
+    /// It asks for the WHOLE allowance in one piece, which is more than the manager takes
+    /// up front - about two thirds of it, the store plus the apply cache, with the unique
+    /// table growing into the rest later. Deliberately conservative: the budget is what
+    /// the diagram may spend, and a machine that cannot supply it will fail during the
+    /// run instead of before it.
+    pub fn can_be_supplied(&self) -> bool {
+        let mut probe: Vec<u8> = Vec::new();
+        probe.try_reserve_exact(self.memory).is_ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_modest_budget_is_one_any_machine_running_this_suite_can_supply() {
+        assert!(DiagramBudget::modest().can_be_supplied());
+    }
+
+    #[test]
+    fn a_budget_no_machine_could_supply_is_refused_rather_than_aborting() {
+        // The whole point of the fallible probe: this REPORTS. The allocation the manager
+        // would make with the same number kills the process instead, which is why the
+        // question has to be asked before rather than handled after.
+        let more_than_exists = DiagramBudget::new(usize::MAX / 2);
+        assert!(!more_than_exists.can_be_supplied());
+    }
+
+    #[test]
+    fn the_capacities_divide_the_allowance_the_way_the_constants_say() {
+        let budget = DiagramBudget::new(DiagramBudget::BYTES_PER_NODE * 1024);
+        assert_eq!(budget.nodes(), 1024);
+        assert_eq!(budget.cache_entries(), 1024 / DiagramBudget::NODES_PER_CACHE_ENTRY);
+    }
+
+    #[test]
+    fn a_budget_too_small_for_a_single_cache_entry_still_gets_one() {
+        // Zero would be a manager that can remember nothing, which is a pathology rather
+        // than a small budget.
+        assert_eq!(DiagramBudget::new(0).cache_entries(), 1);
     }
 }

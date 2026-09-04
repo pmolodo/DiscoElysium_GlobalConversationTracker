@@ -53,10 +53,30 @@ shape of the comparison, and it makes the question "against what?" impossible to
 | `bwd_verdict` | as above, plus `no-room` when the diagram filled its budget |
 | `bwd_ms`, `bwd_nodes` | what it cost |
 | any column `CRASHED` | that row took its process down; its log says how |
+| any column `NOT-MEASURED` | the row never ran; see below |
 
 Both engines get the same allowance, which is the only way the two verdicts mean anything
 against each other: the shared measurement budget in `DiagramBudget::measurement()`, plus
-a time cap the test names. See de-e23q and de-z5sp.
+a time cap that is meant not to be what stops a row. See de-e23q and de-z5sp.
+
+### `no-room`, `CRASHED` and `NOT-MEASURED` are three different things
+
+They look alike from outside - the row has no numbers in it - and they mean opposite
+things, so the run keeps them apart.
+
+- `no-room` is a RESULT, and at six gigabytes an interesting one: the search was given
+  every byte it was allowed and still had no answer.
+- `CRASHED` is a result too. The row took its process down; the log says how, and that is
+  a fact about the search.
+- `NOT-MEASURED` is not a result at all. The machine could not supply the budget, so
+  nothing ran and there is nothing to learn - the row wants running again when the memory
+  is free. A run holding any of these is not yet a measurement, and the script says so at
+  the end rather than leaving it to be noticed.
+
+The distinction needs asking BEFORE the memory is spent, because spending it has no
+failure path: the diagram manager preallocates its node store with `Vec::with_capacity`,
+which aborts the process rather than returning an error. `DiagramBudget::can_be_supplied`
+reserves the same bytes fallibly first.
 
 ## Regenerating
 

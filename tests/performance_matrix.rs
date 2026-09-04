@@ -53,11 +53,18 @@
 //! there was to explore in the first place, which is what makes the rest legible as
 //! fractions of something.
 //!
-//! ## What the whole grid says, 2026-09-04
+//! ## What the whole grid said at 256 MB, 2026-09-04
 //!
-//! Both engines on 256 MB and 60 seconds. The adversarial rows - everything read, or all but
-//! the one, five or ten structurally deepest entries - behave identically within a
-//! conversation, so one line stands for all four:
+//! SUPERSEDED, AND KEPT AS HISTORY. This run held both engines to 256 MB and 60 seconds -
+//! the mod's shipping allowance - and de-e33h is the finding that this measures the ration
+//! rather than the algorithm: most heavy rows end in gave-up or no-room having been stopped
+//! by the ceiling. The measurement now runs at the shared six-gigabyte budget above, with a
+//! cap that is meant not to fire. Every number below is from the old setting and should be
+//! read as what a 256 MB ration does, not as what these searches cost.
+//!
+//! The adversarial rows - everything read, or all but the one, five or ten structurally
+//! deepest entries - behave identically within a conversation, so one line stands for all
+//! four:
 //!
 //! ```text
 //!   conv  entries   forward                    backward
@@ -157,7 +164,37 @@ const HEAVIEST: [i32; 6] = [362, 368, 631, 14, 28, 1030];
 /// about 134 MB, half what the crawl was allowed, and conversations 631 and 14 reported
 /// "no room" at exactly 4,194,304 nodes, which was that ceiling and not the budget.
 const MEMORY: usize = DiagramBudget::measurement().memory();
-const TIME: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// How long one engine may spend on one row.
+///
+/// TEN MINUTES, not the sixty seconds this used to be, and the reason is the budget above.
+/// The matrix exists to find where a search actually stops and to answer "how long until
+/// every scenario has a CONCRETE answer" - found or not-there rather than gave-up. A cap
+/// that fires first answers neither: the row says `gave-up` having never come near
+/// spending the memory, and raising the memory to six gigabytes buys nothing at all.
+///
+/// So the cap is meant to be the thing that does NOT stop a row, and it is here only
+/// because a row that will never finish still has to end. Where it fires, the row's own
+/// wall time says so and the verdict is `gave-up` as before.
+///
+/// Override with `ROW_SECONDS` to bound a run that has to fit in an afternoon; a run
+/// reported as a measurement should say which cap it used.
+const DEFAULT_ROW_SECONDS: u64 = 600;
+
+fn row_time() -> std::time::Duration {
+    let seconds = std::env::var("ROW_SECONDS")
+        .ok()
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or(DEFAULT_ROW_SECONDS);
+    std::time::Duration::from_secs(seconds)
+}
+
+/// The verdict for a row nothing was learned from, in both engines' columns.
+///
+/// LOUD, and not a word either engine can produce on its own, because the failure it
+/// reports is not theirs: the machine could not supply the budget, so the row was never
+/// run. A gap or a quiet `gave-up` here would read as a finding about the search.
+const NOT_MEASURED: &str = "NOT-MEASURED";
 
 const COUNTER_CAP: i32 = 16;
 
@@ -356,7 +393,7 @@ fn forward(
     let result = LookAheadEngine::new(LookAheadOptions {
         state_budget: usize::MAX,
         memory_budget: MEMORY,
-        time_budget: TIME,
+        time_budget: row_time(),
         counter_cap: COUNTER_CAP,
         ..Default::default()
     })
@@ -398,7 +435,7 @@ fn backward(
     let quarry: HashSet<DialogueNodeId> = unseen.clone();
     let budget = Budget {
         steps: usize::MAX,
-        time: TIME,
+        time: row_time(),
         memory: MEMORY,
         report_every: 20_000,
         on_progress: None,
@@ -479,6 +516,29 @@ fn both_engines_over_every_profile() {
 
         for profile in profiles() {
             let unseen = unseen_for(profile, &reachable);
+
+            // ASKED PER ROW, AND BEFORE ANYTHING IS SPENT. A machine that cannot supply the
+            // budget makes the RUN invalid rather than the row a result - there is nothing
+            // to record about a search that never happened - so the row says NOT-MEASURED
+            // and wants running again when the memory is free. Per row rather than once at
+            // the top because what else is running on the machine changes underneath a run
+            // that takes hours.
+            if !DiagramBudget::measurement().can_be_supplied() {
+                eprintln!(
+                    "NOT MEASURED: {conversation} {} - this machine could not supply the \
+                     {} MB budget. The row is not a result; run it again with the memory \
+                     free.",
+                    profile.label(),
+                    MEMORY / (1024 * 1024),
+                );
+                println!(
+                    "{conversation}\t{}\t{}\t{}\t{NOT_MEASURED}\t?\t?\t{NOT_MEASURED}\t?\t?\t?",
+                    graph.count(),
+                    profile.label(),
+                    unseen.len(),
+                );
+                continue;
+            }
 
             let fwd = forward(&graph, start, &world, &unseen);
             let bwd = backward(&graph, start, &world, &symbols, &unseen);

@@ -54,6 +54,10 @@ if [ ${#CONVERSATIONS[@]} -eq 0 ]; then
     CONVERSATIONS=(362 368 631 14 28 1030)
 fi
 
+# Counted so the run can say at the end that part of it is not a measurement. A line
+# scrolled past an hour ago is not a warning.
+not_measured=0
+
 PROFILES=(
     all-seen
     deepest-1
@@ -92,11 +96,23 @@ for conversation in "${CONVERSATIONS[@]}"; do
         row="$(grep -E "^$conversation\b" "$log" | head -1)"
         if [ -n "$row" ]; then
             echo "$row" >> "$tsv"
-            echo "ok"
+
+            # THREE OUTCOMES, NOT TWO, and the third is not a result. The test prints a
+            # NOT-MEASURED row when the machine could not supply the budget; that says
+            # nothing about the search and the run wants repeating with the memory free.
+            # Flattening it in with the real rows is how a gap gets read as a finding.
+            case "$row" in
+                *NOT-MEASURED*)
+                    echo "NOT MEASURED - no memory for the budget; rerun this row"
+                    not_measured=$((not_measured + 1))
+                    ;;
+                *) echo "ok" ;;
+            esac
         else
             # A CRASH IS A RESULT. The row says so and names its log, rather than being
             # silently absent - an empty line in a measurement reads as "not run yet",
-            # which is a different thing from "this is what happens".
+            # which is a different thing from "this is what happens". Distinct from
+            # NOT-MEASURED above: this row died, that one never ran.
             echo -e "$conversation\t?\t$profile\t?\tCRASHED\t?\t?\tCRASHED\t?\t?\t?" >> "$tsv"
             echo "CRASHED (see $log)"
         fi
@@ -107,3 +123,10 @@ echo
 echo "wrote:"
 ls -1 "$LOGS"/performance-matrix-*.tsv
 echo "logs for this run: $LOGS"
+
+if [ "$not_measured" -gt 0 ]; then
+    echo
+    echo "*** $not_measured row(s) NOT MEASURED: this machine could not supply the budget."
+    echo "*** Those rows are not results. Rerun them with the memory free before reading"
+    echo "*** this run as a measurement."
+fi
