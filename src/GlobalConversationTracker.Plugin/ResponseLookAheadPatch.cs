@@ -71,6 +71,7 @@ namespace GlobalConversationTracker
         private static string _unseenAnyGameHtml = NovelResponseColorPatch.DefaultNovelColorHtml;
         private static string _unseenThisGameHtml = DefaultUnseenThisGameColorHtml;
         private static string _uncertainHtml = DefaultUncertainColorHtml;
+        private static string _seenHtml = DefaultSeenColorHtml;
         private static bool _markUncertain = true;
         private static LookAheadDiagnosticsWriter? _diagnostics;
         private static int _budget = DefaultStateBudget;
@@ -126,6 +127,18 @@ namespace GlobalConversationTracker
         /// be saying the wrong thing quietly.
         /// </remarks>
         internal const string DefaultUncertainColorHtml = "#7A7A7A";
+
+        /// <summary>
+        /// The colour for "already read", used on the Pass/Fail line only.
+        /// </summary>
+        /// <remarks>
+        /// A DARK RED, and the third of the three that line paints its words in - see the
+        /// design on de-fes. An option itself never needs this colour, because the game
+        /// already draws a spent option in its own way and the mod leaves it alone. The
+        /// line has to name the state explicitly: "Fail" in no colour at all would read as
+        /// a missing answer rather than as a read one.
+        /// </remarks>
+        internal const string DefaultSeenColorHtml = "#7C2F2A";
 
         /// <summary>The marker for an option whose crawl finished and found something.</summary>
         private const string FoundMarker = "*";
@@ -518,6 +531,36 @@ namespace GlobalConversationTracker
         private static string Draw(string colourHtml, string marker) =>
             "<color=" + colourHtml + ">" + marker + "</color>";
 
+        /// <summary>The colours as the player has configured them.</summary>
+        private static MarkerPalette Palette() => new MarkerPalette(
+            _unseenAnyGameHtml, _unseenThisGameHtml, _seenHtml, _uncertainHtml, _markUncertain);
+
+        /// <summary>
+        /// The Pass / Fail line for one option, or null where it has not earned one.
+        /// </summary>
+        /// <remarks>
+        /// <para>The same lookup <see cref="MarkerFor"/> does, and for the same reason: the
+        /// whole menu was asked about in one call before any of it was drawn, so this is a
+        /// dictionary read rather than a search. The line itself is composed in
+        /// <see cref="BranchLine"/>, which is pure text and therefore testable; this is only
+        /// the part that needs the game.</para>
+        ///
+        /// <para>NO ANSWER MEANS NO LINE, exactly as it means no marker. A line drawn
+        /// without one would be inventing two outcomes rather than reporting them.</para>
+        /// </remarks>
+        private static string? BranchLineFor(DialogueEntry entry)
+        {
+            if (!_enabled || _session == null || entry == null)
+            {
+                return null;
+            }
+
+            return _menuAnswers.TryGetValue(
+                new NodeRef(entry.conversationID, entry.id), out LookAheadAnswer answer)
+                ? BranchLine.For(answer, Palette())
+                : null;
+        }
+
         /// <summary>Wall time since a stopwatch timestamp, in milliseconds.</summary>
         private static double Milliseconds(long since)
         {
@@ -619,6 +662,14 @@ namespace GlobalConversationTracker
                     if (marker != null)
                     {
                         __result.responseText += marker;
+                    }
+
+                    // AFTER the option's own marker, because this is a line BELOW the
+                    // option and the marker belongs on the option's own line.
+                    string? branches = BranchLineFor(response.destinationEntry);
+                    if (branches != null)
+                    {
+                        __result.responseText += branches;
                     }
                 }
                 catch (Exception ex)
