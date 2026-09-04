@@ -1,0 +1,134 @@
+// SPDX-License-Identifier: MIT
+using GlobalConversationTracker.Engine;
+using Xunit;
+
+namespace GlobalConversationTracker.DialogueAsset.Tests
+{
+    /// <summary>
+    /// The index as the mod ships it: what it drops, and what it says about itself.
+    /// </summary>
+    /// <remarks>
+    /// The shipped index is a CACHE of the dialogue database rather than ground truth, so
+    /// it has to carry two things the full index does not - the format it is in, and what
+    /// each conversation's content reduces to. Those are what let the plugin ask whether
+    /// the file still describes the database the player's game actually loaded.
+    /// </remarks>
+    public class ShippedIndexTests
+    {
+        /// <summary>Every trimmed conversation carries a hash.</summary>
+        [Fact]
+        public void EveryTrimmedConversationCarriesAHash()
+        {
+            foreach (ConversationRecord conversation in ShippedIndex.Trim(Fixture()))
+            {
+                Assert.False(string.IsNullOrEmpty(conversation.Hash));
+                // SHA-256 as lower-case hex, which is what the plugin will compare against.
+                Assert.Equal(64, conversation.Hash!.Length);
+            }
+        }
+
+        /// <summary>Trimming does not change what the hash is over.</summary>
+        /// <remarks>
+        /// The property that makes the whole scheme work. The plugin computes its half from
+        /// the LIVE database, which has never been trimmed and never will be, so if
+        /// trimming changed the reduction the two sides could never agree. It does not,
+        /// because the reduction only ever looks at what the engine reads.
+        /// </remarks>
+        [Fact]
+        public void TrimmingDoesNotChangeTheHash()
+        {
+            foreach (ConversationRecord full in Fixture())
+            {
+                ConversationRecord trimmed = ShippedIndex.Trim(full);
+                Assert.Equal(ShippedIndex.HashOf(full), trimmed.Hash);
+            }
+        }
+
+        /// <summary>A hash survives being written to a line and read back.</summary>
+        [Fact]
+        public void AHashSurvivesTheIndexLine()
+        {
+            ConversationRecord trimmed = ShippedIndex.Trim(Fixture()[0]);
+
+            using var written = new StringWriter();
+            ConversationIndexFile.Write(written, new[] { trimmed });
+            using var reading = new StringReader(written.ToString());
+
+            ConversationRecord back = Assert.Single(ConversationIndexFile.Read(reading));
+            Assert.Equal(trimmed.Hash, back.Hash);
+        }
+
+        /// <summary>
+        /// The full index's lines are what they were before there was such a thing as a
+        /// hash.
+        /// </summary>
+        /// <remarks>
+        /// It is regenerated from a 170 MB asset and diffed against the last copy, so a key
+        /// appearing on every line of it would be 1,501 lines of noise saying nothing. It
+        /// is also a build intermediate that nothing validates against anything, so it has
+        /// no use for one.
+        /// </remarks>
+        [Fact]
+        public void TheFullIndexCarriesNoHash()
+        {
+            ConversationRecord full = Fixture()[0];
+
+            Assert.Null(full.Hash);
+            Assert.DoesNotContain("\"hash\"", ConversationIndexFile.ToJson(full));
+        }
+
+        /// <summary>The header says what version the file is.</summary>
+        [Fact]
+        public void TheHeaderNamesTheFormat()
+        {
+            Assert.Equal(
+                "{\"" + ShippedIndex.FormatProperty + "\":" + ShippedIndex.FormatVersion + "}",
+                ShippedIndex.Header());
+        }
+
+        /// <summary>
+        /// The header is recognised as one, and a conversation is not.
+        /// </summary>
+        /// <remarks>
+        /// Getting this wrong is silent: a header deserialised as a conversation is a record
+        /// with id 0 and no entries, which reads as a real, empty conversation rather than
+        /// as a parse failure.
+        /// </remarks>
+        [Fact]
+        public void TheHeaderIsNeverMistakenForAConversation()
+        {
+            Assert.True(ConversationIndexFile.IsHeader(ShippedIndex.Header()));
+            Assert.False(ConversationIndexFile.IsHeader(
+                ConversationIndexFile.ToJson(Fixture()[0])));
+
+            using var reading = new StringReader(
+                ShippedIndex.Header() + "\n" + ConversationIndexFile.ToJson(Fixture()[0]));
+            ConversationRecord back = Assert.Single(ConversationIndexFile.Read(reading));
+            Assert.NotEqual(0, back.Id);
+        }
+
+        /// <summary>The trim keeps the fields the engine reads and drops the rest.</summary>
+        [Fact]
+        public void TheTrimKeepsWhatTheEngineReads()
+        {
+            ConversationRecord trimmed = ShippedIndex.Trim(Fixture()[0]);
+
+            Assert.Null(trimmed.Title);
+            foreach (EntryRecord entry in trimmed.Entries)
+            {
+                Assert.Null(entry.Title);
+                foreach (KeyValuePair<string, string> field in entry.Fields)
+                {
+                    Assert.Contains(field.Key, IndexFields.Read);
+                }
+            }
+        }
+
+        private static List<ConversationRecord> Fixture()
+        {
+            string asset = Path.Combine(
+                AppContext.BaseDirectory, "Fixtures", "mini-database.asset");
+            return ConversationIndexExtractor.Extract(asset).ToList();
+        }
+    }
+}

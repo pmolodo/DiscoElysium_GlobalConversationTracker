@@ -143,6 +143,50 @@ namespace GlobalConversationTracker.Engine
         }
 
         /// <summary>
+        /// What version the opened index says it is, or 0 where it has no header.
+        /// </summary>
+        /// <remarks>
+        /// Zero means the index cannot be validated at all - it is the full index, a build
+        /// intermediate with no header and no hashes - rather than that it is wrong. A
+        /// version this build does not read is refused at <see cref="Open"/>, so anything
+        /// non-zero here is a version it understands.
+        /// </remarks>
+        public int IndexFormat
+        {
+            get
+            {
+                Status status = (Status)NativeMethods.gct_index_format(
+                    _handle.DangerousGetHandle(), out int format);
+                return status == Status.Ok ? format : 0;
+            }
+        }
+
+        /// <summary>
+        /// What the index says one conversation's content reduced to, or empty where it
+        /// carries no hash.
+        /// </summary>
+        /// <remarks>
+        /// The shipped index is a CACHE of the dialogue database, not ground truth, and
+        /// this is the stored half of the comparison that says whether it still describes
+        /// the database the player's game actually loaded. The live half is
+        /// <see cref="ConversationHasher"/>, run over the running game.
+        /// </remarks>
+        /// <param name="conversation">The conversation id.</param>
+        /// <exception cref="InvalidOperationException">The index has no such conversation.</exception>
+        public string HashOf(int conversation)
+        {
+            Status status = (Status)NativeMethods.gct_conversation_hash(
+                _handle.DangerousGetHandle(), conversation, out IntPtr text);
+            if (status != Status.Ok)
+            {
+                throw new InvalidOperationException(
+                    $"the look-ahead library has no conversation {conversation}: {status}");
+            }
+
+            return Take(text);
+        }
+
+        /// <summary>
         /// Every question a crawl over <paramref name="conversation"/>'s group can ask.
         /// </summary>
         /// <remarks>

@@ -65,6 +65,21 @@ namespace GlobalConversationTracker.Engine
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
         internal static extern int gct_entry_count(IntPtr handle, int conversation, out int count);
 
+        /// <summary>What the index says one conversation's content reduced to.</summary>
+        /// <param name="handle">An open engine.</param>
+        /// <param name="conversation">The conversation id.</param>
+        /// <param name="text">
+        /// Receives a string the caller frees with gct_string_free. Empty where the index
+        /// carries no hash.
+        /// </param>
+        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern int gct_conversation_hash(
+            IntPtr handle, int conversation, out IntPtr text);
+
+        /// <summary>What version the opened index says it is; 0 where it has no header.</summary>
+        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern int gct_index_format(IntPtr handle, out int format);
+
         /// <summary>
         /// Every question a crawl over one conversation's group can ask, as JSON.
         /// </summary>

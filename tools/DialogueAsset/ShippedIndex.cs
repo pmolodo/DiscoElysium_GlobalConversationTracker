@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using GlobalConversationTracker.Engine;
 
 namespace GlobalConversationTracker.DialogueAsset
 {
@@ -33,26 +35,100 @@ namespace GlobalConversationTracker.DialogueAsset
         public const string FileName = "conversation_index.trimmed.jsonl";
 
         /// <summary>
+        /// What this build writes, and the oldest it can read.
+        /// </summary>
+        /// <remarks>
+        /// A CONTENT HASH IS NOT ENOUGH ON ITS OWN. It answers "is this the same game";
+        /// this answers "is this an index this engine can read". The format changes - the
+        /// hash itself is version 1, and it was version 0 before there was one - and an
+        /// index from an older build would pass its content hash while missing fields the
+        /// engine has since started reading. That is a cache hit on a file that cannot
+        /// answer the question, which is worse than a miss.
+        /// </remarks>
+        public const int FormatVersion = 1;
+
+        /// <summary>The header line's version property.</summary>
+        /// <remarks>
+        /// Must match <c>lookahead_engine::index::FORMAT_PROPERTY</c>, which reads the same
+        /// line.
+        /// </remarks>
+        public const string FormatProperty = "format";
+
+        /// <summary>
         /// The entry fields the engine reads, spelled as the asset spells them.
         /// </summary>
         /// <remarks>
-        /// Kept in the same order as the Rust constant, so the two can be read side by
-        /// side. Alphabetical would be tidier and would make the comparison harder.
+        /// The list itself lives in <see cref="IndexFields.Read"/>, because the plugin
+        /// canonicalises the live database over the same names and two copies of it in one
+        /// language would be two things to keep in step.
         /// </remarks>
-        public static readonly string[] KeptFields =
+        public static string[] KeptFields => IndexFields.Read;
+
+        /// <summary>The line that opens a shipped index.</summary>
+        /// <remarks>
+        /// Its own line rather than a property on every conversation: it describes the
+        /// FILE, and repeating it 1,501 times would invite the file to disagree with
+        /// itself.
+        /// </remarks>
+        public static string Header()
         {
-            "DifficultyPass",
-            "DifficultyRed",
-            "DifficultyWhite",
-            "DifficultyAtmo",
-            "HiddenTest",
-            "kim_watch",
-            "boolean_only",
-            "FlagName",
-            "ClickCost",
-            "CostOnce",
-            "HiddenNotEnough",
-        };
+            return "{\"" + FormatProperty + "\":"
+                + FormatVersion.ToString(CultureInfo.InvariantCulture) + "}";
+        }
+
+        /// <summary>
+        /// What one conversation's content reduces to, for comparing a shipped index
+        /// against the database a game actually loaded.
+        /// </summary>
+        /// <remarks>
+        /// Over the TRIMMED record, so that what is hashed is what the engine reads. A
+        /// caller may hand over an untrimmed one; the hasher ignores everything outside
+        /// <see cref="IndexFields.Read"/> for itself.
+        /// </remarks>
+        public static string HashOf(ConversationRecord conversation)
+        {
+            if (conversation == null)
+            {
+                throw new ArgumentNullException(nameof(conversation));
+            }
+
+            var hasher = new ConversationHasher(conversation.Id);
+            foreach (EntryRecord entry in conversation.Entries)
+            {
+                hasher.Add(
+                    entry.Id,
+                    entry.Group,
+                    entry.Guard,
+                    entry.Script,
+                    LinksOf(conversation.Id, entry),
+                    entry.Fields);
+            }
+
+            return hasher.Finish();
+        }
+
+        /// <summary>
+        /// Where an entry's links go, as (conversation, entry) pairs.
+        /// </summary>
+        /// <remarks>
+        /// The index omits <c>to_conversation</c> where every link stays inside the entry's
+        /// own conversation, and may write a short one - so a missing element means "this
+        /// conversation". Resolved here rather than left to the hasher, because the plugin
+        /// reads the live database where every link names its destination outright and
+        /// there is nothing to resolve.
+        /// </remarks>
+        private static IEnumerable<KeyValuePair<int, int>> LinksOf(
+            int conversationId, EntryRecord entry)
+        {
+            for (int index = 0; index < entry.To.Count; index++)
+            {
+                int destination =
+                    entry.ToConversation != null && index < entry.ToConversation.Count
+                        ? entry.ToConversation[index]
+                        : conversationId;
+                yield return new KeyValuePair<int, int>(destination, entry.To[index]);
+            }
+        }
 
         /// <summary>One conversation with everything the engine ignores removed.</summary>
         public static ConversationRecord Trim(ConversationRecord conversation)
@@ -90,7 +166,7 @@ namespace GlobalConversationTracker.DialogueAsset
                 });
             }
 
-            return new ConversationRecord
+            var trimmed = new ConversationRecord
             {
                 Id = conversation.Id,
                 Title = null,
@@ -98,6 +174,8 @@ namespace GlobalConversationTracker.DialogueAsset
                 Conversant = null,
                 Entries = entries,
             };
+            trimmed.Hash = HashOf(trimmed);
+            return trimmed;
         }
 
         /// <summary>Every conversation, trimmed.</summary>

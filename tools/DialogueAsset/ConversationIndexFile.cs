@@ -97,9 +97,32 @@ namespace GlobalConversationTracker.DialogueAsset
             return line.ToString();
         }
 
-        private static ConversationRecord? Parse(string line)
+        /// <summary>
+        /// Whether a line is the header rather than a conversation.
+        /// </summary>
+        /// <remarks>
+        /// Checked by looking for the property rather than by matching the start of the
+        /// line, because getting this wrong is silent: a header deserialised as a
+        /// conversation is a record with id 0 and no entries, which reads as a real, empty
+        /// conversation and would put an entry-less line into any index built from a
+        /// round trip.
+        /// </remarks>
+        public static bool IsHeader(string line)
         {
             if (string.IsNullOrWhiteSpace(line))
+            {
+                return false;
+            }
+
+            using JsonDocument document = JsonDocument.Parse(line);
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty(ShippedIndex.FormatProperty, out _)
+                && !document.RootElement.TryGetProperty("id", out _);
+        }
+
+        private static ConversationRecord? Parse(string line)
+        {
+            if (string.IsNullOrWhiteSpace(line) || IsHeader(line))
             {
                 return null;
             }
@@ -118,6 +141,14 @@ namespace GlobalConversationTracker.DialogueAsset
             AppendInt(json, conversation.Actor);
             json.Append(",\"conversant\":");
             AppendInt(json, conversation.Conversant);
+            if (conversation.Hash != null)
+            {
+                // Written only where something computed one, so the full index's lines are
+                // byte for byte what they were before there was such a thing as a hash.
+                json.Append(",\"hash\":");
+                AppendString(json, conversation.Hash);
+            }
+
             json.Append(",\"entries\":[");
             for (int i = 0; i < conversation.Entries.Count; i++)
             {

@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using GlobalConversationTracker.DialogueAsset;
 
 namespace GlobalConversationTracker.DialogueExtract
@@ -222,8 +223,15 @@ namespace GlobalConversationTracker.DialogueExtract
             RejectUnknownOptions(options);
             PrepareOutput(outPath);
 
-            int written = ConversationIndexFile.Write(
-                outPath, ShippedIndex.Trim(ConversationIndexFile.Read(index)));
+            int written;
+            using (var writer = new StreamWriter(outPath, append: false, new UTF8Encoding(false)))
+            {
+                // The header first, because the shipped index is a CACHE and a cache needs
+                // to say what it is before it says what is in it.
+                writer.WriteLine(ShippedIndex.Header());
+                written = ConversationIndexFile.Write(
+                    writer, ShippedIndex.Trim(ConversationIndexFile.Read(index)));
+            }
 
             long before = new FileInfo(index).Length;
             long after = new FileInfo(outPath).Length;

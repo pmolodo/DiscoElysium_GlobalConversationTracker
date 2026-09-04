@@ -69,10 +69,40 @@ pub const ENTRY_FIELDS_READ: [&str; 11] = [
     HIDDEN_NOT_ENOUGH_FIELD,
 ];
 
+/// The header line's version property, as the extractor writes it.
+///
+/// Must match `ShippedIndex.FormatProperty`, which writes the same line.
+pub const FORMAT_PROPERTY: &str = "format";
+
+/// The index format this build understands.
+///
+/// Must match `ShippedIndex.FormatVersion`. A content hash answers "is this the same
+/// game"; this answers "is this an index this engine can read" - and an index from an
+/// older build would pass its content hash while missing fields the engine has since
+/// started reading, which is a cache hit on a file that cannot answer the question.
+pub const FORMAT_VERSION: i32 = 1;
+
+/// A shipped index's header, which is its first line.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+pub struct IndexHeader {
+    #[serde(rename = "format")]
+    pub format: i32,
+}
+
 /// One conversation, as one line of the index.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationRecord {
     pub id: i32,
+    /// What this conversation's content reduces to, where the writer computed one.
+    ///
+    /// Empty for the FULL index, which is a build intermediate that nothing validates
+    /// against anything. The shipped index carries one per conversation, because it is a
+    /// cache of a database the plugin can also read for itself and this is what makes the
+    /// two comparable. Never computed here - see `ConversationHasher`, which is the one
+    /// routine that reduces a conversation, and which this engine is deliberately not a
+    /// third writer of.
+    #[serde(default)]
+    pub hash: String,
     #[serde(default)]
     pub entries: Vec<EntryRecord>,
 }
@@ -104,20 +134,68 @@ pub struct EntryRecord {
 /// The index, by conversation id.
 pub type Index = HashMap<i32, ConversationRecord>;
 
-/// Reads `conversation_index.jsonl`.
+/// Reads `conversation_index.jsonl`, discarding its header if it has one.
 pub fn read_index(path: &Path) -> anyhow::Result<Index> {
+    read_index_with_header(path).map(|(index, _)| index)
+}
+
+/// The same, keeping what the header said.
+///
+/// A shipped index opens with `{"format":1}`; the full index has no header at all, and
+/// then there is no version and no per-conversation hash, so nothing can be validated
+/// against it. That is not an error - it is the mod shipping a build intermediate, and it
+/// works exactly as well as it did before there was such a thing as validation.
+///
+/// A header naming a version this build does not understand IS an error. An index the
+/// engine half-understands is worse than none: it would pass a content check while missing
+/// fields the engine has since started reading.
+pub fn read_index_with_header(path: &Path) -> anyhow::Result<(Index, Option<IndexHeader>)> {
     let mut index = Index::new();
-    for line in BufReader::new(File::open(path)?).lines() {
+    let mut header = None;
+
+    for (number, line) in BufReader::new(File::open(path)?).lines().enumerate() {
         let line = line?;
         if line.trim().is_empty() {
             continue;
+        }
+
+        if number == 0 {
+            if let Some(found) = parse_header(&line) {
+                if found.format != FORMAT_VERSION {
+                    anyhow::bail!(
+                        "{} is a version {} index; this build reads version {}",
+                        path.display(),
+                        found.format,
+                        FORMAT_VERSION,
+                    );
+                }
+
+                header = Some(found);
+                continue;
+            }
         }
 
         let conversation: ConversationRecord = serde_json::from_str(&line)?;
         index.insert(conversation.id, conversation);
     }
 
-    Ok(index)
+    Ok((index, header))
+}
+
+/// The header, if this line is one.
+///
+/// Told apart by the properties rather than by the shape of the text, because getting it
+/// wrong is silent: a header read as a conversation is a record with id 0 and no entries,
+/// which looks like a real, empty conversation and would answer every question about it
+/// with "nothing there".
+fn parse_header(line: &str) -> Option<IndexHeader> {
+    let value: serde_json::Value = serde_json::from_str(line).ok()?;
+    let object = value.as_object()?;
+    if !object.contains_key(FORMAT_PROPERTY) || object.contains_key("id") {
+        return None;
+    }
+
+    serde_json::from_value(value).ok()
 }
 
 /// One variable, as the database declares it.
@@ -392,7 +470,7 @@ mod tests {
     }
 
     fn conversation(id: i32, entries: Vec<EntryRecord>) -> ConversationRecord {
-        ConversationRecord { id, entries }
+        ConversationRecord { id, hash: String::new(), entries }
     }
 
     fn index_of(conversations: Vec<ConversationRecord>) -> Index {
@@ -476,5 +554,86 @@ mod tests {
 
         assert_eq!(parse_cost(&fields), (0, false, false));
         assert_eq!(parse_cost(&HashMap::new()), (0, false, false));
+    }
+
+    /// A file with a header reads as its conversations, and says what version it was.
+    #[test]
+    fn a_shipped_index_reports_its_format() {
+        let path = written(concat!(
+            "{\"format\":1}\n",
+            "{\"id\":7,\"hash\":\"abc\",\"entries\":[]}\n",
+        ));
+
+        let (index, header) = read_index_with_header(path.path()).expect("it reads");
+        assert_eq!(header.map(|h| h.format), Some(FORMAT_VERSION));
+        assert_eq!(index.len(), 1);
+        assert_eq!(index[&7].hash, "abc");
+    }
+
+    /// The full index has no header, and that is not an error - it cannot be validated.
+    #[test]
+    fn an_index_with_no_header_reads_with_no_format_and_no_hash() {
+        let path = written("{\"id\":7,\"entries\":[]}\n");
+
+        let (index, header) = read_index_with_header(path.path()).expect("it reads");
+        assert!(header.is_none());
+        assert!(index[&7].hash.is_empty());
+    }
+
+    /// A version this build does not read is refused, not half-understood.
+    ///
+    /// The failure being prevented: an older index passes its CONTENT hash - it really is
+    /// the same game - while missing fields the engine has since started reading, so the
+    /// cache hits on a file that cannot answer the question.
+    #[test]
+    fn an_index_from_another_format_is_refused() {
+        let path = written(concat!(
+            "{\"format\":99}\n",
+            "{\"id\":7,\"entries\":[]}\n",
+        ));
+
+        let refused = read_index_with_header(path.path()).expect_err("it must be refused");
+        assert!(refused.to_string().contains("version 99"), "{refused}");
+    }
+
+    /// A header is told apart by its properties, not by where it is.
+    ///
+    /// Getting this wrong is silent: a header read as a conversation is a record with id 0
+    /// and no entries, which looks like a real, empty conversation.
+    #[test]
+    fn a_header_is_never_mistaken_for_a_conversation() {
+        let path = written("{\"format\":1}\n{\"id\":7,\"entries\":[]}\n");
+        let (index, _) = read_index_with_header(path.path()).expect("it reads");
+
+        assert!(!index.contains_key(&0), "the header became conversation 0");
+        assert_eq!(index.len(), 1);
+    }
+
+    /// A file written to a temporary path, removed when it goes out of scope.
+    struct Written(std::path::PathBuf);
+
+    impl Written {
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for Written {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+
+    fn written(contents: &str) -> Written {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+        let path = std::env::temp_dir().join(format!(
+            "gct-index-{}-{}.jsonl",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
+        ));
+        std::fs::write(&path, contents).expect("the fixture writes");
+        Written(path)
     }
 }

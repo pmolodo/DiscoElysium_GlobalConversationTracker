@@ -38,7 +38,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::index::{read_index, Index, VariableTable};
+use crate::index::{read_index_with_header, Index, IndexHeader, VariableTable};
 
 /// What an entry point returns. Zero is success; everything else is a reason.
 pub const GCT_OK: c_int = 0;
@@ -69,6 +69,8 @@ pub struct Engine {
     /// and the index describes conversations; the extractor writes them separately and the
     /// measurements already read it from there.
     declared: Option<Arc<VariableTable>>,
+    /// What the index said it was, or `None` where it had no header.
+    header: Option<IndexHeader>,
 }
 
 /// Runs `work`, turning any panic into [`GCT_PANIC`].
@@ -154,12 +156,15 @@ pub unsafe extern "C" fn gct_engine_open(
             .and_then(|path| VariableTable::read(&PathBuf::from(path)).ok())
             .map(Arc::new);
 
-        match read_index(&PathBuf::from(path)) {
-            Ok(index) => {
-                let engine = Box::new(Engine { index, declared });
+        match read_index_with_header(&PathBuf::from(path)) {
+            Ok((index, header)) => {
+                let engine = Box::new(Engine { index, declared, header });
                 unsafe { *out = Box::into_raw(engine) };
                 GCT_OK
             }
+            // Including an index whose header names a version this build does not read.
+            // Refused outright rather than half-understood: it would pass a content check
+            // while missing fields the engine has since started reading.
             Err(_) => GCT_INDEX_UNREADABLE,
         }
     })
@@ -247,6 +252,56 @@ pub unsafe extern "C" fn gct_entry_count(
     })
 }
 
+/// What one conversation's content reduced to when the index was written.
+///
+/// Writes the stored hash to `out` as JSON-free text the caller must free with
+/// [`gct_string_free`], or an EMPTY string where the index carries none - which is what
+/// the full index looks like, and means "this cannot be validated" rather than "this is
+/// wrong".
+///
+/// THIS ENGINE NEVER HASHES. The extractor computes it from 170 MB of YAML and the plugin
+/// computes it from the live dialogue database, through one shared routine; a third writer
+/// here would be a third thing to keep in step, over a third representation, for no gain.
+/// All this does is hand back what it was given.
+///
+/// # Safety
+///
+/// `handle` must be an open engine and `out` a writable pointer to one string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn gct_conversation_hash(
+    handle: *mut Engine,
+    conversation: c_int,
+    out: *mut *mut c_char,
+) -> c_int {
+    guarded(|| {
+        let (Some(engine), false) = (unsafe { engine(handle) }, out.is_null()) else {
+            return GCT_BAD_HANDLE;
+        };
+
+        match engine.index.get(&conversation) {
+            Some(conversation) => write_text(&conversation.hash, out),
+            None => GCT_NO_SUCH_CONVERSATION,
+        }
+    })
+}
+
+/// What version the opened index says it is, written to `out`; 0 where it has no header.
+///
+/// Zero is not a failure. The full index has no header, carries no hashes, and is a build
+/// intermediate rather than a cache - a mod shipping one works exactly as it did before
+/// there was such a thing as validation, and simply cannot check itself.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn gct_index_format(handle: *mut Engine, out: *mut c_int) -> c_int {
+    guarded(|| {
+        let (Some(engine), false) = (unsafe { engine(handle) }, out.is_null()) else {
+            return GCT_BAD_HANDLE;
+        };
+
+        unsafe { *out = engine.header.map_or(0, |header| header.format) };
+        GCT_OK
+    })
+}
+
 /// Every question a crawl over one conversation's group can ask the world.
 ///
 /// Writes JSON to `out`, which the caller must free with [`gct_string_free`]. The plugin
@@ -312,6 +367,19 @@ pub unsafe extern "C" fn gct_look_ahead(
             crate::bridge::answer(&engine.index, engine.declared.clone(), &parsed);
         write_json(&response, out)
     })
+}
+
+/// Hands out a plain string the caller owns.
+///
+/// For the answers that are not JSON. Same ownership rule as everything else here: the
+/// caller frees it with [`gct_string_free`] and never with its own allocator.
+fn write_text(value: &str, out: *mut *mut c_char) -> c_int {
+    let Ok(owned) = CString::new(value) else {
+        return GCT_SERIALISE_FAILED;
+    };
+
+    unsafe { *out = owned.into_raw() };
+    GCT_OK
 }
 
 /// Serialises `value` into a string the caller owns.
@@ -434,7 +502,7 @@ mod tests {
     fn a_request_that_is_not_json_is_a_bad_argument() {
         // No index needed: the handle is checked first, so this uses a real engine only
         // where one is required. Here the argument is what is wrong.
-        let engine = Box::into_raw(Box::new(Engine { index: Index::new(), declared: None }));
+        let engine = Box::into_raw(Box::new(Engine { index: Index::new(), declared: None, header: None }));
         let request = CString::new("not json at all").unwrap();
         let mut out: *mut c_char = ptr::null_mut();
 
@@ -448,7 +516,7 @@ mod tests {
     /// Asking about a conversation the index does not hold says so.
     #[test]
     fn questions_about_an_absent_conversation_are_refused() {
-        let engine = Box::into_raw(Box::new(Engine { index: Index::new(), declared: None }));
+        let engine = Box::into_raw(Box::new(Engine { index: Index::new(), declared: None, header: None }));
         let mut out: *mut c_char = ptr::null_mut();
 
         let code = unsafe { gct_questions(engine, 631, &mut out) };
@@ -461,7 +529,7 @@ mod tests {
     /// relies on for every JSON answer.
     #[test]
     fn a_json_answer_round_trips_and_frees() {
-        let engine = Box::into_raw(Box::new(Engine { index: Index::new(), declared: None }));
+        let engine = Box::into_raw(Box::new(Engine { index: Index::new(), declared: None, header: None }));
         // An empty group answers nothing, but the request is well-formed, so the response
         // is a real one - which is what this is checking the handling of.
         let request = CString::new(

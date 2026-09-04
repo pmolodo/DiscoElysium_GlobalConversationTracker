@@ -18,4 +18,17 @@
     <AssemblyName>DialogueAsset</AssemblyName>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!--
+      For ConversationHasher, which reduces a conversation to the string the
+      plugin compares its live database against. The extractor and the plugin
+      are the two writers of that reduction and there must only be one routine,
+      so it lives in the assembly the plugin already compiles in and this
+      references it. Nothing here calls the native library that assembly also
+      declares.
+    -->
+    <ProjectReference
+      Include="..\..\src\GlobalConversationTracker.Engine\GlobalConversationTracker.Engine.csproj" />
+  </ItemGroup>
+
 </Project>

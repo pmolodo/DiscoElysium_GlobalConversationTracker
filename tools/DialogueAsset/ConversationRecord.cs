@@ -33,6 +33,18 @@ namespace GlobalConversationTracker.DialogueAsset
         [JsonIgnore]
         public OrderedDictionary<string, string> Fields { get; set; } = new OrderedDictionary<string, string>();
 
+        /// <summary>
+        /// What this conversation's content reduces to, or null where nothing computed it.
+        /// </summary>
+        /// <remarks>
+        /// Carried by the SHIPPED index and not by the full one. The shipped index is a
+        /// cache of a database the plugin can also read for itself, and this is what makes
+        /// the two comparable - see <c>ConversationHasher</c>. The full index is a build
+        /// intermediate that nothing validates against anything, so it carries none and the
+        /// key stays absent from its lines.
+        /// </remarks>
+        public string? Hash { get; set; }
+
         /// <summary>Its dialogue entries, in the order the database writes them.</summary>
         public List<EntryRecord> Entries { get; set; } = new List<EntryRecord>();
     }
