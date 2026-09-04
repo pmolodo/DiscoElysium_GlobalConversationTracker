@@ -238,3 +238,53 @@ fn input_that_stops_mid_expression_is_refused_rather_than_crashing() {
         );
     }
 }
+
+
+/// Nesting far past anything real is REFUSED, and refusing is not crashing.
+///
+/// ## The failure this replaces
+///
+/// A stack overflow. This parser is recursive descent, so nesting depth is stack depth, and
+/// until de-fpax there was no bound on it: `deep_nesting_is_answered_rather_than_overflowing`
+/// in tests/properties.rs - a test written to prove exactly this - brought the whole test
+/// binary down with STATUS_STACK_OVERFLOW on a clean tree. An overflow is not a panic. The
+/// guard page is hit, Rust prints, the process ABORTS, and nothing can catch it; inside the
+/// game that is the player's session.
+///
+/// ## The two ends it is pinned between
+///
+/// Both measured, both worth keeping honest:
+///
+/// - ELEVEN is the deepest guard in the shipped database, of 26,210 (tests/guard_depth.rs),
+///   so everything real is accepted with room to spare - and the whole database is re-parsed
+///   by that test, which is what says so.
+/// - ABOUT 130 is where the parser overflows a one-megabyte stack, the Windows main-thread
+///   default (tests/guard_stack.rs). The limit is a quarter of the way there.
+#[test]
+fn nesting_deeper_than_anything_real_is_refused_rather_than_fatal() {
+    // Comfortably inside. Each "not (" is TWO recursion steps - the not and the paren -
+    // so this is 48 of the 64, and about twice the deepest guard the game ships.
+    let real = format!("{}Variable[\"x\"]{}", "not (".repeat(24), ")".repeat(24));
+    assert!(parse_guard(&real).is_ok(), "24 levels of not( should still parse");
+
+    // And past the limit, an ERROR - which is the whole point. The number is not asserted
+    // here; what matters is that there is one and that it answers.
+    let absurd = format!("{}Variable[\"x\"]{}", "not (".repeat(500), ")".repeat(500));
+    let refused = parse_guard(&absurd);
+    assert!(refused.is_err(), "500 levels should be refused");
+    assert!(
+        refused.unwrap_err().to_string().contains("nested"),
+        "the message should say what was wrong with it",
+    );
+}
+
+/// The same, without a parenthesis in sight.
+///
+/// `not not not x` recurses through a different arm of the parser than `not (not (...))`
+/// does - unary calls itself directly, where a parenthesis goes the long way round through
+/// expression, conjunction and comparison. Both had to be bounded, so both are tested.
+#[test]
+fn unparenthesised_nesting_is_bounded_too() {
+    let absurd = format!("{}Variable[\"x\"]", "not ".repeat(500));
+    assert!(parse_guard(&absurd).is_err(), "500 nots should be refused");
+}

@@ -108,16 +108,78 @@ struct Token {
     value: String,
 }
 
+/// How many times the parser may re-enter itself before it refuses a guard.
+///
+/// ## Why there is a limit at all
+///
+/// This is a recursive-descent parser, so nesting depth IS stack depth, and a guard comes
+/// out of a dialogue database that a game patch or another mod can change. Without a bound,
+/// "this string is not a guard" can be a STACK OVERFLOW rather than an error - and an
+/// overflow is not a panic: the thread's guard page is hit, Rust prints and ABORTS, and
+/// nothing can catch it. The engine runs inside the game, so that is the player's session.
+///
+/// ## What it counts, which is NOT what a reader counts
+///
+/// RECURSION STEPS, not levels of the tree. There are two places this parser re-enters
+/// itself - a `not`, and an opening parenthesis - and `not (x)` is BOTH. So a guard that
+/// looks eleven deep can cost up to twenty-two steps, and the two numbers must not be
+/// compared without the factor of two. This is the number that bounds the stack, which is
+/// what the limit is for; the tree's own depth is what `tests/guard_depth.rs` measures.
+///
+/// ## Why SIXTY-FOUR
+///
+/// Between two measured numbers, and clear of both.
+///
+/// - EVERY GUARD IN THE SHIPPED DATABASE PARSES WITHIN IT. Not an argument from the depth
+///   figure but a direct check: `tests/guard_depth.rs` re-parses all 26,210 non-empty
+///   guards and reports how many were refused, and the answer is none. The deepest is
+///   eleven levels of tree, so at most twenty-two steps - a third of this.
+/// - THE PARSER OVERFLOWS AROUND 260 STEPS ON A ONE-MEGABYTE STACK, the Windows
+///   main-thread default and the smallest place this code could plausibly run. That is
+///   about 3.9 KB a step, five frames per level of nesting (`tests/guard_stack.rs`, a
+///   debug build, which is the pessimistic case). Sixty-four steps is therefore about
+///   250 KB - a quarter of that stack, leaving room for whatever called in.
+///
+/// ## What being refused costs
+///
+/// A guard that will not parse reads as Unknown, which is permissive, which can mean a
+/// marker that is wrong with nothing to say so. That is a real cost, and it is why the
+/// limit is not tighter than it needs to be - but it is a wrong asterisk against a dead
+/// process, and only for content far deeper than anything the game ships.
+const MAX_DEPTH: usize = 64;
+
 struct Parser {
     tokens: Vec<Token>,
     pos: usize,
     source: String,
+    /// How many levels of nesting are open right now. See [`MAX_DEPTH`].
+    depth: usize,
 }
 
 impl Parser {
     fn new(text: &str, original: &str) -> Result<Self, GuardParseError> {
         let tokens = tokenize(text, original)?;
-        Ok(Self { tokens, pos: 0, source: original.to_string() })
+        Ok(Self { tokens, pos: 0, source: original.to_string(), depth: 0 })
+    }
+
+    /// Opens a level of nesting, or refuses because there are too many.
+    ///
+    /// Paired with [`Self::shallower`] on the SUCCESS path only. An error abandons the
+    /// whole parse and the parser with it, so there is nothing to restore.
+    fn deeper(&mut self) -> Result<(), GuardParseError> {
+        self.depth += 1;
+        if self.depth > MAX_DEPTH {
+            return Err(GuardParseError::new(
+                format!("nested more than {MAX_DEPTH} deep"),
+                self.source.clone(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn shallower(&mut self) {
+        self.depth -= 1;
     }
 
     fn parse_expression(&mut self) -> Result<GuardExpression, GuardParseError> {
@@ -153,7 +215,11 @@ impl Parser {
     fn parse_unary(&mut self) -> Result<GuardExpression, GuardParseError> {
         if self.peek() == TokenKind::Not {
             self.take();
+            // ONE OF THE TWO PLACES THIS PARSER RE-ENTERS ITSELF, and the one that needs no
+            // parentheses: `not not not x` recurses here and nowhere else.
+            self.deeper()?;
             let inner = self.parse_unary()?;
+            self.shallower();
             return Ok(GuardExpression::Not(Box::new(inner)));
         }
 
@@ -184,7 +250,12 @@ impl Parser {
         match self.peek() {
             TokenKind::OpenParen => {
                 self.take();
+                // THE OTHER ONE. A parenthesis is what starts the whole cycle again -
+                // expression, conjunction, comparison, unary, primary - five frames of
+                // stack for one level of nesting.
+                self.deeper()?;
                 let inner = self.parse_expression()?;
+                self.shallower();
                 self.expect(TokenKind::CloseParen)?;
                 Ok(inner)
             }
