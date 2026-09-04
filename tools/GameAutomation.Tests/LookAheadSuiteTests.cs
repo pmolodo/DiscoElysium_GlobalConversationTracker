@@ -322,6 +322,111 @@ namespace GlobalConversationTracker.Automation.Tests
             Assert.False(scenario.Names(null));
         }
 
+        [Fact]
+        public void NamingNoScenarioKeepsEverySuiteWhole()
+        {
+            IReadOnlyList<LookAheadSuite> suites = LookAheadSuites.Default;
+
+            Assert.Same(suites, LookAheadSuites.Only(suites, Array.Empty<string>()));
+        }
+
+        /// <summary>
+        /// A bare save name takes every scenario that loads it.
+        /// </summary>
+        /// <remarks>
+        /// The pristine suite opens four different conversations from one save, so this is
+        /// the case a save name alone cannot narrow - and must not pretend to.
+        /// </remarks>
+        [Fact]
+        public void ASaveNameTakesEveryScenarioThatLoadsIt()
+        {
+            IReadOnlyList<LookAheadSuite> only = LookAheadSuites.Only(
+                new[] { LookAheadSuites.Pristine },
+                new[] { LookAheadSuites.CeilingFan.Save });
+
+            LookAheadSuite suite = Assert.Single(only);
+            Assert.All(
+                suite.Scenarios,
+                scenario => Assert.Equal(LookAheadSuites.CeilingFan.Save, scenario.SaveName));
+            Assert.NotEmpty(suite.Scenarios);
+        }
+
+        [Fact]
+        public void ASaveAndAConversationTakeExactlyOne()
+        {
+            IReadOnlyList<LookAheadSuite> only = LookAheadSuites.Only(
+                new[] { LookAheadSuites.Pristine },
+                new[]
+                {
+                    LookAheadSuites.CeilingFan.Save + ":" + LookAheadSuites.CeilingFan.Conversation,
+                });
+
+            LookAheadScenario scenario = Assert.Single(Assert.Single(only).Scenarios);
+            Assert.Equal(LookAheadSuites.CeilingFan.Conversation, scenario.ConversationId);
+        }
+
+        /// <summary>
+        /// A suite left with nothing drops out, rather than running as an empty one.
+        /// </summary>
+        [Fact]
+        public void ASuiteWithNoMatchingScenarioIsNotRun()
+        {
+            IReadOnlyList<LookAheadSuite> only = LookAheadSuites.Only(
+                new[] { LookAheadSuites.Pristine, LookAheadSuites.Money },
+                new[]
+                {
+                    LookAheadSuites.CeilingFan.Save + ":" + LookAheadSuites.CeilingFan.Conversation,
+                });
+
+            Assert.Equal("pristine", Assert.Single(only).Name);
+        }
+
+        /// <summary>
+        /// A name matching nothing is refused, and the error says what there was.
+        /// </summary>
+        /// <remarks>
+        /// The whole purpose of the filter is to run less, so a typo that ran nothing and
+        /// reported "0/0 passed" would be the worst thing it could do - and the most
+        /// believable, since a filtered run is expected to be short.
+        /// </remarks>
+        [Fact]
+        public void AScenarioNameThatMatchesNothingIsRefused()
+        {
+            ArgumentException error = Assert.Throws<ArgumentException>(
+                () => LookAheadSuites.Only(
+                    new[] { LookAheadSuites.Pristine }, new[] { "at-the-moon" }));
+
+            Assert.Contains("at-the-moon", error.Message);
+            Assert.Contains(LookAheadSuites.CeilingFan.Save, error.Message);
+        }
+
+        /// <summary>
+        /// A filtered suite says so, and makes none of its whole-suite claims.
+        /// </summary>
+        /// <remarks>
+        /// Its artefacts and log expectations are about the complete set of scenarios - a
+        /// statistics file written over all of them, an overflow log naming one of them -
+        /// so keeping them under a filter would fail a run that is behaving perfectly.
+        /// </remarks>
+        [Fact]
+        public void AFilteredSuiteDropsItsWholeSuiteChecks()
+        {
+            Assert.NotEmpty(LookAheadSuites.Budget.Artefacts);
+
+            LookAheadSuite only = Assert.Single(LookAheadSuites.Only(
+                new[] { LookAheadSuites.Budget },
+                new[] { LookAheadSuites.Siileng.Save }));
+
+            Assert.True(only.Filtered);
+            Assert.Empty(only.Artefacts);
+            Assert.Empty(only.LogExpectations);
+
+            // What makes a scenario mean what it means comes along.
+            Assert.Equal(LookAheadSuites.Budget.GlobalStateFile, only.GlobalStateFile);
+            Assert.Equal(LookAheadSuites.Budget.PluginSettings, only.PluginSettings);
+            Assert.False(LookAheadSuites.Budget.Filtered);
+        }
+
         /// <summary>The part of a statistics file the no-crawl fixture reads.</summary>
         private static string Statistics(int crawls, int states) =>
             $"{{\"crawls\":{crawls},\"states\":{{\"total\":{states}}}}}";

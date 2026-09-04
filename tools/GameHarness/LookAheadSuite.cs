@@ -435,5 +435,43 @@ namespace GlobalConversationTracker.Harness
 
         /// <summary>What the mod should, and should not, have logged.</summary>
         public IReadOnlyList<LogExpectation> LogExpectations { get; }
+
+        /// <summary>Whether this is part of a suite rather than the whole of one.</summary>
+        /// <remarks>
+        /// Only ever true on a copy made by <see cref="WithScenarios"/>. The run says so
+        /// out loud, because a partial suite makes fewer claims than its name implies and
+        /// a reader of the output should not have to know which.
+        /// </remarks>
+        public bool Filtered { get; private set; }
+
+        /// <summary>The same suite over a subset of its scenarios.</summary>
+        /// <remarks>
+        /// <para>THE WHOLE-SUITE CHECKS ARE DROPPED, deliberately. An artefact check reads
+        /// a file the mod wrote over the course of the whole suite - the statistics, the
+        /// overflow log - and a log expectation is about everything the run said. Both are
+        /// claims about the complete set of scenarios, so keeping them under a filter would
+        /// fail a run that is behaving perfectly, and a caller cannot tell that kind of
+        /// failure from a real one without knowing which check belongs to which scenario.
+        /// Dropping them makes the filtered run a fast way to ask about a menu, and leaves
+        /// the whole run as the thing that validates.</para>
+        ///
+        /// <para>The plugin settings and the global state come along, because those are
+        /// what make the scenario mean what it means.</para>
+        /// </remarks>
+        /// <param name="scenarios">The scenarios to keep, in the order they run.</param>
+        /// <returns>A copy carrying only those.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="scenarios"/> is null.</exception>
+        public LookAheadSuite WithScenarios(IReadOnlyList<LookAheadScenario> scenarios)
+        {
+            if (scenarios == null)
+            {
+                throw new ArgumentNullException(nameof(scenarios));
+            }
+
+            return new LookAheadSuite(Name, What, GlobalStateFile, scenarios, PluginSettings)
+            {
+                Filtered = true,
+            };
+        }
     }
 }

@@ -125,6 +125,9 @@ namespace GlobalConversationTracker.Harness
         /// <param name="timeBudgetMs">
         /// A time budget to force on every suite, or null to respect what they declare.
         /// </param>
+        /// <param name="scenarioNames">
+        /// Scenarios to keep, as save names or save:conversation pairs; empty for all.
+        /// </param>
         /// <returns>0 when every check passed.</returns>
         public static int Run(
             string game,
@@ -135,9 +138,16 @@ namespace GlobalConversationTracker.Harness
             bool keepOpen,
             IReadOnlyList<string> suiteNames,
             int? stateBudget = null,
-            int? timeBudgetMs = null)
+            int? timeBudgetMs = null,
+            IReadOnlyList<string>? scenarioNames = null)
         {
-            IReadOnlyList<LookAheadSuite> suites = LookAheadSuites.SelectMany(suiteNames);
+            // FILTERED BEFORE ANYTHING ELSE READS THE LIST, and StagingOrder above all: it
+            // packs the saves so that the FIRST scenario of the run is the newest on disk,
+            // which is the one Continue loads at the main menu. Filtering afterwards would
+            // leave the run loading a save no remaining scenario asked for.
+            IReadOnlyList<LookAheadSuite> suites = LookAheadSuites.Only(
+                LookAheadSuites.SelectMany(suiteNames),
+                scenarioNames ?? Array.Empty<string>());
             var report = new Report();
             _stateBudgetOverride = stateBudget;
             _timeBudgetOverride = timeBudgetMs;
@@ -327,6 +337,16 @@ namespace GlobalConversationTracker.Harness
                 {
                     Console.WriteLine();
                     Console.WriteLine($"=== suite '{suite.Name}': {suite.What} ===");
+                    if (suite.Filtered)
+                    {
+                        // Said out loud because the suite's name no longer describes what
+                        // is being checked: some of its scenarios are not running, and its
+                        // artefact and log expectations - which are claims about the whole
+                        // suite - are not being made at all.
+                        Console.WriteLine(
+                            $"        (only {suite.Scenarios.Count} scenario(s) of this "
+                            + "suite, and none of its whole-suite checks)");
+                    }
                     watcher.Mark();
                     SendPrepareSuite(suite, saveGames, stateFiles[suite.Name]);
                     ProbeEvent prepared = watcher.WaitForEvent(

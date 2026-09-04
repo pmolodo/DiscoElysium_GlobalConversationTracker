@@ -178,7 +178,8 @@ namespace GlobalConversationTracker.Harness
                             options.KeepOpen,
                             options.SuiteNames,
                             options.StateBudget,
-                            options.TimeBudgetMs);
+                            options.TimeBudgetMs,
+                            options.ScenarioNames);
                     default:
                         PrintUsage();
                         return 2;
@@ -209,6 +210,15 @@ Verbs:
                       by this verb. --artifacts names the scenario folder, and
                       --suite runs one or more named suites instead of all of them.
                       Repeat --suite or separate names with commas.
+  --scenario <names>  Run only these scenarios of the selected suites, instead of
+                      every scenario they hold. A name is a save - at-the-fan -
+                      which takes every scenario loading it, or a save and a
+                      conversation - at-the-fan:9 - which takes exactly one.
+                      Repeatable and comma-separated, like --suite; a name that
+                      matches nothing is an error rather than an empty run.
+                      A filtered suite makes NONE of its whole-suite checks: its
+                      artefacts and log expectations are claims about all of its
+                      scenarios. For iterating; run the whole thing to validate.
   analyse-timeline    Read a recorded timeline back and report which frames
                       identify which screens, with a measured threshold. Add
                       --save-reference to write the chosen frame as main-menu.png.
@@ -1482,6 +1492,11 @@ Options:
             /// <summary>Which look-ahead suites to run, or none for every suite.</summary>
             public IReadOnlyList<string> SuiteNames => _suiteNames;
 
+            private readonly List<string> _scenarioNames = new List<string>();
+
+            /// <summary>Which scenarios to keep, or none to keep every one.</summary>
+            public IReadOnlyList<string> ScenarioNames => _scenarioNames;
+
             /// <summary>
             /// A state budget to run every suite at, overriding what they ask for; null
             /// to leave them alone.
@@ -1597,6 +1612,21 @@ Options:
                             }
 
                             options._suiteNames.AddRange(names.Select(name => name.Trim()));
+                            break;
+                        }
+                        case "--scenario":
+                        {
+                            string scenario = Next() ?? throw new ArgumentException(
+                                "--scenario needs at least one scenario name.");
+                            string[] names = scenario.Split(
+                                new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                            if (names.Length == 0)
+                            {
+                                throw new ArgumentException(
+                                    "--scenario needs at least one scenario name.");
+                            }
+
+                            options._scenarioNames.AddRange(names.Select(name => name.Trim()));
                             break;
                         }
                         case "--state-budget":

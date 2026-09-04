@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 
@@ -928,6 +929,101 @@ namespace GlobalConversationTracker.Harness
 
             return selected;
         }
+
+        /// <summary>How a scenario's save is separated from its conversation in a name.</summary>
+        private const char ScenarioSeparator = ':';
+
+        /// <summary>
+        /// The same suites over only the scenarios named, or all of them when none is.
+        /// </summary>
+        /// <remarks>
+        /// <para>WHY A RUN WANTS THIS. A suite is a launch and its scenarios are save loads
+        /// inside it, and the big suites are five or six - so asking about one menu costs
+        /// the other five every time, at half a minute each, with the display taken over
+        /// for all of it. Iterating on one expectation is exactly when that is least
+        /// affordable and exactly when it happens most.</para>
+        ///
+        /// <para>A NAME IS A SAVE, OR A SAVE AND A CONVERSATION. Neither alone identifies a
+        /// scenario: the pristine suite opens four conversations from one save, and
+        /// at-the-fan is used by three suites. So "at-the-fan" takes every scenario that
+        /// loads it and "at-the-fan:9" takes the one that opens conversation 9 from it.</para>
+        ///
+        /// <para>A NAME THAT MATCHES NOTHING IS AN ERROR rather than an empty run. The
+        /// whole purpose of the flag is to run less, so a typo that ran nothing at all and
+        /// reported it as a pass would be the worst thing it could do.</para>
+        /// </remarks>
+        /// <param name="suites">The suites to filter, already selected by name.</param>
+        /// <param name="scenarioNames">Save names or save:conversation pairs.</param>
+        /// <returns>The suites that keep at least one scenario, in their original order.</returns>
+        /// <exception cref="ArgumentNullException">An argument is null.</exception>
+        /// <exception cref="ArgumentException">A name matches no scenario.</exception>
+        public static IReadOnlyList<LookAheadSuite> Only(
+            IReadOnlyList<LookAheadSuite> suites, IReadOnlyList<string> scenarioNames)
+        {
+            if (suites == null)
+            {
+                throw new ArgumentNullException(nameof(suites));
+            }
+
+            if (scenarioNames == null)
+            {
+                throw new ArgumentNullException(nameof(scenarioNames));
+            }
+
+            if (scenarioNames.Count == 0)
+            {
+                return suites;
+            }
+
+            foreach (string name in scenarioNames)
+            {
+                if (!suites.SelectMany(suite => suite.Scenarios).Any(s => Names(s, name)))
+                {
+                    throw new ArgumentException(
+                        $"No scenario called '{name}' in the selected suite(s). Available: "
+                        + string.Join(", ", Available(suites)) + ".",
+                        nameof(scenarioNames));
+                }
+            }
+
+            return suites
+                .Select(suite => suite.WithScenarios(
+                    suite.Scenarios
+                        .Where(s => scenarioNames.Any(name => Names(s, name)))
+                        .ToArray()))
+                .Where(suite => suite.Scenarios.Count > 0)
+                .ToArray();
+        }
+
+        /// <summary>Whether one name picks out one scenario.</summary>
+        private static bool Names(LookAheadScenario scenario, string name)
+        {
+            int separator = name.IndexOf(ScenarioSeparator);
+            if (separator < 0)
+            {
+                return string.Equals(
+                    scenario.SaveName, name, StringComparison.OrdinalIgnoreCase);
+            }
+
+            return string.Equals(
+                    scenario.SaveName,
+                    name.Substring(0, separator),
+                    StringComparison.OrdinalIgnoreCase)
+                && int.TryParse(
+                    name.Substring(separator + 1),
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out int conversation)
+                && conversation == scenario.ConversationId;
+        }
+
+        /// <summary>Every scenario of these suites, named as the filter wants them.</summary>
+        private static IEnumerable<string> Available(IReadOnlyList<LookAheadSuite> suites) =>
+            suites
+                .SelectMany(suite => suite.Scenarios)
+                .Select(s => s.SaveName + ScenarioSeparator + s.ConversationId)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase);
 
         /// <summary>Finds one suite by name, or every suite when no name is given.</summary>
         /// <param name="name">The suite's name, or null for the default run.</param>
