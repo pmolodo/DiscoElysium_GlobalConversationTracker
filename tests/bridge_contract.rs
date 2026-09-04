@@ -169,6 +169,7 @@ fn an_answer_survives_the_crossing() {
             unseen_this_game: Default::default(),
             state_budget: 0,
             time_budget_ms: 0,
+            memory_budget_mb: 0,
             world: snapshot.clone(),
         };
 

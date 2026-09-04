@@ -563,6 +563,21 @@ pub struct LookAheadRequest {
     /// zero is documented as no time limit.
     #[serde(default)]
     pub time_budget_ms: u64,
+
+    /// The most memory one option's search may hold, in MEGABYTES; zero for the default.
+    ///
+    /// MEGABYTES ON THE WIRE AND BYTES IN THE ENGINE, deliberately. This number is set by a
+    /// player in a configuration file, and "256" is a figure a person can hold in their
+    /// head where 268435456 is not. The conversion is one multiplication at the only place
+    /// the two units meet.
+    ///
+    /// The limit that governs by default, in place of the state budget: a state carries one
+    /// slot per tracked variable in its group, so a budget counted in states buys between
+    /// 136 and 455 megabytes depending on which conversation the player is standing in.
+    /// See de-e23q and tests/crawl_memory.rs.
+    #[serde(default)]
+    pub memory_budget_mb: usize,
+
     pub world: WorldSnapshot,
 }
 
@@ -575,6 +590,11 @@ impl LookAheadRequest {
                 default.state_budget
             } else {
                 self.state_budget
+            },
+            memory_budget: if self.memory_budget_mb == 0 {
+                default.memory_budget
+            } else {
+                self.memory_budget_mb * 1024 * 1024
             },
             time_budget: std::time::Duration::from_millis(self.time_budget_ms),
             ..default
@@ -930,6 +950,7 @@ pub struct BranchAnswers {
 fn limit_name(limit: crate::core::types::LookAheadLimit) -> &'static str {
     match limit {
         crate::core::types::LookAheadLimit::States => "states",
+        crate::core::types::LookAheadLimit::Memory => "memory",
         crate::core::types::LookAheadLimit::Time => "time",
         crate::core::types::LookAheadLimit::None => "none",
     }
@@ -1406,6 +1427,7 @@ mod tests {
             unseen_this_game: NodeSet::default(),
             state_budget: 0,
             time_budget_ms: 0,
+            memory_budget_mb: 0,
             world,
         };
 
@@ -1427,6 +1449,53 @@ mod tests {
     /// `LookAheadStateBudget` the plugin configured and this engine ignored would be a dial
     /// connected to nothing, and the in-game suite that sets it to one would stop testing
     /// anything at all.
+    /// A memory budget in megabytes reaches the engine as bytes.
+    ///
+    /// The one place the two units meet, and a factor of a million is the kind of mistake
+    /// that turns a 256 MB allowance into a 256 byte one - which would stop every crawl
+    /// instantly and look like the engine being broken rather than a unit being wrong.
+    #[test]
+    fn a_memory_budget_crosses_as_megabytes_and_arrives_as_bytes() {
+        let request = LookAheadRequest {
+            conversation: 1,
+            starts: Vec::new(),
+            unseen_any_game: NodeSet::default(),
+            unseen_this_game: NodeSet::default(),
+            state_budget: 0,
+            time_budget_ms: 0,
+            memory_budget_mb: 64,
+            world: WorldSnapshot::default(),
+        };
+
+        assert_eq!(request.options().memory_budget, 64 * 1024 * 1024);
+    }
+
+    /// Zero means the engine's own default rather than no budget at all.
+    ///
+    /// The opposite convention to the TIME budget, where zero means no limit, and the
+    /// difference is deliberate: a crawl with no clock finishes, and a crawl with no memory
+    /// limit is the thing this budget exists to prevent. An absent setting must not turn
+    /// the protection off.
+    #[test]
+    fn an_unset_memory_budget_is_the_default_rather_than_none() {
+        let request = LookAheadRequest {
+            conversation: 1,
+            starts: Vec::new(),
+            unseen_any_game: NodeSet::default(),
+            unseen_this_game: NodeSet::default(),
+            state_budget: 0,
+            time_budget_ms: 0,
+            memory_budget_mb: 0,
+            world: WorldSnapshot::default(),
+        };
+
+        assert_eq!(
+            request.options().memory_budget,
+            crate::engine::engine::DEFAULT_MEMORY_BUDGET,
+        );
+        assert!(request.options().memory_budget > 0, "the default turned the budget off");
+    }
+
     #[test]
     fn a_state_budget_that_crosses_is_the_budget_the_crawl_runs_under() {
         let request = LookAheadRequest {
@@ -1436,6 +1505,7 @@ mod tests {
             unseen_this_game: NodeSet::default(),
             state_budget: 7,
             time_budget_ms: 250,
+            memory_budget_mb: 0,
             world: WorldSnapshot::default(),
         };
 
@@ -1458,6 +1528,7 @@ mod tests {
             unseen_this_game: NodeSet::default(),
             state_budget: 0,
             time_budget_ms: 0,
+            memory_budget_mb: 0,
             world: WorldSnapshot::default(),
         };
 

@@ -68,6 +68,28 @@ namespace GlobalConversationTracker.Engine
         /// </remarks>
         public int TimeBudgetMs { get; set; }
 
+        /// <summary>
+        /// The most memory one option's search may hold, in MEGABYTES; 0 for the default.
+        /// </summary>
+        /// <remarks>
+        /// <para>THE LIMIT THAT GOVERNS. A search state carries one slot per variable its
+        /// group tracks, so a budget counted in STATES buys a different amount of memory in
+        /// every conversation - between 136 and 455 megabytes across the six heaviest,
+        /// measured. A number that elastic protects nothing in particular, which is why the
+        /// budget is now stated in the unit it is actually spent in. See de-e23q.</para>
+        ///
+        /// <para>MEGABYTES HERE, BYTES IN THE ENGINE. This is a figure a player types into
+        /// a configuration file, and 256 is a number a person can hold in their head where
+        /// 268435456 is not.</para>
+        ///
+        /// <para>ZERO MEANS THE DEFAULT, not "no limit" - the opposite of what zero means
+        /// for the time budget, and deliberately so. A crawl with no clock still finishes;
+        /// a crawl with no memory limit is the thing this budget exists to prevent, so an
+        /// unset value must not switch the protection off.</para>
+        /// </remarks>
+        public int MemoryBudgetMb { get; set; }
+
+
         /// <summary>The request as the JSON the library reads.</summary>
         public string ToJson()
         {
@@ -96,6 +118,7 @@ namespace GlobalConversationTracker.Engine
 
                 writer.WriteNumber("state_budget", Math.Max(0, StateBudget));
                 writer.WriteNumber("time_budget_ms", Math.Max(0, TimeBudgetMs));
+                writer.WriteNumber("memory_budget_mb", Math.Max(0, MemoryBudgetMb));
 
                 writer.WritePropertyName("world");
                 World.Write(writer);

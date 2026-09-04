@@ -76,6 +76,7 @@ namespace GlobalConversationTracker
         private static LookAheadDiagnosticsWriter? _diagnostics;
         private static int _budget = DefaultStateBudget;
         private static int _timeBudgetMs;
+        private static int _memoryBudgetMb;
         private static bool _enabled = true;
         private static IGlobalStateLog? _log;
 
@@ -165,6 +166,10 @@ namespace GlobalConversationTracker
         /// <param name="timeBudgetMs">
         /// The longest one option's crawl may run for, in milliseconds; 0 for no limit.
         /// </param>
+        /// <param name="memoryBudgetMb">
+        /// The most memory one option's crawl may hold, in megabytes; 0 for the engine's
+        /// own default. The limit that normally decides - see de-e23q.
+        /// </param>
         /// <param name="enabled">Whether the installed hook should add markers.</param>
         /// <param name="diagnostics">
         /// Where budget overflows and cost statistics are recorded, or null to record
@@ -182,6 +187,7 @@ namespace GlobalConversationTracker
             bool markUncertain,
             int stateBudget,
             int timeBudgetMs,
+            int memoryBudgetMb,
             bool enabled,
             LookAheadDiagnosticsWriter? diagnostics = null)
         {
@@ -205,7 +211,7 @@ namespace GlobalConversationTracker
             _unseenThisGameHtml = Validate(unseenThisGameHtml, nameof(unseenThisGameHtml));
             _uncertainHtml = Validate(uncertainHtml, nameof(uncertainHtml));
             _markUncertain = markUncertain;
-            Configure(enabled, stateBudget, timeBudgetMs, diagnostics);
+            Configure(enabled, stateBudget, timeBudgetMs, memoryBudgetMb, diagnostics);
 
             // Two hooks, and they are not interchangeable. The menu one is where the whole
             // list of options exists, which is the only place a single bridge call can
@@ -220,6 +226,7 @@ namespace GlobalConversationTracker
             bool enabled,
             int stateBudget,
             int timeBudgetMs,
+            int memoryBudgetMb,
             LookAheadDiagnosticsWriter? diagnostics)
         {
             _diagnostics?.Flush();
@@ -227,6 +234,7 @@ namespace GlobalConversationTracker
             _enabled = enabled;
             _budget = stateBudget;
             _timeBudgetMs = timeBudgetMs;
+            _memoryBudgetMb = memoryBudgetMb;
             _diagnostics = diagnostics != null && diagnostics.Enabled ? diagnostics : null;
 
             // The budgets are not applied to an engine here any more; they travel in the
@@ -338,6 +346,7 @@ namespace GlobalConversationTracker
                 // options, because the engine never heard about it.
                 request.StateBudget = _budget;
                 request.TimeBudgetMs = _timeBudgetMs;
+                request.MemoryBudgetMb = _memoryBudgetMb;
 
                 foreach (DialogueNodeId start in starts)
                 {

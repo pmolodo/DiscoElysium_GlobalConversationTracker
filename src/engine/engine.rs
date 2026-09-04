@@ -10,7 +10,23 @@ use std::fmt;
 
 /// Options for a look-ahead crawl.
 pub struct LookAheadOptions {
+    /// The most search states one crawl may hold, or `usize::MAX` for no such limit.
+    ///
+    /// OFF BY DEFAULT, in favour of [`Self::memory_budget`]. Kept because it is the limit a
+    /// test can set to an exact small number and get an exactly reproducible give-up, which
+    /// a memory budget cannot promise - the size of a state depends on the group.
     pub state_budget: usize,
+
+    /// The most memory the search frontier may occupy, in bytes, or 0 for no such limit.
+    ///
+    /// THE DEFAULT LIMIT. Counted rather than asked of the allocator: every state the crawl
+    /// keeps costs its slots on the heap plus its own inline size plus the set's overhead,
+    /// and that is arithmetic the crawl can do as it goes for the price of an add. Asking
+    /// the operating system what the process is using would measure the game as well.
+    ///
+    /// An estimate, deliberately. It is a budget rather than an accounting: it needs to be
+    /// the right size and to move the right way, not to be exact.
+    pub memory_budget: usize,
     pub time_budget: Duration,
     pub time_check_interval: usize,
     pub on_progress: Option<Box<dyn Fn(DialogueNodeId, usize, usize, Duration) + Send + Sync>>,
@@ -32,7 +48,8 @@ pub struct LookAheadOptions {
 impl Default for LookAheadOptions {
     fn default() -> Self {
         Self {
-            state_budget: 200_000,
+            state_budget: usize::MAX,
+            memory_budget: DEFAULT_MEMORY_BUDGET,
             time_budget: Duration::from_secs(1),
             time_check_interval: 512,
             on_progress: None,
@@ -50,6 +67,7 @@ impl Default for LookAheadOptions {
 
 impl LookAheadOptions {
     pub fn state_budget(mut self, budget: usize) -> Self { self.state_budget = budget; self }
+    pub fn memory_budget(mut self, bytes: usize) -> Self { self.memory_budget = bytes; self }
     pub fn time_budget(mut self, budget: Duration) -> Self { self.time_budget = budget; self }
     pub fn time_check_interval(mut self, interval: usize) -> Self { self.time_check_interval = interval; self }
     pub fn on_progress<F>(mut self, f: F) -> Self where F: Fn(DialogueNodeId, usize, usize, Duration) + Send + Sync + 'static { self.on_progress = Some(Box::new(f)); self }
@@ -90,11 +108,38 @@ impl fmt::Display for LookAheadResult {
         write!(f, "{:?} after {} states over {} nodes", self.best, self.states_explored, self.nodes_reached)?;
         match self.stopped_by {
             LookAheadLimit::States => write!(f, " (state budget exhausted)"),
+            LookAheadLimit::Memory => write!(f, " (out of memory budget)"),
             LookAheadLimit::Time => write!(f, " (out of time)"),
             LookAheadLimit::None => Ok(()),
         }
     }
 }
+
+/// What one state in the search frontier costs, in bytes.
+///
+/// The key the crawl keeps is an entry id and a state; the state is its slots on the heap
+/// plus its money, clock and cached hash inline. The extra eighth is the hash set's own
+/// overhead - a control byte per element, at around seven-eighths load.
+///
+/// AN ESTIMATE, AND ONLY EVER USED AS ONE. It backs a budget, which needs to be the right
+/// size and to move the right way when a group's states get wider. It is not an accounting
+/// of the process, and nothing should read it as one.
+fn state_bytes(slot_count: usize) -> usize {
+    let key = std::mem::size_of::<StateKey>() + slot_count * std::mem::size_of::<i32>();
+    key + key / 8 + 1
+}
+
+/// What one crawl's search frontier may hold by default, in bytes.
+///
+/// 256 MB. Chosen against the measurement rather than picked: at the old budget of 200,000
+/// states the worst group in the game held 455 MB and the best 136, so this cuts the worst
+/// case roughly in half while leaving every group the same allowance as every other. See
+/// tests/crawl_memory.rs for the table it comes from.
+///
+/// In states, that is about 112,000 in the group with the widest states and about 377,000
+/// in the narrowest - which is the point. The old number spent three and a half times as
+/// much memory on one conversation as another for no reason anybody chose.
+pub const DEFAULT_MEMORY_BUDGET: usize = 256 * 1024 * 1024;
 
 /// Which outcome of a rolled start a crawl explores.
 ///
@@ -339,9 +384,15 @@ impl LookAheadEngine {
         let mut reached = HashSet::new();
         let mut tally = if self.options.collect_trace { Some(HashMap::new()) } else { None };
 
+        // WHAT ONE KEPT STATE COSTS, in bytes, for the memory budget. Every state in the
+        // group has the same slot count, so this is worked out once rather than per state.
+        let bytes_per_state = state_bytes(graph.symbols().count());
+        let mut frontier_bytes = 0usize;
+
         for state in &entered {
             let key = StateKey { node: start, state: state.clone() };
             if seen.insert(key.clone()) {
+                frontier_bytes += bytes_per_state;
                 queue.push_back(key);
             }
         }
@@ -371,6 +422,11 @@ impl LookAheadEngine {
         let mut until_clock_check = self.options.time_check_interval;
 
         while let Some(current) = queue.pop_front() {
+            if self.options.memory_budget > 0 && frontier_bytes >= self.options.memory_budget {
+                stopped_by = LookAheadLimit::Memory;
+                break;
+            }
+
             if seen.len() >= self.options.state_budget {
                 stopped_by = LookAheadLimit::States;
                 break;
@@ -423,6 +479,7 @@ impl LookAheadEngine {
 
                     let key = StateKey { node: child_id, state: next_state.clone() };
                     if seen.insert(key.clone()) {
+                        frontier_bytes += bytes_per_state;
                         reached.insert(child_id);
                         if let Some(t) = &mut tally { *t.entry(child_id).or_insert(0) += 1; }
                         queue.push_back(key);

@@ -107,4 +107,12 @@ pub enum LookAheadLimit {
     None = 0,
     States = 1,
     Time = 2,
+    /// The search frontier grew past what it was allowed to hold.
+    ///
+    /// The limit that governs by default, because it is the one that means the same thing
+    /// in every conversation. A state carries one slot per tracked variable in its group, so
+    /// a budget counted in STATES buys between 136 and 455 megabytes depending on which
+    /// conversation the player is standing in - measured, see tests/crawl_memory.rs - and a
+    /// number that elastic protects nothing in particular. See de-e23q.
+    Memory = 3,
 }

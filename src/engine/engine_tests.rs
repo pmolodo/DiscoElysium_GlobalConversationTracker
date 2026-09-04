@@ -397,6 +397,88 @@ fn exhausting_the_state_budget_is_reported() {
     assert!(result.budget_exhausted());
 }
 
+/// A crawl that fills its memory budget stops, and says which limit stopped it.
+///
+/// The limit that governs by default (de-e23q). It is told apart from the state budget
+/// because the two want different things done about them, exactly as states and time do.
+#[test]
+fn filling_the_memory_budget_is_reported_as_memory() {
+    let engine = LookAheadEngine::new(LookAheadOptions {
+        state_budget: usize::MAX,
+        memory_budget: 4 * 1024,
+        time_budget: Duration::ZERO,
+        ..Default::default()
+    });
+    let result =
+        engine.evaluate(&state_burner(), node(0), &TestWorld::new(), |_| Novelty::SeenThisGame);
+
+    assert_eq!(result.stopped_by, LookAheadLimit::Memory);
+    assert!(result.budget_exhausted());
+}
+
+/// A budget of zero means no memory limit at all.
+///
+/// The same convention the time budget uses, so a caller that wants one limit and not the
+/// other does not have to reach for a sentinel of its own.
+#[test]
+fn a_memory_budget_of_zero_is_no_limit() {
+    let engine = LookAheadEngine::new(LookAheadOptions {
+        state_budget: 20,
+        memory_budget: 0,
+        time_budget: Duration::ZERO,
+        ..Default::default()
+    });
+    let result =
+        engine.evaluate(&state_burner(), node(0), &TestWorld::new(), |_| Novelty::SeenThisGame);
+
+    // Stopped by the OTHER limit, which is what says the memory one did not fire first.
+    assert_eq!(result.stopped_by, LookAheadLimit::States);
+}
+
+/// A wider state costs more of the budget, so fewer of them fit.
+///
+/// The whole reason for measuring in bytes. Two groups given the same allowance explore
+/// different numbers of states, in proportion to what a state in each of them costs - which
+/// is exactly what counting states could not do, and why the same nominal budget bought
+/// between 136 and 455 megabytes across the game.
+#[test]
+fn a_group_with_wider_states_fits_fewer_of_them_in_the_same_budget() {
+    // BOTH SPACES MUST OUTRUN THE BUDGET or the comparison measures nothing. Twelve flags
+    // is 4,096 reachable states and twenty-four is sixteen million, against a budget that
+    // holds fewer than a hundred - so each run is stopped by the budget rather than by
+    // running out of graph, which is asserted below rather than assumed. The first version
+    // of this test used four flags for the narrow side, whose whole space is smaller than
+    // the budget; it explored all 49 states it had and "fitted" fewer than the wide group
+    // for a reason that had nothing to do with memory.
+    let narrow = burner_with_flags(12);
+    let wide = burner_with_flags(24);
+
+    let budget = 8 * 1024;
+    let run = |graph: &LookAheadGraph| {
+        LookAheadEngine::new(LookAheadOptions {
+            state_budget: usize::MAX,
+            memory_budget: budget,
+            time_budget: Duration::ZERO,
+            ..Default::default()
+        })
+        .evaluate(graph, node(0), &TestWorld::new(), |_| Novelty::SeenThisGame)
+    };
+
+    let in_narrow = run(&narrow);
+    let in_wide = run(&wide);
+
+    assert_eq!(in_narrow.stopped_by, LookAheadLimit::Memory, "the narrow run was not budgeted");
+    assert_eq!(in_wide.stopped_by, LookAheadLimit::Memory, "the wide run was not budgeted");
+
+    assert!(
+        in_narrow.states_explored > in_wide.states_explored,
+        "the narrow group fitted {} states and the wide one {}; a wider state should buy \
+         fewer of them",
+        in_narrow.states_explored,
+        in_wide.states_explored,
+    );
+}
+
 /// A crawl with no time budget must not consult a clock at all.
 #[test]
 fn no_time_budget_means_no_clock() {
@@ -480,13 +562,21 @@ const BURNER_FLAGS: i32 = 16;
 /// `exhausting_the_state_budget_is_reported` uses it for, and not enough for a budget of
 /// twenty or a clock.
 fn state_burner() -> LookAheadGraph {
+    burner_with_flags(BURNER_FLAGS)
+}
+
+/// The state burner, with a stated number of flags.
+///
+/// The fan is the same shape whatever the count; what changes is how many variables the
+/// group tracks, and so how wide each state is.
+fn burner_with_flags(flags: i32) -> LookAheadGraph {
     const GROUP: i32 = 1;
     const FIRST_FLAG_ENTRY: i32 = 10;
 
     let mut fan: Vec<i32> = Vec::new();
     let mut builder = GraphBuilder::new().add(Entry::new(0).links(&[GROUP]));
 
-    for index in 0..BURNER_FLAGS {
+    for index in 0..flags {
         let id = FIRST_FLAG_ENTRY + index;
         fan.push(id);
         builder = builder.add(

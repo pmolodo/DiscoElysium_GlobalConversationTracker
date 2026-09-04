@@ -75,7 +75,12 @@ impl Tally {
         });
 
         match result.stopped_by {
-            LookAheadLimit::States => self.stopped_by_states += 1,
+            // MEMORY COUNTS AS A SIZE LIMIT rather than getting a third counter. The
+            // report's question is "did this crawl run out of room or out of time", and
+            // both of these are room - one measured in states and one in bytes, which is
+            // the same limit expressed in a better unit (de-e23q). A reader who needs to
+            // tell them apart has the stopped_by on the result itself.
+            LookAheadLimit::States | LookAheadLimit::Memory => self.stopped_by_states += 1,
             LookAheadLimit::Time => self.stopped_by_time += 1,
             LookAheadLimit::None => {}
         }

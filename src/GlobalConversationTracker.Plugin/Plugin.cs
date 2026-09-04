@@ -91,13 +91,24 @@ namespace GlobalConversationTracker
         /// </param>
         /// <param name="logBudgetExceeded">Whether to log budget overflows.</param>
         /// <param name="keepStatistics">Whether to retain crawl statistics.</param>
+        /// <param name="memoryBudgetMb">
+        /// The memory budget in megabytes, or 0 for the engine's own default.
+        /// </param>
+        /// <remarks>
+        /// The memory budget is LAST and OPTIONAL so that every suite written before it
+        /// existed keeps working and keeps getting the default, which is what those suites
+        /// mean by not mentioning a budget. A suite that wants to starve a crawl on purpose
+        /// still reaches for the state budget: it is the one that can be set to an exact
+        /// small number and give an exactly reproducible give-up. See de-e23q.
+        /// </remarks>
         public static void PrepareLookAheadSuite(
             string sourcePath,
             bool enabled,
             int stateBudget,
             int timeBudgetMs,
             bool logBudgetExceeded,
-            bool keepStatistics)
+            bool keepStatistics,
+            int memoryBudgetMb = 0)
         {
             Session.ReloadFrom(sourcePath);
 
@@ -109,6 +120,7 @@ namespace GlobalConversationTracker
                 enabled,
                 stateBudget,
                 timeBudgetMs,
+                memoryBudgetMb,
                 new LookAheadDiagnosticsWriter(
                     store.DirectoryPath,
                     log,
@@ -245,13 +257,36 @@ namespace GlobalConversationTracker
                 "Append a coloured asterisk to a dialogue option that can still lead to text you have "
                 + "not read, even when the option itself is spent. Orange means it can reach a line no "
                 + "save has seen; red means a line this save has not seen.");
+            // THE BUDGET THAT NORMALLY DECIDES, and it is stated in megabytes because
+            // that is the unit it is spent in. A search state carries one slot per variable
+            // its group tracks, so the old state budget of 200,000 bought 136 MB in one
+            // conversation and 455 MB in another - a number that elastic protects nothing
+            // in particular. 256 MB gives every conversation the same allowance and roughly
+            // halves the worst case. See de-e23q.
+            var lookAheadMemoryBudget = Config.Bind(
+                "Display",
+                "LookAheadMemoryBudgetMb",
+                256,
+                "The most memory one option's look-ahead may use, in megabytes, before giving "
+                + "up. Lower it if response menus feel slow or the game is short of memory; an "
+                + "option whose search gives up is marked with MarkUncertainLookAhead rather "
+                + "than left blank. A menu searches once per option, but one at a time, so this "
+                + "is the peak for the menu rather than per option.");
+
+            // Kept beside the memory budget rather than replaced by it, and OFF by default.
+            // It is the limit that can be set to an exact small number and give an exactly
+            // reproducible give-up, which a memory budget cannot promise - the size of a
+            // state depends on the conversation. That makes it the right dial for a test
+            // and the wrong one for a player.
             var lookAheadBudget = Config.Bind(
                 "Display",
                 "LookAheadStateBudget",
-                200_000,
-                "The most search states one option's look-ahead may explore before giving up. "
-                + "Lower it if response menus feel slow; an option whose search gives up is "
-                + "marked with MarkUncertainLookAhead rather than left blank.");
+                0,
+                "The most search states one option's look-ahead may explore before giving up, "
+                + "or 0 for no such limit. Applies as well as LookAheadMemoryBudgetMb, "
+                + "whichever is reached first. Prefer the memory budget: the same number of "
+                + "states costs very different amounts of memory in different conversations, "
+                + "so this one is hard to set meaningfully.");
 
             // On, because the alternative is worse than it looks. A search that gives up
             // draws nothing, and nothing is what an option with genuinely nothing behind it
@@ -401,6 +436,7 @@ namespace GlobalConversationTracker
                     markUncertainLookAhead.Value,
                     lookAheadBudget.Value,
                     lookAheadTimeBudget.Value,
+                    lookAheadMemoryBudget.Value,
                     markLookAhead.Value,
                     new LookAheadDiagnosticsWriter(
                         store.DirectoryPath,
