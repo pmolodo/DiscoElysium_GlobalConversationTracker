@@ -45,6 +45,18 @@ namespace GlobalConversationTracker.TestProbe
         /// <summary>Report the state a scenario cares about.</summary>
         internal const string ReportCommand = "report";
 
+        /// <summary>
+        /// Tell an open conversation to go on to the next line.
+        /// </summary>
+        /// <remarks>
+        /// THE GAME'S OWN CONTINUE, the one its button and its hotkey call, rather than an
+        /// Enter sent at the window. A keypress goes wherever the focus happens to be,
+        /// needs the game in front, and cannot be aimed: an Enter meant for a line of
+        /// narration lands on a response menu if one has opened in the meantime and picks
+        /// an option instead. This advances a line or does nothing.
+        /// </remarks>
+        internal const string AdvanceCommand = "advance";
+
         /// <summary>Replace the mod's global state from a staged fixture.</summary>
         internal const string PrepareLookAheadSuiteCommand = "prepare-look-ahead-suite";
         internal const string FinishLookAheadSuiteCommand = "finish-look-ahead-suite";
@@ -280,6 +292,9 @@ namespace GlobalConversationTracker.TestProbe
                             "conversation", TestProbePlugin.ConversationId(),
                             "active", TestProbePlugin.IsConversationActive());
                         break;
+                    case AdvanceCommand:
+                        Advance();
+                        break;
                     default:
                         ProbeLog.Write(
                             "command-failed", "command", name, "message", "unknown command");
@@ -458,6 +473,32 @@ namespace GlobalConversationTracker.TestProbe
                     BindingFlags.Public | BindingFlags.Static)
                 ?? throw new MissingMethodException(plugin.FullName, methodName);
             method.Invoke(null, arguments);
+        }
+
+        /// <summary>
+        /// Tells the dialogue UI to go on, and says whether there was one to tell.
+        /// </summary>
+        /// <remarks>
+        /// REFUSES RATHER THAN GUESSES. The logger arrives with the first line of a
+        /// conversation; before that there is nothing to call, and a command that quietly
+        /// did nothing would look exactly like a line that refused to advance. The harness
+        /// only sends this after the probe has reported a line, so being asked without one
+        /// is a fault worth naming.
+        /// </remarks>
+        private static void Advance()
+        {
+            ProbeLog.Write("command-started", "command", AdvanceCommand);
+            if (!TestProbePlugin.Advance())
+            {
+                throw new InvalidOperationException(
+                    "No dialogue has been shown yet, so there is nothing to advance.");
+            }
+
+            ProbeLog.Write(
+                "command-finished",
+                "command", AdvanceCommand,
+                "active", TestProbePlugin.IsConversationActive(),
+                "conversation", TestProbePlugin.ConversationId());
         }
 
         private static void StartConversation(JsonElement root)

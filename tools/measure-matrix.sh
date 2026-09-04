@@ -28,12 +28,18 @@
 #                    \$_.CommandLine -like '*performance_matrix*' } |
 #     ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }"
 #
-# Writes one TSV per conversation into measurements/, plus a log per row beside it.
+# Writes one TSV per conversation into measurements/, plus one folder per run under
+# measurements/logs holding a log per row.
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/measurements"
-LOGS="$OUT/logs"
+
+# ONE FOLDER PER RUN, named for the day and the commit it measured - the whole matrix is
+# one measurement, and its sixty-six row logs only mean anything as a set. Flat files
+# named for the row were overwritten by the next run, which left every recorded TSV with
+# no logs behind it except the newest one's.
+LOGS="$(RUN_LOG_DIR="$OUT/logs" "$ROOT/tools/run-logged.sh" --folder-only measure matrix)"
 mkdir -p "$LOGS"
 
 CONVERSATIONS=("$@")
@@ -93,3 +99,4 @@ done
 echo
 echo "wrote:"
 ls -1 "$OUT"/performance-matrix-*.tsv
+echo "logs for this run: $LOGS"

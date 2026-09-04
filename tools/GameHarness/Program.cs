@@ -31,6 +31,9 @@ namespace GlobalConversationTracker.Harness
     {
         private const string DefaultProcessName = "disco";
 
+        /// <summary>What this names itself as in a log file's name.</summary>
+        private const string ToolName = "GameHarness";
+
         /// <summary>The save staged when none is named.</summary>
         /// <remarks>
         /// The archive's entries are named to match it. Every entry in a save is prefixed
@@ -57,6 +60,19 @@ namespace GlobalConversationTracker.Harness
 
             try
             {
+                // HERE RATHER THAN IN A WRAPPER SCRIPT, so that a verb typed by hand is
+                // logged too - a wrapper that has to be remembered is the thing this
+                // replaces. It also catches the in-game tests, which reach these verbs by
+                // calling Main rather than by running the executable.
+                //
+                // Inside the try so that a run which cannot be logged - no repository
+                // around it, nowhere to write - says so in one sentence like every other
+                // failure here, and so that what the catch reports lands in the log.
+                using IDisposable? log = options.NoLog
+                    ? null
+                    : RunLog.Begin(
+                        ToolName, options.Verb, ToolName + " " + string.Join(" ", args));
+
                 switch (options.Verb)
                 {
                     case "analyse-timeline":
@@ -249,7 +265,11 @@ Options:
   --timeline-interval How often to capture in timeline mode, in ms (default 1000).
   --timeline-seconds  How long to record in timeline mode (default 60). Separate
                       from --timeout, which is the wait for the window to appear.
-  --verbose           Report every sample the waits take.");
+  --verbose           Report every sample the waits take.
+  --no-log            Do not keep a log of this run. Every verb otherwise writes
+                      its whole output to testing/logs under a name carrying the
+                      date, the commit it ran against, and the verb. Setting
+                      DISCO_ELYSIUM_GCT_NO_RUN_LOG does the same thing.");
         }
 
         /// <summary>
@@ -1404,6 +1424,9 @@ Options:
 
             public bool Verbose { get; private set; }
 
+            /// <summary>Do not keep a log of this run under testing/logs.</summary>
+            public bool NoLog { get; private set; }
+
             /// <summary>Capture every frame of startup instead of waiting for a settle.</summary>
             public bool Timeline { get; private set; }
 
@@ -1546,6 +1569,7 @@ Options:
                                 Next() ?? "30", System.Globalization.CultureInfo.InvariantCulture);
                             break;
                         case "--dry-run": options.DryRun = true; break;
+                        case "--no-log": options.NoLog = true; break;
                         case "--keep-open": options.KeepOpen = true; break;
                         case "--via-steam": options.ViaSteam = true; break;
                         case "--no-screen-prefs": options.SkipScreenPrefs = true; break;

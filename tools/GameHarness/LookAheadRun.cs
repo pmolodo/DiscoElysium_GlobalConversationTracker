@@ -50,6 +50,15 @@ namespace GlobalConversationTracker.Harness
         /// </remarks>
         public const string UncertainHtml = "#7A7A7A";
 
+        /// <summary>The colour meaning "this save has already read it".</summary>
+        /// <remarks>
+        /// A dark red, and the Pass / Fail line's alone - an option never needs it, since
+        /// the game draws a spent option in its own way. Must match
+        /// <c>ResponseLookAheadPatch.DefaultSeenColorHtml</c>, which for the same reason as
+        /// the colour above cannot be shared with this.
+        /// </remarks>
+        public const string SeenHtml = "#7C2F2A";
+
         /// <summary>What a packed save archive is called.</summary>
         private const string SaveExtension = ".ntwtf.zip";
 
@@ -59,6 +68,28 @@ namespace GlobalConversationTracker.Harness
         /// loading screen is not hammered.
         /// </summary>
         private static readonly TimeSpan BetweenPresses = TimeSpan.FromSeconds(2);
+
+        /// <summary>
+        /// How long to give the game to say what is on screen before deciding nothing is.
+        /// </summary>
+        /// <remarks>
+        /// The probe's events reach the harness through the BepInEx log, which is re-read
+        /// twice a second, so this has to be several polls wide - a window as short as the
+        /// poll would call a line that arrived a moment late "nothing", and advancing on
+        /// that is exactly the mistake this replaced.
+        /// </remarks>
+        private static readonly TimeSpan SettleWindow = TimeSpan.FromSeconds(3);
+
+        /// <summary>How long to give the probe to pick a command up off disk.</summary>
+        /// <remarks>
+        /// GENEROUS, because it is bounded by the game's frame rate rather than by
+        /// anything this controls: the probe polls for a command every few frames, and the
+        /// frames right after a conversation opens are the slowest there are - the menu is
+        /// being composed and every option's look-ahead is running. Three seconds was not
+        /// enough and cost a run, which failed as "the conversation drew no menu" while
+        /// the game was in the middle of drawing one.
+        /// </remarks>
+        private static readonly TimeSpan CommandPickUp = TimeSpan.FromSeconds(30);
 
         /// <summary>How long to spend trying to wake the display before giving up.</summary>
         /// <remarks>
@@ -632,18 +663,27 @@ namespace GlobalConversationTracker.Harness
                     Console.WriteLine(
                         $"        asking for conversation {scenario.ConversationId} again "
                         + $"(attempt {attempt} of {OpenAttempts})");
+
+                    // A retry is already a recovery, and the attempt that failed may have
+                    // left a continue on disk that the probe never took. Sending the next
+                    // command on top of it is refused outright, which reports a pending
+                    // command where the real story is the attempt before it.
+                    ProbeCommand.Clear(saveGames);
                 }
 
                 ProbeCommand.SendStartConversation(saveGames, scenario.ConversationId);
 
-                // Read before the menu wait, not after: WaitFor consumes as it scans, so
-                // pressing Enter first would swallow the acknowledgement this turns on.
-                ProbeEvent started = watcher.WaitFor(
+                // WITHOUT CONSUMING, because the first lines of the conversation arrive
+                // alongside this answer and sometimes before it - the run that found this
+                // showed line 451:0 between the command starting and finishing. A wait
+                // that scanned past them would swallow them, and the count of lines this
+                // conversation needs would depend on how quickly the probe answered.
+                ProbeEvent started = WaitWithoutConsuming(
+                    watcher,
                     e => e.Name == "command-finished"
                         && e.Text("command") == "start-conversation",
                     StartAcknowledgement,
-                    $"an answer to start-conversation {scenario.ConversationId}",
-                    Log);
+                    $"an answer to start-conversation {scenario.ConversationId}");
 
                 if (FellStraightOut(started))
                 {
@@ -671,14 +711,7 @@ namespace GlobalConversationTracker.Harness
                 // completed one is tied to its conversation and its balance.
                 try
                 {
-                    return PressEnterUntil(
-                        watcher,
-                        e => e.Name == "menu"
-                            && e.Number("conversation") == scenario.ConversationId
-                            && e.Text("state") == "complete",
-                        perAttempt,
-                        what,
-                        "advancing dialogue");
+                    return AdvanceToMenu(scenario, saveGames, watcher, perAttempt, what);
                 }
                 catch (TimeoutException) when (!last)
                 {
@@ -686,6 +719,200 @@ namespace GlobalConversationTracker.Harness
                         "        it is open but drew no menu; letting the world settle");
                     Thread.Sleep(BetweenOpenAttempts);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Advances an open conversation to its first response menu, one line at a time.
+        /// </summary>
+        /// <remarks>
+        /// <para>LOOKS BEFORE IT ACTS, AND ACTS ONLY AT A LINE. A conversation opens on
+        /// narration and waits to be told to go on; the probe reports each line as it goes
+        /// up, and this answers one line with one continue. It never advances on
+        /// speculation, and never at all once a menu has been reported.</para>
+        ///
+        /// <para>WHY THAT IS THE WHOLE POINT. The old loop pressed Enter first and looked
+        /// afterwards, so every scenario got a keypress whether or not its menu was
+        /// already up - and an Enter on an open response menu PICKS THE HIGHLIGHTED
+        /// OPTION. The same save then opened whichever menu the selection led to: over
+        /// three runs the ceiling fan gave the four-option hub twice and a single option
+        /// from somewhere else in the conversation once. A suite about what has been read
+        /// was quietly reading dialogue of its own choosing.</para>
+        ///
+        /// <para>The continue is the game's own, called on the dialogue UI through the
+        /// probe, rather than a keypress at the window. A keypress cannot be aimed - it
+        /// goes to whatever has focus, and means "advance" or "choose" depending on what
+        /// is on screen when it lands. This says one thing only.</para>
+        ///
+        /// <para>A LINE IS ANSWERED ONLY AFTER A QUIET WINDOW, never the moment it
+        /// arrives. The game leaves the last line on screen and puts the menu up beside
+        /// it, so a line followed by a menu wants no answer at all - and whether the menu
+        /// had reached the log by the time the line was read is a matter of polling luck.
+        /// Answering immediately made the count depend on that luck: the ceiling fan
+        /// reported one advance in one run and none in the next while opening the
+        /// identical menu. Waiting the window out makes the count a fact about the
+        /// conversation.</para>
+        ///
+        /// <para>THE WINDOW IS THE ONE PROBABILISTIC PART LEFT, and it is deliberate for
+        /// now. Asking the interface directly would be exact, but the class that decides
+        /// between the continue button and the options list -
+        /// <c>ContinueResponseTogglePageSystem</c> - is never instantiated in this build:
+        /// seven hooks over every member of it, <c>Update</c> included, applied cleanly
+        /// and none ever fired. See de-6vyj for where a later attempt should look.</para>
+        ///
+        /// <para>The count it took is returned to the caller, which holds it against what
+        /// the scenario says it should be. A scenario that suddenly needs a different
+        /// number is not at the menu it thinks it is.</para>
+        /// </remarks>
+        /// <param name="scenario">The scenario being opened.</param>
+        /// <param name="saveGames">The profile's SaveGames folder, for the probe.</param>
+        /// <param name="watcher">The probe's events.</param>
+        /// <param name="timeout">How long to keep at it.</param>
+        /// <param name="what">What is being waited for, for the report.</param>
+        /// <returns>The completed menu event.</returns>
+        private static ProbeEvent AdvanceToMenu(
+            LookAheadScenario scenario,
+            string saveGames,
+            ProbeWatcher watcher,
+            TimeSpan timeout,
+            string what)
+        {
+            var clock = Stopwatch.StartNew();
+            int advances = 0;
+            int silent = 0;
+            bool waiting = false;
+
+            while (true)
+            {
+                ProbeEvent? seen = Settle(watcher, scenario.ConversationId);
+                if (seen != null && seen.Name == "menu")
+                {
+                    // Any menu at all ends the advancing. A "superseded" one is the first
+                    // of the two passes the game composes over the same options, so the
+                    // completed one is on its way and there is nothing left to answer.
+                    if (seen.Text("state") == "complete")
+                    {
+                        Console.WriteLine(
+                            $"        {what} after {clock.Elapsed.TotalSeconds:N0}s and "
+                            + $"{advances} advance(s)");
+                        LastAdvances = advances;
+                        return seen;
+                    }
+
+                    silent = 0;
+                    continue;
+                }
+
+                if (clock.Elapsed >= timeout)
+                {
+                    throw new TimeoutException(
+                        $"Waited {timeout.TotalSeconds:N0}s for {what}, advancing "
+                        + $"{advances} line(s). The conversation is open and is not "
+                        + "reaching a menu.");
+                }
+
+                if (seen != null)
+                {
+                    // A LINE, AND IT MAY OR MAY NOT BE THE LAST ONE. The game leaves the
+                    // final line on screen and puts the menu up beside it, so a line is
+                    // only worth answering if no menu follows it. Noted and left for the
+                    // next quiet window to settle.
+                    waiting = true;
+                    silent = 0;
+                    continue;
+                }
+
+                if (!waiting)
+                {
+                    // Nothing reported at all, and nothing outstanding. Either the world
+                    // is still settling or a line went up without being announced; either
+                    // way, advancing blind is what this exists to avoid.
+                    silent++;
+                    Console.WriteLine(
+                        $"        nothing on screen yet ({clock.Elapsed.TotalSeconds:N0}s, "
+                        + $"{silent} quiet wait(s))");
+                    continue;
+                }
+
+                // A line is up and waiting. One continue answers exactly this one.
+                //
+                // WAITED FOR ON THE FILE, not on the acknowledgement. Only one command may
+                // be in flight, and the lines of an opening conversation arrive close
+                // enough together that the next one is ready before the probe has picked
+                // this one up. Waiting on the acknowledgement instead would swallow the
+                // line or menu the continue produced, because a scan consumes what it
+                // passes; a continue that failed outright still arrives as a
+                // command-failed and is raised out of the next wait.
+                ProbeCommand.SendAdvance(saveGames);
+                ProbeCommand.WaitUntilTaken(saveGames, CommandPickUp);
+                advances++;
+                waiting = false;
+                silent = 0;
+            }
+        }
+
+        /// <summary>
+        /// Waits briefly for the next thing to happen in a conversation: a menu, or a line
+        /// going up.
+        /// </summary>
+        /// <returns>The event, or null when nothing happened in the window.</returns>
+        private static ProbeEvent? Settle(ProbeWatcher watcher, int conversationId)
+        {
+            try
+            {
+                return watcher.WaitFor(
+                    e => (e.Name == "menu" && e.Number("conversation") == conversationId)
+                        || e.Name == "line",
+                    SettleWindow,
+                    "a line or a menu");
+            }
+            catch (TimeoutException)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>How many advances the last conversation opened with.</summary>
+        /// <remarks>
+        /// Carried out of band rather than returned beside the menu because every caller
+        /// but one wants the menu alone. It is read immediately after
+        /// <see cref="OpenConversation"/> and never stored.
+        /// </remarks>
+        private static int LastAdvances { get; set; }
+
+        /// <summary>
+        /// Waits for an event without consuming anything, so a later reader still sees
+        /// every event that arrived before it - and every one that arrived beside it.
+        /// </summary>
+        /// <param name="watcher">The probe's events.</param>
+        /// <param name="matches">What is being waited for.</param>
+        /// <param name="timeout">How long to wait.</param>
+        /// <param name="what">What to call it, for the report.</param>
+        /// <exception cref="TimeoutException">It never came.</exception>
+        private static ProbeEvent WaitWithoutConsuming(
+            ProbeWatcher watcher, Func<ProbeEvent, bool> matches, TimeSpan timeout, string what)
+        {
+            var clock = Stopwatch.StartNew();
+            Console.WriteLine($"        waiting for {what} (0s)");
+            while (true)
+            {
+                foreach (ProbeEvent candidate in watcher.Since())
+                {
+                    if (matches(candidate))
+                    {
+                        Console.WriteLine(
+                            $"        saw {what} after {clock.Elapsed.TotalSeconds:N1}s");
+                        return candidate;
+                    }
+                }
+
+                if (clock.Elapsed >= timeout)
+                {
+                    throw new TimeoutException(
+                        $"Waited {timeout.TotalSeconds:N0}s for {what} and it never came.");
+                }
+
+                Thread.Sleep(ProbeWatcher.DefaultPollInterval);
             }
         }
 
@@ -699,6 +926,29 @@ namespace GlobalConversationTracker.Harness
             watcher.WaitForEvent("load-finished", timeout, Log);
 
             ProbeEvent menu = OpenConversation(scenario, saveGames, watcher, timeout);
+            int advances = LastAdvances;
+
+            // A SCENARIO THAT NEEDS A DIFFERENT NUMBER OF LINES IS NOT AT ITS OWN MENU.
+            // The count is a fixed property of a save and a conversation, so a change in
+            // it means the run arrived somewhere else - which used to happen silently and
+            // is the whole reason this is checked rather than merely reported.
+            if (scenario.Advances is int wanted)
+            {
+                report.Check(
+                    advances == wanted,
+                    $"{scenario.SaveName}: its conversation opened after {wanted} "
+                        + "advance(s), as it always should",
+                    advances == wanted
+                        ? "it did"
+                        : $"it took {advances} this time - the menu it reached is not the "
+                            + "one this scenario was written against");
+            }
+            else
+            {
+                Console.WriteLine(
+                    $"        (this scenario does not say how many advances it needs; it "
+                    + $"took {advances})");
+            }
 
             // Taken from the menu rather than from load-finished, which is emitted when
             // the game's IsLoading flag falls - a poll boundary earlier than the loaded
@@ -720,9 +970,19 @@ namespace GlobalConversationTracker.Harness
 
             foreach (ProbeOption option in options)
             {
+                string rolls = option.Check == null ? string.Empty : $" ({option.Check} check)";
                 Console.WriteLine(
                     $"        [{Describe(MarkerOn(option)),-6}] "
-                    + $"{option.ConversationId}:{option.EntryId} {Trim(option.Text)}");
+                    + $"{option.ConversationId}:{option.EntryId}{rolls} "
+                    + $"{Trim(option.OwnLine())}");
+
+                // ON ITS OWN ROW, because that is where the game draws it and because
+                // trimming an option to a line once cut the Fail half off entirely - the
+                // only in-game evidence the line existed at all was half of it.
+                if (option.Branches() is ProbeBranchLine drawn)
+                {
+                    Console.WriteLine($"                   {drawn}");
+                }
             }
 
             if (scenario.Markers == MarkerPolicy.Ignored)
@@ -766,7 +1026,137 @@ namespace GlobalConversationTracker.Harness
                         + "not name, is unmarked",
                     $"it is {Describe(MarkerOn(option))}");
             }
+
+            CheckBranchLines(scenario, options, report);
         }
+
+        /// <summary>
+        /// Checks the Pass / Fail line drawn under each check option in a menu.
+        /// </summary>
+        /// <remarks>
+        /// SEPARATE FROM THE MARKER CHECKS, because they are separate claims about
+        /// separate things: the marker says what the option as a whole can still reach,
+        /// and the line says which of a rolled check's two outcomes gets there. An option
+        /// carries both, and a suite that conflated them could not tell a check whose
+        /// failure leads somewhere new from one whose success does.
+        /// </remarks>
+        private static void CheckBranchLines(
+            LookAheadScenario scenario, ProbeOption[] options, Report report)
+        {
+            if (scenario.BranchPolicy == BranchPolicy.Ignored)
+            {
+                return;
+            }
+
+            BranchExpectation? expected = scenario.Branches;
+            foreach (ProbeOption option in options)
+            {
+                bool wanted = expected != null && option.IsRolledCheck;
+                ProbeBranchLine? line = option.Branches();
+
+                if (!wanted)
+                {
+                    report.Check(
+                        line == null,
+                        $"{scenario.SaveName}: entry {option.EntryId}, "
+                            + (option.Check == null
+                                ? "which rolls nothing, has no Pass / Fail line"
+                                : $"a {option.Check} check, has no Pass / Fail line either"),
+                        line == null ? "it has none" : $"it carries '{line}'");
+                    continue;
+                }
+
+                if (line == null)
+                {
+                    report.Check(
+                        false,
+                        $"{scenario.SaveName}: entry {option.EntryId}, a {option.Check} "
+                            + "check, is drawn with a Pass / Fail line",
+                        $"it carries none - {expected!.Why}");
+                    continue;
+                }
+
+                CheckHalf(scenario, option, expected!.Pass, line.Pass, expected.Why, report);
+                CheckHalf(scenario, option, expected.Fail, line.Fail, expected.Why, report);
+            }
+        }
+
+        /// <summary>Checks one half of one line, its colour and its marker.</summary>
+        private static void CheckHalf(
+            LookAheadScenario scenario,
+            ProbeOption option,
+            BranchHalf wanted,
+            ProbeBranch drawn,
+            string why,
+            Report report)
+        {
+            report.Check(
+                drawn.ColourHtml.Equals(HtmlOf(wanted.Colour), StringComparison.OrdinalIgnoreCase)
+                    && MarkerOn(drawn) == wanted.Marker,
+                $"{scenario.SaveName}: entry {option.EntryId} says {drawn.Word} in {wanted}",
+                $"it says {drawn.Word} in {Describe(drawn)} - {why}");
+        }
+
+        /// <summary>What one half of a drawn line reads as, for the report.</summary>
+        private static string Describe(ProbeBranch drawn)
+        {
+            string colour = drawn.ColourHtml.Equals(OrangeHtml, StringComparison.OrdinalIgnoreCase)
+                ? nameof(BranchColour.Orange)
+                : drawn.ColourHtml.Equals(RedHtml, StringComparison.OrdinalIgnoreCase)
+                    ? nameof(BranchColour.Red)
+                    : drawn.ColourHtml.Equals(SeenHtml, StringComparison.OrdinalIgnoreCase)
+                        ? nameof(BranchColour.DarkRed)
+                        : drawn.ColourHtml;
+
+            Marker marker = MarkerOn(drawn);
+            return marker == Marker.None ? colour : $"{colour} with {marker}";
+        }
+
+        /// <summary>The marker one half of a drawn line carries.</summary>
+        /// <remarks>
+        /// Both halves of the answer have to agree - the glyph AND its colour - for the
+        /// same reason the option's own marker is matched whole: a grey '*?' and an orange
+        /// '*' say opposite things, and either one read as the other turns "the search
+        /// gave up" into "the search found something".
+        /// </remarks>
+        private static Marker MarkerOn(ProbeBranch drawn)
+        {
+            if (drawn.Marker == null || drawn.MarkerColourHtml == null)
+            {
+                return Marker.None;
+            }
+
+            bool uncertain = drawn.Marker == ProbeLog.UncertainMarkerGlyph;
+            string colour = drawn.MarkerColourHtml;
+            if (uncertain && colour.Equals(UncertainHtml, StringComparison.OrdinalIgnoreCase))
+            {
+                return Marker.Uncertain;
+            }
+
+            if (drawn.Marker == ProbeLog.MarkerGlyph)
+            {
+                if (colour.Equals(OrangeHtml, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Marker.Orange;
+                }
+
+                if (colour.Equals(RedHtml, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Marker.Red;
+                }
+            }
+
+            throw new FormatException(
+                $"'{drawn}' carries a marker in no colour the mod uses.");
+        }
+
+        /// <summary>The colour the mod draws one branch state in.</summary>
+        private static string HtmlOf(BranchColour colour) => colour switch
+        {
+            BranchColour.Orange => OrangeHtml,
+            BranchColour.Red => RedHtml,
+            _ => SeenHtml,
+        };
 
         /// <summary>
         /// Asks the mod whether the world it would send the native look-ahead says the

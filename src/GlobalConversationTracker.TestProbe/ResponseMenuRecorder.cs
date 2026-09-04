@@ -11,11 +11,14 @@ namespace GlobalConversationTracker.TestProbe
         /// <param name="conversationId">The destination entry's conversation.</param>
         /// <param name="entryId">The destination entry.</param>
         /// <param name="text">The final text, markup and all.</param>
-        internal RecordedOption(int? conversationId, int? entryId, string? text)
+        /// <param name="check">Which kind of roll it is, or null for none.</param>
+        internal RecordedOption(
+            int? conversationId, int? entryId, string? text, string? check)
         {
             ConversationId = conversationId;
             EntryId = entryId;
             Text = text;
+            Check = check;
         }
 
         /// <summary>The destination entry's conversation, or null if unreadable.</summary>
@@ -34,6 +37,19 @@ namespace GlobalConversationTracker.TestProbe
         /// markup and all three read the same.
         /// </remarks>
         internal string? Text { get; }
+
+        /// <summary>
+        /// <c>white</c>, <c>red</c>, or null where the option rolls nothing.
+        /// </summary>
+        /// <remarks>
+        /// FROM THE GAME'S OWN ENTRY, not from what the mod drew on it. The mod draws a
+        /// Pass / Fail line under exactly the rolled checks, so a test that read "is this
+        /// a check" out of the mod's own output could only ever confirm the mod agreed
+        /// with itself. Read here, it is an independent fact to hold the mod to - and one
+        /// that needs no entry ids pinned in a suite, which matters because which options
+        /// a conversation offers is not stable between runs.
+        /// </remarks>
+        internal string? Check { get; }
     }
 
     /// <summary>
@@ -145,7 +161,8 @@ namespace GlobalConversationTracker.TestProbe
                         writer,
                         "conversation", option.ConversationId,
                         "entry", option.EntryId,
-                        "text", option.Text);
+                        "text", option.Text,
+                        "check", option.Check);
                     writer.WriteEndObject();
                 }
 

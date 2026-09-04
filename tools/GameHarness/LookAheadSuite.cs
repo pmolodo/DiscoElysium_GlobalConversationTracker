@@ -29,6 +29,127 @@ namespace GlobalConversationTracker.Harness
         Uncertain = 3,
     }
 
+    /// <summary>
+    /// What colour a word of an option's Pass / Fail line should be drawn in.
+    /// </summary>
+    /// <remarks>
+    /// The word's colour is where that OUTCOME lands, by the same three-rung rule an
+    /// option's own colour follows - so two of these are the colours <see cref="Marker"/>
+    /// already names. The third is not: an option never needs a colour for "already
+    /// read", because the game draws a spent option itself, and the line does, because a
+    /// word in no colour at all reads as a missing answer rather than a read one.
+    /// </remarks>
+    public enum BranchColour
+    {
+        /// <summary>Orange: the outcome lands on a line no save has read.</summary>
+        Orange = 0,
+
+        /// <summary>Red: it lands on a line this save has not read.</summary>
+        Red = 1,
+
+        /// <summary>Dark red: it lands on a line this save has already read.</summary>
+        DarkRed = 2,
+    }
+
+    /// <summary>One half of a Pass / Fail line: where it lands, and what lies beyond.</summary>
+    public readonly struct BranchHalf : IEquatable<BranchHalf>
+    {
+        /// <summary>Creates a half.</summary>
+        /// <param name="colour">Where the outcome lands.</param>
+        /// <param name="marker">What lies beyond it, or None for nothing.</param>
+        public BranchHalf(BranchColour colour, Marker marker = Marker.None)
+        {
+            Colour = colour;
+            Marker = marker;
+        }
+
+        /// <summary>Where the outcome lands.</summary>
+        public BranchColour Colour { get; }
+
+        /// <summary>What lies beyond it.</summary>
+        public Marker Marker { get; }
+
+        /// <inheritdoc/>
+        public bool Equals(BranchHalf other) =>
+            Colour == other.Colour && Marker == other.Marker;
+
+        /// <inheritdoc/>
+        public override bool Equals(object? obj) => obj is BranchHalf other && Equals(other);
+
+        /// <inheritdoc/>
+        public override int GetHashCode() => ((int)Colour * 4) + (int)Marker;
+
+        /// <inheritdoc/>
+        public override string ToString() =>
+            Marker == Marker.None ? $"{Colour}" : $"{Colour} with {Marker}";
+    }
+
+    /// <summary>What every rolled check in a menu should be drawn with.</summary>
+    /// <remarks>
+    /// A MENU-WIDE CLAIM RATHER THAN A PER-ENTRY ONE, and that is not a convenience. Which
+    /// options a conversation offers is not stable between runs - the same save opened at
+    /// the ceiling fan gave four options one day and one the next - so a scenario cannot
+    /// name the check it expects to see. What it can do is state the rule the mod is meant
+    /// to follow and let it apply to whatever the menu turns out to hold, which is a
+    /// stronger claim anyway: every check, not one that was known about in advance.
+    /// </remarks>
+    public sealed class BranchExpectation
+    {
+        /// <summary>Creates an expectation.</summary>
+        /// <param name="pass">The half naming the outcome where the check succeeds.</param>
+        /// <param name="fail">The half naming the outcome where it fails.</param>
+        /// <param name="why">Why, in one line, for the report.</param>
+        public BranchExpectation(BranchHalf pass, BranchHalf fail, string why)
+        {
+            Pass = pass;
+            Fail = fail;
+            Why = why ?? throw new ArgumentNullException(nameof(why));
+        }
+
+        /// <summary>The outcome where the check succeeds.</summary>
+        public BranchHalf Pass { get; }
+
+        /// <summary>The outcome where it fails.</summary>
+        public BranchHalf Fail { get; }
+
+        /// <summary>Why, for the report.</summary>
+        public string Why { get; }
+    }
+
+    /// <summary>How much a scenario claims about the Pass / Fail lines in its menu.</summary>
+    public enum BranchPolicy
+    {
+        /// <summary>
+        /// The lines are not the subject, and nothing about them is asserted.
+        /// </summary>
+        /// <remarks>
+        /// The default, and honest for every scenario written before the line existed: a
+        /// menu holding a check the scenario never arranged would otherwise be claimed
+        /// about by a suite that is asking a different question entirely.
+        /// </remarks>
+        Ignored = 0,
+
+        /// <summary>
+        /// Nothing in the menu carries a line, whatever the menu turns out to hold.
+        /// </summary>
+        /// <remarks>
+        /// For a conversation with no rolled check in it, where the claim is that the mod
+        /// does not invent one - and for the feature switched off, where the claim is that
+        /// a check gets nothing either.
+        /// </remarks>
+        NoneAnywhere = 1,
+
+        /// <summary>
+        /// Every rolled check carries the expected line, and nothing else carries one.
+        /// </summary>
+        /// <remarks>
+        /// The negative half is the load-bearing one. A line drawn on an option that rolls
+        /// nothing would be inventing two outcomes where the game has one, and would read
+        /// perfectly well while doing it.
+        /// </remarks>
+        EveryCheck = 2,
+    }
+
     /// <summary>How much a scenario claims about the markers in its menu.</summary>
     public enum MarkerPolicy
     {
@@ -92,7 +213,11 @@ namespace GlobalConversationTracker.Harness
         /// <param name="money">The balance to assert, or null not to.</param>
         /// <param name="dayMinutes">The clock to assert, or null not to.</param>
         /// <param name="markers">How much the scenario claims about the markers.</param>
+        /// <param name="branchPolicy">How much it claims about the Pass / Fail lines.</param>
+        /// <param name="branches">What every check's line should be, under EveryCheck.</param>
+        /// <param name="advances">Lines to advance before its menu, or null if unmeasured.</param>
         /// <exception cref="ArgumentNullException">An argument is null.</exception>
+        /// <exception cref="ArgumentException">The policy and the expectation disagree.</exception>
         public LookAheadScenario(
             string saveName,
             int conversationId,
@@ -100,8 +225,25 @@ namespace GlobalConversationTracker.Harness
             IReadOnlyList<OptionExpectation> options,
             int? money = null,
             int? dayMinutes = null,
-            MarkerPolicy markers = MarkerPolicy.Named)
+            MarkerPolicy markers = MarkerPolicy.Named,
+            BranchPolicy branchPolicy = BranchPolicy.Ignored,
+            BranchExpectation? branches = null,
+            int? advances = null)
         {
+            if (advances < 0)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(advances), advances, "A conversation cannot advance backwards.");
+            }
+
+            if ((branchPolicy == BranchPolicy.EveryCheck) != (branches != null))
+            {
+                throw new ArgumentException(
+                    $"{nameof(BranchPolicy)}.{BranchPolicy.EveryCheck} needs a line to "
+                    + "expect, and every other policy needs none.",
+                    nameof(branches));
+            }
+
             SaveName = saveName ?? throw new ArgumentNullException(nameof(saveName));
             ConversationId = conversationId;
             Why = why ?? throw new ArgumentNullException(nameof(why));
@@ -109,6 +251,9 @@ namespace GlobalConversationTracker.Harness
             Money = money;
             DayMinutes = dayMinutes;
             Markers = markers;
+            Branches = branches;
+            BranchPolicy = branchPolicy;
+            Advances = advances;
         }
 
         /// <summary>The staged save's name, without extension.</summary>
@@ -131,6 +276,26 @@ namespace GlobalConversationTracker.Harness
 
         /// <summary>How much the scenario claims about the markers.</summary>
         public MarkerPolicy Markers { get; }
+
+        /// <summary>What every rolled check's line should be, or null when nothing is claimed.</summary>
+        public BranchExpectation? Branches { get; }
+
+        /// <summary>How much the scenario claims about those lines.</summary>
+        public BranchPolicy BranchPolicy { get; }
+
+        /// <summary>
+        /// How many lines of narration stand between opening this conversation and its
+        /// first response menu, or null where it has not been measured yet.
+        /// </summary>
+        /// <remarks>
+        /// A PROPERTY OF THE SCENARIO, and the thing that makes a run repeatable. A
+        /// conversation opens on however much narration its writer put there, and the run
+        /// answers one line with one Enter - so this number is fixed for a given save and
+        /// conversation, and a run that needs a different one has not arrived where the
+        /// scenario says it has. Measure it by running: the report names the count it
+        /// actually took.
+        /// </remarks>
+        public int? Advances { get; }
 
         /// <summary>Whether the scenario says anything about an entry.</summary>
         /// <param name="entryId">The entry, which may be unreadable.</param>

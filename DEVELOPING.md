@@ -355,6 +355,48 @@ written, which is history, not a pointer. Each manifest also carries a `runId`
 (`<capture timestamp>-<first 8 of the md5>`), so a manifest that has been separated from
 its log can still be matched back to it by `md5` and `bytes`.
 
+## Run logs
+
+Every run keeps its whole output in `testing/logs`, under a name that says when it ran,
+what it ran against, and what it was:
+
+```
+testing/logs/2026-09-04_1e08319064b7bd9d115f26c3abf35145d3fb7d8e_GameHarness_look-ahead.txt
+             ^ date       ^ the commit it ran against              ^ tool     ^ verb
+```
+
+The revision gains `-dirty` when the tree has been changed since that commit - a sha that
+does not describe what actually ran would invite a later reader to diff against a commit
+that never contained the code under test - and a name already taken gains `_2`, `_3`,
+which is what iterating on a failure looks like. The folder is gitignored; the logs are
+for reading and diffing locally, not for committing.
+
+**GameHarness logs itself.** Every verb, including the ones the in-game tests reach by
+calling `Program.Main`, with nothing to remember at the call site:
+
+```powershell
+dotnet run --project tools/GameHarness/GameHarness.csproj -- look-ahead
+```
+
+`--no-log`, or `DISCO_ELYSIUM_GCT_NO_RUN_LOG=1`, turns it off.
+
+**Everything else goes through the wrapper**, which cargo and `dotnet test` need because
+neither is ours to modify:
+
+```bash
+tools/run-logged.sh cargo corpus -- cargo test --test corpus
+tools/run-logged.sh dotnet unit -- dotnet test
+DISCO_ELYSIUM_GCT_INGAME_TESTS=1 \
+  tools/run-logged.sh dotnet in-game -- dotnet test tools/GameAutomation.Tests
+```
+
+It tees, so a long run can still be watched, and it exits with the command's own status.
+
+The naming is written out twice - `tools/GameAutomation/RunLog.cs` for the runs that can
+call it, `tools/run-logged.sh` for the ones that cannot, since the script has to work
+before anything is built and the harness has to work without a shell. `RunLogTests` runs
+both and fails if they disagree.
+
 ## Safety rules baked into the scripts
 
 - **The repo's reference material is never written to.** `deploy.ps1` refuses any target

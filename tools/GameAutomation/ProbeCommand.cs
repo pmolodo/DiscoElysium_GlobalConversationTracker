@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 
 namespace GlobalConversationTracker.Automation
 {
@@ -33,6 +35,17 @@ namespace GlobalConversationTracker.Automation
 
         /// <summary>Ask the probe to report the state a scenario cares about.</summary>
         public const string Report = "report";
+
+        /// <summary>
+        /// Tell an open conversation to go on to its next line.
+        /// </summary>
+        /// <remarks>
+        /// The game's own continue, called on the dialogue UI, rather than an Enter sent
+        /// at the window: a keypress goes wherever the focus is and cannot be aimed at a
+        /// line rather than at a menu, which is how a run ends up picking dialogue options
+        /// it never meant to.
+        /// </remarks>
+        public const string Advance = "advance";
 
         /// <summary>Apply one look-ahead suite's state and runtime settings.</summary>
         public const string PrepareLookAheadSuite = "prepare-look-ahead-suite";
@@ -82,6 +95,50 @@ namespace GlobalConversationTracker.Automation
         {
             Send(saveGamesFolder, StartConversation, "conversation", conversationId);
         }
+
+        /// <summary>Asks the probe to advance the open conversation by one line.</summary>
+        /// <param name="saveGamesFolder">The profile's SaveGames folder.</param>
+        public static void SendAdvance(string saveGamesFolder)
+        {
+            Send(saveGamesFolder, Advance);
+        }
+
+        /// <summary>Waits until the probe has picked up whatever command is pending.</summary>
+        /// <remarks>
+        /// THE FILE IS THE SIGNAL, not an event. The probe deletes a command before running
+        /// it, so the file going away means it has been taken - which is all a caller
+        /// needs before sending the next one, and is knowable without reading the event
+        /// log at all. Waiting on the probe's ACKNOWLEDGEMENT instead would mean scanning
+        /// the log, and a scan consumes what it passes: the line or menu the command
+        /// produced gets swallowed by the wait for the answer that reported it.
+        /// </remarks>
+        /// <param name="saveGamesFolder">The profile's SaveGames folder.</param>
+        /// <param name="timeout">How long to wait for it to be taken.</param>
+        /// <exception cref="TimeoutException">It was never picked up.</exception>
+        public static void WaitUntilTaken(string saveGamesFolder, TimeSpan timeout)
+        {
+            string path = PathIn(saveGamesFolder);
+            var clock = Stopwatch.StartNew();
+            while (File.Exists(path))
+            {
+                if (clock.Elapsed >= timeout)
+                {
+                    throw new TimeoutException(
+                        $"The probe did not pick up the command at {path} within "
+                        + $"{timeout.TotalSeconds:N0}s.");
+                }
+
+                Thread.Sleep(PickUpPoll);
+            }
+        }
+
+        /// <summary>How often to look for a command having been taken.</summary>
+        /// <remarks>
+        /// Far shorter than the log poll on purpose: this is a local file check between
+        /// two commands that the game answers within a frame or two, and the run advances
+        /// one line at a time through it.
+        /// </remarks>
+        private static readonly TimeSpan PickUpPoll = TimeSpan.FromMilliseconds(50);
 
         /// <summary>Asks the probe to report where the game currently is.</summary>
         /// <param name="saveGamesFolder">The profile's SaveGames folder.</param>

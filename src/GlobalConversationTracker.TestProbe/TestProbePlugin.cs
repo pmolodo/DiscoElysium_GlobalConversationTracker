@@ -3,6 +3,7 @@ using System;
 using System.IO;
 using BepInEx;
 using BepInEx.Unity.IL2CPP;
+using DiscoPages.Elements.Dialogue;
 using HarmonyLib;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using PixelCrushers.DialogueSystem;
@@ -63,7 +64,58 @@ namespace GlobalConversationTracker.TestProbe
         /// </remarks>
         internal const string ModGuid = "com.molodowitch.globalconversationtracker";
 
+        /// <summary>The field that makes an entry a white check.</summary>
+        internal const string WhiteCheckField = "DifficultyWhite";
+
+        /// <summary>The field that makes it a red one.</summary>
+        internal const string RedCheckField = "DifficultyRed";
+
         private static readonly ResponseMenuRecorder Menu = new ResponseMenuRecorder();
+
+        /// <summary>
+        /// The mouse UI's dialogue logger, once it has put a line up.
+        /// </summary>
+        /// <remarks>
+        /// WHAT ADVANCES A LINE. The game's own continue - the thing its continue button
+        /// and its hotkey call - is an instance method on the logger, so telling the
+        /// dialogue to go on means having the instance. It arrives with the first line
+        /// and stays put afterwards.
+        ///
+        /// Calling it beats sending Enter at the window: a keypress goes wherever the
+        /// focus is, cannot be aimed at a line rather than a menu, and needs the game in
+        /// front. This needs none of that.
+        /// </remarks>
+        internal static Sunshine.ConversationLogger? MouseLogger { get; private set; }
+
+        /// <summary>The page-system UI's logger, which is the one this game runs.</summary>
+        /// <remarks>
+        /// TWO UIS, TWO LOGGERS, and only one of them is live. The mod already carries the
+        /// same split for its option colouring - <c>SunshineResponseButton</c> against
+        /// <c>SunshineResponseButtonPageSystem</c> - and hooking only the mouse one here
+        /// cost a whole in-game run: the patch applied, the method was never called, and
+        /// the harness sat waiting for a line that nothing was going to announce. Both are
+        /// hooked, and whichever speaks is the one that gets told to continue.
+        /// </remarks>
+        internal static ConversationLoggerPageSystem? PageLogger { get; private set; }
+
+        /// <summary>Tells whichever dialogue UI is live to go on to the next line.</summary>
+        /// <returns>False when no line has been shown yet, so there is nothing to tell.</returns>
+        internal static bool Advance()
+        {
+            if (PageLogger != null)
+            {
+                PageLogger.OnContinue();
+                return true;
+            }
+
+            if (MouseLogger != null)
+            {
+                MouseLogger.OnContinue();
+                return true;
+            }
+
+            return false;
+        }
 
         /// <summary>Installs the hooks and the command pump.</summary>
         public override void Load()
@@ -73,6 +125,8 @@ namespace GlobalConversationTracker.TestProbe
             var harmony = new Harmony(PluginGuid);
             harmony.PatchAll(typeof(ResponseTextProbe));
             harmony.PatchAll(typeof(ResponseMenuProbe));
+            harmony.PatchAll(typeof(ConversationLineProbe));
+            harmony.PatchAll(typeof(PageConversationLineProbe));
             harmony.PatchAll(typeof(ConversationStartProbe));
             harmony.PatchAll(typeof(ConversationEndProbe));
             harmony.PatchAll(typeof(SaveLoadedProbe));
@@ -220,12 +274,111 @@ namespace GlobalConversationTracker.TestProbe
                     Menu.AddOption(new RecordedOption(
                         entry == null ? (int?)null : entry.conversationID,
                         entry == null ? (int?)null : entry.id,
-                        __result == null ? null : __result.responseText));
+                        __result == null ? null : __result.responseText,
+                        CheckKind(entry)));
                 }
                 catch (Exception error)
                 {
                     ProbeLog.Failed("an option's text", error);
                 }
+            }
+
+            /// <summary>
+            /// Which kind of roll an option is, from the game's own fields.
+            /// </summary>
+            /// <remarks>
+            /// The two difficulty fields are what make an entry a rolled check - the same
+            /// fields the shipped index carries them by, and the same ones the mod's engine
+            /// reads to decide an option gets two outcomes rather than one. Read here from
+            /// the live entry, so a suite can hold the mod to the game rather than to
+            /// itself.
+            /// </remarks>
+            private static string? CheckKind(DialogueEntry? entry)
+            {
+                if (entry == null)
+                {
+                    return null;
+                }
+
+                if (Field.FieldExists(entry.fields, WhiteCheckField))
+                {
+                    return "white";
+                }
+
+                return Field.FieldExists(entry.fields, RedCheckField) ? "red" : null;
+            }
+        }
+
+        /// <summary>
+        /// A line of dialogue going up on screen, which is a line waiting to be advanced.
+        /// </summary>
+        /// <remarks>
+        /// WHY A RUN NEEDS TO BE TOLD THIS. A conversation opens on narration and waits to
+        /// be told to go on, exactly as it would for a player, and the harness has no other
+        /// way to know a line is up. Without it the only strategy is to press Enter and see
+        /// what happens - which is what it used to do, and an Enter that arrives while a
+        /// RESPONSE menu is open picks an option instead of advancing a line. That is how
+        /// the same save opened four different menus over three runs.
+        ///
+        /// So: one event per line, and the run presses once per line it is told about and
+        /// never otherwise.
+        /// </remarks>
+        [HarmonyPatch(
+            typeof(Sunshine.ConversationLogger),
+            nameof(Sunshine.ConversationLogger.OnConversationLine))]
+        private static class ConversationLineProbe
+        {
+            /// <summary>
+            /// The parameter names have to stay <c>subtitle</c> and <c>__instance</c>.
+            /// </summary>
+            [HarmonyPostfix]
+            private static void Postfix(
+                Sunshine.ConversationLogger __instance, Subtitle subtitle)
+            {
+                // KEPT, because it is the thing that can advance the line this event
+                // announces. The logger is a scene object with no accessor the probe can
+                // call for it, and the line hook is where one arrives.
+                MouseLogger = __instance;
+                ReportLine(subtitle);
+            }
+        }
+
+        /// <summary>The same line, on the UI this game actually runs.</summary>
+        /// <remarks>
+        /// See <see cref="PageLogger"/>: the two dialogue UIs have the same shape and only
+        /// one of them speaks. Hooking both is cheaper than being sure which.
+        /// </remarks>
+        [HarmonyPatch(
+            typeof(ConversationLoggerPageSystem),
+            nameof(ConversationLoggerPageSystem.OnConversationLine))]
+        private static class PageConversationLineProbe
+        {
+            /// <summary>
+            /// The parameter names have to stay <c>subtitle</c> and <c>__instance</c>.
+            /// </summary>
+            [HarmonyPostfix]
+            private static void Postfix(
+                ConversationLoggerPageSystem __instance, Subtitle subtitle)
+            {
+                PageLogger = __instance;
+                ReportLine(subtitle);
+            }
+        }
+
+        /// <summary>Reports one line of dialogue going up, whichever UI put it there.</summary>
+        private static void ReportLine(Subtitle? subtitle)
+        {
+            try
+            {
+                DialogueEntry? entry = subtitle == null ? null : subtitle.dialogueEntry;
+                ProbeLog.Write(
+                    "line",
+                    "conversation", entry == null ? (int?)null : entry.conversationID,
+                    "entry", entry == null ? (int?)null : entry.id);
+            }
+            catch (Exception error)
+            {
+                ProbeLog.Failed("a line of dialogue", error);
             }
         }
 

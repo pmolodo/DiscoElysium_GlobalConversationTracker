@@ -8,7 +8,8 @@
 # 631, reported nothing at all for 14, 28 and 1030.
 #
 # One process each means a crash is a RESULT for that conversation and costs nothing else.
-# Every run keeps its own log, so a crashed row can still be read afterwards.
+# Every run keeps its own folder under measurements/logs, one log per conversation inside
+# it, so a crashed row can still be read afterwards - and so can the run before this one.
 #
 # Usage:
 #   tools/measure-symbolic.sh <test-name> [conversation ...]
@@ -32,7 +33,13 @@ if [ ${#CONVERSATIONS[@]} -eq 0 ]; then
     CONVERSATIONS=(368 631 14 28 1030)
 fi
 
-LOG_DIR="${LOG_DIR:-target/measurements}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# ONE FOLDER PER RUN, and under measurements/ rather than target/ - a `cargo clean` should
+# not take measurements with it, and a run's logs only mean anything as a set. LOG_DIR
+# still overrides the whole thing, which is what a one-off comparison wants.
+LOG_DIR="${LOG_DIR:-$(RUN_LOG_DIR="$ROOT/measurements/logs" \
+    "$ROOT/tools/run-logged.sh" --folder-only measure "$TEST_NAME")}"
 mkdir -p "$LOG_DIR"
 
 echo "measuring ${TEST_NAME}, one process per conversation"

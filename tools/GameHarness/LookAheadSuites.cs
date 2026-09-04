@@ -33,6 +33,22 @@ namespace GlobalConversationTracker.Harness
         public const int SiilengConversation = 451;
 
         /// <summary>
+        /// The one line Siileng's stall has to be told to go on from, before its menu.
+        /// </summary>
+        /// <remarks>
+        /// MEASURED, 2026-09-04, and the same for every balance and every save that opens
+        /// this conversation: the narration is in front of the menu and does not depend on
+        /// what is in the player's pocket or on what has been read. Named once rather than
+        /// repeated, so a change in the conversation is one edit and not five - and so
+        /// that a scenario which legitimately differs stands out.
+        ///
+        /// It counts lines that WANT an answer. The conversation puts up two, but the
+        /// second is the one the menu appears beside, and a line with a menu behind it
+        /// needs nothing.
+        /// </remarks>
+        private const int SiilengAdvances = 1;
+
+        /// <summary>
         /// The entry only a speaker buyer reaches, left unseen so that reaching it is
         /// what an orange marker means.
         /// </summary>
@@ -69,11 +85,16 @@ namespace GlobalConversationTracker.Harness
             /// <param name="save">The save that stands in the right place.</param>
             /// <param name="conversation">The conversation to open from there.</param>
             /// <param name="what">Where it is and who is there.</param>
-            public Somewhere(string save, int conversation, string what)
+            /// <param name="advances">
+            /// Lines of narration between opening it and its first menu, measured; null
+            /// where it has not been.
+            /// </param>
+            public Somewhere(string save, int conversation, string what, int? advances = null)
             {
                 Save = save;
                 Conversation = conversation;
                 What = what;
+                Advances = advances;
             }
 
             /// <summary>The save that stands in the right place.</summary>
@@ -84,6 +105,19 @@ namespace GlobalConversationTracker.Harness
 
             /// <summary>Where it is and who is there.</summary>
             public string What { get; }
+
+            /// <summary>
+            /// How many lines of narration stand between opening the conversation and its
+            /// first menu, or null where nobody has measured it.
+            /// </summary>
+            /// <remarks>
+            /// A property of the place, not of the run: a conversation opens on however
+            /// much narration its writer put in front of it, and the harness answers one
+            /// line with one continue. Measured by running - the report names the count
+            /// it took - and checked from then on, because a conversation that suddenly
+            /// needs a different number is not the one the scenario was written against.
+            /// </remarks>
+            public int? Advances { get; }
         }
 
         /// <summary>Siileng's stall on the canal, where the sneakers are.</summary>
@@ -92,19 +126,19 @@ namespace GlobalConversationTracker.Harness
 
         /// <summary>The player's own room, where a new game starts.</summary>
         public static Somewhere CeilingFan { get; } =
-            new Somewhere("at-the-fan", 9, "the ceiling fan, in the player's own room");
+            new Somewhere("at-the-fan", 9, "the ceiling fan, in the player's own room", 0);
 
         /// <summary>Klaasje's room on the Whirling's second floor.</summary>
         public static Somewhere KlaasjesNote { get; } =
-            new Somewhere("at-klaasjes-note", 717, "Klaasje's note, in her room");
+            new Somewhere("at-klaasjes-note", 717, "Klaasje's note, in her room", 1);
 
         /// <summary>The cafeteria on the Whirling's ground floor.</summary>
         public static Somewhere Garte { get; } =
-            new Somewhere("at-garte", 28, "Garte, behind the cafeteria counter");
+            new Somewhere("at-garte", 28, "Garte, behind the cafeteria counter", 1);
 
         /// <summary>The balcony off the same floor.</summary>
         public static Somewhere Smoker { get; } =
-            new Somewhere("at-the-smoker", 892, "the smoker on the balcony");
+            new Somewhere("at-the-smoker", 892, "the smoker on the balcony", 0);
 
         /// <summary>Joyce's sloop, at the pier.</summary>
         public static Somewhere Joyce { get; } =
@@ -225,19 +259,27 @@ namespace GlobalConversationTracker.Harness
                         Orange(InspectSpeakersEntry, "and so does looking at the other"),
                         Unmarked(LeaveEntry, "leaving reaches nothing at all"),
                     },
-                    money: 5100),
+                    money: 5100,
+                    advances: SiilengAdvances,
+                    // Nothing in this conversation rolls anything, so nothing in it may
+                    // carry a Pass / Fail line - including the option that leads to a
+                    // purchase, which is a choice with two outcomes in every sense except
+                    // the one the line is about.
+                    branchPolicy: BranchPolicy.NoneAnywhere),
                 new LookAheadScenario(
                     "afford-only-sneakers",
                     SiilengConversation,
                     "25 centimes left after the sneakers, so the speakers are not affordable",
                     AllUnmarked("the speakers are out of reach once the sneakers are paid for"),
-                    money: 5025),
+                    money: 5025,
+                    advances: SiilengAdvances),
                 new LookAheadScenario(
                     "afford-neither",
                     SiilengConversation,
                     "the sneakers cannot be bought at all",
                     AllUnmarked("nothing on the path is affordable"),
-                    money: 4900),
+                    money: 4900,
+                    advances: SiilengAdvances),
             },
             // Costs this suite nothing - it makes the mod write a summary it would
             // otherwise keep to itself - and this is the suite with the most crawls to
@@ -355,7 +397,8 @@ namespace GlobalConversationTracker.Harness
                         Unmarked(LeaveEntry, "nothing it reaches outranks it, and no budget "
                             + "is needed to know that"),
                     },
-                    money: 5100),
+                    money: 5100,
+                    advances: SiilengAdvances),
             },
             pluginSettings: new Dictionary<string, string>
             {
@@ -392,7 +435,21 @@ namespace GlobalConversationTracker.Harness
                     SiilengConversation,
                     "the balance that marks three options, with the feature switched off",
                     AllUnmarked("look-ahead marking is disabled"),
-                    money: 5100),
+                    money: 5100,
+                    advances: SiilengAdvances,
+                    branchPolicy: BranchPolicy.NoneAnywhere),
+                // A SECOND CONVERSATION, and one that can offer a rolled check, because
+                // the switch has a second thing to turn off now: the Pass / Fail line.
+                // Siileng's stall rolls nothing, so on its own it could not tell a switch
+                // that works from a line that was never going to be drawn there.
+                new LookAheadScenario(
+                    Smoker.Save,
+                    Smoker.Conversation,
+                    $"{Smoker.What}, which can offer a check, with the feature switched off",
+                    Array.Empty<OptionExpectation>(),
+                    markers: MarkerPolicy.NoneAnywhere,
+                    advances: Smoker.Advances,
+                    branchPolicy: BranchPolicy.NoneAnywhere),
             },
             pluginSettings: new Dictionary<string, string>
             {
@@ -440,7 +497,8 @@ namespace GlobalConversationTracker.Harness
                             "not read here, so it already ranks as high as anything it reaches"),
                         Unmarked(LeaveEntry, "leaving reaches nothing at all"),
                     },
-                    money: 5100),
+                    money: 5100,
+                    advances: SiilengAdvances),
             });
 
         /// <summary>
@@ -464,7 +522,8 @@ namespace GlobalConversationTracker.Harness
                     SiilengConversation,
                     "every entry read in this save",
                     AllUnmarked("there is nothing here this save has not read"),
-                    money: 5100),
+                    money: 5100,
+                    advances: SiilengAdvances),
             },
             pluginSettings: KeepStatistics,
             artefacts: new[]
@@ -524,13 +583,33 @@ namespace GlobalConversationTracker.Harness
                 .ToArray();
 
         /// <summary>A scenario that says nothing in the menu should be marked.</summary>
+        /// <remarks>
+        /// It says something about the Pass / Fail lines all the same, and can, because
+        /// the claim is a rule rather than a list: on a profile that has recorded nothing,
+        /// every outcome of every check lands on text no save has read, so both words are
+        /// orange - and nothing can outrank the top rung, so neither carries an asterisk.
+        /// Every option that rolls nothing gets no line at all, which is the half that
+        /// catches a line invented for an option with one outcome.
+        ///
+        /// A FAILURE HERE IS WORTH READING BEFORE IT IS BELIEVED. These saves are real
+        /// playthroughs, so an entry may be read in the SAVE while the global state is
+        /// empty; a check whose outcome lands on one of those would draw that word dark
+        /// red, correctly. The run prints every line it read, so the log says which.
+        /// </remarks>
         private static LookAheadScenario Nothing(Somewhere where) =>
             new LookAheadScenario(
                 where.Save,
                 where.Conversation,
                 $"{where.What}, on a profile that has recorded nothing",
                 Array.Empty<OptionExpectation>(),
-                markers: MarkerPolicy.NoneAnywhere);
+                markers: MarkerPolicy.NoneAnywhere,
+                advances: where.Advances,
+                branchPolicy: BranchPolicy.EveryCheck,
+                branches: new BranchExpectation(
+                    new BranchHalf(BranchColour.Orange),
+                    new BranchHalf(BranchColour.Orange),
+                    "nothing has been read anywhere, so both outcomes land on unread text "
+                        + "and neither can reach anything that outranks it"));
 
     /// <summary>
     /// Checks that nothing was actually searched.
