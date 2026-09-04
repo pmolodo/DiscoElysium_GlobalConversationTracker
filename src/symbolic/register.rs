@@ -368,7 +368,13 @@ impl<'a> RegisterOps<'a> {
 
         // Landed below the ceiling: exactly one value came here, and it is this one minus
         // the amount. Only values at or above `amount` can have been reached by adding it.
-        let below = if amount > ceiling {
+        //
+        // AT OR ABOVE, not merely above. Adding the ceiling itself to any value the
+        // register can hold reaches the ceiling, so nothing can land below it and the
+        // branch is empty - the same answer the forward `saturating_add` gives, which
+        // sends everything to the ceiling from `amount >= ceiling` upwards. Guarding only
+        // the greater-than case left `ceiling - amount - 1` to evaluate 0 - 1 on unsigned.
+        let below = if amount >= ceiling {
             self.bottom.clone()
         } else {
             let landed = states.and(&self.at_least(amount)).ok()?;
