@@ -82,6 +82,30 @@ impl StateSymbols {
     pub fn name_of(&self, index: usize) -> Option<&str> {
         self.names.get(index).map(|s| s.as_str())
     }
+
+    /// The table with only the slots `keep` marks, plus the old-to-new index map.
+    ///
+    /// The map has one entry per slot of THIS table and holds `-1` where the slot has
+    /// gone, so a caller renumbering slot indices baked into something else - a node's
+    /// flag, seen and once slots, an action's target - can tell "moved to 0" from
+    /// "dropped" without a second lookup. Kept slots keep their relative order, which
+    /// keeps the numbering a deterministic function of the untrimmed one, and therefore
+    /// keeps a symbolic variable order repeatable across runs.
+    ///
+    /// A slot shorter than `keep` covers is dropped: saying nothing about a slot is not
+    /// the same as asking for it.
+    pub fn retaining(&self, keep: &[bool]) -> (Self, Vec<i32>) {
+        let mut kept = Self::new();
+        let mut map = vec![-1i32; self.names.len()];
+
+        for (index, name) in self.names.iter().enumerate() {
+            if keep.get(index).copied().unwrap_or(false) {
+                map[index] = kept.intern(name.clone()) as i32;
+            }
+        }
+
+        (kept, map)
+    }
 }
 
 impl Default for StateSymbols {

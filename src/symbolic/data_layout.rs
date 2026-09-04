@@ -30,6 +30,7 @@ use crate::core::state::{
     StateSymbols, ITEM_PREFIX, ONCE_PREFIX, SEEN_PREFIX, TASK_PREFIX, THOUGHT_PREFIX,
 };
 use crate::graph::graph::LookAheadGraph;
+use crate::graph::node::LookAheadNode;
 
 /// Minutes in a day; the clock is wrapped into `0..MINUTES_IN_DAY`.
 const MINUTES_IN_DAY: u32 = 1440;
@@ -257,25 +258,39 @@ impl DataLayout {
     /// `LookAheadEngine::enter_rolled` reads them to decide whether a check can be
     /// attempted, so a layout without them would let a check be retried for ever.
     pub fn read_by(graph: &LookAheadGraph) -> HashSet<String> {
-        Self::read_by_some(graph, graph.nodes().map(|node| node.id))
+        Self::read_by_nodes(graph.nodes(), graph.symbols())
     }
 
     /// The same, for SOME of the entries rather than all of them.
     ///
     /// What a per-target analysis needs: the names read on the paths that can reach one
-    /// entry, rather than the names read anywhere in the group. Shared with
-    /// [`Self::read_by`] rather than written twice, because a second copy of the reading
-    /// rules is a copy that drifts - the modelling-gaps report carries the scar of
-    /// exactly that.
+    /// entry, rather than the names read anywhere in the group.
     pub fn read_by_some(
         graph: &LookAheadGraph,
         nodes: impl IntoIterator<Item = crate::core::types::DialogueNodeId>,
     ) -> HashSet<String> {
-        let mut names = HashSet::new();
-        let symbols = graph.symbols();
+        Self::read_by_nodes(
+            nodes.into_iter().filter_map(|id| graph.get(id)),
+            graph.symbols(),
+        )
+    }
 
-        for id in nodes {
-            let Some(node) = graph.get(id) else { continue };
+    /// The reading rules themselves, over entries that need not be a graph yet.
+    ///
+    /// Nodes and a symbol table are all the rules ever needed, and taking those rather
+    /// than a `LookAheadGraph` is what lets `build_group_graph` ask the question DURING
+    /// construction - the point at which the slots nothing reads can still be dropped.
+    ///
+    /// The one implementation, shared by both callers above rather than written twice: a
+    /// second copy of the reading rules is a copy that drifts, and the modelling-gaps
+    /// report carries the scar of exactly that.
+    pub fn read_by_nodes<'a>(
+        nodes: impl IntoIterator<Item = &'a LookAheadNode>,
+        symbols: &StateSymbols,
+    ) -> HashSet<String> {
+        let mut names = HashSet::new();
+
+        for node in nodes {
             Self::read_by_guard(&node.guard, &mut names);
 
             for slot in [node.flag_slot, node.failed_flag_slot] {

@@ -17,12 +17,13 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::core::guard::GuardExpression;
-use crate::core::state::StateSymbols;
+use crate::core::state::{StateSymbols, ONCE_PREFIX, SEEN_PREFIX};
 use crate::core::types::{DialogueCheckKind, DialogueNodeId};
 use crate::graph::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
 use crate::parser::action_parser::parse_actions;
 use crate::parser::guard_parser::parse_guard;
+use crate::symbolic::data_layout::DataLayout;
 
 /// Field names as the asset spells them.
 const PASSIVE_FIELD: &str = "DifficultyPass";
@@ -385,7 +386,101 @@ pub fn build_group_graph(
         }
     }
 
+    let (nodes, symbols) = keeping_only_read_slots(nodes, symbols);
+
     Ok((LookAheadGraph::new(nodes, symbols)?, group))
+}
+
+/// Drops every slot no guard in the group reads, renumbering what is left.
+///
+/// ## Why it is exact
+///
+/// A conversation group is closed under links, so a crawl over it only ever evaluates
+/// guards belonging to it. A slot no guard in the group reads cannot change which entries
+/// are reachable, whatever an action writes to it - it is write-only for the length of
+/// any crawl. So this removes no information: it removes carrying.
+///
+/// ## Why it is worth doing
+///
+/// Between a quarter and nearly a half of a group's slots are like this - measured, in
+/// `tests/unread_slots.rs` - and the explicit crawl's cost is dominated by copying and
+/// comparing the slot vector, about seventy per cent of the per-state cost on the widest
+/// group. The slots are written by actions, copied for every state, hashed and compared,
+/// and can never change an answer.
+///
+/// The symbolic side has done this since it existed, in
+/// [`DataLayout::keeping_only_read`], which is where the rule comes from. This puts it
+/// one level lower, so both engines get a graph that never mentions the dropped slots
+/// rather than each trimming its own copy.
+///
+/// ## What is kept
+///
+/// - Every name any guard reads, which [`DataLayout::read_by_nodes`] computes, including
+///   the subjects of the queries answered from crawl state and a rolled check's own pass
+///   and fail flags.
+/// - The engine's bookkeeping, `seen:` and `once:`. No guard mentions either and every
+///   crawl depends on both - a seen marker is what closes a once-only check, a once
+///   marker is what stops a purchase being charged twice.
+///
+/// `once:` slots do not exist yet at this point - [`LookAheadGraph::new`] interns them,
+/// after this - so the prefix guards nothing today. It is here because the rule is "the
+/// engine's own bookkeeping stays", not "seen stays", and a later change that moved the
+/// interning earlier should not quietly cost every once slot in the game.
+///
+/// ## Where a mistake would show
+///
+/// In ANSWERS, not in performance: a slot index is baked into the nodes, so a
+/// misnumbering sends a read somewhere else rather than degrading quietly. Every crawl
+/// test asserts on what a search finds, `tests/corpus.rs` runs the builders over the whole
+/// shipped database, and `tests/backward_oracle.rs` compares this crawl against the
+/// symbolic search, which numbers its own variables independently.
+fn keeping_only_read_slots(
+    nodes: Vec<LookAheadNode>,
+    symbols: StateSymbols,
+) -> (Vec<LookAheadNode>, StateSymbols) {
+    let reads = DataLayout::read_by_nodes(nodes.iter(), &symbols);
+
+    let keep: Vec<bool> = (0..symbols.count())
+        .map(|slot| match symbols.name_of(slot) {
+            Some(name) => {
+                name.starts_with(SEEN_PREFIX)
+                    || name.starts_with(ONCE_PREFIX)
+                    || reads.contains(name)
+            }
+            // A slot with no name is one this table never interned, so there is nothing
+            // to keep and nothing pointing at it.
+            None => false,
+        })
+        .collect();
+
+    let (kept, map) = symbols.retaining(&keep);
+
+    let renumber = |slot: i32| -> i32 {
+        usize::try_from(slot)
+            .ok()
+            .and_then(|slot| map.get(slot).copied())
+            .unwrap_or(-1)
+    };
+
+    let nodes = nodes
+        .into_iter()
+        .map(|mut node| {
+            node.flag_slot = renumber(node.flag_slot);
+            node.failed_flag_slot = renumber(node.failed_flag_slot);
+            node.seen_slot = renumber(node.seen_slot);
+            // An action whose slot has gone is REMOVED rather than renumbered - see
+            // `DialogueAction::renumbered` for why writing -1 would be a different thing
+            // entirely.
+            node.actions = node
+                .actions
+                .into_iter()
+                .filter_map(|action| action.renumbered(&map))
+                .collect();
+            node
+        })
+        .collect();
+
+    (nodes, kept)
 }
 
 /// An entry's outgoing links, pairing each destination entry with its conversation.

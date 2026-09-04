@@ -122,6 +122,40 @@ impl DialogueAction {
         }
     }
 
+    /// Whether this action's `slot` names a slot at all.
+    ///
+    /// Only the two that write one do. For every other kind `slot` is `-1`, which is a
+    /// marker rather than an index - see the field.
+    pub fn writes_slot(&self) -> bool {
+        matches!(self.kind, DialogueActionKind::Assign | DialogueActionKind::Increment)
+    }
+
+    /// The same action against a renumbered symbol table, or `None` if its slot has gone.
+    ///
+    /// `map` is [`crate::core::state::StateSymbols::retaining`]'s old-to-new index map.
+    ///
+    /// NONE MEANS REMOVE THE ACTION, and the caller must. Writing `-1` into the slot
+    /// instead would not disable the write: `-1` is what money and unmodelled actions
+    /// carry, so an `Assign` holding it is not "no slot" but a slot index of minus one,
+    /// and `apply` would cast it straight to a `usize`. Removal is also what is actually
+    /// meant - a dropped slot is one nothing reads, so the write cannot change an answer.
+    pub fn renumbered(mut self, map: &[i32]) -> Option<Self> {
+        if !self.writes_slot() {
+            return Some(self);
+        }
+
+        let moved = usize::try_from(self.slot)
+            .ok()
+            .and_then(|slot| map.get(slot).copied())
+            .unwrap_or(-1);
+        if moved < 0 {
+            return None;
+        }
+
+        self.slot = moved;
+        Some(self)
+    }
+
     pub fn kind(&self) -> DialogueActionKind { self.kind }
     pub fn slot(&self) -> i32 { self.slot }
     pub fn value(&self) -> i32 { self.value }
