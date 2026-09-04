@@ -5,12 +5,24 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
+using GlobalConversationTracker.Core;
+
 namespace NtwtfDecode;
 
 /// <summary>Builds a game-ready archive from an expanded sparse save source.</summary>
 public static class ExpandedSave
 {
     public const string DiffManifestFileName = "_archive.json";
+
+    /// <summary>What the manifest of an expanded save built on another one calls itself.</summary>
+    /// <remarks>
+    /// A constant rather than the literal it was written as twice - the writer's and the
+    /// reader's copies were the same string only because nobody had changed one of them.
+    /// </remarks>
+    public const string DiffFormat = "expanded-save-diff";
+
+    /// <summary>The version of it this build writes.</summary>
+    public const int FormatVersion = 1;
 
     private static readonly Regex TimestampPattern = new(
         @"\(\d{1,2}_\d{1,2}_\d{4} \d{1,2}-\d{2}-\d{2} (?:AM|PM)\)$",
@@ -294,7 +306,8 @@ public static class ExpandedSave
         }
         var manifest = new JsonObject
         {
-            [LuaJson.FormatName] = "expanded-save-diff",
+            [LuaJson.FormatName] = DiffFormat,
+            [FormatStamp.PropertyName] = FormatVersion,
             ["base"] = Path.GetRelativePath(directory, fullBaseline)
                 .Replace(Path.DirectorySeparatorChar, '/'),
             ["members"] = members,
@@ -337,12 +350,19 @@ public static class ExpandedSave
     {
         JsonObject manifest = JsonNode.Parse(File.ReadAllText(manifestPath)) as JsonObject
             ?? throw new InvalidDataException($"'{manifestPath}' is not a JSON object");
-        if (manifest[LuaJson.FormatName]?.GetValue<string>() != "expanded-save-diff"
+        if (manifest[LuaJson.FormatName]?.GetValue<string>() != DiffFormat
             || manifest["base"]?.GetValue<string>() is not string relativeBase
             || manifest["members"] is not JsonArray members)
         {
             throw new InvalidDataException($"'{manifestPath}' is not an expanded save diff");
         }
+
+        // BEFORE THE CHAIN IS WALKED. A manifest from a newer build may name members this
+        // one would resolve wrongly, and what follows writes a save.
+        FormatStamp.EnsureReadable(
+            DiffFormat,
+            manifest[FormatStamp.PropertyName]?.GetValue<int>() ?? FormatStamp.Unstamped,
+            FormatVersion);
 
         chain ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         Descend(chain, source, manifestPath);

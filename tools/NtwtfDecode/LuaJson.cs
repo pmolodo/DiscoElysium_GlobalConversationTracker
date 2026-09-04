@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Numerics;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using GlobalConversationTracker.Core;
 using GlobalConversationTracker.Persistence;
 
 namespace NtwtfDecode;
@@ -30,12 +31,18 @@ public static class LuaJson
     /// When given, the representation to record as a leading <see cref="FormatName"/>
     /// property. Only a whole table can carry one.
     /// </param>
+    /// <param name="formatVersion">
+    /// Which version of that representation, written beside it. Ignored when
+    /// <paramref name="format"/> is null: a file that does not say what it is has
+    /// nothing for a version to be a version of.
+    /// </param>
     public static void Write(
         Stream stream,
         object? value,
         int? indent,
         string tablePath = DefaultTablePath,
-        string? format = null
+        string? format = null,
+        int formatVersion = FormatStamp.Unstamped
     )
     {
         var options = new JsonWriterOptions
@@ -60,7 +67,7 @@ public static class LuaJson
         }
         else if (value is LuaTable table)
         {
-            WriteTable(writer, table, tablePath, format);
+            WriteTable(writer, table, tablePath, format, formatVersion);
         }
         else
         {
@@ -129,6 +136,44 @@ public static class LuaJson
         return reader.TokenType == JsonTokenType.String ? reader.GetString() : null;
     }
 
+    /// <summary>
+    /// The version a JSON object records for its format, or
+    /// <see cref="FormatStamp.Unstamped"/> when it records none.
+    /// </summary>
+    /// <remarks>
+    /// Reads only the two leading properties, so it costs nothing on a large file - and
+    /// takes the same view of an unstamped file every other reader here does: it is
+    /// version 1, because every format was stamped without changing its shape.
+    /// </remarks>
+    public static int VersionOf(Stream stream)
+    {
+        var reader = new Utf8JsonReader(ReadLeadingBytes(stream));
+        if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
+        {
+            return FormatStamp.Unstamped;
+        }
+
+        // Past the format name and its value, which is what a version sits after.
+        for (int skip = 0; skip < 2; skip++)
+        {
+            if (!reader.Read())
+            {
+                return FormatStamp.Unstamped;
+            }
+        }
+
+        if (reader.TokenType != JsonTokenType.PropertyName
+            || reader.GetString() != FormatStamp.PropertyName
+            || !reader.Read())
+        {
+            return FormatStamp.Unstamped;
+        }
+
+        return reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out int version)
+            ? version
+            : FormatStamp.Unstamped;
+    }
+
     private static byte[] ReadLeadingBytes(Stream stream)
     {
         // Enough for the opening brace, the property name and a short value.
@@ -193,7 +238,8 @@ public static class LuaJson
         Utf8JsonWriter writer,
         LuaTable table,
         string path,
-        string? format = null
+        string? format = null,
+        int formatVersion = FormatStamp.Unstamped
     )
     {
         if (table.NumListEntries < 0 || table.NumListEntries > table.Count)
@@ -208,6 +254,11 @@ public static class LuaJson
         if (format is not null)
         {
             writer.WriteString(FormatName, format);
+
+            // BESIDE THE NAME, AND ONLY WHERE THERE IS A NAME. A file that does not say
+            // which representation it is in has nothing for a version to be a version OF,
+            // and the two are read together or not at all.
+            writer.WriteNumber(FormatStamp.PropertyName, formatVersion);
         }
         if (table.NumListEntries > 0)
         {
@@ -269,7 +320,7 @@ public static class LuaJson
     /// </summary>
     private static void ClaimName(HashSet<string> used, string name, string path)
     {
-        if (name == ListCountName || name == FormatName)
+        if (name == ListCountName || name == FormatName || name == FormatStamp.PropertyName)
         {
             // Either would be read back as this object's own bookkeeping.
             throw new InvalidDataException(
@@ -305,6 +356,16 @@ public static class LuaJson
         if (more && properties.Current.Name == FormatName)
         {
             more = properties.MoveNext();
+
+            // AND ITS VERSION, WHICH ONLY FOLLOWS A NAME. Skipped rather than checked
+            // here: this reads one table out of a file, and which versions of a format
+            // this build can read is the format's own business - see the callers, which
+            // ask FormatStamp before they get this far. A file written before the stamp
+            // existed has no such property and reads exactly as it did.
+            if (more && properties.Current.Name == FormatStamp.PropertyName)
+            {
+                more = properties.MoveNext();
+            }
         }
 
         // The list boundary leads the object when there is one; without it the

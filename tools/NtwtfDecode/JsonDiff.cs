@@ -2,12 +2,17 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
+using GlobalConversationTracker.Core;
+
 namespace NtwtfDecode;
 
 /// <summary>A recursive overlay for general JSON documents, including arrays and nulls.</summary>
 public static class JsonDiff
 {
     public const string Format = "json-diff";
+
+    /// <summary>The version of it this build writes.</summary>
+    public const int FormatVersion = 1;
 
     /// <summary>Creates a diff document, or null when the documents are equal.</summary>
     public static JsonObject? Create(JsonNode? baseline, JsonNode? target)
@@ -21,7 +26,11 @@ public static class JsonDiff
         // Both members are left out when they have nothing to say. A diff that changes
         // one field should read as that one field; "_remove": [] on every file is noise
         // that a reader has to look past to find the change.
-        var patch = new JsonObject { [LuaJson.FormatName] = Format };
+        var patch = new JsonObject
+        {
+            [LuaJson.FormatName] = Format,
+            [FormatStamp.PropertyName] = FormatVersion,
+        };
         if (removed.Count > 0)
         {
             patch["_remove"] = removed;
@@ -40,6 +49,13 @@ public static class JsonDiff
         {
             throw new InvalidDataException($"{context} is not a {Format} JSON file");
         }
+
+        // Absent means version 1, which is what every file written before the
+        // stamp existed is - the shape did not change when it was added.
+        FormatStamp.EnsureReadable(
+            Format,
+            patch[FormatStamp.PropertyName]?.GetValue<int>() ?? FormatStamp.Unstamped,
+            FormatVersion);
 
         // Absent means empty, for both. Only the format marker is required, so a diff
         // that removes nothing and a diff that changes nothing each say only what they

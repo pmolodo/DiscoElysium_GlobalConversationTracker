@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 using GlobalConversationTracker.Persistence;
 
+using GlobalConversationTracker.Core;
+
 namespace NtwtfDecode;
 
 /// <summary>Reads and writes the six-file split representation of a save blob.</summary>
@@ -14,6 +16,15 @@ public static class LuaSplitFiles
 
     /// <summary>The smaller representation, which keeps the data but not the layout.</summary>
     public const string SparseFormat = "sparse";
+
+    /// <summary>The version of both representations this build writes.</summary>
+    /// <remarks>
+    /// ONE NUMBER FOR BOTH, because they are one decision: a split save is
+    /// written entirely in one form or the other, and a directory that mixed
+    /// them is already refused. Two versions to keep in step would be two
+    /// chances to forget.
+    /// </remarks>
+    public const int FormatVersion = 1;
 
     /// <summary>Writes five table JSON files and one trailing-data binary file.</summary>
     /// <param name="sparse">
@@ -36,7 +47,8 @@ public static class LuaSplitFiles
             }
             else
             {
-                LuaJson.Write(stream, table, indent, name, DenseFormat);
+                LuaJson.Write(
+                    stream, table, indent, name, DenseFormat, FormatVersion);
             }
             stream.WriteByte((byte)'\n');
         }
@@ -156,7 +168,17 @@ public static class LuaSplitFiles
         foreach (string name in RawDataParser.TableNames)
         {
             using FileStream stream = File.OpenRead(TablePath(directory, name));
-            if (LuaJson.FormatOf(stream) == SparseFormat)
+            string? form = LuaJson.FormatOf(stream);
+
+            // BEFORE ANYTHING IS PARSED, and for either form. A file from a newer build
+            // may hold a shape this one would half-read, and half-reading a save is how a
+            // save gets corrupted by the write that follows.
+            if (form is not null)
+            {
+                FormatStamp.EnsureReadable(form, LuaJson.VersionOf(stream), FormatVersion);
+            }
+
+            if (form == SparseFormat)
             {
                 trees[name] = SparseJson.Read(stream);
             }
@@ -252,9 +274,16 @@ public static class LuaSplitFiles
         foreach (string name in RawDataParser.TableNames)
         {
             SparseMap map = LuaSparse.Encode(TableOf(root, name), name, conversations);
+
+            // Leading, and the version straight after the name, so the two read together
+            // and a reader can find both without parsing the file.
             map.Entries.Insert(
                 0,
                 new KeyValuePair<string, object?>(LuaJson.FormatName, SparseFormat)
+            );
+            map.Entries.Insert(
+                1,
+                new KeyValuePair<string, object?>(FormatStamp.PropertyName, FormatVersion)
             );
             trees[name] = map;
         }

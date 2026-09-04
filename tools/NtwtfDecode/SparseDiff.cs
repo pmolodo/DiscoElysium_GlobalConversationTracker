@@ -1,11 +1,16 @@
 // SPDX-License-Identifier: MIT
 
+using GlobalConversationTracker.Core;
+
 namespace NtwtfDecode;
 
 /// <summary>A recursive JSON-object overlay against a sparse split baseline.</summary>
 public static class SparseDiff
 {
     public const string DiffFormat = "sparse-diff";
+
+    /// <summary>The version of it this build writes.</summary>
+    public const int FormatVersion = 1;
 
     private const string ChangesName = "_changes";
     private const string RemoveName = "_remove";
@@ -22,6 +27,7 @@ public static class SparseDiff
 
         var patch = new SparseMap();
         patch.Add(LuaJson.FormatName, DiffFormat);
+        patch.Add(FormatStamp.PropertyName, FormatVersion);
 
         // Left out when empty, like the JSON form: a table diff that only changes a
         // value should read as that value.
@@ -48,6 +54,13 @@ public static class SparseDiff
         {
             throw new InvalidDataException($"{context} is not a {DiffFormat} JSON file");
         }
+
+        // Absent means version 1, which is what every diff written before
+        // the stamp existed is - the shape did not change when it arrived.
+        FormatStamp.EnsureReadable(
+            DiffFormat,
+            patch.Find(FormatStamp.PropertyName) as int? ?? FormatStamp.Unstamped,
+            FormatVersion);
         // Absent means empty for both, so a patch states only what it does.
         SparseMap removals = OptionalMap(patch, RemoveName, context);
         SparseMap changes = OptionalMap(patch, ChangesName, context);

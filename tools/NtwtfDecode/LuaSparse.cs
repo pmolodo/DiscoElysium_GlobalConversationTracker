@@ -56,6 +56,7 @@ public static class LuaSparse
         KeysName,
         RetiredReorderName,
         LuaJson.FormatName,
+        FormatStamp.PropertyName,
     };
 
     /// <summary>The table whose variables mirror another table's data.</summary>
@@ -177,6 +178,13 @@ public static class LuaSparse
             if (entry.Key == LuaJson.FormatName && table.Count == 0)
             {
                 // Which representation this is; the caller has already acted on it.
+                continue;
+            }
+            if (entry.Key == FormatStamp.PropertyName && table.Count == 0)
+            {
+                // And which version of it, likewise. Only leading, and only beside the
+                // name - deeper in the tree it would be an ordinary key, and the check
+                // below is what says so.
                 continue;
             }
             if (entry.Key == LuaSimX.HeaderName)

@@ -159,10 +159,16 @@ fn changes(document: &serde_json::Value) -> Option<&serde_json::Map<String, serd
 
 /// Keys a part carries that are about the FILE rather than about the world.
 ///
-/// `_derived_simx` is the packer's own index into the entry tables; `_format` says which
-/// of the two shapes above the document is in. Neither is a dialogue variable, and a world
-/// that answered one as though it were would be answering a question no guard asks.
-const NOT_A_VARIABLE: [&str; 2] = ["_format", "_derived_simx"];
+/// `_derived_simx` is the packer's own index into the entry tables; `_format` says which of
+/// the two shapes above the document is in, and `_formatVersion` which version of it. None
+/// is a dialogue variable, and a world that answered one as though it were would be
+/// answering a question no guard asks.
+///
+/// `_formatVersion` is here BEFORE ANY COMMITTED SAVE CARRIES ONE. The stamp was added
+/// while the shapes were unchanged, so the saves in this repository are unstamped and read
+/// as version 1; the first one regenerated will carry it, and a reader that learned about
+/// it only then would have been wrong in between with nothing to say so.
+const NOT_A_VARIABLE: [&str; 3] = ["_format", "_formatVersion", "_derived_simx"];
 
 /// Every dialogue variable a save holds, with the bases it rests on merged in.
 ///
