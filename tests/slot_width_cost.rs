@@ -24,14 +24,24 @@
 //! Dropping the slots no guard reads (de-f9gt.1), all-seen, 100,000 states:
 //!
 //! ```text
-//!   conv   slots  us/state        slots  us/state
-//!    631     518      3.32   ->     245      2.13
-//!     14     436      3.15   ->     232      2.02
+//!   conv    before          after         saving
+//!         slots us/state  slots us/state
+//!    362    146     1.55    102     1.37     12%
+//!     28    256     2.04    136     1.51     26%
+//!    368    337     2.26    217     1.78     21%
+//!     14    436     2.86    232     1.90     34%
+//!    631    518     3.35    245     2.02     40%
 //! ```
 //!
-//! Thirty-six per cent off the per-state cost of both, against a prediction of a quarter to
-//! a third - the trim went further than the prediction because dropping an action can drop
-//! the `once:` slot that existed to stop it firing twice.
+//! Against a prediction of a quarter to a third on the heavy groups. It tracks how much of
+//! a group's width the trim removed rather than how wide the group was: 362 kept most of
+//! its slots and saved least.
+//!
+//! READ A ROW ONLY AGAINST OTHER ROWS OF THE SAME RUN. Five groups measured in one process
+//! give different absolute figures from two measured alone - the first version of this
+//! table had 631 at 3.32 and 14 at 3.15 from a two-row run - because what is in cache when
+//! a row starts depends on what ran before it. The savings survive that; the absolute
+//! microseconds do not.
 //!
 //! Run it with `--ignored --release`.
 
@@ -41,8 +51,13 @@ use lookahead_engine::index::{build_group_graph, read_index};
 
 mod common;
 
-/// The two widest groups, which is where the slot vector's share of the cost is largest.
-const MEASURED: [i32; 2] = [631, 14];
+/// The five groups de-f9gt profiled, narrowest first, so the rows sit beside its table.
+///
+/// The spread is the point rather than the worst case alone: the slot-proportional share
+/// of per-state cost runs from about 38 per cent on the narrowest of these to about 70 on
+/// the widest, so a change that only helps the widest looks different from one that helps
+/// all five.
+const MEASURED: [i32; 5] = [362, 28, 368, 14, 631];
 
 /// How many states each crawl explores before it is stopped.
 ///
