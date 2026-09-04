@@ -57,6 +57,54 @@ namespace GlobalConversationTracker.TestProbe
         /// </remarks>
         internal const string AdvanceCommand = "advance";
 
+        /// <summary>
+        /// Advance an open conversation until its response menu is up, and say how many
+        /// lines that took.
+        /// </summary>
+        /// <remarks>
+        /// <para>THE LOOP BELONGS IN HERE. From inside the game the interface can be asked
+        /// what it is waiting for and answered on the frame the answer changes; from
+        /// outside, the same question could only be inferred from the order events reached
+        /// the log, half a second late.</para>
+        ///
+        /// <para>ONE CONTINUE PER LINE, and only after the line has held still. The
+        /// interface does not announce a menu before it appears - the last line before one
+        /// reads exactly like any other - so a line is answered only if it is still asking
+        /// after <see cref="SettlePolls"/> polls with no menu. That wait is what it always
+        /// was; what has changed is that it is measured against the game's own state at
+        /// frame granularity rather than against a log read twice a second, and that the
+        /// menu ends it the instant it appears.</para>
+        /// </remarks>
+        internal const string AdvanceToMenuCommand = "advance-to-menu";
+
+        /// <summary>
+        /// How many polls a line must keep asking before it is answered.
+        /// </summary>
+        /// <remarks>
+        /// At a poll every ten frames this is about a third of a second, against the three
+        /// seconds the harness used to wait outside the game. Enough for a menu that is
+        /// coming to arrive - measured at a handful of frames - and short enough that ten
+        /// scenarios do not add a minute to a run.
+        /// </remarks>
+        private const int SettlePolls = 2;
+
+        /// <summary>How many lines one conversation may be advanced through.</summary>
+        /// <remarks>
+        /// Far above anything a scenario opens on - the largest measured is two - and there
+        /// only so that a conversation which never reaches a menu ends the command rather
+        /// than the run.
+        /// </remarks>
+        private const int MostLines = 50;
+
+        /// <summary>How many polls an advance-to-menu may take before giving up.</summary>
+        private const int MostPolls = 400;
+
+        private static bool _advancing;
+        private static int _advances;
+        private static int _answered;
+        private static int _advancePolls;
+        private static int _settled;
+
         /// <summary>Replace the mod's global state from a staged fixture.</summary>
         internal const string PrepareLookAheadSuiteCommand = "prepare-look-ahead-suite";
         internal const string FinishLookAheadSuiteCommand = "finish-look-ahead-suite";
@@ -153,6 +201,13 @@ namespace GlobalConversationTracker.TestProbe
 
             _sinceLastPoll = 0;
             ReportLoadingFinished();
+
+            // Before reading a new command: an advance-to-menu runs across frames, and
+            // nothing else may start while it does.
+            if (_advancing && StepAdvance())
+            {
+                return;
+            }
 
             string path = CommandPath;
             if (path.Length == 0 || !File.Exists(path))
@@ -294,6 +349,18 @@ namespace GlobalConversationTracker.TestProbe
                         break;
                     case AdvanceCommand:
                         Advance();
+                        break;
+                    case AdvanceToMenuCommand:
+                        ProbeLog.Write(
+                            "command-started",
+                            "command", AdvanceToMenuCommand,
+                            "waiting", DialogueWaitProbe.WhatIsWaiting().ToString(),
+                            "lines", TestProbePlugin.LinesShown);
+                        _advancing = true;
+                        _advances = 0;
+                        _answered = TestProbePlugin.LinesShown - 1;
+                        _advancePolls = 0;
+                        _settled = 0;
                         break;
                     default:
                         ProbeLog.Write(
@@ -476,6 +543,88 @@ namespace GlobalConversationTracker.TestProbe
         }
 
         /// <summary>
+        /// One step of an advance-to-menu. Answers whether it is still going.
+        /// </summary>
+        /// <remarks>
+        /// The three outcomes are the three the interface has. OPTIONS is the menu and the
+        /// end of it. CONTINUE is a line asking to be advanced - answered once it has kept
+        /// asking for <see cref="SettlePolls"/> polls, because a menu arriving beside the
+        /// last line looks like this until it arrives. NOTHING is the interface between
+        /// the two, waited through rather than guessed at.
+        /// </remarks>
+        private static bool StepAdvance()
+        {
+            DialogueWaitProbe.Waiting waiting;
+            try
+            {
+                waiting = DialogueWaitProbe.WhatIsWaiting();
+            }
+            catch (Exception error)
+            {
+                FinishAdvance("failed", Explain(error));
+                return false;
+            }
+
+            if (waiting == DialogueWaitProbe.Waiting.Options)
+            {
+                FinishAdvance("menu", null);
+                return false;
+            }
+
+            if (waiting == DialogueWaitProbe.Waiting.Ending)
+            {
+                // The button closes the conversation rather than advancing it, so no menu
+                // is coming and pressing on would leave. Said plainly, because it is a
+                // fact about the conversation rather than a fault in the run.
+                FinishAdvance(
+                    "ends",
+                    "the only thing on offer closes the conversation, so it has no menu");
+                return false;
+            }
+
+            if (++_advancePolls > MostPolls || _advances >= MostLines)
+            {
+                FinishAdvance("gave-up", $"the interface is still showing {waiting}");
+                return false;
+            }
+
+            if (waiting != DialogueWaitProbe.Waiting.Continue
+                || TestProbePlugin.LinesShown <= _answered)
+            {
+                _settled = 0;
+                return true;
+            }
+
+            if (++_settled < SettlePolls)
+            {
+                return true;
+            }
+
+            // A line, still asking, with no menu behind it. Answered once.
+            _settled = 0;
+            _answered = TestProbePlugin.LinesShown;
+            if (TestProbePlugin.Advance())
+            {
+                _advances++;
+            }
+
+            return true;
+        }
+
+        /// <summary>Ends an advance-to-menu, whatever ended it.</summary>
+        private static void FinishAdvance(string outcome, string? message)
+        {
+            _advancing = false;
+            ProbeLog.Write(
+                "command-finished",
+                "command", AdvanceToMenuCommand,
+                "outcome", outcome,
+                "advances", _advances,
+                "lines", TestProbePlugin.LinesShown,
+                "message", message);
+        }
+
+        /// <summary>
         /// Tells the dialogue UI to go on, and says whether there was one to tell.
         /// </summary>
         /// <remarks>
@@ -518,6 +667,9 @@ namespace GlobalConversationTracker.TestProbe
                 "conversation", conversationId,
                 "title", resolved);
 
+            // Zeroed here so "how many lines has this conversation put up" counts this
+            // conversation's, and an advance-to-menu answers each of them once.
+            TestProbePlugin.ForgetLines();
             DialogueManager.StartConversation(resolved);
 
             // Whether it took is not obvious from the call: StartConversation returns

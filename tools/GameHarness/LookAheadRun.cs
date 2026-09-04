@@ -69,28 +69,6 @@ namespace GlobalConversationTracker.Harness
         /// </summary>
         private static readonly TimeSpan BetweenPresses = TimeSpan.FromSeconds(2);
 
-        /// <summary>
-        /// How long to give the game to say what is on screen before deciding nothing is.
-        /// </summary>
-        /// <remarks>
-        /// The probe's events reach the harness through the BepInEx log, which is re-read
-        /// twice a second, so this has to be several polls wide - a window as short as the
-        /// poll would call a line that arrived a moment late "nothing", and advancing on
-        /// that is exactly the mistake this replaced.
-        /// </remarks>
-        private static readonly TimeSpan SettleWindow = TimeSpan.FromSeconds(3);
-
-        /// <summary>How long to give the probe to pick a command up off disk.</summary>
-        /// <remarks>
-        /// GENEROUS, because it is bounded by the game's frame rate rather than by
-        /// anything this controls: the probe polls for a command every few frames, and the
-        /// frames right after a conversation opens are the slowest there are - the menu is
-        /// being composed and every option's look-ahead is running. Three seconds was not
-        /// enough and cost a run, which failed as "the conversation drew no menu" while
-        /// the game was in the middle of drawing one.
-        /// </remarks>
-        private static readonly TimeSpan CommandPickUp = TimeSpan.FromSeconds(30);
-
         /// <summary>How long to spend trying to wake the display before giving up.</summary>
         /// <remarks>
         /// Short. A display that is going to come back does so in a second or two; one that
@@ -723,46 +701,34 @@ namespace GlobalConversationTracker.Harness
         }
 
         /// <summary>
-        /// Advances an open conversation to its first response menu, one line at a time.
+        /// Advances an open conversation to its first response menu.
         /// </summary>
         /// <remarks>
-        /// <para>LOOKS BEFORE IT ACTS, AND ACTS ONLY AT A LINE. A conversation opens on
-        /// narration and waits to be told to go on; the probe reports each line as it goes
-        /// up, and this answers one line with one continue. It never advances on
-        /// speculation, and never at all once a menu has been reported.</para>
+        /// <para>ASKS THE GAME RATHER THAN WATCHING IT. The probe runs the loop, off the
+        /// interface's own state: the mouse UI's continue/options toggle says when a menu
+        /// is up, and the continue button says when a line is asking to be advanced. This
+        /// sends one command and waits for one answer.</para>
         ///
-        /// <para>WHY THAT IS THE WHOLE POINT. The old loop pressed Enter first and looked
-        /// afterwards, so every scenario got a keypress whether or not its menu was
-        /// already up - and an Enter on an open response menu PICKS THE HIGHLIGHTED
-        /// OPTION. The same save then opened whichever menu the selection led to: over
-        /// three runs the ceiling fan gave the four-option hub twice and a single option
-        /// from somewhere else in the conversation once. A suite about what has been read
-        /// was quietly reading dialogue of its own choosing.</para>
+        /// <para>WHAT THAT REPLACED. The loop used to live here, inferring the same thing
+        /// from the ORDER events reached the log - which is half a second late and silent
+        /// about what has NOT happened. Deciding no menu was coming meant waiting three
+        /// seconds and betting on it, once per line, forty seconds a run.</para>
         ///
-        /// <para>The continue is the game's own, called on the dialogue UI through the
-        /// probe, rather than a keypress at the window. A keypress cannot be aimed - it
-        /// goes to whatever has focus, and means "advance" or "choose" depending on what
-        /// is on screen when it lands. This says one thing only.</para>
+        /// <para>A WAIT REMAINS, and it is worth being exact about: the interface does not
+        /// announce a menu before it appears - the last line before one reads exactly like
+        /// any other - so the probe still lets a line hold still before answering it. What
+        /// changed is that the waiting is measured against the game's own state, at frame
+        /// granularity, and that a menu ends it the instant it exists rather than a poll
+        /// later. de-6vyj carries what would be needed to remove it entirely.</para>
         ///
-        /// <para>A LINE IS ANSWERED ONLY AFTER A QUIET WINDOW, never the moment it
-        /// arrives. The game leaves the last line on screen and puts the menu up beside
-        /// it, so a line followed by a menu wants no answer at all - and whether the menu
-        /// had reached the log by the time the line was read is a matter of polling luck.
-        /// Answering immediately made the count depend on that luck: the ceiling fan
-        /// reported one advance in one run and none in the next while opening the
-        /// identical menu. Waiting the window out makes the count a fact about the
-        /// conversation.</para>
+        /// <para>BEFORE EITHER, this pressed Enter first and looked afterwards, so every
+        /// scenario got a keypress whether or not its menu was already up - and an Enter on
+        /// an open response menu PICKS THE HIGHLIGHTED OPTION. A suite about what has been
+        /// read was quietly reading dialogue of its own choosing.</para>
         ///
-        /// <para>THE WINDOW IS THE ONE PROBABILISTIC PART LEFT, and it is deliberate for
-        /// now. Asking the interface directly would be exact, but the class that decides
-        /// between the continue button and the options list -
-        /// <c>ContinueResponseTogglePageSystem</c> - is never instantiated in this build:
-        /// seven hooks over every member of it, <c>Update</c> included, applied cleanly
-        /// and none ever fired. See de-6vyj for where a later attempt should look.</para>
-        ///
-        /// <para>The count it took is returned to the caller, which holds it against what
-        /// the scenario says it should be. A scenario that suddenly needs a different
-        /// number is not at the menu it thinks it is.</para>
+        /// <para>The count is returned to the caller, which holds it against what the
+        /// scenario says it should be. A scenario that suddenly needs a different number is
+        /// not at the menu it thinks it is.</para>
         /// </remarks>
         /// <param name="scenario">The scenario being opened.</param>
         /// <param name="saveGames">The profile's SaveGames folder, for the probe.</param>
@@ -778,98 +744,38 @@ namespace GlobalConversationTracker.Harness
             string what)
         {
             var clock = Stopwatch.StartNew();
-            int advances = 0;
-            int silent = 0;
-            bool waiting = false;
+            ProbeCommand.SendAdvanceToMenu(saveGames);
 
-            while (true)
+            // WITHOUT CONSUMING, because the menu this produces is reported by its own
+            // event and a scanning wait would swallow it on the way to this answer.
+            ProbeEvent done = WaitWithoutConsuming(
+                watcher,
+                e => e.Name == "command-finished"
+                    && e.Text("command") == ProbeCommand.AdvanceToMenu,
+                timeout,
+                "an answer to advance-to-menu");
+
+            string outcome = done.Text("outcome") ?? "?";
+            LastAdvances = done.Number("advances") ?? -1;
+            if (outcome != "menu")
             {
-                ProbeEvent? seen = Settle(watcher, scenario.ConversationId);
-                if (seen != null && seen.Name == "menu")
-                {
-                    // Any menu at all ends the advancing. A "superseded" one is the first
-                    // of the two passes the game composes over the same options, so the
-                    // completed one is on its way and there is nothing left to answer.
-                    if (seen.Text("state") == "complete")
-                    {
-                        Console.WriteLine(
-                            $"        {what} after {clock.Elapsed.TotalSeconds:N0}s and "
-                            + $"{advances} advance(s)");
-                        LastAdvances = advances;
-                        return seen;
-                    }
-
-                    silent = 0;
-                    continue;
-                }
-
-                if (clock.Elapsed >= timeout)
-                {
-                    throw new TimeoutException(
-                        $"Waited {timeout.TotalSeconds:N0}s for {what}, advancing "
-                        + $"{advances} line(s). The conversation is open and is not "
-                        + "reaching a menu.");
-                }
-
-                if (seen != null)
-                {
-                    // A LINE, AND IT MAY OR MAY NOT BE THE LAST ONE. The game leaves the
-                    // final line on screen and puts the menu up beside it, so a line is
-                    // only worth answering if no menu follows it. Noted and left for the
-                    // next quiet window to settle.
-                    waiting = true;
-                    silent = 0;
-                    continue;
-                }
-
-                if (!waiting)
-                {
-                    // Nothing reported at all, and nothing outstanding. Either the world
-                    // is still settling or a line went up without being announced; either
-                    // way, advancing blind is what this exists to avoid.
-                    silent++;
-                    Console.WriteLine(
-                        $"        nothing on screen yet ({clock.Elapsed.TotalSeconds:N0}s, "
-                        + $"{silent} quiet wait(s))");
-                    continue;
-                }
-
-                // A line is up and waiting. One continue answers exactly this one.
-                //
-                // WAITED FOR ON THE FILE, not on the acknowledgement. Only one command may
-                // be in flight, and the lines of an opening conversation arrive close
-                // enough together that the next one is ready before the probe has picked
-                // this one up. Waiting on the acknowledgement instead would swallow the
-                // line or menu the continue produced, because a scan consumes what it
-                // passes; a continue that failed outright still arrives as a
-                // command-failed and is raised out of the next wait.
-                ProbeCommand.SendAdvance(saveGames);
-                ProbeCommand.WaitUntilTaken(saveGames, CommandPickUp);
-                advances++;
-                waiting = false;
-                silent = 0;
+                throw new TimeoutException(
+                    $"The conversation did not reach a menu: {outcome} "
+                    + $"({done.Text("message") ?? "no detail"}), after {LastAdvances} "
+                    + $"advance(s) over {done.Number("lines")} line(s).");
             }
-        }
 
-        /// <summary>
-        /// Waits briefly for the next thing to happen in a conversation: a menu, or a line
-        /// going up.
-        /// </summary>
-        /// <returns>The event, or null when nothing happened in the window.</returns>
-        private static ProbeEvent? Settle(ProbeWatcher watcher, int conversationId)
-        {
-            try
-            {
-                return watcher.WaitFor(
-                    e => (e.Name == "menu" && e.Number("conversation") == conversationId)
-                        || e.Name == "line",
-                    SettleWindow,
-                    "a line or a menu");
-            }
-            catch (TimeoutException)
-            {
-                return null;
-            }
+            ProbeEvent menu = watcher.WaitFor(
+                e => e.Name == "menu"
+                    && e.Number("conversation") == scenario.ConversationId
+                    && e.Text("state") == "complete",
+                timeout,
+                what);
+
+            Console.WriteLine(
+                $"        {what} after {clock.Elapsed.TotalSeconds:N0}s and "
+                + $"{LastAdvances} advance(s)");
+            return menu;
         }
 
         /// <summary>How many advances the last conversation opened with.</summary>

@@ -47,6 +47,18 @@ namespace GlobalConversationTracker.Automation
         /// </remarks>
         public const string Advance = "advance";
 
+        /// <summary>
+        /// Advance an open conversation until its response menu is up, and report how many
+        /// lines that took.
+        /// </summary>
+        /// <remarks>
+        /// The loop runs inside the game, where the interface can be ASKED what it is
+        /// waiting for - the continue button offers a continue, the toggle says when a menu
+        /// is up - rather than inferred from the order events reach the log half a second
+        /// later. Its answer carries the count, which is a scenario's recorded property.
+        /// </remarks>
+        public const string AdvanceToMenu = "advance-to-menu";
+
         /// <summary>Apply one look-ahead suite's state and runtime settings.</summary>
         public const string PrepareLookAheadSuite = "prepare-look-ahead-suite";
 
@@ -101,6 +113,13 @@ namespace GlobalConversationTracker.Automation
         public static void SendAdvance(string saveGamesFolder)
         {
             Send(saveGamesFolder, Advance);
+        }
+
+        /// <summary>Asks the probe to advance to the conversation's response menu.</summary>
+        /// <param name="saveGamesFolder">The profile's SaveGames folder.</param>
+        public static void SendAdvanceToMenu(string saveGamesFolder)
+        {
+            Send(saveGamesFolder, AdvanceToMenu);
         }
 
         /// <summary>Waits until the probe has picked up whatever command is pending.</summary>

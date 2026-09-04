@@ -125,6 +125,9 @@ namespace GlobalConversationTracker.TestProbe
         {
             if (_expecting && _options.Count >= _expected)
             {
+                // Counted before it is written, so that anything asking "is a menu up"
+                // gets the answer as soon as the menu is whole rather than a poll later.
+                TestProbePlugin.NoteMenu();
                 Emit("complete");
             }
         }
@@ -151,7 +154,13 @@ namespace GlobalConversationTracker.TestProbe
                     "money", money,
                     "state", state,
                     "expected", expecting ? expected : (int?)null,
-                    "shown", options.Length);
+                    "shown", options.Length,
+                    // The same two readings the line event carries, so the pair can be
+                    // compared: whichever of them says something different here from what
+                    // it said while a line was up is the one that can replace the
+                    // harness's fixed wait (de-6vyj).
+                    "continueButton", DialogueWaitProbe.ContinueButton(),
+                    "toggle", DialogueWaitProbe.Toggle());
 
                 writer.WriteStartArray("options");
                 foreach (RecordedOption option in options)

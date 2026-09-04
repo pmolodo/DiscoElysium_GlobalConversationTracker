@@ -98,6 +98,37 @@ namespace GlobalConversationTracker.TestProbe
         /// </remarks>
         internal static ConversationLoggerPageSystem? PageLogger { get; private set; }
 
+        /// <summary>How many lines this conversation has put up.</summary>
+        /// <remarks>
+        /// What makes advancing exact: a line is answered at most once, however many polls
+        /// it spends asking. Without it, a line that keeps offering its continue would be
+        /// answered again on every poll.
+        /// </remarks>
+        internal static int LinesShown { get; private set; }
+
+        /// <summary>
+        /// How many response menus this conversation has finished composing.
+        /// </summary>
+        /// <remarks>
+        /// The probe's own answer to "is a menu up", and the reason it is trustworthy: it
+        /// is reset when a conversation starts, so it cannot report the previous
+        /// scenario's menu the way the interface's own toggle does.
+        /// </remarks>
+        internal static int MenusShown { get; private set; }
+
+        /// <summary>Counts a menu the game finished composing.</summary>
+        internal static void NoteMenu()
+        {
+            MenusShown++;
+        }
+
+        /// <summary>Forgets what this conversation has drawn, as one starts.</summary>
+        internal static void ForgetLines()
+        {
+            LinesShown = 0;
+            MenusShown = 0;
+        }
+
         /// <summary>Tells whichever dialogue UI is live to go on to the next line.</summary>
         /// <returns>False when no line has been shown yet, so there is nothing to tell.</returns>
         internal static bool Advance()
@@ -127,6 +158,7 @@ namespace GlobalConversationTracker.TestProbe
             harmony.PatchAll(typeof(ResponseMenuProbe));
             harmony.PatchAll(typeof(ConversationLineProbe));
             harmony.PatchAll(typeof(PageConversationLineProbe));
+            DialogueWaitProbe.Install(harmony);
             harmony.PatchAll(typeof(ConversationStartProbe));
             harmony.PatchAll(typeof(ConversationEndProbe));
             harmony.PatchAll(typeof(SaveLoadedProbe));
@@ -370,11 +402,18 @@ namespace GlobalConversationTracker.TestProbe
         {
             try
             {
+                LinesShown++;
                 DialogueEntry? entry = subtitle == null ? null : subtitle.dialogueEntry;
                 ProbeLog.Write(
                     "line",
                     "conversation", entry == null ? (int?)null : entry.conversationID,
-                    "entry", entry == null ? (int?)null : entry.id);
+                    "entry", entry == null ? (int?)null : entry.id,
+                    // What the interface says at the moment a line goes up. Paired with
+                    // the same two readings on the menu event, one run says whether either
+                    // can tell "a line is waiting" from "a menu is up" - which is what
+                    // would replace the harness's fixed wait (de-6vyj).
+                    "continueButton", DialogueWaitProbe.ContinueButton(),
+                    "toggle", DialogueWaitProbe.Toggle());
             }
             catch (Exception error)
             {
