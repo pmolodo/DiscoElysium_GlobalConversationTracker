@@ -49,10 +49,16 @@ namespace GlobalConversationTracker.Automation
         public bool IsRolledCheck => Check != null;
 
         /// <summary>Whether it carries a look-ahead marker in a given colour.</summary>
+        /// <remarks>
+        /// THE OPTION'S OWN LINE, NOT THE LINE BELOW IT. A check's Pass / Fail line carries
+        /// markers of its own, in the same colours and the same glyphs, and asking the
+        /// whole text would read one of those as the option's - so an option drawing no
+        /// marker at all would still answer yes on the strength of its Pass half.
+        /// </remarks>
         /// <param name="colourHtml">The colour, as the mod's config spells it.</param>
         public bool HasMarker(string colourHtml)
         {
-            return ProbeLog.HasMarker(Text, colourHtml);
+            return ProbeLog.HasMarker(OwnLine(), colourHtml);
         }
 
         /// <summary>Whether the option carries a marker of this colour and glyph.</summary>
@@ -60,7 +66,7 @@ namespace GlobalConversationTracker.Automation
         /// <param name="glyph">The marker itself.</param>
         public bool HasMarker(string colourHtml, string glyph)
         {
-            return ProbeLog.HasMarker(Text, colourHtml, glyph);
+            return ProbeLog.HasMarker(OwnLine(), colourHtml, glyph);
         }
 
         /// <summary>

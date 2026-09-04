@@ -667,15 +667,25 @@ namespace GlobalConversationTracker
                         return;
                     }
 
+                    // ASKED FOR EVEN WHERE IT IS NOT DRAWN. MarkerFor is what records an
+                    // option in the diagnostics, so skipping the call for rolled checks
+                    // would quietly drop them out of every statistic the mod keeps.
                     string? marker = MarkerFor(response.destinationEntry);
-                    if (marker != null)
+                    string? branches = BranchLineFor(response.destinationEntry);
+
+                    // THE LINE REPLACES THE MARKER RATHER THAN JOINING IT. An option's
+                    // marker is the better of what its two outcomes can reach, so on a
+                    // rolled check it is a weaker restatement of what the line below
+                    // already says - in the one place it cannot be read against the
+                    // outcome it came from. Only a check ever gets a line, so this is
+                    // exactly the set of options that lose their marker.
+                    if (branches == null && marker != null)
                     {
                         __result.responseText += marker;
                     }
 
                     // AFTER the option's own marker, because this is a line BELOW the
                     // option and the marker belongs on the option's own line.
-                    string? branches = BranchLineFor(response.destinationEntry);
                     if (branches != null)
                     {
                         __result.responseText += branches;

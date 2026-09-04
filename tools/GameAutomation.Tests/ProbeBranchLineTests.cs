@@ -105,6 +105,31 @@ namespace GlobalConversationTracker.Automation.Tests
         }
 
         /// <summary>
+        /// A marker on a half of the line is not a marker on the option.
+        /// </summary>
+        /// <remarks>
+        /// The shape a rolled check is drawn in since its own marker was dropped: no
+        /// marker of its own, and a Pass half carrying one. Asking the whole text would
+        /// find the Pass half's asterisk and report the option as marked - which passed
+        /// every suite in the run that first drew it this way, because the suites were
+        /// expecting a marker that was no longer there.
+        /// </remarks>
+        [Fact]
+        public void AMarkerOnAHalfIsNotAMarkerOnTheOption()
+        {
+            var option = new ProbeOption(
+                9,
+                50,
+                WithLine(Draw(Red, "Pass") + Draw(Orange, "*"), Draw(Orange, "Fail")),
+                "White");
+
+            Assert.False(option.HasMarker(Orange));
+            Assert.False(option.HasMarker(Red));
+            Assert.False(option.HasMarker(Grey, "*?"));
+            Assert.NotNull(option.Branches());
+        }
+
+        /// <summary>
         /// A line that will not parse is a failure, not an absence. It means the mod drew
         /// something no suite can read, and a suite asserting on it must not pass anyway.
         /// </summary>

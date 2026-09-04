@@ -975,10 +975,12 @@ namespace GlobalConversationTracker.Harness
                         + "its FAIL outcome recorded nowhere",
                     new[]
                     {
-                        Orange(
+                        Unmarked(
                             GrabTheTieEntry,
-                            "the check is itself recorded, so the unread text down its "
-                                + "pass branch outranks it"),
+                            "a rolled check has a line below it saying what each outcome "
+                                + "reaches, so it keeps no marker of its own - and there "
+                                + "is one to keep here, since the unread text down the "
+                                + "pass branch outranks the recorded check"),
                     },
                     advances: CeilingFan.Advances,
                     branchPolicy: BranchPolicy.EveryCheck,
@@ -1024,9 +1026,11 @@ namespace GlobalConversationTracker.Harness
                     "the same check, with a budget of one",
                     new[]
                     {
-                        Uncertain(
+                        Unmarked(
                             GrabTheTieEntry,
-                            "the crawl gave up before it could establish anything"),
+                            "the crawl gave up, and a rolled check draws no marker of its "
+                                + "own either way - each half of its line says whether "
+                                + "that outcome's search finished"),
                     },
                     advances: CeilingFan.Advances,
                     branchPolicy: BranchPolicy.EveryCheck,
