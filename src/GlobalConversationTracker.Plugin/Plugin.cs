@@ -304,7 +304,18 @@ namespace GlobalConversationTracker
                 "Display",
                 "UncertainLookAheadColor",
                 ResponseLookAheadPatch.DefaultUncertainColorHtml,
-                "Colour for the '*?' marker, as #RRGGBB, #RRGGBBAA, or a colour name.");
+                "Colour for the '*?' marker on an option, as #RRGGBB, #RRGGBBAA, or a "
+                + "colour name. An option is drawn on black.");
+            // A SECOND COLOUR FOR A SECOND BACKGROUND. The Pass / Fail line under a check
+            // is drawn on the check's own background - pale for a white check, red for a
+            // red one - where a colour chosen against black can be invisible. It was: the
+            // option grey stood at 1.08:1 against the white check's #857F70.
+            var branchUncertainLookAheadColor = Config.Bind(
+                "Display",
+                "BranchUncertainLookAheadColor",
+                ResponseLookAheadPatch.DefaultBranchUncertainColorHtml,
+                "Colour for the '*?' marker on a check's Pass / Fail line, which is drawn "
+                + "on the check's own background rather than on black.");
 
             // Beside the state budget rather than instead of it. States are what makes a
             // marker reproducible - the same menu on the same save marks the same way
@@ -433,6 +444,7 @@ namespace GlobalConversationTracker
                     novelOptionColor.Value,
                     ResponseLookAheadPatch.DefaultUnseenThisGameColorHtml,
                     uncertainLookAheadColor.Value,
+                    branchUncertainLookAheadColor.Value,
                     markUncertainLookAhead.Value,
                     lookAheadBudget.Value,
                     lookAheadTimeBudget.Value,

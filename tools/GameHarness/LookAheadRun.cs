@@ -50,6 +50,14 @@ namespace GlobalConversationTracker.Harness
         /// </remarks>
         public const string UncertainHtml = "#7A7A7A";
 
+        /// <summary>The same, on a Pass / Fail line, which is not drawn on black.</summary>
+        /// <remarks>
+        /// Must match <c>ResponseLookAheadPatch.DefaultBranchUncertainColorHtml</c>. A
+        /// separate colour because the line sits on the check's own background rather than
+        /// on black, where the option's grey is invisible - see de-8hh2.4.
+        /// </remarks>
+        public const string BranchUncertainHtml = "#F2F2F2";
+
         /// <summary>The colour meaning "this save has already read it".</summary>
         /// <remarks>
         /// A dark red, and the Pass / Fail line's alone - an option never needs it, since
@@ -270,6 +278,25 @@ namespace GlobalConversationTracker.Harness
                 packed,
                 null,
                 progress: message => Console.WriteLine($"staging:   {message}"));
+
+            // THE COLOURS A RUN ASSERTS ARE THE COLOURS IT STAGES. Both of these are
+            // player settings, read from the config file at chainload, so until this was
+            // here every colour check in every suite was really a check on whatever the
+            // config file on THIS machine happened to say. Two ways that lied: a player
+            // who had changed a colour failed suites that were passing, and - what
+            // actually happened - a changed DEFAULT did not reach a config file BepInEx
+            // had already written, so the run went on asserting the old value and failed
+            // against a mod that was behaving exactly as asked. The player's file is put
+            // back when the run ends.
+            using StagedPluginConfig colours = StagedPluginConfig.Apply(
+                game,
+                new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["NovelOptionColor"] = OrangeHtml,
+                    ["UncertainLookAheadColor"] = UncertainHtml,
+                    ["BranchUncertainLookAheadColor"] = BranchUncertainHtml,
+                },
+                message => Console.WriteLine($"staging:   {message}"));
 
             var stateFiles = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (LookAheadSuite suite in suites)
@@ -1112,7 +1139,11 @@ namespace GlobalConversationTracker.Harness
 
             bool uncertain = drawn.Marker == ProbeLog.UncertainMarkerGlyph;
             string colour = drawn.MarkerColourHtml;
-            if (uncertain && colour.Equals(UncertainHtml, StringComparison.OrdinalIgnoreCase))
+            // THE BRANCH LINE'S UNCERTAIN COLOUR, not the option's. They differ because the
+            // two are drawn on different backgrounds - see de-8hh2.4 - and a reader that
+            // accepted either here would pass a mod drawing the invisible one.
+            if (uncertain
+                && colour.Equals(BranchUncertainHtml, StringComparison.OrdinalIgnoreCase))
             {
                 return Marker.Uncertain;
             }

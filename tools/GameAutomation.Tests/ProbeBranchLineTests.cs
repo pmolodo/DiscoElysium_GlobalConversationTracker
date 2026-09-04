@@ -16,7 +16,7 @@ namespace GlobalConversationTracker.Automation.Tests
         private const string Orange = "#FF8C42";
         private const string Red = "#C4453C";
         private const string DarkRed = "#7C2F2A";
-        private const string Grey = "#7A7A7A";
+        private const string Grey = "#F2F2F2";
 
         /// <summary>An option's own line, of the kind a check is drawn on.</summary>
         private const string Option = "Grab the tie.";

@@ -19,8 +19,20 @@ namespace GlobalConversationTracker.LookAhead.Tests
         private const string Seen = "#CCCCCC";
         private const string Gave = "#DDDDDD";
 
+        /// <summary>
+        /// The option's uncertain colour, which the line must NOT use.
+        /// </summary>
+        /// <remarks>
+        /// Distinct from <see cref="Gave"/> so that a line reaching for the wrong one of
+        /// the two is a failure rather than a coincidence. They are different colours in
+        /// the shipped mod for a real reason - the line is drawn on the check's background
+        /// and an option on black, see de-8hh2.4 - so a test that let them be equal would
+        /// not be testing the thing that broke.
+        /// </remarks>
+        private const string GaveOnAnOption = "#EEEEEE";
+
         private static MarkerPalette Palette(bool markUncertain = true) =>
-            new MarkerPalette(Any, This, Seen, Gave, markUncertain);
+            new MarkerPalette(Any, This, Seen, GaveOnAnOption, Gave, markUncertain);
 
         private static LookAheadAnswer Answer(BranchAnswers? branches) =>
             new LookAheadAnswer(

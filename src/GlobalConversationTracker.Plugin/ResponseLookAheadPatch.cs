@@ -71,6 +71,7 @@ namespace GlobalConversationTracker
         private static string _unseenAnyGameHtml = NovelResponseColorPatch.DefaultNovelColorHtml;
         private static string _unseenThisGameHtml = DefaultUnseenThisGameColorHtml;
         private static string _uncertainHtml = DefaultUncertainColorHtml;
+        private static string _branchUncertainHtml = DefaultBranchUncertainColorHtml;
         private static string _seenHtml = DefaultSeenColorHtml;
         private static bool _markUncertain = true;
         private static LookAheadDiagnosticsWriter? _diagnostics;
@@ -126,8 +127,31 @@ namespace GlobalConversationTracker
         /// markers are a promise - there IS something through here - and this one is the
         /// absence of a promise, so a colour that reads as a weaker version of either would
         /// be saying the wrong thing quietly.
+        ///
+        /// ON BLACK, which is where an option is drawn. The branch line is not, and has
+        /// <see cref="DefaultBranchUncertainColorHtml"/> for that reason.
         /// </remarks>
         internal const string DefaultUncertainColorHtml = "#7A7A7A";
+
+        /// <summary>
+        /// The same, for the Pass / Fail line, which is not drawn on black.
+        /// </summary>
+        /// <remarks>
+        /// <para>A SECOND COLOUR BECAUSE THERE ARE TWO BACKGROUNDS, not because the two
+        /// markers mean different things. An option sits on black; the line under a check
+        /// sits on the CHECK's background, which the game paints pale for a white check and
+        /// red for a red one. Measured off a screenshot, the white check's is #857F70, and
+        /// the option colour #7A7A7A stands at 1.08:1 against it - the same colour, drawn
+        /// and invisible, which is how this was found.</para>
+        ///
+        /// <para>NEAR WHITE RATHER THAN NEAR BLACK, which is the counter-intuitive half.
+        /// A dark grey reads better than a pale one on the white check (3.55:1 against
+        /// 3.56:1, near enough equal) and far worse on the red one, where it is 1.72:1
+        /// against 7.34:1 - because the two check backgrounds sit on opposite sides of a
+        /// mid grey, and only a colour at one extreme clears both. It is still neutral, and
+        /// the '*?' glyph is what says "did not finish" in any case.</para>
+        /// </remarks>
+        internal const string DefaultBranchUncertainColorHtml = "#F2F2F2";
 
         /// <summary>
         /// The colour for "already read", used on the Pass/Fail line only.
@@ -161,6 +185,7 @@ namespace GlobalConversationTracker
         /// <param name="unseenAnyGameHtml">Colour for reaching never-seen-anywhere text.</param>
         /// <param name="unseenThisGameHtml">Colour for reaching unseen-this-save text.</param>
         /// <param name="uncertainHtml">Colour for a crawl that gave up before it could say.</param>
+        /// <param name="branchUncertainHtml">The same, on a check's Pass / Fail line.</param>
         /// <param name="markUncertain">Whether a crawl that gave up says so at all.</param>
         /// <param name="stateBudget">The most search states one option may cost.</param>
         /// <param name="timeBudgetMs">
@@ -184,6 +209,7 @@ namespace GlobalConversationTracker
             string unseenAnyGameHtml,
             string unseenThisGameHtml,
             string uncertainHtml,
+            string branchUncertainHtml,
             bool markUncertain,
             int stateBudget,
             int timeBudgetMs,
@@ -210,6 +236,7 @@ namespace GlobalConversationTracker
             _unseenAnyGameHtml = Validate(unseenAnyGameHtml, nameof(unseenAnyGameHtml));
             _unseenThisGameHtml = Validate(unseenThisGameHtml, nameof(unseenThisGameHtml));
             _uncertainHtml = Validate(uncertainHtml, nameof(uncertainHtml));
+            _branchUncertainHtml = Validate(branchUncertainHtml, nameof(branchUncertainHtml));
             _markUncertain = markUncertain;
             Configure(enabled, stateBudget, timeBudgetMs, memoryBudgetMb, diagnostics);
 
@@ -542,7 +569,8 @@ namespace GlobalConversationTracker
 
         /// <summary>The colours as the player has configured them.</summary>
         private static MarkerPalette Palette() => new MarkerPalette(
-            _unseenAnyGameHtml, _unseenThisGameHtml, _seenHtml, _uncertainHtml, _markUncertain);
+            _unseenAnyGameHtml, _unseenThisGameHtml, _seenHtml, _uncertainHtml,
+            _branchUncertainHtml, _markUncertain);
 
         /// <summary>
         /// The Pass / Fail line for one option, or null where it has not earned one.

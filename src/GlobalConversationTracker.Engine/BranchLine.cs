@@ -10,12 +10,15 @@ namespace GlobalConversationTracker.Engine
     /// <param name="Seen">Already read. Used on the branch line only - see the remarks
     /// on <see cref="BranchLine"/>.</param>
     /// <param name="Uncertain">A search that gave up before it could say.</param>
+    /// <param name="BranchUncertain">The same, on the branch line - see the remarks
+    /// on <see cref="BranchLine"/> for why it is a different colour.</param>
     /// <param name="MarkUncertain">Whether a search that gave up says so at all.</param>
     public readonly record struct MarkerPalette(
         string UnseenAnyGame,
         string UnseenThisGame,
         string Seen,
         string Uncertain,
+        string BranchUncertain,
         bool MarkUncertain);
 
     /// <summary>
@@ -118,8 +121,12 @@ namespace GlobalConversationTracker.Engine
                 return coloured + Draw(html, FoundMarker);
             }
 
+            // THE BRANCH LINE'S OWN UNCERTAIN COLOUR, not the option's. An option is
+            // drawn on black, where the mid grey the mod uses reads perfectly well; this
+            // line is drawn on the check's own background, where the same grey measured
+            // 1.08:1 and simply could not be seen. See de-8hh2.4.
             return palette.MarkUncertain && !branch.Complete
-                ? coloured + Draw(palette.Uncertain, UncertainMarker)
+                ? coloured + Draw(palette.BranchUncertain, UncertainMarker)
                 : coloured;
         }
 
