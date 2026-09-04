@@ -12,6 +12,7 @@ use oxidd::{BooleanFunction, Manager, ManagerRef};
 
 use crate::core::state::StateSymbols;
 use crate::symbolic::data_layout::DataLayout;
+use crate::symbolic::register::{Register, RegisterOps};
 
 /// A manager, its variables, and the layout that says what they mean.
 pub struct DataVars<'a> {
@@ -65,6 +66,28 @@ impl<'a> DataVars<'a> {
     /// The slot a name occupies, if the layout has one for it.
     pub fn slot_of(&self, name: &str) -> Option<usize> {
         self.symbols.find(name)
+    }
+
+    /// Arithmetic over one slot's run of variables.
+    pub fn slot_ops(&self, slot: usize) -> Option<RegisterOps<'_>> {
+        let (base, bits) = self.layout.slot(slot)?;
+        Some(self.ops_over(Register::new(base, bits)))
+    }
+
+    /// Arithmetic over the money register, if the layout carries one.
+    pub fn money_ops(&self) -> Option<RegisterOps<'_>> {
+        let (base, bits) = self.layout.money()?;
+        Some(self.ops_over(Register::new(base, bits)))
+    }
+
+    /// Arithmetic over the clock register, if the layout carries one.
+    pub fn clock_ops(&self) -> Option<RegisterOps<'_>> {
+        let (base, bits) = self.layout.clock()?;
+        Some(self.ops_over(Register::new(base, bits)))
+    }
+
+    fn ops_over(&self, register: Register) -> RegisterOps<'_> {
+        RegisterOps::new(register, self.top(), self.bottom(), |number| self.var(number))
     }
 
     /// The largest value a slot can hold, given its width.

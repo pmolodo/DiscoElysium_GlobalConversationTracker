@@ -28,6 +28,7 @@ use oxidd::bdd::BDDFunction;
 use oxidd::BooleanFunctionQuant;
 
 use crate::core::action::{DialogueAction, DialogueActionKind};
+use crate::symbolic::register::RegisterOps;
 use crate::symbolic::vars::DataVars;
 
 /// Applies actions to sets of data states.
@@ -147,6 +148,30 @@ impl<'a> ActionImage<'a> {
 
     /// One action's pre-image over a set.
     fn pre_one(&mut self, states: &BDDFunction, action: &DialogueAction) -> BDDFunction {
+        // Money and the clock, undone exactly. Saturation is many-to-one, so the pre-image
+        // of the ceiling is a range - getting that half wrong is the one error a backward
+        // search may not make, because it reports an entry unreachable that the crawl
+        // walks to.
+        match action.kind() {
+            DialogueActionKind::GainMoney => {
+                return self.on_money(states, |ops, set| {
+                    ops.pre_saturating_add(set, action.value().max(0) as u32)
+                });
+            }
+            DialogueActionKind::LoseMoney => {
+                return self.on_money(states, |ops, set| {
+                    ops.pre_saturating_sub(set, action.value().max(0) as u32)
+                });
+            }
+            DialogueActionKind::PassTime => {
+                let modulus = crate::core::clock::ClockTime::MINUTES_IN_DAY as u32;
+                return self.on_clock(states, |ops, set| {
+                    ops.pre_wrapping_add(set, action.value().max(0) as u32, modulus)
+                });
+            }
+            _ => {}
+        }
+
         let slot = action.slot();
         let Ok(slot) = usize::try_from(slot) else {
             self.ignored += 1;
@@ -241,10 +266,18 @@ impl<'a> ActionImage<'a> {
             return states.clone();
         }
 
+        // Money and the clock write no slot; they have registers of their own, and the
+        // layout carries them only where the group can move them.
+        match action.kind() {
+            DialogueActionKind::GainMoney => return self.gain_money(states, action.value()),
+            DialogueActionKind::LoseMoney => return self.lose_money(states, action.value()),
+            DialogueActionKind::PassTime => return self.pass_time(states, action.value()),
+            _ => {}
+        }
+
         let slot = action.slot();
         let Ok(slot) = usize::try_from(slot) else {
-            // Money, the clock, and anything the model does not apply - whether declared
-            // or unknown: no slot to write.
+            // Anything the model does not apply, whether declared or unknown.
             self.ignored += 1;
             return states.clone();
         };
@@ -257,11 +290,80 @@ impl<'a> ActionImage<'a> {
             DialogueActionKind::Increment => {
                 self.increment(states, slot, action.value())
             }
-            // GainMoney, LoseMoney, PassTime, Declared and Unmodelled write no slot.
-            // Money and the clock are deliberately outside this layout - see DataLayout
-            // and de-sze.10.
             _ => {
                 self.ignored += 1;
+                states.clone()
+            }
+        }
+    }
+
+    /// `money := min(money + amount, ceiling)`, where the layout carries money.
+    ///
+    /// SATURATING, and the ceiling is the width the layout chose from the largest cost the
+    /// group can charge. A balance above every price the group asks is indistinguishable
+    /// from any other such balance as far as this group's guards are concerned, so
+    /// collapsing them loses nothing a crawl over it could observe.
+    fn gain_money(&mut self, states: &BDDFunction, amount: i32) -> BDDFunction {
+        self.on_money(states, |ops, set| ops.saturating_add(set, amount.max(0) as u32))
+    }
+
+    /// `money := max(money - amount, 0)`, where the layout carries money.
+    fn lose_money(&mut self, states: &BDDFunction, amount: i32) -> BDDFunction {
+        self.on_money(states, |ops, set| ops.saturating_sub(set, amount.max(0) as u32))
+    }
+
+    /// `clock := (clock + minutes) mod 1440`, where the layout carries the clock.
+    ///
+    /// WRAPPING, not saturating: midnight is not a ceiling, and a clock that stuck at
+    /// 23:59 would answer every night-time question wrongly for the rest of the crawl.
+    fn pass_time(&mut self, states: &BDDFunction, minutes: i32) -> BDDFunction {
+        let modulus = crate::core::clock::ClockTime::MINUTES_IN_DAY as u32;
+        self.on_clock(states, |ops, set| {
+            ops.wrapping_add(set, minutes.max(0) as u32, modulus)
+        })
+    }
+
+    /// Runs an operation over the money register, or counts the action as ignored.
+    fn on_money(
+        &mut self,
+        states: &BDDFunction,
+        operation: impl Fn(&RegisterOps<'_>, &BDDFunction) -> Option<BDDFunction>,
+    ) -> BDDFunction {
+        let ops = self.vars.money_ops();
+        self.on_register(ops, states, operation)
+    }
+
+    /// Runs an operation over the clock register, or counts the action as ignored.
+    fn on_clock(
+        &mut self,
+        states: &BDDFunction,
+        operation: impl Fn(&RegisterOps<'_>, &BDDFunction) -> Option<BDDFunction>,
+    ) -> BDDFunction {
+        let ops = self.vars.clock_ops();
+        self.on_register(ops, states, operation)
+    }
+
+    /// Runs an operation over a register, or counts the action as ignored.
+    ///
+    /// An action whose register the layout does not carry is IGNORED and counted, not
+    /// silently dropped. That is the honest reading - a group with no cost option and no
+    /// `PassTime` never moves either, so spending bits on them would be pure cost - and
+    /// the count is how a layout that should have carried one gets noticed.
+    fn on_register(
+        &mut self,
+        ops: Option<RegisterOps<'_>>,
+        states: &BDDFunction,
+        operation: impl Fn(&RegisterOps<'_>, &BDDFunction) -> Option<BDDFunction>,
+    ) -> BDDFunction {
+        let Some(ops) = ops else {
+            self.ignored += 1;
+            return states.clone();
+        };
+
+        match operation(&ops, states) {
+            Some(moved) => moved,
+            None => {
+                self.out_of_memory = true;
                 states.clone()
             }
         }

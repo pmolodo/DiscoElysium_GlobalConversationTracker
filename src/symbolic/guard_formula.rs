@@ -331,6 +331,25 @@ impl<'a> GuardCompiler<'a> {
                 }
             }
 
+            // The clock, TRACKED: read straight off its own register. Every clock
+            // question in the language is a question about the HOUR, so each one becomes
+            // the union of the minute ranges of the hours that satisfy it - at most
+            // twenty-four ranges, each a pair of comparisons over eleven bits.
+            //
+            // Which hours satisfy it is decided by asking `ClockTime::answer` at each
+            // hour rather than by restating the table here. A second copy of "afternoon
+            // runs to the end of the eighteenth hour" is exactly the kind of thing that
+            // drifts, and this port has already had those boundaries wrong once.
+            GuardExpression::Call(name, args)
+                if crate::core::clock::ClockTime::owns(name)
+                    && self.vars.clock_ops().is_some() =>
+            {
+                match self.clock_hours_formula(name, args) {
+                    Some(holds) => self.decided(holds),
+                    None => self.undecided("call: clock, not a question of the hour", guard.to_string()),
+                }
+            }
+
             // The clock, held at whatever the world says and not moved by the
             // conversation. See `with_constant_clock` for why, and what it costs: this is
             // the one approximation here that can close a branch the crawl would walk.
@@ -427,6 +446,14 @@ impl<'a> GuardCompiler<'a> {
             if let Some(truth) = Self::boolean_of(left) {
                 return self.against_boolean(right, truth != negated);
             }
+        }
+
+        // Money and the hour are CALLS rather than variables - `MoneyAmount() >= 50`,
+        // `HourCount() > 12` - so they never reach the variable path below. Where the
+        // layout carries a register for one, this is the arithmetic de-sze named as the
+        // likely blowup and never once ran.
+        if let Some(compiled) = self.register_comparison(op, left, right) {
+            return compiled;
         }
 
         let (Some(name), Some(literal)) = (Self::variable_of(left), Self::literal_of(right))
@@ -550,41 +577,138 @@ impl<'a> GuardCompiler<'a> {
 
     /// `Variable[name] op value` for an ordering operator, over a tracked slot.
     ///
-    /// ## Why this is not the blowup the epic expected
+    /// ## The blowup the epic expected, and where it went
     ///
     /// Magnitude comparison on bit-blasted integers is the classic way to make a decision
-    /// diagram explode, and it is named in de-sze as the likely failure. It is not, for
-    /// these slots, because THE COUNTER CAP BOUNDS THE WIDTH: a slot saturates at 16 by
-    /// default, so it is five bits and holds 32 values. The set of values satisfying the
-    /// comparison is enumerated and unioned, which costs at most one diagram operation
-    /// per value and reuses [`Self::slot_equals`] rather than open-coding a comparator.
+    /// diagram explode, and de-sze names it as the likely failure. This used to enumerate
+    /// the satisfying values and union them, which a counter can afford - the cap bounds
+    /// it to five bits and 32 values - and which money's thirteen bits and the clock's
+    /// eleven cannot: eight thousand conjunctions to say one thing.
     ///
-    /// What the warning was really about is MONEY and the CLOCK - a thirteen-bit balance
-    /// and an eleven-bit minute count, compared against arbitrary constants. Neither is
-    /// in this layout, and when one arrives it should get a proper ripple comparator
-    /// rather than this.
+    /// It is now a ripple comparator instead, O(bits) rather than O(2^bits), so the same
+    /// routine serves a five-bit counter and a thirteen-bit balance. See
+    /// [`crate::symbolic::register`].
     fn slot_ordered(&mut self, name: &str, op: &str, value: i32) -> Option<BDDFunction> {
         let slot = self.vars.slot_of(name)?;
-        let ceiling = self.vars.slot_ceiling(slot)? as i64;
+        self.vars.slot_ops(slot)?.compare(op, value as i64)
+    }
 
-        let mut holds = self.bottom();
-        for candidate in 0..=ceiling {
-            let satisfies = match op {
-                ">=" => candidate >= value as i64,
-                "<=" => candidate <= value as i64,
-                ">" => candidate > value as i64,
-                "<" => candidate < value as i64,
+    /// A comparison whose subject is money or the hour, where the layout carries it.
+    ///
+    /// Returns `None` when this is not such a comparison at all, so the caller carries on
+    /// to the variable path rather than treating it as a failure.
+    fn register_comparison(
+        &mut self,
+        op: &str,
+        left: &GuardExpression,
+        right: &GuardExpression,
+    ) -> Option<MayBe> {
+        // Either way round, and the operator turns with the operands: `50 <= MoneyAmount()`
+        // is `MoneyAmount() >= 50`, and reading it the other way answers the opposite
+        // question everywhere the two disagree.
+        let (name, literal, op) = match (Self::call_of(left), Self::literal_of(right)) {
+            (Some(name), Some(literal)) => (name, literal, op),
+            _ => match (Self::call_of(right), Self::literal_of(left)) {
+                (Some(name), Some(literal)) => (name, literal, Self::mirrored(op)),
                 _ => return None,
-            };
-            if !satisfies {
+            },
+        };
+
+        let value = literal.try_as_number()?;
+        match name.as_str() {
+            "MoneyAmount" => {
+                let ops = self.vars.money_ops()?;
+                let holds = ops.compare(op, value as i64)?;
+                Some(self.decided(holds))
+            }
+            // The hour, in minutes: `HourCount() >= 13` is `clock >= 13 * 60`. Exact for
+            // every operator, because the hour is the minute count divided by sixty and
+            // that division is monotone - `hours >= h` is `minutes >= 60h`, and
+            // `hours <= h` is `minutes <= 60h + 59`.
+            "HourCount" => {
+                let ops = self.vars.clock_ops()?;
+                let hour = value as i64;
+                let holds = match op {
+                    ">=" | ">" => {
+                        let first = if op == ">" { hour + 1 } else { hour };
+                        ops.compare(">=", first * 60)?
+                    }
+                    "<=" | "<" => {
+                        let last = if op == "<" { hour - 1 } else { hour };
+                        ops.compare("<=", last * 60 + 59)?
+                    }
+                    "==" => {
+                        let from = ops.compare(">=", hour * 60)?;
+                        let to = ops.compare("<=", hour * 60 + 59)?;
+                        from.and(&to).ok()?
+                    }
+                    "~=" | "!=" => {
+                        let from = ops.compare(">=", hour * 60)?;
+                        let to = ops.compare("<=", hour * 60 + 59)?;
+                        from.and(&to).ok()?.not().ok()?
+                    }
+                    _ => return None,
+                };
+                Some(self.decided(holds))
+            }
+            _ => None,
+        }
+    }
+
+    /// Every minute of the day at which a clock question is true, as a formula.
+    ///
+    /// The hours that satisfy it are found by ASKING THE CLOCK MODEL at each hour, so the
+    /// boundaries - afternoon running to the end of the eighteenth hour, dusk being the
+    /// single hour of nineteen - are stated in exactly one place. This port has already had
+    /// them wrong once by restating them.
+    fn clock_hours_formula(
+        &mut self,
+        name: &str,
+        args: &[GuardExpression],
+    ) -> Option<BDDFunction> {
+        use crate::core::clock::ClockTime;
+
+        // Only literal arguments; anything computed would have to be evaluated per state.
+        let values: Option<Vec<GuardValue>> = args
+            .iter()
+            .map(|arg| match arg {
+                GuardExpression::Literal(value) => Some(value.clone()),
+                _ => None,
+            })
+            .collect();
+        let values = values?;
+
+        let ops = self.vars.clock_ops()?;
+        let mut holds = self.bottom();
+        let mut answered = false;
+        for hour in 0..24i32 {
+            // The day counter is what the world says; it cannot change within a
+            // conversation, so it is the same at every hour.
+            let day = self.world.map_or(1, |world| world.day_counter());
+            let answer = ClockTime::answer(name, &values, hour * 60, day);
+            if answer.kind() == GuardValueKind::Unknown {
+                return None;
+            }
+
+            answered = true;
+            if !answer.boolean() {
                 continue;
             }
 
-            let at = self.slot_equals(name, candidate as i32)?;
-            holds = holds.or(&at).expect("or");
+            let from = ops.compare(">=", hour as i64 * 60)?;
+            let to = ops.compare("<=", hour as i64 * 60 + 59)?;
+            holds = holds.or(&from.and(&to).ok()?).ok()?;
         }
 
-        Some(holds)
+        if answered { Some(holds) } else { None }
+    }
+
+    /// The name a zero-argument call carries, if the expression is one.
+    fn call_of(expression: &GuardExpression) -> Option<String> {
+        match expression {
+            GuardExpression::Call(name, args) if args.is_empty() => Some(name.clone()),
+            _ => None,
+        }
     }
 
     /// The name a `Variable` node carries, if the expression is one.

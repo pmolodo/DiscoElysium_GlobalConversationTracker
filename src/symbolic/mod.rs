@@ -27,6 +27,7 @@ pub mod guard_formula;
 pub mod novelty_search;
 pub mod portfolio;
 pub mod reachability;
+pub mod register;
 pub mod vars;
 
 use std::collections::HashMap;
