@@ -47,7 +47,7 @@ use serde::{Deserialize, Serialize};
 use crate::core::guard::GuardExpression;
 use crate::core::guard_value::{GuardValue, GuardValueKind};
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, Novelty, Ternary};
-use crate::engine::engine::LookAheadEngine;
+use crate::engine::engine::{LookAheadEngine, StartBranch};
 use crate::graph::graph::LookAheadGraph;
 use crate::index::{build_group_graph, Index, VariableTable};
 use crate::world::world::ILookAheadWorld;
@@ -538,7 +538,7 @@ pub struct Questions {
 }
 
 /// What the plugin asks.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct LookAheadRequest {
     /// Any conversation in the group; the engine loads the whole group from it.
     pub conversation: i32,
@@ -583,7 +583,7 @@ impl LookAheadRequest {
 }
 
 /// What one option scored.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LookAheadAnswer {
     pub start: NodeRef,
     /// 0 seen, 1 unseen this game, 2 unseen in any game.
@@ -610,7 +610,15 @@ pub struct LookAheadAnswer {
     /// that ran out of TIME on the same states wants a slower machine or a longer clock.
     /// A single "it gave up" cannot tell them which dial to turn.
     #[serde(default)]
-    pub stopped_by: String,
+    pub stopped_by: String,    /// The two outcomes, where the option is a white or red check.
+    ///
+    /// ABSENT ON EVERYTHING ELSE, and that is how the mod decides whether to draw the
+    /// Pass/Fail line: a check has two outcomes worth telling apart, an ordinary option has
+    /// one. The fields above are the two of these combined, so a reader that does not know
+    /// about branches still gets the right answer for the option as a whole.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branches: Option<BranchAnswers>,
+
 }
 
 /// What comes back.
@@ -819,9 +827,20 @@ pub fn answer(
                 states_explored: 0,
                 nodes_reached: 0,
                 stopped_by: "none".to_string(),
+                branches: None,
             });
             continue;
         }
+
+        let began = std::time::Instant::now();
+
+        // A ROLLED CHECK IS ASKED ABOUT ONCE PER OUTCOME, because it is two options
+        // wearing one line of text and the mod draws them apart - see de-fes. Two crawls
+        // rather than one, and only here: a menu of ordinary options costs what it did.
+        let rolled = matches!(
+            graph.get(id).map(|node| node.kind),
+            Some(DialogueCheckKind::Red) | Some(DialogueCheckKind::White)
+        );
 
         // NOTHING BETTER IS REACHABLE, so there is no crawl to run. The walk that
         // decides this is a few thousand pointer-follows against a crawl budgeted at
@@ -831,6 +850,12 @@ pub fn answer(
         //
         // A COMPLETE ANSWER, not a gave-up one: this establishes that nothing outranks
         // the option, which is exactly what a finished crawl finding nothing would.
+        //
+        // A ROLLED CHECK STILL REPORTS ITS TWO OUTCOMES. The shortcut settles the
+        // ASTERISK - is anything novel down there - and the Pass/Fail line's WORDS are
+        // coloured by where each outcome leads, which is a fact about the option either
+        // way. A check both of whose outcomes are already read has a line saying exactly
+        // that, and dropping it here would have made those checks silently lineless.
         let own = novelty(id);
         if !LookAheadEngine::reaches_potential_improvement(&graph, id, own, &novelty) {
             answers.push(LookAheadAnswer {
@@ -838,34 +863,216 @@ pub fn answer(
                 best: Novelty::SeenThisGame as i32,
                 witness: None,
                 complete: true,
-                elapsed_ms: 0,
+                elapsed_ms: began.elapsed().as_millis() as u64,
                 states_explored: 0,
                 nodes_reached: 0,
                 stopped_by: "none".to_string(),
+                branches: rolled.then(|| BranchAnswers {
+                    pass: settled_branch(&engine, &graph, id, &world, &novelty, StartBranch::Pass),
+                    fail: settled_branch(&engine, &graph, id, &world, &novelty, StartBranch::Fail),
+                }),
             });
             continue;
         }
 
-        let began = std::time::Instant::now();
-        let result = engine.evaluate(&graph, id, &world, &novelty);
-        answers.push(LookAheadAnswer {
-            start: *start,
-            best: result.best as i32,
-            witness: None,
-            complete: !result.budget_exhausted(),
-            elapsed_ms: began.elapsed().as_millis() as u64,
-            states_explored: result.states_explored,
-            nodes_reached: result.nodes_reached,
-            stopped_by: match result.stopped_by {
-                crate::core::types::LookAheadLimit::States => "states",
-                crate::core::types::LookAheadLimit::Time => "time",
-                crate::core::types::LookAheadLimit::None => "none",
+        let mut answer = if rolled {
+            let pass = branch_answer(&engine, &graph, id, &world, &novelty, StartBranch::Pass);
+            let fail = branch_answer(&engine, &graph, id, &world, &novelty, StartBranch::Fail);
+            let combined = combine(*start, &pass, &fail);
+            LookAheadAnswer { branches: Some(BranchAnswers { pass, fail }), ..combined }
+        } else {
+            let result = engine.evaluate(&graph, id, &world, &novelty);
+            LookAheadAnswer {
+                start: *start,
+                best: result.best as i32,
+                witness: None,
+                complete: !result.budget_exhausted(),
+                elapsed_ms: 0,
+                states_explored: result.states_explored,
+                nodes_reached: result.nodes_reached,
+                stopped_by: limit_name(result.stopped_by).to_string(),
+                branches: None,
             }
-            .to_string(),
-        });
+        };
+
+        answer.elapsed_ms = began.elapsed().as_millis() as u64;
+        answers.push(answer);
     }
 
     LookAheadResponse { answers, error: None }
+}
+
+
+/// What the mod says about one outcome of a rolled check.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BranchAnswer {
+    /// The best novelty among the entries this branch leads to DIRECTLY - what the mod
+    /// colours the word "Pass" or "Fail" by.
+    pub destination: i32,
+
+    /// The best novelty anywhere down this branch, which is what earns it an asterisk when
+    /// it beats `destination`. The same rule an option's own marker follows.
+    pub best: i32,
+
+    /// Whether the search of this branch finished. A branch that gave up draws the
+    /// uncertain marker rather than nothing - see de-pvq.
+    pub complete: bool,
+}
+
+/// Both outcomes of a rolled check, present only on a rolled check.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BranchAnswers {
+    pub pass: BranchAnswer,
+    pub fail: BranchAnswer,
+}
+
+/// The name a limit crosses the wire under.
+fn limit_name(limit: crate::core::types::LookAheadLimit) -> &'static str {
+    match limit {
+        crate::core::types::LookAheadLimit::States => "states",
+        crate::core::types::LookAheadLimit::Time => "time",
+        crate::core::types::LookAheadLimit::None => "none",
+    }
+}
+
+/// One outcome of a rolled check whose crawl was refused as pointless.
+///
+/// Where it leads is still worth reporting - that is what colours the word - and the best
+/// beyond it is the destination itself, because the refusal established that nothing in
+/// the group outranks the option and so nothing down either branch can either.
+fn settled_branch<F>(
+    engine: &LookAheadEngine,
+    graph: &LookAheadGraph,
+    start: DialogueNodeId,
+    world: &dyn ILookAheadWorld,
+    novelty: F,
+    branch: StartBranch,
+) -> BranchAnswer
+where
+    F: Fn(DialogueNodeId) -> Novelty,
+{
+    let destination = engine
+        .branch_destinations(graph, start, world, branch)
+        .into_iter()
+        .map(&novelty)
+        .max()
+        .unwrap_or(Novelty::SeenThisGame);
+
+    BranchAnswer { destination: destination as i32, best: destination as i32, complete: true }
+}
+
+/// One outcome of a rolled check: where it leads, and what lies beyond that.
+fn branch_answer<F>(
+    engine: &LookAheadEngine,
+    graph: &LookAheadGraph,
+    start: DialogueNodeId,
+    world: &dyn ILookAheadWorld,
+    novelty: F,
+    branch: StartBranch,
+) -> BranchAnswer
+where
+    F: Fn(DialogueNodeId) -> Novelty,
+{
+    let destination = engine
+        .branch_destinations(graph, start, world, branch)
+        .into_iter()
+        .map(&novelty)
+        .max()
+        .unwrap_or(Novelty::SeenThisGame);
+
+    let result = engine.evaluate_from(graph, start, world, &novelty, branch);
+
+    BranchAnswer {
+        destination: destination as i32,
+        best: result.best as i32,
+        complete: !result.budget_exhausted(),
+    }
+}
+
+/// The one answer a check option's own marker is drawn from, out of its two branches.
+///
+/// DERIVED RATHER THAN CRAWLED A THIRD TIME. Asking the engine for the whole option would
+/// give the same `best` - it is the better of the two branches either way - at the cost of
+/// repeating both searches, so the numbers are combined here instead.
+///
+/// `nodes_reached` is the LARGER of the two rather than their sum, because the branches
+/// overlap wherever they rejoin and adding them would count the shared tail twice. It is a
+/// lower bound, and it is only ever read by the diagnostics.
+fn combine(start: NodeRef, pass: &BranchAnswer, fail: &BranchAnswer) -> LookAheadAnswer {
+    LookAheadAnswer {
+        start,
+        best: pass.best.max(fail.best),
+        witness: None,
+        complete: pass.complete && fail.complete,
+        elapsed_ms: 0,
+        states_explored: 0,
+        nodes_reached: 0,
+        stopped_by: if pass.complete && fail.complete { "none" } else { "states" }.to_string(),
+        branches: None,
+    }
+}
+
+#[cfg(test)]
+mod branch_wire_tests {
+    use super::*;
+
+    /// An answer carrying two outcomes round-trips as JSON.
+    #[test]
+    fn branches_survive_the_wire() {
+        let answer = LookAheadAnswer {
+            start: NodeRef { conversation: 451, entry: 12 },
+            best: 2,
+            witness: None,
+            complete: true,
+            elapsed_ms: 4,
+            states_explored: 90,
+            nodes_reached: 30,
+            stopped_by: "none".to_string(),
+            branches: Some(BranchAnswers {
+                pass: BranchAnswer { destination: 0, best: 2, complete: true },
+                fail: BranchAnswer { destination: 1, best: 1, complete: false },
+            }),
+        };
+
+        let text = serde_json::to_string(&answer).expect("an answer serialises");
+        let back: LookAheadAnswer = serde_json::from_str(&text).expect("and parses back");
+        assert_eq!(back, answer);
+    }
+
+    /// An ordinary option says nothing about branches, and costs nothing to say it.
+    ///
+    /// The absence is load bearing: it is what the mod reads to decide whether an option
+    /// gets a Pass/Fail line at all.
+    #[test]
+    fn an_ordinary_option_carries_no_branches() {
+        let answer = LookAheadAnswer {
+            start: NodeRef { conversation: 451, entry: 12 },
+            best: 0,
+            witness: None,
+            complete: true,
+            elapsed_ms: 0,
+            states_explored: 1,
+            nodes_reached: 1,
+            stopped_by: "none".to_string(),
+            branches: None,
+        };
+
+        let text = serde_json::to_string(&answer).expect("an answer serialises");
+        assert!(!text.contains("branches"), "an absent branch pair still crossed: {text}");
+
+        let back: LookAheadAnswer = serde_json::from_str(&text).expect("and parses back");
+        assert_eq!(back.branches, None);
+    }
+
+    /// A reader that has never heard of branches still parses an answer that has them.
+    #[test]
+    fn an_answer_without_the_field_still_parses() {
+        let text = r#"{"start":{"conversation":1,"entry":2},"best":1,"complete":true,
+            "elapsed_ms":0,"states_explored":0,"nodes_reached":0,"stopped_by":"none"}"#;
+
+        let answer: LookAheadAnswer = serde_json::from_str(text).expect("it parses");
+        assert_eq!(answer.branches, None);
+    }
 }
 
 /// The graph a group builds, for a caller that wants to look before asking.

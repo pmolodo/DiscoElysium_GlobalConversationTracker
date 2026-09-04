@@ -167,11 +167,19 @@ fn test_red_check_branches() {
     });
 
     assert_eq!(result.best, Novelty::UnseenThisGame);
-    // A, B and C. The start node is entered by try_enter, which takes the FIRST of a
-    // rolled check's two outcomes rather than both - the marker answers "what follows from
-    // picking this option", and picking it is a single act. The two-outcome branching
-    // applies to rolled checks met further down, as children.
-    assert_eq!(result.states_explored, 3);
+
+    // BOTH OUTCOMES, from the start node as much as from a check met further down.
+    //
+    // This used to assert 3 and to argue for it: the start was entered by a `try_enter`
+    // that took the FIRST of a rolled check's two outcomes, on the reasoning that the
+    // marker answers "what follows from picking this option" and picking it is a single
+    // act. Picking it is indeed a single act - but its OUTCOME is not the player's to
+    // choose, and both outcomes follow from the one act. A check whose failure led
+    // somewhere new was drawn as leading nowhere. See de-fes.1.
+    //
+    // Six: A, B and C, each reached in the passing state and in the failing one, which
+    // differ by the two flags this check sets.
+    assert_eq!(result.states_explored, 6);
 }
 
 #[test]

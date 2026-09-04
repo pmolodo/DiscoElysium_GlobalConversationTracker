@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use crate::core::guard_value::GuardValue;
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, LookAheadLimit, Novelty};
-use crate::engine::engine::{LookAheadEngine, LookAheadOptions, LookAheadResult};
+use crate::engine::engine::{LookAheadEngine, LookAheadOptions, LookAheadResult, StartBranch};
 use crate::graph::graph::LookAheadGraph;
 use crate::test_graph::{node, Entry, GraphBuilder};
 use crate::world::test_world::TestWorld;
@@ -692,4 +692,113 @@ fn a_passing_check_closes_the_options_its_flag_guards() {
     // Already passed: the flag is set, so entry 2 is shut behind it.
     let world = TestWorld::new().set_variable("check.red", truth());
     assert_eq!(run(&graph, &world, &[2]).best, Novelty::SeenThisGame);
+}
+/// A check option one of whose branches is a rolled check itself.
+fn rolled_start() -> LookAheadGraph {
+    GraphBuilder::new()
+        .add(Entry::new(0).kind(DialogueCheckKind::White).flag("roll").links(&[1, 2]))
+        .add(Entry::new(1).guard(r#"Variable["roll"] == true"#))
+        .add(Entry::new(2).guard(r#"Variable["roll"] == false"#))
+        .build()
+}
+
+/// A crawl that STARTS at a rolled check sees BOTH of its branches.
+///
+/// It did not, until de-fes.1: the start was entered by a `try_enter` that took the first
+/// of the two states `enter_rolled` builds, and that is the passing one. So a check option
+/// whose FAILURE led somewhere new was drawn exactly like one that led nowhere - the mod
+/// said "nothing beyond here" on the strength of having looked at half of it.
+#[test]
+fn a_crawl_starting_at_a_check_sees_both_branches() {
+    // Only the FAILURE branch leads anywhere new.
+    assert_eq!(run(&rolled_start(), &TestWorld::new(), &[2]).best, Novelty::UnseenAnyGame);
+
+    // ...and so does only the passing one, which is the half that always worked.
+    assert_eq!(run(&rolled_start(), &TestWorld::new(), &[1]).best, Novelty::UnseenAnyGame);
+}
+
+/// Naming a branch explores that branch and not the other.
+#[test]
+fn a_named_branch_of_a_rolled_start_is_the_only_one_explored() {
+    let graph = rolled_start();
+    let engine = LookAheadEngine::default();
+
+    // Entry 1 is behind the passing flag, entry 2 behind its absence.
+    let pass = engine.evaluate_from(&graph, node(0), &TestWorld::new(), novel(&[1]), StartBranch::Pass);
+    assert_eq!(pass.best, Novelty::UnseenAnyGame, "the pass branch did not reach its own child");
+
+    let blind = engine.evaluate_from(&graph, node(0), &TestWorld::new(), novel(&[2]), StartBranch::Pass);
+    assert_eq!(blind.best, Novelty::SeenThisGame, "the pass branch reached the failure child");
+
+    let fail = engine.evaluate_from(&graph, node(0), &TestWorld::new(), novel(&[2]), StartBranch::Fail);
+    assert_eq!(fail.best, Novelty::UnseenAnyGame, "the fail branch did not reach its own child");
+
+    let other = engine.evaluate_from(&graph, node(0), &TestWorld::new(), novel(&[1]), StartBranch::Fail);
+    assert_eq!(other.best, Novelty::SeenThisGame, "the fail branch reached the passing child");
+}
+
+/// Each branch of a rolled check names its own outcome entry.
+#[test]
+fn each_branch_names_the_entry_it_leads_to() {
+    let graph = rolled_start();
+    let engine = LookAheadEngine::default();
+
+    assert_eq!(
+        engine.branch_destinations(&graph, node(0), &TestWorld::new(), StartBranch::Pass),
+        vec![node(1)],
+    );
+    assert_eq!(
+        engine.branch_destinations(&graph, node(0), &TestWorld::new(), StartBranch::Fail),
+        vec![node(2)],
+    );
+}
+
+/// A branch that opens several entries names all of them.
+#[test]
+fn a_branch_names_every_entry_it_opens() {
+    let graph = GraphBuilder::new()
+        .add(Entry::new(0).kind(DialogueCheckKind::White).flag("roll").links(&[1, 2, 3]))
+        .add(Entry::new(1).guard(r#"Variable["roll"] == true"#))
+        .add(Entry::new(2).guard(r#"Variable["roll"] == true"#))
+        .add(Entry::new(3).guard(r#"Variable["roll"] == false"#))
+        .build();
+
+    let found = LookAheadEngine::default().branch_destinations(
+        &graph, node(0), &TestWorld::new(), StartBranch::Pass);
+    assert_eq!(found, vec![node(1), node(2)]);
+}
+
+/// A group is walked through, because the player never sees one.
+#[test]
+fn a_branch_leading_to_a_group_names_what_the_group_holds() {
+    let graph = GraphBuilder::new()
+        .add(Entry::new(0).kind(DialogueCheckKind::White).flag("roll").links(&[1, 4]))
+        .add(Entry::new(1).guard(r#"Variable["roll"] == true"#).group().links(&[2, 3]))
+        .add(Entry::new(2))
+        .add(Entry::new(3))
+        .add(Entry::new(4).guard(r#"Variable["roll"] == false"#))
+        .build();
+
+    let found = LookAheadEngine::default().branch_destinations(
+        &graph, node(0), &TestWorld::new(), StartBranch::Pass);
+    assert_eq!(found, vec![node(2), node(3)], "the group itself was named as a destination");
+}
+
+/// A start that does not roll has a pass branch and no failure branch.
+///
+/// The definition that keeps `Fail` from quietly meaning `Pass` on an ordinary option.
+#[test]
+fn an_unrolled_start_has_no_failure_branch() {
+    let graph = GraphBuilder::new()
+        .add(Entry::new(0).links(&[1]))
+        .add(Entry::new(1))
+        .build();
+
+    let engine = LookAheadEngine::default();
+    let pass = engine.evaluate_from(&graph, node(0), &TestWorld::new(), novel(&[1]), StartBranch::Pass);
+    assert_eq!(pass.best, Novelty::UnseenAnyGame);
+
+    let fail = engine.evaluate_from(&graph, node(0), &TestWorld::new(), novel(&[1]), StartBranch::Fail);
+    assert_eq!(fail.best, Novelty::SeenThisGame);
+    assert_eq!(fail.states_explored, 0, "a branch that does not exist explored something");
 }

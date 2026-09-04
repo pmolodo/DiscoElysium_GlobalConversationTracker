@@ -96,6 +96,55 @@ impl fmt::Display for LookAheadResult {
     }
 }
 
+/// Which outcome of a rolled start a crawl explores.
+///
+/// A white or red check is the one node that can be entered in two ways: the roll passes
+/// and its success flag is set, or it fails and - for a red check - its failure flag is.
+/// [`LookAheadEngine::enter_rolled`] builds both, in that order, and this picks between
+/// them.
+///
+/// WHY THE ORDER IS LOAD BEARING: `Pass` and `Fail` are positions in that vector, not a
+/// re-derivation of the roll. Anything that reorders `enter_rolled` has to reorder these
+/// with it, which is why they are defined next to each other in the same file.
+///
+/// A start that does not roll leaves exactly one state, and that state is its `Pass`; its
+/// `Fail` is empty, because there is no failure to explore. The bridge asks for branches
+/// only where the start is a white or red check, so that case is a definition rather than
+/// a situation - but it is the definition that keeps `Fail` from quietly meaning `Pass`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartBranch {
+    /// Both, when the start rolls. What an ordinary crawl wants: the answer is the best
+    /// anything reachable can offer, and which side of a roll it lay on does not change it.
+    Either,
+
+    /// The roll passed.
+    Pass,
+
+    /// The roll failed. EMPTY WHERE THERE IS NO SUCH BRANCH - a red check with no failure
+    /// flag has nowhere to fail to, and the honest answer is that the crawl found nothing
+    /// rather than that it explored the pass branch twice.
+    Fail,
+}
+
+impl StartBranch {
+    /// The states this branch keeps, out of everything entering the start produced.
+    fn take(self, entered: Vec<LookAheadState>) -> Vec<LookAheadState> {
+        match self {
+            StartBranch::Either => entered,
+            // A single state means the start does not roll, and one branch is all there
+            // is - so naming a branch of it names that state rather than nothing.
+            StartBranch::Pass => entered.into_iter().take(1).collect(),
+            StartBranch::Fail => {
+                if entered.len() < 2 {
+                    Vec::new()
+                } else {
+                    entered.into_iter().skip(1).collect()
+                }
+            }
+        }
+    }
+}
+
 /// Trace of a crawl for diagnostics.
 #[derive(Debug, Clone)]
 pub struct LookAheadTrace {
@@ -245,40 +294,68 @@ impl LookAheadEngine {
     where
         F: Fn(DialogueNodeId) -> Novelty,
     {
+        self.evaluate_from(graph, start, world, novelty, StartBranch::Either)
+    }
+
+    /// The same crawl, told which outcome of a rolled start to explore.
+    ///
+    /// A white or red check is two options wearing one line of text, and the interesting
+    /// thing about it is often which of the two leads somewhere. [`StartBranch`] picks one
+    /// of them, so the caller can ask twice and report the answers apart.
+    ///
+    /// A start that does not roll has one way in, and every branch names it.
+    pub fn evaluate_from<F>(
+        &self,
+        graph: &LookAheadGraph,
+        start: DialogueNodeId,
+        world: &dyn ILookAheadWorld,
+        novelty: F,
+        branch: StartBranch,
+    ) -> LookAheadResult
+    where
+        F: Fn(DialogueNodeId) -> Novelty,
+    {
         let start_node = graph.get(start).expect("start node not in graph");
         let context = CrawlContext::new(graph.symbols(), world);
         let initial = Self::seed(graph, world);
 
-        // Enter the start node (pay cost, apply actions)
-        let entered = match self.try_enter(start_node, &initial, &context) {
-            Some(s) => s,
-            None => {
-                return LookAheadResult {
-                    best: Novelty::SeenThisGame,
-                    states_explored: 0,
-                    nodes_reached: 0,
-                    stopped_by: LookAheadLimit::None,
-                    trace: self.build_trace(graph, start, world, None),
-                };
-            }
-        };
+        // Enter the start node (pay cost, apply actions), keeping EVERY state that entering
+        // it can leave the crawl in. A rolled check leaves two - it is the one node type
+        // that does - and taking only the first of them was how a check option's failure
+        // branch went unexplored for as long as this function took `.next()`.
+        let entered = branch.take(self.enter(start_node, &initial, &context));
+        if entered.is_empty() {
+            return LookAheadResult {
+                best: Novelty::SeenThisGame,
+                states_explored: 0,
+                nodes_reached: 0,
+                stopped_by: LookAheadLimit::None,
+                trace: self.build_trace(graph, start, world, None),
+            };
+        }
 
         let mut seen = HashSet::new();
         let mut queue = VecDeque::new();
         let mut reached = HashSet::new();
         let mut tally = if self.options.collect_trace { Some(HashMap::new()) } else { None };
 
-        let first_key = StateKey { node: start, state: entered.clone() };
-        seen.insert(first_key.clone());
-        queue.push_back(first_key);
+        for state in &entered {
+            let key = StateKey { node: start, state: state.clone() };
+            if seen.insert(key.clone()) {
+                queue.push_back(key);
+            }
+        }
+
         reached.insert(start);
-        if let Some(t) = &mut tally { t.insert(start, 1); }
+        if let Some(t) = &mut tally { t.insert(start, entered.len()); }
 
         let sample_fn = self.options.on_state_reached.as_ref();
         let sample_every = self.options.state_sample_interval;
         let sampling = sample_fn.is_some() && sample_every > 0;
         if sampling {
-            sample_fn.unwrap()(start, &entered, seen.len());
+            for state in &entered {
+                sample_fn.unwrap()(start, state, seen.len());
+            }
         }
 
         let mut best = Novelty::SeenThisGame;
@@ -411,19 +488,66 @@ impl LookAheadEngine {
         state
     }
 
-    fn try_enter(
+
+    /// The entries one branch of a start leads to DIRECTLY.
+    ///
+    /// What the mod colours the word "Pass" or "Fail" by: the outcome entry the player
+    /// would actually be shown, as against [`Self::evaluate_from`]'s answer, which is the
+    /// best anything further down that branch can offer.
+    ///
+    /// GROUPS ARE WALKED THROUGH rather than reported. A group is a container the game
+    /// expands in place and never displays, so a branch that leads to one leads, as far as
+    /// a player can tell, to whatever the group holds. Better than a third of the database
+    /// is groups, so stopping at one would name a destination the player never sees.
+    ///
+    /// More than one is normal - a branch can open several entries at once - and the caller
+    /// takes the best novelty among them, on the same reasoning the crawl itself uses: the
+    /// interesting thing about a set of destinations is the most novel one in it.
+    pub fn branch_destinations(
         &self,
-        node: &LookAheadNode,
-        state: &LookAheadState,
-        context: &CrawlContext,
-    ) -> Option<LookAheadState> {
-        if !ternary_logic::can_pass(node.guard.test(&context.bound(state))) {
-            return None;
+        graph: &LookAheadGraph,
+        start: DialogueNodeId,
+        world: &dyn ILookAheadWorld,
+        branch: StartBranch,
+    ) -> Vec<DialogueNodeId> {
+        let Some(start_node) = graph.get(start) else { return Vec::new() };
+        let context = CrawlContext::new(graph.symbols(), world);
+        let initial = Self::seed(graph, world);
+        let entered = branch.take(self.enter(start_node, &initial, &context));
+
+        let mut found = Vec::new();
+        let mut seen = HashSet::new();
+        let mut pending: VecDeque<(DialogueNodeId, LookAheadState)> = VecDeque::new();
+
+        for state in entered {
+            pending.push_back((start, state));
         }
-        if !self.can_afford(node, state) {
-            return None;
+
+        while let Some((id, state)) = pending.pop_front() {
+            let Some(node) = graph.get(id) else { continue };
+
+            for &child_id in &node.links {
+                let Some(child) = graph.get(child_id) else { continue };
+
+                for next in self.enter(child, &state, &context) {
+                    if child.is_group {
+                        // Through it, not to it - and only once per state, since a group
+                        // reached twice the same way holds the same entries.
+                        if seen.insert(StateKey { node: child_id, state: next.clone() }) {
+                            pending.push_back((child_id, next));
+                        }
+                        continue;
+                    }
+
+                    if !found.contains(&child_id) {
+                        found.push(child_id);
+                    }
+                    break;
+                }
+            }
         }
-        self.enter(node, state, context).into_iter().next()
+
+        found
     }
 
     fn can_afford(&self, node: &LookAheadNode, state: &LookAheadState) -> bool {
