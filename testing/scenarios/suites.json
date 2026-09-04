@@ -225,17 +225,6 @@
           "pass": { "colour": "orange" },
           "fail": { "colour": "orange" },
           "branchesWhy": "nothing has been read anywhere, so both outcomes land on unread text and neither can reach anything that outranks it"
-        },
-        {
-          "save": "at-klaasjes-note",
-          "conversation": 656,
-          "what": "Klaasje's flower, in her room, on a profile that has recorded nothing",
-          "markers": "noneAnywhere",
-          "branches": "everyCheck",
-          "pass": { "colour": "orange" },
-          "fail": { "colour": "orange" },
-          "branchesWhy": "nothing has been read anywhere, so both outcomes land on unread text and neither can reach anything that outranks it",
-          "_why_this_one": "THE ONLY RED CHECK IN THE GAME THAT AN OPENING MENU OFFERS, which is what makes it reachable at all: the probe advances to the first menu and stops, and every other red check in the 76 conversations that hold one is deeper in. Found by reading the shipped index for entries carrying DifficultyRed and walking from entry 0 through the single-link narration the harness answers with one continue - 656:3 is the one that comes out. Its own guard names whirling.klaasje_flower_red_check_grab, which is why the save that stands in Klaasje's room is the one to open it from. advances is left unmeasured deliberately; the run reports the count it took."
         }
       ]
     },
