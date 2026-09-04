@@ -17,10 +17,12 @@
 #   DISCO_ELYSIUM_GCT_INGAME_TESTS=1 \
 #     tools/run-logged.sh dotnet in-game -- dotnet test tools/GameAutomation.Tests
 #
-# The name is <date>_<revision>_<tool>_<verb>, with -dirty on the revision when the tree
-# has been changed since the commit, and _2, _3 ... when that name is taken. THE FORMAT
-# LIVES IN TWO PLACES, here and in RunLog.cs, because one of them has to work without a
-# build and the other has to work without a shell; RunLogTests holds them to each other.
+# The name is <date>_<time>_<revision>_<tool>_<verb>, where the time is HH,MM,SS - commas
+# because a Windows file name cannot hold a colon - with -dirty on the revision when the
+# tree has been changed since the commit, and _2, _3 ... when even that name is taken,
+# which takes two runs starting in the same second. THE FORMAT LIVES IN TWO PLACES, here
+# and in RunLog.cs, because one of them has to work without a build and the other has to
+# work without a shell; RunLogTests holds them to each other.
 #
 # The command's exit status is this script's exit status, so it drops into a pipeline
 # where the bare command stood.
@@ -33,7 +35,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="${RUN_LOG_DIR:-$ROOT/testing/logs}"
 
 usage() {
-    sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'
     exit 2
 }
 
@@ -61,8 +63,9 @@ revision() {
 
 # The stem every run-log name is built from.
 stem() {
-    printf '%s_%s_%s_%s' \
-        "$(date +%Y-%m-%d)" "$(revision)" "$(safe "$1")" "$(safe "$2")"
+    printf '%s_%s_%s_%s_%s' \
+        "$(date +%Y-%m-%d)" "$(date +%H,%M,%S)" "$(revision)" \
+        "$(safe "$1")" "$(safe "$2")"
 }
 
 # The given path, or the first numbered variant of it that is free. Two runs at one commit

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Text.RegularExpressions;
 using GlobalConversationTracker.Automation;
@@ -14,16 +15,36 @@ namespace GlobalConversationTracker.Automation.Tests
         private const string Tool = "GameHarness";
         private const string Verb = "look-ahead";
 
+        /// <summary>A time of day with all three parts distinct, so none can hide.</summary>
+        private static readonly DateTime When = new DateTime(2026, 9, 4, 7, 44, 32);
+
         [Fact]
-        public void ANameCarriesTheDateTheRevisionTheToolAndTheVerb()
+        public void ANameCarriesTheTimeTheRevisionTheToolAndTheVerb()
         {
             string name = RunLog.FileName(
-                new DateTime(2026, 9, 4), "1e08319064b7bd9d115f26c3abf35145d3fb7d8e",
-                Tool, Verb);
+                When, "1e08319064b7bd9d115f26c3abf35145d3fb7d8e", Tool, Verb);
 
             Assert.Equal(
-                "2026-09-04_1e08319064b7bd9d115f26c3abf35145d3fb7d8e_GameHarness_look-ahead.txt",
+                "2026-09-04_07,44,32_1e08319064b7bd9d115f26c3abf35145d3fb7d8e"
+                    + "_GameHarness_look-ahead.txt",
                 name);
+        }
+
+        /// <summary>
+        /// The time is 24-hour, so an afternoon run sorts after a morning one.
+        /// </summary>
+        /// <remarks>
+        /// The whole point of the stamp is that a directory listing puts a day's runs in
+        /// the order they happened. A 12-hour clock would interleave them.
+        /// </remarks>
+        [Fact]
+        public void TheAfternoonSortsAfterTheMorning()
+        {
+            string morning = RunLog.FileName(When, "abc", Tool, Verb);
+            string afternoon = RunLog.FileName(When.AddHours(12), "abc", Tool, Verb);
+
+            Assert.Contains("_19,44,32_", afternoon);
+            Assert.True(string.CompareOrdinal(morning, afternoon) < 0);
         }
 
         [Theory]
@@ -32,16 +53,16 @@ namespace GlobalConversationTracker.Automation.Tests
         [InlineData("look ahead", "look-ahead")]
         public void AwkwardCharactersInAComponentBecomeDashes(string verb, string expected)
         {
-            string name = RunLog.FileName(new DateTime(2026, 9, 4), "abc", Tool, verb);
+            string name = RunLog.FileName(When, "abc", Tool, verb);
 
-            Assert.Equal("2026-09-04_abc_GameHarness_" + expected + ".txt", name);
+            Assert.Equal("2026-09-04_07,44,32_abc_GameHarness_" + expected + ".txt", name);
         }
 
         [Fact]
         public void AnEmptyComponentIsRefused()
         {
             Assert.Throws<ArgumentException>(
-                () => RunLog.FileName(new DateTime(2026, 9, 4), "abc", Tool, string.Empty));
+                () => RunLog.FileName(When, "abc", Tool, string.Empty));
         }
 
         [Fact]
@@ -101,20 +122,38 @@ namespace GlobalConversationTracker.Automation.Tests
         /// other: the script has to work before anything is built, and the harness has to
         /// work without a shell. So they are held to each other here instead, and a change
         /// to one that is not made to the other fails this.
+        ///
+        /// THE SHELL'S OWN STAMP IS READ BACK AND HANDED TO THE C# SIDE, rather than both
+        /// being asked what time it is. Two clock readings a few milliseconds apart can
+        /// straddle a second, and a cross-check that fails once in a while on the clock is
+        /// worse than none - it teaches a reader to re-run it. Nothing is lost by it: the
+        /// stamp is parsed with <see cref="RunLog.TimeFormat"/>, so a script writing the
+        /// time in any other shape fails to parse and fails the test.
         /// </remarks>
         [Fact]
         public void TheShellWrapperNamesARunTheSameWay()
         {
             string root = GameInstall.RepoRoot();
-            string fromShell = Run(
+            string fromShell = Path.GetFileName(Run(
                 Bash(),
                 "\"" + Path.Combine(root, "tools", "run-logged.sh").Replace('\\', '/')
                     + "\" --name-only " + Tool + " " + Verb,
-                root);
+                root).Trim());
+
+            string[] parts = fromShell.Split('_');
+            Assert.True(
+                DateTime.TryParseExact(
+                    parts[0] + "_" + parts[1],
+                    RunLog.DateFormat + "_" + RunLog.TimeFormat,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out DateTime when),
+                $"the shell named a run '{fromShell}', whose first two parts are not a "
+                    + $"'{RunLog.DateFormat}' date and a '{RunLog.TimeFormat}' time");
 
             Assert.Equal(
-                Path.GetFileName(RunLog.PathFor(Tool, Verb, root)),
-                Path.GetFileName(fromShell.Trim()));
+                RunLog.FileName(when, RunLog.Revision(root), Tool, Verb),
+                fromShell);
         }
 
         /// <summary>

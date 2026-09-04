@@ -9,7 +9,7 @@ namespace GlobalConversationTracker.Automation
 {
     /// <summary>
     /// A run's console output, kept in <c>testing/logs</c> under a name that says when it
-    /// ran, what ran, and what it ran against.
+    /// ran, to the second, what ran, and what it ran against.
     /// </summary>
     /// <remarks>
     /// <para>WHY IT IS NOT LEFT TO WHOEVER LAUNCHES THE RUN. It was, and the logs that
@@ -42,6 +42,18 @@ namespace GlobalConversationTracker.Automation
         /// <summary>The date part's format, and the first thing a name sorts by.</summary>
         public const string DateFormat = "yyyy-MM-dd";
 
+        /// <summary>The time part's format, which is the second thing a name sorts by.</summary>
+        /// <remarks>
+        /// COMMAS RATHER THAN COLONS, because a Windows file name cannot hold a colon at
+        /// all. Anything that separates the three numbers would do; commas were asked for
+        /// and read as a time to a person scanning a directory, which is the whole job.
+        ///
+        /// Seconds rather than minutes: two runs a minute apart is not the case worth
+        /// naming, two runs back to back is. It does not make <see cref="Unique"/>
+        /// redundant - two runs can start in the same second - only rare.
+        /// </remarks>
+        public const string TimeFormat = "HH,mm,ss";
+
         private const string Extension = ".txt";
 
         /// <summary>Where the logs live, relative to the repository root.</summary>
@@ -59,7 +71,8 @@ namespace GlobalConversationTracker.Automation
         }
 
         /// <summary>
-        /// The name a run's log takes: the date, the revision, the tool and its verb.
+        /// The name a run's log takes: the date and time, the revision, the tool and its
+        /// verb.
         /// </summary>
         /// <param name="when">When the run started.</param>
         /// <param name="revision">What it ran against, from <see cref="Revision"/>.</param>
@@ -73,6 +86,7 @@ namespace GlobalConversationTracker.Automation
             return string.Join(
                 "_",
                 when.ToString(DateFormat, CultureInfo.InvariantCulture),
+                when.ToString(TimeFormat, CultureInfo.InvariantCulture),
                 Safe(revision, nameof(revision)),
                 Safe(tool, nameof(tool)),
                 Safe(verb, nameof(verb))) + Extension;

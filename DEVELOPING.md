@@ -361,15 +361,18 @@ Every run keeps its whole output in `testing/logs`, under a name that says when 
 what it ran against, and what it was:
 
 ```
-testing/logs/2026-09-04_1e08319064b7bd9d115f26c3abf35145d3fb7d8e_GameHarness_look-ahead.txt
-             ^ date       ^ the commit it ran against              ^ tool     ^ verb
+testing/logs/2026-09-04_07,44,32_1e08319064b7bd9d115f26c3abf35145d3fb7d8e_GameHarness_look-ahead.txt
+             ^ date      ^ time  ^ the commit it ran against              ^ tool    ^ verb
 ```
+
+The time is `HH,MM,SS` - commas because a file name cannot hold a colon - so a day's runs
+sort into the order they happened.
 
 The revision gains `-dirty` when the tree has been changed since that commit - a sha that
 does not describe what actually ran would invite a later reader to diff against a commit
 that never contained the code under test - and a name already taken gains `_2`, `_3`,
-which is what iterating on a failure looks like. The folder is gitignored; the logs are
-for reading and diffing locally, not for committing.
+which now takes two runs starting in the same second. The folder is gitignored; the logs
+are for reading and diffing locally, not for committing.
 
 **GameHarness logs itself.** Every verb, including the ones the in-game tests reach by
 calling `Program.Main`, with nothing to remember at the call site:
