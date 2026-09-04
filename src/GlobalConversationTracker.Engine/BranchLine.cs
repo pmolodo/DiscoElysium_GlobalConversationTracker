@@ -121,6 +121,17 @@ namespace GlobalConversationTracker.Engine
                 return coloured + Draw(html, FoundMarker);
             }
 
+            // AN OUTCOME ON THE TOP RUNG IS NOT UNCERTAIN ABOUT ANYTHING. The asterisk
+            // answers "does something beyond this outrank it", and where the outcome
+            // already lands on text no save has read, nothing can - so the answer is no,
+            // settled, whether or not the search finished. Drawing '*?' there would claim
+            // a doubt about a question that has none. The option's own marker has always
+            // reasoned this way, refusing a search it can prove pointless before it starts.
+            if (branch.Destination >= (int)Novelty.UnseenAnyGame)
+            {
+                return coloured;
+            }
+
             // THE BRANCH LINE'S OWN UNCERTAIN COLOUR, not the option's. An option is
             // drawn on black, where the mid grey the mod uses reads perfectly well; this
             // line is drawn on the check's own background, where the same grey measured

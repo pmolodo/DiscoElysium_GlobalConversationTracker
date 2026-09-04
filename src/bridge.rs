@@ -862,22 +862,22 @@ pub fn answer(
             Some(DialogueCheckKind::Red) | Some(DialogueCheckKind::White)
         );
 
-        // NOTHING BETTER IS REACHABLE, so there is no crawl to run. The walk that
-        // decides this is a few thousand pointer-follows against a crawl budgeted at
-        // 200,000 states, and it stops early whenever the answer is yes - so the case it
-        // costs anything in is the case where it saves a whole crawl. See
-        // LookAheadEngine::reaches_potential_improvement.
+        // NOTHING BETTER IS REACHABLE, so there is no crawl to run. Asked through
+        // `worth_crawling`, which is the ONE place this is decided for an ordinary option
+        // and for each outcome of a check alike.
         //
         // A COMPLETE ANSWER, not a gave-up one: this establishes that nothing outranks
         // the option, which is exactly what a finished crawl finding nothing would.
         //
-        // A ROLLED CHECK STILL REPORTS ITS TWO OUTCOMES. The shortcut settles the
-        // ASTERISK - is anything novel down there - and the Pass/Fail line's WORDS are
-        // coloured by where each outcome leads, which is a fact about the option either
-        // way. A check both of whose outcomes are already read has a line saying exactly
-        // that, and dropping it here would have made those checks silently lineless.
+        // A ROLLED CHECK STILL REPORTS ITS TWO OUTCOMES, and asks about them ITSELF rather
+        // than being handed the option's conclusion. The two questions are not the same
+        // one: "nothing outranks the OPTION" does not settle "nothing outranks where this
+        // outcome LANDS", and where an outcome lands lower than the option does - a check
+        // this save has not read, one of whose outcomes it has - there can be something
+        // worth reporting down that branch after all. Answering it here used to assume
+        // otherwise and dropped that asterisk.
         let own = novelty(id);
-        if !LookAheadEngine::reaches_potential_improvement(&graph, id, own, &novelty) {
+        if !worth_crawling(&graph, id, own, &novelty) {
             answers.push(LookAheadAnswer {
                 start: *start,
                 best: Novelty::SeenThisGame as i32,
@@ -888,8 +888,8 @@ pub fn answer(
                 nodes_reached: 0,
                 stopped_by: "none".to_string(),
                 branches: rolled.then(|| BranchAnswers {
-                    pass: settled_branch(&engine, &graph, id, &world, &novelty, StartBranch::Pass),
-                    fail: settled_branch(&engine, &graph, id, &world, &novelty, StartBranch::Fail),
+                    pass: branch_answer(&engine, &graph, id, &world, &novelty, StartBranch::Pass),
+                    fail: branch_answer(&engine, &graph, id, &world, &novelty, StartBranch::Fail),
                 }),
             });
             continue;
@@ -956,30 +956,39 @@ fn limit_name(limit: crate::core::types::LookAheadLimit) -> &'static str {
     }
 }
 
-/// One outcome of a rolled check whose crawl was refused as pointless.
+/// Whether a crawl from this start could find anything worth reporting.
 ///
-/// Where it leads is still worth reporting - that is what colours the word - and the best
-/// beyond it is the destination itself, because the refusal established that nothing in
-/// the group outranks the option and so nothing down either branch can either.
-fn settled_branch<F>(
-    engine: &LookAheadEngine,
+/// THE ONE PLACE THE QUESTION IS ASKED, for an ordinary option and for each outcome of a
+/// rolled check alike. A crawl exists to find something that OUTRANKS a baseline: the
+/// option's own novelty for an ordinary option, and where the outcome LANDS for a branch.
+/// Both cases refuse for the same two reasons, in the same order, so neither can drift
+/// from the other and a rule added here reaches all three paths at once.
+///
+/// NOTHING OUTRANKS THE TOP RUNG. Text no save has read is as novel as anything gets, so
+/// there is nothing for a search to find and the answer is settled without building a
+/// state - forward or backward, since this is decided before any strategy is chosen.
+///
+/// AND NOTHING IS REACHABLE THAT WOULD BEAT IT. The walk that decides this is a few
+/// thousand pointer-follows against a crawl budgeted at 200,000 states, and it stops early
+/// whenever the answer is yes - so the case it costs anything in is the case where it
+/// saves a whole crawl. See LookAheadEngine::reaches_potential_improvement.
+///
+/// FOR A BRANCH IT WALKS FROM THE CHECK rather than from that outcome's own destinations,
+/// which OVER-approximates: it can answer yes for a branch whose own half of the graph
+/// holds nothing. That direction is the safe one - it costs a crawl that finds nothing,
+/// never a wrong answer - and the branch's own destinations are not a cheaper place to
+/// start the walk from.
+fn worth_crawling<F>(
     graph: &LookAheadGraph,
     start: DialogueNodeId,
-    world: &dyn ILookAheadWorld,
+    baseline: Novelty,
     novelty: F,
-    branch: StartBranch,
-) -> BranchAnswer
+) -> bool
 where
     F: Fn(DialogueNodeId) -> Novelty,
 {
-    let destination = engine
-        .branch_destinations(graph, start, world, branch)
-        .into_iter()
-        .map(&novelty)
-        .max()
-        .unwrap_or(Novelty::SeenThisGame);
-
-    BranchAnswer { destination: destination as i32, best: destination as i32, complete: true }
+    baseline < Novelty::UnseenAnyGame
+        && LookAheadEngine::reaches_potential_improvement(graph, start, baseline, novelty)
 }
 
 /// One outcome of a rolled check: where it leads, and what lies beyond that.
@@ -1000,6 +1009,17 @@ where
         .map(&novelty)
         .max()
         .unwrap_or(Novelty::SeenThisGame);
+
+    // THE SAME QUESTION THE OPTION ASKS, against this outcome's own baseline. Where the
+    // branch lands is the most that is already known about it, so a crawl is worth running
+    // only if something down there beats that.
+    if !worth_crawling(graph, start, destination, &novelty) {
+        return BranchAnswer {
+            destination: destination as i32,
+            best: destination as i32,
+            complete: true,
+        };
+    }
 
     let result = engine.evaluate_from(graph, start, world, &novelty, branch);
 
@@ -1036,6 +1056,72 @@ fn combine(start: NodeRef, pass: &BranchAnswer, fail: &BranchAnswer) -> LookAhea
 #[cfg(test)]
 mod branch_wire_tests {
     use super::*;
+    use crate::test_graph::{node, Entry, GraphBuilder};
+    use crate::world::test_world::TestWorld;
+
+    /// A check whose outcomes land on different rungs, both below the top one.
+    ///
+    /// 0 is the check. Passing opens 1, which this save has read, and 2 lies past it;
+    /// failing opens 3. Nothing anywhere is unseen in any game, which is what makes the
+    /// OPTION not worth crawling while one of its OUTCOMES still is.
+    fn check_landing_on_something_read() -> LookAheadGraph {
+        GraphBuilder::new()
+            .add(Entry::new(0).kind(DialogueCheckKind::White).flag("roll").links(&[1, 3]))
+            .add(Entry::new(1).guard(r#"Variable["roll"] == true"#).links(&[2]))
+            .add(Entry::new(2))
+            .add(Entry::new(3).guard(r#"Variable["roll"] == false"#))
+            .build()
+    }
+
+    /// The option's refusal does not settle its outcomes' questions.
+    ///
+    /// THE BUG THE ONE-PLACE REFUSAL FIXED. "Nothing outranks the OPTION" and "nothing
+    /// outranks where this OUTCOME lands" are different questions whenever an outcome
+    /// lands lower than the option does, and the branches used to be handed the option's
+    /// answer. Here the option is unseen-this-game and nothing beats that, so no crawl
+    /// runs for it - but passing lands on text this save has READ, and the unread entry
+    /// past it outranks that. The pass half has an asterisk to draw; it used to draw none.
+    #[test]
+    fn a_refused_option_still_lets_each_outcome_ask_for_itself() {
+        let graph = check_landing_on_something_read();
+        let engine = LookAheadEngine::default();
+        let world = TestWorld::new();
+
+        // 1 is read; everything else is unseen this game. Nothing is unseen anywhere.
+        let novelty = |id: DialogueNodeId| {
+            if id == node(1) { Novelty::SeenThisGame } else { Novelty::UnseenThisGame }
+        };
+
+        assert!(
+            !worth_crawling(&graph, node(0), novelty(node(0)), novelty),
+            "the option should be refused: nothing outranks unseen-this-game here",
+        );
+
+        let pass = branch_answer(&engine, &graph, node(0), &world, novelty, StartBranch::Pass);
+        assert_eq!(pass.destination, Novelty::SeenThisGame as i32, "passing opens 1");
+        assert_eq!(
+            pass.best, Novelty::UnseenThisGame as i32,
+            "the unread entry past 1 outranks where passing lands, and should be reported",
+        );
+
+        let fail = branch_answer(&engine, &graph, node(0), &world, novelty, StartBranch::Fail);
+        assert_eq!(fail.destination, Novelty::UnseenThisGame as i32, "failing opens 3");
+        assert_eq!(fail.best, fail.destination, "and nothing past 3 beats it");
+    }
+
+    /// An outcome on the top rung is refused in the same place, and costs nothing.
+    #[test]
+    fn an_outcome_on_the_top_rung_is_refused_without_a_search() {
+        let graph = check_landing_on_something_read();
+
+        // Everything unseen anywhere, which is what a fresh profile looks like.
+        let novelty = |_: DialogueNodeId| Novelty::UnseenAnyGame;
+
+        assert!(
+            !worth_crawling(&graph, node(0), Novelty::UnseenAnyGame, novelty),
+            "nothing outranks the top rung, so there is nothing to search for",
+        );
+    }
 
     /// An answer carrying two outcomes round-trips as JSON.
     #[test]

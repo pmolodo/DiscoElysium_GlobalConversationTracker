@@ -1132,10 +1132,12 @@ namespace GlobalConversationTracker.Harness
                     branchPolicy: BranchPolicy.EveryCheck,
                     branches: new BranchExpectation(
                         new BranchHalf(BranchColour.Red, Marker.Uncertain),
-                        new BranchHalf(BranchColour.Orange, Marker.Uncertain),
+                        new BranchHalf(BranchColour.Orange),
                         "where each outcome LANDS is read off the graph and costs no "
-                            + "search, so both words keep their colours; what lies beyond "
-                            + "each is what the budget stopped, so both asterisks are grey")),
+                            + "search, so both words keep their colours; the pass half is "
+                            + "what the budget stopped, so its asterisk is grey - and the "
+                            + "fail half lands on the top rung, where no search is run at "
+                            + "all and nothing could have outranked it if one had")),
             },
             pluginSettings: new Dictionary<string, string>
             {

@@ -172,3 +172,110 @@ fn every_rolled_check_in_the_corpus_answers() {
     assert!(asked > 0, "no rolled check was asked about at all");
     eprintln!("asked about {asked} rolled checks");
 }
+
+/// Both kinds of rolled check answer, not just whichever the corpus offers first.
+///
+/// The mod treats red and white checks alike - both roll, both get a Pass / Fail line -
+/// and nothing said so. The searches above take the first roll they find in a group, which
+/// on this corpus is very often white, so a red check could have stopped answering without
+/// a single test noticing.
+#[test]
+fn a_red_check_and_a_white_check_both_answer() {
+    let Some(index) = index() else {
+        eprintln!("no shipped index; skipping.");
+        return;
+    };
+
+    let mut asked: Vec<DialogueCheckKind> = Vec::new();
+
+    for kind in [DialogueCheckKind::Red, DialogueCheckKind::White] {
+        for conversation in conversations(&index) {
+            let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+
+            let Some(roll) = graph.nodes().find(|node| node.kind == kind) else { continue };
+
+            let request = LookAheadRequest {
+                conversation,
+                starts: vec![NodeRef::from(roll.id)],
+                world: undecided(),
+                ..Default::default()
+            };
+
+            let response = answer(&index, None, &request);
+            assert!(response.error.is_none(), "{conversation}: {:?}", response.error);
+
+            let reply = response.answers.first().expect("one start, one answer");
+            assert!(
+                reply.branches.is_some(),
+                "{conversation}:{} is a {kind:?} check and carried no branches",
+                reply.start.entry,
+            );
+
+            asked.push(kind);
+            break;
+        }
+    }
+
+    assert_eq!(
+        asked,
+        vec![DialogueCheckKind::Red, DialogueCheckKind::White],
+        "the corpus did not yield one of each kind to ask about",
+    );
+}
+
+/// An outcome landing on text no save has read costs no search at all.
+///
+/// THE RULE THE WHOLE FEATURE RESTS ON, at branch level: a crawl exists to find something
+/// that OUTRANKS what is already known, and nothing outranks the top rung. The option-level
+/// form of this is older - a search is refused before any state is built when nothing
+/// reachable can beat the option's own novelty - and this is the case it cannot cover, an
+/// option worth crawling for one outcome but not the other.
+///
+/// Measured as STATES rather than as time: zero states is the only evidence that survives
+/// a fast machine.
+#[test]
+fn an_outcome_on_the_top_rung_is_not_searched() {
+    let Some(index) = index() else {
+        eprintln!("no shipped index; skipping.");
+        return;
+    };
+
+    let Some((conversation, rolled, _)) = a_group_with_a_roll() else {
+        panic!("the shipped index holds no group with both a rolled check and a plain entry");
+    };
+
+    // Nothing recorded anywhere, so every entry either branch lands on is on the top rung.
+    let request = LookAheadRequest {
+        conversation,
+        starts: vec![rolled],
+        world: undecided(),
+        ..Default::default()
+    };
+
+    let response = answer(&index, None, &request);
+    assert!(response.error.is_none(), "{:?}", response.error);
+
+    let reply = response.answers.first().expect("one start, one answer");
+    let branches = reply.branches.as_ref().expect("a roll carries branches");
+
+    for (name, branch) in [("pass", &branches.pass), ("fail", &branches.fail)] {
+        // Where it lands is read off the graph and costs nothing; what it says about
+        // BEYOND has to be the destination itself, unsearched and not in doubt.
+        assert_eq!(
+            branch.best, branch.destination,
+            "{conversation}:{} {name} claims to reach past a destination nothing can outrank",
+            rolled.entry,
+        );
+        assert!(
+            branch.complete,
+            "{conversation}:{} {name} reported a search that gave up, but none should have run",
+            rolled.entry,
+        );
+    }
+
+    assert_eq!(
+        reply.states_explored, 0,
+        "{conversation}:{} built search states for two outcomes that could not be improved on",
+        rolled.entry,
+    );
+}
