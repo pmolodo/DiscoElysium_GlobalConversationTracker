@@ -33,8 +33,14 @@
 //! an unanswered question widens the reachable set rather than narrowing it, costing a
 //! wasted click instead of hiding content the player has never seen. That is what the
 //! managed engine does with an unanswerable query, and it must stay true here.
+//!
+//! The one exception is a DIALOGUE VARIABLE the database declares, because such a variable
+//! is not unanswerable - a variable nobody has written is at the value the database gives
+//! it. Where the variable table has been deployed, that value is the fallback; see
+//! [`SnapshotWorld`].
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -43,7 +49,7 @@ use crate::core::guard_value::{GuardValue, GuardValueKind};
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, Novelty, Ternary};
 use crate::engine::engine::LookAheadEngine;
 use crate::graph::graph::LookAheadGraph;
-use crate::index::{build_group_graph, Index};
+use crate::index::{build_group_graph, Index, VariableTable};
 use crate::world::world::ILookAheadWorld;
 
 /// One entry, as it crosses.
@@ -63,6 +69,202 @@ impl From<NodeRef> for DialogueNodeId {
     fn from(node: NodeRef) -> Self {
         DialogueNodeId::new(node.conversation, node.entry)
     }
+}
+
+/// The run separator inside a [`NodeSet`]'s entry list.
+///
+/// `..` rather than `-` so a negative id could never be read as a range boundary. The
+/// shipped database has none, and a wire format that becomes ambiguous the first time one
+/// appears is not worth the character it saves.
+const RUN_SEPARATOR: &str = "..";
+
+/// A set of entries, in the shape it crosses the bridge in.
+///
+/// ## Why this is not just a list
+///
+/// Three fields of a request name entries - what the player has been shown, what is unseen
+/// this game, what is unseen in any game - and a group is 4,514 entries for conversation
+/// 631. Measured (`tests/request_size.rs`), one such set costs:
+///
+/// ```text
+/// one entry set                            members   objects      ids     runs    bits
+/// everything seen (a completionist save)      4514    149040    18027      146     754
+/// one entry in ten, clustered                  451     14774     1703       16     754
+/// one entry in ten, scattered                  452     14925     1850     1850     754
+/// ```
+///
+/// `objects` is `[{"conversation":631,"entry":12},...]`, which is what the first crossing
+/// wrote and what a whole request at 341,357 bytes was mostly made of. `ids` groups by
+/// conversation, which is what the mod's own state file has done on disk since format
+/// version 3. `runs` collapses consecutive ids, and `bits` is a base64 bitmap in the order
+/// [`questions_for`] returned the entries.
+///
+/// `runs` is chosen. It is the smallest on the data that actually occurs, because a save's
+/// history is CLUSTERED - a player walks through a conversation rather than through every
+/// seventh entry of one - and the staged worst-case global state covers the whole group in
+/// one run. Its bad case is a perfectly alternating set, where it costs what `ids` costs.
+///
+/// `bits` is smaller in that bad case and is still not chosen. At 146 bytes for a whole
+/// group there is nothing left to buy, and what it would cost is self-description: a
+/// bitmap only means anything against a matching entries list, so a plugin holding a
+/// cached one against a rebuilt index would send bits that decode cleanly and mean
+/// something else. These carry their own ids.
+///
+/// That trade goes the other way for the ANSWERS, where the constant part is most of the
+/// request - see [`WorldSnapshot::variable_values`].
+///
+/// ## What it looks like
+///
+/// ```json
+/// {"631": "0..40,42,50..99", "636": "3"}
+/// ```
+///
+/// A list of `[{"conversation":631,"entry":12}]` objects is still ACCEPTED, so a
+/// hand-written fixture or a test can say what it means the long way. Nothing writes it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NodeSet {
+    nodes: HashSet<NodeRef>,
+}
+
+impl NodeSet {
+    pub fn contains(&self, node: &NodeRef) -> bool {
+        self.nodes.contains(node)
+    }
+
+    pub fn insert(&mut self, node: NodeRef) -> bool {
+        self.nodes.insert(node)
+    }
+
+    pub fn len(&self) -> usize {
+        self.nodes.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &NodeRef> {
+        self.nodes.iter()
+    }
+
+    /// The runs, by conversation, as they are written.
+    fn runs(&self) -> BTreeMap<String, String> {
+        let mut by_conversation: BTreeMap<i32, Vec<i32>> = BTreeMap::new();
+        for node in &self.nodes {
+            by_conversation.entry(node.conversation).or_default().push(node.entry);
+        }
+
+        by_conversation
+            .into_iter()
+            .map(|(conversation, mut entries)| {
+                entries.sort_unstable();
+                (conversation.to_string(), write_runs(&entries))
+            })
+            .collect()
+    }
+}
+
+impl FromIterator<NodeRef> for NodeSet {
+    fn from_iter<T: IntoIterator<Item = NodeRef>>(nodes: T) -> Self {
+        Self { nodes: nodes.into_iter().collect() }
+    }
+}
+
+impl Serialize for NodeSet {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.runs().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for NodeSet {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        /// Either shape, told apart by which one parses.
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Wire {
+            Runs(BTreeMap<String, String>),
+            Nodes(Vec<NodeRef>),
+        }
+
+        match Wire::deserialize(deserializer)? {
+            Wire::Nodes(nodes) => Ok(nodes.into_iter().collect()),
+            Wire::Runs(runs) => {
+                let mut set = NodeSet::default();
+                for (conversation, entries) in runs {
+                    let conversation: i32 = conversation.parse().map_err(|_| {
+                        serde::de::Error::custom(format!(
+                            "'{conversation}' is not a conversation id",
+                        ))
+                    })?;
+                    for entry in read_runs(&entries).map_err(serde::de::Error::custom)? {
+                        set.insert(NodeRef { conversation, entry });
+                    }
+                }
+                Ok(set)
+            }
+        }
+    }
+}
+
+/// Sorted ids as `0..40,42,50..99`.
+fn write_runs(entries: &[i32]) -> String {
+    let mut runs: Vec<String> = Vec::new();
+    let mut index = 0;
+    while index < entries.len() {
+        let first = entries[index];
+        let mut last = first;
+        // Duplicates cannot occur - these come out of a set - so a run is strictly
+        // ascending and one step at a time.
+        while index + 1 < entries.len() && entries[index + 1] == last + 1 {
+            index += 1;
+            last = entries[index];
+        }
+
+        runs.push(if first == last {
+            first.to_string()
+        } else {
+            format!("{first}{RUN_SEPARATOR}{last}")
+        });
+        index += 1;
+    }
+
+    runs.join(",")
+}
+
+/// Reads back what [`write_runs`] wrote.
+///
+/// Refuses anything it does not understand rather than skipping it. A run list that is
+/// silently half-read is a world that quietly answers "not seen" for entries the player
+/// has read, and the marker is then wrong with nothing to say so.
+fn read_runs(text: &str) -> Result<Vec<i32>, String> {
+    let mut entries = Vec::new();
+    for run in text.split(',') {
+        let run = run.trim();
+        if run.is_empty() {
+            continue;
+        }
+
+        let (first, last) = match run.split_once(RUN_SEPARATOR) {
+            Some((first, last)) => (first, last),
+            None => (run, run),
+        };
+
+        let first: i32 = first
+            .trim()
+            .parse()
+            .map_err(|_| format!("'{run}' is not an entry id or a range of them"))?;
+        let last: i32 = last
+            .trim()
+            .parse()
+            .map_err(|_| format!("'{run}' is not an entry id or a range of them"))?;
+        if last < first {
+            return Err(format!("'{run}' runs backwards"));
+        }
+
+        entries.extend(first..=last);
+    }
+
+    Ok(entries)
 }
 
 /// A value, in a shape a C# caller can write without knowing this crate.
@@ -96,14 +298,6 @@ impl From<&WireValue> for GuardValue {
     }
 }
 
-/// What a check answers, when the plugin knows.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct CheckAnswer {
-    pub node: NodeRef,
-    /// -1 fails, 0 undecided, 1 passes - the three the engine's `Ternary` carries.
-    pub passes: i32,
-}
-
 /// The player's situation, as the plugin sees it, for one look-ahead.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct WorldSnapshot {
@@ -112,11 +306,35 @@ pub struct WorldSnapshot {
     pub day_counter: i32,
     pub clock_locked: bool,
     /// Dialogue variables, by name.
+    ///
+    /// For a caller that wants to say what it means: a fixture, a test, a tool. The plugin
+    /// uses [`WorldSnapshot::variable_values`] instead, and where both name the same
+    /// variable this one wins, because naming it is the more specific statement.
     #[serde(default)]
     pub variables: HashMap<String, WireValue>,
+    /// The same answers, in the order [`Questions::variables`] listed the names.
+    ///
+    /// ## Why a caller would send these instead
+    ///
+    /// The names are CONSTANT for a group, and the plugin already holds them: it asked for
+    /// the questions once and cached them, because they cannot change while the game is
+    /// running. Sending them back with every response menu is sending back what the engine
+    /// itself said - 306 of them for conversation 631's group, and measured
+    /// (`tests/request_size.rs`) they were 14 KB of a 22.5 KB request, repeated per menu.
+    ///
+    /// This is the shape that was NOT chosen for the entry sets, and the difference is
+    /// what it buys. A run list already costs 146 bytes for a whole group, so nothing is
+    /// left to win there and self-description is free; here it is most of the request. The
+    /// coupling is also checkable rather than silent: a positional list of the wrong LENGTH
+    /// is refused outright, where a bitmap of the right length simply means something else.
+    #[serde(default)]
+    pub variable_values: Vec<WireValue>,
     /// World queries, by the key [`questions_for`] gave them.
     #[serde(default)]
     pub queries: HashMap<String, WireValue>,
+    /// The same answers, in the order [`Questions::queries`] listed the keys.
+    #[serde(default)]
+    pub query_values: Vec<WireValue>,
     /// Items held when the crawl starts.
     #[serde(default)]
     pub items: HashSet<String>,
@@ -126,35 +344,95 @@ pub struct WorldSnapshot {
     /// Thoughts in the cabinet when the crawl starts.
     #[serde(default)]
     pub thoughts: HashSet<String>,
+    /// Entries whose skill check the plugin says PASSES.
+    ///
+    /// Two sets rather than one list of outcomes, because the third outcome is "not
+    /// known", and that is what an entry in neither set already means. A `Ternary` on the
+    /// wire would have carried an Unknown that says exactly what silence says.
     #[serde(default)]
-    pub checks: Vec<CheckAnswer>,
+    pub checks_pass: NodeSet,
+    /// Entries whose skill check the plugin says FAILS.
+    #[serde(default)]
+    pub checks_fail: NodeSet,
     /// Entries the player has already been shown.
     #[serde(default)]
-    pub seen: HashSet<NodeRef>,
+    pub seen: NodeSet,
 }
 
-/// A [`WorldSnapshot`] with its lookups arranged for asking rather than for sending.
+impl WorldSnapshot {
+    /// Moves the positional answers onto the names the engine asked under.
+    ///
+    /// Must run before the snapshot is asked anything. A positional list that is present
+    /// and the wrong length is REFUSED rather than zipped as far as it goes: a caller
+    /// answering a stale questions list would otherwise have every answer after the first
+    /// difference land on the wrong variable, and the marker would be wrong with nothing
+    /// to report it.
+    pub fn resolve(&mut self, questions: &Questions) -> Result<(), String> {
+        place("variable", &questions.variables, &self.variable_values, &mut self.variables)?;
+        place("query", &questions.queries, &self.query_values, &mut self.queries)?;
+        self.variable_values.clear();
+        self.query_values.clear();
+        Ok(())
+    }
+}
+
+/// Names `values` by `asked`, without disturbing anything `named` already says.
+fn place(
+    what: &str,
+    asked: &[String],
+    values: &[WireValue],
+    named: &mut HashMap<String, WireValue>,
+) -> Result<(), String> {
+    if values.is_empty() {
+        return Ok(());
+    }
+
+    if values.len() != asked.len() {
+        return Err(format!(
+            "{} {what} answers came back for {} questions; the caller is answering a \
+             different list of them than this group asks",
+            values.len(),
+            asked.len(),
+        ));
+    }
+
+    for (name, value) in asked.iter().zip(values) {
+        named.entry(name.clone()).or_insert_with(|| value.clone());
+    }
+
+    Ok(())
+}
+
+/// A [`WorldSnapshot`], answering as a world.
+///
+/// ## The variable table behind it
+///
+/// A snapshot answers what the plugin could read. What it could not read reads Unknown,
+/// which is permissive and correct for a genuinely unanswerable question - but a dialogue
+/// variable nobody has written is not unanswerable, it is at the value the database
+/// declares. Answering Unknown for it makes every guard over it undecidable; answering
+/// boolean false for it makes every ordering comparison over a COUNTER undecidable, which
+/// is the bug de-sze.5.4 exists about.
+///
+/// So where the table has been loaded - `variables.jsonl`, deployed beside the index - a
+/// variable the snapshot could not answer falls back to its declared initial value, which
+/// carries the right KIND as well as the right value. Without the table nothing changes
+/// and it stays Unknown.
 pub struct SnapshotWorld {
     snapshot: WorldSnapshot,
-    checks: HashMap<DialogueNodeId, Ternary>,
+    /// What the database declares its variables to be, where it has been deployed.
+    declared: Option<Arc<VariableTable>>,
 }
 
 impl SnapshotWorld {
+    /// A world that knows only what the snapshot says.
     pub fn new(snapshot: WorldSnapshot) -> Self {
-        let checks = snapshot
-            .checks
-            .iter()
-            .map(|answer| {
-                let ternary = match answer.passes {
-                    value if value > 0 => Ternary::True,
-                    value if value < 0 => Ternary::False,
-                    _ => Ternary::Unknown,
-                };
-                (DialogueNodeId::from(answer.node), ternary)
-            })
-            .collect();
+        Self { snapshot, declared: None }
+    }
 
-        Self { snapshot, checks }
+    /// The same, falling back to the database's declared variables.
+    pub fn declaring(snapshot: WorldSnapshot, declared: Option<Arc<VariableTable>>) -> Self {
+        Self { snapshot, declared }
     }
 }
 
@@ -176,7 +454,20 @@ impl ILookAheadWorld for SnapshotWorld {
     }
 
     fn get_variable(&self, name: &str) -> GuardValue {
-        self.snapshot.variables.get(name).map(GuardValue::from).unwrap_or_else(GuardValue::unknown)
+        let answered = self.snapshot.variables.get(name).map(GuardValue::from);
+        if let Some(value) = answered {
+            if value.kind() != GuardValueKind::Unknown {
+                return value;
+            }
+        }
+
+        // The plugin could not read it. What the database says it starts as is a better
+        // answer than "no idea", and is the only one that gets a counter's KIND right.
+        self.declared
+            .as_ref()
+            .and_then(|table| table.initial(name))
+            .cloned()
+            .unwrap_or_else(GuardValue::unknown)
     }
 
     fn initially_has_item(&self, name: &str) -> bool {
@@ -200,7 +491,14 @@ impl ILookAheadWorld for SnapshotWorld {
     }
 
     fn check_passes(&self, node: DialogueNodeId) -> Ternary {
-        self.checks.get(&node).copied().unwrap_or(Ternary::Unknown)
+        let node = NodeRef::from(node);
+        if self.snapshot.checks_pass.contains(&node) {
+            Ternary::True
+        } else if self.snapshot.checks_fail.contains(&node) {
+            Ternary::False
+        } else {
+            Ternary::Unknown
+        }
     }
 
     fn is_seen(&self, node: DialogueNodeId) -> bool {
@@ -248,10 +546,10 @@ pub struct LookAheadRequest {
     pub starts: Vec<NodeRef>,
     /// Entries the player has never seen in any game.
     #[serde(default)]
-    pub unseen_any_game: HashSet<NodeRef>,
+    pub unseen_any_game: NodeSet,
     /// Entries unseen this game but seen in a previous one.
     #[serde(default)]
-    pub unseen_this_game: HashSet<NodeRef>,
+    pub unseen_this_game: NodeSet,
     pub world: WorldSnapshot,
 }
 
@@ -285,7 +583,14 @@ impl LookAheadResponse {
 /// Every question a crawl over `conversation`'s group can ask.
 pub fn questions_for(index: &Index, conversation: i32) -> Result<Questions, String> {
     let (graph, group) = build_group_graph(index, conversation)?;
+    Ok(questions_of(&graph, group))
+}
 
+/// The same, for a group already built.
+///
+/// Split out because [`answer`] needs both the graph and the questions, and building the
+/// group twice per response menu to get them would be paying for the expensive half twice.
+fn questions_of(graph: &LookAheadGraph, group: Vec<i32>) -> Questions {
     let mut found = Questions { conversations: group, ..Default::default() };
     let mut variables = HashSet::new();
     let mut queries = HashSet::new();
@@ -309,9 +614,11 @@ pub fn questions_for(index: &Index, conversation: i32) -> Result<Questions, Stri
         }
     }
 
-    // Sorted, so two runs over the same group produce the same list. The plugin may cache
-    // these against a conversation, and a list that reordered itself would look like a
-    // change every time.
+    // SORTED, and that is load-bearing rather than tidy. The plugin caches this list
+    // against a conversation and answers it POSITIONALLY - see
+    // `WorldSnapshot::variable_values` - so the order is the agreement between the two
+    // sides, and a list that reordered itself between two calls would silently move every
+    // answer onto the wrong question.
     found.variables = sorted(variables);
     found.queries = sorted(queries);
     found.items = sorted(items);
@@ -320,7 +627,7 @@ pub fn questions_for(index: &Index, conversation: i32) -> Result<Questions, Stri
     found.entries.sort_by_key(|node| (node.conversation, node.entry));
     found.checks.sort_by_key(|node| (node.conversation, node.entry));
 
-    Ok(found)
+    found
 }
 
 fn sorted(names: HashSet<String>) -> Vec<String> {
@@ -414,13 +721,28 @@ fn collect(
 /// answer here is a marshalling bug rather than a question of which search was right. The
 /// portfolio - which is what makes this migration worth doing - goes in once the crossing
 /// itself is trusted, and de-i5xj.2 says so.
-pub fn answer(index: &Index, request: &LookAheadRequest) -> LookAheadResponse {
-    let (graph, _) = match build_group_graph(index, request.conversation) {
+///
+/// `declared` is the database's variable table where it has been deployed beside the
+/// index; see [`SnapshotWorld`] for what it is for and what its absence costs.
+pub fn answer(
+    index: &Index,
+    declared: Option<Arc<VariableTable>>,
+    request: &LookAheadRequest,
+) -> LookAheadResponse {
+    let (graph, group) = match build_group_graph(index, request.conversation) {
         Ok(built) => built,
         Err(reason) => return LookAheadResponse::failed(reason),
     };
 
-    let world = SnapshotWorld::new(request.world.clone());
+    // The questions this group asks, so positional answers can be put back onto their
+    // names. Derived from the graph just built rather than by building it again.
+    let questions = questions_of(&graph, group);
+    let mut snapshot = request.world.clone();
+    if let Err(reason) = snapshot.resolve(&questions) {
+        return LookAheadResponse::failed(reason);
+    }
+
+    let world = SnapshotWorld::declaring(snapshot, declared);
     let novelty = |id: DialogueNodeId| {
         let node = NodeRef::from(id);
         if request.unseen_any_game.contains(&node) {
@@ -560,6 +882,128 @@ mod tests {
         assert!(answer.boolean(), "the answer did not come back under the key given");
     }
 
+    /// A variable the plugin could not read falls back to what the database declares.
+    ///
+    /// The KIND is what this is about. A counter answered Unknown makes `>= 3`
+    /// undecidable, and answered boolean false makes it undecidable in exactly the same
+    /// way - `try_as_number` gives nothing for a boolean. Only a number answers it.
+    #[test]
+    fn a_variable_the_game_could_not_read_falls_back_to_what_the_database_declares() {
+        let mut table = VariableTable::default();
+        table.add(&crate::index::VariableRecord {
+            name: "jam.lorrymans_questioned".to_string(),
+            declared: "Number".to_string(),
+            initial: "0".to_string(),
+        });
+        table.add(&crate::index::VariableRecord {
+            name: "church.done".to_string(),
+            declared: "Boolean".to_string(),
+            initial: "False".to_string(),
+        });
+
+        let mut snapshot = WorldSnapshot::default();
+        // What the plugin sends for a variable Lua would not answer.
+        snapshot.variables.insert("church.done".to_string(), WireValue::Unknown);
+        // And one it did answer, which must not be overridden by the table's initial.
+        snapshot
+            .variables
+            .insert("jam.lorrymans_questioned".to_string(), WireValue::Number { value: 4.0 });
+
+        let world = SnapshotWorld::declaring(snapshot, Some(Arc::new(table)));
+
+        assert_eq!(world.get_variable("jam.lorrymans_questioned").try_as_number(), Some(4.0));
+        assert_eq!(world.get_variable("church.done").kind(), GuardValueKind::Boolean);
+        // Never named at all, and the table does not declare it either.
+        assert_eq!(world.get_variable("nothing.declares.this").kind(), GuardValueKind::Unknown);
+    }
+
+    /// A declared counter nobody wrote answers as a NUMBER, so an ordering guard decides.
+    #[test]
+    fn a_declared_counter_answers_as_a_number_rather_than_undecidably() {
+        let mut table = VariableTable::default();
+        table.add(&crate::index::VariableRecord {
+            name: "pier.reporting_counter".to_string(),
+            declared: "Number".to_string(),
+            initial: "0".to_string(),
+        });
+
+        // Nothing about it in the snapshot at all, which is what a group whose variable
+        // the plugin never saw looks like.
+        let world = SnapshotWorld::declaring(WorldSnapshot::default(), Some(Arc::new(table)));
+        assert_eq!(world.get_variable("pier.reporting_counter").try_as_number(), Some(0.0));
+
+        // And without the table it is Unknown, which is what it was before.
+        let bare = SnapshotWorld::new(WorldSnapshot::default());
+        assert_eq!(bare.get_variable("pier.reporting_counter").kind(), GuardValueKind::Unknown);
+    }
+
+    /// A positional answer lands on the name the engine asked under.
+    #[test]
+    fn positional_answers_are_put_back_onto_their_names() {
+        let questions = Questions {
+            variables: vec!["a.first".to_string(), "b.second".to_string()],
+            queries: vec!["IsKimHere()".to_string()],
+            ..Default::default()
+        };
+
+        let mut snapshot = WorldSnapshot {
+            variable_values: vec![
+                WireValue::Number { value: 4.0 },
+                WireValue::Bool { value: true },
+            ],
+            query_values: vec![WireValue::Bool { value: true }],
+            ..Default::default()
+        };
+        snapshot.resolve(&questions).expect("the lists are the same length");
+
+        let world = SnapshotWorld::new(snapshot);
+        assert_eq!(world.get_variable("a.first").try_as_number(), Some(4.0));
+        assert!(world.get_variable("b.second").boolean());
+        assert!(world.query("IsKimHere", &[]).boolean());
+    }
+
+    /// A named answer beats a positional one, because naming it says more.
+    #[test]
+    fn a_named_answer_wins_over_the_positional_one() {
+        let questions = Questions {
+            variables: vec!["a.first".to_string()],
+            ..Default::default()
+        };
+
+        let mut snapshot = WorldSnapshot {
+            variable_values: vec![WireValue::Number { value: 4.0 }],
+            ..Default::default()
+        };
+        snapshot.variables.insert("a.first".to_string(), WireValue::Number { value: 9.0 });
+        snapshot.resolve(&questions).expect("the lists are the same length");
+
+        assert_eq!(
+            SnapshotWorld::new(snapshot).get_variable("a.first").try_as_number(),
+            Some(9.0),
+        );
+    }
+
+    /// Answers to a DIFFERENT list of questions are refused, not zipped as far as they go.
+    ///
+    /// The failure this exists to prevent: a caller answering a stale questions list has
+    /// every answer after the first difference land on the wrong variable, and the marker
+    /// is then wrong with nothing whatever to report it.
+    #[test]
+    fn a_positional_list_of_the_wrong_length_is_refused() {
+        let questions = Questions {
+            variables: vec!["a.first".to_string(), "b.second".to_string()],
+            ..Default::default()
+        };
+
+        let mut snapshot = WorldSnapshot {
+            variable_values: vec![WireValue::Bool { value: true }],
+            ..Default::default()
+        };
+
+        let refused = snapshot.resolve(&questions).expect_err("it must be refused");
+        assert!(refused.contains("1 variable answers came back for 2"), "{refused}");
+    }
+
     /// Anything unanswered reads Unknown, which is the permissive direction.
     #[test]
     fn an_unanswered_question_is_unknown_rather_than_false() {
@@ -570,14 +1014,12 @@ mod tests {
         assert_eq!(world.check_passes(DialogueNodeId::new(1, 2)), Ternary::Unknown);
     }
 
+    /// All three check outcomes come across, and the third one is silence.
     #[test]
     fn a_check_answer_carries_all_three_outcomes() {
         let world = SnapshotWorld::new(WorldSnapshot {
-            checks: vec![
-                CheckAnswer { node: NodeRef { conversation: 1, entry: 1 }, passes: 1 },
-                CheckAnswer { node: NodeRef { conversation: 1, entry: 2 }, passes: -1 },
-                CheckAnswer { node: NodeRef { conversation: 1, entry: 3 }, passes: 0 },
-            ],
+            checks_pass: NodeSet::from_iter([NodeRef { conversation: 1, entry: 1 }]),
+            checks_fail: NodeSet::from_iter([NodeRef { conversation: 1, entry: 2 }]),
             ..Default::default()
         });
 
@@ -589,12 +1031,76 @@ mod tests {
     #[test]
     fn seen_entries_are_carried_across() {
         let world = SnapshotWorld::new(WorldSnapshot {
-            seen: HashSet::from([NodeRef { conversation: 7, entry: 3 }]),
+            seen: NodeSet::from_iter([NodeRef { conversation: 7, entry: 3 }]),
             ..Default::default()
         });
 
         assert!(world.is_seen(DialogueNodeId::new(7, 3)));
         assert!(!world.is_seen(DialogueNodeId::new(7, 4)));
+    }
+
+    /// The runs a set is written as, pinned - the plugin writes these by hand.
+    #[test]
+    fn an_entry_set_is_written_as_runs_by_conversation() {
+        let set = NodeSet::from_iter(
+            [0, 1, 2, 3, 5, 9, 10]
+                .map(|entry| NodeRef { conversation: 631, entry })
+                .into_iter()
+                .chain([NodeRef { conversation: 636, entry: 7 }]),
+        );
+
+        assert_eq!(
+            serde_json::to_string(&set).expect("it serialises"),
+            r#"{"631":"0..3,5,9..10","636":"7"}"#,
+        );
+    }
+
+    #[test]
+    fn an_entry_set_comes_back_from_its_runs() {
+        let set: NodeSet =
+            serde_json::from_str(r#"{"631":"0..3,5","636":"7"}"#).expect("it reads");
+
+        assert_eq!(set.len(), 6);
+        assert!(set.contains(&NodeRef { conversation: 631, entry: 3 }));
+        assert!(!set.contains(&NodeRef { conversation: 631, entry: 4 }));
+        assert!(set.contains(&NodeRef { conversation: 636, entry: 7 }));
+    }
+
+    /// An empty set is an empty object, not an absent field with a different meaning.
+    #[test]
+    fn an_empty_entry_set_survives_the_round_trip() {
+        let text = serde_json::to_string(&NodeSet::default()).expect("it serialises");
+        assert_eq!(text, "{}");
+
+        let back: NodeSet = serde_json::from_str(&text).expect("it reads");
+        assert!(back.is_empty());
+    }
+
+    /// The long shape still reads, so a fixture can spell out what it means.
+    #[test]
+    fn an_entry_set_still_accepts_a_list_of_entries() {
+        let set: NodeSet = serde_json::from_str(
+            r#"[{"conversation":631,"entry":4},{"conversation":631,"entry":5}]"#,
+        )
+        .expect("it reads");
+
+        assert_eq!(set.len(), 2);
+        assert!(set.contains(&NodeRef { conversation: 631, entry: 5 }));
+    }
+
+    /// A run list that is not understood is refused, not half-read.
+    ///
+    /// Skipping what it cannot parse would leave a world quietly answering "not seen" for
+    /// entries the player has read, and the marker would then be wrong with nothing to say
+    /// so.
+    #[test]
+    fn a_run_list_that_makes_no_sense_is_refused() {
+        for bad in [r#"{"631":"0..x"}"#, r#"{"631":"9..3"}"#, r#"{"nope":"1"}"#] {
+            assert!(
+                serde_json::from_str::<NodeSet>(bad).is_err(),
+                "'{bad}' was accepted",
+            );
+        }
     }
 
     /// The request and the response survive a round trip through JSON, which is the only
@@ -608,8 +1114,8 @@ mod tests {
         let request = LookAheadRequest {
             conversation: 631,
             starts: vec![NodeRef { conversation: 631, entry: 4 }],
-            unseen_any_game: HashSet::from([NodeRef { conversation: 631, entry: 9 }]),
-            unseen_this_game: HashSet::new(),
+            unseen_any_game: NodeSet::from_iter([NodeRef { conversation: 631, entry: 9 }]),
+            unseen_this_game: NodeSet::default(),
             world,
         };
 

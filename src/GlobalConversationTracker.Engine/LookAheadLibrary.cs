@@ -52,20 +52,26 @@ namespace GlobalConversationTracker.Engine
         /// Opens the engine over <paramref name="indexPath"/>.
         /// </summary>
         /// <param name="indexPath">The conversation index shipped with the mod.</param>
-        /// <exception cref="ArgumentNullException">The path is null.</exception>
+        /// <param name="variablesPath">
+        /// The database's variable table, shipped beside it, or null. Optional and
+        /// non-fatal: without it a dialogue variable the game would not answer reads
+        /// Unknown, where with it the value the database declares is used instead - which
+        /// is what an unwritten variable actually is, and the only answer that gets a
+        /// counter's kind right. <see cref="VariableCount"/> says whether one was read.
+        /// </param>
+        /// <exception cref="ArgumentNullException">The index path is null.</exception>
         /// <exception cref="InvalidOperationException">The library refused to open it.</exception>
-        public static LookAheadLibrary Open(string indexPath)
+        public static LookAheadLibrary Open(string indexPath, string? variablesPath = null)
         {
             if (indexPath == null)
             {
                 throw new ArgumentNullException(nameof(indexPath));
             }
 
-            // NUL-terminated UTF-8, encoded here because the library reads UTF-8 and the
-            // platform's default code page is not it.
-            byte[] path = Encoding.UTF8.GetBytes(indexPath + "\0");
-
-            Status status = (Status)NativeMethods.gct_engine_open(path, out IntPtr handle);
+            Status status = (Status)NativeMethods.gct_engine_open(
+                NulTerminated(indexPath)!,
+                NulTerminated(variablesPath),
+                out IntPtr handle);
             if (status != Status.Ok)
             {
                 throw new InvalidOperationException(
@@ -75,12 +81,44 @@ namespace GlobalConversationTracker.Engine
             return new LookAheadLibrary(new EngineHandle(handle));
         }
 
+        /// <summary>
+        /// A string as the NUL-terminated UTF-8 the library reads, or null for null.
+        /// </summary>
+        /// <remarks>
+        /// Encoded here rather than left to the marshaller because the library reads UTF-8
+        /// and nothing else, and a guess through the platform's default code page would
+        /// turn a path with an accent in it into a file that is not there.
+        /// </remarks>
+        private static byte[]? NulTerminated(string? text)
+        {
+            return text == null ? null : Encoding.UTF8.GetBytes(text + "\0");
+        }
+
         /// <summary>How many conversations the index holds.</summary>
         public int ConversationCount
         {
             get
             {
                 Status status = (Status)NativeMethods.gct_conversation_count(
+                    _handle.DangerousGetHandle(), out int count);
+                return status == Status.Ok ? count : 0;
+            }
+        }
+
+        /// <summary>
+        /// How many variables the deployed table declares, or 0 if none was read.
+        /// </summary>
+        /// <remarks>
+        /// Worth logging at load for the same reason the conversation count is: a table
+        /// that was not deployed, or that would not read, is a mod that still works and
+        /// answers one variable in seventy-five less precisely - exactly the kind of thing
+        /// that is never noticed unless a line says it.
+        /// </remarks>
+        public int VariableCount
+        {
+            get
+            {
+                Status status = (Status)NativeMethods.gct_variable_count(
                     _handle.DangerousGetHandle(), out int count);
                 return status == Status.Ok ? count : 0;
             }
@@ -105,15 +143,45 @@ namespace GlobalConversationTracker.Engine
         }
 
         /// <summary>
-        /// Every question a crawl over <paramref name="conversation"/>'s group can ask,
-        /// as the JSON the engine produced.
+        /// Every question a crawl over <paramref name="conversation"/>'s group can ask.
         /// </summary>
         /// <remarks>
-        /// The keys are the engine's, and the answers must come back under them exactly -
-        /// see <see cref="LookAhead"/>. Cache this per conversation: the questions cannot
-        /// change while the game is running, and the walk over a group's guards is not
-        /// free.
+        /// CACHE THIS PER CONVERSATION. The questions cannot change while the game is
+        /// running, the walk over a group's guards is not free, and a request answers the
+        /// lists BY POSITION - so the cached list is also the agreement about what each
+        /// answer means. See <see cref="WorldSnapshot.VariableValues"/>.
         /// </remarks>
+        /// <param name="conversation">Any conversation in the group.</param>
+        /// <exception cref="InvalidOperationException">The group could not be built.</exception>
+        /// <exception cref="FormatException">The answer was not a questions document.</exception>
+        public LookAheadQuestions QuestionsFor(int conversation)
+        {
+            return LookAheadQuestions.Parse(Questions(conversation));
+        }
+
+        /// <summary>Answers a look-ahead request.</summary>
+        /// <param name="request">The question, built against a cached questions list.</param>
+        /// <exception cref="ArgumentNullException">The request is null.</exception>
+        /// <exception cref="InvalidOperationException">The call itself failed.</exception>
+        /// <exception cref="FormatException">The answer was not a response document.</exception>
+        public LookAheadResponse Ask(LookAheadRequest request)
+        {
+            if (request == null)
+            {
+                throw new ArgumentNullException(nameof(request));
+            }
+
+            return LookAheadResponse.Parse(LookAhead(request.ToJson()));
+        }
+
+        /// <summary>
+        /// The same questions, as the JSON the engine produced.
+        /// </summary>
+        /// <remarks>
+        /// The layer under <see cref="QuestionsFor"/>, kept public so a test can look at
+        /// what actually crossed rather than at what this assembly made of it.
+        /// </remarks>
+        /// <param name="conversation">Any conversation in the group.</param>
         /// <exception cref="InvalidOperationException">The group could not be built.</exception>
         public string Questions(int conversation)
         {
@@ -176,40 +244,16 @@ namespace GlobalConversationTracker.Engine
 
             try
             {
-                return PtrToStringUtf8(json);
+                // UTF-8 and not PtrToStringAnsi, which would read this through the
+                // platform's default code page and mangle any dialogue text outside ASCII.
+                // The JSON crossing here carries conversation content, so that is not
+                // hypothetical.
+                return Marshal.PtrToStringUTF8(json) ?? string.Empty;
             }
             finally
             {
                 NativeMethods.gct_string_free(json);
             }
-        }
-
-        /// <summary>
-        /// Reads a NUL-terminated UTF-8 string, which netstandard2.0 cannot do for itself.
-        /// </summary>
-        /// <remarks>
-        /// <c>Marshal.PtrToStringUTF8</c> arrived after netstandard2.0, and
-        /// <c>PtrToStringAnsi</c> would read this through the platform's default code page
-        /// - which is not UTF-8, and would mangle any dialogue text that left the ASCII
-        /// range. The JSON crossing here carries conversation content, so that is not
-        /// hypothetical.
-        /// </remarks>
-        private static string PtrToStringUtf8(IntPtr text)
-        {
-            int length = 0;
-            while (Marshal.ReadByte(text, length) != 0)
-            {
-                length++;
-            }
-
-            if (length == 0)
-            {
-                return string.Empty;
-            }
-
-            byte[] bytes = new byte[length];
-            Marshal.Copy(text, bytes, 0, length);
-            return Encoding.UTF8.GetString(bytes);
         }
 
         /// <inheritdoc/>

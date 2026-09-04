@@ -165,15 +165,15 @@ fn an_answer_survives_the_crossing() {
         let request = LookAheadRequest {
             conversation,
             starts: vec![NodeRef::from(start)],
-            unseen_any_game: unseen.clone(),
-            unseen_this_game: HashSet::new(),
+            unseen_any_game: unseen.iter().copied().collect(),
+            unseen_this_game: Default::default(),
             world: snapshot.clone(),
         };
 
         // Through JSON, exactly as it would travel.
         let text = serde_json::to_string(&request).expect("it serialises");
         let parsed: LookAheadRequest = serde_json::from_str(&text).expect("it comes back");
-        let crossed = answer(&index, &parsed);
+        let crossed = answer(&index, None, &parsed);
 
         // And in-process, with no crossing at all.
         let world = SnapshotWorld::new(snapshot);

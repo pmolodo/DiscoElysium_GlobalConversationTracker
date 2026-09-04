@@ -20,7 +20,7 @@ namespace GlobalConversationTracker.Automation.Tests
             + "[Message:GlobalConversationTracker] GlobalConversationTracker v0.1.0 loaded.\n"
             + "[Message:GlobalConversationTracker] Native look-ahead: library v0.1.0 loaded.\n"
             + "[Message:GlobalConversationTracker] Native look-ahead: index opened, "
-            + "1501 conversations.\n"
+            + "1501 conversations, 10645 declared variables.\n"
             + "[Message:GlobalConversationTracker] Global state file: C:\\saves\\gct.json\n";
 
         [Fact]
@@ -31,6 +31,28 @@ namespace GlobalConversationTracker.Automation.Tests
             Assert.True(report.Loaded);
             Assert.Equal("0.1.0", report.Version);
             Assert.Equal(1501, report.Conversations);
+            Assert.Equal(10645, report.Variables);
+        }
+
+        /// <summary>
+        /// An index opened with no variable table beside it reports zero, not "no index".
+        /// </summary>
+        /// <remarks>
+        /// The two mean quite different things, and only one of them is a problem. Zero
+        /// declared variables is a mod that works and answers unset dialogue variables less
+        /// precisely - which nothing would ever notice, which is why it is reported.
+        /// </remarks>
+        [Fact]
+        public void AnIndexWithNoVariableTableReportsZeroRatherThanNothing()
+        {
+            NativeEngineReport report = NativeEngineReport.FromText(
+                "[Message:GlobalConversationTracker] Native look-ahead: library v0.1.0 loaded.\n"
+                + "[Message:GlobalConversationTracker] Native look-ahead: index opened, "
+                + "1501 conversations, 0 declared variables.\n");
+
+            Assert.True(report.Loaded);
+            Assert.Equal(1501, report.Conversations);
+            Assert.Equal(0, report.Variables);
         }
 
         /// <summary>

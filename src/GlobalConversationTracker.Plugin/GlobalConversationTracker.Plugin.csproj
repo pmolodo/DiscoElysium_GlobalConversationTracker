@@ -117,6 +117,30 @@
     </Target>
 
     <!--
+    The database's variable table, 851 KB, so the engine can tell a counter from a flag.
+    Without it a dialogue variable the game will not answer reads Unknown; with it the value
+    the database declares is used instead, which is what an unwritten variable actually is
+    and the only answer that keeps an ordering comparison over a counter decidable. Only 142
+    of the 10,645 are numbers, so this is worth about one variable in seventy-five - and
+    those are exactly the ones the counting guards ask about.
+
+    Renamed on the way in for the same reason the index and the native library are: the
+    deployment predicate takes $AssemblyName*, so a file called variables.jsonl would be
+    built, ignored, and never noticed missing.
+  -->
+    <Target Name="CopyVariableTable" AfterTargets="Build">
+        <PropertyGroup>
+            <VariableTableSource>$(MSBuildThisFileDirectory)..\..\.game_reference_copies\derived\variables.jsonl</VariableTableSource>
+        </PropertyGroup>
+        <Copy Condition="Exists('$(VariableTableSource)')"
+            SourceFiles="$(VariableTableSource)"
+            DestinationFiles="$(OutDir)GlobalConversationTracker.Variables.jsonl"
+            SkipUnchangedFiles="true" />
+        <Message Condition="!Exists('$(VariableTableSource)')" Importance="high"
+            Text="No variable table found; the look-ahead will answer unset variables less precisely. Run: dotnet run --project tools/DialogueExtract -- variables" />
+    </Target>
+
+    <!--
     This project references assemblies out of a Disco Elysium install. Saying so here
     is the whole of it: Directory.Build.props resolves the install and
     Directory.Build.targets does the checking, for every project that needs one.

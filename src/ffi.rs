@@ -36,8 +36,9 @@
 use std::ffi::{c_char, c_int, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
+use std::sync::Arc;
 
-use crate::index::{read_index, Index};
+use crate::index::{read_index, Index, VariableTable};
 
 /// What an entry point returns. Zero is success; everything else is a reason.
 pub const GCT_OK: c_int = 0;
@@ -61,6 +62,13 @@ pub const GCT_SERIALISE_FAILED: c_int = -6;
 /// parse inside the frame that draws the menu.
 pub struct Engine {
     index: Index,
+    /// The database's variable table, where the caller deployed one.
+    ///
+    /// Optional, and the mod works without it - see [`crate::bridge::SnapshotWorld`]. Its
+    /// own file rather than something read out of the index because it describes VARIABLES
+    /// and the index describes conversations; the extractor writes them separately and the
+    /// measurements already read it from there.
+    declared: Option<Arc<VariableTable>>,
 }
 
 /// Runs `work`, turning any panic into [`GCT_PANIC`].
@@ -114,14 +122,22 @@ pub extern "C" fn gct_version() -> *const c_char {
 
 /// Opens the engine over a conversation index, writing the handle to `out`.
 ///
+/// `variables_path` is the database's variable table, or null. Passed rather than looked
+/// for beside the index because the caller renames what it deploys: only
+/// `GlobalConversationTracker*` is installed next to the plugin, so a library hunting for
+/// `variables.jsonl` would never find the file that is actually there. Null, or a path that
+/// will not read, is not an error - the mod works without it, one variable in seventy-five
+/// answering less precisely. [`gct_variable_count`] says which happened.
+///
 /// # Safety
 ///
-/// `index_path` must be a valid NUL-terminated UTF-8 path, and `out` a writable pointer to
-/// one handle. On success the caller owns the handle and must pass it to
-/// [`gct_engine_close`].
+/// `index_path` must be a valid NUL-terminated UTF-8 path, `variables_path` null or the
+/// same, and `out` a writable pointer to one handle. On success the caller owns the handle
+/// and must pass it to [`gct_engine_close`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn gct_engine_open(
     index_path: *const c_char,
+    variables_path: *const c_char,
     out: *mut *mut Engine,
 ) -> c_int {
     guarded(|| {
@@ -132,9 +148,15 @@ pub unsafe extern "C" fn gct_engine_open(
             return GCT_BAD_ARGUMENT;
         };
 
+        // Read before the index, which is the expensive one: a table that will not read
+        // costs nothing here and would otherwise be discovered after a 15 MB parse.
+        let declared = unsafe { borrowed(variables_path) }
+            .and_then(|path| VariableTable::read(&PathBuf::from(path)).ok())
+            .map(Arc::new);
+
         match read_index(&PathBuf::from(path)) {
             Ok(index) => {
-                let engine = Box::new(Engine { index });
+                let engine = Box::new(Engine { index, declared });
                 unsafe { *out = Box::into_raw(engine) };
                 GCT_OK
             }
@@ -174,6 +196,26 @@ pub unsafe extern "C" fn gct_conversation_count(
         };
 
         unsafe { *out = engine.index.len() as c_int };
+        GCT_OK
+    })
+}
+
+/// How many variables the deployed table declares, written to `out`; zero if none was.
+///
+/// The plugin logs this at load for the same reason it logs the conversation count: a table
+/// that was not deployed, or that would not read, is a mod that still works and answers one
+/// variable in seventy-five less precisely - which is exactly the kind of thing that is
+/// never noticed unless a line says it.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn gct_variable_count(handle: *mut Engine, out: *mut c_int) -> c_int {
+    guarded(|| {
+        let (Some(engine), false) = (unsafe { engine(handle) }, out.is_null()) else {
+            return GCT_BAD_HANDLE;
+        };
+
+        unsafe {
+            *out = engine.declared.as_ref().map_or(0, |table| table.len()) as c_int;
+        }
         GCT_OK
     })
 }
@@ -266,7 +308,8 @@ pub unsafe extern "C" fn gct_look_ahead(
             Err(_) => return GCT_BAD_ARGUMENT,
         };
 
-        let response = crate::bridge::answer(&engine.index, &parsed);
+        let response =
+            crate::bridge::answer(&engine.index, engine.declared.clone(), &parsed);
         write_json(&response, out)
     })
 }
@@ -326,7 +369,7 @@ mod tests {
     fn opening_a_path_that_is_not_an_index_reports_it() {
         let path = CString::new("no-such-file.jsonl").unwrap();
         let mut handle: *mut Engine = ptr::null_mut();
-        let code = unsafe { gct_engine_open(path.as_ptr(), &mut handle) };
+        let code = unsafe { gct_engine_open(path.as_ptr(), ptr::null(), &mut handle) };
 
         assert_eq!(code, GCT_INDEX_UNREADABLE);
         assert!(handle.is_null(), "a failed open must not hand out a handle");
@@ -336,7 +379,7 @@ mod tests {
     fn a_null_path_is_a_bad_argument_rather_than_a_crash() {
         let mut handle: *mut Engine = ptr::null_mut();
         assert_eq!(
-            unsafe { gct_engine_open(ptr::null(), &mut handle) },
+            unsafe { gct_engine_open(ptr::null(), ptr::null(), &mut handle) },
             GCT_BAD_ARGUMENT,
         );
     }
@@ -391,7 +434,7 @@ mod tests {
     fn a_request_that_is_not_json_is_a_bad_argument() {
         // No index needed: the handle is checked first, so this uses a real engine only
         // where one is required. Here the argument is what is wrong.
-        let engine = Box::into_raw(Box::new(Engine { index: Index::new() }));
+        let engine = Box::into_raw(Box::new(Engine { index: Index::new(), declared: None }));
         let request = CString::new("not json at all").unwrap();
         let mut out: *mut c_char = ptr::null_mut();
 
@@ -405,7 +448,7 @@ mod tests {
     /// Asking about a conversation the index does not hold says so.
     #[test]
     fn questions_about_an_absent_conversation_are_refused() {
-        let engine = Box::into_raw(Box::new(Engine { index: Index::new() }));
+        let engine = Box::into_raw(Box::new(Engine { index: Index::new(), declared: None }));
         let mut out: *mut c_char = ptr::null_mut();
 
         let code = unsafe { gct_questions(engine, 631, &mut out) };
@@ -418,7 +461,7 @@ mod tests {
     /// relies on for every JSON answer.
     #[test]
     fn a_json_answer_round_trips_and_frees() {
-        let engine = Box::into_raw(Box::new(Engine { index: Index::new() }));
+        let engine = Box::into_raw(Box::new(Engine { index: Index::new(), declared: None }));
         // An empty group answers nothing, but the request is well-formed, so the response
         // is a real one - which is what this is checking the handling of.
         let request = CString::new(

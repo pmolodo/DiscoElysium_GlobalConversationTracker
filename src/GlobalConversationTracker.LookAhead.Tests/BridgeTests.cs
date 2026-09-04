@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 using System;
 using System.IO;
-using System.Reflection;
-using System.Runtime.InteropServices;
 using GlobalConversationTracker.Engine;
 using Xunit;
 using Xunit.Abstractions;
@@ -29,118 +27,16 @@ namespace GlobalConversationTracker.LookAhead.Tests
     {
         private readonly ITestOutputHelper _output;
 
-        /// <summary>
-        /// Installed once, so <c>DllImport</c> finds the library in Cargo's output rather
-        /// than beside this test assembly.
-        /// </summary>
-        /// <remarks>
-        /// Deployed, the library sits next to the plugin and the ordinary search finds it.
-        /// Here it sits in <c>target/</c>, which nothing would look in, so the resolver
-        /// points at it directly. A static constructor rather than a fixture because it
-        /// must run before the first <c>DllImport</c> in the process, whichever test that
-        /// turns out to be.
-        /// </remarks>
-        static BridgeTests()
-        {
-            NativeLibrary.SetDllImportResolver(
-                typeof(LookAheadLibrary).Assembly,
-                (name, assembly, path) =>
-                {
-                    string? library = FindLibrary();
-                    return library == null
-                        ? IntPtr.Zero
-                        : NativeLibrary.Load(library);
-                });
-        }
-
         public BridgeTests(ITestOutputHelper output)
         {
             _output = output;
-        }
-
-        /// <summary>The repository root, walked up from the test assembly.</summary>
-        private static string? RepositoryRoot()
-        {
-            DirectoryInfo? directory = new DirectoryInfo(
-                Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!);
-
-            while (directory != null)
-            {
-                if (Directory.Exists(Path.Combine(directory.FullName, ".git")))
-                {
-                    return directory.FullName;
-                }
-
-                directory = directory.Parent;
-            }
-
-            return null;
-        }
-
-        /// <summary>
-        /// Cargo's copy of the library, the more recently built of release and debug, or
-        /// null if neither has been built.
-        /// </summary>
-        /// <remarks>
-        /// NEWER rather than release-first, which is not a preference but a bug fix. A
-        /// stale release build silently shadows a fresh debug one, and the symptom is an
-        /// EntryPointNotFoundException naming a function that was added minutes ago -
-        /// which reads as a marshalling problem and is not one. Whichever was built last
-        /// is the one the developer meant.
-        /// </remarks>
-        private static string? FindLibrary()
-        {
-            string? root = RepositoryRoot();
-            if (root == null)
-            {
-                return null;
-            }
-
-            string name = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-                ? "lookahead_engine.dll"
-                : RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
-                    ? "liblookahead_engine.dylib"
-                    : "liblookahead_engine.so";
-
-            string? newest = null;
-            DateTime newestAt = DateTime.MinValue;
-            foreach (string profile in new[] { "release", "debug" })
-            {
-                string candidate = Path.Combine(root, "target", profile, name);
-                if (!File.Exists(candidate))
-                {
-                    continue;
-                }
-
-                DateTime written = File.GetLastWriteTimeUtc(candidate);
-                if (newest == null || written > newestAt)
-                {
-                    newest = candidate;
-                    newestAt = written;
-                }
-            }
-
-            return newest;
-        }
-
-        /// <summary>The conversation index, or null where it has not been extracted.</summary>
-        private static string? FindIndex()
-        {
-            string? root = RepositoryRoot();
-            if (root == null)
-            {
-                return null;
-            }
-
-            string candidate = Path.Combine(
-                root, ".game_reference_copies", "derived", "conversation_index.jsonl");
-            return File.Exists(candidate) ? candidate : null;
+            NativeLookAhead.Install();
         }
 
         [Fact]
         public void TheLibraryReportsAVersion()
         {
-            if (FindLibrary() == null)
+            if (NativeLookAhead.Library == null)
             {
                 _output.WriteLine("the native library is not built; skipping. Run: cargo build");
                 return;
@@ -161,7 +57,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
         [Fact]
         public void AnIndexThatIsNotThereIsRefused()
         {
-            if (FindLibrary() == null)
+            if (NativeLookAhead.Library == null)
             {
                 _output.WriteLine("the native library is not built; skipping. Run: cargo build");
                 return;
@@ -176,8 +72,8 @@ namespace GlobalConversationTracker.LookAhead.Tests
         [Fact]
         public void TheIndexOpensAndReportsWhatIsInIt()
         {
-            string? index = FindIndex();
-            if (FindLibrary() == null || index == null)
+            string? index = NativeLookAhead.Index;
+            if (NativeLookAhead.Library == null || index == null)
             {
                 _output.WriteLine("the library or the index is missing; skipping.");
                 return;
@@ -204,8 +100,8 @@ namespace GlobalConversationTracker.LookAhead.Tests
         [Fact]
         public void TheEngineDescribesWhatItNeedsToKnow()
         {
-            string? index = FindIndex();
-            if (FindLibrary() == null || index == null)
+            string? index = NativeLookAhead.Index;
+            if (NativeLookAhead.Library == null || index == null)
             {
                 _output.WriteLine("the library or the index is missing; skipping.");
                 return;
@@ -237,8 +133,8 @@ namespace GlobalConversationTracker.LookAhead.Tests
         [Fact]
         public void AQuestionCrossesAndComesBackAnswered()
         {
-            string? index = FindIndex();
-            if (FindLibrary() == null || index == null)
+            string? index = NativeLookAhead.Index;
+            if (NativeLookAhead.Library == null || index == null)
             {
                 _output.WriteLine("the library or the index is missing; skipping.");
                 return;
@@ -270,8 +166,8 @@ namespace GlobalConversationTracker.LookAhead.Tests
         [Fact]
         public void ARequestThatIsNotJsonIsRefused()
         {
-            string? index = FindIndex();
-            if (FindLibrary() == null || index == null)
+            string? index = NativeLookAhead.Index;
+            if (NativeLookAhead.Library == null || index == null)
             {
                 _output.WriteLine("the library or the index is missing; skipping.");
                 return;
@@ -291,8 +187,8 @@ namespace GlobalConversationTracker.LookAhead.Tests
         [Fact]
         public void ClosingTwiceIsHarmless()
         {
-            string? index = FindIndex();
-            if (FindLibrary() == null || index == null)
+            string? index = NativeLookAhead.Index;
+            if (NativeLookAhead.Library == null || index == null)
             {
                 _output.WriteLine("the library or the index is missing; skipping.");
                 return;

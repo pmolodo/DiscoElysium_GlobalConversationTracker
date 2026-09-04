@@ -179,7 +179,10 @@ impl VariableTable {
     }
 
     /// Records one variable at its declared type.
-    fn add(&mut self, record: &VariableRecord) {
+    ///
+    /// Public so a test can build a table without a file - the reader above is the only
+    /// other caller.
+    pub fn add(&mut self, record: &VariableRecord) {
         use crate::core::guard_value::GuardValue;
 
         let value = match record.declared.as_str() {

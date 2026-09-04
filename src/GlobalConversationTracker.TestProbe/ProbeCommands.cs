@@ -49,6 +49,19 @@ namespace GlobalConversationTracker.TestProbe
         internal const string PrepareLookAheadSuiteCommand = "prepare-look-ahead-suite";
         internal const string FinishLookAheadSuiteCommand = "finish-look-ahead-suite";
 
+        /// <summary>
+        /// Ask the mod to compare the world it would send the native engine against the
+        /// one its managed engine reads.
+        /// </summary>
+        /// <remarks>
+        /// The answer goes to the BepInEx log rather than to a probe event, because the
+        /// comparison happens inside the PLUGIN - it is the plugin's two worlds being
+        /// compared - and reaching it from here already costs a reflection call. A probe
+        /// event would mean marshalling the report back through that call to write it out
+        /// again beside a line the plugin can write itself.
+        /// </remarks>
+        internal const string CheckSnapshotCommand = "check-snapshot";
+
         /// <summary>Ask the game to close itself the way a player would.</summary>
         internal const string QuitCommand = "quit";
 
@@ -248,6 +261,9 @@ namespace GlobalConversationTracker.TestProbe
                         InvokePlugin("FinishLookAheadSuite", Array.Empty<object>());
                         ProbeLog.Write("look-ahead-suite-finished");
                         break;
+                    case CheckSnapshotCommand:
+                        CheckSnapshot(root);
+                        break;
                     case QuitCommand:
                         // Not a kill. The mod flushes its global state and writes its
                         // look-ahead statistics from Application.quitting, so a run that
@@ -327,6 +343,22 @@ namespace GlobalConversationTracker.TestProbe
             // the tests already hook rather than a private shortcut. Not bundled: these
             // are ordinary saves staged into the profile's SaveGames folder.
             persistence.Load(save!, false);
+        }
+
+        /// <summary>Asks the mod to compare its two worlds over one conversation group.</summary>
+        private static void CheckSnapshot(JsonElement root)
+        {
+            int conversation = NumberMember(root, "conversation")
+                ?? throw new ArgumentException("No conversation was given.");
+
+            ProbeLog.Write(
+                "command-started",
+                "command", CheckSnapshotCommand,
+                "conversation", conversation);
+            InvokePlugin("CheckLookAheadSnapshot", new object[] { conversation });
+            // Says the comparison RAN. What it found is in the BepInEx log, which is where
+            // the plugin wrote it and where the harness reads it from.
+            ProbeLog.Write("snapshot-checked", "conversation", conversation);
         }
 
         private static void PrepareLookAheadSuite(JsonElement root)

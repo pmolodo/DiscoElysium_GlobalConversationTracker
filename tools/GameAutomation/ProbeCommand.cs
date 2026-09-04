@@ -40,6 +40,12 @@ namespace GlobalConversationTracker.Automation
         /// <summary>Flush the current look-ahead suite's diagnostics.</summary>
         public const string FinishLookAheadSuite = "finish-look-ahead-suite";
 
+        /// <summary>
+        /// Ask the mod to compare the world it would send the native look-ahead against
+        /// the one its managed engine reads.
+        /// </summary>
+        public const string CheckSnapshot = "check-snapshot";
+
         /// <summary>Ask the game to close itself, so the mod can flush on the way out.</summary>
         public const string Quit = "quit";
 
@@ -124,6 +130,21 @@ namespace GlobalConversationTracker.Automation
         public static void SendFinishLookAheadSuite(string saveGamesFolder)
         {
             Send(saveGamesFolder, FinishLookAheadSuite);
+        }
+
+        /// <summary>
+        /// Asks the mod to compare its two look-ahead worlds over one conversation group.
+        /// </summary>
+        /// <remarks>
+        /// The command only says the comparison RAN; what it found goes to the BepInEx log,
+        /// where <see cref="SnapshotAgreementReport"/> reads it. Needs a loaded save: the
+        /// Lua variable table, the dialogue database and the clock all have to exist.
+        /// </remarks>
+        /// <param name="saveGamesFolder">The profile's SaveGames folder.</param>
+        /// <param name="conversationId">Any conversation in the group to compare over.</param>
+        public static void SendCheckSnapshot(string saveGamesFolder, int conversationId)
+        {
+            Send(saveGamesFolder, CheckSnapshot, "conversation", conversationId);
         }
 
         /// <summary>Asks the game to close itself.</summary>

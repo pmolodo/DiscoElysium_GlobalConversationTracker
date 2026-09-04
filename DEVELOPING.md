@@ -66,6 +66,13 @@ Two things about its contents are deliberate:
     - `conversation-index` - `.game_reference_copies\derived\conversation_index.jsonl`.
     - `corpus` - `.game_reference_copies\derived\distinct_guards.txt` and
       `.game_reference_copies\derived\distinct_scripts.txt`.
+    - `shipped-index` - `.game_reference_copies\derived\conversation_index.trimmed.jsonl`,
+      the conversation index cut down to what a crawl reads. Deployed beside the plugin as
+      `GlobalConversationTracker.Index.jsonl`, which is what the native look-ahead opens.
+    - `variables` - `.game_reference_copies\derived\variables.jsonl`, what the database
+      declares each of its 10,645 variables to be. Deployed as
+      `GlobalConversationTracker.Variables.jsonl`; without it the look-ahead cannot tell a
+      counter from a flag, and an ordering comparison over one becomes undecidable.
     - `worst-case-state` - `testing\scenarios\global-state-worst-case.json`, derived from
       the conversation index rather than directly from the `.asset`.
   - `NtwtfDecode` - dumps the Lua tables inside a `{save}.ntwtf` save (zip, folder or

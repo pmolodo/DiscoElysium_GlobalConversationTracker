@@ -27,12 +27,6 @@ namespace GlobalConversationTracker
     /// </remarks>
     internal sealed class GameLookAheadWorld : ILookAheadWorld
     {
-        /// <summary>
-        /// What to assume when the balance cannot be read. Everything is affordable, so
-        /// cost options stay walkable - the over-reporting direction.
-        /// </summary>
-        private const int UnknownMoney = int.MaxValue;
-
         private readonly Dictionary<string, GuardValue> _queries =
             new Dictionary<string, GuardValue>();
         private readonly Dictionary<string, GuardValue> _variables =
@@ -43,9 +37,9 @@ namespace GlobalConversationTracker
         /// <summary>Creates a snapshot.</summary>
         internal GameLookAheadWorld()
         {
-            Money = ReadMoney();
+            Money = GameFacts.ReadMoney();
 
-            SunshineClockTime? time = ReadClock();
+            SunshineClockTime? time = GameFacts.ReadClock();
             DayMinutes = time == null ? 0 : time.DayMinutes;
             DayCounter = time == null ? 1 : time.DayCounter;
             IsClockLocked = time == null || time.IsTimeLocked;
@@ -136,8 +130,7 @@ namespace GlobalConversationTracker
         /// <inheritdoc/>
         public bool IsSeen(DialogueNodeId node)
         {
-            return DialogueLua.GetSimStatus(node.ConversationId, node.EntryId)
-                == "WasDisplayed";
+            return GameFacts.IsSeen(node.ConversationId, node.EntryId);
         }
 
         /// <summary>
@@ -187,17 +180,10 @@ namespace GlobalConversationTracker
                 return cached;
             }
 
-            GuardValue value;
-            try
-            {
-                value = Convert(Lua.Run("return " + expression));
-            }
-            catch (System.Exception)
-            {
-                // A query this build of the game does not define, or one that threw.
-                // Unknown is the honest answer and the safe one.
-                value = GuardValue.Unknown;
-            }
+            // A query this build of the game does not define, or one that threw, is
+            // Unknown - the honest answer and the safe one.
+            Lua.Result? result = GameFacts.Run(expression);
+            GuardValue value = result == null ? GuardValue.Unknown : Convert(result);
 
             _queries[expression] = value;
             return value;
@@ -221,39 +207,6 @@ namespace GlobalConversationTracker
             }
 
             return GuardValue.Unknown;
-        }
-
-        /// <summary>The game's clock, or null before it exists.</summary>
-        private static SunshineClockTime? ReadClock()
-        {
-            try
-            {
-                SunshineClock clock = SingletonClass<SunshineClock>.Singleton;
-                return clock == null ? null : clock.Time;
-            }
-            catch (System.Exception)
-            {
-                return null;
-            }
-        }
-
-        private static int ReadMoney()
-        {
-            try
-            {
-                Lua.Result result = Lua.Run("return MoneyAmount()");
-                if (result.isNumber)
-                {
-                    float amount = result.asFloat;
-                    return amount <= 0 ? 0 : (int)amount;
-                }
-            }
-            catch (System.Exception)
-            {
-                // Fall through to the permissive default.
-            }
-
-            return UnknownMoney;
         }
     }
 }

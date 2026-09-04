@@ -3,6 +3,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using BepInEx;
+using BepInEx.Logging;
 using BepInEx.Unity.IL2CPP;
 using HarmonyLib;
 using GlobalConversationTracker.Persistence;
@@ -80,6 +81,7 @@ namespace GlobalConversationTracker
         private static GlobalStateSession? _session;
         private static GlobalStateStore? _store;
         private static IGlobalStateLog? _globalStateLog;
+        private static ManualLogSource? _log;
 
         /// <summary>Prepares suite-scoped state and look-ahead settings.</summary>
         /// <param name="sourcePath">The staged global-state fixture.</param>
@@ -121,6 +123,25 @@ namespace GlobalConversationTracker
             ResponseLookAheadPatch.FlushDiagnostics();
         }
 
+        /// <summary>
+        /// Compares the world the native bridge would send against the one the managed
+        /// engine reads, and writes the result to the log.
+        /// </summary>
+        /// <remarks>
+        /// The in-game half of de-i5xj.7, and a diagnostic rather than a feature: it is
+        /// only ever called by a harness, it changes nothing, and what it produces is a
+        /// line for that harness to read back. It needs a LOADED GAME - the Lua variable
+        /// table, the dialogue database and the clock all have to exist - so it cannot run
+        /// from plugin load and is invoked once a save is in.
+        /// </remarks>
+        /// <param name="conversation">Any conversation in the group to compare over.</param>
+        public static void CheckLookAheadSnapshot(int conversation)
+        {
+            ManualLogSource log = _log
+                ?? throw new InvalidOperationException("The plugin log is unavailable.");
+            SnapshotAgreementCheck.Report(log, Session, conversation);
+        }
+
         private Harmony? _harmony;
 
         /// <summary>
@@ -131,6 +152,9 @@ namespace GlobalConversationTracker
         /// </summary>
         public override void Load()
         {
+            // Kept so the static seams a harness invokes by reflection can write to the
+            // same log as everything else here; BasePlugin.Log is an instance property.
+            _log = Log;
             Log.LogMessage($"{PluginName} v{PluginVersion} loaded.");
 
             // Whether the native look-ahead can be reached from inside the game is the one

@@ -48,6 +48,14 @@ namespace GlobalConversationTracker
         /// </remarks>
         internal const string IndexFileName = "GlobalConversationTracker.Index.jsonl";
 
+        /// <summary>The variable table, if it was deployed beside the plugin.</summary>
+        /// <remarks>
+        /// Renamed from the extractor's <c>variables.jsonl</c> for the same reason as the
+        /// index, and optional in the same way: without it a variable the game will not
+        /// answer reads Unknown instead of the value the database declares.
+        /// </remarks>
+        internal const string VariablesFileName = "GlobalConversationTracker.Variables.jsonl";
+
         /// <summary>
         /// Reports what the native library says about itself, and about the index if one
         /// is deployed.
@@ -73,7 +81,7 @@ namespace GlobalConversationTracker
 
             log.LogMessage($"{LogPrefix} library v{version} loaded.");
 
-            string? index = FindIndex();
+            string? index = Deployed(IndexFileName);
             if (index == null)
             {
                 log.LogMessage(
@@ -84,9 +92,15 @@ namespace GlobalConversationTracker
 
             try
             {
-                using LookAheadLibrary engine = LookAheadLibrary.Open(index);
+                using LookAheadLibrary engine = LookAheadLibrary.Open(
+                    index, Deployed(VariablesFileName));
+
+                // The variable count is reported whether or not there is one, because zero
+                // is the interesting answer: a mod that still works and answers unset
+                // variables less precisely is exactly what goes unnoticed otherwise.
                 log.LogMessage(
-                    $"{LogPrefix} index opened, {engine.ConversationCount} conversations.");
+                    $"{LogPrefix} index opened, {engine.ConversationCount} conversations, "
+                    + $"{engine.VariableCount} declared variables.");
             }
             catch (Exception error)
             {
@@ -96,8 +110,8 @@ namespace GlobalConversationTracker
             }
         }
 
-        /// <summary>The index beside this assembly, or null if it was not deployed.</summary>
-        private static string? FindIndex()
+        /// <summary>One deployed file beside this assembly, or null if it is not there.</summary>
+        internal static string? Deployed(string fileName)
         {
             string? directory = Path.GetDirectoryName(
                 Assembly.GetExecutingAssembly().Location);
@@ -106,7 +120,7 @@ namespace GlobalConversationTracker
                 return null;
             }
 
-            string candidate = Path.Combine(directory, IndexFileName);
+            string candidate = Path.Combine(directory, fileName);
             return File.Exists(candidate) ? candidate : null;
         }
     }

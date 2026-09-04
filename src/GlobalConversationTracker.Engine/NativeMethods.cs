@@ -35,15 +35,19 @@ namespace GlobalConversationTracker.Engine
 
         /// <summary>Opens the engine over a conversation index.</summary>
         /// <param name="indexPathUtf8">
-        /// The path as UTF-8 bytes, NUL-terminated. Encoded by the caller rather than by
-        /// the marshaller: <c>UnmanagedType.LPUTF8Str</c> does not exist in
-        /// netstandard2.0, and the library reads UTF-8 and nothing else, so guessing
-        /// through the platform's default code page would turn a path with an accent in
-        /// it into a file that is not there.
+        /// The path as UTF-8 bytes, NUL-terminated. Encoded by the caller rather than
+        /// left to the marshaller, because the library reads UTF-8 and nothing else and a
+        /// guess through the platform's default code page would turn a path with an accent
+        /// in it into a file that is not there.
+        /// </param>
+        /// <param name="variablesPathUtf8">
+        /// The database's variable table, encoded the same way, or null for none. Not an
+        /// error to omit or to point at nothing: the mod works without it.
         /// </param>
         /// <param name="handle">Receives the engine handle, on success only.</param>
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern int gct_engine_open(byte[] indexPathUtf8, out IntPtr handle);
+        internal static extern int gct_engine_open(
+            byte[] indexPathUtf8, byte[]? variablesPathUtf8, out IntPtr handle);
 
         /// <summary>Closes an engine. Closing <see cref="IntPtr.Zero"/> is allowed.</summary>
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
@@ -52,6 +56,10 @@ namespace GlobalConversationTracker.Engine
         /// <summary>How many conversations the index holds.</summary>
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
         internal static extern int gct_conversation_count(IntPtr handle, out int count);
+
+        /// <summary>How many variables the deployed table declares; zero if none was.</summary>
+        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern int gct_variable_count(IntPtr handle, out int count);
 
         /// <summary>How many entries one conversation holds.</summary>
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]

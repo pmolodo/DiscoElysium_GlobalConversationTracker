@@ -276,6 +276,11 @@ namespace GlobalConversationTracker.Harness
                     $"got {window.Width}x{window.Height}");
 
                 bool firstScenario = true;
+                // Once per run, not once per scenario. The comparison opens the shipped
+                // index - tens of megabytes - and what it checks is whether the two worlds
+                // read the game the same way, which does not become a different question
+                // for the second save.
+                bool snapshotCompared = false;
                 foreach (LookAheadSuite suite in suites)
                 {
                     Console.WriteLine();
@@ -320,6 +325,14 @@ namespace GlobalConversationTracker.Harness
                         }
 
                         RunScenario(scenario, saveGames, watcher, timeout, report);
+
+                        if (!snapshotCompared)
+                        {
+                            CheckSnapshot(
+                                scenario.ConversationId, saveGames, watcher, timeout,
+                                logPath, report);
+                            snapshotCompared = true;
+                        }
                     }
 
                     watcher.Mark();
@@ -716,6 +729,66 @@ namespace GlobalConversationTracker.Harness
                     $"{scenario.SaveName}: entry {option.EntryId}, which the scenario does "
                         + "not name, is unmarked",
                     $"it is {Describe(MarkerOn(option))}");
+            }
+        }
+
+        /// <summary>
+        /// Asks the mod whether the world it would send the native look-ahead says the
+        /// same thing as the world its managed engine reads, and checks the answer.
+        /// </summary>
+        /// <remarks>
+        /// <para>The in-game half of de-i5xj.7, and the only place it can be asked: both
+        /// worlds read the running game, so there is nothing to compare outside one. The
+        /// comparison happens inside the plugin and comes back through the BepInEx log,
+        /// which is the same channel the native library's own report uses and for the same
+        /// reason - a probe command would need the library deployed beside the PROBE too.</para>
+        ///
+        /// <para>SKIPPED, not failed, where the native library was never built. A
+        /// contributor who has not run <c>cargo build</c> has a mod that works, and failing
+        /// their run would be telling them off for something that is not yet a
+        /// requirement. Where the library IS there the agreement is a real check, because
+        /// then a disagreement is a bug in the thing being built.</para>
+        /// </remarks>
+        private static void CheckSnapshot(
+            int conversationId,
+            string saveGames,
+            ProbeWatcher watcher,
+            TimeSpan timeout,
+            string logPath,
+            Report report)
+        {
+            NativeEngineReport native = NativeEngineReport.FromLog(logPath);
+            if (!native.Loaded)
+            {
+                Console.WriteLine();
+                Console.WriteLine($"  NOTE  no snapshot comparison: {native}");
+                return;
+            }
+
+            Console.WriteLine();
+            Console.WriteLine(
+                $"comparing the snapshot against the managed world over {conversationId}...");
+
+            watcher.Mark();
+            ProbeCommand.SendCheckSnapshot(saveGames, conversationId);
+            watcher.WaitForEvent("snapshot-checked", timeout, Log);
+
+            SnapshotAgreementReport agreement = SnapshotAgreementReport.FromLog(logPath);
+            report.Check(
+                agreement.Agreed,
+                $"the snapshot answers what the managed world answers, over {conversationId}",
+                agreement.ToString());
+
+            // Separately, because it is the one part the comparison cannot check name for
+            // name: the engine hands out a rendered call as each query's key and the plugin
+            // runs it as Lua. A disagreement about that rendering answers Unknown for every
+            // query in the group, silently, and every guard over one turns permissive.
+            if (agreement.QueriesAsked > 0)
+            {
+                report.Check(
+                    agreement.QueriesAnswered > 0,
+                    $"the engine's query keys run in the game, over {conversationId}",
+                    $"{agreement.QueriesAnswered} of {agreement.QueriesAsked} answered");
             }
         }
 

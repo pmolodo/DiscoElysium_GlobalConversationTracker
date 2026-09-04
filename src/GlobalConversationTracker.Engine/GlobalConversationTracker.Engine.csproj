@@ -3,12 +3,21 @@
   <PropertyGroup>
     <!--
       The managed side of the bridge to the Rust look-ahead engine - see de-i5xj.
-      netstandard2.0 for the same reason as the assembly it will replace: the
-      BepInEx plugin (net6.0) and the net10.0 test project both consume it.
       Nothing here touches Unity, BepInEx or PixelCrushers; it marshals to a
-      native library and back, so it can be tested without the game.
+      native library and back, and builds the JSON that crosses, so all of it can
+      be tested without the game.
+
+      net6.0, and NOT netstandard2.0 as this began, for the reason the Persistence
+      project gives: the request and the questions travel as JSON, and
+      System.Text.Json is in-box on net6.0 while on netstandard2.0 it is a NuGet
+      package and a System.Memory / System.Buffers dependency chain that would
+      then have to ship beside the plugin. BepInEx v6 IL2CPP runs the plugin on
+      net6.0 / CoreCLR and the test project is net10.0, so both consumers take a
+      net6.0 assembly without complaint.
     -->
-    <TargetFramework>netstandard2.0</TargetFramework>
+    <TargetFramework>net6.0</TargetFramework>
+    <!-- net6.0 is chosen to match the game's runtime, not for support status. -->
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

@@ -38,14 +38,17 @@ namespace GlobalConversationTracker.Automation
             RegexOptions.Compiled);
 
         private static readonly Regex IndexPattern = new Regex(
-            @"Native look-ahead: index opened, (?<count>\d+) conversations\.",
+            @"Native look-ahead: index opened, (?<count>\d+) conversations, "
+            + @"(?<variables>\d+) declared variables\.",
             RegexOptions.Compiled);
 
-        private NativeEngineReport(bool loaded, string? version, int conversations, string? line)
+        private NativeEngineReport(
+            bool loaded, string? version, int conversations, int variables, string? line)
         {
             Loaded = loaded;
             Version = version;
             Conversations = conversations;
+            Variables = variables;
             Line = line;
         }
 
@@ -65,6 +68,17 @@ namespace GlobalConversationTracker.Automation
         /// </remarks>
         public int Conversations { get; }
 
+        /// <summary>
+        /// How many variables the deployed table declared, or -1 if no index was opened.
+        /// </summary>
+        /// <remarks>
+        /// Zero is a real answer and not a missing one: it means the index opened and no
+        /// variable table was deployed beside it, which is a mod that works and answers
+        /// unset dialogue variables less precisely. Worth being able to assert on, because
+        /// nothing else would ever notice.
+        /// </remarks>
+        public int Variables { get; }
+
         /// <summary>The first matching line, for a failure message worth reading.</summary>
         public string? Line { get; }
 
@@ -76,7 +90,7 @@ namespace GlobalConversationTracker.Automation
         {
             if (!File.Exists(logPath))
             {
-                return new NativeEngineReport(false, null, -1, null);
+                return new NativeEngineReport(false, null, -1, -1, null);
             }
 
             // Shared read-write-delete: the game still has this open, and on Windows an
@@ -103,22 +117,25 @@ namespace GlobalConversationTracker.Automation
             Match loaded = LoadedPattern.Match(text);
             Match index = IndexPattern.Match(text);
 
-            int conversations = -1;
-            if (index.Success
-                && int.TryParse(
-                    index.Groups["count"].Value,
-                    NumberStyles.None,
-                    CultureInfo.InvariantCulture,
-                    out int parsed))
-            {
-                conversations = parsed;
-            }
-
             return new NativeEngineReport(
                 loaded.Success,
                 loaded.Success ? loaded.Groups["version"].Value : null,
-                conversations,
+                Number(index, "count"),
+                Number(index, "variables"),
                 FirstMentioning(text));
+        }
+
+        /// <summary>One captured number, or -1 where the match did not happen.</summary>
+        private static int Number(Match match, string group)
+        {
+            return match.Success
+                && int.TryParse(
+                    match.Groups[group].Value,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out int parsed)
+                    ? parsed
+                    : -1;
         }
 
         /// <summary>The first line mentioning the bridge, whatever it says about it.</summary>
@@ -146,7 +163,8 @@ namespace GlobalConversationTracker.Automation
             }
 
             return Conversations >= 0
-                ? $"native look-ahead v{Version}, {Conversations} conversations"
+                ? $"native look-ahead v{Version}, {Conversations} conversations, "
+                    + $"{Variables} declared variables"
                 : $"native look-ahead v{Version}, no index opened";
         }
     }
