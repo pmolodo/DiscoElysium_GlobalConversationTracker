@@ -382,6 +382,10 @@ namespace GlobalConversationTracker.TestProbe
             // Absent means no limit, so an older harness that does not send it keeps
             // working and gets the behaviour it had.
             int timeBudgetMs = NumberMember(root, "timeBudgetMs") ?? 0;
+            // Absent means the engine's own default rather than no limit, which is what
+            // zero means for this one - see de-e23q. A suite that does not mention a memory
+            // budget gets the shipped behaviour, which is what not mentioning it means.
+            int memoryBudgetMb = NumberMember(root, "memoryBudgetMb") ?? 0;
             bool logBudgetExceeded = BoolMember(root, "logBudgetExceeded")
                 ?? throw new ArgumentException("No budget-log setting was given.");
             bool keepStatistics = BoolMember(root, "keepStatistics")
@@ -391,12 +395,17 @@ namespace GlobalConversationTracker.TestProbe
                 "command-started",
                 "command", PrepareLookAheadSuiteCommand,
                 "file", fileName);
+            // EVERY PARAMETER, INCLUDING THE OPTIONAL ONE. This is a reflection call, and
+            // reflection does not fill in a C# default: a method that grew an optional
+            // parameter and a probe that kept passing the old count is a
+            // TargetParameterCountException at run time, which is a whole in-game run lost
+            // to a mismatch the compiler never sees.
             InvokePlugin(
                 "PrepareLookAheadSuite",
                 new object[]
                 {
                     sourcePath, enabled, stateBudget, timeBudgetMs, logBudgetExceeded,
-                    keepStatistics,
+                    keepStatistics, memoryBudgetMb,
                 });
             ProbeLog.Write(
                 "look-ahead-suite-prepared",
@@ -404,6 +413,7 @@ namespace GlobalConversationTracker.TestProbe
                 "enabled", enabled,
                 "stateBudget", stateBudget,
                 "timeBudgetMs", timeBudgetMs,
+                "memoryBudgetMb", memoryBudgetMb,
                 "logBudgetExceeded", logBudgetExceeded,
                 "keepStatistics", keepStatistics);
         }
