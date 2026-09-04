@@ -53,6 +53,66 @@
 //! there was to explore in the first place, which is what makes the rest legible as
 //! fractions of something.
 //!
+//! ## What the whole grid says, 2026-09-04
+//!
+//! Both engines on 256 MB and 60 seconds. The adversarial rows - everything read, or all but
+//! the one, five or ten structurally deepest entries - behave identically within a
+//! conversation, so one line stands for all four:
+//!
+//! ```text
+//!   conv  entries   forward                    backward
+//!    368     4724   gave-up   400ms  170,870   gave-up   64s   7.5M nodes
+//!    631     4514   gave-up   370ms  112,506   gave-up   65s   7.4M nodes
+//!     14     3594   gave-up   390ms  133,089   NO ROOM   55s   8.4M nodes (the budget)
+//!    362     1860   gave-up   660ms  377,017   gave-up   62s   2.1M nodes
+//!     28     2186   gave-up   490ms  222,400   FOUND     50ms  180K nodes
+//!   1030     1476   not-there   0ms      410   not-there  6ms  6.2K nodes
+//! ```
+//!
+//! And every random profile, on every conversation, at every percentage:
+//!
+//! ```text
+//!   forward: found, 0ms, 2-100 states       backward: found, 5-15ms, 30-55K nodes
+//! ```
+//!
+//! ### The forward crawl wins almost everywhere, and it is not close
+//!
+//! On the profiles a real save actually has - any of the random percentages - the forward
+//! crawl answers in under a millisecond and the backward one takes five to fifteen. Not a
+//! disaster in either case, but there is no argument for the backward search there: it is
+//! slower on every single row.
+//!
+//! On the adversarial profiles the forward crawl gives up in about four hundred
+//! milliseconds and the backward one spends A MINUTE to give up as well. Five of the six
+//! conversations end that way.
+//!
+//! ### Conversation 28 is the exception, and the whole case
+//!
+//! It ANSWERS where the forward crawl cannot: 50 milliseconds against 490 spent giving up.
+//! That is what the backward search is for, and it is one conversation in six. Anything that
+//! decides between the two engines per option (de-a1wb) has to find the 28-shaped groups
+//! cheaply, because guessing wrong costs a minute.
+//!
+//! ### The verdicts changed once the two were really given the same room
+//!
+//! Worth recording because it was nearly missed. The manager PREALLOCATES its node capacity
+//! and refuses to grow past it, and that capacity was a hand-picked 2^22 - about 134 MB,
+//! half the forward crawl's allowance. On that setting 631 and 14 both read NO ROOM.
+//!
+//! Derive the capacity from the budget instead and they separate: 631 runs out of TIME at
+//! 6.4 million nodes, and only 14 genuinely fails to fit, stopping at exactly the 8,388,608
+//! nodes the budget allows. One of those is a search that is too slow and the other is a
+//! representation that does not fit, and the earlier setting reported both as the second.
+//!
+//! ### The adversarial rows are all the same row
+//!
+//! Within a conversation, all-seen and deepest-1, -5 and -10 cost the forward crawl exactly
+//! the same number of states - 170,870 on 368, four times over. The deepest entries by edge
+//! analysis are the ones the guards shut, so seeding them changes nothing the search can
+//! find and it explores the whole space regardless. That is the correct worst case and it is
+//! what these rows are for; it is not a falloff curve, and tests/unseen_falloff.rs exists
+//! because measuring one needs a different seeding entirely.
+//!
 //! ## Running it
 //!
 //! One conversation per process, because a diagram manager that runs out of nodes takes the
@@ -88,8 +148,21 @@ const MEMORY: usize = DEFAULT_MEMORY_BUDGET;
 const TIME: std::time::Duration = std::time::Duration::from_secs(60);
 
 const COUNTER_CAP: i32 = 16;
-const NODE_CAPACITY: usize = 1 << 22;
-const CACHE_CAPACITY: usize = 1 << 20;
+
+/// How many nodes the diagram manager may hold, derived from the memory budget.
+///
+/// NOT A ROUND POWER OF TWO PICKED BY HAND, which is what it was and which quietly made the
+/// comparison unequal: the manager preallocates its capacity and refuses to grow past it, so
+/// a hand-picked 2^22 nodes is a hard ceiling of about 134 MB - half what the forward crawl
+/// was allowed. Conversations 631 and 14 reported "no room" at exactly 4,194,304 nodes,
+/// which is that ceiling rather than the budget, and it read as the diagram failing when it
+/// was the harness rationing it.
+///
+/// Derived, the two engines get the same allowance and the budget is what decides.
+const NODE_CAPACITY: usize = MEMORY / DataVars::NODE_BYTES;
+
+/// The operation cache, kept proportional to the node capacity as it was before.
+const CACHE_CAPACITY: usize = NODE_CAPACITY / 4;
 
 /// How much of a group a profile has read.
 #[derive(Debug, Clone, Copy)]

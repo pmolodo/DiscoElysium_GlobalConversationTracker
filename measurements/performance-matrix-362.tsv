@@ -1,0 +1,12 @@
+conv	entries	profile	unseen	fwd_verdict	fwd_ms	fwd_states	bwd_verdict	bwd_ms	bwd_nodes	bwd_setsum
+362	1860	all-seen	0	gave-up	623	377017	gave-up	62344	2101671	9651217
+362	1860	deepest-1	1	gave-up	678	377017	gave-up	62075	2877515	9648196
+362	1860	deepest-5	5	gave-up	657	377017	gave-up	62317	1808887	9681887
+362	1860	deepest-10	10	gave-up	730	377017	gave-up	62197	1953902	9668500
+362	1860	95pc-seen	61	found	0	11	found	10	7501	1500
+362	1860	90pc-seen	121	found	0	14	found	11	7501	1750
+362	1860	75pc-seen	302	found	0	8	found	10	7501	1125
+362	1860	50pc-seen	603	found	0	8	found	10	7501	1125
+362	1860	25pc-seen	904	found	0	9	found	10	7501	1250
+362	1860	10pc-seen	1085	found	0	8	found	10	7501	1125
+362	1860	5pc-seen	1145	found	0	8	found	10	7501	1125

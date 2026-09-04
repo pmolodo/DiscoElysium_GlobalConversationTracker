@@ -37,8 +37,17 @@ use lookahead_engine::world::world::ILookAheadWorld;
 mod common;
 
 const COUNTER_CAP: i32 = 16;
-const NODE_CAPACITY: usize = 1 << 22;
-const CACHE_CAPACITY: usize = 1 << 20;
+/// How many nodes the diagram manager may hold, derived from the shared allowance.
+///
+/// WAS A HAND-PICKED 2^22, and that quietly made this comparison unequal in the same way it
+/// made the performance matrix unequal. The manager preallocates its capacity and refuses to
+/// grow past it, so 4,194,304 nodes is a hard ceiling of about 134 MB - half what the
+/// forward crawl gets. A row reading "NO ROOM" was then reporting the harness rationing the
+/// diagram, not the diagram failing to fit, and the two are entirely different findings.
+const NODE_CAPACITY: usize = COMPARISON_MEMORY / DataVars::NODE_BYTES;
+
+/// The operation cache, kept at the quarter of the node capacity it was before.
+const CACHE_CAPACITY: usize = NODE_CAPACITY / 4;
 
 /// Small enough that the explicit crawl can exhaust them, which is what makes them usable
 /// as an oracle. A conversation the explicit crawl gives up on proves nothing when the
@@ -257,31 +266,37 @@ fn the_symbolic_search_reaches_what_the_explicit_crawl_reaches() {
 ///
 /// ## What it says on equal terms, 2026-09-04
 ///
-/// Both engines given 256 MB and 60 seconds (de-e23q; before that the explicit side had
-/// 200,000 states and the symbolic side no memory limit at all, so the table below was not
-/// a comparison of anything):
+/// Both engines given 256 MB and 60 seconds - and the memory really equal, which took two
+/// goes: the diagram manager PREALLOCATES its node capacity and will not grow past it, so
+/// the hand-picked 2^22 that stood here was a hard ceiling of about 134 MB, half what the
+/// explicit crawl had. Derived from the budget instead:
 ///
 /// ```text
 ///   conv  entries    vars     engine        ms  symbolic       ms
-///    368     4724     263    gave up       426   gave up    60008
-///    631     4514     331    gave up       368   NO ROOM    57587
-///     14     3594     250    gave up       411   NO ROOM    23143
-///     28     2186     160    gave up       484     FOUND       46
+///    368     4724     263    gave up       394   gave up    60002
+///    631     4514     331    gave up       381   gave up    60016
+///     14     3594     250    gave up       411   NO ROOM    47972
+///     28     2186     160    gave up       515     FOUND       50
 ///   1030     1476      92  not there         0 not there        0
-///    362     1860     123    gave up       647   gave up    60018
+///    362     1860     123    gave up       671   gave up    60000
 /// ```
 ///
 /// CONVERSATION 28 IS THE CASE FOR THE BACKWARD SEARCH, and the only one here: it answers
-/// in 46 milliseconds a question the explicit crawl spends 484 giving up on. That is the
+/// in 50 milliseconds a question the explicit crawl spends 515 giving up on. That is the
 /// whole shape of the argument - a representation that shares structure can settle a
 /// question an enumeration cannot reach - and it is now one measured instance rather than a
 /// hope.
 ///
-/// EVERYWHERE ELSE THE BACKWARD SEARCH IS WORSE, and worse in two different ways worth
-/// telling apart. On 631 and 14 it fills 256 MB of diagram and stops; on 368 and 362 it
-/// spends the whole minute without either filling the budget or answering. The first is a
-/// representation that does not fit, the second one that is merely slow, and they want
-/// different things done about them.
+/// EVERYWHERE ELSE THE BACKWARD SEARCH IS WORSE, and ONE conversation fails for a different
+/// reason than the rest: 14 fills the 256 MB and stops, while 368, 631 and 362 spend the
+/// whole minute without either filling the budget or answering. A representation that does
+/// not fit and one that is merely slow want different things done about them.
+///
+/// THAT DISTINCTION IS THE THING THE UNEQUAL CEILING WAS HIDING. At 134 MB, 631 also read
+/// NO ROOM, and the earlier version of this note concluded that two conversations did not
+/// fit. Given the room the explicit crawl gets, 631 turns out to fit and to be slow. One
+/// artefact, one real result, and no way to tell them apart without giving both sides the
+/// same allowance.
 ///
 /// 1030 answers instantly on both sides because its whole reachable space is a few hundred
 /// states - it is the control rather than a result.

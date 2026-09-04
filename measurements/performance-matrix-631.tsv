@@ -1,0 +1,12 @@
+conv	entries	profile	unseen	fwd_verdict	fwd_ms	fwd_states	bwd_verdict	bwd_ms	bwd_nodes	bwd_setsum
+631	4514	all-seen	0	gave-up	382	112506	gave-up	64924	6402475	27333569
+631	4514	deepest-1	1	gave-up	366	112506	gave-up	65059	7852629	27831193
+631	4514	deepest-5	5	gave-up	368	112506	gave-up	65031	7448968	27804001
+631	4514	deepest-10	10	gave-up	369	112506	gave-up	65401	4507792	27930732
+631	4514	95pc-seen	143	found	0	20	found	17	54157	6993
+631	4514	90pc-seen	285	found	0	27	found	18	54280	9324
+631	4514	75pc-seen	712	found	0	23	found	18	54157	7992
+631	4514	50pc-seen	1423	found	0	10	found	17	54157	3663
+631	4514	25pc-seen	2134	found	0	17	found	17	54157	5994
+631	4514	10pc-seen	2561	found	0	10	found	17	54157	3663
+631	4514	5pc-seen	2703	found	0	10	found	18	54157	3663
