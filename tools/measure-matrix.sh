@@ -74,10 +74,51 @@ PROFILES=(
 
 HEADER=$'conv\tentries\tprofile\tunseen\tfwd_verdict\tfwd_ms\tfwd_states\tbwd_verdict\tbwd_ms\tbwd_nodes\tbwd_setsum'
 
+# THE CAP EACH ENGINE GETS, which the run needs a copy of to say anything about how long
+# it has left. The test's own default is ten minutes (DEFAULT_ROW_SECONDS in
+# tests/performance_matrix.rs); this passes whatever is set through unchanged, and both
+# engines get it separately, so a row's worst case is TWICE this plus the build and the
+# index read.
+ROW_SECONDS="${ROW_SECONDS:-600}"
+export ROW_SECONDS
+
+TOTAL_ROWS=$(( ${#CONVERSATIONS[@]} * ${#PROFILES[@]} ))
+DONE_ROWS=0
+STARTED=$(date +%s)
+
+# h:mm:ss. A run of this length is watched rather than read afterwards, and seconds since
+# the epoch is not something a person can watch.
+clock() {
+    printf '%d:%02d:%02d' $(( $1 / 3600 )) $(( ($1 % 3600) / 60 )) $(( $1 % 60 ))
+}
+
+# WHERE THE RUN IS, after every row.
+#
+# Two numbers rather than one, because they bracket an honest answer and neither does it
+# alone. The estimate is the mean row so far spread over what is left, which reads LONG
+# early on: each conversation's heavy profiles run first, so the first rows of every six
+# are the slowest ones. The worst case is every remaining row spending both caps in full,
+# which is the number that says whether this can possibly finish overnight.
+progress() {
+    DONE_ROWS=$(( DONE_ROWS + 1 ))
+    local now
+    now=$(date +%s)
+    local elapsed=$(( now - STARTED ))
+    local left=$(( TOTAL_ROWS - DONE_ROWS ))
+    printf '    %d/%d (%d%%)  row %s  elapsed %s  est. left ~%s  worst case %s\n' \
+        "$DONE_ROWS" "$TOTAL_ROWS" $(( DONE_ROWS * 100 / TOTAL_ROWS )) \
+        "$(clock $(( now - ROW_STARTED )))" \
+        "$(clock "$elapsed")" \
+        "$(clock $(( elapsed * left / DONE_ROWS )))" \
+        "$(clock $(( left * 2 * ROW_SECONDS )))"
+}
+
 # Built once, up front. Letting each row build would put a compile inside the timing of
 # whichever row happened to run first.
 echo "building..."
 cargo build --release --tests --manifest-path "$ROOT/Cargo.toml" >/dev/null 2>&1
+
+echo "$TOTAL_ROWS rows, ${ROW_SECONDS}s per engine per row, started $(date '+%H:%M:%S')"
 
 for conversation in "${CONVERSATIONS[@]}"; do
     tsv="$LOGS/performance-matrix-$conversation.tsv"
@@ -87,6 +128,7 @@ for conversation in "${CONVERSATIONS[@]}"; do
     for profile in "${PROFILES[@]}"; do
         log="$LOGS/matrix-$conversation-$profile.log"
         printf '  %-12s' "$profile"
+        ROW_STARTED=$(date +%s)
 
         CONVERSATION="$conversation" PROFILE="$profile" NO_HEADER=1 \
             cargo test --release --test performance_matrix \
@@ -116,6 +158,7 @@ for conversation in "${CONVERSATIONS[@]}"; do
             echo -e "$conversation\t?\t$profile\t?\tCRASHED\t?\t?\tCRASHED\t?\t?\t?" >> "$tsv"
             echo "CRASHED (see $log)"
         fi
+        progress
     done
 done
 
