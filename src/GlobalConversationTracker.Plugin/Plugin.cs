@@ -171,66 +171,6 @@ namespace GlobalConversationTracker
         private const string DisplaySection = "Display";
 
         /// <summary>
-        /// Binds a setting that has MOVED to another section, carrying the player's own
-        /// value across with it.
-        /// </summary>
-        /// <remarks>
-        /// <para>BepInEx keys an entry by section AND name, so a value the player set
-        /// under one heading is simply not found when the same key is bound under
-        /// another: they silently get the default back, and their old line stays in the
-        /// file looking authoritative. That is the worst of both, so the move is
-        /// migrated rather than left to chance.</para>
-        ///
-        /// <para>The order is what does it. Binding the OLD definition first is what
-        /// reads a value already in the file - an entry nobody binds is left orphaned and
-        /// cannot be read at all - and removing it afterwards is what takes the stale
-        /// line out. The value carried across is then only the DEFAULT for the new
-        /// binding, so a file that already has the setting in its new home wins, which is
-        /// what makes running this twice the same as running it once.</para>
-        /// </remarks>
-        /// <typeparam name="T">The setting's type.</typeparam>
-        /// <param name="oldSection">The heading it used to be under.</param>
-        /// <param name="newSection">The heading it belongs under now.</param>
-        /// <param name="key">The setting's name, which does not change.</param>
-        /// <param name="fallback">The default, for a player who never set it.</param>
-        /// <param name="description">The description, as for an ordinary binding.</param>
-        /// <returns>The entry under its new heading.</returns>
-        private ConfigEntry<T> Rehomed<T>(
-            string oldSection,
-            string newSection,
-            string key,
-            T fallback,
-            string description)
-        {
-            ConfigEntry<T> legacy = Config.Bind(oldSection, key, fallback, description);
-            T carried = legacy.Value;
-            Config.Remove(legacy.Definition);
-
-            return Config.Bind(newSection, key, carried, description);
-        }
-
-        /// <summary>
-        /// Takes a setting that no longer exists out of the player's file.
-        /// </summary>
-        /// <remarks>
-        /// Bound and immediately removed, for the same reason <see cref="Rehomed{T}"/>
-        /// binds before it removes: an entry nobody binds is orphaned, and BepInEx writes
-        /// orphaned entries straight back out. Left alone, a retired setting sits in the
-        /// file under a real heading, indistinguishable from one that still does
-        /// something.
-        /// </remarks>
-        /// <typeparam name="T">The type it used to have.</typeparam>
-        /// <param name="section">The heading it was under.</param>
-        /// <param name="key">Its name.</param>
-        /// <param name="fallback">Any value of the right type; it is never read.</param>
-        private void Retired<T>(string section, string key, T fallback)
-        {
-            ConfigEntry<T> gone = Config.Bind(
-                section, key, fallback, "Retired; this line is about to be removed.");
-            Config.Remove(gone.Definition);
-        }
-
-        /// <summary>
         /// BepInEx's entry point, called once during chainload. Builds the session,
         /// installs each hook independently, and returns; nothing here reads the disk
         /// or the game, so a failure to hook costs tracking rather than the
@@ -276,20 +216,17 @@ namespace GlobalConversationTracker
             // much has ever been seen, which options are new - and a player who wants one
             // does not necessarily want the others. Switching a feature off never stops
             // tracking.
-            var showCurrentSaveCount = Rehomed(
-                DisplaySection,
+            var showCurrentSaveCount = Config.Bind(
                 FeaturesSection,
                 "ShowCurrentSaveCount",
                 true,
                 "Show the this-save dialogue count on the main HUD.");
-            var showAllSavesCount = Rehomed(
-                DisplaySection,
+            var showAllSavesCount = Config.Bind(
                 FeaturesSection,
                 "ShowAllSavesCount",
                 true,
                 "Show the across-all-saves dialogue count on the main HUD.");
-            var markNovelOptions = Rehomed(
-                DisplaySection,
+            var markNovelOptions = Config.Bind(
                 FeaturesSection,
                 "MarkNovelOptions",
                 true,
@@ -328,8 +265,7 @@ namespace GlobalConversationTracker
             // Performance are the dials to turn if a menu ever feels slow, and this switch
             // is how to leave the look-ahead out entirely - tracking is unaffected either
             // way.
-            var markLookAhead = Rehomed(
-                DisplaySection,
+            var markLookAhead = Config.Bind(
                 FeaturesSection,
                 "MarkLookAhead",
                 true,
@@ -342,8 +278,7 @@ namespace GlobalConversationTracker
             // conversation and 455 MB in another - a number that elastic protects nothing
             // in particular. 256 MB gives every conversation the same allowance and roughly
             // halves the worst case. See de-e23q.
-            var lookAheadMemoryBudget = Rehomed(
-                DisplaySection,
+            var lookAheadMemoryBudget = Config.Bind(
                 PerformanceSection,
                 "LookAheadMemoryBudgetMb",
                 256,
@@ -358,17 +293,12 @@ namespace GlobalConversationTracker
             // the same 200,000 states cost 136 MB in one conversation and 455 MB in
             // another, which is why the memory budget exists. Between memory and time,
             // the two that remain cover what a player would ever want to set.
-            //
-            // Bound and immediately dropped so the stale line goes from the file instead
-            // of sitting under a heading looking like a setting that still does something.
-            Retired(DisplaySection, "LookAheadStateBudget", 0);
 
             // On, because the alternative is worse than it looks. A search that gives up
             // draws nothing, and nothing is what an option with genuinely nothing behind it
             // also draws - so without this the two are indistinguishable and the player is
             // told "there is nothing here" on the strength of a search that never finished.
-            var markUncertainLookAhead = Rehomed(
-                DisplaySection,
+            var markUncertainLookAhead = Config.Bind(
                 FeaturesSection,
                 "MarkUncertainLookAhead",
                 true,
@@ -402,8 +332,7 @@ namespace GlobalConversationTracker
             // backstop rather than the limit that normally decides - how many states fit
             // in a second depends on the machine, so this cannot promise a reproducible
             // give-up and the memory budget is what usually stops a crawl.
-            var lookAheadTimeBudget = Rehomed(
-                DisplaySection,
+            var lookAheadTimeBudget = Config.Bind(
                 PerformanceSection,
                 "LookAheadTimeBudgetMs",
                 1000,
@@ -440,9 +369,8 @@ namespace GlobalConversationTracker
                 + "extremes, a histogram, and a per-conversation breakdown.");
 
             // Every binding is done, so the file on disk can be brought into line with
-            // them. Without this the migration above is only in memory until something
-            // else happens to save, and a player who read their config between runs would
-            // see settings under two headings at once.
+            // them - which is what writes a newly added setting out for a player to find
+            // rather than leaving them to guess it exists.
             Config.Save();
 
             var harmony = new Harmony(PluginGuid);
