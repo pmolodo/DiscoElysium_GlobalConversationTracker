@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using GlobalConversationTracker.Core;
 using GlobalConversationTracker.Engine;
 using GlobalConversationTracker.Session;
 
@@ -31,6 +32,14 @@ namespace GlobalConversationTracker
 
         /// <summary>The rewritten-in-place summary of what crawls have cost.</summary>
         internal const string StatisticsFileName = "look-ahead-stats.json";
+
+        /// <summary>The version of that summary's shape this build writes.</summary>
+        /// <remarks>
+        /// The overflow log has no version and wants none: it is append-only prose, read
+        /// by a person and by one substring search, and nothing about it can be
+        /// half-understood. The statistics file is parsed.
+        /// </remarks>
+        internal const int FormatVersion = 1;
 
         /// <summary>
         /// How often the statistics file is rewritten, in crawls. Every menu draws
@@ -232,6 +241,13 @@ namespace GlobalConversationTracker
             using (var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions { Indented = true }))
             {
                 writer.WriteStartObject();
+
+                // IN SCOPE BECAUSE IT IS READ BACK BY CODE, not only by a person: the
+                // in-game suites parse this file and assert on it (see the artefact checks
+                // in tools/GameHarness), so a shape change here fails a suite in terms of
+                // whatever the parse happened to produce rather than in terms of the
+                // version. A log nothing reads would not need this.
+                writer.WriteNumber(FormatStamp.PropertyName, FormatVersion);
                 writer.WriteString(
                     "written",
                     DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture));
