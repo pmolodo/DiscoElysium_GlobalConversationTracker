@@ -456,6 +456,13 @@ impl<'a> GuardCompiler<'a> {
             return compiled;
         }
 
+        // A query the CRAWL cannot change is a constant, and a comparison against one is
+        // arithmetic on two knowns. `DayCount() >= 2` is the shape, and it was the single
+        // largest remaining fallback category in the corpus.
+        if let Some(compiled) = self.constant_comparison(op, left, right) {
+            return compiled;
+        }
+
         let (Some(name), Some(literal)) = (Self::variable_of(left), Self::literal_of(right))
         else {
             // Also try the other way round: a guard may be written `1 == Variable[..]`.
@@ -467,6 +474,19 @@ impl<'a> GuardCompiler<'a> {
             {
                 return self.comparison(Self::mirrored(op), &name, literal);
             }
+            // Money, where the layout does not carry it. It must NOT be answered from
+            // the world: the crawl changes it - `BoundContext::query` reads it from crawl
+            // state - so the world's starting balance would close a branch a richer path
+            // opens, which is the unsafe direction. The reason says so rather than blaming
+            // the shape of the expression, which is what it used to do and which sent
+            // somebody looking at the parser.
+            if Self::names_money(left) || Self::names_money(right) {
+                return self.undecided(
+                    "comparison: money, which the crawl changes and this layout does not carry",
+                    format!("({left} {op} {right})"),
+                );
+            }
+
             return self.undecided("comparison: neither side a known variable", format!("({left} {op} {right})"));
         };
 
@@ -810,6 +830,19 @@ impl<'a> GuardCompiler<'a> {
     /// Only literal arguments: a query whose argument is itself computed would have to be
     /// evaluated per state, which is the thing being avoided.
     fn constant_query(&self, name: &str, args: &[GuardExpression]) -> Option<bool> {
+        match self.constant_value(name, args)?.as_condition() {
+            Ternary::True => Some(true),
+            Ternary::False => Some(false),
+            Ternary::Unknown => None,
+        }
+    }
+
+    /// What a constant query evaluates to, as a value rather than as a truth.
+    ///
+    /// Split out from [`Self::constant_query`] because a comparison needs the NUMBER:
+    /// `DayCount() >= 2` cannot be answered from whether `DayCount()` is truthy. Both go
+    /// through here so the two can never disagree about what the query says.
+    fn constant_value(&self, name: &str, args: &[GuardExpression]) -> Option<GuardValue> {
         let mut values = Vec::with_capacity(args.len());
         for arg in args {
             let GuardExpression::Literal(value) = arg else { return None };
@@ -829,11 +862,82 @@ impl<'a> GuardCompiler<'a> {
             world.query(name, &values)
         };
 
-        match answer.as_condition() {
-            Ternary::True => Some(true),
-            Ternary::False => Some(false),
-            Ternary::Unknown => None,
+        if answer.kind() == GuardValueKind::Unknown { None } else { Some(answer) }
+    }
+
+    /// A comparison one of whose sides is a query the crawl cannot change.
+    ///
+    /// `None` when this is not such a comparison, so the caller carries on rather than
+    /// treating it as a failure.
+    ///
+    /// ## Why this is safe and answering money the same way would not be
+    ///
+    /// A query the crawl cannot change has the same answer at every state the crawl can
+    /// reach, so asking the world once is exactly what the engine does at every step -
+    /// `BoundContext::query` lets anything it does not intercept fall through to the
+    /// world. `MoneyAmount` IS intercepted, so it is excluded here by
+    /// [`Self::crawl_can_change`], and answering it from the world's starting balance
+    /// would close a branch a richer path opens.
+    fn constant_comparison(
+        &mut self,
+        op: &str,
+        left: &GuardExpression,
+        right: &GuardExpression,
+    ) -> Option<MayBe> {
+        let (name, args, literal, op) = match (Self::query_of(left), Self::literal_of(right)) {
+            (Some((name, args)), Some(literal)) => (name, args, literal, op),
+            _ => match (Self::query_of(right), Self::literal_of(left)) {
+                // The operator turns with the operands: `2 <= DayCount()` is
+                // `DayCount() >= 2`, and reading it the other way answers the opposite
+                // question everywhere the two disagree.
+                (Some((name, args)), Some(literal)) => {
+                    (name, args, literal, Self::mirrored(op))
+                }
+                _ => return None,
+            },
+        };
+
+        if Self::crawl_can_change(&name) {
+            return None;
         }
+
+        let actual = self.constant_value(&name, args)?;
+        let rendered = format!("({name}(..) {op} {literal})");
+
+        let holds = if op == "==" || op == "~=" {
+            actual.equals(literal) != (op == "~=")
+        } else {
+            // Ordering the way `GuardExpression::evaluate` does it: both sides through
+            // `try_as_number`, and undecided where either will not convert.
+            let (Some(a), Some(b)) = (actual.try_as_number(), literal.try_as_number()) else {
+                return Some(
+                    self.undecided("comparison: ordering on a non-numeric query", rendered),
+                );
+            };
+            match op {
+                ">=" => a >= b,
+                "<=" => a <= b,
+                ">" => a > b,
+                "<" => a < b,
+                _ => return Some(self.undecided("comparison: unknown operator", rendered)),
+            }
+        };
+
+        let formula = if holds { self.top() } else { self.bottom() };
+        Some(self.decided(formula))
+    }
+
+    /// The name and arguments of a call, if the expression is one.
+    fn query_of(expression: &GuardExpression) -> Option<(String, &[GuardExpression])> {
+        match expression {
+            GuardExpression::Call(name, args) => Some((name.clone(), args.as_slice())),
+            _ => None,
+        }
+    }
+
+    /// Whether an expression is a call to `MoneyAmount`.
+    fn names_money(expression: &GuardExpression) -> bool {
+        matches!(expression, GuardExpression::Call(name, _) if name == "MoneyAmount")
     }
 
     /// What the world says an untracked variable is, as a condition.
@@ -904,6 +1008,122 @@ mod tests {
 
     fn number(value: f64) -> GuardExpression {
         GuardExpression::Literal(GuardValue::from_number(value))
+    }
+
+    fn call(name: &str, args: Vec<GuardExpression>) -> GuardExpression {
+        GuardExpression::Call(name.to_string(), args)
+    }
+
+    /// `DayCount() >= 2` is decided by the world's day, not given up on.
+    ///
+    /// The single largest remaining fallback category in the corpus - de-sze.5.5 - and it
+    /// was reported as "neither side a known variable", which describes the SHAPE of the
+    /// expression and says nothing about what was actually missing.
+    #[test]
+    fn a_comparison_against_a_constant_query_is_decided_by_the_world() {
+        let (graph, symbols) = fixture(&["a"], None);
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let world = crate::world::test_world::TestWorld::new().with_day_counter(1);
+        let mut compiler = GuardCompiler::new(&vars).with_world(&world);
+
+        // Day one, so the branch is shut.
+        let compiled = compiler.compile(&GuardExpression::Comparison(
+            ">=".to_string(),
+            Box::new(call("DayCount", vec![])),
+            Box::new(number(2.0)),
+        ));
+        assert!(!compiled.may_be_true.satisfiable());
+        assert_eq!(compiler.fallbacks(), 0);
+
+        // And open where the day satisfies it.
+        let compiled = compiler.compile(&GuardExpression::Comparison(
+            ">=".to_string(),
+            Box::new(call("DayCount", vec![])),
+            Box::new(number(1.0)),
+        ));
+        assert!(compiled.may_be_true.satisfiable());
+        assert_eq!(compiler.fallbacks(), 0);
+    }
+
+    /// Written the other way round, the operator turns with the operands.
+    #[test]
+    fn a_constant_query_on_the_right_compares_the_same_way() {
+        let (graph, symbols) = fixture(&["a"], None);
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let world = crate::world::test_world::TestWorld::new().with_day_counter(1);
+        let mut compiler = GuardCompiler::new(&vars).with_world(&world);
+
+        // `2 <= DayCount()` is `DayCount() >= 2`, which is false on day one. Read without
+        // turning the operator it would be `DayCount() <= 2`, which is true - the opposite
+        // answer.
+        let compiled = compiler.compile(&GuardExpression::Comparison(
+            "<=".to_string(),
+            Box::new(number(2.0)),
+            Box::new(call("DayCount", vec![])),
+        ));
+        assert!(!compiled.may_be_true.satisfiable());
+        assert_eq!(compiler.fallbacks(), 0);
+    }
+
+    /// A money comparison stays undecided where the layout does not carry money.
+    ///
+    /// The crawl CHANGES money, so answering it from the world's starting balance would
+    /// close a branch a richer path opens - the unsafe direction. What changes is the
+    /// reason: it now names money instead of blaming the shape of the expression.
+    #[test]
+    fn a_money_comparison_is_undecided_and_says_it_is_about_money() {
+        let (graph, symbols) = fixture(&["a"], None);
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let world = crate::world::test_world::TestWorld::new();
+        let mut compiler = GuardCompiler::new(&vars).with_world(&world);
+
+        let compiled = compiler.compile(&GuardExpression::Comparison(
+            ">=".to_string(),
+            Box::new(call("MoneyAmount", vec![])),
+            Box::new(number(50.0)),
+        ));
+
+        // Permissive: both outcomes stay open, which is what an undecided guard means.
+        assert!(compiled.may_be_true.satisfiable());
+        assert!(compiled.may_be_false.satisfiable());
+        assert_eq!(compiler.fallbacks(), 1);
+        let reasons = compiler.fallback_reasons();
+        assert!(
+            reasons.iter().any(|(reason, _)| reason.contains("money")),
+            "the reason should name money: {reasons:?}",
+        );
+    }
+
+    /// With money in the layout, the same comparison is decided against its register.
+    #[test]
+    fn a_money_comparison_is_decided_once_money_has_a_register() {
+        let (graph, symbols) = fixture(&["a"], None);
+        let layout = DataLayout::for_graph(&graph, 16, Some(1000), false);
+        let vars = DataVars::new(&layout, &symbols, NODES, CACHE);
+        let world = crate::world::test_world::TestWorld::new();
+        let mut compiler = GuardCompiler::new(&vars).with_world(&world);
+
+        let compiled = compiler.compile(&GuardExpression::Comparison(
+            ">=".to_string(),
+            Box::new(call("MoneyAmount", vec![])),
+            Box::new(number(50.0)),
+        ));
+
+        assert_eq!(compiler.fallbacks(), 0);
+        // Decided, and decided as a real condition rather than as everywhere-true: some
+        // balances satisfy it and some do not.
+        assert!(compiled.may_be_true.satisfiable());
+        assert!(compiled.may_be_false.satisfiable());
+
+        let (base, bits) = layout.money().expect("money is in this layout");
+        let at = |value: u32| -> Vec<(u32, bool)> {
+            (0..bits as u32).map(|b| (base + b, (value >> b) & 1 == 1)).collect()
+        };
+        assert!(compiled.may_be_true.eval(at(50).iter().copied()));
+        assert!(!compiled.may_be_true.eval(at(49).iter().copied()));
     }
 
     #[test]
