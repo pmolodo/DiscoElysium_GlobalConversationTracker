@@ -52,3 +52,6 @@ uv.lock
 
 # Raw output from the measurement runs; the TSVs beside them are what is kept.
 /measurements/logs/
+
+# Place to stash miscellaneous testing logs we want to keep around
+/testing/logs/
