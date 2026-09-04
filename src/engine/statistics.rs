@@ -82,6 +82,13 @@ impl Tally {
             // tell them apart has the stopped_by on the result itself.
             LookAheadLimit::States | LookAheadLimit::Memory => self.stopped_by_states += 1,
             LookAheadLimit::Time => self.stopped_by_time += 1,
+            // NOT A SIZE LIMIT, and deliberately counted as neither. The report's two
+            // counters answer "did this crawl run out of room or out of time", and both
+            // are questions about the budget the caller set. The MACHINE running out is
+            // not an answer to either - it says nothing about the search - so folding it
+            // in with the crawls that spent their allowance would put a number in the
+            // report that is about the box rather than about the mod.
+            LookAheadLimit::NoMemory => {}
             LookAheadLimit::None => {}
         }
     }

@@ -9,10 +9,15 @@
 //! engine hands back a value instead of dying - and that can be provoked in milliseconds by
 //! making the allocator say no.
 //!
-//! So this installs a global allocator that refuses any single allocation over an armed
-//! threshold. Armed, a six-gigabyte reservation fails exactly as it would on a machine with
-//! no six gigabytes free, and the code under test cannot tell the difference: it asked, and
-//! it was refused.
+//! So this binary installs a global allocator with a HEAP CAP. Under it, the code runs
+//! normally until the total it holds would pass the cap, and then every further request is
+//! refused - which is what running out of memory IS, reproduced in milliseconds on a
+//! process holding a few megabytes. The code under test cannot tell the difference: it
+//! asked, and it was refused.
+//!
+//! A cap on the total rather than a threshold on one allocation, because that is how a
+//! machine actually runs out: not on one enormous request, but on a search growing in
+//! doublings that are individually unremarkable until there is nothing left.
 //!
 //! ## What aborting means here, and why it is worth this much trouble
 //!
@@ -28,14 +33,15 @@
 //!
 //! ## What is still not covered, and is not pretended to be
 //!
-//! - THE FORWARD CRAWL. Its frontier grows a state at a time in a `HashSet`, so it has no
-//!   up-front reservation to probe and no fallible growth either. An allocation failure part
-//!   way through a crawl aborts, and its budget only stops it at the ceiling the CALLER set,
-//!   which says nothing about what the machine has. Nothing here can change that without
-//!   making the frontier's growth fallible.
+//! - THE STATE ITSELF. The crawl's frontier now GROWS FALLIBLY - see `room_for` - so the
+//!   two collections that hold every state it has seen report instead of aborting. What
+//!   they hold does not: a `StateKey` keeps its slots on the heap, and cloning one
+//!   allocates infallibly like anything else. The collections are where the memory goes and
+//!   where the failing ask happens, so this converts the realistic case rather than making
+//!   the crawl allocation-safe.
 //! - THE STACK. A deep recursion overflows a guard page and aborts, and that is uncatchable
-//!   too - see de-fpax, which is a real occurrence rather than a worry. A refusing allocator
-//!   says nothing about it.
+//!   too - see de-fpax, which is a real occurrence rather than a worry. A heap cap says
+//!   nothing about it.
 //! - HOW MUCH THE MACHINE ACTUALLY HAS FREE. Reading that needs a platform call this
 //!   repository does not make anywhere, and a budget four times what is free is a very
 //!   different ask from one larger than the address space: Windows may well accept it
@@ -53,98 +59,167 @@ use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::graph::node::LookAheadNode;
 use lookahead_engine::symbolic::budget::DiagramBudget;
 
-/// An allocator that refuses any single allocation at or above an armed threshold.
+/// An allocator with a HEAP CAP: it refuses once this binary's live bytes would pass one.
 ///
-/// ## Why a threshold and not a total
+/// ## A cap on the total, not a threshold on one allocation
 ///
-/// Because the test harness has to keep working while this is armed. Printing a failure
-/// message, growing the vector that collects them, and everything libtest does between
-/// tests are all allocations, and an allocator that refused them would take the process down
-/// in the act of proving that the process does not go down. A threshold well above anything
-/// ordinary machinery asks for - see [`ORDINARY`] - refuses only the deliberate ask.
+/// Because that is how a machine actually runs out. A search does not die on one enormous
+/// request; it grows, in doublings that are individually unremarkable, until there is
+/// nothing left. A cap reproduces that - and it reproduces it in milliseconds, on a
+/// process that never holds more than a few megabytes, so nothing on the machine is
+/// disturbed by proving what happens when memory runs out.
+///
+/// ## Why an allocator and not a real limit
+///
+/// Rust has no maximum-heap switch, and neither does a Rust binary: the portable way to
+/// bound a heap is exactly this, a `#[global_allocator]` that counts and refuses. (The
+/// `cap` crate is this, packaged; twenty lines is cheaper than a dependency here.) An OS
+/// limit - `ulimit -v`, a job object - would bound the whole PROCESS, which on Windows
+/// includes the test harness, and would take the run down with the subject.
+///
+/// ## Why this is its own test binary
+///
+/// The allocator is the process's. Cargo gives each integration test its own executable,
+/// so the cap here reaches this file's tests and nothing else in the suite.
 ///
 /// Returning null is exactly what an allocator does when it cannot serve a request. What
 /// happens next is the whole subject: a fallible reservation turns it into an `Err`, and an
 /// infallible one turns it into `handle_alloc_error` and an abort.
-struct Refusing;
+struct Capped;
 
-/// The size at or above which allocations are refused, or `usize::MAX` for none.
-static REFUSE_AT: AtomicUsize = AtomicUsize::new(usize::MAX);
+/// What this binary is holding, in bytes.
+static LIVE: AtomicUsize = AtomicUsize::new(0);
 
-/// How many allocations have actually been refused, so a test can prove one was.
+/// The most it may hold, or `usize::MAX` for no cap.
+static CAP: AtomicUsize = AtomicUsize::new(usize::MAX);
+
+/// How many allocations the cap has refused, so a test can prove one was.
 static REFUSED: AtomicUsize = AtomicUsize::new(0);
 
-unsafe impl GlobalAlloc for Refusing {
+impl Capped {
+    /// Takes `size` out of the cap, or refuses.
+    fn take(size: usize) -> bool {
+        let cap = CAP.load(Ordering::Relaxed);
+        if cap == usize::MAX {
+            LIVE.fetch_add(size, Ordering::Relaxed);
+            return true;
+        }
+
+        // A compare-and-swap loop rather than a fetch-add and a check, so two threads
+        // cannot both see room for the last byte. libtest allocates on its own threads
+        // while a test runs, so this is not hypothetical.
+        let mut live = LIVE.load(Ordering::Relaxed);
+        loop {
+            if live.saturating_add(size) > cap {
+                REFUSED.fetch_add(1, Ordering::Relaxed);
+                return false;
+            }
+
+            match LIVE.compare_exchange_weak(
+                live,
+                live + size,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return true,
+                Err(seen) => live = seen,
+            }
+        }
+    }
+
+    fn give_back(size: usize) {
+        LIVE.fetch_sub(size, Ordering::Relaxed);
+    }
+}
+
+unsafe impl GlobalAlloc for Capped {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if layout.size() >= REFUSE_AT.load(Ordering::Relaxed) {
-            REFUSED.fetch_add(1, Ordering::Relaxed);
+        if !Self::take(layout.size()) {
             return std::ptr::null_mut();
         }
 
-        unsafe { System.alloc(layout) }
+        let pointer = unsafe { System.alloc(layout) };
+        if pointer.is_null() {
+            Self::give_back(layout.size());
+        }
+        pointer
     }
 
     unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
+        Self::give_back(layout.size());
         unsafe { System.dealloc(pointer, layout) }
     }
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        if layout.size() >= REFUSE_AT.load(Ordering::Relaxed) {
-            REFUSED.fetch_add(1, Ordering::Relaxed);
+        if !Self::take(layout.size()) {
             return std::ptr::null_mut();
         }
 
-        unsafe { System.alloc_zeroed(layout) }
+        let pointer = unsafe { System.alloc_zeroed(layout) };
+        if pointer.is_null() {
+            Self::give_back(layout.size());
+        }
+        pointer
     }
 
     unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        if new_size >= REFUSE_AT.load(Ordering::Relaxed) {
-            REFUSED.fetch_add(1, Ordering::Relaxed);
+        // The GROWTH is what has to fit; a shrink always does.
+        if new_size > layout.size() && !Self::take(new_size - layout.size()) {
             return std::ptr::null_mut();
         }
 
-        unsafe { System.realloc(pointer, layout, new_size) }
+        let moved = unsafe { System.realloc(pointer, layout, new_size) };
+        if moved.is_null() {
+            if new_size > layout.size() {
+                Self::give_back(new_size - layout.size());
+            }
+        } else if new_size < layout.size() {
+            Self::give_back(layout.size() - new_size);
+        }
+        moved
     }
 }
 
 #[global_allocator]
-static ALLOCATOR: Refusing = Refusing;
+static ALLOCATOR: Capped = Capped;
 
-/// The largest single allocation the test harness itself is assumed to make.
+/// How much a capped test is allowed to allocate ON TOP of what is already held.
 ///
-/// Eight megabytes, which libtest and the printing machinery are nowhere near - and which
-/// every budget these tests refuse is orders of magnitude above. It is a ceiling on what
-/// stays working rather than a measurement, so it is deliberately generous in both
-/// directions.
-const ORDINARY: usize = 8 * 1024 * 1024;
+/// FOUR MEGABYTES, and the number is a compromise with one job on each side. It has to be
+/// big enough that libtest, the panic machinery and the formatting of a failure message all
+/// still work while the cap is on - a test that ran out of memory while reporting that
+/// something ran out of memory would be a poor joke. It has to be small enough that a crawl
+/// reaches it in a moment rather than after filling the machine.
+const HEADROOM: usize = 4 * 1024 * 1024;
 
 /// Arming is process-wide, so the tests in this file take turns.
 ///
-/// EVERY TEST HERE HOLDS IT, not only the ones that arm. Cargo runs the tests in a binary in
-/// parallel and the allocator belongs to the process, so a test that allocates a
-/// thirty-two-megabyte budget while another has the allocator armed is refused for a reason
-/// that has nothing to do with it - and would fail, or abort, at random. The lock is what
-/// makes "armed" mean "armed for this test".
+/// EVERY TEST IN THIS FILE TAKES IT, exactly once, at the top. Once, because the guard is a
+/// plain `Mutex` and taking it twice on one thread deadlocks - which looks exactly like a
+/// slow test, and did. Every test, because the allocator belongs to the process and one
+/// test allocating freely while another has the cap on would be refused for a reason that
+/// has nothing to do with it.
 static ARMED: Mutex<()> = Mutex::new(());
 
-/// Runs `body` with the allocator refusing anything at or above [`ORDINARY`].
+/// Runs `body` under a heap cap of [`HEADROOM`] above what is held now.
 ///
-/// Returns what `body` returned and how many allocations were refused while it ran. The
-/// count matters: a test that passes because the code never asked for anything large is not
-/// the test that was wanted, and without this it would look identical to one that asked and
-/// was refused.
-fn while_refusing<T>(body: impl FnOnce() -> T) -> (T, usize) {
-    let _held = alone();
-
+/// Returns what `body` returned and how many allocations the cap refused while it ran. The
+/// count matters: a test that passes because the code never asked for much is not the test
+/// that was wanted, and without this it would look identical to one that asked and was
+/// refused.
+///
+/// The caller holds the turn - see [`alone`] - and this does not take it, so a test can do
+/// something uncapped as well as capped under one guard.
+fn under_a_heap_cap<T>(body: impl FnOnce() -> T) -> (T, usize) {
     let before = REFUSED.load(Ordering::Relaxed);
-    REFUSE_AT.store(ORDINARY, Ordering::Relaxed);
+    CAP.store(LIVE.load(Ordering::Relaxed) + HEADROOM, Ordering::Relaxed);
     let outcome = body();
-    REFUSE_AT.store(usize::MAX, Ordering::Relaxed);
+    CAP.store(usize::MAX, Ordering::Relaxed);
 
     (outcome, REFUSED.load(Ordering::Relaxed) - before)
 }
 
-/// Holds the turn, so no other test in this file has the allocator armed meanwhile.
+/// Holds the turn, so no other test in this file has the cap on meanwhile.
 ///
 /// A poisoned lock is taken anyway: it means another test panicked, and its failure is the
 /// one worth reading - not a second failure here about the lock.
@@ -159,9 +234,10 @@ fn alone() -> std::sync::MutexGuard<'static, ()> {
 /// turns down on arithmetic without ever reaching the allocator's own no; this reaches it.
 #[test]
 fn a_budget_the_allocator_refuses_comes_back_as_a_value() {
+    let _alone = alone();
     let budget = DiagramBudget::measurement();
 
-    let (supplied, refusals) = while_refusing(|| budget.can_be_supplied());
+    let (supplied, refusals) = under_a_heap_cap(|| budget.can_be_supplied());
 
     assert!(!supplied, "the allocator refused and can_be_supplied said yes anyway");
     assert!(
@@ -187,9 +263,10 @@ fn a_budget_the_allocator_refuses_comes_back_as_a_value() {
 /// difference between a feature that degrades and a game that closes.
 #[test]
 fn a_manager_that_cannot_be_afforded_is_refused_rather_than_aborting() {
+    let _alone = alone();
     let budget = DiagramBudget::measurement();
 
-    let (manager, refusals) = while_refusing(|| budget.try_manager());
+    let (manager, refusals) = under_a_heap_cap(|| budget.try_manager());
 
     assert!(manager.is_none(), "a manager came back that the allocator would not pay for");
     assert!(refusals > 0, "nothing was refused, so no manager was ever at risk");
@@ -315,4 +392,76 @@ fn a_crawl_too_big_for_its_budget_says_so_instead_of_dying() {
         "{} states over {} entries, stopped by {:?}",
         result.states_explored, result.nodes_reached, result.stopped_by,
     );
+}
+
+/// And a crawl the ALLOCATOR refuses says so, rather than taking the process with it.
+///
+/// ## The difference from the test above
+///
+/// That one is about the budget the CALLER set: the search behaved and reported. This is
+/// the allocator saying no inside a budget the search had not reached, which is a fact
+/// about the machine and not about the algorithm - and which, until the frontier grew
+/// fallibly, was not a report at all. `HashSet::insert` and `VecDeque::push_back` reach
+/// `handle_alloc_error` when they cannot grow, and that ABORTS: no panic to catch, no
+/// result to read, and inside the game, no session.
+///
+/// ## Why the two verdicts are kept apart
+///
+/// They want opposite responses. `Memory` says a player who wants more markers can raise
+/// their budget; `NoMemory` says the budget is not the problem and the machine had nothing
+/// to give. A single "it gave up" cannot tell them which.
+#[test]
+fn a_crawl_the_allocator_refuses_reports_it_rather_than_aborting() {
+    use lookahead_engine::core::types::LookAheadLimit;
+    use lookahead_engine::engine::engine::{LookAheadEngine, LookAheadOptions};
+    use lookahead_engine::world::test_world::TestWorld;
+
+    let _alone = alone();
+
+    // BIG ENOUGH TO OUTGROW THE CAP, which is the whole design of this test: the frontier
+    // has to pass HEADROOM while the SAME crawl, uncapped, still finishes in a moment - so
+    // that the refusal is demonstrably the cap's and not the graph's. Sixteen levels is
+    // 65,535 states, several megabytes of frontier, and under a second uncapped.
+    let graph = branching(16);
+    let world = TestWorld::new();
+
+    let engine = LookAheadEngine::new(LookAheadOptions {
+        // NO BUDGET THAT CAN FIRE FIRST, so nothing but the allocator stops it. A budget
+        // that fired would make this a slower copy of the test above.
+        memory_budget: usize::MAX,
+        state_budget: usize::MAX,
+        time_budget: std::time::Duration::ZERO,
+        ..Default::default()
+    });
+
+    let (result, refusals) = under_a_heap_cap(|| {
+        engine.evaluate(
+            &graph,
+            DialogueNodeId::new(1, 0),
+            &world,
+            |_| Novelty::UnseenThisGame,
+        )
+    });
+
+    assert!(refusals > 0, "the frontier never grew past the threshold, so nothing was refused");
+    assert_eq!(
+        result.stopped_by,
+        LookAheadLimit::NoMemory,
+        "the allocator refused and the crawl reported {:?}",
+        result.stopped_by,
+    );
+    assert!(
+        result.budget_exhausted(),
+        "a refused crawl has to read as unfinished, or its answer is taken as settled",
+    );
+
+    // Unarmed, the same crawl finishes - which is what says the refusal was the
+    // allocator's and not a property of this graph.
+    let finished = engine.evaluate(
+        &graph,
+        DialogueNodeId::new(1, 0),
+        &world,
+        |_| Novelty::UnseenThisGame,
+    );
+    assert_eq!(finished.stopped_by, LookAheadLimit::None);
 }

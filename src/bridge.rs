@@ -1075,6 +1075,10 @@ fn limit_name(limit: crate::core::types::LookAheadLimit) -> &'static str {
     match limit {
         crate::core::types::LookAheadLimit::States => "states",
         crate::core::types::LookAheadLimit::Memory => "memory",
+        // A DIFFERENT WORD FROM "memory", because they want opposite responses: that one
+        // says a player could raise their budget, this one says the machine had nothing to
+        // give and the budget is not the problem.
+        crate::core::types::LookAheadLimit::NoMemory => "no-ram",
         crate::core::types::LookAheadLimit::Time => "time",
         crate::core::types::LookAheadLimit::None => "none",
     }

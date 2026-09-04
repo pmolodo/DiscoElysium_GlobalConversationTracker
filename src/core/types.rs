@@ -115,4 +115,18 @@ pub enum LookAheadLimit {
     /// conversation the player is standing in - measured, see tests/crawl_memory.rs - and a
     /// number that elastic protects nothing in particular. See de-e23q.
     Memory = 3,
+
+    /// The MACHINE could not supply what the search asked for, inside its budget.
+    ///
+    /// A DIFFERENT THING FROM [`Self::Memory`], and they want opposite responses.
+    /// `Memory` is the ceiling the CALLER set: the search behaved, and a player who wants
+    /// more markers can raise it. This is the allocator saying no, which says nothing at
+    /// all about the algorithm and cannot be fixed by turning a dial - it wants the memory
+    /// freed, or a bigger machine.
+    ///
+    /// The alternative to reporting it is not a wrong answer, it is NO PROCESS: an
+    /// infallible allocation that fails reaches `handle_alloc_error`, which aborts, and the
+    /// engine runs inside the game. See `tests/out_of_memory.rs` for what is and is not
+    /// covered.
+    NoMemory = 4,
 }
