@@ -170,6 +170,138 @@ namespace GlobalConversationTracker.LookAhead.Tests
             Assert.DoesNotContain(BranchLine.UncertainMarker, line);
         }
 
+        /// <summary>
+        /// Every shape one half of the line can take, named.
+        /// </summary>
+        /// <remarks>
+        /// <para>EIGHT, AND NO MORE THAN EIGHT. A half is a word in the colour of where
+        /// its outcome lands, and an asterisk in the colour of the best beyond it, drawn
+        /// only when that best outranks the destination. Three destinations times what can
+        /// outrank each gives eight - and the ninth, an orange word with an asterisk, is
+        /// impossible by construction: nothing outranks the top rung, so there is never
+        /// anything for an asterisk to report. <see cref="AnOrangeHalfNeverCarriesAnything"/>
+        /// holds that.</para>
+        ///
+        /// <para>Named because the in-game suites arrange these same eight through
+        /// fixtures, at a minute a launch, and a shape that has never been composed here
+        /// has no business being asked of the game.</para>
+        /// </remarks>
+        public enum Shape
+        {
+            /// <summary>Lands on text no save has read. Nothing can outrank it.</summary>
+            OrangeAlone,
+
+            /// <summary>Lands on text this save has not read; nothing beyond beats it.</summary>
+            RedAlone,
+
+            /// <summary>...and beyond it is text no save has read.</summary>
+            RedThenOrange,
+
+            /// <summary>...and the search gave up before it could say.</summary>
+            RedThenGaveUp,
+
+            /// <summary>Lands on text this save has read; nothing beyond beats it.</summary>
+            DarkRedAlone,
+
+            /// <summary>...and beyond it is text this save has not read.</summary>
+            DarkRedThenRed,
+
+            /// <summary>...and beyond it is text no save has read.</summary>
+            DarkRedThenOrange,
+
+            /// <summary>...and the search gave up.</summary>
+            DarkRedThenGaveUp,
+        }
+
+        /// <summary>The answer that produces one shape.</summary>
+        private static BranchAnswer AnswerFor(Shape shape) => shape switch
+        {
+            Shape.OrangeAlone => new BranchAnswer(2, 2, true),
+            Shape.RedAlone => new BranchAnswer(1, 1, true),
+            Shape.RedThenOrange => new BranchAnswer(1, 2, true),
+            Shape.RedThenGaveUp => new BranchAnswer(1, 1, false),
+            Shape.DarkRedAlone => new BranchAnswer(0, 0, true),
+            Shape.DarkRedThenRed => new BranchAnswer(0, 1, true),
+            Shape.DarkRedThenOrange => new BranchAnswer(0, 2, true),
+            _ => new BranchAnswer(0, 0, false),
+        };
+
+        /// <summary>The markup one shape must be drawn as, for a given word.</summary>
+        private static string MarkupFor(Shape shape, string word) => shape switch
+        {
+            Shape.OrangeAlone => Coloured(Any, word),
+            Shape.RedAlone => Coloured(This, word),
+            Shape.RedThenOrange => Coloured(This, word) + Coloured(Any, BranchLine.FoundMarker),
+            Shape.RedThenGaveUp =>
+                Coloured(This, word) + Coloured(Gave, BranchLine.UncertainMarker),
+            Shape.DarkRedAlone => Coloured(Seen, word),
+            Shape.DarkRedThenRed =>
+                Coloured(Seen, word) + Coloured(This, BranchLine.FoundMarker),
+            Shape.DarkRedThenOrange =>
+                Coloured(Seen, word) + Coloured(Any, BranchLine.FoundMarker),
+            _ => Coloured(Seen, word) + Coloured(Gave, BranchLine.UncertainMarker),
+        };
+
+        private static string Coloured(string colour, string text) =>
+            $"<color={colour}>{text}</color>";
+
+        /// <summary>
+        /// Every shape, on the Pass half and on the Fail half, drawn exactly.
+        /// </summary>
+        /// <remarks>
+        /// BOTH HALVES FOR EACH, because the two are separate code paths in everything but
+        /// name and the bug worth catching is one that draws the Pass answer twice. Each
+        /// case pairs a shape with a DIFFERENT one on the other half for the same reason -
+        /// a line whose halves are identical cannot show that they are read separately -
+        /// and the two same-shape cases at the end cover the other half of the user's ask.
+        /// </remarks>
+        [Theory]
+        [InlineData(Shape.OrangeAlone, Shape.RedAlone)]
+        [InlineData(Shape.RedAlone, Shape.OrangeAlone)]
+        [InlineData(Shape.RedThenOrange, Shape.DarkRedAlone)]
+        [InlineData(Shape.DarkRedAlone, Shape.RedThenOrange)]
+        [InlineData(Shape.RedThenGaveUp, Shape.DarkRedThenRed)]
+        [InlineData(Shape.DarkRedThenRed, Shape.RedThenGaveUp)]
+        [InlineData(Shape.DarkRedThenOrange, Shape.DarkRedThenGaveUp)]
+        [InlineData(Shape.DarkRedThenGaveUp, Shape.DarkRedThenOrange)]
+        [InlineData(Shape.OrangeAlone, Shape.OrangeAlone)]
+        [InlineData(Shape.DarkRedThenOrange, Shape.DarkRedThenOrange)]
+        public void EveryShapeIsDrawnOnEitherHalf(Shape pass, Shape fail)
+        {
+            string line = Assert.IsType<string>(
+                BranchLine.For(
+                    Answer(new BranchAnswers(AnswerFor(pass), AnswerFor(fail))),
+                    Palette()));
+
+            Assert.Contains(MarkupFor(pass, BranchLine.PassWord), line);
+            Assert.Contains(MarkupFor(fail, BranchLine.FailWord), line);
+        }
+
+        /// <summary>
+        /// A half on the top rung carries nothing, whatever the search did.
+        /// </summary>
+        /// <remarks>
+        /// The ninth shape, which must not exist. An asterisk answers "is there something
+        /// beyond this that outranks it", and text no save has read cannot be outranked -
+        /// so the answer is no, settled, and a search that ran out of budget has not made
+        /// it doubtful. It used to draw '*?' here, which claimed a doubt about a question
+        /// that has none.
+        /// </remarks>
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void AnOrangeHalfNeverCarriesAnything(bool complete)
+        {
+            string line = Assert.IsType<string>(
+                BranchLine.For(
+                    Answer(new BranchAnswers(
+                        new BranchAnswer(2, 2, complete), new BranchAnswer(2, 2, complete))),
+                    Palette()));
+
+            Assert.DoesNotContain(BranchLine.FoundMarker, line);
+            Assert.DoesNotContain(BranchLine.UncertainMarker, line);
+        }
+
         /// <summary>The two words are separated, so they read as two columns.</summary>
         [Fact]
         public void TheTwoWordsAreSetApart()

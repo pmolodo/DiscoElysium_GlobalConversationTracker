@@ -1,0 +1,82 @@
+{
+  "_what": "Every shape one half of a check's Pass / Fail line can take, as the fixture that produces it and the line it must draw. THE DEFINITION, not a description of one: tools/GameHarness turns each row into an in-game suite, and tests/branch_shapes.rs runs the same row through the engine over the shipped index. Adding a row adds a test to both; neither side declares anything of its own.",
+  "_colours": "orange = unseen in any game, red = unseen this game, darkRed = already read in this save. A marker is one of those three, or gaveUp for a search that did not finish, or absent where nothing beyond the destination outranks it.",
+  "_extra": "A row is the whole scenario, and both executors read all of it. If one ever needs something the other cannot use - an in-game screenshot reference, say - it goes under a key naming the executor, 'offline' or 'inGame', so a reader can see at a glance which half of the world it belongs to. NOTHING NEEDS THAT YET and no support for it is built; what the offline executor needs beyond these fields, it reads from the same save the in-game one loads.",
+  "_eight": "orange alone (nothing outranks the top rung, so it never carries a marker); red alone, red+orange, red+gaveUp; darkRed alone, darkRed+red, darkRed+orange, darkRed+gaveUp. Rows both differ across the two halves and match, which is what says the halves are read separately.",
+  "conversation": 9,
+  "entry": 50,
+  "rows": [
+    {
+      "suite": "fan-nothing-recorded",
+      "what": "nothing recorded anywhere, so both outcomes are on the top rung",
+      "state": "global-state-empty.json",
+      "save": "at-the-fan",
+      "stateBudget": 0,
+      "pass": { "colour": "orange" },
+      "fail": { "colour": "orange" }
+    },
+    {
+      "suite": "fan-recorded-elsewhere",
+      "what": "the check and where passing lands are recorded elsewhere; failing is not",
+      "state": "global-state-fan-pass-recorded.json",
+      "save": "at-the-fan",
+      "stateBudget": 0,
+      "pass": { "colour": "red", "marker": "orange" },
+      "fail": { "colour": "orange" }
+    },
+    {
+      "suite": "fan-recorded-gives-up",
+      "what": "the same, with a budget of one",
+      "state": "global-state-fan-pass-recorded.json",
+      "save": "at-the-fan",
+      "stateBudget": 1,
+      "pass": { "colour": "red", "marker": "gaveUp" },
+      "fail": { "colour": "orange" }
+    },
+    {
+      "suite": "fan-all-recorded",
+      "what": "every entry recorded elsewhere and none read here, so both outcomes are red and nothing outranks either",
+      "state": "global-state-fan-all-recorded.json",
+      "save": "at-the-fan",
+      "stateBudget": 0,
+      "pass": { "colour": "red" },
+      "fail": { "colour": "red" }
+    },
+    {
+      "suite": "fan-read-here",
+      "what": "this save has read the whole conversation, so both outcomes are dark red with nothing past them",
+      "state": "global-state-empty.json",
+      "save": "fan-read-all",
+      "stateBudget": 0,
+      "pass": { "colour": "darkRed" },
+      "fail": { "colour": "darkRed" }
+    },
+    {
+      "suite": "fan-reaches-unread",
+      "what": "the check recorded and where passing lands read here, so passing reaches text no save has read",
+      "state": "global-state-fan-check-recorded.json",
+      "save": "fan-read-pass",
+      "stateBudget": 0,
+      "pass": { "colour": "darkRed", "marker": "orange" },
+      "fail": { "colour": "orange" }
+    },
+    {
+      "suite": "fan-reaches-gives-up",
+      "what": "the same, with a budget of one",
+      "state": "global-state-fan-check-recorded.json",
+      "save": "fan-read-pass",
+      "stateBudget": 1,
+      "pass": { "colour": "darkRed", "marker": "gaveUp" },
+      "fail": { "colour": "orange" }
+    },
+    {
+      "suite": "fan-nothing-unread-anywhere",
+      "what": "every entry recorded and this save has read the check and its pass outcome, so the best anything reaches is red",
+      "state": "global-state-fan-all-recorded.json",
+      "save": "fan-read-both",
+      "stateBudget": 0,
+      "pass": { "colour": "darkRed", "marker": "red" },
+      "fail": { "colour": "red" }
+    }
+  ]
+}
