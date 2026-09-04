@@ -92,6 +92,19 @@ pub struct Budget {
     pub steps: usize,
     /// How long to keep going.
     pub time: std::time::Duration,
+
+    /// The most memory the diagram may hold, in bytes, or 0 for no such limit.
+    ///
+    /// The counterpart of the forward crawl's memory budget, and the reason both exist: a
+    /// search that gives up after 500,000 steps and one that gives up after 200,000 states
+    /// cannot be compared, because neither number says what either search SPENT. Two
+    /// searches held to the same number of bytes can be. See de-e23q.
+    ///
+    /// CHECKED ON THE PROGRESS CADENCE rather than every step, because asking the manager
+    /// its node count is not free and a budget that costs more than it saves is not a
+    /// saving. So the diagram can overshoot by up to `report_every` steps' worth of growth -
+    /// the same bargain the forward crawl makes with its clock.
+    pub memory: usize,
     /// Called every `report_every` steps with the step count, entries reached, the
     /// diagram nodes held in total, and the LARGEST single set.
     ///
@@ -122,6 +135,10 @@ impl Default for Budget {
         Self {
             steps: 2_000_000,
             time: std::time::Duration::from_secs(120),
+            // THE SAME NUMBER THE FORWARD CRAWL GETS, which is the point of stating either
+            // of them in bytes: two searches held to the same allowance can be compared,
+            // and a step count against a state count cannot. See de-e23q.
+            memory: crate::engine::engine::DEFAULT_MEMORY_BUDGET,
             on_progress: None,
             report_every: 20_000,
             halt_on: None,
@@ -268,6 +285,12 @@ impl<'a> Reachability<'a> {
             this.stats.steps += 1;
 
             if this.stats.steps % budget.report_every == 0 {
+                if budget.memory > 0 && this.vars.memory_used() >= budget.memory {
+                    this.stats.out_of_memory = true;
+                    ran_out = true;
+                    break;
+                }
+
                 if let Some(report) = &budget.on_progress {
                     let sizes: Vec<usize> =
                         this.sets.values().map(|s| s.node_count()).collect();

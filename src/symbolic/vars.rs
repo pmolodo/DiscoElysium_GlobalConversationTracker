@@ -40,6 +40,35 @@ impl<'a> DataVars<'a> {
         Self { manager, vars, layout, symbols }
     }
 
+    /// How many nodes the diagram manager is holding.
+    ///
+    /// THE MANAGER'S OWN COUNT, not a sum over the sets. Summing each set's `node_count`
+    /// counts a node once per set that uses it, and sharing between sets is most of what
+    /// makes a diagram cheap - so that sum is an upper bound that can exceed the truth
+    /// several times over. For a budget, and above all for a budget that is meant to be
+    /// comparable with the forward crawl's (de-e23q), the number wanted is what is actually
+    /// held.
+    pub fn node_count(&self) -> usize {
+        self.manager.with_manager_shared(|m| m.num_inner_nodes())
+    }
+
+    /// What one diagram node costs, in bytes.
+    ///
+    /// AN ESTIMATE, and stated here so the two budgets can be read against each other. A
+    /// binary decision diagram node carries a level and two child edges, and the unique
+    /// table that finds it again carries a slot per node; 32 bytes is the round figure that
+    /// covers both without pretending to an accuracy nothing here needs.
+    ///
+    /// It backs a budget, which has to be the right size and to move the right way. It is
+    /// not an accounting of the process and nothing should read it as one - the same
+    /// caveat, for the same reason, as `state_bytes` on the forward side.
+    pub const NODE_BYTES: usize = 32;
+
+    /// What the manager is holding, in bytes.
+    pub fn memory_used(&self) -> usize {
+        self.node_count() * Self::NODE_BYTES
+    }
+
     pub fn layout(&self) -> &DataLayout {
         self.layout
     }

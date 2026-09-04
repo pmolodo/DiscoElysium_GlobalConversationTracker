@@ -45,6 +45,17 @@ const CACHE_CAPACITY: usize = 1 << 20;
 /// symbolic side reaches more.
 const CHECKABLE: [i32; 6] = [1123, 484, 1066, 1147, 949, 511];
 
+/// What each engine is allowed for the comparison, in bytes.
+///
+/// The shipped default, given to BOTH sides. The comparison is the point of this file, and
+/// a comparison needs a common unit: 200,000 states against 500,000 steps says nothing
+/// about which search did more with the same room, because neither number is room. See
+/// de-e23q and tests/crawl_memory.rs.
+const COMPARISON_MEMORY: usize = lookahead_engine::engine::engine::DEFAULT_MEMORY_BUDGET;
+
+/// And the same clock for both, for the same reason.
+const COMPARISON_TIME: std::time::Duration = std::time::Duration::from_secs(60);
+
 /// The groups that drive the cost.
 ///
 /// 362 IS FIRST BECAUSE IT IS THE LARGEST AND WAS THE LAST ONE UNMEASURED. At 1,860
@@ -243,6 +254,37 @@ fn the_symbolic_search_reaches_what_the_explicit_crawl_reaches() {
 ///
 /// A slow answer beats a budget exhaustion that returns nothing, so the bar the symbolic
 /// side has to clear is low: ANSWER AT ALL.
+///
+/// ## What it says on equal terms, 2026-09-04
+///
+/// Both engines given 256 MB and 60 seconds (de-e23q; before that the explicit side had
+/// 200,000 states and the symbolic side no memory limit at all, so the table below was not
+/// a comparison of anything):
+///
+/// ```text
+///   conv  entries    vars     engine        ms  symbolic       ms
+///    368     4724     263    gave up       426   gave up    60008
+///    631     4514     331    gave up       368   NO ROOM    57587
+///     14     3594     250    gave up       411   NO ROOM    23143
+///     28     2186     160    gave up       484     FOUND       46
+///   1030     1476      92  not there         0 not there        0
+///    362     1860     123    gave up       647   gave up    60018
+/// ```
+///
+/// CONVERSATION 28 IS THE CASE FOR THE BACKWARD SEARCH, and the only one here: it answers
+/// in 46 milliseconds a question the explicit crawl spends 484 giving up on. That is the
+/// whole shape of the argument - a representation that shares structure can settle a
+/// question an enumeration cannot reach - and it is now one measured instance rather than a
+/// hope.
+///
+/// EVERYWHERE ELSE THE BACKWARD SEARCH IS WORSE, and worse in two different ways worth
+/// telling apart. On 631 and 14 it fills 256 MB of diagram and stops; on 368 and 362 it
+/// spends the whole minute without either filling the budget or answering. The first is a
+/// representation that does not fit, the second one that is merely slow, and they want
+/// different things done about them.
+///
+/// 1030 answers instantly on both sides because its whole reachable space is a few hundred
+/// states - it is the control rather than a result.
 #[test]
 #[ignore = "a long measurement, not a test: run it with --ignored --release"]
 fn finding_one_unseen_entry_in_a_group_that_is_otherwise_seen() {
@@ -284,10 +326,17 @@ fn finding_one_unseen_entry_in_a_group_that_is_otherwise_seen() {
         };
 
         // The explicit crawl, asked exactly this.
+        //
+        // THE SAME ALLOWANCE THE SYMBOLIC SIDE GETS BELOW: the same bytes and the same
+        // seconds. That is the only way the two verdicts in the table mean anything against
+        // each other - a state count and a step count are not comparable quantities, and
+        // holding one side to 200,000 states while the other ran unlimited was comparing
+        // two searches given different amounts of room (de-e23q).
         let began = std::time::Instant::now();
         let explicit_answer = LookAheadEngine::new(LookAheadOptions {
-            state_budget: 200_000,
-            time_budget: std::time::Duration::from_secs(60),
+            state_budget: usize::MAX,
+            memory_budget: COMPARISON_MEMORY,
+            time_budget: COMPARISON_TIME,
             counter_cap: COUNTER_CAP,
             ..Default::default()
         })
@@ -304,8 +353,10 @@ fn finding_one_unseen_entry_in_a_group_that_is_otherwise_seen() {
 
         let seed = lookahead_engine::symbolic::reachability::seed_of(&graph, &world, &vars);
         let budget = Budget {
-            steps: 500_000,
-            time: std::time::Duration::from_secs(60),
+            // No step limit, because steps are not what is being rationed here.
+            steps: usize::MAX,
+            time: COMPARISON_TIME,
+            memory: COMPARISON_MEMORY,
             report_every: 20_000,
             on_progress: None,
             // Stop the moment the quarry is reached - the whole point of the exercise.
@@ -420,6 +471,7 @@ fn what_the_expensive_conversations_cost() {
         let budget = Budget {
             steps: 500_000,
             time: std::time::Duration::from_secs(120),
+            memory: 0,
             report_every: 5_000,
             on_progress: Some(Box::new(move |steps, reached, held, largest| {
                 println!(
