@@ -244,12 +244,17 @@ fn input_that_stops_mid_expression_is_refused_rather_than_crashing() {
 ///
 /// ## The failure this replaces
 ///
-/// A stack overflow. This parser is recursive descent, so nesting depth is stack depth, and
-/// until de-fpax there was no bound on it: `deep_nesting_is_answered_rather_than_overflowing`
-/// in tests/properties.rs - a test written to prove exactly this - brought the whole test
-/// binary down with STATUS_STACK_OVERFLOW on a clean tree. An overflow is not a panic. The
-/// guard page is hit, Rust prints, the process ABORTS, and nothing can catch it; inside the
-/// game that is the player's session.
+/// A stack overflow. The parser used to be recursive descent, so nesting depth was stack
+/// depth, and until de-fpax there was no bound on it:
+/// `deep_nesting_is_answered_rather_than_overflowing` in tests/properties.rs - a test
+/// written to prove exactly this - brought the whole test binary down with
+/// STATUS_STACK_OVERFLOW on a clean tree. An overflow is not a panic. The guard page is hit,
+/// Rust prints, the process ABORTS, and nothing can catch it; inside the game that is the
+/// player's session.
+///
+/// The parser is iterative now (de-bnjy.4) and cannot overflow at all, but everything that
+/// USES what it returns still walks the tree by recursion - evaluate, Display, and the Drop
+/// that frees it - so the bound is still what keeps the abort out of reach.
 ///
 /// ## The two ends it is pinned between
 ///
@@ -258,14 +263,16 @@ fn input_that_stops_mid_expression_is_refused_rather_than_crashing() {
 /// - ELEVEN is the deepest guard in the shipped database, of 26,210 (tests/guard_depth.rs),
 ///   so everything real is accepted with room to spare - and the whole database is re-parsed
 ///   by that test, which is what says so.
-/// - ABOUT 130 is where the parser overflows a one-megabyte stack, the Windows main-thread
-///   default (tests/guard_stack.rs). The limit is a quarter of the way there.
+/// - 800 is where walking a tree overflows a one-megabyte stack, the Windows main-thread
+///   default, in a debug build; 2,875 in a release one (tests/guard_stack.rs). The limit is
+///   under a third of the pessimistic figure.
 #[test]
 fn nesting_deeper_than_anything_real_is_refused_rather_than_fatal() {
-    // Comfortably inside. Each "not (" is TWO recursion steps - the not and the paren -
-    // so this is 48 of the 64, and about twice the deepest guard the game ships.
-    let real = format!("{}Variable[\"x\"]{}", "not (".repeat(24), ")".repeat(24));
-    assert!(parse_guard(&real).is_ok(), "24 levels of not( should still parse");
+    // Comfortably inside, and about ten times the deepest guard the game ships. The count
+    // is now the depth a reader sees: the limit is on the TREE, so `not (` is one level and
+    // not the two recursion steps the old bound charged for it.
+    let real = format!("{}Variable[\"x\"]{}", "not (".repeat(100), ")".repeat(100));
+    assert!(parse_guard(&real).is_ok(), "100 levels of not( should still parse");
 
     // And past the limit, an ERROR - which is the whole point. The number is not asserted
     // here; what matters is that there is one and that it answers.
@@ -280,11 +287,34 @@ fn nesting_deeper_than_anything_real_is_refused_rather_than_fatal() {
 
 /// The same, without a parenthesis in sight.
 ///
-/// `not not not x` recurses through a different arm of the parser than `not (not (...))`
-/// does - unary calls itself directly, where a parenthesis goes the long way round through
-/// expression, conjunction and comparison. Both had to be bounded, so both are tested.
+/// `not not not x` reaches the depth through a different part of the parser than
+/// `not (not (...))` does - a run of prefix operators waiting on the operator stack, rather
+/// than a run of open brackets waiting on the frame stack. Both end up as depth in the same
+/// tree, and both are bounded, so both are tested.
 #[test]
 fn unparenthesised_nesting_is_bounded_too() {
     let absurd = format!("{}Variable[\"x\"]", "not ".repeat(500));
     assert!(parse_guard(&absurd).is_err(), "500 nots should be refused");
+}
+
+/// A CHAIN is bounded too, which is the hole the old limit left open.
+///
+/// `a and b and c` never recursed in the recursive-descent parser - conjunctions were
+/// gathered by a `while` loop - so a guard with ten thousand `and`s cost nothing to parse
+/// and sailed past a limit that counted re-entries. What it produced was a tree ten thousand
+/// levels deep down its left side, and evaluating, printing or freeing that walks every one
+/// of them. The bound is on the tree now, so the shape that used to slip through does not.
+#[test]
+fn a_long_chain_is_as_bounded_as_a_deep_nest() {
+    let chain = "true and ".repeat(500) + "true";
+    let refused = parse_guard(&chain);
+    assert!(refused.is_err(), "a 500-long and-chain should be refused");
+    assert!(
+        refused.unwrap_err().to_string().contains("nested"),
+        "the message should say what was wrong with it",
+    );
+
+    // And a chain of ordinary length is untouched: real guards are full of these.
+    let short = "true and ".repeat(20) + "true";
+    assert!(parse_guard(&short).is_ok(), "a 20-long and-chain is ordinary content");
 }

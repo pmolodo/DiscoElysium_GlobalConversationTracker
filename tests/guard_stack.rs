@@ -1,71 +1,98 @@
 // SPDX-License-Identifier: MIT
-//! How much STACK one level of guard nesting costs, and therefore how deep is safe.
+//! How deep a guard's tree can be before something that walks it overflows the stack.
 //!
 //! ## Why this is worth measuring rather than guessing
 //!
-//! The guard parser is recursive descent, and a guard comes out of a dialogue database that
-//! a game patch or another mod can change - so "this string is not a guard" has to be an
-//! error and never a crash. Making that true needs a depth limit, and a depth limit needs a
-//! number: high enough to accept everything real, low enough to be safe on the smallest
-//! stack the parser can find itself on.
+//! A guard comes out of a dialogue database that a game patch or another mod can change, so
+//! "this string is not a guard" has to be an error and never a crash. Making that true needs
+//! a depth limit, and a depth limit needs a number: high enough to accept everything real,
+//! low enough to be safe on the smallest stack this code can find itself on.
 //!
 //! The deepest guard in the shipped database is ELEVEN levels, of 26,210 (tests/
 //! guard_depth.rs). What is not known without measuring is the other end - and it cannot be
-//! taken from a plain `cargo test` run, because a test thread's stack is generous. The
-//! parser runs inside the game, on whatever thread the dialogue system calls it from.
+//! taken from a plain `cargo test` run, because a test thread's stack is generous. This code
+//! runs inside the game, on whatever thread the dialogue system calls it from.
+//!
+//! ## What changed, and why this file no longer measures the parser
+//!
+//! It used to. The parser was recursive descent, so it was the shallowest thing in the
+//! chain: it overflowed a megabyte at about 260 re-entries, five stack frames per level of
+//! nesting. It is iterative now (de-bnjy.4) - nesting costs entries in a `Vec` and nothing
+//! on the stack - so parsing is no longer what fails first, or at all.
+//!
+//! THE RISK DID NOT GO AWAY, IT MOVED. What the parser returns is a tree of `Box`es, and
+//! everything that consumes one recurses over it: `evaluate`, `Display`, and the `Drop` that
+//! frees it. So the number that matters now is theirs, and it is the number `MAX_DEPTH` in
+//! src/parser/guard_parser.rs is chosen against.
 //!
 //! ## How
 //!
-//! Parse at increasing depths on threads of known stack size, and find where each one
-//! stops. `stack / deepest` is what a level costs, and it is what a limit has to be chosen
-//! against.
+//! Build a tree of a known depth - directly, in a loop, because the parser refuses anything
+//! past its own limit and this has to go well past it - then USE it the way the engine does
+//! and let it fall out of scope. On threads of known stack size, walking up until one dies.
 //!
-//! Run it deliberately: `cargo test --test guard_stack -- --ignored --nocapture`. Each
-//! failure is a thread that overflows, which Rust reports and aborts - so this spawns them
-//! one at a time and reads the exit rather than catching anything.
+//! Run it deliberately: `cargo test --test guard_stack -- --ignored --nocapture`. A thread
+//! that overflows takes the process with it, which is why every step prints before it tries:
+//! the last line printed is the answer.
 
-use lookahead_engine::parser::guard_parser::parse_guard;
+use lookahead_engine::core::guard::{GuardExpression, IGuardContext};
+use lookahead_engine::core::guard_value::GuardValue;
 
-/// A guard nested `depth` deep: `not (not (... x ...))`.
-fn nested(depth: usize) -> String {
-    format!(
-        "{}Variable[\"x\"]{}",
-        "not (".repeat(depth),
-        ")".repeat(depth),
-    )
+/// A world that has heard of nothing, so evaluation walks the whole tree.
+///
+/// Unknown rather than false on purpose: a definite answer lets `And` and `Or` short-circuit
+/// and stop descending, which would measure something shallower than the worst case.
+struct Nothing;
+
+impl IGuardContext for Nothing {
+    fn get_variable(&self, _name: &str) -> GuardValue {
+        GuardValue::unknown()
+    }
+
+    fn query(&self, _name: &str, _arguments: &[GuardValue]) -> GuardValue {
+        GuardValue::unknown()
+    }
 }
 
-/// Whether parsing at `depth` survives on a thread with `stack` bytes.
+/// A tree `depth` levels deep, built without recursing.
+fn nested(depth: usize) -> GuardExpression {
+    let mut node = GuardExpression::Variable("x".into());
+    for _ in 1..depth {
+        node = GuardExpression::Not(Box::new(node));
+    }
+    node
+}
+
+/// Whether building, using and freeing a tree that deep survives on a `stack`-byte thread.
 ///
-/// A thread that overflows takes the PROCESS down, so this cannot simply be looped over in
-/// one binary. It is run as a child process instead - see the test below.
+/// All three consumers in one pass, because an overflow ends the process and there is no
+/// second run to try the next one in. The answer wanted is the shallowest depth at which ANY
+/// of them fails, which is what one walk finds.
 fn survives_here(depth: usize, stack: usize) -> bool {
     std::thread::Builder::new()
         .stack_size(stack)
         .spawn(move || {
-            let _ = parse_guard(&nested(depth));
+            let tree = nested(depth);
+            let _ = tree.evaluate(&Nothing);
+            let _ = tree.to_string();
+            drop(tree);
         })
         .expect("a thread")
         .join()
         .is_ok()
 }
 
-/// What one level costs, on the stack sizes worth knowing about.
-///
-/// ONE DEPTH PER PROCESS would be the careful way and is far too slow; instead this walks
-/// up from a depth known to be safe and stops at the first that is not. When it overflows
-/// it takes the run with it, and the last line printed is the answer - which is why every
-/// step prints before it tries.
+/// How deep is safe, on the stack size worth knowing about.
 #[test]
 #[ignore = "a measurement; it ends by overflowing a thread on purpose"]
-fn what_one_level_of_nesting_costs() {
+fn how_deep_a_tree_can_be_walked() {
     // A megabyte is the default main-thread stack on Windows, which is the smallest place
     // this code could plausibly run.
     let stack = 1024 * 1024;
 
     println!("walking up on a {} KB stack:", stack / 1024);
     let mut deepest = 0;
-    for depth in (5..2000).step_by(5) {
+    for depth in (25..40_000).step_by(25) {
         println!("  trying {depth}...");
         if !survives_here(depth, stack) {
             break;

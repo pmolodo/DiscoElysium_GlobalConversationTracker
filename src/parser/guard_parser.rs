@@ -30,7 +30,7 @@ pub fn parse_guard(text: &str) -> Result<GuardExpression, GuardParseError> {
         return Ok(GuardExpression::always_true());
     }
     let mut parser = Parser::new(&stripped, text)?;
-    let expr = parser.parse_expression()?;
+    let expr = parser.parse()?;
     parser.expect_end()?;
     Ok(expr)
 }
@@ -108,119 +108,189 @@ struct Token {
     value: String,
 }
 
-/// How many times the parser may re-enter itself before it refuses a guard.
+/// How deep a guard's expression tree may go before it is refused.
 ///
-/// ## Why there is a limit at all
+/// ## Why there is still a limit, when the parser itself no longer recurses
 ///
-/// This is a recursive-descent parser, so nesting depth IS stack depth, and a guard comes
-/// out of a dialogue database that a game patch or another mod can change. Without a bound,
-/// "this string is not a guard" can be a STACK OVERFLOW rather than an error - and an
-/// overflow is not a panic: the thread's guard page is hit, Rust prints and ABORTS, and
-/// nothing can catch it. The engine runs inside the game, so that is the player's session.
+/// The parser below is ITERATIVE (de-bnjy.4): nesting costs entries in a `Vec` and nothing
+/// on the stack, so no guard, however deep, can overflow while being read. What it produces
+/// is still a tree of `Box`es, and everything that consumes one walks it by recursion -
+/// [`GuardExpression::evaluate`], its `Display`, and the `Drop` that frees it. So the stack
+/// risk moved from parsing to using, and a bound is still what keeps "this string is not a
+/// guard" an error rather than an abort. An overflow is not a panic: the guard page is hit,
+/// Rust prints, the process ABORTS, and nothing can catch it. Inside the game that is the
+/// player's session.
 ///
-/// ## What it counts, which is NOT what a reader counts
+/// ## It counts the TREE, which is what the old limit did not
 ///
-/// RECURSION STEPS, not levels of the tree. There are two places this parser re-enters
-/// itself - a `not`, and an opening parenthesis - and `not (x)` is BOTH. So a guard that
-/// looks eleven deep can cost up to twenty-two steps, and the two numbers must not be
-/// compared without the factor of two. This is the number that bounds the stack, which is
-/// what the limit is for; the tree's own depth is what `tests/guard_depth.rs` measures.
+/// The limit this replaces counted the parser's re-entries. That was twice the depth a
+/// reader counts - `not (` was two steps for one level - and needed the factor of two
+/// explained every time. It also missed the shape that matters most: `a and b and c` chained
+/// in a `while` loop, costing NO recursion to parse and producing a left-leaning tree as
+/// deep as the chain is long. Ten thousand `and`s were accepted by the old bound and would
+/// have overflowed whatever walked the result.
 ///
-/// ## Why SIXTY-FOUR
+/// This is measured on the tree as it is built, so a long chain is bounded exactly as a deep
+/// nest is.
 ///
-/// Between two measured numbers, and clear of both.
+/// ## Why this number
 ///
-/// - EVERY GUARD IN THE SHIPPED DATABASE PARSES WITHIN IT. Not an argument from the depth
-///   figure but a direct check: `tests/guard_depth.rs` re-parses all 26,210 non-empty
-///   guards and reports how many were refused, and the answer is none. The deepest is
-///   eleven levels of tree, so at most twenty-two steps - a third of this.
-/// - THE PARSER OVERFLOWS AROUND 260 STEPS ON A ONE-MEGABYTE STACK, the Windows
-///   main-thread default and the smallest place this code could plausibly run. That is
-///   about 3.9 KB a step, five frames per level of nesting (`tests/guard_stack.rs`, a
-///   debug build, which is the pessimistic case). Sixty-four steps is therefore about
-///   250 KB - a quarter of that stack, leaving room for whatever called in.
+/// Between two measured ends, and clear of both.
 ///
-/// ## What being refused costs
+/// - THE DEEPEST GUARD IN THE SHIPPED DATABASE IS ELEVEN LEVELS, of 26,210 non-empty ones,
+///   and `tests/guard_depth.rs` re-parses all of them rather than arguing from the figure.
+///   This is twenty-three times that, so the limit is nowhere near real content.
+/// - THE CONSUMERS OVERFLOW A ONE-MEGABYTE STACK - the Windows main-thread default, and the
+///   smallest place this code could plausibly run - at 800 levels in a debug build and
+///   2,875 in a release one (`tests/guard_stack.rs`; about 1.3 KB and 365 bytes a level).
+///   This is under a third of the pessimistic figure, leaving the rest of that megabyte for
+///   whatever called in.
+const MAX_DEPTH: usize = 256;
+
+/// A value the parser has read, carrying how deep the tree under it goes.
 ///
-/// A guard that will not parse reads as Unknown, which is permissive, which can mean a
-/// marker that is wrong with nothing to say so. That is a real cost, and it is why the
-/// limit is not tighter than it needs to be - but it is a wrong asterisk against a dead
-/// process, and only for content far deeper than anything the game ships.
-const MAX_DEPTH: usize = 64;
+/// The depth travels WITH the value because [`MAX_DEPTH`] bounds the tree, and the parser's
+/// own stacks do not measure it: an operator is reduced as soon as one of equal or lower
+/// binding power arrives, so a chain of ten thousand `and`s never has more than one entry
+/// waiting while the tree under it grows ten thousand deep.
+struct Operand {
+    node: GuardExpression,
+    depth: usize,
+}
+
+/// An operator that has been read but not yet built, because its operands are not all in.
+#[derive(Debug)]
+enum Pending {
+    Not,
+    And,
+    Or,
+    Compare(String),
+}
+
+/// How tightly each operator holds its operands.
+///
+/// The order is the grammar this parser replaced: `or` loosest, then `and`, then a
+/// comparison, then a prefix `not` tightest - which is why `not a == b` is `(not a) == b`
+/// and `not a and b` is `(not a) and b`.
+impl Pending {
+    fn binding_power(&self) -> u8 {
+        match self {
+            Pending::Or => 1,
+            Pending::And => 2,
+            Pending::Compare(_) => 3,
+            Pending::Not => 4,
+        }
+    }
+}
+
+/// A bracket that is open, and what closing it will mean.
+enum FrameKind {
+    /// The guard as a whole. Never popped, so the stacks always have a floor.
+    Whole,
+    /// `( ... )`, whose value is simply what is inside it.
+    Group,
+    /// `name( ... )`, gathering arguments until the closing parenthesis.
+    Call { name: String, args: Vec<GuardExpression>, deepest: usize },
+}
+
+/// One open bracket, and where the work inside it starts.
+struct Frame {
+    kind: FrameKind,
+    /// The first operand and the first operator that belong to this frame. Reductions stop
+    /// here, so nothing inside a bracket can consume anything outside it.
+    operands: usize,
+    ops: usize,
+    /// Whether a comparison has already been made at this level.
+    ///
+    /// Comparison does not chain: `a == b == c` was refused by the grammar this replaces -
+    /// its comparison rule took at most one operator - and is refused here by declining to
+    /// take a second, which leaves the token where it is for [`Parser::expect_end`] to
+    /// report as trailing.
+    compared: bool,
+}
 
 struct Parser {
     tokens: Vec<Token>,
     pos: usize,
     source: String,
-    /// How many levels of nesting are open right now. See [`MAX_DEPTH`].
-    depth: usize,
+    /// Values read but not yet built into anything, innermost last.
+    operands: Vec<Operand>,
+    /// Operators waiting for their operands, innermost last.
+    ops: Vec<Pending>,
+    /// Brackets currently open, outermost first.
+    frames: Vec<Frame>,
 }
 
 impl Parser {
     fn new(text: &str, original: &str) -> Result<Self, GuardParseError> {
         let tokens = tokenize(text, original)?;
-        Ok(Self { tokens, pos: 0, source: original.to_string(), depth: 0 })
+        Ok(Self {
+            tokens,
+            pos: 0,
+            source: original.to_string(),
+            operands: Vec::new(),
+            ops: Vec::new(),
+            frames: vec![Frame {
+                kind: FrameKind::Whole,
+                operands: 0,
+                ops: 0,
+                compared: false,
+            }],
+        })
     }
 
-    /// Opens a level of nesting, or refuses because there are too many.
+    /// Reads the whole expression, alternating between the two positions a parser can be in.
     ///
-    /// Paired with [`Self::shallower`] on the SUCCESS path only. An error abandons the
-    /// whole parse and the parser with it, so there is nothing to restore.
-    fn deeper(&mut self) -> Result<(), GuardParseError> {
-        self.depth += 1;
-        if self.depth > MAX_DEPTH {
-            return Err(GuardParseError::new(
-                format!("nested more than {MAX_DEPTH} deep"),
-                self.source.clone(),
-            ));
+    /// Where the recursive version had five functions calling each other - expression,
+    /// conjunction, comparison, unary, primary - there is one loop and three `Vec`s. A value
+    /// is wanted, or an operator is wanted; each says whether the other is wanted next.
+    fn parse(&mut self) -> Result<GuardExpression, GuardParseError> {
+        loop {
+            if self.read_value()? {
+                continue;
+            }
+            if self.read_operator()? {
+                continue;
+            }
+            break;
         }
-
-        Ok(())
+        Ok(self.pop_operand()?.node)
     }
 
-    fn shallower(&mut self) {
-        self.depth -= 1;
-    }
-
-    fn parse_expression(&mut self) -> Result<GuardExpression, GuardParseError> {
-        let mut node = self.parse_conjunction()?;
-        while self.peek() == TokenKind::Or {
+    /// The prefix position: any `not`s, then a value or an opening bracket.
+    ///
+    /// Returns true when a bracket was opened, because then a value is wanted again rather
+    /// than an operator.
+    fn read_value(&mut self) -> Result<bool, GuardParseError> {
+        // An argument list that ends where an argument would start: `f()`, and `f(a,)`,
+        // which the grammar this replaces also accepted.
+        if self.peek() == TokenKind::CloseParen && self.inside_a_call() {
             self.take();
-            let right = self.parse_conjunction()?;
-            node = GuardExpression::Or(Box::new(node), Box::new(right));
+            self.close_call(None)?;
+            return Ok(false);
         }
-        Ok(node)
-    }
 
-    fn parse_conjunction(&mut self) -> Result<GuardExpression, GuardParseError> {
-        let mut node = self.parse_comparison()?;
-        while self.peek() == TokenKind::And {
+        while self.peek() == TokenKind::Not {
             self.take();
-            let right = self.parse_comparison()?;
-            node = GuardExpression::And(Box::new(node), Box::new(right));
+            // A prefix operator has nothing to its left, so it is pushed rather than
+            // reduced against what is already there - which is also what makes `not not x`
+            // right-associative without saying so.
+            self.ops.push(Pending::Not);
         }
-        Ok(node)
-    }
 
-    fn parse_comparison(&mut self) -> Result<GuardExpression, GuardParseError> {
-        let left = self.parse_unary()?;
-        if self.peek() == TokenKind::Operator {
-            let op = self.take().value;
-            let right = self.parse_unary()?;
-            return Ok(GuardExpression::Comparison(op, Box::new(left), Box::new(right)));
-        }
-        Ok(left)
-    }
-
-    fn parse_unary(&mut self) -> Result<GuardExpression, GuardParseError> {
-        if self.peek() == TokenKind::Not {
-            self.take();
-            // ONE OF THE TWO PLACES THIS PARSER RE-ENTERS ITSELF, and the one that needs no
-            // parentheses: `not not not x` recurses here and nowhere else.
-            self.deeper()?;
-            let inner = self.parse_unary()?;
-            self.shallower();
-            return Ok(GuardExpression::Not(Box::new(inner)));
+        match self.peek() {
+            TokenKind::OpenParen => {
+                self.take();
+                self.open(FrameKind::Group);
+                return Ok(true);
+            }
+            TokenKind::Name if self.peek_at(1) == TokenKind::OpenParen => {
+                let name = self.take().value;
+                self.take();
+                self.open(FrameKind::Call { name, args: Vec::new(), deepest: 0 });
+                return Ok(true);
+            }
+            _ => {}
         }
 
         // A NEGATIVE NUMBER. The tokeniser reads `-` as an operator, so `x > -1` arrived
@@ -232,72 +302,242 @@ impl Parser {
         // this; a generated guard found it immediately. Folded into the literal rather than
         // given a Negate node, because the language has no arithmetic and the only thing a
         // minus can be here is part of a number.
-        if self.peek() == TokenKind::Operator && self.peek_value() == "-" {
-            if self.peek_at(1) == TokenKind::Number {
-                self.take();
-                let raw = self.take().value;
-                let number = raw.parse::<f64>().map_err(|_| {
-                    GuardParseError::new(format!("bad number '-{raw}'"), self.source.clone())
-                })?;
-                return Ok(GuardExpression::Literal(GuardValue::from_number(-number)));
-            }
+        if self.peek() == TokenKind::Operator
+            && self.peek_value() == "-"
+            && self.peek_at(1) == TokenKind::Number
+        {
+            self.take();
+            let raw = self.take().value;
+            let number = raw.parse::<f64>().map_err(|_| {
+                GuardParseError::new(format!("bad number '-{raw}'"), self.source.clone())
+            })?;
+            self.push_leaf(GuardExpression::Literal(GuardValue::from_number(-number)))?;
+            return Ok(false);
         }
 
-        self.parse_primary()
-    }
-
-    fn parse_primary(&mut self) -> Result<GuardExpression, GuardParseError> {
-        match self.peek() {
-            TokenKind::OpenParen => {
+        let leaf = match self.peek() {
+            TokenKind::Variable => GuardExpression::Variable(self.take().value),
+            TokenKind::True => {
                 self.take();
-                // THE OTHER ONE. A parenthesis is what starts the whole cycle again -
-                // expression, conjunction, comparison, unary, primary - five frames of
-                // stack for one level of nesting.
-                self.deeper()?;
-                let inner = self.parse_expression()?;
-                self.shallower();
-                self.expect(TokenKind::CloseParen)?;
-                Ok(inner)
+                GuardExpression::Literal(GuardValue::from_boolean(true))
             }
-            TokenKind::Variable => {
-                let name = self.take().value;
-                Ok(GuardExpression::Variable(name))
+            TokenKind::False => {
+                self.take();
+                GuardExpression::Literal(GuardValue::from_boolean(false))
             }
-            TokenKind::True => { self.take(); Ok(GuardExpression::Literal(GuardValue::from_boolean(true))) }
-            TokenKind::False => { self.take(); Ok(GuardExpression::Literal(GuardValue::from_boolean(false))) }
-            TokenKind::Nil => { self.take(); Ok(GuardExpression::Literal(GuardValue::unknown())) }
+            TokenKind::Nil => {
+                self.take();
+                GuardExpression::Literal(GuardValue::unknown())
+            }
             TokenKind::Number => {
                 let raw = self.take().value;
-                let num = raw.parse::<f64>().map_err(|_| GuardParseError::new(format!("bad number '{raw}'"), self.source.clone()))?;
-                Ok(GuardExpression::Literal(GuardValue::from_number(num)))
+                let number = raw.parse::<f64>().map_err(|_| {
+                    GuardParseError::new(format!("bad number '{raw}'"), self.source.clone())
+                })?;
+                GuardExpression::Literal(GuardValue::from_number(number))
             }
-            TokenKind::Text => {
-                let text = self.take().value;
-                Ok(GuardExpression::Literal(GuardValue::from_text(text)))
+            TokenKind::Text => GuardExpression::Literal(GuardValue::from_text(self.take().value)),
+            // A name with no argument list. Still a call, as it always was: the world is
+            // what decides whether it answers.
+            TokenKind::Name => GuardExpression::Call(self.take().value, Vec::new()),
+            _ => {
+                return Err(GuardParseError::new("unexpected token".into(), self.source.clone()))
             }
-            TokenKind::Name => {
-                let name = self.take().value;
-                let mut args = Vec::new();
-                if self.peek() == TokenKind::OpenParen {
+        };
+        self.push_leaf(leaf)?;
+        Ok(false)
+    }
+
+    /// The infix position: an operator, or whatever closes the brackets around it.
+    ///
+    /// Returns true when a value is wanted next - an operator or a comma was taken - and
+    /// false when the guard is finished.
+    fn read_operator(&mut self) -> Result<bool, GuardParseError> {
+        loop {
+            match self.peek() {
+                TokenKind::Or => {
                     self.take();
-                    while self.peek() != TokenKind::CloseParen {
-                        args.push(self.parse_expression()?);
-                        if self.peek() == TokenKind::Comma {
-                            self.take();
-                        } else if self.peek() != TokenKind::CloseParen {
-                            return Err(GuardParseError::new("bad argument list".into(), self.source.clone()));
-                        }
-                    }
-                    self.expect(TokenKind::CloseParen)?;
+                    self.push_op(Pending::Or)?;
+                    return Ok(true);
                 }
-                Ok(GuardExpression::Call(name, args))
+                TokenKind::And => {
+                    self.take();
+                    self.push_op(Pending::And)?;
+                    return Ok(true);
+                }
+                TokenKind::Operator if !self.compared() => {
+                    let op = self.take().value;
+                    self.push_op(Pending::Compare(op))?;
+                    return Ok(true);
+                }
+                _ => {}
             }
-            _ => Err(GuardParseError::new("unexpected token".into(), self.source.clone())),
+
+            // Nothing this frame can take, so it is finished: fold everything in it into
+            // one value and see what closes it.
+            self.reduce_frame()?;
+            let closing = self.peek();
+            if closing == TokenKind::Comma && self.inside_a_call() {
+                self.take();
+                let argument = self.pop_operand()?;
+                self.add_argument(argument);
+                return Ok(true);
+            }
+            if closing == TokenKind::CloseParen && self.inside_a_call() {
+                self.take();
+                let argument = self.pop_operand()?;
+                self.close_call(Some(argument))?;
+                continue;
+            }
+            if closing == TokenKind::CloseParen && self.inside_a_group() {
+                // A group's value is what is inside it, which is already the top operand.
+                self.take();
+                self.frames.pop();
+                continue;
+            }
+            if self.frames.len() == 1 {
+                return Ok(false);
+            }
+            // An argument list says so, because it is the more useful half of "expected a
+            // comma or a close" and because it is the message this parser has always given.
+            let message = if self.inside_a_call() { "bad argument list" } else { "expected CloseParen" };
+            return Err(GuardParseError::new(message.into(), self.source.clone()));
         }
     }
 
-    /// The kind `offset` tokens ahead, for the one decision that needs to look past the
-    /// next token: whether a minus begins a negative number or is something else.
+    fn open(&mut self, kind: FrameKind) {
+        self.frames.push(Frame {
+            kind,
+            operands: self.operands.len(),
+            ops: self.ops.len(),
+            compared: false,
+        });
+    }
+
+    /// Pops the innermost frame, which must be a call, and pushes what it built.
+    fn close_call(&mut self, last: Option<Operand>) -> Result<(), GuardParseError> {
+        if let Some(argument) = last {
+            self.add_argument(argument);
+        }
+        match self.frames.pop().map(|frame| frame.kind) {
+            Some(FrameKind::Call { name, args, deepest }) => {
+                self.push_operand(GuardExpression::Call(name, args), deepest + 1)
+            }
+            _ => Err(self.confused()),
+        }
+    }
+
+    fn add_argument(&mut self, argument: Operand) {
+        if let Some(frame) = self.frames.last_mut() {
+            frame.compared = false;
+            if let FrameKind::Call { args, deepest, .. } = &mut frame.kind {
+                *deepest = (*deepest).max(argument.depth);
+                args.push(argument.node);
+            }
+        }
+    }
+
+    /// Takes an infix operator, building everything that binds at least as tightly first.
+    ///
+    /// This is where precedence happens: `a or b and c` leaves the `or` waiting because
+    /// `and` holds tighter, while `a and b or c` builds the `and` before the `or` goes on.
+    fn push_op(&mut self, op: Pending) -> Result<(), GuardParseError> {
+        let power = op.binding_power();
+        while self.ops.len() > self.floor().1
+            && self.ops.last().is_some_and(|top| top.binding_power() >= power)
+        {
+            self.reduce()?;
+        }
+
+        if let Some(frame) = self.frames.last_mut() {
+            // A comparison is what blocks a second one; `and` and `or` open a fresh level
+            // where a comparison is allowed again.
+            frame.compared = match op {
+                Pending::Compare(_) => true,
+                Pending::And | Pending::Or => false,
+                Pending::Not => frame.compared,
+            };
+        }
+        self.ops.push(op);
+        Ok(())
+    }
+
+    /// Builds everything the innermost frame is holding, leaving it one value.
+    fn reduce_frame(&mut self) -> Result<(), GuardParseError> {
+        while self.ops.len() > self.floor().1 {
+            self.reduce()?;
+        }
+        Ok(())
+    }
+
+    /// Builds one operator from the operands waiting under it.
+    fn reduce(&mut self) -> Result<(), GuardParseError> {
+        let op = self.ops.pop().ok_or_else(|| self.confused())?;
+        let right = self.pop_operand()?;
+        if let Pending::Not = op {
+            let depth = right.depth;
+            return self.push_operand(GuardExpression::Not(Box::new(right.node)), depth + 1);
+        }
+
+        let left = self.pop_operand()?;
+        let depth = left.depth.max(right.depth);
+        let (left, right) = (Box::new(left.node), Box::new(right.node));
+        let node = match op {
+            Pending::And => GuardExpression::And(left, right),
+            Pending::Or => GuardExpression::Or(left, right),
+            Pending::Compare(name) => GuardExpression::Comparison(name, left, right),
+            Pending::Not => return Err(self.confused()),
+        };
+        self.push_operand(node, depth + 1)
+    }
+
+    fn push_leaf(&mut self, node: GuardExpression) -> Result<(), GuardParseError> {
+        self.push_operand(node, 1)
+    }
+
+    fn push_operand(&mut self, node: GuardExpression, depth: usize) -> Result<(), GuardParseError> {
+        if depth > MAX_DEPTH {
+            return Err(GuardParseError::new(
+                format!("nested more than {MAX_DEPTH} deep"),
+                self.source.clone(),
+            ));
+        }
+        self.operands.push(Operand { node, depth });
+        Ok(())
+    }
+
+    fn pop_operand(&mut self) -> Result<Operand, GuardParseError> {
+        self.operands.pop().ok_or_else(|| self.confused())
+    }
+
+    /// Where the innermost frame's operands and operators begin.
+    fn floor(&self) -> (usize, usize) {
+        self.frames.last().map_or((0, 0), |frame| (frame.operands, frame.ops))
+    }
+
+    fn compared(&self) -> bool {
+        self.frames.last().is_some_and(|frame| frame.compared)
+    }
+
+    fn inside_a_call(&self) -> bool {
+        matches!(self.frames.last().map(|frame| &frame.kind), Some(FrameKind::Call { .. }))
+    }
+
+    fn inside_a_group(&self) -> bool {
+        matches!(self.frames.last().map(|frame| &frame.kind), Some(FrameKind::Group))
+    }
+
+    /// The error for a state the grammar cannot reach.
+    ///
+    /// Only a bug in this file gets here, and it is an error rather than a panic for the
+    /// same reason everything else in this file is: a guard is game content, and no string
+    /// may bring the process down.
+    fn confused(&self) -> GuardParseError {
+        GuardParseError::new("the parser lost its place".into(), self.source.clone())
+    }
+
+    /// The kind `offset` tokens ahead, for the two decisions that need to look past the
+    /// next token: whether a minus begins a negative number, and whether a name is a call.
     fn peek_at(&self, offset: usize) -> TokenKind {
         self.tokens.get(self.pos + offset).map(|t| t.kind.clone()).unwrap_or(TokenKind::End)
     }
@@ -324,15 +564,6 @@ impl Parser {
                 token
             }
             None => Token { kind: TokenKind::End, value: String::new() },
-        }
-    }
-
-    fn expect(&mut self, kind: TokenKind) -> Result<(), GuardParseError> {
-        if self.peek() == kind {
-            self.take();
-            Ok(())
-        } else {
-            Err(GuardParseError::new(format!("expected {kind:?}"), self.source.clone()))
         }
     }
 
