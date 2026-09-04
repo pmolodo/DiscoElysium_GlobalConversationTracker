@@ -5,6 +5,7 @@
 //! buckets and the rendering - because nothing ever wanted one without the others.
 
 use std::collections::HashMap;
+use std::fmt;
 
 use crate::core::types::{DialogueNodeId, LookAheadLimit, Novelty};
 use crate::engine::engine::LookAheadResult;
@@ -141,6 +142,80 @@ impl LookAheadStatistics {
         let mut ids: Vec<i32> = self.by_conversation.keys().copied().collect();
         ids.sort_unstable();
         ids
+    }
+}
+
+/// The cost report, for a measurement to print.
+///
+/// REPORTING IS NOT ASSERTING, which is the point this was split off from. The in-game
+/// harness had the only cost report and it FAILED when no crawl had run, because the suite
+/// that owned it demanded a cost. That is wrong for a general measurement: "no crawls" is a
+/// legitimate result to print, it is exactly what a fully-read profile produces, and it is
+/// the correct answer rather than a fault. This renders whatever it was given, including
+/// nothing.
+impl fmt::Display for LookAheadStatistics {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.overall.crawls == 0 {
+            return writeln!(f, "no crawls ran");
+        }
+
+        writeln!(
+            f,
+            "{} crawls: {} states worst, {:.0} mean; {:.0}ms worst, {:.1}ms mean",
+            self.overall.crawls,
+            self.overall.max_states,
+            self.overall.mean_states(),
+            self.overall.max_milliseconds,
+            self.overall.mean_milliseconds(),
+        )?;
+
+        writeln!(
+            f,
+            "  stopped early: {} on states, {} on time ({} finished)",
+            self.overall.stopped_by_states,
+            self.overall.stopped_by_time,
+            self.overall.crawls - self.overall.stopped_early(),
+        )?;
+
+        writeln!(
+            f,
+            "  found: {} nothing, {} unseen this save, {} unseen anywhere",
+            self.found_nothing, self.found_unseen_this_game, self.found_unseen_any_game,
+        )?;
+
+        // THE HISTOGRAM IS WHAT MAKES THE TAIL VISIBLE. A mean is useless for spotting the
+        // one menu in a thousand that costs a hundred times the rest, and that menu is the
+        // whole reason a budget exists.
+        writeln!(f, "  states:")?;
+        for (bucket, &count) in self.buckets.iter().enumerate() {
+            if count > 0 {
+                writeln!(f, "    {:>12}  {count}", bucket_label(bucket))?;
+            }
+        }
+
+        let conversations = self.conversations();
+        if conversations.len() > 1 {
+            writeln!(f, "  by conversation:")?;
+            writeln!(
+                f,
+                "    {:>6} {:>7} {:>10} {:>10} {:>9} {:>7}",
+                "conv", "crawls", "max states", "mean", "max ms", "stopped",
+            )?;
+            for id in conversations {
+                let tally = &self.by_conversation[&id];
+                writeln!(
+                    f,
+                    "    {id:>6} {:>7} {:>10} {:>10.0} {:>9.0} {:>7}",
+                    tally.crawls,
+                    tally.max_states,
+                    tally.mean_states(),
+                    tally.max_milliseconds,
+                    tally.stopped_early(),
+                )?;
+            }
+        }
+
+        Ok(())
     }
 }
 

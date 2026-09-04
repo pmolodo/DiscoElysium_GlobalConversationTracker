@@ -76,6 +76,7 @@ use std::sync::{Arc, Mutex};
 
 use lookahead_engine::core::types::{DialogueNodeId, Novelty};
 use lookahead_engine::engine::engine::{LookAheadEngine, LookAheadOptions};
+use lookahead_engine::engine::statistics::LookAheadStatistics;
 use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::world::world::ILookAheadWorld;
 use lookahead_engine::index::{build_group_graph, read_index};
@@ -168,6 +169,11 @@ fn how_crawl_cost_falls_as_more_entries_go_unread() {
         "conv", "entries", "unseen", "states", "ms", "found"
     );
 
+    // The per-row table below is what this measurement is FOR; the tally is the same runs
+    // aggregated, and it exists so the shape of a cost report is exercised by something
+    // rather than only tested. See de-i60.24.
+    let mut cost = LookAheadStatistics::new();
+
     for conversation in conversations(&EXPENSIVE) {
         let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
         let start = DialogueNodeId::new(conversation, 0);
@@ -202,6 +208,8 @@ fn how_crawl_cost_falls_as_more_entries_go_unread() {
             .evaluate(&graph, start, &world, novelty);
             let ms = began.elapsed().as_millis();
 
+            cost.record(start, &result, ms as f64);
+
             let found = if result.best == Novelty::UnseenAnyGame {
                 "yes"
             } else if result.budget_exhausted() {
@@ -232,4 +240,7 @@ fn how_crawl_cost_falls_as_more_entries_go_unread() {
 
         println!();
     }
+
+    println!("across every row above:");
+    print!("{cost}");
 }
