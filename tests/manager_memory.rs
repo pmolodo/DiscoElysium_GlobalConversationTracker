@@ -3,13 +3,20 @@
 //!
 //! THE BUDGET HAS TO COVER EVERYTHING THE SEARCH SPENDS, and on the symbolic side that is
 //! three allocations, not one: oxidd's node store, the unique table that finds a node
-//! again, and the apply cache that remembers the result of an operation. All three are
-//! made when the manager is built and none of them grows afterwards.
+//! again, and the apply cache that remembers the result of an operation.
 //!
-//! The arithmetic that sizes them therefore has to be measured rather than guessed. It was
-//! guessed - 32 bytes a node, covering the node and its table slot and ignoring the cache
-//! entirely - so a budget bought more memory than it said. This measures the real figure
-//! and holds the derivation to it.
+//! TWO OF THE THREE ARE MADE WHEN THE MANAGER IS BUILT. This file used to say all three
+//! were, and that none of them grew afterwards, and that was the mistake the whole thing
+//! rested on: oxidd starts the unique table EMPTY and grows it as nodes are inserted, so an
+//! empty manager has not paid for it and no measurement of construction could see it.
+//!
+//! What that cost is recorded on `DiagramBudget::BYTES_PER_NODE`: a manager built for 1 GB
+//! spent 1020 of its 1024 MB while holding 23.3 million of the 33.5 million nodes the
+//! budget said it had bought, so a search that spent its allowance was already past it.
+//!
+//! There are two measurements here as a result. The first counts CONSTRUCTION, which is the
+//! floor. The second FILLS a manager and reads the allocator as it grows, which is the only
+//! way to see the table, and is what the constant is now derived from.
 //!
 //! HOW IT MEASURES. A counting allocator, rather than the process's resident size: the
 //! question is how many bytes this library asks for, which is exactly what a global
