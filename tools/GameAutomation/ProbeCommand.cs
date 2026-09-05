@@ -71,6 +71,16 @@ namespace GlobalConversationTracker.Automation
         /// </summary>
         public const string CheckSnapshot = "check-snapshot";
 
+        /// <summary>
+        /// Kill the look-ahead engine, to see what the mod does about it.
+        /// </summary>
+        /// <remarks>
+        /// The one failure the out-of-process engine exists to survive, and a running game
+        /// is the only place it can be provoked for real - de-bnjy.1.2.4. The mod does the
+        /// killing, because it is the only thing that knows which process is its own.
+        /// </remarks>
+        public const string KillLookAheadEngine = "kill-look-ahead-engine";
+
         /// <summary>Ask the game to close itself, so the mod can flush on the way out.</summary>
         public const string Quit = "quit";
 
@@ -232,6 +242,17 @@ namespace GlobalConversationTracker.Automation
         public static void SendCheckSnapshot(string saveGamesFolder, int conversationId)
         {
             Send(saveGamesFolder, CheckSnapshot, "conversation", conversationId);
+        }
+
+        /// <summary>Asks the mod to kill its look-ahead engine.</summary>
+        /// <remarks>
+        /// It stays dead for the rest of the run: the mod does not restart one, which is
+        /// the behaviour being tested rather than a limitation of this command.
+        /// </remarks>
+        /// <param name="saveGamesFolder">The profile's SaveGames folder.</param>
+        public static void SendKillLookAheadEngine(string saveGamesFolder)
+        {
+            Send(saveGamesFolder, KillLookAheadEngine);
         }
 
         /// <summary>Asks the game to close itself.</summary>

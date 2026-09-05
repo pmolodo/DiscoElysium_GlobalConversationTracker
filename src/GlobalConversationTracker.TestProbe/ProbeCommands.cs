@@ -122,6 +122,18 @@ namespace GlobalConversationTracker.TestProbe
         /// </remarks>
         internal const string CheckSnapshotCommand = "check-snapshot";
 
+        /// <summary>
+        /// Kill the look-ahead engine, to see what the mod does about it.
+        /// </summary>
+        /// <remarks>
+        /// The one failure the out-of-process arrangement exists to survive, and the only
+        /// place it can be provoked for real - de-bnjy.1.2.4. The KILLING is done by the
+        /// plugin rather than here, because the plugin is the only thing that knows which
+        /// process its engine is; killing by name would take down an engine belonging to
+        /// something else on the same machine.
+        /// </remarks>
+        internal const string KillLookAheadEngineCommand = "kill-look-ahead-engine";
+
         /// <summary>Ask the game to close itself the way a player would.</summary>
         internal const string QuitCommand = "quit";
 
@@ -331,6 +343,9 @@ namespace GlobalConversationTracker.TestProbe
                     case CheckSnapshotCommand:
                         CheckSnapshot(root);
                         break;
+                    case KillLookAheadEngineCommand:
+                        KillLookAheadEngine();
+                        break;
                     case QuitCommand:
                         // Not a kill. The mod flushes its global state and writes its
                         // look-ahead statistics from Application.quitting, so a run that
@@ -443,6 +458,22 @@ namespace GlobalConversationTracker.TestProbe
             ProbeLog.Write("snapshot-checked", "conversation", conversation);
         }
 
+        /// <summary>
+        /// Asks the plugin to kill its engine, and says which process went.
+        /// </summary>
+        /// <remarks>
+        /// The id is reported because it is the only way a suite can afterwards check that
+        /// nothing was left behind - and because a kill that found no engine to kill would
+        /// otherwise look exactly like one that worked.
+        /// </remarks>
+        private static void KillLookAheadEngine()
+        {
+            object? killed = InvokePluginFor(
+                "KillLookAheadEngine", Array.Empty<object>());
+            ProbeLog.Write(
+                "look-ahead-engine-killed", "process", killed is int id ? id : 0);
+        }
+
         private static void PrepareLookAheadSuite(JsonElement root)
         {
             string? fileName = Member(root, "file");
@@ -528,6 +559,16 @@ namespace GlobalConversationTracker.TestProbe
 
         private static void InvokePlugin(string methodName, object[] arguments)
         {
+            InvokePluginFor(methodName, arguments);
+        }
+
+        /// <summary>The same, for a plugin method whose answer is wanted.</summary>
+        /// <remarks>
+        /// Most of these are asked to DO something and their answer is the log line the
+        /// plugin writes; this is for the one that has a value only the caller can use.
+        /// </remarks>
+        private static object? InvokePluginFor(string methodName, object[] arguments)
+        {
             Type plugin = Type.GetType(
                     "GlobalConversationTracker.GlobalConversationTrackerPlugin, "
                         + "GlobalConversationTracker",
@@ -538,7 +579,7 @@ namespace GlobalConversationTracker.TestProbe
                     methodName,
                     BindingFlags.Public | BindingFlags.Static)
                 ?? throw new MissingMethodException(plugin.FullName, methodName);
-            method.Invoke(null, arguments);
+            return method.Invoke(null, arguments);
         }
 
         /// <summary>

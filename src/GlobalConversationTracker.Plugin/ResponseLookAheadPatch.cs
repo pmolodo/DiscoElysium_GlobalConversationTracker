@@ -530,6 +530,42 @@ namespace GlobalConversationTracker
         }
 
         /// <summary>
+        /// Kills the engine process, for a harness that wants to see what happens next.
+        /// </summary>
+        /// <remarks>
+        /// <para>TEST-ONLY, and reached from <c>KillLookAheadEngine</c>. Nothing in play
+        /// calls it. It kills rather than closes because the case worth provoking is an
+        /// engine that died on its own; a clean shutdown is the one that already works.</para>
+        ///
+        /// <para>It does NOT report the death itself. The mod is supposed to find that out
+        /// the way it would in earnest - by asking the engine something and getting nothing
+        /// back - and a shutdown triggered from here would prove that this method works
+        /// rather than that the detection does.</para>
+        ///
+        /// <para>Waits for the process to be gone before returning, so a suite that kills
+        /// and then opens a menu cannot race a child that is still on its way out.</para>
+        /// </remarks>
+        /// <returns>The process id that was killed, or 0 if there was no engine.</returns>
+        internal static int KillEngineForTesting()
+        {
+            int id = _bridge?.Engine.ProcessId ?? 0;
+            if (id == 0)
+            {
+                return 0;
+            }
+
+            using System.Diagnostics.Process engine =
+                System.Diagnostics.Process.GetProcessById(id);
+            engine.Kill();
+            engine.WaitForExit();
+
+            _log?.Warning(
+                $"{LogPrefix} the look-ahead engine (process {id}) was killed on purpose "
+                + "by a harness. What happens next is the thing being tested.");
+            return id;
+        }
+
+        /// <summary>
         /// The engine has gone: say so once, take the hooks off, and stop for good.
         /// </summary>
         /// <remarks>

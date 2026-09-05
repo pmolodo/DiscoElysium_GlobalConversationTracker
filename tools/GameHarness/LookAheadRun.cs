@@ -700,6 +700,33 @@ namespace GlobalConversationTracker.Harness
             return started.Boolean("active") == false;
         }
 
+        /// <summary>Kills the mod's look-ahead engine and says which process went.</summary>
+        /// <remarks>
+        /// A process id of zero is not a quiet no-op to be passed over: it means the mod had
+        /// no engine to kill, so every scenario after this would pass for the wrong reason -
+        /// options drawn without markers because there was never an engine, rather than
+        /// because one died. Loud, and it ends the run.
+        /// </remarks>
+        private static void KillTheEngine(
+            string saveGames, ProbeWatcher watcher, TimeSpan timeout)
+        {
+            Console.WriteLine("        killing the look-ahead engine on purpose");
+            ProbeCommand.SendKillLookAheadEngine(saveGames);
+            ProbeEvent killed = watcher.WaitForEvent(
+                "look-ahead-engine-killed", timeout, Log);
+
+            int process = killed.Number("process") ?? 0;
+            if (process == 0)
+            {
+                throw new InvalidOperationException(
+                    "The mod had no look-ahead engine to kill, so nothing after this would "
+                    + "mean what it claims: options drawn without markers because there "
+                    + "was never an engine look exactly like ones drawn because it died.");
+            }
+
+            Console.WriteLine($"        the engine was process {process}, and is gone");
+        }
+
         private static ProbeEvent OpenConversation(
             LookAheadScenario scenario,
             string saveGames,
@@ -708,6 +735,15 @@ namespace GlobalConversationTracker.Harness
         {
             string what = $"a response menu in conversation {scenario.ConversationId}";
             TimeSpan perAttempt = AttemptTimeout(timeout);
+
+            // BEFORE THE CONVERSATION, so the menu this scenario is about is drawn by a mod
+            // whose engine has already gone - which is the arrangement it exists to
+            // describe. Outside the retry loop because it happens once: the engine is not
+            // restarted, so a second attempt has nothing left to kill.
+            if (scenario.KillEngineFirst)
+            {
+                KillTheEngine(saveGames, watcher, timeout);
+            }
 
             for (int attempt = 1; ; attempt++)
             {
@@ -1282,14 +1318,47 @@ namespace GlobalConversationTracker.Harness
             string log = File.Exists(logPath) ? FilePaths.ReadShared(logPath) : string.Empty;
             foreach (LogExpectation expected in suite.LogExpectations)
             {
-                bool present = log.Contains(expected.Substring, StringComparison.Ordinal);
+                int said = Occurrences(log, expected.Substring);
+                bool present = said > 0;
+                bool right = expected.Times == null
+                    ? present == expected.ShouldAppear
+                    : said == expected.Times;
+
                 report.Check(
-                    present == expected.ShouldAppear,
+                    right,
                     $"{suite.Name}: {expected.What}",
-                    present
-                        ? $"the log says '{expected.Substring}'"
-                        : $"the log does not say '{expected.Substring}'");
+                    expected.Times == null
+                        ? present
+                            ? $"the log says '{expected.Substring}'"
+                            : $"the log does not say '{expected.Substring}'"
+                        : $"the log says '{expected.Substring}' {said} time(s), and should "
+                            + $"say it {expected.Times}");
             }
+        }
+
+        /// <summary>How many times one string appears in another.</summary>
+        /// <remarks>
+        /// NON-OVERLAPPING, which is the counting a reader means: the search resumes past
+        /// the match rather than one character into it. Every substring these expectations
+        /// use is a sentence, so it could not overlap itself anyway - but a count that
+        /// depended on that would be a trap for whoever first writes a shorter one.
+        /// </remarks>
+        private static int Occurrences(string text, string sought)
+        {
+            if (sought.Length == 0)
+            {
+                return 0;
+            }
+
+            int count = 0;
+            int at = text.IndexOf(sought, StringComparison.Ordinal);
+            while (at >= 0)
+            {
+                count++;
+                at = text.IndexOf(sought, at + sought.Length, StringComparison.Ordinal);
+            }
+
+            return count;
         }
 
         /// <summary>Checks the files a suite says the run should leave behind.</summary>

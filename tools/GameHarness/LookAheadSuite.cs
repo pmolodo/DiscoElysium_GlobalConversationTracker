@@ -216,6 +216,12 @@ namespace GlobalConversationTracker.Harness
         /// <param name="branchPolicy">How much it claims about the Pass / Fail lines.</param>
         /// <param name="branches">What every check's line should be, under EveryCheck.</param>
         /// <param name="advances">Lines to advance before its menu, or null if unmeasured.</param>
+        /// <param name="killEngineFirst">
+        /// Kill the look-ahead engine before opening this scenario's conversation, so what
+        /// the scenario expects is what the mod does WITHOUT one. See de-bnjy.1.2.4: a
+        /// running game is the only place the out-of-process arrangement can be tested
+        /// under the failure it exists to survive.
+        /// </param>
         /// <exception cref="ArgumentNullException">An argument is null.</exception>
         /// <exception cref="ArgumentException">The policy and the expectation disagree.</exception>
         public LookAheadScenario(
@@ -228,7 +234,8 @@ namespace GlobalConversationTracker.Harness
             MarkerPolicy markers = MarkerPolicy.Named,
             BranchPolicy branchPolicy = BranchPolicy.Ignored,
             BranchExpectation? branches = null,
-            int? advances = null)
+            int? advances = null,
+            bool killEngineFirst = false)
         {
             if (advances < 0)
             {
@@ -254,6 +261,7 @@ namespace GlobalConversationTracker.Harness
             Branches = branches;
             BranchPolicy = branchPolicy;
             Advances = advances;
+            KillEngineFirst = killEngineFirst;
         }
 
         /// <summary>The staged save's name, without extension.</summary>
@@ -267,6 +275,17 @@ namespace GlobalConversationTracker.Harness
 
         /// <summary>What each named option should carry.</summary>
         public IReadOnlyList<OptionExpectation> Options { get; }
+
+        /// <summary>
+        /// Whether to kill the look-ahead engine before opening this conversation.
+        /// </summary>
+        /// <remarks>
+        /// Once killed it stays dead for the rest of the run, deliberately - that is what
+        /// the mod does about it and the reason the user asked for a game restart rather
+        /// than a respawn. So a suite using this puts the scenario that needs a live engine
+        /// FIRST, and everything after the kill is about a mod with none.
+        /// </remarks>
+        public bool KillEngineFirst { get; }
 
         /// <summary>The balance to assert, or null not to.</summary>
         public int? Money { get; }
@@ -316,12 +335,34 @@ namespace GlobalConversationTracker.Harness
         /// <param name="substring">What to look for.</param>
         /// <param name="shouldAppear">Whether it should be there.</param>
         /// <param name="what">What its presence or absence proves.</param>
+        /// <param name="times">
+        /// Exactly how many times it should appear, or null to ask only whether it does.
+        /// Meaningless with <paramref name="shouldAppear"/> false, which is already a
+        /// count of zero.
+        /// </param>
         /// <exception cref="ArgumentNullException">An argument is null.</exception>
-        public LogExpectation(string substring, bool shouldAppear, string what)
+        /// <exception cref="ArgumentException">A count is given for an absence.</exception>
+        public LogExpectation(
+            string substring, bool shouldAppear, string what, int? times = null)
         {
+            if (times != null && !shouldAppear)
+            {
+                throw new ArgumentException(
+                    "An expectation that something is absent already says how many times "
+                    + "it appears.",
+                    nameof(times));
+            }
+
+            if (times < 1)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(times), times, "Use shouldAppear: false to expect none.");
+            }
+
             Substring = substring ?? throw new ArgumentNullException(nameof(substring));
             ShouldAppear = shouldAppear;
             What = what ?? throw new ArgumentNullException(nameof(what));
+            Times = times;
         }
 
         /// <summary>What to look for.</summary>
@@ -332,6 +373,17 @@ namespace GlobalConversationTracker.Harness
 
         /// <summary>What its presence or absence proves.</summary>
         public string What { get; }
+
+        /// <summary>
+        /// Exactly how many times it should appear, or null to ask only whether it does.
+        /// </summary>
+        /// <remarks>
+        /// For the messages whose POINT is that they are said once. A warning that the
+        /// look-ahead has stopped is worth nothing if it is repeated on every response
+        /// menu afterwards - that is noise where the silence it replaced was merely
+        /// unhelpful - so "once" is the claim, and a presence check cannot make it.
+        /// </remarks>
+        public int? Times { get; }
     }
 
     /// <summary>A file the run should leave in the profile's SaveGames folder.</summary>

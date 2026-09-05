@@ -296,6 +296,7 @@ namespace GlobalConversationTracker.Harness
             new[]
             {
                 Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff, AllSeen,
+                EngineDeath,
             }.Concat(BranchShapes).ToArray();
 
         /// <summary>The suites a run does when it is not told which to do.</summary>
@@ -314,7 +315,7 @@ namespace GlobalConversationTracker.Harness
         public static IReadOnlyList<LookAheadSuite> Default =>
             new[]
             {
-                Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff,
+                Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff, EngineDeath,
             }.Concat(BranchShapes).ToArray();
 
         /// <summary>
@@ -444,6 +445,87 @@ namespace GlobalConversationTracker.Harness
                     "dialogue statuses are being tracked",
                     true,
                     "tracking is unaffected by the switch"),
+            });
+
+        /// <summary>
+        /// The engine dies and the game carries on, with the feature off and nothing else.
+        /// </summary>
+        /// <remarks>
+        /// <para>THE FAILURE THE WHOLE OUT-OF-PROCESS ARRANGEMENT EXISTS TO SURVIVE, and a
+        /// running game is the only place it can be provoked for real - de-bnjy.1.2.4. Two
+        /// scenarios over the same save and the same conversation: the first with an engine,
+        /// which marks three options, and the second after it has been killed, which marks
+        /// none.</para>
+        ///
+        /// <para>THE PAIR IS THE POINT. Either half alone proves nothing. Markers before a
+        /// kill could be markers a mod draws whatever happens; no markers after one could be
+        /// a mod that never had an engine, which is why the harness refuses a kill that
+        /// found no process. Together they say the feature was working, that it stopped, and
+        /// that stopping was all that happened.</para>
+        ///
+        /// <para>DECLARED HERE RATHER THAN IN <c>testing/scenarios/suites.json</c>, for the
+        /// reason <see cref="SwitchedOff"/> is: what it stages is the DEATH OF A PROCESS,
+        /// and the offline executor has no process to kill. From the same fixture it would
+        /// answer what the money suite answers, three options marked, so a row claiming
+        /// none are would be a definition only one side could execute.</para>
+        ///
+        /// <para>The log expectations carry the other half of the promise. The warning is
+        /// expected EXACTLY ONCE, because a message repeated on every response menu
+        /// afterwards is worse than the silence it replaced; and the tracking line has to
+        /// be there, because losing what the player has read when a search process died
+        /// would turn a cosmetic failure into data loss.</para>
+        /// </remarks>
+        public static LookAheadSuite EngineDeath { get; } = new LookAheadSuite(
+            "engine-death",
+            "an engine that dies takes the markers with it and nothing else",
+            MoneyState,
+            new[]
+            {
+                new LookAheadScenario(
+                    "afford-both",
+                    SiilengConversation,
+                    "with an engine, the balance that marks three options",
+                    new[]
+                    {
+                        new OptionExpectation(
+                            BuySneakersEntry,
+                            Marker.Orange,
+                            "buying the sneakers leads on to the speakers"),
+                        new OptionExpectation(
+                            InspectSneakersEntry,
+                            Marker.Orange,
+                            "looking returns to the hub, which still can"),
+                        new OptionExpectation(
+                            InspectSpeakersEntry,
+                            Marker.Orange,
+                            "and so does looking at the other"),
+                        new OptionExpectation(
+                            LeaveEntry, Marker.None, "leaving reaches nothing at all"),
+                    },
+                    money: 5100,
+                    advances: SiilengAdvances,
+                    branchPolicy: BranchPolicy.NoneAnywhere),
+                new LookAheadScenario(
+                    "afford-both",
+                    SiilengConversation,
+                    "the same menu with the engine killed underneath it",
+                    AllUnmarked("the look-ahead engine has gone"),
+                    money: 5100,
+                    advances: SiilengAdvances,
+                    branchPolicy: BranchPolicy.NoneAnywhere,
+                    killEngineFirst: true),
+            },
+            logExpectations: new[]
+            {
+                new LogExpectation(
+                    "the look-ahead engine has gone and will not be restarted",
+                    true,
+                    "the mod says the engine has gone, once and only once",
+                    times: 1),
+                new LogExpectation(
+                    "dialogue statuses are being tracked",
+                    true,
+                    "tracking survives an engine that died"),
             });
 
         /// <summary>

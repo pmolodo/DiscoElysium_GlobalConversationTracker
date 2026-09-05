@@ -139,6 +139,28 @@ namespace GlobalConversationTracker
         }
 
         /// <summary>
+        /// Kills the look-ahead engine, so a suite can see what the mod does next.
+        /// </summary>
+        /// <remarks>
+        /// <para>A HARNESS ENTRY POINT AND NOTHING ELSE, like the three around it. Nothing
+        /// in play calls it; what calls it is de-bnjy.1.2.4, provoking the one failure the
+        /// out-of-process arrangement exists to survive.</para>
+        ///
+        /// <para>It has to live here rather than in the probe because the mod is the only
+        /// thing that knows WHICH process its engine is - killing by name would take down
+        /// an engine belonging to something else, and on a developer's machine that is not
+        /// hypothetical.</para>
+        ///
+        /// <para>Deliberately not a graceful stop. The point is to imitate an engine that
+        /// died on its own, and a clean shutdown is the case that already works.</para>
+        /// </remarks>
+        /// <returns>The process id that was killed, or 0 if there was no engine.</returns>
+        public static int KillLookAheadEngine()
+        {
+            return ResponseLookAheadPatch.KillEngineForTesting();
+        }
+
+        /// <summary>
         /// Compares the world the native bridge would send against the one the managed
         /// engine reads, and writes the result to the log.
         /// </summary>
