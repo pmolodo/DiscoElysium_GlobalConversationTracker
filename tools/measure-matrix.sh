@@ -139,13 +139,21 @@ for conversation in "${CONVERSATIONS[@]}"; do
         # not the same question, so tee answers both: the file keeps the whole output, and
         # only the lines the test marks with the progress prefix come through to stdout.
         #
-        # AWK RATHER THAN `tee | grep`, and the reason is buffering. tee writes its stdout
-        # through the C library, which block-buffers into a pipe, so the progress lines
-        # arrived in four-kilobyte lumps long after the moment they described - measured
-        # here as a watched log that stayed empty for eighty seconds while the row's own
-        # file already had three progress lines in it. Telling grep to line-buffer does not
-        # help, because the delay is upstream of grep. awk can be made to flush after every
-        # line, and does both jobs in one process.
+        # AWK RATHER THAN `tee | grep --line-buffered`, which does both jobs in one process
+        # and flushes explicitly after every line it passes on.
+        #
+        # A NOTE ON WHY, BECAUSE THE OBVIOUS EXPLANATION IS WRONG. The `tee | grep` version
+        # was written first and, in one observed run, delivered nothing to the watched log
+        # for eighty seconds while the row's own file already held three progress lines.
+        # That looks exactly like tee block-buffering its stdout into a pipe, and this
+        # comment said so. It is not: feeding that pipeline one marked line a second and
+        # stamping each on arrival shows every line coming through in the second it was
+        # written, with tee and grep in place. So the cause of that run's silence is NOT
+        # established, and nothing here should be read as evidence about tee.
+        #
+        # What is established is that this version delivers. It is kept because it works and
+        # because one process with an explicit flush leaves less to be wrong about, not
+        # because the alternative was proven guilty.
         printf '\n'
         CONVERSATION="$conversation" PROFILE="$profile" NO_HEADER=1 \
             cargo test --release --test performance_matrix \
