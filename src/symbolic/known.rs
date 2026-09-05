@@ -42,6 +42,7 @@
 //! it: the seed is what the crawl holds arriving at the start, which is the same shape as
 //! everything else this compares.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use oxidd::bdd::BDDFunction;
@@ -50,6 +51,17 @@ use oxidd::BooleanFunction;
 use crate::core::types::DialogueNodeId;
 use crate::graph::graph::LookAheadGraph;
 use crate::symbolic::reachability::Reachability;
+
+/// What a settled forward run says can arrive at one entry.
+#[derive(Clone)]
+enum Arriving {
+    /// Exactly these states, and no others.
+    Bounded(BDDFunction),
+    /// None at all: the crawl provably never gets here.
+    Nothing,
+    /// No settled run, or the manager ran out of room working it out. Bounds nothing.
+    Unknown,
+}
 
 /// The group's shape and whatever a forward run has already established about it.
 pub struct Known {
@@ -63,11 +75,20 @@ pub struct Known {
     forward: HashMap<DialogueNodeId, BDDFunction>,
     /// The entry a crawl begins at, and what it holds arriving there.
     start: Option<(DialogueNodeId, BDDFunction)>,
+    /// What can arrive at an entry, worked out on demand from [`Self::forward`].
+    ///
+    /// A cache rather than state: every value in it is derivable from the fields above, and
+    /// it exists because a backward pass asks about the same entry once per widening.
+    arriving: RefCell<HashMap<DialogueNodeId, Arriving>>,
+    /// Whether a settled forward run may narrow a backward pass at all.
+    ///
+    /// Off by default; see [`Self::restricted`] for what that costs and why.
+    narrow: bool,
     /// Whether the forward run settled. False for a partial one, and for no run at all.
     ///
-    /// Only a settled run bounds anything. Nothing here uses it yet - the meet does not
-    /// need it - and it is recorded because the pruning that WOULD need it is the obvious
-    /// next thing to want, and getting this wrong is the way to lose a marker.
+    /// Only a settled run bounds anything, which is what [`Self::arriving_at`] refuses to
+    /// answer without. The meet does not need it - a partial run proves just as well - and
+    /// keeping the two apart is what stops a proof and a bound being confused.
     forward_settled: bool,
 }
 
@@ -81,12 +102,25 @@ impl Known {
             }
         }
 
-        Self { parents, forward: HashMap::new(), start: None, forward_settled: false }
+        Self {
+            parents,
+            forward: HashMap::new(),
+            start: None,
+            arriving: RefCell::new(HashMap::new()),
+            narrow: false,
+            forward_settled: false,
+        }
     }
 
     /// The same, plus where a crawl begins and what it holds when it does.
     pub fn from(mut self, start: DialogueNodeId, seed: &BDDFunction) -> Self {
         self.start = Some((start, seed.clone()));
+        self
+    }
+
+    /// Lets a settled forward run narrow the backward passes told about it.
+    pub fn pruning(mut self, on: bool) -> Self {
+        self.narrow = on;
         self
     }
 
@@ -116,6 +150,128 @@ impl Known {
 
     pub fn forward_settled(&self) -> bool {
         self.forward_settled
+    }
+
+    /// Everything a crawl could be holding when it arrives at `id`.
+    ///
+    /// ONLY FROM A SETTLED FORWARD RUN, and that restriction is the whole of the soundness
+    /// argument. A settled run's sets are complete, so a state outside this can never be
+    /// held here and dropping it changes no answer. A partial run's sets are a subset of
+    /// that, and a state missing from one may simply not have been reached yet - pruning
+    /// against it would refuse states that are genuinely reachable, which is how a marker
+    /// gets lost.
+    ///
+    /// Across the incoming edges, for the reason the module explains: what the forward run
+    /// holds at a parent is what that parent hands on, and it is what its child receives.
+    /// The start receives the seed instead, having no incoming edge to receive anything on.
+    ///
+    /// CACHED, because a backward pass asks about the same entry once per widening and the
+    /// union costs one disjunction per incoming edge.
+    fn arriving_at(&self, id: DialogueNodeId) -> Arriving {
+        if !self.forward_settled {
+            return Arriving::Unknown;
+        }
+        if let Some(known) = self.arriving.borrow().get(&id) {
+            return known.clone();
+        }
+
+        let mut union = match &self.start {
+            Some((start, seed)) if *start == id => Some(seed.clone()),
+            _ => None,
+        };
+
+        let mut no_room = false;
+        for parent in self.parents_of(id) {
+            let Some(held) = self.forward.get(parent) else { continue };
+            union = match union.take() {
+                None => Some(held.clone()),
+                // An `Err` is the manager out of room. Give up on bounding this entry
+                // rather than bounding it by a union missing a disjunct, which would refuse
+                // states that can be here.
+                Some(sofar) => match sofar.or(held) {
+                    Ok(both) => Some(both),
+                    Err(_) => {
+                        no_room = true;
+                        break;
+                    }
+                },
+            };
+        }
+
+        let answer = match union {
+            _ if no_room => Arriving::Unknown,
+            Some(bound) => Arriving::Bounded(bound),
+            // A settled run reached no parent of this entry and it is not the start, so
+            // NOTHING can arrive here at all. Stronger than a bound, and the case worth
+            // having: a backward pass otherwise spends a fixed point on entries the crawl
+            // provably never visits.
+            None => Arriving::Nothing,
+        };
+
+        self.arriving.borrow_mut().insert(id, answer.clone());
+        answer
+    }
+
+    /// Whether a settled forward run says NOTHING can arrive at this entry.
+    ///
+    /// The cheap half of pruning, and it costs no diagram work at all: an entry no reached
+    /// parent hands anything to, and which is not the start, is one the crawl provably
+    /// never visits.
+    fn nothing_arrives(&self, id: DialogueNodeId) -> bool {
+        if !self.forward_settled {
+            return false;
+        }
+        if matches!(&self.start, Some((start, _)) if *start == id) {
+            return false;
+        }
+        !self.parents_of(id).iter().any(|parent| self.forward.contains_key(parent))
+    }
+
+    /// `states` narrowed to what could actually be held on arrival at `id`.
+    ///
+    /// The identity where nothing is known, or where the forward run did not settle.
+    ///
+    /// OFF UNLESS ASKED FOR, and that is a measurement rather than caution. Pruning is
+    /// sound - tests/backward_oracle.rs checks every target of every group it can check
+    /// both ways, and the pruned answer has never differed from the plain one - but it is
+    /// not free and on this database it is not yet worth its cost:
+    ///
+    /// - The union over the incoming edges is a disjunction of sets that are already large,
+    ///   and building it overflows the stack inside a recursive diagram operation on
+    ///   conversations 28 and 631.
+    /// - Even dropping an entry nothing can arrive at, which needs no diagram work to
+    ///   decide, destabilised conversation 631's partial run where the plain pass survives.
+    ///
+    /// So the default is what has been measured to work, and de-fawk carries the rest. Turn
+    /// it on with [`Self::pruning`] to measure it or to check it.
+    pub fn restricted(&self, id: DialogueNodeId, states: BDDFunction) -> BDDFunction {
+        if !self.narrow {
+            return states;
+        }
+        if self.nothing_arrives(id) {
+            return self.empty().unwrap_or(states);
+        }
+
+        match self.arriving_at(id) {
+            // An `Err` is the manager out of room; keep the wider set, which is the safe
+            // direction - it can only make the pass do more work, never less.
+            Arriving::Bounded(bound) => states.and(&bound).unwrap_or(states),
+            Arriving::Nothing => self.empty().unwrap_or(states),
+            Arriving::Unknown => states,
+        }
+    }
+
+    /// The empty set, built from a formula this already holds.
+    ///
+    /// Built rather than stored because `Known` has no variables of its own - it holds
+    /// formulas somebody else made, and any of them can be turned into the empty set.
+    fn empty(&self) -> Option<BDDFunction> {
+        let any = self
+            .start
+            .as_ref()
+            .map(|(_, seed)| seed)
+            .or_else(|| self.forward.values().next())?;
+        any.and(&any.not().ok()?).ok()
     }
 
     /// Whether a crawl could arrive at `id` holding one of `wanted`.

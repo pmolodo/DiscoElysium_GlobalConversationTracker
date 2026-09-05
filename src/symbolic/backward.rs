@@ -241,6 +241,14 @@ impl<'a> Backward<'a> {
         let mut frontier: HashMap<DialogueNodeId, BDDFunction> = HashMap::new();
         if let Some(node) = graph.get(target) {
             let arriving = this.pre_enter(node, &vars.top(), compiler, world, &mut image);
+            // NARROWED HERE FIRST, AND THIS IS WHERE IT PAYS MOST. If a settled forward run
+            // says nothing can arrive at the target, this set is empty, nothing is queued,
+            // and the pass ends at once having refused it - which is the whole cost of a
+            // refusal, and the thing a meet can never do.
+            let arriving = match known {
+                Some(known) => known.restricted(target, arriving),
+                None => arriving,
+            };
             if let Some(fresh) = this.widen(target, &arriving) {
                 // The target itself can be the meeting point, and on a group a forward run
                 // has already covered it usually is: whether anything can arrive AT the
@@ -303,6 +311,19 @@ impl<'a> Backward<'a> {
                 // Entering the parent has to leave the crawl somewhere that can go on to
                 // reach the target through this child.
                 let before = this.pre_enter(node, &delta, compiler, world, &mut image);
+                // NARROWED TO WHAT CAN ACTUALLY ARRIVE HERE, where a SETTLED forward run
+                // says. A state no crawl can hold at this entry cannot carry a path from
+                // the seed to the target through it, so dropping it changes no answer and
+                // makes every set from here up smaller. `restricted` is the identity unless
+                // the forward run settled - a partial one may prove, never refuse.
+                //
+                // This is the half that can shorten a REFUSAL, which the meet cannot: a
+                // set narrowed to nothing ends a branch, where a meet only ever ends the
+                // search with a yes.
+                let before = match known {
+                    Some(known) => known.restricted(parent, before),
+                    None => before,
+                };
                 if image.out_of_memory() {
                     this.stats.out_of_memory = true;
                     break 'search;

@@ -32,12 +32,13 @@ use lookahead_engine::core::types::{DialogueNodeId, Novelty};
 use lookahead_engine::engine::engine::{LookAheadEngine, LookAheadOptions};
 use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
-use lookahead_engine::symbolic::backward::Backward;
+use lookahead_engine::symbolic::backward::{Backward, Budget as BackwardBudget};
+use lookahead_engine::symbolic::known::Known;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::novelty_search::{best_novelty, Budget as SearchBudget};
 use lookahead_engine::symbolic::portfolio;
-use lookahead_engine::symbolic::reachability::seed_of;
+use lookahead_engine::symbolic::reachability::{seed_of, Reachability};
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::world::world::ILookAheadWorld;
 use lookahead_engine::symbolic::budget::DiagramBudget;
@@ -168,6 +169,26 @@ fn the_backward_search_finds_what_the_explicit_crawl_reaches() {
         let depths = structural_depths(&graph, start);
         let asked = targets(&depths);
 
+        // A SETTLED forward run, which is what licenses pruning a backward pass: it bounds
+        // what can arrive at each entry, and says outright that some entries can never be
+        // arrived at. Every target below is then asked TWICE - plain, and pruned - because
+        // an unsound bound would show up here and nowhere else: this is the only test that
+        // checks a backward answer against the crawl rather than against another symbolic
+        // search.
+        let forward = Reachability::explore(&graph, start, &seed, &mut compiler, &world,
+            COUNTER_CAP as u32);
+        let settled = forward.stats().reached_fixed_point;
+        // PRUNING ON, because checking it is the point of asking twice. It is off by
+        // default everywhere else - see Known::restricted - and this is what keeps it
+        // honest against the crawl while it waits for de-fawk.
+        let known = Known::of(&graph)
+            .from(start, &seed)
+            .with_forward(&forward)
+            .pruning(true);
+        if !settled {
+            println!("{conversation:>6}  the forward run did not settle; pruning not checked");
+        }
+
         let began = std::time::Instant::now();
         let mut missed: Vec<DialogueNodeId> = Vec::new();
         let mut agreed = 0;
@@ -185,6 +206,23 @@ fn the_backward_search_finds_what_the_explicit_crawl_reaches() {
             diagram_nodes += stats.diagram_nodes;
 
             let says_reachable = backward.reachable_from(start, &seed);
+
+            // THE SAME QUESTION, PRUNED. A pass that meets the forward run stops early
+            // having proved yes, so met_at is asked before the set is - reading a no out
+            // of a pass that stopped on a yes is the mistake this arrangement invites.
+            if settled {
+                let pruned = Backward::reaching_knowing(
+                    &graph, *target, &mut compiler, &world, COUNTER_CAP as u32,
+                    &BackwardBudget::default(), Some(&known),
+                );
+                let pruned_says = pruned.stats().met_at.is_some()
+                    || pruned.reachable_from(start, &seed);
+                assert_eq!(
+                    pruned_says, says_reachable,
+                    "conversation {conversation}: pruning changed the answer about                      {target}, which it may never do",
+                );
+            }
+
             match (walked.contains(target), says_reachable) {
                 (true, true) => agreed += 1,
                 (true, false) => missed.push(*target),

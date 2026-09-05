@@ -37,22 +37,47 @@
 //! ## What it said, 2026-09-05
 //!
 //! ```text
-//!   conv  entries  unseen  alone  shared: total = forward + backward   met  asked
-//!   1030     1476     501    0ms      1ms =      1ms +        0ms      yes    1/1
-//!     28     2186     707   18ms     84ms =     64ms +       19ms      yes  26/26
-//!    631     4514    1423   26ms     99ms =     96ms +        1ms      yes    4/4
+//!   conv  entries  unseen  knowing    verdict           ms      nodes  asked
+//!   1030     1476     501  alone      UnseenAnyGame      0       2775      1
+//!                          partial    UnseenAnyGame      1       3805      1  met
+//!                          SETTLED    UnseenAnyGame      1       3805      1  met
+//!     28     2186     707  alone      UnseenAnyGame     17      13530     26
+//!                          partial    UnseenAnyGame     77     159808     26  met, 57+19
+//!                          SETTLED    UnseenAnyGame    249     548635     26  met, 247+2
+//!    631     4514    1423  alone      UnseenAnyGame     31      56380      4
+//!                          partial    UnseenAnyGame     99     274883      4  met, 96+1
 //! ```
 //!
-//! THE MEET FIRES EVERYWHERE AND PAYS IN ONE PLACE. On 631 the backward half drops from 26
-//! milliseconds to ONE once the forward work exists - the winning candidate's fixed point
-//! is where nearly all the cost was, and the meet cuts it off. On 28 it buys nothing: 25 of
-//! the 26 candidates asked about are REFUSALS, and a meet cannot help a refusal. That is
-//! the shape of the whole feature.
+//! The last two columns of the shared rows are the forward half and the backward half, in
+//! milliseconds, of the total beside them.
 //!
-//! SO IT IS NOT A SPEED-UP, IT IS A SUNK-COST RECOVERY. Every row is slower end to end than
-//! the backward driver alone, because the forward half costs more than the meet saves. What
-//! it is for is the second question on a group whose forward run has already been paid for -
-//! which is why the backward half is reported separately, and why the total is reported too.
+//! THE MEET FIRES EVERYWHERE AND PAYS IN ONE PLACE. On 631 the backward half falls from 31
+//! milliseconds to ONE once a forward run exists - nearly all the cost was the winning
+//! candidate fixed point, and the meet cuts it off. On 28 it buys nothing: 25 of the 26
+//! candidates asked about are REFUSALS, and no forward set can shorten a refusal. That is
+//! the shape of the whole feature, and the reason de-fawk exists.
+//!
+//! SO IT IS A SUNK-COST RECOVERY, NOT A SPEED-UP. Every row is slower end to end than the
+//! backward driver alone, because the forward half costs more than the meet saves. What it
+//! is for is the SECOND question on a group whose forward run has already been paid for,
+//! which is why the backward half is reported apart from the total.
+//!
+//! ## Pruning is sound and, as written, too expensive to leave on
+//!
+//! Narrowing a backward pass by a SETTLED forward run is the half that could shorten a
+//! refusal. tests/backward_oracle.rs checks it against the explicit crawl on every target
+//! of every group it can check both ways, and the pruned answer has never differed from the
+//! plain one. It is nonetheless OFF by default, because turning it on costs stability:
+//!
+//! ```text
+//!   pruning                        conv 28    conv 631
+//!   off                            finishes   finishes
+//!   unreachable entries only       finishes   stack overflow
+//!   and the arriving bound too     overflow   stack overflow
+//! ```
+//!
+//! Each increment breaks another group, and the groups it breaks are the ones the whole
+//! approach is for. de-fawk carries what to try instead.
 //!
 //! ## The three heaviest groups take the process down at this profile
 //!
@@ -170,6 +195,8 @@ struct Run {
     met: bool,
     /// Just the backward half, where there was a forward half to pay for separately.
     backward_millis: u128,
+    /// Whether the forward half settled, which is what licenses pruning.
+    settled: bool,
 }
 
 fn search_budget() -> SearchBudget {
@@ -216,15 +243,22 @@ fn alone(
         guards: compiler.guard_cache(),
         met: answer.met_at.is_some(),
         backward_millis: began.elapsed().as_millis(),
+        settled: false,
     }
 }
 
-/// A partial forward run first, then the backward driver told about it.
+/// A forward run first, then the backward driver told about it.
+///
+/// `steps` is what the forward half is allowed. A SMALL number stands for work an earlier
+/// query left half done, and only the meet can use it. A number large enough for the fixed
+/// point to settle also lets the backward passes be PRUNED - a settled run bounds what can
+/// arrive at each entry - which is the only thing here that can shorten a refusal.
 fn shared(
     graph: &LookAheadGraph,
     start: DialogueNodeId,
     world: &dyn ILookAheadWorld,
     unseen: &HashSet<DialogueNodeId>,
+    steps: usize,
 ) -> (Run, usize) {
     let symbols = graph.symbols().clone();
     let layout = DataLayout::for_graph(graph, COUNTER_CAP, None, false)
@@ -242,13 +276,19 @@ fn shared(
     let forward = Reachability::explore_within(
         graph, start, &seed, &mut compiler, world, COUNTER_CAP as u32,
         &ForwardBudget {
-            steps: FORWARD_STEPS,
-            time: std::time::Duration::from_secs(30),
+            steps,
+            time: std::time::Duration::from_secs(60),
             ..Default::default()
         },
     );
     let forward_ms = began.elapsed().as_millis() as usize;
-    let known = Known::of(graph).from(start, &seed).with_forward(&forward);
+    // PRUNING FOLLOWS THE FORWARD RUN: it does nothing without a settled one, and it is
+    // off by default everywhere else. Asked for here because measuring what it costs is
+    // half of what this file is for.
+    let known = Known::of(graph)
+        .from(start, &seed)
+        .with_forward(&forward)
+        .pruning(true);
 
     // THE BACKWARD HALF ON ITS OWN, which is the honest number for the case this feature
     // is actually for: a forward run that happened earlier, for some other question, and
@@ -269,6 +309,7 @@ fn shared(
             guards: compiler.guard_cache(),
             met: answer.met_at.is_some(),
             backward_millis: backward_began.elapsed().as_millis(),
+            settled: forward.stats().reached_fixed_point,
         },
         forward_ms,
     )
@@ -289,10 +330,8 @@ fn what_sharing_a_forward_run_buys() {
     let world = common::measurement_save();
 
     println!(
-        "{:>6} {:>8} {:>7} {:>16} {:>8} {:>10} {:>6} {:>16} {:>8} {:>10} {:>6} {:>5} {:>7}",
-        "conv", "entries", "unseen",
-        "alone", "ms", "nodes", "asked",
-        "shared", "ms", "nodes", "asked", "met", "bwd ms",
+        "{:>6} {:>8} {:>7}  {:9} {:>16} {:>8} {:>10} {:>6}",
+        "conv", "entries", "unseen", "knowing", "verdict", "ms", "nodes", "asked",
     );
 
     for conversation in conversations(&HEAVIEST) {
@@ -308,34 +347,50 @@ fn what_sharing_a_forward_run_buys() {
         }
         let unseen = unseen_for(&reachable, PERCENT_SEEN);
 
+        // PRINTED AS EACH ARRANGEMENT FINISHES, not gathered into one line at the end.
+        // The third arrangement runs a forward fixed point to completion, and on the heavy
+        // groups that overflows the stack inside a recursive diagram operation and takes
+        // the process with it - so a row gathered at the end loses the two arrangements
+        // that did work.
         let one = alone(&graph, start, &world, &unseen);
-        let (two, forward_ms) = shared(&graph, start, &world, &unseen);
-
         println!(
-            "{conversation:>6} {:>8} {:>7} {:>16} {:>8} {:>10} {:>6} {:>16} {:>8} {:>10} {:>6} {:>5} {:>7}",
-            graph.count(),
-            unseen.len(),
-            one.verdict, one.millis, one.nodes, one.asked,
-            two.verdict, two.millis, two.nodes, two.asked,
-            if two.met { "yes" } else { "no" },
-            two.backward_millis,
-        );
-        println!(
-            "         shared total {} ms = {} forward + {} backward",
-            two.millis, forward_ms, two.backward_millis,
+            "{conversation:>6} {:>8} {:>7}  alone     {:>16} {:>8} {:>10} {:>6}",
+            graph.count(), unseen.len(), one.verdict, one.millis, one.nodes, one.asked,
         );
 
-        // THE ANSWERS MUST AGREE. A meet is a proof, so sharing may make a search faster
-        // and may make it stop earlier - it may never make it answer differently. This is
-        // the only assertion here, and it is the one worth having.
+        let (two, forward_ms) = shared(&graph, start, &world, &unseen, FORWARD_STEPS);
+        println!(
+            "{:>23}  partial   {:>16} {:>8} {:>10} {:>6}  met {}, {} fwd + {} bwd",
+            "", two.verdict, two.millis, two.nodes, two.asked,
+            if two.met { "yes" } else { "no" }, forward_ms, two.backward_millis,
+        );
         assert_eq!(
             one.verdict, two.verdict,
             "conversation {conversation}: sharing changed the answer, which it may never do",
         );
 
+        // AND AGAIN WITH THE FORWARD HALF ALLOWED TO FINISH, because only a settled run
+        // bounds what can arrive at an entry, and that bound is the only thing measured
+        // here that can shorten a REFUSAL.
+        let (three, settled_forward_ms) = shared(&graph, start, &world, &unseen, usize::MAX);
         println!(
-            "         guards: {} held / {} reuses alone, {} held / {} reuses shared",
+            "{:>23}  {:9} {:>16} {:>8} {:>10} {:>6}  met {}, {} fwd + {} bwd",
+            "",
+            if three.settled { "SETTLED" } else { "unsettled" },
+            three.verdict, three.millis, three.nodes, three.asked,
+            if three.met { "yes" } else { "no" },
+            settled_forward_ms, three.backward_millis,
+        );
+        assert_eq!(
+            one.verdict, three.verdict,
+            "conversation {conversation}: pruning changed the answer, which it may never do",
+        );
+
+        println!(
+            "{:>23}  guards held/reused: {} / {} alone, {} / {} partial, {} / {} settled",
+            "",
             one.guards.0, one.guards.1, two.guards.0, two.guards.1,
+            three.guards.0, three.guards.1,
         );
     }
 }

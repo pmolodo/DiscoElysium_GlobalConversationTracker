@@ -173,6 +173,33 @@
 //! falloff curve, and tests/unseen_falloff.rs exists because measuring one needs a different
 //! seeding entirely.
 //!
+//! ## All three engines on one row, at one budget, 2026-09-05
+//!
+//! Conversation 14, its one structurally deepest entry unseen, six gigabytes and a
+//! ten-minute cap EACH. The comparison de-rfva asked for, and the first one on this file
+//! that is like for like:
+//!
+//! ```text
+//!   engine    verdict         ms       states / nodes
+//!   explicit  gave-up     20,101       5,862,108 states
+//!   symfwd    gave-up    668,613      89,921,612 nodes (229,729,460 summed over the sets)
+//!   symbwd    NOT-THERE      634          28,468 nodes, 1 candidate of 1
+//! ```
+//!
+//! THE BACKWARD SEARCH IS THE ONLY ONE THAT ANSWERS, and it answers in two thirds of a
+//! second. The crawl spends twenty seconds and six gigabytes to give up; the symbolic
+//! forward search spends ELEVEN MINUTES and ninety million nodes to give up. Neither
+//! failure is the ration talking - both were given the whole measurement budget, which is
+//! what de-e33h asked for and what the 256 MB history above could not say.
+//!
+//! And `not-there` here is settled, not exhausted: the one candidate was asked about and
+//! its fixed point completed. The engine's approximations run the safe way, so a state
+//! missing from a completed backward set genuinely cannot reach the target.
+//!
+//! WHAT IT DOES NOT SAY is anything about a long candidate list. One candidate is the
+//! shape backward is best at, and the crossover this file exists to find lives in the
+//! percentage profiles, where a refusal has to be paid for once per candidate.
+//!
 //! ## The first row the backward column has been run on, 2026-09-05
 //!
 //! Conversation 14 with its one structurally deepest entry unseen - so ONE CANDIDATE - at
