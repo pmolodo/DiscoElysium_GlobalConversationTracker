@@ -346,13 +346,15 @@ fn what_each_group_carries() {
         // count here is what says the column above means anything.
         // CHECKS BY KIND, and how many are on a cycle.
         //
-        // de-1uy8: a failed WHITE check is modelled as leaving the state completely
-        // unchanged, so it can be retried without limit, where the game locks it until a
-        // modifier or a skill value changes (FailedWhiteChecks in the game's own code). A
-        // white check on a cycle is therefore a loop nothing but the budget stops, and the
-        // count of those is what says whether that matters for a given group.
-        let mut white = (0usize, 0usize);
-        let mut red = (0usize, 0usize);
+        // de-1uy8: a failed check used to leave the state completely unchanged for white,
+        // so it could be retried without limit, where the game locks it until a modifier or
+        // a skill value changes (FailedWhiteChecks in the game's own code). Both kinds now
+        // record the failure - but only where there is a flag to record it in, and a check
+        // with no flag at all is still retryable. So the count that matters is the THIRD
+        // one: a white check on a cycle with nowhere to write its failure is the loop
+        // nothing but the state budget stops.
+        let mut white = (0usize, 0usize, 0usize);
+        let mut red = (0usize, 0usize, 0usize);
         for node in graph.nodes() {
             let seat = match node.kind {
                 lookahead_engine::core::types::DialogueCheckKind::White => &mut white,
@@ -362,11 +364,15 @@ fn what_each_group_carries() {
             seat.0 += 1;
             if cyclic.contains(&node.id) {
                 seat.1 += 1;
+                if node.failed_flag_slot < 0 {
+                    seat.2 += 1;
+                }
             }
         }
         println!(
-            "      checks: {} white ({} on a cycle), {} red ({} on a cycle)",
-            white.0, white.1, red.0, red.1,
+            "      checks: {} white ({} on a cycle, {} of those unrecordable), \
+             {} red ({} on a cycle, {} of those unrecordable)",
+            white.0, white.1, white.2, red.0, red.1, red.2,
         );
 
         let clock = layout.clock().map(|(_, bits)| bits).unwrap_or(0);
