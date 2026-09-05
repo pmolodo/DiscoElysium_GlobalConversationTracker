@@ -149,14 +149,32 @@ namespace GlobalConversationTracker.Automation
         /// Everything the look-ahead library is built from, as git spells the paths.
         /// </summary>
         /// <remarks>
-        /// RESTATED FROM <c>build.rs</c>, which writes the stamp this is compared against.
-        /// The two have to ask git the same question and neither can call the other - one
-        /// runs during a cargo build with no .NET in sight, the other in a harness that
-        /// must work without cargo. A path added to one and not the other makes the check
-        /// silently narrower, which is why each names the other.
+        /// <para>RESTATED FROM <c>build.rs</c>, which writes the stamp this is compared
+        /// against. The two have to ask git the same question and neither can call the
+        /// other - one runs during a cargo build with no .NET in sight, the other in a
+        /// harness that must work without cargo. A path added to one and not the other
+        /// makes the check silently narrower, which is why each names the other.</para>
+        ///
+        /// <para>THE EXCLUSION IS NOT A DETAIL. <c>src/</c> in this repository holds the
+        /// Rust crate AND eight C# projects, all named <c>GlobalConversationTracker.*</c>.
+        /// Without the last entry the stamp counts every C# file, and a commit touching one
+        /// plugin file makes the harness refuse to run against an engine that is
+        /// byte-for-byte the right one - measured 2026-09-05, de-b0e7. A guard that cries
+        /// wolf is one people learn to pass over.</para>
+        ///
+        /// <para>Excluded by pattern rather than listed positively, so that a Rust module
+        /// added tomorrow is covered without anyone remembering to add it. That is the
+        /// direction the mistake must not be able to go: a source left out is a stale
+        /// engine that passes.</para>
         /// </remarks>
         public static readonly string[] Sources =
-            { "Cargo.toml", "Cargo.lock", "build.rs", "src" };
+        {
+            "Cargo.toml",
+            "Cargo.lock",
+            "build.rs",
+            "src",
+            ":(exclude)src/GlobalConversationTracker.*",
+        };
 
         /// <summary>
         /// A hash over the library's sources, uncommitted changes to tracked files included.

@@ -45,12 +45,31 @@ use std::process::Command;
 /// What a stamp says when git cannot answer.
 const NO_REVISION: &str = "nogit";
 
-/// Everything this library is built from, as git spells the paths.
+/// Everything this engine is built from, as git spells the paths.
 ///
 /// RESTATED IN THE READER, in tools/GameAutomation/NativeEngineStamp.cs, because the two
 /// have to ask git the same question and neither can call the other. A path added to one
 /// and not the other makes the check silently narrower, which is why they name each other.
-const SOURCES: &[&str] = &["Cargo.toml", "Cargo.lock", "build.rs", "src"];
+///
+/// ## The exclusion is not a detail
+///
+/// `src/` in this repository holds the Rust crate AND eight C# projects, all of them named
+/// `GlobalConversationTracker.*`. Without the last entry the stamp counts every C# file,
+/// which is exactly the failure the note above warns about: measured 2026-09-05 (de-b0e7),
+/// a commit touching one plugin file moved the hash and the in-game harness refused to run
+/// against an engine that was byte-for-byte the right one. A guard that cries wolf is one
+/// people learn to pass over.
+///
+/// EXCLUDED BY PATTERN RATHER THAN LISTED POSITIVELY, so that a Rust module added tomorrow
+/// is covered without anyone remembering to add it - which is the direction the mistake
+/// must not be able to go, since a source left out is a stale engine that passes.
+const SOURCES: &[&str] = &[
+    "Cargo.toml",
+    "Cargo.lock",
+    "build.rs",
+    "src",
+    ":(exclude)src/GlobalConversationTracker.*",
+];
 
 fn main() {
     // No rerun-if-changed: the default is to rerun when anything in the package changes,
