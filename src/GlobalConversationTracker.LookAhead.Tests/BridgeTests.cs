@@ -36,9 +36,9 @@ namespace GlobalConversationTracker.LookAhead.Tests
         [Fact]
         public void TheLibraryReportsAVersion()
         {
-            if (NativeLookAhead.Library == null)
+            if (NativeLookAhead.Engine == null)
             {
-                _output.WriteLine("the native library is not built; skipping. Run: cargo build");
+                _output.WriteLine("the engine is not built; skipping. Run: cargo build");
                 return;
             }
 
@@ -57,9 +57,9 @@ namespace GlobalConversationTracker.LookAhead.Tests
         [Fact]
         public void AnIndexThatIsNotThereIsRefused()
         {
-            if (NativeLookAhead.Library == null)
+            if (NativeLookAhead.Engine == null)
             {
-                _output.WriteLine("the native library is not built; skipping. Run: cargo build");
+                _output.WriteLine("the engine is not built; skipping. Run: cargo build");
                 return;
             }
 
@@ -73,9 +73,9 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public void TheIndexOpensAndReportsWhatIsInIt()
         {
             string? index = NativeLookAhead.Index;
-            if (NativeLookAhead.Library == null || index == null)
+            if (NativeLookAhead.Engine == null || index == null)
             {
-                _output.WriteLine("the library or the index is missing; skipping.");
+                _output.WriteLine("the engine or the index is missing; skipping.");
                 return;
             }
 
@@ -101,9 +101,9 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public void TheEngineDescribesWhatItNeedsToKnow()
         {
             string? index = NativeLookAhead.Index;
-            if (NativeLookAhead.Library == null || index == null)
+            if (NativeLookAhead.Engine == null || index == null)
             {
-                _output.WriteLine("the library or the index is missing; skipping.");
+                _output.WriteLine("the engine or the index is missing; skipping.");
                 return;
             }
 
@@ -134,9 +134,9 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public void AQuestionCrossesAndComesBackAnswered()
         {
             string? index = NativeLookAhead.Index;
-            if (NativeLookAhead.Library == null || index == null)
+            if (NativeLookAhead.Engine == null || index == null)
             {
-                _output.WriteLine("the library or the index is missing; skipping.");
+                _output.WriteLine("the engine or the index is missing; skipping.");
                 return;
             }
 
@@ -167,9 +167,9 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public void ARequestThatIsNotJsonIsRefused()
         {
             string? index = NativeLookAhead.Index;
-            if (NativeLookAhead.Library == null || index == null)
+            if (NativeLookAhead.Engine == null || index == null)
             {
-                _output.WriteLine("the library or the index is missing; skipping.");
+                _output.WriteLine("the engine or the index is missing; skipping.");
                 return;
             }
 
@@ -188,9 +188,9 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public void ClosingTwiceIsHarmless()
         {
             string? index = NativeLookAhead.Index;
-            if (NativeLookAhead.Library == null || index == null)
+            if (NativeLookAhead.Engine == null || index == null)
             {
-                _output.WriteLine("the library or the index is missing; skipping.");
+                _output.WriteLine("the engine or the index is missing; skipping.");
                 return;
             }
 

@@ -190,9 +190,9 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public void AWholeMenuCrossesAndComesBackAnswered()
         {
             string? index = NativeLookAhead.Index;
-            if (NativeLookAhead.Library == null || index == null)
+            if (NativeLookAhead.Engine == null || index == null)
             {
-                _output.WriteLine("the library or the index is missing; skipping.");
+                _output.WriteLine("the engine or the index is missing; skipping.");
                 return;
             }
 
@@ -287,9 +287,9 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public void ARolledCheckCrossesAsTwoAnswers()
         {
             string? index = NativeLookAhead.Index;
-            if (NativeLookAhead.Library == null || index == null)
+            if (NativeLookAhead.Engine == null || index == null)
             {
-                _output.WriteLine("the library or the index is missing; skipping.");
+                _output.WriteLine("the engine or the index is missing; skipping.");
                 return;
             }
 
@@ -353,9 +353,9 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public void AnswersToADifferentSetOfQuestionsAreRefused()
         {
             string? index = NativeLookAhead.Index;
-            if (NativeLookAhead.Library == null || index == null)
+            if (NativeLookAhead.Engine == null || index == null)
             {
-                _output.WriteLine("the library or the index is missing; skipping.");
+                _output.WriteLine("the engine or the index is missing; skipping.");
                 return;
             }
 
@@ -381,9 +381,9 @@ namespace GlobalConversationTracker.LookAhead.Tests
         {
             string? index = NativeLookAhead.Index;
             string? variables = NativeLookAhead.Variables;
-            if (NativeLookAhead.Library == null || index == null || variables == null)
+            if (NativeLookAhead.Engine == null || index == null || variables == null)
             {
-                _output.WriteLine("the library, the index or the variable table is missing; skipping.");
+                _output.WriteLine("the engine, the index or the variable table is missing; skipping.");
                 return;
             }
 

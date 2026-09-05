@@ -1,50 +1,74 @@
 // SPDX-License-Identifier: MIT
 using System;
-using System.Runtime.InteropServices;
-using System.Text;
 
 namespace GlobalConversationTracker.Engine
 {
     /// <summary>
-    /// The Rust look-ahead engine, opened over a conversation index.
+    /// The look-ahead engine, opened over a conversation index.
     /// </summary>
     /// <remarks>
-    /// <para>Owns one native handle for its lifetime. The index behind it is tens of
-    /// megabytes and takes a moment to parse, so this is opened once when the plugin
-    /// loads and kept - opening one per response menu would put that parse inside the
-    /// frame that draws the menu.</para>
+    /// <para>Owns one engine for its lifetime. The index behind it is tens of megabytes and
+    /// takes a moment to parse, so this is opened once when the plugin loads and kept -
+    /// opening one per response menu would put that parse inside the frame that draws the
+    /// menu.</para>
     ///
-    /// <para>A <see cref="SafeHandle"/> rather than a raw pointer and a finaliser,
-    /// because the failure being guarded against is a modded game: a handle leaked
-    /// through an exception would hold the index for the session, and one freed twice
-    /// would corrupt the heap of the process the player is playing in.</para>
+    /// <para>THE ENGINE IS A CHILD PROCESS, not a library this process loads - de-bnjy.1.
+    /// It used to be a <c>DllImport</c> against a Rust <c>cdylib</c>, which meant that
+    /// every way the engine could fail was a way the GAME could fail: an abort, an
+    /// allocation the machine would not make, a stack overflow inside a recursive diagram
+    /// operation. Out of process those are the child's death and not the game's, and this
+    /// side hears about them as an exception rather than as a crash dump.</para>
+    ///
+    /// <para>The surface here did not change when the transport did, which is the point:
+    /// the plugin, the harness and the tests all speak to this class and none of them had
+    /// to learn what a frame is. <see cref="EngineHost"/> is where that lives.</para>
     /// </remarks>
     public sealed class LookAheadLibrary : IDisposable
     {
-        private readonly EngineHandle _handle;
+        private readonly EngineHost _host;
 
-        private LookAheadLibrary(EngineHandle handle)
+        private LookAheadLibrary(EngineHost host)
         {
-            _handle = handle;
+            _host = host;
         }
 
         /// <summary>
-        /// The native library's version, for checking it is the one this was built
-        /// against.
+        /// Where to find the engine executable, or null to look beside this assembly.
         /// </summary>
         /// <remarks>
-        /// A static string on the other side, so it is read and not freed. Worth checking
-        /// at load: a version mismatch discovered here is a log line, and discovered
-        /// through a wrong marker is a bug report about the game.
+        /// Deployed, the engine sits beside the plugin and the default finds it. In a test
+        /// run it is a Cargo build artefact under <c>target/</c>, which nothing would look
+        /// in - so a test points this at it, exactly as it used to install a
+        /// <c>DllImport</c> resolver.
         /// </remarks>
+        public static string? EnginePath
+        {
+            get => EngineHost.EnginePath;
+            set => EngineHost.EnginePath = value;
+        }
+
+        /// <summary>
+        /// The engine's version, for checking it is the one this was built against.
+        /// </summary>
+        /// <remarks>
+        /// <para>Worth checking at load: a version mismatch discovered here is a log line,
+        /// and discovered through a wrong marker is a bug report about the game.</para>
+        ///
+        /// <para>IT COSTS A PROCESS, which the DllImport version did not - there is no
+        /// engine yet to ask, so one is started, asked, and closed again. That is the whole
+        /// of the smoke test the plugin runs at load, and it is a better one than before:
+        /// it proves the executable is there, that it runs, and that it speaks the
+        /// protocol, where reading a static string only ever proved the library loaded.
+        /// </para>
+        /// </remarks>
+        /// <exception cref="InvalidOperationException">The engine would not start or answer.</exception>
         public static string Version
         {
             get
             {
-                IntPtr text = NativeMethods.gct_version();
-                return text == IntPtr.Zero
-                    ? string.Empty
-                    : Marshal.PtrToStringAnsi(text) ?? string.Empty;
+                using EngineHost host = EngineHost.Start();
+                EngineHost.Answer answer = host.Ask(EngineHost.Requests.Version);
+                return answer.Status == Status.Ok ? answer.Text ?? string.Empty : string.Empty;
             }
         }
 
@@ -60,7 +84,7 @@ namespace GlobalConversationTracker.Engine
         /// counter's kind right. <see cref="VariableCount"/> says whether one was read.
         /// </param>
         /// <exception cref="ArgumentNullException">The index path is null.</exception>
-        /// <exception cref="InvalidOperationException">The library refused to open it.</exception>
+        /// <exception cref="InvalidOperationException">The engine refused to open it.</exception>
         public static LookAheadLibrary Open(string indexPath, string? variablesPath = null)
         {
             if (indexPath == null)
@@ -68,42 +92,30 @@ namespace GlobalConversationTracker.Engine
                 throw new ArgumentNullException(nameof(indexPath));
             }
 
-            Status status = (Status)NativeMethods.gct_engine_open(
-                NulTerminated(indexPath)!,
-                NulTerminated(variablesPath),
-                out IntPtr handle);
-            if (status != Status.Ok)
+            EngineHost host = EngineHost.Start();
+            try
             {
-                throw new InvalidOperationException(
-                    $"the look-ahead library would not open '{indexPath}': {status}");
+                Status status =
+                    host.Ask(EngineHost.Requests.Open(indexPath, variablesPath)).Status;
+                if (status != Status.Ok)
+                {
+                    throw new InvalidOperationException(
+                        $"the look-ahead engine would not open '{indexPath}': {status}");
+                }
+            }
+            catch
+            {
+                // A child started and then not handed to anyone would be an orphan for the
+                // life of the game, which is exactly the failure de-bnjy.1 is about.
+                host.Dispose();
+                throw;
             }
 
-            return new LookAheadLibrary(new EngineHandle(handle));
-        }
-
-        /// <summary>
-        /// A string as the NUL-terminated UTF-8 the library reads, or null for null.
-        /// </summary>
-        /// <remarks>
-        /// Encoded here rather than left to the marshaller because the library reads UTF-8
-        /// and nothing else, and a guess through the platform's default code page would
-        /// turn a path with an accent in it into a file that is not there.
-        /// </remarks>
-        private static byte[]? NulTerminated(string? text)
-        {
-            return text == null ? null : Encoding.UTF8.GetBytes(text + "\0");
+            return new LookAheadLibrary(host);
         }
 
         /// <summary>How many conversations the index holds.</summary>
-        public int ConversationCount
-        {
-            get
-            {
-                Status status = (Status)NativeMethods.gct_conversation_count(
-                    _handle.DangerousGetHandle(), out int count);
-                return status == Status.Ok ? count : 0;
-            }
-        }
+        public int ConversationCount => Count(EngineHost.Requests.ConversationCount);
 
         /// <summary>
         /// How many variables the deployed table declares, or 0 if none was read.
@@ -114,33 +126,7 @@ namespace GlobalConversationTracker.Engine
         /// answers one variable in seventy-five less precisely - exactly the kind of thing
         /// that is never noticed unless a line says it.
         /// </remarks>
-        public int VariableCount
-        {
-            get
-            {
-                Status status = (Status)NativeMethods.gct_variable_count(
-                    _handle.DangerousGetHandle(), out int count);
-                return status == Status.Ok ? count : 0;
-            }
-        }
-
-        /// <summary>
-        /// How many entries one conversation holds, or -1 if the index has no such
-        /// conversation.
-        /// </summary>
-        /// <remarks>
-        /// The plugin's guard against a stale index. It builds its graph from the LIVE
-        /// dialogue database while the library reads a file shipped with the mod, and if a
-        /// game update or another mod moves the two apart, the look-ahead would be
-        /// answering about a conversation the player is not in. Comparing entry counts is
-        /// the cheap half of noticing.
-        /// </remarks>
-        public int EntryCount(int conversation)
-        {
-            Status status = (Status)NativeMethods.gct_entry_count(
-                _handle.DangerousGetHandle(), conversation, out int count);
-            return status == Status.Ok ? count : -1;
-        }
+        public int VariableCount => Count(EngineHost.Requests.VariableCount);
 
         /// <summary>
         /// What version the opened index says it is, or 0 where it has no header.
@@ -151,14 +137,24 @@ namespace GlobalConversationTracker.Engine
         /// version this build does not read is refused at <see cref="Open"/>, so anything
         /// non-zero here is a version it understands.
         /// </remarks>
-        public int IndexFormat
+        public int IndexFormat => Count(EngineHost.Requests.IndexFormat);
+
+        /// <summary>
+        /// How many entries one conversation holds, or -1 if the index has no such
+        /// conversation.
+        /// </summary>
+        /// <remarks>
+        /// The plugin's guard against a stale index. It builds its graph from the LIVE
+        /// dialogue database while the engine reads a file shipped with the mod, and if a
+        /// game update or another mod moves the two apart, the look-ahead would be
+        /// answering about a conversation the player is not in. Comparing entry counts is
+        /// the cheap half of noticing.
+        /// </remarks>
+        public int EntryCount(int conversation)
         {
-            get
-            {
-                Status status = (Status)NativeMethods.gct_index_format(
-                    _handle.DangerousGetHandle(), out int format);
-                return status == Status.Ok ? format : 0;
-            }
+            EngineHost.Answer answer =
+                _host.Ask(EngineHost.Requests.EntryCount(conversation));
+            return answer.Status == Status.Ok ? answer.Value : -1;
         }
 
         /// <summary>
@@ -175,15 +171,16 @@ namespace GlobalConversationTracker.Engine
         /// <exception cref="InvalidOperationException">The index has no such conversation.</exception>
         public string HashOf(int conversation)
         {
-            Status status = (Status)NativeMethods.gct_conversation_hash(
-                _handle.DangerousGetHandle(), conversation, out IntPtr text);
-            if (status != Status.Ok)
+            EngineHost.Answer answer =
+                _host.Ask(EngineHost.Requests.ConversationHash(conversation));
+            if (answer.Status != Status.Ok)
             {
                 throw new InvalidOperationException(
-                    $"the look-ahead library has no conversation {conversation}: {status}");
+                    $"the look-ahead engine has no conversation {conversation}: "
+                    + $"{answer.Status}");
             }
 
-            return Take(text);
+            return answer.Text ?? string.Empty;
         }
 
         /// <summary>
@@ -229,16 +226,16 @@ namespace GlobalConversationTracker.Engine
         /// <exception cref="InvalidOperationException">The group could not be built.</exception>
         public string Questions(int conversation)
         {
-            Status status = (Status)NativeMethods.gct_questions(
-                _handle.DangerousGetHandle(), conversation, out IntPtr json);
-            if (status != Status.Ok)
+            EngineHost.Answer answer =
+                _host.Ask(EngineHost.Requests.Questions(conversation));
+            if (answer.Status != Status.Ok)
             {
                 throw new InvalidOperationException(
-                    $"the look-ahead library would not describe conversation "
-                    + $"{conversation}: {status}");
+                    $"the look-ahead engine would not describe conversation "
+                    + $"{conversation}: {answer.Status}");
             }
 
-            return Take(json);
+            return answer.Text ?? string.Empty;
         }
 
         /// <summary>
@@ -248,7 +245,7 @@ namespace GlobalConversationTracker.Engine
         /// A request the engine could not serve at all comes back as a response carrying
         /// an <c>error</c> field rather than as an exception, so a caller has one thing to
         /// parse. What throws here is what happens BEFORE there is a response: a request
-        /// that is not JSON, or a library that is not there.
+        /// that is not JSON, or an engine that has stopped answering.
         /// </remarks>
         /// <exception cref="ArgumentNullException">The request is null.</exception>
         /// <exception cref="InvalidOperationException">The call itself failed.</exception>
@@ -259,72 +256,35 @@ namespace GlobalConversationTracker.Engine
                 throw new ArgumentNullException(nameof(requestJson));
             }
 
-            byte[] request = Encoding.UTF8.GetBytes(requestJson + "\0");
-            Status status = (Status)NativeMethods.gct_look_ahead(
-                _handle.DangerousGetHandle(), request, out IntPtr json);
-            if (status != Status.Ok)
+            EngineHost.Answer answer =
+                _host.Ask(EngineHost.Requests.LookAhead(requestJson));
+            if (answer.Status != Status.Ok)
             {
                 throw new InvalidOperationException(
-                    $"the look-ahead library refused the request: {status}");
+                    $"the look-ahead engine refused the request: {answer.Status}");
             }
 
-            return Take(json);
+            return answer.Text ?? string.Empty;
         }
 
         /// <summary>
-        /// Reads a string the library handed out, and gives it back.
+        /// One of the calls whose whole answer is a number, with zero for a refusal.
         /// </summary>
         /// <remarks>
-        /// The two allocators are different, so a string from over there must be freed
-        /// over there. Copied into a managed string first, then freed, in a finally so a
-        /// failure to decode still returns the memory.
+        /// Zero rather than an exception, for all three, because each of them is read into
+        /// a log line at load and none is worth failing over: a count that cannot be got is
+        /// reported as none, which is also what none looks like.
         /// </remarks>
-        private static string Take(IntPtr json)
+        private int Count(string request)
         {
-            if (json == IntPtr.Zero)
-            {
-                return string.Empty;
-            }
-
-            try
-            {
-                // UTF-8 and not PtrToStringAnsi, which would read this through the
-                // platform's default code page and mangle any dialogue text outside ASCII.
-                // The JSON crossing here carries conversation content, so that is not
-                // hypothetical.
-                return Marshal.PtrToStringUTF8(json) ?? string.Empty;
-            }
-            finally
-            {
-                NativeMethods.gct_string_free(json);
-            }
+            EngineHost.Answer answer = _host.Ask(request);
+            return answer.Status == Status.Ok ? answer.Value : 0;
         }
 
         /// <inheritdoc/>
         public void Dispose()
         {
-            _handle.Dispose();
-        }
-
-        /// <summary>
-        /// One native engine handle, closed exactly once.
-        /// </summary>
-        private sealed class EngineHandle : SafeHandle
-        {
-            internal EngineHandle(IntPtr handle)
-                : base(IntPtr.Zero, ownsHandle: true)
-            {
-                SetHandle(handle);
-            }
-
-            /// <inheritdoc/>
-            public override bool IsInvalid => handle == IntPtr.Zero;
-
-            /// <inheritdoc/>
-            protected override bool ReleaseHandle()
-            {
-                return NativeMethods.gct_engine_close(handle) == (int)Status.Ok;
-            }
+            _host.Dispose();
         }
     }
 }

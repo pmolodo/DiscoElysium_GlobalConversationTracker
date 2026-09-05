@@ -8,53 +8,49 @@ using GlobalConversationTracker.Engine;
 namespace GlobalConversationTracker.LookAhead.Tests
 {
     /// <summary>
-    /// Finding the native look-ahead library and the files it opens, from a test run.
+    /// Finding the look-ahead engine and the files it opens, from a test run.
     /// </summary>
     /// <remarks>
-    /// <para>Deployed, all three sit beside the plugin and the ordinary search finds them.
-    /// Here they are build artefacts and extracted game content in <c>target/</c> and
-    /// <c>.game_reference_copies/</c>, which nothing would look in - so the resolver is
-    /// pointed at the library directly and the rest are found by path.</para>
+    /// <para>Deployed, all three sit beside the plugin and the default finds them. Here they
+    /// are build artefacts and extracted game content in <c>target/</c> and
+    /// <c>.game_reference_copies/</c>, which nothing would look in - so
+    /// <see cref="LookAheadLibrary.EnginePath"/> is pointed at the executable directly and
+    /// the rest are found by path.</para>
     ///
-    /// <para>Shared by every test class that needs them. The <c>DllImport</c> resolver may
-    /// only be installed once per assembly, and installing it from one test class's static
-    /// constructor would leave a second class depending on which ran first.</para>
+    /// <para>THE ENGINE IS A PROCESS, not a library this one loads - de-bnjy.1. What used
+    /// to be installed here was a <c>DllImport</c> resolver, which could only be installed
+    /// once per assembly and so had to be shared by every test class that needed it. The
+    /// path is shared for the same reason, and setting it twice is harmless where
+    /// installing a resolver twice was not.</para>
     /// </remarks>
     internal static class NativeLookAhead
     {
         /// <summary>
-        /// Installed once, before the first <c>DllImport</c> in the process, whichever test
-        /// turns out to make it.
+        /// Points the engine at Cargo's build, before the first call that starts one.
         /// </summary>
         static NativeLookAhead()
         {
-            NativeLibrary.SetDllImportResolver(
-                typeof(LookAheadLibrary).Assembly,
-                (name, assembly, path) =>
-                {
-                    string? library = Library;
-                    return library == null ? IntPtr.Zero : NativeLibrary.Load(library);
-                });
+            LookAheadLibrary.EnginePath = Engine;
         }
 
-        /// <summary>Makes sure the resolver is in place. Call before any native call.</summary>
+        /// <summary>Makes sure the path is set. Call before starting an engine.</summary>
         internal static void Install()
         {
             // The static constructor is the whole of it; this exists so a test can say so.
         }
 
         /// <summary>
-        /// Cargo's copy of the library, the more recently built of release and debug, or
-        /// null if neither has been built.
+        /// Cargo's copy of the engine executable, the more recently built of release and
+        /// debug, or null if neither has been built.
         /// </summary>
         /// <remarks>
         /// NEWER rather than release-first, which is not a preference but a bug fix. A
         /// stale release build silently shadows a fresh debug one, and the symptom is an
-        /// EntryPointNotFoundException naming a function that was added minutes ago -
-        /// which reads as a marshalling problem and is not one. Whichever was built last
-        /// is the one the developer meant.
+        /// answer that does not contain a change made minutes ago - which reads as a bug in
+        /// the change and is not one. Whichever was built last is the one the developer
+        /// meant.
         /// </remarks>
-        internal static string? Library
+        internal static string? Engine
         {
             get
             {
@@ -65,10 +61,8 @@ namespace GlobalConversationTracker.LookAhead.Tests
                 }
 
                 string name = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-                    ? "lookahead_engine.dll"
-                    : RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
-                        ? "liblookahead_engine.dylib"
-                        : "liblookahead_engine.so";
+                    ? "gct-engine-host.exe"
+                    : "gct-engine-host";
 
                 string? newest = null;
                 DateTime newestAt = DateTime.MinValue;

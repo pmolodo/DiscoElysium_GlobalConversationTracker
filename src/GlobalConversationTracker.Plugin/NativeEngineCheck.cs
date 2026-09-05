@@ -69,10 +69,13 @@ namespace GlobalConversationTracker
             }
             catch (Exception error)
             {
-                // The first call is where a missing DLL, a wrong architecture or an
-                // unresolvable dependency shows up, and all three arrive here rather than
-                // at load. Naming the type matters: DllNotFoundException and
-                // BadImageFormatException mean quite different things to whoever reads it.
+                // Reading the version STARTS THE ENGINE, asks it, and closes it again -
+                // since de-bnjy.1 it is a child process rather than a library - so this is
+                // where a missing executable, one this platform will not run, or one that
+                // does not speak the protocol shows up. A better smoke test than the one
+                // it replaced: reading a static string out of a loaded library only ever
+                // proved the loader was happy. Naming the exception type matters, because
+                // "would not start" and "stopped answering" want different things done.
                 log.LogWarning(
                     $"{LogPrefix} unavailable ({error.GetType().Name}: {error.Message}). "
                     + "The look-ahead will use the managed engine.");

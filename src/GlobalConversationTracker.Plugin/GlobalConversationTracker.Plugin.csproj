@@ -66,10 +66,15 @@
     </ItemGroup>
 
     <!--
-    The Rust look-ahead library, copied in under a name the deployment already
-    carries: Get-PluginPayloadFile takes $AssemblyName*.dll out of this folder, so
-    calling it GlobalConversationTracker.Native.dll means deploy.ps1, the release
+    The Rust look-ahead engine, copied in under a name the deployment already
+    carries: Get-PluginPayloadFile takes $AssemblyName* out of this folder, so
+    calling it GlobalConversationTracker.Native.exe means deploy.ps1, the release
     packaging and the uninstaller all handle it without being told about it.
+
+    AN EXECUTABLE AND NOT A LIBRARY SINCE de-bnjy.1. The plugin used to DllImport a
+    cdylib, which meant every way the engine could fail was a way the game could
+    fail. It now runs as a child process and is spoken to over a pipe, so what is
+    deployed is the thing that gets spawned.
 
     Conditional on the file existing, because a C#-only build must still work - the
     Rust side needs `cargo build` and a contributor who has not run it should get a
@@ -77,32 +82,43 @@
   -->
     <Target Name="CopyNativeLookAhead" AfterTargets="Build">
         <PropertyGroup>
-            <NativeLookAheadRelease>$(MSBuildThisFileDirectory)..\..\target\release\lookahead_engine.dll</NativeLookAheadRelease>
-            <NativeLookAheadDebug>$(MSBuildThisFileDirectory)..\..\target\debug\lookahead_engine.dll</NativeLookAheadDebug>
-            <NativeLookAheadSource Condition="Exists('$(NativeLookAheadRelease)')">$(NativeLookAheadRelease)</NativeLookAheadSource>
-            <NativeLookAheadSource Condition="'$(NativeLookAheadSource)' == '' And Exists('$(NativeLookAheadDebug)')">$(NativeLookAheadDebug)</NativeLookAheadSource>
+            <NativeLookAheadRelease>$(MSBuildThisFileDirectory)..\..\target\release\</NativeLookAheadRelease>
+            <NativeLookAheadDebug>$(MSBuildThisFileDirectory)..\..\target\debug\</NativeLookAheadDebug>
+            <NativeLookAheadDir Condition="Exists('$(NativeLookAheadRelease)gct-engine-host.exe')">$(NativeLookAheadRelease)</NativeLookAheadDir>
+            <NativeLookAheadDir Condition="'$(NativeLookAheadDir)' == '' And Exists('$(NativeLookAheadDebug)gct-engine-host.exe')">$(NativeLookAheadDebug)</NativeLookAheadDir>
         </PropertyGroup>
-        <Copy Condition="'$(NativeLookAheadSource)' != ''"
-            SourceFiles="$(NativeLookAheadSource)"
-            DestinationFiles="$(OutDir)GlobalConversationTracker.Native.dll"
+        <Copy Condition="'$(NativeLookAheadDir)' != ''"
+            SourceFiles="$(NativeLookAheadDir)gct-engine-host.exe"
+            DestinationFiles="$(OutDir)GlobalConversationTracker.Native.exe"
             SkipUnchangedFiles="true" />
         <!--
-        And the stamp beside it, saying which source the library was built from. Copied
+        And the stamp beside it, saying which source the engine was built from. Copied
         as a pair, and never one without the other: a run compares the stamp against the
         tree it is running from and refuses when they differ, so a stamp left behind from
-        an older library would be worse than none. See build.rs.
+        an older engine would be worse than none. See build.rs, which writes one stamp
+        per profile directory covering everything built from that tree - so it is named
+        for the crate rather than for either artefact.
       -->
         <PropertyGroup>
-            <NativeLookAheadStamp>$([System.IO.Path]::ChangeExtension('$(NativeLookAheadSource)', '.built.json'))</NativeLookAheadStamp>
+            <NativeLookAheadStamp>$(NativeLookAheadDir)lookahead_engine.built.json</NativeLookAheadStamp>
         </PropertyGroup>
-        <Copy Condition="'$(NativeLookAheadSource)' != '' And Exists('$(NativeLookAheadStamp)')"
+        <Copy Condition="'$(NativeLookAheadDir)' != '' And Exists('$(NativeLookAheadStamp)')"
             SourceFiles="$(NativeLookAheadStamp)"
             DestinationFiles="$(OutDir)GlobalConversationTracker.Native.built.json"
             SkipUnchangedFiles="true" />
-        <Delete Condition="'$(NativeLookAheadSource)' != '' And !Exists('$(NativeLookAheadStamp)')"
+        <Delete Condition="'$(NativeLookAheadDir)' != '' And !Exists('$(NativeLookAheadStamp)')"
             Files="$(OutDir)GlobalConversationTracker.Native.built.json" />
-        <Message Condition="'$(NativeLookAheadSource)' == ''" Importance="high"
-            Text="No Rust look-ahead library found; the plugin will report the bridge as unavailable. Run: cargo build --release" />
+        <Message Condition="'$(NativeLookAheadDir)' == ''" Importance="high"
+            Text="No Rust look-ahead engine found; the plugin will report the bridge as unavailable. Run: cargo build --release" />
+        <!--
+        And the cdylib this used to deploy, removed. Nothing loads it any more, but the
+        payload predicate takes every GlobalConversationTracker*.dll out of this folder -
+        so one left behind by an earlier build would be shipped, and a thirty-megabyte
+        library nobody opens is the kind of thing that goes unnoticed for a year. The
+        crate still builds it and src/ffi.rs still tests it; see de-bnjy.1.1.4, which
+        retires the C ABI once the pipe has been proved in the game.
+      -->
+        <Delete Files="$(OutDir)GlobalConversationTracker.Native.dll" />
     </Target>
 
     <!--

@@ -305,6 +305,46 @@ mod tests {
         answers
     }
 
+    /// THE WIRE SHAPE, written out rather than round-tripped.
+    ///
+    /// A round trip through serde proves the two halves of serde agree, which they always
+    /// will. What the .NET client is written against is these exact bytes, and it does not
+    /// use serde - so this is the contract, and a derive attribute changed without meaning
+    /// to should fail here rather than in the game.
+    #[test]
+    fn a_request_looks_on_the_wire_the_way_the_client_writes_it() {
+        let wrote = |request: &Request| serde_json::to_string(request).expect("serialises");
+
+        assert_eq!(wrote(&Request::Version), r#""version""#);
+        assert_eq!(wrote(&Request::ConversationCount), r#""conversation_count""#);
+        assert_eq!(
+            wrote(&Request::EntryCount { conversation: 631 }),
+            r#"{"entry_count":{"conversation":631}}"#,
+        );
+        assert_eq!(
+            wrote(&Request::Open { index: "i.jsonl".into(), variables: None }),
+            r#"{"open":{"index":"i.jsonl","variables":null}}"#,
+        );
+        assert_eq!(
+            wrote(&Request::LookAhead { request: "{}".into() }),
+            r#"{"look_ahead":{"request":"{}"}}"#,
+        );
+    }
+
+    /// And the answer, whose absent fields are absent rather than null.
+    #[test]
+    fn a_response_looks_on_the_wire_the_way_the_client_reads_it() {
+        let wrote = |response: &Response| serde_json::to_string(response).expect("serialises");
+
+        assert_eq!(wrote(&Response::bare(Status::Ok)), r#"{"status":0}"#);
+        assert_eq!(
+            wrote(&Response::bare(Status::NoSuchConversation)),
+            r#"{"status":-5}"#,
+        );
+        assert_eq!(wrote(&Response::value(7)), r#"{"status":0,"value":7}"#);
+        assert_eq!(wrote(&Response::text("hi")), r#"{"status":0,"text":"hi"}"#);
+    }
+
     #[test]
     fn a_frame_round_trips_through_its_own_length_prefix() {
         let mut buffer: Vec<u8> = Vec::new();

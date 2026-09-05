@@ -29,7 +29,14 @@ use crate::index::{read_index_with_header, Index, IndexHeader, VariableTable};
 ///
 /// `repr(i32)` and explicitly numbered because these values cross a language boundary in
 /// two different ways and are matched by number on the far side of both.
+///
+/// ON THE WIRE IT IS THE NUMBER, not the name - hence the `into`/`try_from`. Serde's
+/// default for a fieldless enum is its variant name, which would mean the pipe carried
+/// `"NoSuchConversation"` where the ABI carries `-5`, and the .NET `Status` enum would
+/// have to know both spellings of the same thing. One representation, and it is the one
+/// that was already crossing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(into = "i32", try_from = "i32")]
 #[repr(i32)]
 pub enum Status {
     /// The call succeeded.
@@ -46,6 +53,34 @@ pub enum Status {
     NoSuchConversation = -5,
     /// An answer could not be turned into JSON. Should not happen; reported anyway.
     SerialiseFailed = -6,
+}
+
+impl From<Status> for i32 {
+    fn from(status: Status) -> Self {
+        status as i32
+    }
+}
+
+impl TryFrom<i32> for Status {
+    type Error = String;
+
+    /// A number that is not one of these is refused rather than guessed at.
+    ///
+    /// It can only arrive from a peer built from different sources, and a status invented
+    /// by a newer build would be read as whatever this one happened to map it to - which
+    /// is a wrong answer wearing the clothes of a right one.
+    fn try_from(number: i32) -> Result<Self, Self::Error> {
+        match number {
+            0 => Ok(Status::Ok),
+            -1 => Ok(Status::BadHandle),
+            -2 => Ok(Status::BadArgument),
+            -3 => Ok(Status::IndexUnreadable),
+            -4 => Ok(Status::Panic),
+            -5 => Ok(Status::NoSuchConversation),
+            -6 => Ok(Status::SerialiseFailed),
+            other => Err(format!("{other} is not a status this build knows")),
+        }
+    }
 }
 
 /// The engine, opened over an index.
@@ -195,6 +230,21 @@ mod tests {
         assert_eq!(Status::Panic as i32, -4);
         assert_eq!(Status::NoSuchConversation as i32, -5);
         assert_eq!(Status::SerialiseFailed as i32, -6);
+    }
+
+    /// And the wire carries that number, rather than the variant's name.
+    #[test]
+    fn a_status_crosses_as_its_number() {
+        assert_eq!(serde_json::to_string(&Status::Ok).unwrap(), "0");
+        assert_eq!(serde_json::to_string(&Status::NoSuchConversation).unwrap(), "-5");
+        assert_eq!(
+            serde_json::from_str::<Status>("-3").unwrap(),
+            Status::IndexUnreadable,
+        );
+        assert!(
+            serde_json::from_str::<Status>("-99").is_err(),
+            "a status this build does not know must be refused rather than guessed at",
+        );
     }
 
     #[test]

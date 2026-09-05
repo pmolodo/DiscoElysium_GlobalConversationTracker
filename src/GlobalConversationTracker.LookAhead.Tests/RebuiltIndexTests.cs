@@ -36,9 +36,9 @@ namespace GlobalConversationTracker.LookAhead.Tests
         [Fact]
         public void AnIndexWrittenHereOpensAndAnswers()
         {
-            if (NativeLookAhead.Library == null)
+            if (NativeLookAhead.Engine == null)
             {
-                _output.WriteLine("the native library is not built; skipping. Run: cargo build");
+                _output.WriteLine("the engine is not built; skipping. Run: cargo build");
                 return;
             }
 
@@ -80,9 +80,9 @@ namespace GlobalConversationTracker.LookAhead.Tests
         [Fact]
         public void TheStoredHashSurvivesTheRoundTrip()
         {
-            if (NativeLookAhead.Library == null)
+            if (NativeLookAhead.Engine == null)
             {
-                _output.WriteLine("the native library is not built; skipping. Run: cargo build");
+                _output.WriteLine("the engine is not built; skipping. Run: cargo build");
                 return;
             }
 
@@ -114,9 +114,9 @@ namespace GlobalConversationTracker.LookAhead.Tests
         [Fact]
         public void AnIndexWithNoHeaderReportsNoFormatAndNoHash()
         {
-            if (NativeLookAhead.Library == null)
+            if (NativeLookAhead.Engine == null)
             {
-                _output.WriteLine("the native library is not built; skipping. Run: cargo build");
+                _output.WriteLine("the engine is not built; skipping. Run: cargo build");
                 return;
             }
 
