@@ -30,6 +30,7 @@ use lookahead_engine::engine::engine::{LookAheadEngine, LookAheadOptions};
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
+use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::reachability::{Budget, Reachability};
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::world::world::ILookAheadWorld;
@@ -185,28 +186,36 @@ fn the_symbolic_search_reaches_what_the_explicit_crawl_reaches() {
 
         let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
         let symbols = graph.symbols().clone();
-        // THE COMPARISON'S OWN ALLOWANCE, not the measurement one. This test is about
-        // the two searches agreeing, and they can only be compared if they were rationed
-        // alike - so the diagram gets exactly what the crawl it is checked against gets.
-        // It is also an ordinary test rather than a measurement, and handing every run of
-        // the suite six gigabytes to prove an agreement would be its own kind of wrong.
-        let vars = DataVars::new(&layout, &symbols, DiagramBudget::new(COMPARISON_MEMORY));
-        let mut compiler = GuardCompiler::new(&vars)
-            .with_world(&world)
-            .with_constant_clock(DataLayout::group_passes_time(&graph));
 
-        // The same state the explicit crawl starts in, encoded - not every data state.
-        // Starting from all of them would walk paths needing an item the player has not
-        // got, and report entries the crawl cannot reach - a surplus that says nothing
-        // about the encoding.
-        let seed = lookahead_engine::symbolic::reachability::seed_of(&graph, &world, &vars);
-        let found =
-            Reachability::explore(&graph, start, &seed, &mut compiler, &world, COUNTER_CAP as u32);
-        let symbolic: HashSet<DialogueNodeId> = found.entries().collect();
+        // A THREAD OF ITS OWN, with the manager built inside it - de-fpax. The entry set
+        // and the counts are plain data and come back; the sets they were read off belong
+        // to the manager and end with the thread.
+        let (symbolic, stats, fallbacks) = on_its_own_thread(|| {
+            // THE COMPARISON'S OWN ALLOWANCE, not the measurement one. This test is about
+            // the two searches agreeing, and they can only be compared if they were
+            // rationed alike - so the diagram gets exactly what the crawl it is checked
+            // against gets. It is also an ordinary test rather than a measurement, and
+            // handing every run of the suite six gigabytes to prove an agreement would be
+            // its own kind of wrong.
+            let vars = DataVars::new(&layout, &symbols, DiagramBudget::new(COMPARISON_MEMORY));
+            let mut compiler = GuardCompiler::new(&vars)
+                .with_world(&world)
+                .with_constant_clock(DataLayout::group_passes_time(&graph));
+
+            // The same state the explicit crawl starts in, encoded - not every data state.
+            // Starting from all of them would walk paths needing an item the player has not
+            // got, and report entries the crawl cannot reach - a surplus that says nothing
+            // about the encoding.
+            let seed = lookahead_engine::symbolic::reachability::seed_of(&graph, &world, &vars);
+            let found = Reachability::explore(
+                &graph, start, &seed, &mut compiler, &world, COUNTER_CAP as u32,
+            );
+            let symbolic: HashSet<DialogueNodeId> = found.entries().collect();
+            (symbolic, found.stats().clone(), compiler.fallbacks())
+        });
 
         let missed: Vec<&DialogueNodeId> = walked.difference(&symbolic).collect();
         let surplus = symbolic.difference(&walked).count();
-        let stats = found.stats();
 
         println!(
             "{conversation:>6} {:>8} {:>9} {:>9} {:>8} {:>9} {:>7}",
@@ -225,8 +234,8 @@ fn the_symbolic_search_reaches_what_the_explicit_crawl_reaches() {
         // priced option and the symbolic search takes them all.
         if surplus > 0 {
             println!(
-                "         {surplus} extra: {} guard fallbacks, {} cost checks undecidable",
-                compiler.fallbacks(),
+                "         {surplus} extra: {fallbacks} guard fallbacks, {} cost checks \
+                 undecidable",
                 stats.unaffordable_unknown,
             );
         }
@@ -357,33 +366,37 @@ fn finding_one_unseen_entry_in_a_group_that_is_otherwise_seen() {
         let symbols = graph.symbols().clone();
         let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false)
             .keeping_only_read(&symbols, &DataLayout::read_by(&graph));
-        let vars = DataVars::new(&layout, &symbols, DiagramBudget::measurement());
-        let mut compiler = GuardCompiler::new(&vars)
-            .with_world(&world)
-            .with_constant_clock(DataLayout::group_passes_time(&graph));
+        // A THREAD OF ITS OWN, with the manager built inside it - de-fpax. Only the stats
+        // leave, and they are plain numbers.
+        let stats = on_its_own_thread(|| {
+            let vars = DataVars::new(&layout, &symbols, DiagramBudget::measurement());
+            let mut compiler = GuardCompiler::new(&vars)
+                .with_world(&world)
+                .with_constant_clock(DataLayout::group_passes_time(&graph));
 
-        let seed = lookahead_engine::symbolic::reachability::seed_of(&graph, &world, &vars);
-        let budget = Budget {
-            // No step limit, because steps are not what is being rationed here.
-            steps: usize::MAX,
-            time: COMPARISON_TIME,
-            memory: COMPARISON_MEMORY,
-            report_every: 20_000,
-            report_gap: std::time::Duration::ZERO,
-            check_gap: std::time::Duration::ZERO,
-            // Off: this measures the SEARCH, and a machine-dependent stop would make the
-            // numbers depend on what else was running.
-            on_step: None,
-            system_reserve: 0.0,
-            on_progress: None,
-            // Stop the moment the quarry is reached - the whole point of the exercise.
-            halt_on: Some(Box::new(move |id| id == quarry)),
-        };
+            let seed = lookahead_engine::symbolic::reachability::seed_of(&graph, &world, &vars);
+            let budget = Budget {
+                // No step limit, because steps are not what is being rationed here.
+                steps: usize::MAX,
+                time: COMPARISON_TIME,
+                memory: COMPARISON_MEMORY,
+                report_every: 20_000,
+                report_gap: std::time::Duration::ZERO,
+                check_gap: std::time::Duration::ZERO,
+                // Off: this measures the SEARCH, and a machine-dependent stop would make
+                // the numbers depend on what else was running.
+                on_step: None,
+                system_reserve: 0.0,
+                on_progress: None,
+                // Stop the moment the quarry is reached - the whole point of the exercise.
+                halt_on: Some(Box::new(move |id| id == quarry)),
+            };
 
-        let found = Reachability::explore_within(
-            &graph, start, &seed, &mut compiler, &world, COUNTER_CAP as u32, &budget,
-        );
-        let stats = found.stats();
+            let found = Reachability::explore_within(
+                &graph, start, &seed, &mut compiler, &world, COUNTER_CAP as u32, &budget,
+            );
+            found.stats().clone()
+        });
 
         let explicit_says = if explicit_answer.best == Novelty::UnseenAnyGame {
             "FOUND"
@@ -479,37 +492,41 @@ fn what_the_expensive_conversations_cost() {
             layout.total_vars(),
             full.total_vars(),
         );
-        let vars = DataVars::new(&layout, &symbols, DiagramBudget::measurement());
-        let mut compiler = GuardCompiler::new(&vars)
-            .with_world(&world)
-            .with_constant_clock(DataLayout::group_passes_time(&graph));
+        // A THREAD OF ITS OWN, with the manager built inside it - de-fpax. The stats and
+        // the compiler's two counts come back; nothing the manager owns does.
+        let (stats, compiled, fallbacks) = on_its_own_thread(|| {
+            let vars = DataVars::new(&layout, &symbols, DiagramBudget::measurement());
+            let mut compiler = GuardCompiler::new(&vars)
+                .with_world(&world)
+                .with_constant_clock(DataLayout::group_passes_time(&graph));
 
-        let seed = lookahead_engine::symbolic::reachability::seed_of(&graph, &world, &vars);
-        let budget = Budget {
-            steps: 500_000,
-            time: std::time::Duration::from_secs(120),
-            memory: 0,
-            report_every: 5_000,
-            report_gap: std::time::Duration::ZERO,
-            check_gap: std::time::Duration::ZERO,
-            // Off: this measures the SEARCH, and a machine-dependent stop would make the
-            // numbers depend on what else was running.
-            on_step: None,
-            system_reserve: 0.0,
-            on_progress: Some(Box::new(move |steps, reached, held, largest, _bytes| {
-                println!(
-                    "         ... {conversation}: {steps} steps, {reached} entries, \
-                     {held} diagram nodes, largest set {largest}"
-                );
-            })),
-            // This measurement wants the whole fixed point, so it stops for nothing.
-            halt_on: None,
-        };
+            let seed = lookahead_engine::symbolic::reachability::seed_of(&graph, &world, &vars);
+            let budget = Budget {
+                steps: 500_000,
+                time: std::time::Duration::from_secs(120),
+                memory: 0,
+                report_every: 5_000,
+                report_gap: std::time::Duration::ZERO,
+                check_gap: std::time::Duration::ZERO,
+                // Off: this measures the SEARCH, and a machine-dependent stop would make
+                // the numbers depend on what else was running.
+                on_step: None,
+                system_reserve: 0.0,
+                on_progress: Some(Box::new(move |steps, reached, held, largest, _bytes| {
+                    println!(
+                        "         ... {conversation}: {steps} steps, {reached} entries, \
+                         {held} diagram nodes, largest set {largest}"
+                    );
+                })),
+                // This measurement wants the whole fixed point, so it stops for nothing.
+                halt_on: None,
+            };
 
-        let found = Reachability::explore_within(
-            &graph, start, &seed, &mut compiler, &world, COUNTER_CAP as u32, &budget,
-        );
-        let stats = found.stats();
+            let found = Reachability::explore_within(
+                &graph, start, &seed, &mut compiler, &world, COUNTER_CAP as u32, &budget,
+            );
+            (found.stats().clone(), compiler.compiled(), compiler.fallbacks())
+        });
 
         println!(
             "{conversation:>6} {:>8} {:>7} {:>9} {:>9} {:>9} {:>8} {:>7}  {}",
@@ -525,10 +542,8 @@ fn what_the_expensive_conversations_cost() {
             if stats.reached_fixed_point { "complete" } else { "OUT OF BUDGET" },
         );
         println!(
-            "         guards {} compiled / {} fell back; {} cost checks undecidable, \
-             {} actions ignored",
-            compiler.compiled(),
-            compiler.fallbacks(),
+            "         guards {compiled} compiled / {fallbacks} fell back; {} cost checks \
+             undecidable, {} actions ignored",
             stats.unaffordable_unknown,
             stats.actions_ignored,
         );
@@ -579,34 +594,38 @@ fn the_machine_running_low_stops_the_search_and_is_not_called_no_room() {
     let symbols = graph.symbols().clone();
     let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false)
         .keeping_only_read(&symbols, &DataLayout::read_by(&graph));
-    let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
-    let mut compiler = GuardCompiler::new(&vars)
-        .with_world(&world)
-        .with_constant_clock(DataLayout::group_passes_time(&graph));
-    let seed = lookahead_engine::symbolic::reachability::seed_of(&graph, &world, &vars);
+    // A THREAD OF ITS OWN, with the manager built inside it - de-fpax.
+    let stats = on_its_own_thread(|| {
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
+        let mut compiler = GuardCompiler::new(&vars)
+            .with_world(&world)
+            .with_constant_clock(DataLayout::group_passes_time(&graph));
+        let seed = lookahead_engine::symbolic::reachability::seed_of(&graph, &world, &vars);
 
-    let budget = Budget {
-        steps: usize::MAX,
-        time: std::time::Duration::from_secs(60),
-        // GENEROUS, so that the budget cannot be what stops this. If the two guards were
-        // confused with each other the run would still stop, and the test would pass while
-        // proving nothing - so the one being tested has to be the only one that can fire.
-        memory: COMPARISON_MEMORY,
-        // Every step, so the reserve is consulted immediately rather than after twenty
-        // thousand steps of a group that finishes in a few hundred.
-        report_every: 1,
-        report_gap: std::time::Duration::ZERO,
-        check_gap: std::time::Duration::ZERO,
-        on_step: None,
-        system_reserve: 0.99,
-        on_progress: None,
-        halt_on: None,
-    };
+        let budget = Budget {
+            steps: usize::MAX,
+            time: std::time::Duration::from_secs(60),
+            // GENEROUS, so that the budget cannot be what stops this. If the two guards
+            // were confused with each other the run would still stop, and the test would
+            // pass while proving nothing - so the one being tested has to be the only one
+            // that can fire.
+            memory: COMPARISON_MEMORY,
+            // Every step, so the reserve is consulted immediately rather than after twenty
+            // thousand steps of a group that finishes in a few hundred.
+            report_every: 1,
+            report_gap: std::time::Duration::ZERO,
+            check_gap: std::time::Duration::ZERO,
+            on_step: None,
+            system_reserve: 0.99,
+            on_progress: None,
+            halt_on: None,
+        };
 
-    let found = Reachability::explore_within(
-        &graph, start, &seed, &mut compiler, &world, COUNTER_CAP as u32, &budget,
-    );
-    let stats = found.stats();
+        let found = Reachability::explore_within(
+            &graph, start, &seed, &mut compiler, &world, COUNTER_CAP as u32, &budget,
+        );
+        found.stats().clone()
+    });
 
     // A machine that cannot be read turns the guard off rather than faking an answer, and a
     // build on such a platform should skip rather than fail.
@@ -657,29 +676,32 @@ fn the_ordinary_reserve_does_not_stop_an_ordinary_search() {
     let symbols = graph.symbols().clone();
     let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false)
         .keeping_only_read(&symbols, &DataLayout::read_by(&graph));
-    let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
-    let mut compiler = GuardCompiler::new(&vars)
-        .with_world(&world)
-        .with_constant_clock(DataLayout::group_passes_time(&graph));
-    let seed = lookahead_engine::symbolic::reachability::seed_of(&graph, &world, &vars);
+    // A THREAD OF ITS OWN, with the manager built inside it - de-fpax.
+    let stats = on_its_own_thread(|| {
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
+        let mut compiler = GuardCompiler::new(&vars)
+            .with_world(&world)
+            .with_constant_clock(DataLayout::group_passes_time(&graph));
+        let seed = lookahead_engine::symbolic::reachability::seed_of(&graph, &world, &vars);
 
-    let budget = Budget {
-        steps: usize::MAX,
-        time: std::time::Duration::from_secs(60),
-        memory: COMPARISON_MEMORY,
-        report_every: 1,
-        report_gap: std::time::Duration::ZERO,
-        check_gap: std::time::Duration::ZERO,
-        on_step: None,
-        system_reserve: lookahead_engine::engine::system_memory::DEFAULT_RESERVE,
-        on_progress: None,
-        halt_on: None,
-    };
+        let budget = Budget {
+            steps: usize::MAX,
+            time: std::time::Duration::from_secs(60),
+            memory: COMPARISON_MEMORY,
+            report_every: 1,
+            report_gap: std::time::Duration::ZERO,
+            check_gap: std::time::Duration::ZERO,
+            on_step: None,
+            system_reserve: lookahead_engine::engine::system_memory::DEFAULT_RESERVE,
+            on_progress: None,
+            halt_on: None,
+        };
 
-    let found = Reachability::explore_within(
-        &graph, start, &seed, &mut compiler, &world, COUNTER_CAP as u32, &budget,
-    );
-    let stats = found.stats();
+        let found = Reachability::explore_within(
+            &graph, start, &seed, &mut compiler, &world, COUNTER_CAP as u32, &budget,
+        );
+        found.stats().clone()
+    });
 
     assert!(
         !stats.out_of_system_memory,
