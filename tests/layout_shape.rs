@@ -1,0 +1,290 @@
+// SPDX-License-Identifier: MIT
+//! What the symbolic layout is actually carrying, per slot class, per group.
+//!
+//! ## The measurement that ranks de-3x76
+//!
+//! Conversation 14 does not reach a fixed point at six gigabytes and ten minutes, nor at ten
+//! and forty; more of both bought it about three hundred steps. So it is not short of
+//! allowance, it is carrying too much, and de-3x76 collects the ideas for carrying less.
+//!
+//! Every one of those ideas claims to remove or narrow some CLASS of slot, and nobody knows
+//! how big any class is. This counts them. It needs no search - build the group graph, build
+//! the layout, classify - so it is seconds rather than the minutes a search costs, and it is
+//! deterministic, which the node-count measurements are not (see the note at the end).
+//!
+//! ## The classes, and which task each one is evidence for
+//!
+//! - NEVER WRITTEN: a guard reads it, no action in the group writes it. Its value is fixed
+//!   by the save for the whole search. de-3x76.6.
+//! - ONCE-ONLY: every increment to it is a one-time action, so it can reach at most the
+//!   number of such sites - usually one or two, never the sixteen the cap allows.
+//!   de-3x76.2, which is the cheapest task in the epic and needs no graph analysis.
+//! - ACYCLIC: incremented, but never inside a cycle, so its maximum is the number of
+//!   increment sites on the longest path. de-3x76.4.
+//! - CYCLIC: incremented inside a cycle, so it really can reach the cap. These are the only
+//!   ones that need the saturating width, and the ones de-3x76.5 would abstract.
+//!
+//! ## What the slot count already known does NOT say
+//!
+//! tests/slot_width_cost.rs records slots after the read trim: 362 keeps 102, 28 keeps 136,
+//! 368 keeps 217, 14 keeps 232, 631 keeps 245. That ranks 631 as the widest - and 631
+//! FINISHES the fixed point in 351 seconds while 14 never finishes at all. So the slot count
+//! does not predict the thing being optimised. Variables might, and the split by class
+//! might; that is what this is for.
+//!
+//! Run it with `cargo test --test layout_shape -- --ignored --nocapture`.
+
+use std::collections::{HashMap, HashSet};
+
+use lookahead_engine::core::action::DialogueActionKind;
+use lookahead_engine::core::types::DialogueNodeId;
+use lookahead_engine::graph::graph::LookAheadGraph;
+use lookahead_engine::index::{build_group_graph, read_index};
+use lookahead_engine::symbolic::data_layout::DataLayout;
+
+mod common;
+
+/// The groups the matrix measures, so the rows sit beside its numbers.
+const GROUPS: [i32; 6] = [362, 28, 368, 14, 631, 1030];
+
+/// The cap every symbolic measurement in this repository uses.
+const COUNTER_CAP: i32 = 16;
+
+/// Which entries lie on a cycle.
+///
+/// Tarjan's, written with an EXPLICIT STACK rather than recursively. A dialogue group is a
+/// few thousand entries and the recursion would be as deep as the longest chain; this
+/// repository has already lost a day to a recursive walk overflowing (de-fpax), and a
+/// measurement that aborts measures nothing.
+///
+/// An entry is on a cycle if its strongly connected component has more than one member, or
+/// if it links to itself.
+fn on_a_cycle(graph: &LookAheadGraph) -> HashSet<DialogueNodeId> {
+    let ids: Vec<DialogueNodeId> = graph.nodes().map(|node| node.id).collect();
+    let mut index_of: HashMap<DialogueNodeId, usize> = HashMap::new();
+    let mut low: HashMap<DialogueNodeId, usize> = HashMap::new();
+    let mut on_stack: HashSet<DialogueNodeId> = HashSet::new();
+    let mut stack: Vec<DialogueNodeId> = Vec::new();
+    let mut next_index = 0usize;
+    let mut cyclic: HashSet<DialogueNodeId> = HashSet::new();
+
+    // (entry, how many of its links have been dealt with)
+    let mut work: Vec<(DialogueNodeId, usize)> = Vec::new();
+
+    for root in ids {
+        if index_of.contains_key(&root) {
+            continue;
+        }
+        work.push((root, 0));
+
+        while let Some((id, child)) = work.pop() {
+            if child == 0 {
+                index_of.insert(id, next_index);
+                low.insert(id, next_index);
+                next_index += 1;
+                stack.push(id);
+                on_stack.insert(id);
+            }
+
+            let links: &[DialogueNodeId] = match graph.get(id) {
+                Some(node) => &node.links,
+                None => &[],
+            };
+
+            // A link that has been visited since this frame was pushed contributes its
+            // lowlink; one never seen is descended into.
+            let mut descended = false;
+            let mut next = child;
+            while next < links.len() {
+                let to = links[next];
+                next += 1;
+                if !index_of.contains_key(&to) {
+                    work.push((id, next));
+                    work.push((to, 0));
+                    descended = true;
+                    break;
+                }
+                if on_stack.contains(&to) {
+                    let theirs = index_of[&to];
+                    let mine = low[&id];
+                    low.insert(id, mine.min(theirs));
+                }
+                if to == id {
+                    cyclic.insert(id);
+                }
+            }
+            if descended {
+                continue;
+            }
+
+            // Finished with this entry: fold its lowlink into its parent, and close the
+            // component if it is a root.
+            if low[&id] == index_of[&id] {
+                let mut members = Vec::new();
+                while let Some(popped) = stack.pop() {
+                    on_stack.remove(&popped);
+                    members.push(popped);
+                    if popped == id {
+                        break;
+                    }
+                }
+                if members.len() > 1 {
+                    cyclic.extend(members);
+                }
+            }
+
+            if let Some(&(parent, _)) = work.last() {
+                let theirs = low[&id];
+                let mine = low[&parent];
+                low.insert(parent, mine.min(theirs));
+            }
+        }
+    }
+
+    cyclic
+}
+
+/// How each slot is written, gathered in one pass over the graph.
+#[derive(Default)]
+struct Writes {
+    /// Any action writes it at all.
+    written: bool,
+    /// Every increment to it is a one-time action.
+    every_increment_is_once: bool,
+    /// Some increment to it sits on a cycle.
+    increments_on_a_cycle: bool,
+    /// It is incremented anywhere.
+    incremented: bool,
+}
+
+fn writes_of(graph: &LookAheadGraph, cyclic: &HashSet<DialogueNodeId>, slots: usize) -> Vec<Writes> {
+    let mut found: Vec<Writes> = (0..slots)
+        .map(|_| Writes { every_increment_is_once: true, ..Writes::default() })
+        .collect();
+
+    for node in graph.nodes() {
+        for action in &node.actions {
+            let slot = action.slot();
+            if slot < 0 || slot as usize >= slots {
+                continue;
+            }
+            let slot = slot as usize;
+            match action.kind() {
+                DialogueActionKind::Increment => {
+                    found[slot].written = true;
+                    found[slot].incremented = true;
+                    if !action.is_once() {
+                        found[slot].every_increment_is_once = false;
+                    }
+                    if cyclic.contains(&node.id) {
+                        found[slot].increments_on_a_cycle = true;
+                    }
+                }
+                DialogueActionKind::Assign => found[slot].written = true,
+                // Money, clock and unmodelled actions do not write a slot.
+                _ => {}
+            }
+        }
+    }
+
+    found
+}
+
+#[test]
+#[ignore = "a measurement; run it deliberately"]
+fn what_each_group_carries() {
+    let Some(path) = common::conversation_index() else {
+        eprintln!("no conversation index; skipping.");
+        return;
+    };
+    let index = read_index(&path).expect("the index reads");
+
+    println!(
+        "{:>5} {:>8} {:>6} {:>6} {:>7} {:>7} {:>7} {:>7} {:>7}",
+        "conv", "entries", "slots", "vars", "unwrit", "once", "acyclic", "cyclic", "clock"
+    );
+
+    for conversation in GROUPS {
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            println!("{conversation:>5}  does not build");
+            continue;
+        };
+
+        let symbols = graph.symbols().clone();
+        let reads = DataLayout::read_by(&graph);
+        let passes_time = DataLayout::group_passes_time(&graph);
+        let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, passes_time)
+            .keeping_only_read(&symbols, &reads);
+
+        let cyclic = on_a_cycle(&graph);
+        let writes = writes_of(&graph, &cyclic, symbols.count());
+
+        // Counted in VARIABLES rather than slots, because a slot is one to five bits and
+        // the diagram pays per variable. Both are printed; the second is the one that
+        // matters.
+        let mut live_slots = 0usize;
+        let mut vars = 0usize;
+        let mut unwritten = (0usize, 0usize);
+        let mut once_only = (0usize, 0usize);
+        let mut acyclic = (0usize, 0usize);
+        let mut cyclic_slots = (0usize, 0usize);
+        let mut widths: HashMap<u8, usize> = HashMap::new();
+
+        for slot in 0..symbols.count() {
+            let Some((_, bits)) = layout.slot(slot) else { continue };
+            if bits == 0 {
+                continue;
+            }
+            live_slots += 1;
+            vars += bits as usize;
+            *widths.entry(bits).or_default() += 1;
+
+            let write = &writes[slot];
+            if !write.written {
+                unwritten.0 += 1;
+                unwritten.1 += bits as usize;
+            } else if write.incremented && write.every_increment_is_once {
+                once_only.0 += 1;
+                once_only.1 += bits as usize;
+            } else if write.incremented && !write.increments_on_a_cycle {
+                acyclic.0 += 1;
+                acyclic.1 += bits as usize;
+            } else if write.incremented {
+                cyclic_slots.0 += 1;
+                cyclic_slots.1 += bits as usize;
+            }
+        }
+
+        // PRINTED BECAUSE A ZERO IN THE CYCLIC COLUMN IS ALSO WHAT A BROKEN CYCLE FINDER
+        // REPORTS. A dialogue group is full of hubs - a menu you return to - so a plausible
+        // count here is what says the column above means anything.
+        let clock = layout.clock().map(|(_, bits)| bits).unwrap_or(0);
+        println!(
+            "      {} of {} entries lie on a cycle",
+            cyclic.len(),
+            graph.count(),
+        );
+        println!(
+            "{conversation:>5} {:>8} {live_slots:>6} {vars:>6} {:>7} {:>7} {:>7} {:>7} {clock:>7}",
+            graph.count(),
+            unwritten.0,
+            once_only.0,
+            acyclic.0,
+            cyclic_slots.0,
+        );
+        println!(
+            "      variables: {} unwritten, {} once-only, {} acyclic, {} cyclic, {} clock",
+            unwritten.1, once_only.1, acyclic.1, cyclic_slots.1, clock,
+        );
+        let mut by_width: Vec<(u8, usize)> = widths.into_iter().collect();
+        by_width.sort();
+        let shown: Vec<String> =
+            by_width.iter().map(|(bits, count)| format!("{bits}b x{count}")).collect();
+        println!("      widths: {}", shown.join(", "));
+    }
+
+    println!(
+        "\nDETERMINISTIC, unlike the node-count measurements: this reads the graph and the \
+         layout and never runs a search, so two runs agree exactly."
+    );
+}
