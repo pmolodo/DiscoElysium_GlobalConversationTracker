@@ -17,6 +17,14 @@
 # Examples:
 #   tools/measure-matrix.sh                 # every conversation, every profile
 #   tools/measure-matrix.sh 368 631         # just these two
+#   ENGINES=symbwd tools/measure-matrix.sh 14    # one engine, one group
+#   PROFILES=deepest-1 ENGINES=symbwd tools/measure-matrix.sh 14   # one row
+#
+# ENGINES and PROFILES each take a comma or space separated list and narrow the grid the
+# same way the conversation arguments do. The engines are explicit (the crawl), symfwd
+# (the symbolic FORWARD search) and symbwd (the genuine backward one) - see the note at
+# the top of tests/performance_matrix.rs, and de-zovl for why the first two were called
+# fwd and bwd until they were not.
 #
 # STOPPING IT MID-RUN NEEDS MORE THAN KILLING THE SHELL. Every row is a fresh cargo and a
 # fresh test binary, so killing the terminal or the job leaves the script looping and
@@ -58,26 +66,54 @@ fi
 # scrolled past an hour ago is not a warning.
 not_measured=0
 
-PROFILES=(
-    deepest-1
-    deepest-5
-    deepest-10
-    95pc-seen
-    90pc-seen
-    75pc-seen
-    50pc-seen
-    25pc-seen
-    10pc-seen
-    5pc-seen
-)
+# Every profile the test knows, unless a run names the ones it wants. A single row is a
+# reasonable thing to ask for: the heavy groups spend the full cap per engine, so the
+# whole grid is hours and one question is often one row.
+if [ -n "${PROFILES:-}" ]; then
+    IFS=', ' read -r -a PROFILES <<< "$PROFILES"
+else
+    PROFILES=(
+        deepest-1
+        deepest-5
+        deepest-10
+        95pc-seen
+        90pc-seen
+        75pc-seen
+        50pc-seen
+        25pc-seen
+        10pc-seen
+        5pc-seen
+    )
+fi
 
-HEADER=$'conv\tentries\tprofile\tunseen\tfwd_verdict\tfwd_ms\tfwd_states\tbwd_verdict\tbwd_ms\tbwd_nodes\tbwd_setsum'
+# WHICH ENGINES EACH ROW MEASURES, passed through to the test. Empty means all three -
+# explicit, symfwd, symbwd - which is what the grid is for; naming one or two is how a
+# question about a single engine gets asked without paying for the others.
+#
+#   ENGINES=symbwd tools/measure-matrix.sh 14
+ENGINES="${ENGINES:-}"
+export ENGINES
+
+# A row that died, shaped by the header: the conversation and profile it was, CRASHED in
+# every verdict column, and nothing claimed for the rest.
+crashed_row() {
+    printf '%s' "$HEADER" | awk -F'\t' -v conv="$1" -v prof="$2" '{
+        for (i = 1; i <= NF; i++) {
+            if ($i == "conv") cell = conv
+            else if ($i == "profile") cell = prof
+            else if ($i ~ /_verdict$/) cell = "CRASHED"
+            else cell = "?"
+            printf "%s%s", (i > 1 ? "\t" : ""), cell
+        }
+        printf "\n"
+    }'
+}
 
 # THE CAP EACH ENGINE GETS, which the run needs a copy of to say anything about how long
 # it has left. The test's own default is ten minutes (DEFAULT_ROW_SECONDS in
-# tests/performance_matrix.rs); this passes whatever is set through unchanged, and both
-# engines get it separately, so a row's worst case is TWICE this plus the build and the
-# index read.
+# tests/performance_matrix.rs); this passes whatever is set through unchanged, and EACH
+# ENGINE gets it separately, so a row's worst case is this times the number of engines
+# measured, plus the build and the index read.
 ROW_SECONDS="${ROW_SECONDS:-600}"
 export ROW_SECONDS
 
@@ -96,8 +132,8 @@ clock() {
 # Two numbers rather than one, because they bracket an honest answer and neither does it
 # alone. The estimate is the mean row so far spread over what is left, which reads LONG
 # early on: each conversation's heavy profiles run first, so the first rows of every six
-# are the slowest ones. The worst case is every remaining row spending both caps in full,
-# which is the number that says whether this can possibly finish overnight.
+# are the slowest ones. The worst case is every remaining row spending every engine's cap
+# in full, which is the number that says whether this can possibly finish overnight.
 progress() {
     DONE_ROWS=$(( DONE_ROWS + 1 ))
     local now
@@ -109,13 +145,29 @@ progress() {
         "$(clock $(( now - ROW_STARTED )))" \
         "$(clock "$elapsed")" \
         "$(clock $(( elapsed * left / DONE_ROWS )))" \
-        "$(clock $(( left * 2 * ROW_SECONDS )))"
+        "$(clock $(( left * ENGINE_COUNT * ROW_SECONDS )))"
 }
 
 # Built once, up front. Letting each row build would put a compile inside the timing of
 # whichever row happened to run first.
 echo "building..."
 cargo build --release --tests --manifest-path "$ROOT/Cargo.toml" >/dev/null 2>&1
+
+# ASKED FOR RATHER THAN WRITTEN DOWN. The column names follow the engine selection, and a
+# copy kept here would be wrong for any narrowed run and silently wrong for a renamed
+# column - which is the mistake de-zovl exists to correct, in the one place it would still
+# be possible to make.
+HEADER="$(HEADER_ONLY=1 cargo test --release --test performance_matrix \
+    --manifest-path "$ROOT/Cargo.toml" -- --ignored --nocapture 2>/dev/null \
+    | grep -m1 '^conv')"
+if [ -z "$HEADER" ]; then
+    echo "could not read the column names from the test - did the build fail?" >&2
+    exit 1
+fi
+
+# How many engines a row measures, counted from the header rather than from a second
+# reading of ENGINES: one verdict column each, whatever the selection was.
+ENGINE_COUNT=$(printf '%s' "$HEADER" | tr '\t' '\n' | grep -c '_verdict$')
 
 echo "$TOTAL_ROWS rows, ${ROW_SECONDS}s per engine per row, started $(date '+%H:%M:%S')"
 
@@ -184,7 +236,7 @@ for conversation in "${CONVERSATIONS[@]}"; do
             # silently absent - an empty line in a measurement reads as "not run yet",
             # which is a different thing from "this is what happens". Distinct from
             # NOT-MEASURED above: this row died, that one never ran.
-            echo -e "$conversation\t?\t$profile\t?\tCRASHED\t?\t?\tCRASHED\t?\t?\t?" >> "$tsv"
+            crashed_row "$conversation" "$profile" >> "$tsv"
             echo "CRASHED (see $log)"
         fi
         progress

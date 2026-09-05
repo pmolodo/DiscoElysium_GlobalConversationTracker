@@ -48,16 +48,34 @@ shape of the comparison, and it makes the question "against what?" impossible to
 | `conv`, `entries` | the conversation group and its size |
 | `profile` | how much of the group the profile has read (see `tests/performance_matrix.rs`) |
 | `unseen` | how many entries that leaves unread |
-| `fwd_verdict` | `found`, `not-there`, or `gave-up` - the explicit crawl |
-| `fwd_ms`, `fwd_states` | what it cost |
-| `bwd_verdict` | as above, plus `no-room` when the diagram filled its budget |
-| `bwd_ms`, `bwd_nodes` | what it cost |
+| `explicit_verdict` | `found`, `not-there`, or `gave-up` - the explicit crawl |
+| `explicit_ms`, `explicit_states` | what it cost |
+| `symfwd_verdict` | as above, plus `no-room` when the diagram filled its budget and `no-ram` when the machine did |
+| `symfwd_ms`, `symfwd_nodes`, `symfwd_setsum` | what it cost: manager nodes held, and the per-entry sets summed |
+| `symbwd_verdict` | as `symfwd`, except that there is no `no-ram`: its manager is allocated up front, so a machine that cannot supply the budget gives `NOT-MEASURED` before anything runs |
+| `symbwd_ms`, `symbwd_nodes` | what it cost |
+| `symbwd_asked`, `symbwd_cands` | candidates asked about, out of candidates waiting - one fixed point was paid per candidate asked |
 | any column `CRASHED` | that row took its process down; its log says how |
 | any column `NOT-MEASURED` | the row never ran; see below |
 
-Both engines get the same allowance, which is the only way the two verdicts mean anything
-against each other: the shared measurement budget in `DiagramBudget::measurement()`, plus
-a time cap that is meant not to be what stops a row. See de-e23q and de-z5sp.
+### The columns are three engines, on two axes
+
+`explicit` is the crawl that is wired in today. `symfwd` and `symbwd` are both symbolic -
+a decision diagram per entry rather than a state at a time - and they differ in DIRECTION:
+`symfwd` walks links from the start, `symbwd` computes pre-images from a target, one
+candidate at a time, stopping at the first candidate proved reachable.
+
+A run whose columns are called `fwd` and `bwd` is from before de-zovl, and its `bwd` is
+`symfwd`: no backward search was measured. Two such runs can be compared with each other
+and neither says anything about backward.
+
+Not every run holds all three. `ENGINES` narrows the selection and the header follows it,
+so a narrowed run is a narrower row rather than a wide one with holes; read the header
+rather than assuming the columns.
+
+Every engine in a run gets the same allowance, which is the only way the verdicts mean
+anything against each other: the shared measurement budget in `DiagramBudget::measurement()`,
+plus a time cap that is meant not to be what stops a row. See de-e23q and de-z5sp.
 
 ### `no-room`, `CRASHED` and `NOT-MEASURED` are three different things
 

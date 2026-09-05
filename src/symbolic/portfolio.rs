@@ -129,6 +129,8 @@ where
             each: crate::symbolic::backward::Budget {
                 steps: usize::MAX,
                 time: budget.each,
+                // Nothing watches a pass that is over in a quarter of a second.
+                ..Default::default()
             },
         },
     );

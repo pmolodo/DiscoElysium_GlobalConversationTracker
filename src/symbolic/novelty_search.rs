@@ -101,6 +101,14 @@ pub struct NoveltyAnswer {
     /// How many candidates there were.
     pub candidates: usize,
     pub stopped_by: StoppedBy,
+    /// Whether the pass that failed to settle failed by running out of DIAGRAM NODES.
+    ///
+    /// [`StoppedBy::Incomplete`] covers both ways a pass can fail to settle, and they are
+    /// not the same finding: a pass that spent every node it was allowed is a result about
+    /// the representation, where one that ran out of steps or seconds is a result about
+    /// the clock. A measurement that reported them alike would blame the budget for what
+    /// the ration did, which is exactly the mistake de-e33h was raised for.
+    pub out_of_nodes: bool,
     pub elapsed: std::time::Duration,
 }
 
@@ -171,6 +179,7 @@ where
         targets_asked: 0,
         candidates: ordered.len(),
         stopped_by: StoppedBy::Nothing,
+        out_of_nodes: false,
         elapsed: std::time::Duration::ZERO,
     };
 
@@ -202,6 +211,7 @@ where
         let stats = backward.stats();
         if !stats.reached_fixed_point {
             answer.stopped_by = StoppedBy::Incomplete;
+            answer.out_of_nodes = stats.out_of_memory;
             break;
         }
     }

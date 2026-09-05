@@ -107,7 +107,7 @@ fn compare(
         }
     };
 
-    // The crawl the plugin runs today, under its shipped budget.
+    // The crawl the plugin runs today, under the budget it runs under.
     let engine = LookAheadEngine::new(LookAheadOptions {
         counter_cap: COUNTER_CAP,
         ..Default::default()

@@ -65,11 +65,15 @@
 //! backward NO against a forward YES is a bug in the pre-image, not an approximation, and
 //! `tests/backward_oracle.rs` exists to catch it.
 //!
-//! ## What it does not do yet
+//! ## What it does not do, and what does it instead
 //!
-//! Ordering candidates and stopping at the first witness - de-sze.14.3 - and the money
-//! approximation is inherited from the forward pass unchanged: a cost option is treated as
-//! affordable, because money is not in the layout.
+//! ONE TARGET PER PASS, deliberately. Ordering candidates and stopping at the first
+//! witness is [`crate::symbolic::novelty_search`]'s job - de-sze.14.3 - and it is the
+//! thing that turns this into an answer to the question the look-ahead actually asks.
+//! Nothing else should call this in a loop of its own.
+//!
+//! The money approximation is inherited from the forward pass unchanged: a cost option is
+//! treated as affordable, because money is not in the layout.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -110,11 +114,29 @@ pub struct BackwardStats {
 pub struct Budget {
     pub steps: usize,
     pub time: std::time::Duration,
+    /// How often the pass should say where it has got to, or ZERO to say nothing.
+    ///
+    /// A measurement pass runs for minutes on the heavy groups, and one fixed point over
+    /// one target is a single call that returns when it is finished - so without this the
+    /// only thing a watcher sees is the row ending. The forward searches both grew the
+    /// same hook for the same reason.
+    pub report_gap: std::time::Duration,
+    /// Steps, entries known to reach the target, entries still queued, manager nodes.
+    ///
+    /// No percentage, because the pass does not know one: it knows what it has spent, and
+    /// spending the budget is how these passes end.
+    #[allow(clippy::type_complexity)]
+    pub on_progress: Option<Box<dyn Fn(usize, usize, usize, usize)>>,
 }
 
 impl Default for Budget {
     fn default() -> Self {
-        Self { steps: 2_000_000, time: std::time::Duration::from_secs(120) }
+        Self {
+            steps: 2_000_000,
+            time: std::time::Duration::from_secs(120),
+            report_gap: std::time::Duration::ZERO,
+            on_progress: None,
+        }
     }
 }
 
@@ -165,6 +187,7 @@ impl<'a> Backward<'a> {
         let relevant = Self::can_reach(&parents, target);
 
         let began = std::time::Instant::now();
+        let mut last_report = began;
         let mut queue: VecDeque<DialogueNodeId> = VecDeque::new();
         let mut ran_out = false;
 
@@ -199,6 +222,17 @@ impl<'a> Backward<'a> {
             if this.stats.steps >= budget.steps || began.elapsed() >= budget.time {
                 ran_out = true;
                 break;
+            }
+
+            // On a clock rather than on a step count, because no step count works: early
+            // on the sets are tiny and a step is nothing, and by the time one step is
+            // minutes long a step count is either far too chatty or silent for an hour.
+            // The clock is read every step regardless, one line above.
+            if let Some(report) = &budget.on_progress {
+                if !budget.report_gap.is_zero() && last_report.elapsed() >= budget.report_gap {
+                    last_report = std::time::Instant::now();
+                    report(this.stats.steps, this.sets.len(), queue.len(), vars.node_count());
+                }
             }
 
             for &parent in parents.get(&id).into_iter().flatten() {
