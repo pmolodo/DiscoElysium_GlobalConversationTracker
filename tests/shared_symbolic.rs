@@ -62,7 +62,7 @@
 //! is for is the SECOND question on a group whose forward run has already been paid for,
 //! which is why the backward half is reported apart from the total.
 //!
-//! ## Pruning is sound and, as written, too expensive to leave on
+//! ## Pruning is sound, and switched off until de-fpax lands
 //!
 //! Narrowing a backward pass by a SETTLED forward run is the half that could shorten a
 //! refusal. tests/backward_oracle.rs checks it against the explicit crawl on every target
@@ -77,7 +77,18 @@
 //! ```
 //!
 //! Each increment breaks another group, and the groups it breaks are the ones the whole
-//! approach is for. de-fawk carries what to try instead.
+//! approach is for.
+//!
+//! IT IS PROBABLY NOT THE COST, THOUGH IT LOOKS LIKE IT. de-8hh2.13 established the cause
+//! of these overflows and it is not recursion depth: something accumulates PER THREAD
+//! inside the diagram manager, so twelve identical searches die on the third when they
+//! share a thread and all twelve survive on a thread each. This file runs three or four
+//! whole searches in one thread, and pruning adds diagram work to each - which moves the
+//! round the accumulation kills, rather than proving the work too heavy.
+//!
+//! So the table above is a record of WHERE IT BREAKS TODAY and not a verdict on the idea.
+//! de-fpax is the fix - a thread per search - and this wants re-measuring on top of it
+//! before anything is concluded about what pruning costs. de-fawk carries that.
 //!
 //! ## The three heaviest groups take the process down at this profile
 //!

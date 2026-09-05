@@ -231,19 +231,21 @@ impl Known {
     ///
     /// The identity where nothing is known, or where the forward run did not settle.
     ///
-    /// OFF UNLESS ASKED FOR, and that is a measurement rather than caution. Pruning is
-    /// sound - tests/backward_oracle.rs checks every target of every group it can check
-    /// both ways, and the pruned answer has never differed from the plain one - but it is
-    /// not free and on this database it is not yet worth its cost:
+    /// OFF UNLESS ASKED FOR, and the reason is a measurement rather than doubt about
+    /// whether it is right. Pruning is SOUND - tests/backward_oracle.rs asks every target
+    /// of every group it can check both ways twice, plain and pruned, with the explicit
+    /// crawl as referee, and the two have never differed. What it is not yet is stable:
+    /// turning it on overflows the stack on conversations 631 and then 28, which are the
+    /// groups the whole approach exists for.
     ///
-    /// - The union over the incoming edges is a disjunction of sets that are already large,
-    ///   and building it overflows the stack inside a recursive diagram operation on
-    ///   conversations 28 and 631.
-    /// - Even dropping an entry nothing can arrive at, which needs no diagram work to
-    ///   decide, destabilised conversation 631's partial run where the plain pass survives.
+    /// THAT IS ALMOST CERTAINLY NOT THE COST OF THE PRUNING. de-8hh2.13 found the cause of
+    /// these overflows and it is not recursion depth - something accumulates PER THREAD
+    /// inside the diagram manager, so identical searches die on the third round in one
+    /// thread and survive on a thread each. Extra diagram work moves the round it kills.
+    /// de-fpax is the fix, and de-fawk re-measures this on top of it.
     ///
-    /// So the default is what has been measured to work, and de-fawk carries the rest. Turn
-    /// it on with [`Self::pruning`] to measure it or to check it.
+    /// Until then the default is what has been measured to work. Turn it on with
+    /// [`Self::pruning`] to check it or to measure it.
     pub fn restricted(&self, id: DialogueNodeId, states: BDDFunction) -> BDDFunction {
         if !self.narrow {
             return states;
