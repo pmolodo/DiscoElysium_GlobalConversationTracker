@@ -139,15 +139,22 @@ for conversation in "${CONVERSATIONS[@]}"; do
         # not the same question, so tee answers both: the file keeps the whole output, and
         # only the lines the test marks with the progress prefix come through to stdout.
         #
-        # --line-buffered because the point is to see them as they happen; grep block-buffers
-        # into a pipe otherwise and delivers the lot when the row is already over.
+        # AWK RATHER THAN `tee | grep`, and the reason is buffering. tee writes its stdout
+        # through the C library, which block-buffers into a pipe, so the progress lines
+        # arrived in four-kilobyte lumps long after the moment they described - measured
+        # here as a watched log that stayed empty for eighty seconds while the row's own
+        # file already had three progress lines in it. Telling grep to line-buffer does not
+        # help, because the delay is upstream of grep. awk can be made to flush after every
+        # line, and does both jobs in one process.
         printf '\n'
         CONVERSATION="$conversation" PROFILE="$profile" NO_HEADER=1 \
             cargo test --release --test performance_matrix \
             --manifest-path "$ROOT/Cargo.toml" \
             -- --ignored --nocapture 2>&1 \
-            | tee "$log" \
-            | grep --line-buffered -E '^  ~' || true
+            | awk -v rowlog="$log" '
+                { print > rowlog; fflush(rowlog) }
+                /^  ~/ { print; fflush() }
+              ' || true
         printf '  %-12s' "$profile"
 
         row="$(grep -E "^$conversation\b" "$log" | head -1)"
