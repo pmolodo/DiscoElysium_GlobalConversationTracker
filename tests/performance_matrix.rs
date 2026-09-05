@@ -179,9 +179,12 @@
 //! the measurement budget, `ENGINES=symbwd` alone:
 //!
 //! ```text
-//!   conv  entries  profile    unseen  verdict     ms   nodes  asked  cands
-//!     14     3594  deepest-1       1  not-there  476  28,467      1      1
+//!   conv  entries  profile    unseen  verdict         ms   nodes  asked  cands
+//!     14     3594  deepest-1       1  not-there  326-476  28,467      1      1
 //! ```
+//!
+//! Run twice, on a quiet machine and a busy one. The time moved and the set size did not,
+//! which is the reassuring way round for a measurement of a representation.
 //!
 //! NOT-THERE IS A SETTLED ANSWER here, not a budget running out: every candidate was asked
 //! about and every pass reached a fixed point. The approximation also runs the safe way -
