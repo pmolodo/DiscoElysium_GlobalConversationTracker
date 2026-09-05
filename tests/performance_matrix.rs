@@ -445,8 +445,16 @@ impl Engine {
 /// A narrowed run is a NARROWER ROW, not a wide one with holes in it: the header follows
 /// the selection, so nothing has to be told apart from a result later.
 fn engines() -> Vec<Engine> {
-    let Ok(named) = std::env::var("ENGINES") else { return ALL_ENGINES.to_vec() };
+    let named = std::env::var("ENGINES").unwrap_or_default();
     let wanted: Vec<&str> = named.split(',').map(str::trim).filter(|n| !n.is_empty()).collect();
+
+    // SET BUT EMPTY MEANS ALL, the same as unset. A driver script that passes the
+    // selection through has nothing to pass when the selection is "everything", and this
+    // is what it looked like when that was an error instead: a row printed with no engine
+    // columns at all, past a header with none either, recorded as a measurement.
+    if wanted.is_empty() {
+        return ALL_ENGINES.to_vec();
+    }
 
     // A misspelling would otherwise measure nothing and say nothing about why.
     for name in &wanted {

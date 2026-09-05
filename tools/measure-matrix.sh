@@ -86,13 +86,18 @@ else
     )
 fi
 
-# WHICH ENGINES EACH ROW MEASURES, passed through to the test. Empty means all three -
+# WHICH ENGINES EACH ROW MEASURES, passed through to the test. Unset means all three -
 # explicit, symfwd, symbwd - which is what the grid is for; naming one or two is how a
 # question about a single engine gets asked without paying for the others.
 #
 #   ENGINES=symbwd tools/measure-matrix.sh 14
-ENGINES="${ENGINES:-}"
-export ENGINES
+#
+# EXPORTED ONLY WHEN IT HAS A VALUE. The test reads an empty ENGINES as "all", so this is
+# belt and braces - but an empty selection exported into a measurement is the kind of thing
+# that should not have two chances to mean nothing.
+if [ -n "${ENGINES:-}" ]; then
+    export ENGINES
+fi
 
 # A row that died, shaped by the header: the conversation and profile it was, CRASHED in
 # every verdict column, and nothing claimed for the rest.
