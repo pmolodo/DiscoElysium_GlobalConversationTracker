@@ -44,6 +44,11 @@ use lookahead_engine::symbolic::data_layout::DataLayout;
 
 mod common;
 
+/// How many bits it takes to represent 0..=max, mirroring the layout's own rule.
+fn bits_for(max: u32) -> u8 {
+    if max == 0 { 1 } else { (u32::BITS - max.leading_zeros()) as u8 }
+}
+
 /// The groups the matrix measures, so the rows sit beside its numbers.
 const GROUPS: [i32; 6] = [362, 28, 368, 14, 631, 1030];
 
@@ -155,6 +160,35 @@ struct Writes {
     increments_on_a_cycle: bool,
     /// It is incremented anywhere.
     incremented: bool,
+    /// How many places increment it.
+    increment_sites: usize,
+    /// The largest value anything assigns to it.
+    max_assigned: u32,
+}
+
+impl Writes {
+    /// The largest value this slot can actually hold, or None where it is unbounded.
+    ///
+    /// ## Why the site count is a sound bound
+    ///
+    /// - A ONCE-GUARDED increment fires at most once ever, whatever the graph looks like,
+    ///   so the total is at most the number of such sites.
+    /// - AN INCREMENT NOT ON A CYCLE can be passed at most once on any single path, so
+    ///   again the total is at most the number of sites.
+    /// - AN INCREMENT ON A CYCLE that is not once-guarded can fire without limit. That is
+    ///   the only case the saturating cap is for, and no group measured has one.
+    ///
+    /// An `Assign` writes a value directly, so whatever it writes has to fit too.
+    fn ceiling(&self) -> Option<u32> {
+        let from_assign = self.max_assigned;
+        if !self.incremented {
+            return Some(from_assign);
+        }
+        if self.increments_on_a_cycle && !self.every_increment_is_once {
+            return None;
+        }
+        Some(from_assign.max(self.increment_sites as u32))
+    }
 }
 
 fn writes_of(graph: &LookAheadGraph, cyclic: &HashSet<DialogueNodeId>, slots: usize) -> Vec<Writes> {
@@ -173,6 +207,7 @@ fn writes_of(graph: &LookAheadGraph, cyclic: &HashSet<DialogueNodeId>, slots: us
                 DialogueActionKind::Increment => {
                     found[slot].written = true;
                     found[slot].incremented = true;
+                    found[slot].increment_sites += 1;
                     if !action.is_once() {
                         found[slot].every_increment_is_once = false;
                     }
@@ -180,7 +215,11 @@ fn writes_of(graph: &LookAheadGraph, cyclic: &HashSet<DialogueNodeId>, slots: us
                         found[slot].increments_on_a_cycle = true;
                     }
                 }
-                DialogueActionKind::Assign => found[slot].written = true,
+                DialogueActionKind::Assign => {
+                    found[slot].written = true;
+                    let value = action.value().max(0) as u32;
+                    found[slot].max_assigned = found[slot].max_assigned.max(value);
+                }
                 // Money, clock and unmodelled actions do not write a slot.
                 _ => {}
             }
@@ -281,6 +320,42 @@ fn what_each_group_carries() {
         let shown: Vec<String> =
             by_width.iter().map(|(bits, count)| format!("{bits}b x{count}")).collect();
         println!("      widths: {}", shown.join(", "));
+
+        // WHAT de-3x76.2 WOULD BUY. Each slot re-widened to the largest value it can
+        // actually hold rather than to the blanket cap, and the counters listed one by one
+        // because there are few enough to read.
+        let mut derived = 0usize;
+        let mut narrowed: Vec<String> = Vec::new();
+        for slot in 0..symbols.count() {
+            let Some((_, bits)) = layout.slot(slot) else { continue };
+            if bits == 0 {
+                continue;
+            }
+            let wanted = match writes[slot].ceiling() {
+                // Unbounded: it keeps the cap, which is what the cap is for.
+                None => bits,
+                Some(ceiling) => {
+                    let needed = if ceiling <= 1 { 1 } else { bits_for(ceiling) };
+                    needed.min(bits)
+                }
+            };
+            derived += wanted as usize;
+            if wanted < bits {
+                narrowed.push(format!(
+                    "{} {bits}b->{wanted}b",
+                    symbols.name_of(slot).unwrap_or("?"),
+                ));
+            }
+        }
+        println!(
+            "      derived widths would give {derived} variables against {vars}, saving {} \
+             ({:.1}%)",
+            vars - derived,
+            if vars > 0 { (vars - derived) as f64 / vars as f64 * 100.0 } else { 0.0 },
+        );
+        if !narrowed.is_empty() {
+            println!("      narrowed: {}", narrowed.join(", "));
+        }
     }
 
     println!(
