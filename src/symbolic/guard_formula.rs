@@ -36,7 +36,7 @@ use oxidd::BooleanFunction;
 use crate::core::guard::GuardExpression;
 use crate::core::guard_value::{GuardValue, GuardValueKind};
 use crate::core::state::{ITEM_PREFIX, TASK_PREFIX, THOUGHT_PREFIX};
-use crate::core::types::Ternary;
+use crate::core::types::{DialogueNodeId, Ternary};
 use crate::symbolic::vars::DataVars;
 use crate::world::world::ILookAheadWorld;
 
@@ -93,6 +93,27 @@ pub struct GuardCompiler<'a> {
     /// fallback counts - which is right, they are not gaps - but they are approximations,
     /// and an approximation nobody can see is the kind that gets forgotten.
     declared_constants: Vec<(&'static str, String)>,
+    /// One entry's guard, compiled once and kept for however long this compiler lives.
+    ///
+    /// ## Why the compiler holds it rather than the search
+    ///
+    /// A fixed point revisits an entry every time its set grows, and the guard it tests
+    /// there is the same guard every time. The forward search had worked this out and kept
+    /// a map of its own; the backward search had not, and recompiled on every visit.
+    ///
+    /// Keeping it HERE fixes that and does something the per-search map could not: a
+    /// compiler outlives one search, so a group's second question inherits the guards its
+    /// first question compiled - which is the cheap, soundness-free half of de-cnjw. A
+    /// compiled guard depends on the layout and the world, and both of those are fixed for
+    /// the life of a compiler, so there is nothing here that can go stale while it lives.
+    ///
+    /// ## What it costs
+    ///
+    /// Node references, which the manager cannot reclaim while they are held. On a group
+    /// whose manager fills up that is a real trade rather than a free win, and
+    /// [`Self::forget_guards`] is the way out for a caller that would rather have the room.
+    guards: HashMap<DialogueNodeId, MayBe>,
+    guard_cache_hits: usize,
 }
 
 impl<'a> GuardCompiler<'a> {
@@ -103,7 +124,42 @@ impl<'a> GuardCompiler<'a> {
             constant_clock: false, clock_approximated: false,
             fallbacks: 0, compiled: 0, reasons: HashMap::new(), subjects: Vec::new(),
             declared_constants: Vec::new(),
+            guards: HashMap::new(), guard_cache_hits: 0,
         }
+    }
+
+    /// One entry's guard, compiled the first time it is asked for and remembered after.
+    ///
+    /// KEYED BY THE ENTRY, not by the expression. Two entries with identical guards each
+    /// get their own compilation, which is a small waste and the alternative wants a
+    /// hashable normal form for `GuardExpression` that does not exist yet.
+    ///
+    /// The statistics count the COMPILATION, so a cache hit adds nothing to them. That
+    /// makes `compiled()` and `fallbacks()` counts of distinct entries rather than of
+    /// visits, which is the number anybody reading them wanted anyway - a fallback counted
+    /// once per revisit says how hot the loop was, not how much the compiler cannot read.
+    pub fn compile_for(&mut self, id: DialogueNodeId, guard: &GuardExpression) -> MayBe {
+        if let Some(compiled) = self.guards.get(&id) {
+            self.guard_cache_hits += 1;
+            return compiled.clone();
+        }
+
+        let compiled = self.compile(guard);
+        self.guards.insert(id, compiled.clone());
+        compiled
+    }
+
+    /// How many entries have a compiled guard held, and how often one was reused.
+    pub fn guard_cache(&self) -> (usize, usize) {
+        (self.guards.len(), self.guard_cache_hits)
+    }
+
+    /// Drops the compiled guards, releasing the nodes they hold.
+    ///
+    /// For a caller that has run out of room and would rather recompile than have no
+    /// answer. Nothing is lost but time.
+    pub fn forget_guards(&mut self) {
+        self.guards.clear();
     }
 
     /// Gives the compiler a world to read untracked variables from.

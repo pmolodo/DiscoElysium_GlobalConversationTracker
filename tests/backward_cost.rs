@@ -35,6 +35,7 @@ use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
+use lookahead_engine::symbolic::known::Known;
 use lookahead_engine::symbolic::novelty_search::{best_novelty, candidates, Budget};
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
@@ -125,6 +126,7 @@ fn compare(
     let seed = seed_of(graph, world, &vars);
 
     let waiting = candidates(graph, start, &novelty).len();
+    let known = Known::of(graph);
     let began = std::time::Instant::now();
     let answer = best_novelty(
         graph,
@@ -135,6 +137,8 @@ fn compare(
         COUNTER_CAP as u32,
         &novelty,
         &Budget { targets: 256, time: std::time::Duration::from_secs(120), ..Default::default() },
+        // The parent map, built once and shared by every candidate's pass.
+        Some(&known),
     );
     let backward_ms = began.elapsed().as_millis();
 

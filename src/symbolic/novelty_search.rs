@@ -40,6 +40,7 @@ use crate::core::types::{DialogueNodeId, Novelty};
 use crate::graph::graph::LookAheadGraph;
 use crate::symbolic::backward::Backward;
 use crate::symbolic::guard_formula::GuardCompiler;
+use crate::symbolic::known::Known;
 use crate::world::world::ILookAheadWorld;
 
 /// Every novelty class better than "seen", best first.
@@ -109,6 +110,11 @@ pub struct NoveltyAnswer {
     /// the clock. A measurement that reported them alike would blame the budget for what
     /// the ration did, which is exactly the mistake de-e33h was raised for.
     pub out_of_nodes: bool,
+    /// The entry at which a pass MET what an earlier search already knew, when one did.
+    ///
+    /// Set only when the meet is what answered the question, so it is the measurement of
+    /// whether sharing paid: an answer with this set is one no fixed point had to finish.
+    pub met_at: Option<DialogueNodeId>,
     pub elapsed: std::time::Duration,
 }
 
@@ -167,6 +173,7 @@ pub fn best_novelty<'a, F>(
     counter_cap: u32,
     novelty: F,
     budget: &Budget,
+    known: Option<&Known>,
 ) -> NoveltyAnswer
 where
     F: Fn(DialogueNodeId) -> Novelty,
@@ -180,6 +187,7 @@ where
         candidates: ordered.len(),
         stopped_by: StoppedBy::Nothing,
         out_of_nodes: false,
+        met_at: None,
         elapsed: std::time::Duration::ZERO,
     };
 
@@ -194,15 +202,20 @@ where
         }
 
         answer.targets_asked += 1;
-        let backward = Backward::reaching_within(
-            graph, target, compiler, world, counter_cap, &budget.each,
+        let backward = Backward::reaching_knowing(
+            graph, target, compiler, world, counter_cap, &budget.each, known,
         );
 
-        if backward.reachable_from(start, seed) {
+        // TWO WAYS TO PROVE IT, and the cheap one is asked first. A meet is a proof that
+        // stopped the pass early - a state an earlier search can hold at some entry is one
+        // this pass has shown reaches the target - so the fixed point is deliberately
+        // incomplete and `reachable_from` would be asking the wrong question of it.
+        if backward.stats().met_at.is_some() || backward.reachable_from(start, seed) {
             // The best class is asked about first and exhausted before the next one is
             // begun, so the first candidate that answers yes carries the answer.
             answer.best = novelty(target);
             answer.witness = Some(target);
+            answer.met_at = backward.stats().met_at;
             break;
         }
 
@@ -293,6 +306,7 @@ mod tests {
             CAP as u32,
             novelty,
             &Budget::default(),
+            None,
         )
     }
 

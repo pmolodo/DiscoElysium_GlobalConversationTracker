@@ -133,6 +133,11 @@ where
                 ..Default::default()
             },
         },
+        // NOTHING KNOWN YET. The portfolio runs the backward driver FIRST and the crawl
+        // only as a fallback, so on the first call there is no forward work to meet. What
+        // would change that is keeping a workspace across calls on one group - de-cnjw -
+        // and that is a decision about ownership rather than a line here.
+        None,
     );
 
     if backwards.stopped_by == StoppedBy::Nothing {

@@ -299,6 +299,7 @@ fn the_driver_answers_what_the_engine_answers() {
             COUNTER_CAP as u32,
             &novelty,
             &SearchBudget::default(),
+            None,
         );
 
         println!(

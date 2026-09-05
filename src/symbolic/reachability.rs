@@ -284,10 +284,6 @@ pub struct ReachabilityStats {
 /// The reachable data states, one set per entry.
 pub struct Reachability<'a> {
     vars: &'a DataVars<'a>,
-    /// One compiled guard per entry, built once. A guard is compiled on the entry's first
-    /// visit and reused: an entry in a cycle is stepped many times and its guard does not
-    /// change, and compiling is the expensive half.
-    guards: HashMap<DialogueNodeId, (BDDFunction, BDDFunction)>,
     sets: HashMap<DialogueNodeId, BDDFunction>,
     stats: ReachabilityStats,
 }
@@ -326,7 +322,6 @@ impl<'a> Reachability<'a> {
         let mut image = ActionImage::new(vars, counter_cap);
         let mut this = Self {
             vars,
-            guards: HashMap::new(),
             sets: HashMap::new(),
             stats: ReachabilityStats::default(),
         };
@@ -756,19 +751,18 @@ impl<'a> Reachability<'a> {
     }
 
     /// This node's compiled guard, compiled once and remembered.
+    ///
+    /// THE COMPILER REMEMBERS IT, not this search. It used to be a map here, which meant
+    /// the cache died with the run - so a second question about the same group recompiled
+    /// every guard, and the backward search, which had no such map, recompiled on every
+    /// visit within one run. See `GuardCompiler::compile_for`.
     fn guard_of(
         &mut self,
         node: &LookAheadNode,
         compiler: &mut GuardCompiler<'a>,
     ) -> (BDDFunction, BDDFunction) {
-        if let Some(compiled) = self.guards.get(&node.id) {
-            return compiled.clone();
-        }
-
-        let compiled = compiler.compile(&node.guard);
-        let pair = (compiled.may_be_true, compiled.may_be_false);
-        self.guards.insert(node.id, pair.clone());
-        pair
+        let compiled = compiler.compile_for(node.id, &node.guard);
+        (compiled.may_be_true, compiled.may_be_false)
     }
 
     /// Totals that can only be taken once the sets have stopped moving.

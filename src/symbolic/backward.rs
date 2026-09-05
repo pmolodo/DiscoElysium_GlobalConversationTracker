@@ -85,6 +85,7 @@ use crate::graph::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
 use crate::symbolic::action_image::ActionImage;
 use crate::symbolic::guard_formula::GuardCompiler;
+use crate::symbolic::known::Known;
 use crate::symbolic::vars::DataVars;
 use crate::world::world::ILookAheadWorld;
 
@@ -107,6 +108,16 @@ pub struct BackwardStats {
     pub out_of_memory: bool,
     /// Actions skipped because the layout does not carry what they touch.
     pub actions_ignored: usize,
+    /// The entry where this pass MET what an earlier search already knew.
+    ///
+    /// A proof that the target is reachable, and the pass stopped on it: a state that a
+    /// forward run can hold arriving at this entry is one this pass has shown reaches the
+    /// target. See [`crate::symbolic::known::Known`].
+    ///
+    /// The fixed point is NOT complete when this is set - it stopped early, on purpose -
+    /// so `reached_fixed_point` is false and the sets are a lower bound. That is the right
+    /// way round: the answer is yes, and there is nothing left to prove.
+    pub met_at: Option<DialogueNodeId>,
     pub elapsed: std::time::Duration,
 }
 
@@ -170,6 +181,26 @@ impl<'a> Backward<'a> {
         counter_cap: u32,
         budget: &Budget,
     ) -> Self {
+        Self::reaching_knowing(graph, target, compiler, world, counter_cap, budget, None)
+    }
+
+    /// The same, told what earlier searches over this group already worked out.
+    ///
+    /// TWO DIFFERENT USES OF THE SAME ARGUMENT, and only one of them changes an answer.
+    /// The parent map is a fact about the graph that every pass rebuilds for itself, so
+    /// taking it from `known` is pure saving. The forward sets are a proof: a pass that
+    /// MEETS one stops there, having shown the target reachable without finishing - see
+    /// [`Known`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn reaching_knowing(
+        graph: &LookAheadGraph,
+        target: DialogueNodeId,
+        compiler: &mut GuardCompiler<'a>,
+        world: &dyn ILookAheadWorld,
+        counter_cap: u32,
+        budget: &Budget,
+        known: Option<&Known>,
+    ) -> Self {
         let vars = compiler.vars();
         let mut image = ActionImage::new(vars, counter_cap);
         let mut this = Self {
@@ -183,8 +214,21 @@ impl<'a> Backward<'a> {
         // bound on what the fixed point will touch - and on the hub-shaped groups it is
         // most of them, which is a measured fact rather than a disappointment: see
         // de-sze.14. Where it IS small, it saves visiting the rest entirely.
-        let parents = Self::parents_of(graph);
-        let relevant = Self::can_reach(&parents, target);
+        // TAKEN RATHER THAN REBUILT where an earlier search left one. A driver that asks
+        // about forty candidates walked the whole graph forty times to build the same map.
+        let owned_parents;
+        let parents = match known {
+            Some(known) => known.parents(),
+            None => {
+                owned_parents = Self::parents_of(graph);
+                &owned_parents
+            }
+        };
+        let relevant = Self::can_reach(parents, target);
+
+        // Only worth asking when something is actually known; `meets` on an empty `Known`
+        // is a walk over the parents to conclude nothing.
+        let meeting = known.filter(|known| known.can_meet());
 
         let began = std::time::Instant::now();
         let mut last_report = began;
@@ -198,6 +242,15 @@ impl<'a> Backward<'a> {
         if let Some(node) = graph.get(target) {
             let arriving = this.pre_enter(node, &vars.top(), compiler, world, &mut image);
             if let Some(fresh) = this.widen(target, &arriving) {
+                // The target itself can be the meeting point, and on a group a forward run
+                // has already covered it usually is: whether anything can arrive AT the
+                // target holding a state the target's own guard admits is the whole
+                // question, and both halves of that are already in hand.
+                if let Some(known) = meeting {
+                    if this.meets_known(known, target) {
+                        this.stats.met_at = Some(target);
+                    }
+                }
                 frontier.insert(target, fresh);
                 queue.push_back(target);
             }
@@ -211,6 +264,12 @@ impl<'a> Backward<'a> {
         // visit recomputes the first half each time, which on a group of four thousand
         // entries is the difference between finishing and not.
         'search: while let Some(id) = queue.pop_front() {
+            // Proved already, at the target or at an entry reached since. Nothing below
+            // can improve on a yes.
+            if this.stats.met_at.is_some() {
+                break;
+            }
+
             // Take what is pending and leave nothing behind: an entry can be queued more
             // than once, and the second visit has nothing left to do.
             let delta = match frontier.insert(id, vars.bottom()) {
@@ -259,6 +318,17 @@ impl<'a> Backward<'a> {
                     continue;
                 };
 
+                // ON EVERY WIDENING, not only the first sighting. A state that meets what
+                // is already known can arrive at any growth of this entry's set, and
+                // checking only the first would turn a proof into a maybe for the sake of
+                // one conjunction.
+                if let Some(known) = meeting {
+                    if this.meets_known(known, parent) {
+                        this.stats.met_at = Some(parent);
+                        break 'search;
+                    }
+                }
+
                 let pending = frontier
                     .get(&parent)
                     .cloned()
@@ -273,7 +343,12 @@ impl<'a> Backward<'a> {
         }
 
         this.stats.actions_ignored = image.ignored();
-        this.stats.reached_fixed_point = !ran_out && !this.stats.out_of_memory;
+        // A MEET IS NOT A FIXED POINT. The pass stopped early having proved the answer
+        // yes, so the sets are a lower bound and nothing may read a no out of them. The
+        // caller is expected to look at `met_at` first; this makes the wrong reading of
+        // the flag say "incomplete", which is the safe thing for it to say.
+        this.stats.reached_fixed_point =
+            !ran_out && !this.stats.out_of_memory && this.stats.met_at.is_none();
         this.stats.elapsed = began.elapsed();
         this.finish();
         this
@@ -492,12 +567,29 @@ impl<'a> Backward<'a> {
     /// backward pass visits an entry once per widening of its own set, which is far fewer
     /// times than a forward pass visits one in a cycle. If a measurement shows otherwise
     /// this should grow the same map.
+    /// Whether this entry's set has met something an earlier search already established.
+    ///
+    /// Asked of the WHOLE set rather than of the delta that just arrived: the meet is a
+    /// question about what can be held here at all, and a state that arrived two widenings
+    /// ago counts exactly as much as one that arrived now.
+    fn meets_known(&self, known: &Known, id: DialogueNodeId) -> bool {
+        self.sets.get(&id).is_some_and(|set| known.meets(id, set))
+    }
+
+    /// This node's compiled guard, from the compiler's cache when it has one.
+    ///
+    /// THIS USED TO COMPILE ON EVERY VISIT. A pass revisits an entry each time its set
+    /// grows, and the guard does not change between visits - the forward search had
+    /// noticed and kept a map, this had not. `compile_for` is that map, moved into the
+    /// compiler so that it also outlives a single pass: `novelty_search` asks about one
+    /// candidate after another over the same compiler, so the second candidate's pass
+    /// inherits every guard the first one compiled.
     fn guard_of(
         &mut self,
         node: &LookAheadNode,
         compiler: &mut GuardCompiler<'a>,
     ) -> (BDDFunction, BDDFunction) {
-        let compiled = compiler.compile(&node.guard);
+        let compiled = compiler.compile_for(node.id, &node.guard);
         (compiled.may_be_true, compiled.may_be_false)
     }
 

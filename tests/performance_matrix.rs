@@ -230,6 +230,7 @@ use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
+use lookahead_engine::symbolic::known::Known;
 use lookahead_engine::symbolic::novelty_search::{
     best_novelty, Budget as SearchBudget, StoppedBy,
 };
@@ -814,6 +815,16 @@ fn symbolic_backward(
         if unseen.contains(&id) { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
     };
 
+    // THE GRAPH'S SHAPE ONLY, and deliberately nothing else. Every candidate's pass used
+    // to rebuild the parent map from scratch, which on a four-thousand-entry group is a
+    // full walk per candidate; sharing it changes no answer at all.
+    //
+    // WHAT IS NOT SHARED HERE is any forward result. `Known` can carry one, and a pass that
+    // meets it stops early having proved the target reachable - but this column exists to
+    // say what a backward search costs on its own, and a column quietly answered by another
+    // engine's work would be the same mislabelling this file was corrected for. de-cnjw is
+    // where that is measured, against a run that pays for the forward half.
+    let known = Known::of(graph);
     let every = progress_every();
     let answer = best_novelty(
         graph,
@@ -852,6 +863,7 @@ fn symbolic_backward(
                 }),
             },
         },
+        Some(&known),
     );
 
     let verdict = if answer.best != Novelty::SeenThisGame {

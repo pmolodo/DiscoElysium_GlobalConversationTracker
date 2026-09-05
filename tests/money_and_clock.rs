@@ -340,6 +340,7 @@ fn ask(
         COUNTER_CAP as u32,
         novelty,
         &Budget { targets: 1, time: std::time::Duration::from_secs(60), ..Default::default() },
+        None,
     );
 
     (
