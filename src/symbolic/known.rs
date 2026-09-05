@@ -58,7 +58,7 @@ use oxidd::BooleanFunction;
 
 use crate::core::types::DialogueNodeId;
 use crate::graph::graph::LookAheadGraph;
-use crate::symbolic::order::{IterationOrder, Ranking};
+use crate::symbolic::order::IterationOrder;
 use crate::symbolic::reachability::Reachability;
 
 /// What a settled forward run says can arrive at one entry.
@@ -129,12 +129,15 @@ impl Known {
         }
     }
 
-    /// The same for a named group, under whatever ranking measurement picked for it.
+    /// The same, told where a crawl begins, so the start-distances can be worked out.
     ///
-    /// What a caller that knows which conversation it is asking about should use;
-    /// [`Self::of`] takes the default. See [`Ranking::for_conversation`].
-    pub fn for_conversation(graph: &LookAheadGraph, conversation: i32) -> Self {
-        Self::of(graph).ranking(Ranking::for_conversation(conversation))
+    /// Without it the members of a component simply tie and the push order decides, which
+    /// is a coarser order rather than a wrong one - but it is a measurement reporting
+    /// less than it could, so a caller that knows the start should say so.
+    pub fn of_from(graph: &LookAheadGraph, start: DialogueNodeId) -> Self {
+        let mut this = Self::of(graph);
+        this.order = IterationOrder::of_from(graph, start);
+        this
     }
 
     /// The same, plus where a crawl begins and what it holds when it does.
@@ -149,16 +152,6 @@ impl Known {
         self
     }
 
-    /// Which [`Ranking`] the searches told about this should use within a component.
-    ///
-    /// Defaults to [`Ranking::PerComponent`]. Not a switch between ordered and unordered -
-    /// there is no unordered path - but between two readings of the same decomposition,
-    /// which measure very differently on the groups that are mostly one cycle and in
-    /// opposite directions. See [`Ranking`].
-    pub fn ranking(mut self, ranking: Ranking) -> Self {
-        self.order = self.order.ranked(ranking);
-        self
-    }
 
     /// The order to take entries in.
     ///

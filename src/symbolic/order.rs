@@ -71,101 +71,30 @@ use crate::graph::graph::LookAheadGraph;
 /// meaningful - a cycle has no first entry, which is the reason components exist here.
 pub struct IterationOrder {
     /// Each entry's component number, in topological order of the condensation.
-    component: HashMap<DialogueNodeId, u32>,
-    /// Each entry's own position in the linear order, members of a component contiguous.
     ///
-    /// Only [`Ranking::PerEntry`] reads it. Both maps are built either way, because the
-    /// decomposition that produces one produces the other and keeping both lets the ranking
-    /// be changed on a built order for nothing.
-    position: HashMap<DialogueNodeId, u32>,
+    /// The primary key, and the part that carries the ordering guarantee: a component is
+    /// finished before anything downstream of it begins. It depends on the links alone, so
+    /// a driver asking about hundreds of candidates builds it once.
+    component: HashMap<DialogueNodeId, u32>,
     /// Links traversed to arrive at each entry from the group's start, ignoring guards.
     ///
-    /// Empty unless the order was built by [`Self::of_from`], which is the only constructor
-    /// that knows where a crawl begins. [`Ranking::PerDistance`] reads it.
+    /// The tie-break INSIDE a component, where a topological order has nothing to say - and
+    /// on the groups that are mostly one cycle, that tie-break decides almost everything.
+    /// Empty unless the order was built by [`Self::of_from`], and then the members of a
+    /// component simply tie.
+    ///
+    /// MEASURED FROM THE START WHICHEVER WAY THE SEARCH RUNS, and that is a measured choice
+    /// rather than an oversight. Measuring a backward pass's distances from its own target
+    /// instead is the obvious refinement, it was built, and it lost: one group in five gained
+    /// (368, 51 ms against 125), three lost slightly, the rest tied - against a per-candidate
+    /// distance map where this is shared across every candidate. The near-ties are the
+    /// giveaway: reversed-distance-from-start and distance-to-target coincide on a chain, and
+    /// only 368 branches enough on its deep path to tell them apart. It is in the history.
     distance: HashMap<DialogueNodeId, u32>,
-    ranking: Ranking,
     /// How many strongly connected components the group has.
     components: usize,
     /// The largest of them, which is 1 exactly when the group is acyclic.
     largest: usize,
-}
-
-/// How much a rank separates. All of them agree that a component precedes what follows it,
-/// except [`Ranking::Fifo`], which is the baseline that separates nothing.
-///
-/// FOUR ARRANGEMENTS AND NO RULE THAT PICKS BETWEEN THEM. That is the honest state: the
-/// obvious predictor is the size of the largest component, and it is disqualified -
-/// conversation 631 is 84 per cent one component and 14 is 75 per cent, nearly the same
-/// shape, and they want opposite rankings. So the choice is made per group from
-/// measurement, by [`Ranking::for_conversation`], and this enum is what that chooses from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Ranking {
-    /// A distinct rank per entry, in the order the walk closed each component. THE DEFAULT.
-    ///
-    /// Invents a priority among entries inside one cycle, which a weak topological order
-    /// says nothing about - so it is the less principled reading, and it is the default
-    /// because it is the one that measures better where the ordering matters at all: on 368
-    /// it settles the forward pass in 721 ms against 6857, and on 631 it settles at all,
-    /// where `PerComponent` spends three hundred seconds without finishing.
-    ///
-    /// The asymmetry that decides it: choosing this costs conversation 14 pops on a group
-    /// where nothing settles under any arrangement, while choosing `PerComponent` costs 631
-    /// a working answer. A default should fail on the group that is already failing.
-    #[default]
-    PerEntry,
-    /// One rank for the whole component: members tie, and the push order decides.
-    ///
-    /// What a Bourdoncle weak topological order actually prescribes, and the principled
-    /// reading - a cycle has no first entry, so a priority among its members is invented
-    /// information. Kept, and pinned to conversation 14, because `PerEntry` there cost SIX
-    /// TIMES the pops of a plain queue and reached fewer entries in the same time.
-    PerComponent,
-    /// Component first, then LINKS FROM THE START, then the push order.
-    ///
-    /// The tie-break `PerEntry` should have used. `PerEntry` separates the members of a
-    /// component by the position at which the walk happened to close them, which depends on
-    /// the DFS root and on the order links are declared in - it carries nothing about the
-    /// graph, and imposing a total order out of nothing is what starves a big component.
-    /// This separates them by how far a crawl has to walk to arrive, which is a fact about
-    /// the graph and a good proxy for which entries feed which.
-    ///
-    /// A PARTIAL REFINEMENT, deliberately: entries the same distance from the start tie, and
-    /// fall back to the push order. That is the right amount of information to add, where a
-    /// total order is more than the graph supports.
-    ///
-    /// It costs no direction of its own. Information runs start-to-target forwards and
-    /// target-to-start backwards, so a forward pass wants the nearest entry first and a
-    /// backward pass the furthest - which is the same reading-from-opposite-ends that the
-    /// component number already gets. Needs [`IterationOrder::of_from`], which is the only
-    /// constructor told where the crawl begins; without it every distance is zero and this
-    /// degrades to `PerComponent`.
-    PerDistance,
-    /// No separation at all: every entry ranks equal, so the worklist is a plain queue.
-    ///
-    /// THE BASELINE EVERY MEASUREMENT IS READ AGAINST, and the only arrangement that does
-    /// not honour the between-component guarantee - it makes no ordering claim to honour.
-    /// It is selectable rather than deleted because it is not always the worst: on 631 it
-    /// beats `PerComponent` in both directions, and on 14 it is the best arrangement
-    /// measured so far.
-    Fifo,
-}
-
-/// Which conversations have been measured and want something other than the default.
-///
-/// ONE ENTRY, AND IT IS NOT A RULE. 14 is here because `PerEntry` is measurably bad on it,
-/// not because anything predicts that from the group's shape. A group absent from this list
-/// gets [`Ranking::PerEntry`] because that is what wins on the groups measured so far, and
-/// the right response to a group that behaves badly is to measure it and add a row.
-const CHOSEN: [(i32, Ranking); 1] = [(14, Ranking::PerComponent)];
-
-impl Ranking {
-    /// The ranking measurement has picked for a group, or the default where none has.
-    pub fn for_conversation(conversation: i32) -> Self {
-        match CHOSEN.iter().find(|(id, _)| *id == conversation) {
-            Some((_, ranking)) => *ranking,
-            None => Self::default(),
-        }
-    }
 }
 
 impl IterationOrder {
@@ -193,32 +122,19 @@ impl IterationOrder {
         // list it leaves is a reverse topological order of the condensation - sinks first.
         // Walking it backwards puts the sources first, which is what a forward pass wants
         // and, read from the other end, what a backward pass wants.
-        // BOTH NUMBERINGS, because they cost the same walk and [`Ranking`] chooses between
-        // them afterwards. The component number is what separates components and is all
-        // either ranking uses for that; the position additionally separates the members of
-        // one component, which is the part the two rankings disagree about.
         let mut component_of = HashMap::with_capacity(walk.index.len());
-        let mut position = HashMap::with_capacity(walk.index.len());
-        let mut next = 0;
         let mut largest = 0;
-        for (number, component) in walk.components.iter_mut().rev().enumerate() {
+        for (number, component) in walk.components.iter().rev().enumerate() {
             largest = largest.max(component.len());
-            // The stack unwinds down to the component's root, so the root comes off last;
-            // reversing puts the entry the walk arrived through at the front. Advisory only,
-            // and read by `PerEntry` alone.
-            component.reverse();
-            for &member in component.iter() {
+            for &member in component {
                 component_of.insert(member, number as u32);
-                position.insert(member, next);
-                next += 1;
             }
         }
 
         Self {
             component: component_of,
-            position,
             distance: HashMap::new(),
-            ranking: Ranking::default(),
+
             components: walk.components.len(),
             largest,
         }
@@ -226,7 +142,7 @@ impl IterationOrder {
 
     /// The same, told where a crawl begins, so distances can be worked out.
     ///
-    /// Required by [`Ranking::PerDistance`] and harmless to every other ranking. One BFS
+    /// One BFS
     /// over the links on top of the Tarjan pass, and target-independent like everything else
     /// here - so a driver asking about hundreds of candidates pays for it once.
     pub fn of_from(graph: &LookAheadGraph, start: DialogueNodeId) -> Self {
@@ -250,62 +166,28 @@ impl IterationOrder {
         this
     }
 
-    /// The order for a named group, under whatever ranking measurement picked for it.
+    /// Where `id` falls: its component, then how far from the start it sits within it.
     ///
-    /// The entry point a caller that knows which conversation it is looking at should use;
-    /// [`Self::of`] takes the default and is for callers that do not. See
-    /// [`Ranking::for_conversation`].
-    pub fn for_conversation(graph: &LookAheadGraph, conversation: i32) -> Self {
-        Self::of_from(graph, DialogueNodeId::new(conversation, 0))
-            .ranked(Ranking::for_conversation(conversation))
-    }
-
-    /// The same order, read the other way within a component.
+    /// COMPONENT IN THE HIGH HALF, DISTANCE IN THE LOW, so one integer orders by the
+    /// component first and by the distance only within it. Packed rather than compared as a
+    /// pair because the worklist wants a single key it can read from either end, and a pair
+    /// would need the direction flip applied to both halves separately.
     ///
-    /// FREE ON A BUILT ORDER: both numberings are already held, so this is a flag and not a
-    /// second decomposition.
-    pub fn ranked(mut self, ranking: Ranking) -> Self {
-        self.ranking = ranking;
-        self
-    }
-
-    pub fn ranking(&self) -> Ranking {
-        self.ranking
-    }
-
-    /// Where `id` falls, under whichever [`Ranking`] this order carries.
-    ///
-    /// EITHER WAY, a link that leaves a component climbs - that is the guarantee the
-    /// searches rest on and it does not depend on the ranking. Under
-    /// [`Ranking::PerComponent`] two entries in one cycle rank EQUAL and a worklist leaves
-    /// the tie to the push order; under [`Ranking::PerEntry`] they are separated.
+    /// A link that leaves a component always climbs, whatever the distances say - the
+    /// component half dominates, and that is the guarantee the searches rest on.
     ///
     /// An entry the graph does not hold ranks first, and is never queued.
     pub fn rank_of(&self, id: DialogueNodeId) -> u64 {
-        let component = || self.component.get(&id).copied().unwrap_or(0) as u64;
-        match self.ranking {
-            Ranking::PerComponent => component(),
-            Ranking::PerEntry => self.position.get(&id).copied().unwrap_or(0) as u64,
-            // COMPONENT IN THE HIGH HALF, DISTANCE IN THE LOW, so one integer orders by the
-            // component first and by the distance only within it. Packed rather than
-            // compared as a pair because the worklist wants a single key it can read from
-            // either end, and a pair would need the direction flip applied to both halves
-            // separately - the same thing, spelled twice.
-            Ranking::PerDistance => {
-                let within = self.distance.get(&id).copied().unwrap_or(0) as u64;
-                (component() << 32) | within
-            }
-            // Everything ties, so the worklist's tie-break - the push order - is the whole
-            // of the order, which is exactly a queue.
-            Ranking::Fifo => 0,
-        }
+        let component = self.component.get(&id).copied().unwrap_or(0) as u64;
+        let within = self.distance.get(&id).copied().unwrap_or(0) as u64;
+        (component << 32) | within
     }
 
     /// Which component `id` is in, or `None` for an entry the graph does not hold.
     ///
-    /// Independent of the ranking, because the decomposition is. Two entries share it
+    /// Independent of the distances, because the decomposition is. Two entries share it
     /// exactly when each can reach the other, and the ordering guarantee is stated in terms
-    /// of it - so a check of that guarantee can say so whichever ranking is in use.
+    /// of it - so a check of that guarantee can say so directly.
     pub fn component_of(&self, id: DialogueNodeId) -> Option<u32> {
         self.component.get(&id).copied()
     }
@@ -395,9 +277,10 @@ impl<'a> Worklist<'a> {
     pub fn push(&mut self, id: DialogueNodeId) {
         let rank = self.order.rank_of(id);
         self.queue.push(Queued {
-            // Read from whichever end this search works from. The subtraction cannot
-            // underflow: a rank is a position among the entries, so it is far below
-            // `u32::MAX` for any graph that fits in memory.
+            // WHICH END THIS SEARCH READS FROM. A forward pass wants the entry nearest its
+            // source first, so it takes the lowest rank; a backward pass keyed on the START
+            // wants the furthest, because far from the start stands in for near the target.
+            //
             priority: match self.direction {
                 Direction::Forward => u64::MAX - rank,
                 Direction::Backward => rank,
@@ -563,7 +446,7 @@ mod tests {
         assert!(rank[&0] < rank[&1], "the start ranks before what it links to");
         assert!(rank[&1] < rank[&2]);
 
-        let order = IterationOrder::of(&graph).ranked(Ranking::PerComponent);
+        let order = IterationOrder::of(&graph);
         assert_eq!(order.components(), 3, "a chain has a component per entry");
         assert_eq!(order.largest_component(), 1, "and no cycle in it");
     }
@@ -593,7 +476,7 @@ mod tests {
             .add(Entry::new(3))
             .build();
 
-        let order = IterationOrder::of(&graph).ranked(Ranking::PerComponent);
+        let order = IterationOrder::of(&graph);
         assert_eq!(order.largest_component(), 2, "1 and 2 are one component");
         assert_eq!(order.components(), 3, "the start, the loop, and the tail");
 
@@ -611,7 +494,7 @@ mod tests {
             .add(Entry::new(2).links(&[3]))
             .add(Entry::new(3))
             .build();
-        let order = IterationOrder::of(&graph).ranked(Ranking::PerComponent);
+        let order = IterationOrder::of(&graph);
 
         let mut backward = Worklist::new(&order, Direction::Backward);
         for id in [node(0), node(1), node(3)] {
@@ -631,39 +514,78 @@ mod tests {
     }
 
     /// Entries the order does not separate keep the order they were pushed in.
-    ///
-    /// A whole group in one cycle is the case where the rank has nothing to say, and it is
-    /// the shape conversation 1030 really has - 1379 of its 1476 entries in one component.
+    /// Inside a component, nearer the source ranks lower - and the component still wins.
     #[test]
-    fn one_component_falls_back_to_the_push_order() {
+    fn the_distance_separates_a_component_without_overriding_it() {
+        // 1 -> 2 -> 3 -> 1 is one component entered at 1, so the start-distances within it
+        // are 1, 2 and 3. 0 leads in and 4 leads out.
         let graph = GraphBuilder::new()
             .add(Entry::new(0).links(&[1]))
             .add(Entry::new(1).links(&[2]))
-            .add(Entry::new(2).links(&[0]))
+            .add(Entry::new(2).links(&[3]))
+            .add(Entry::new(3).links(&[1, 4]))
+            .add(Entry::new(4))
             .build();
-        let order = IterationOrder::of(&graph).ranked(Ranking::PerComponent);
-        assert_eq!(order.components(), 1, "all three are in one cycle");
+        let order = IterationOrder::of_from(&graph, node(0));
 
-        // THE POINT: nothing about a member's position may leak into the priority, so an
-        // awkward push order has to come back exactly as it went in.
-        let pushed = [node(2), node(0), node(1)];
+        assert!(order.rank_of(node(1)) < order.rank_of(node(2)), "nearer ranks lower");
+        assert!(order.rank_of(node(2)) < order.rank_of(node(3)));
+
+        // THE PART THE DISTANCE MAY NOT BREAK. It is a tie-break inside a component, so it
+        // may never lift a member above something the component leads to, however deep.
+        assert!(order.rank_of(node(0)) < order.rank_of(node(1)), "the way in stays below");
+        assert!(order.rank_of(node(3)) < order.rank_of(node(4)), "the tail stays above");
+    }
+
+    /// Entries the distance does not separate keep the order they were pushed in.
+    #[test]
+    fn equidistant_entries_fall_back_to_the_push_order() {
+        // 1 and 2 are both one link from the start and both in the cycle through 3.
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1, 2]))
+            .add(Entry::new(1).links(&[3]))
+            .add(Entry::new(2).links(&[3]))
+            .add(Entry::new(3).links(&[1, 2]))
+            .build();
+        let order = IterationOrder::of_from(&graph, node(0));
+        assert_eq!(order.rank_of(node(1)), order.rank_of(node(2)), "same component, same step");
+
+        let pushed = [node(2), node(1)];
         let mut queue = Worklist::new(&order, Direction::Forward);
         for id in pushed {
             queue.push(id);
         }
-        assert_eq!(queue.len(), 3);
         for id in pushed {
-            assert_eq!(queue.pop(), Some(id), "one component keeps the push order");
+            assert_eq!(queue.pop(), Some(id), "a tie keeps the push order");
         }
-        assert_eq!(queue.pop(), None);
-        assert!(queue.is_empty());
+    }
+
+    /// An order built without a start has no distances, and must still order by component.
+    ///
+    /// The silent-degradation guard: `Known::of` builds one of these, and a caller that
+    /// forgets `of_from` should get a coarser order rather than a wrong one.
+    #[test]
+    fn without_a_start_the_component_still_orders() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(Entry::new(1).links(&[2]))
+            .add(Entry::new(2).links(&[1]))
+            .build();
+        let blind = IterationOrder::of(&graph);
+
+        assert_eq!(
+            blind.rank_of(node(1)),
+            blind.rank_of(node(2)),
+            "with no distances the members of a component tie",
+        );
+        assert!(blind.rank_of(node(0)) < blind.rank_of(node(1)), "and the order still holds");
     }
 
     /// The same entry queued twice is popped twice; both searches rely on it.
     #[test]
     fn a_duplicate_is_kept_rather_than_merged() {
         let graph = GraphBuilder::new().add(Entry::new(0)).build();
-        let order = IterationOrder::of(&graph).ranked(Ranking::PerComponent);
+        let order = IterationOrder::of(&graph);
 
         let mut queue = Worklist::new(&order, Direction::Forward);
         queue.push(node(0));
@@ -676,156 +598,6 @@ mod tests {
 
     /// Every entry is ranked, and a rank is its component rather than its own position.
     #[test]
-    fn a_rank_is_the_component_and_members_share_it() {
-        // 1, 2 and 3 are one cycle; 0 leads into it.
-        let graph = GraphBuilder::new()
-            .add(Entry::new(0).links(&[1]))
-            .add(Entry::new(1).links(&[2]))
-            .add(Entry::new(2).links(&[3]))
-            .add(Entry::new(3).links(&[1]))
-            .build();
-
-        let order = IterationOrder::of(&graph).ranked(Ranking::PerComponent);
-        assert_eq!(order.len(), 4, "every entry is ranked");
-        assert!(!order.is_empty());
-        assert_eq!(order.components(), 2);
-        assert_eq!(order.largest_component(), 3);
-
-        assert_eq!(order.rank_of(node(1)), order.rank_of(node(2)), "one cycle, one rank");
-        assert_eq!(order.rank_of(node(2)), order.rank_of(node(3)));
-        assert!(order.rank_of(node(0)) < order.rank_of(node(1)), "and the way in is below");
-
-        // Ranks number the components, so they run 0..components and not 0..entries.
-        let mut seen: Vec<u64> = graph.nodes().map(|node| order.rank_of(node.id)).collect();
-        seen.sort_unstable();
-        assert_eq!(seen, vec![0, 1, 1, 1]);
-    }
-
-    /// `PerEntry` separates the members of a component; `PerComponent` does not.
-    #[test]
-    fn per_entry_separates_what_per_component_ties() {
-        let graph = GraphBuilder::new()
-            .add(Entry::new(0).links(&[1]))
-            .add(Entry::new(1).links(&[2]))
-            .add(Entry::new(2).links(&[3]))
-            .add(Entry::new(3).links(&[1]))
-            .build();
-
-        let shared = IterationOrder::of(&graph).ranked(Ranking::PerComponent);
-        assert_eq!(shared.ranking(), Ranking::PerComponent);
-        assert_eq!(shared.rank_of(node(1)), shared.rank_of(node(2)));
-
-        let distinct = IterationOrder::of(&graph);
-        assert_eq!(distinct.ranking(), Ranking::PerEntry, "the default");
-        let mut inside = [node(1), node(2), node(3)].map(|id| distinct.rank_of(id));
-        inside.sort_unstable();
-        assert_eq!(inside[0] + 1, inside[1], "the members are separated");
-        assert_eq!(inside[1] + 1, inside[2], "and contiguous");
-
-        // THE PART THAT MAY NOT DIFFER. Whatever happens inside a component, a link that
-        // leaves one has to climb, or the searches lose the property they rest on.
-        for order in [&shared, &distinct] {
-            assert!(order.rank_of(node(0)) < order.rank_of(node(1)));
-            assert!(order.rank_of(node(0)) < order.rank_of(node(3)));
-        }
-
-        // And the decomposition itself is the same object under either reading.
-        assert_eq!(shared.components(), distinct.components());
-        assert_eq!(shared.largest_component(), distinct.largest_component());
-        assert_eq!(shared.component_of(node(2)), distinct.component_of(node(2)));
-    }
-
-    /// `PerDistance` orders a component's members by how far a crawl walks to reach them.
-    #[test]
-    fn per_distance_separates_a_component_by_links_from_the_start() {
-        // 1 -> 2 -> 3 -> 1 is one component, entered at 1, so within it the distances from
-        // the start are 1, 2 and 3. Tarjan's closure order need not agree with that.
-        let graph = GraphBuilder::new()
-            .add(Entry::new(0).links(&[1]))
-            .add(Entry::new(1).links(&[2]))
-            .add(Entry::new(2).links(&[3]))
-            .add(Entry::new(3).links(&[1, 4]))
-            .add(Entry::new(4))
-            .build();
-        let order = IterationOrder::of_from(&graph, node(0)).ranked(Ranking::PerDistance);
-
-        assert!(order.rank_of(node(1)) < order.rank_of(node(2)), "nearer ranks lower");
-        assert!(order.rank_of(node(2)) < order.rank_of(node(3)));
-
-        // AND THE COMPONENT STILL COMES FIRST. The distance is only a tie-break inside one,
-        // so it may never lift a member above something the component leads to.
-        assert!(order.rank_of(node(0)) < order.rank_of(node(1)), "the way in is below");
-        assert!(order.rank_of(node(3)) < order.rank_of(node(4)), "and the tail is above");
-    }
-
-    /// Without a start there are no distances, so `PerDistance` falls back to the component.
-    #[test]
-    fn per_distance_without_a_start_is_per_component() {
-        let graph = GraphBuilder::new()
-            .add(Entry::new(0).links(&[1]))
-            .add(Entry::new(1).links(&[2]))
-            .add(Entry::new(2).links(&[1]))
-            .build();
-
-        let blind = IterationOrder::of(&graph).ranked(Ranking::PerDistance);
-        assert_eq!(
-            blind.rank_of(node(1)),
-            blind.rank_of(node(2)),
-            "with every distance zero the members tie, as PerComponent leaves them",
-        );
-        assert!(blind.rank_of(node(0)) < blind.rank_of(node(1)), "and the order still holds");
-    }
-
-    /// Every entry ties under `Fifo`, so the worklist hands them back as they were pushed.
-    #[test]
-    fn fifo_separates_nothing_and_is_the_push_order() {
-        let graph = GraphBuilder::new()
-            .add(Entry::new(0).links(&[1, 2]))
-            .add(Entry::new(1).links(&[3]))
-            .add(Entry::new(2).links(&[3]))
-            .add(Entry::new(3))
-            .build();
-        let order = IterationOrder::of(&graph).ranked(Ranking::Fifo);
-
-        for node in graph.nodes() {
-            assert_eq!(order.rank_of(node.id), 0, "nothing is separated");
-        }
-
-        // Pushed deepest first, which either ordering ranking would reorder and this must
-        // not - in both directions, since the two read the rank from opposite ends.
-        for direction in [Direction::Forward, Direction::Backward] {
-            let pushed = [node(3), node(1), node(0), node(2)];
-            let mut queue = Worklist::new(&order, direction);
-            for id in pushed {
-                queue.push(id);
-            }
-            for id in pushed {
-                assert_eq!(queue.pop(), Some(id), "{direction:?} under Fifo is a queue");
-            }
-            assert_eq!(queue.pop(), None);
-        }
-    }
-
-    /// The default is what the searches get when nobody chooses, and 14 is the exception.
-    #[test]
-    fn the_default_is_per_entry_and_fourteen_is_pinned() {
-        assert_eq!(Ranking::default(), Ranking::PerEntry);
-        assert_eq!(Ranking::for_conversation(631), Ranking::PerEntry);
-        assert_eq!(Ranking::for_conversation(28), Ranking::PerEntry);
-        assert_eq!(
-            Ranking::for_conversation(14),
-            Ranking::PerComponent,
-            "14 is measured to be bad under the default",
-        );
-
-        let graph = GraphBuilder::new().add(Entry::new(0)).build();
-        assert_eq!(IterationOrder::of(&graph).ranking(), Ranking::PerEntry);
-        assert_eq!(
-            IterationOrder::for_conversation(&graph, 14).ranking(),
-            Ranking::PerComponent,
-        );
-    }
-
     /// The guarantee, stated as it is stated on the type: across components, rank rises.
     #[test]
     fn a_link_between_components_always_climbs() {
@@ -836,7 +608,7 @@ mod tests {
             .add(Entry::new(3).links(&[4]))
             .add(Entry::new(4))
             .build();
-        let order = IterationOrder::of(&graph).ranked(Ranking::PerComponent);
+        let order = IterationOrder::of(&graph);
 
         for node in graph.nodes() {
             for &child in &node.links {
@@ -860,7 +632,7 @@ mod tests {
             .add(Entry::new(1))
             .build();
 
-        let order = IterationOrder::of(&graph).ranked(Ranking::PerComponent);
+        let order = IterationOrder::of(&graph);
         assert_eq!(order.components(), 2, "the missing entry is not one of them");
         assert!(order.rank_of(node(0)) < order.rank_of(node(1)));
     }
