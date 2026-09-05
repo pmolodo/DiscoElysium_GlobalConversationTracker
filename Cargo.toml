@@ -27,3 +27,12 @@ proptest = "1.0"
 [[bench]]
 name = "benchmarks"
 harness = false
+
+# MEASUREMENTS LIVE HERE, not in tests/. A test passes or fails on its own; a measurement
+# produces a number a person reads, and the two were being confused - see de-18bo, which
+# carries moving the rest of them across. Run one with:
+#
+#     tools/run-logged.sh cargo answers -- cargo run --release --example symbolic_answers
+[[example]]
+name = "symbolic_answers"
+path = "measurements/symbolic_answers.rs"

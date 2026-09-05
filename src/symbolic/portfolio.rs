@@ -35,6 +35,7 @@
 //! win and far too loose for the ones that lose; what makes this work is that a group
 //! which is going to be slow is usually slow immediately.
 
+use std::collections::HashSet;
 use std::time::Duration;
 
 use oxidd::bdd::BDDFunction;
@@ -43,12 +44,16 @@ use crate::core::types::{DialogueNodeId, Novelty};
 use crate::engine::engine::LookAheadEngine;
 use crate::graph::graph::LookAheadGraph;
 use crate::symbolic::guard_formula::GuardCompiler;
+use crate::symbolic::known::Known;
 use crate::symbolic::novelty_search::{self, StoppedBy};
+use crate::symbolic::reachability::{self, Reachability};
 use crate::world::world::ILookAheadWorld;
 
 /// Which search produced an answer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Answered {
+    /// The forward pass reached an entry worth reporting and stopped there.
+    Forwards,
     /// The backward driver settled within its budget.
     Backwards,
     /// The backward driver did not settle, and the crawl was run instead.
@@ -72,6 +77,22 @@ pub struct PortfolioAnswer {
 
 /// How long to let the backward driver try before falling back.
 pub struct Budget {
+    /// The forward slice run BEFORE the backward driver, or zero to skip it.
+    ///
+    /// SMALL, AND IT EARNS ITS PLACE TWO WAYS. A forward pass halts the moment it reaches
+    /// an entry worth reporting - `Reachability::Budget::halt_on` - so on the common shapes
+    /// it answers outright in under a millisecond and nothing else runs. Where it does not,
+    /// what it reached is not thrown away: it is handed to the backward driver, and a
+    /// backward pass that MEETS it stops there having proved the target reachable.
+    ///
+    /// The meet is sound from a slice that was cut off, which is what makes a small budget
+    /// worth spending: forward sets only ever grow, so every state in a partial run is
+    /// genuinely reachable and meeting one proves reachable. It is only the CONVERSE that
+    /// needs a settled run, and nothing here reads a no out of the slice.
+    ///
+    /// So the two searches work in from both ends and share what they find, rather than one
+    /// running after the other has given up.
+    pub forwards: Duration,
     /// The whole backward attempt, across every candidate.
     pub backwards: Duration,
     /// One candidate's fixed point.
@@ -90,6 +111,13 @@ impl Default for Budget {
         // seconds. A quarter-second per candidate keeps the first three and cuts the other
         // two off early enough to be worth falling back from.
         Self {
+            // FIFTY MILLISECONDS, and the shape of the measurement rather than a guess.
+            // A forward pass that is going to answer at all answers in under one on every
+            // group measured - it halts on the first entry worth reporting - so this is not
+            // sized to let it finish. It is sized to be worth the sets it leaves behind for
+            // the backward half to meet, and to be small enough that spending all of it and
+            // learning nothing costs a twentieth of the backward allowance.
+            forwards: Duration::from_millis(50),
             backwards: Duration::from_secs(2),
             each: Duration::from_millis(250),
             targets: 64,
@@ -115,6 +143,53 @@ where
 {
     let began = std::time::Instant::now();
 
+    // IN FROM THE START, FIRST. The forward pass is asked the question directly - halt on
+    // any entry whose novelty beats what a crawl would settle for - so where it can answer
+    // it answers here and nothing else runs.
+    let forwards = (!budget.forwards.is_zero()).then(|| {
+        // THE SET RATHER THAN THE CLOSURE, because `halt_on` outlives this call and cannot
+        // borrow `novelty`. One pass over the entries to build it, against a search that is
+        // thousands of diagram operations.
+        let wanted: HashSet<DialogueNodeId> = graph
+            .nodes()
+            .map(|node| node.id)
+            .filter(|id| novelty(*id) > Novelty::SeenThisGame)
+            .collect();
+
+        Reachability::explore_within(
+            graph,
+            start,
+            seed,
+            compiler,
+            world,
+            counter_cap,
+            &reachability::Budget {
+                time: budget.forwards,
+                halt_on: Some(Box::new(move |id| wanted.contains(&id))),
+                ..Default::default()
+            },
+        )
+    });
+
+    if let Some(found) = &forwards {
+        if let Some(halted_at) = found.stats().halted_at {
+            return PortfolioAnswer {
+                best: novelty(halted_at),
+                by: Answered::Forwards,
+                witness: Some(halted_at),
+                targets_asked: 0,
+                elapsed: began.elapsed(),
+            };
+        }
+    }
+
+    // AND IN FROM THE TARGET, TOLD WHAT THE FIRST HALF REACHED. A backward pass that meets
+    // those sets has proved its target reachable and stops there - the two searches meet in
+    // the middle rather than one starting over where the other gave up. See `Known`.
+    let known = forwards.as_ref().map(|found| {
+        Known::of_from(graph, start).from(start, seed).with_forward(found)
+    });
+
     let backwards = novelty_search::best_novelty(
         graph,
         start,
@@ -133,11 +208,7 @@ where
                 ..Default::default()
             },
         },
-        // NOTHING KNOWN YET. The portfolio runs the backward driver FIRST and the crawl
-        // only as a fallback, so on the first call there is no forward work to meet. What
-        // would change that is keeping a workspace across calls on one group - de-cnjw -
-        // and that is a decision about ownership rather than a line here.
-        None,
+        known.as_ref(),
     );
 
     if backwards.stopped_by == StoppedBy::Nothing {
@@ -229,6 +300,27 @@ mod tests {
         }
     }
 
+    /// The forward slice answers a reachable entry outright, without the backward driver.
+    #[test]
+    fn the_forward_slice_answers_before_anything_else_runs() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(Entry::new(1).links(&[2]))
+            .add(Entry::new(2))
+            .build();
+
+        let answer = run(&graph, &TestWorld::new(), unseen(&[2]), &Budget::default());
+        assert_eq!(answer.best, Novelty::UnseenAnyGame);
+        assert_eq!(answer.by, Answered::Forwards, "it halts on the unseen entry");
+        assert_eq!(answer.witness, Some(node(2)));
+        assert_eq!(answer.targets_asked, 0, "and no candidate was asked about");
+    }
+
+    /// The same, with the forward slice starved, so the backward driver is what answers.
+    ///
+    /// STARVED RATHER THAN REMOVED, because the two paths have to keep agreeing: this is
+    /// the fixture above with the first half switched off, and both must reach the same
+    /// verdict and name the same witness.
     #[test]
     fn a_settled_backward_answer_is_taken_as_it_stands() {
         let graph = GraphBuilder::new()
@@ -237,7 +329,8 @@ mod tests {
             .add(Entry::new(2))
             .build();
 
-        let answer = run(&graph, &TestWorld::new(), unseen(&[2]), &Budget::default());
+        let no_forward = Budget { forwards: Duration::ZERO, ..Default::default() };
+        let answer = run(&graph, &TestWorld::new(), unseen(&[2]), &no_forward);
         assert_eq!(answer.best, Novelty::UnseenAnyGame);
         assert_eq!(answer.by, Answered::Backwards);
         assert_eq!(answer.witness, Some(node(2)));
@@ -253,7 +346,10 @@ mod tests {
             .add(Entry::new(2))
             .build();
 
+        // THE FORWARD SLICE IS STARVED TOO, or it would answer this fixture outright and
+        // the crawl - which is what this test is about - would never run.
         let starved = Budget {
+            forwards: Duration::ZERO,
             backwards: Duration::ZERO,
             each: Duration::ZERO,
             targets: 64,
