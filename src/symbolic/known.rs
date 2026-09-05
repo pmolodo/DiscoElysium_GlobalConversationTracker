@@ -6,6 +6,14 @@
 //! the part of that which can be handed on, and the part that cannot is worth naming just
 //! as precisely - see de-cnjw.
 //!
+//! ## Two kinds of thing live here, and only one of them is a proof
+//!
+//! THE GRAPH'S SHAPE - the parent map, and the order to take entries in - is true of the
+//! group and of nothing else. It depends on no target, no start and no world, so sharing it
+//! can change no answer at all; what it saves is a driver working the same thing out once
+//! per candidate. A FORWARD RUN'S SETS are the other kind, and everything below is about
+//! what may and may not be read out of them.
+//!
 //! ## The meet, which is the interesting one
 //!
 //! A forward search records, per entry, the data states a crawl can hold there. A backward
@@ -50,6 +58,7 @@ use oxidd::BooleanFunction;
 
 use crate::core::types::DialogueNodeId;
 use crate::graph::graph::LookAheadGraph;
+use crate::symbolic::order::{IterationOrder, Ranking};
 use crate::symbolic::reachability::Reachability;
 
 /// What a settled forward run says can arrive at one entry.
@@ -71,6 +80,13 @@ pub struct Known {
     /// that asks about forty candidates walks the whole graph forty times to build the
     /// same map.
     parents: HashMap<DialogueNodeId, Vec<DialogueNodeId>>,
+    /// The order to take entries in, so that a loop is finished before what follows it.
+    ///
+    /// TARGET-INDEPENDENT AND DIRECTION-INDEPENDENT, for the same reason the parent map is
+    /// and with the same saving: it is a fact about the graph's shape, and a driver asking
+    /// about forty candidates would otherwise work it out forty times. One rank serves both
+    /// searches - see [`IterationOrder`] for why reversing the edges does not change it.
+    order: IterationOrder,
     /// What a forward run left at each entry, AFTER that entry - so, what it can hand on.
     forward: HashMap<DialogueNodeId, BDDFunction>,
     /// The entry a crawl begins at, and what it holds arriving there.
@@ -104,12 +120,21 @@ impl Known {
 
         Self {
             parents,
+            order: IterationOrder::of(graph),
             forward: HashMap::new(),
             start: None,
             arriving: RefCell::new(HashMap::new()),
             narrow: false,
             forward_settled: false,
         }
+    }
+
+    /// The same for a named group, under whatever ranking measurement picked for it.
+    ///
+    /// What a caller that knows which conversation it is asking about should use;
+    /// [`Self::of`] takes the default. See [`Ranking::for_conversation`].
+    pub fn for_conversation(graph: &LookAheadGraph, conversation: i32) -> Self {
+        Self::of(graph).ranking(Ranking::for_conversation(conversation))
     }
 
     /// The same, plus where a crawl begins and what it holds when it does.
@@ -122,6 +147,25 @@ impl Known {
     pub fn pruning(mut self, on: bool) -> Self {
         self.narrow = on;
         self
+    }
+
+    /// Which [`Ranking`] the searches told about this should use within a component.
+    ///
+    /// Defaults to [`Ranking::PerComponent`]. Not a switch between ordered and unordered -
+    /// there is no unordered path - but between two readings of the same decomposition,
+    /// which measure very differently on the groups that are mostly one cycle and in
+    /// opposite directions. See [`Ranking`].
+    pub fn ranking(mut self, ranking: Ranking) -> Self {
+        self.order = self.order.ranked(ranking);
+        self
+    }
+
+    /// The order to take entries in.
+    ///
+    /// An order changes no settled answer - only how many pops reaching it takes - so a
+    /// search handed this uses it rather than deciding whether to. See [`IterationOrder`].
+    pub fn order(&self) -> &IterationOrder {
+        &self.order
     }
 
     /// Adds what a forward run found, settled or not.

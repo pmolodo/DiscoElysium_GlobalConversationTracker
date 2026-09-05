@@ -38,7 +38,7 @@ temptation is to elide the middle - `2026-09-05_03,51,18_..._cargo_full-suite.tx
 an elided path cannot be pasted into anything, which defeats the point of saying it. Print
 it verbatim, on its own line, in a code block rather than inline prose.
 
-This file and `AGENTS.md` carry the same rules and are kept in step. They are duplicated
+This file and `CLAUDE.md` carry the same rules and are kept in step. They are duplicated
 rather than one pointing at the other because the Git rule below overrides a built-in
 default, and an override that goes missing because a pointer was not followed is worse
 than two copies to keep aligned.

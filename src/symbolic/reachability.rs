@@ -38,7 +38,7 @@
 //! Money is the exception worth naming, and it is not in the layout at all - see
 //! [`Reachability::unaffordable_unknown`].
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 use oxidd::bdd::BDDFunction;
 use oxidd::{BooleanFunction, Function};
@@ -49,6 +49,7 @@ use crate::graph::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
 use crate::symbolic::action_image::ActionImage;
 use crate::symbolic::guard_formula::GuardCompiler;
+use crate::symbolic::order::{Direction, IterationOrder, Worklist};
 use crate::symbolic::vars::DataVars;
 use crate::world::world::ILookAheadWorld;
 
@@ -318,6 +319,28 @@ impl<'a> Reachability<'a> {
         counter_cap: u32,
         budget: &Budget,
     ) -> Self {
+        let order = IterationOrder::of(graph);
+        Self::explore_knowing(graph, start, seed, compiler, world, counter_cap, budget, &order)
+    }
+
+    /// The same, given an order worked out for this group already.
+    ///
+    /// For a caller that runs several searches over one graph: the order depends on nothing
+    /// but the links, so building it per search is waste rather than a difference. See
+    /// [`IterationOrder`] for what it is and why one of them serves this search and the
+    /// backward one both. There is no unordered form of this - an order changes no settled
+    /// answer, so there would be nothing for a caller to choose.
+    #[allow(clippy::too_many_arguments)]
+    pub fn explore_knowing(
+        graph: &LookAheadGraph,
+        start: DialogueNodeId,
+        seed: &BDDFunction,
+        compiler: &mut GuardCompiler<'a>,
+        world: &dyn ILookAheadWorld,
+        counter_cap: u32,
+        budget: &Budget,
+        order: &IterationOrder,
+    ) -> Self {
         let vars = compiler.vars();
         let mut image = ActionImage::new(vars, counter_cap);
         let mut this = Self {
@@ -356,8 +379,12 @@ impl<'a> Reachability<'a> {
             }
         }
 
-        let mut queue = VecDeque::new();
-        queue.push_back(start);
+        // FROM THE NEAR END OF THE ORDER. The rank puts a component below everything it can
+        // reach, and this pass travels the links forwards - so taking the lowest rank first
+        // means an entry is popped once with every arm of a join already folded into what is
+        // pending, rather than once per arm as they arrive.
+        let mut queue = Worklist::new(order, Direction::Forward);
+        queue.push(start);
 
         let began = std::time::Instant::now();
         let mut last_report = began;
@@ -386,7 +413,7 @@ impl<'a> Reachability<'a> {
         };
         let mut charged = this.vars.memory_used();
 
-        'search: while let Some(id) = queue.pop_front() {
+        'search: while let Some(id) = queue.pop() {
             // Take the pending states and leave nothing behind. An entry can be queued
             // more than once before it is reached, and the second visit has nothing to do.
             let delta = match frontier.insert(id, vars.bottom()) {
@@ -521,7 +548,7 @@ impl<'a> Reachability<'a> {
                     break 'search;
                 };
                 frontier.insert(child_id, waiting);
-                queue.push_back(child_id);
+                queue.push(child_id);
 
                 if first_sighting {
                     if let Some(halt) = &budget.halt_on {

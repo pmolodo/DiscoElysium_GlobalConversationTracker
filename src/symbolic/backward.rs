@@ -86,6 +86,7 @@ use crate::graph::node::LookAheadNode;
 use crate::symbolic::action_image::ActionImage;
 use crate::symbolic::guard_formula::GuardCompiler;
 use crate::symbolic::known::Known;
+use crate::symbolic::order::{Direction, IterationOrder, Worklist};
 use crate::symbolic::vars::DataVars;
 use crate::world::world::ILookAheadWorld;
 
@@ -186,11 +187,12 @@ impl<'a> Backward<'a> {
 
     /// The same, told what earlier searches over this group already worked out.
     ///
-    /// TWO DIFFERENT USES OF THE SAME ARGUMENT, and only one of them changes an answer.
-    /// The parent map is a fact about the graph that every pass rebuilds for itself, so
-    /// taking it from `known` is pure saving. The forward sets are a proof: a pass that
-    /// MEETS one stops there, having shown the target reachable without finishing - see
-    /// [`Known`].
+    /// THREE DIFFERENT USES OF THE SAME ARGUMENT, and only one of them changes an answer.
+    /// The parent map and the iteration order are facts about the graph that every pass
+    /// works out for itself, so taking them from `known` is pure saving - the order changes
+    /// how many pops the same settled sets take, and not what is in them. The forward sets
+    /// are the one that does: a pass that MEETS one stops there, having shown the target
+    /// reachable without finishing - see [`Known`].
     #[allow(clippy::too_many_arguments)]
     pub fn reaching_knowing(
         graph: &LookAheadGraph,
@@ -232,7 +234,23 @@ impl<'a> Backward<'a> {
 
         let began = std::time::Instant::now();
         let mut last_report = began;
-        let mut queue: VecDeque<DialogueNodeId> = VecDeque::new();
+        // FROM THE FAR END OF THE ORDER. The rank puts a component below everything it can
+        // reach through links, and this pass travels the links backwards - so taking the
+        // highest rank first finishes a component before the ones that feed it, which is
+        // what stops an entry being popped once per contribution that arrives late.
+        //
+        // TAKEN RATHER THAN REBUILT where an earlier search left one, exactly like the
+        // parent map above; a caller with nothing to share pays one Tarjan pass, which is
+        // nothing against the diagram work that follows.
+        let owned_order;
+        let order = match known {
+            Some(known) => known.order(),
+            None => {
+                owned_order = IterationOrder::of(graph);
+                &owned_order
+            }
+        };
+        let mut queue = Worklist::new(order, Direction::Backward);
         let mut ran_out = false;
 
         // The target's own set: enter it in any state at all and the target has been
@@ -260,7 +278,7 @@ impl<'a> Backward<'a> {
                     }
                 }
                 frontier.insert(target, fresh);
-                queue.push_back(target);
+                queue.push(target);
             }
         }
 
@@ -271,7 +289,7 @@ impl<'a> Backward<'a> {
         // been sent plus the pre-image of what is new. Re-sending the whole set at every
         // visit recomputes the first half each time, which on a group of four thousand
         // entries is the difference between finishing and not.
-        'search: while let Some(id) = queue.pop_front() {
+        'search: while let Some(id) = queue.pop() {
             // Proved already, at the target or at an entry reached since. Nothing below
             // can improve on a yes.
             if this.stats.met_at.is_some() {
@@ -359,7 +377,7 @@ impl<'a> Backward<'a> {
                     break 'search;
                 };
                 frontier.insert(parent, waiting);
-                queue.push_back(parent);
+                queue.push(parent);
             }
         }
 
