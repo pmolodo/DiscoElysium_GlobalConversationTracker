@@ -213,6 +213,57 @@ impl DataLayout {
     ///
     /// Without this a dropped slot costs no reads but still costs its variable numbers,
     /// so the diagram keeps exactly the depth the dropping was meant to remove.
+    /// The same layout with its slots numbered in `order` instead of by slot index.
+    ///
+    /// ## Why this exists
+    ///
+    /// FOR A BDD THE NUMBERING IS THE VARIABLE ORDER, and the order usually matters more
+    /// than anything else about an encoding - diagram size is exponential in it in the bad
+    /// cases. The order here has always been "whatever order the symbol table happens to
+    /// be in", which `super` describes as "a starting guess and is meant to be varied", and
+    /// nothing has varied it against the fixed point.
+    ///
+    /// This is what lets a measurement vary it. Slots named in `order` are laid out in that
+    /// sequence; any slot not named keeps its width and is appended afterwards, so a
+    /// partial order is still a valid layout rather than a lost slot. Money and the clock
+    /// follow the slots, as they always have.
+    ///
+    /// See de-3x76.10. `tests/order_sensitivity.rs` is the caller.
+    pub fn in_slot_order(mut self, order: &[usize]) -> Self {
+        let mut next = 0u32;
+        let mut placed = vec![false; self.slots.len()];
+
+        for &slot in order {
+            let Some((base, bits)) = self.slots.get_mut(slot) else { continue };
+            if placed[slot] {
+                continue;
+            }
+            placed[slot] = true;
+            *base = next;
+            next += *bits as u32;
+        }
+
+        for (slot, (base, bits)) in self.slots.iter_mut().enumerate() {
+            if placed[slot] {
+                continue;
+            }
+            *base = next;
+            next += *bits as u32;
+        }
+
+        if let Some((base, bits)) = &mut self.money {
+            *base = next;
+            next += *bits as u32;
+        }
+        if let Some((base, bits)) = &mut self.clock {
+            *base = next;
+            next += *bits as u32;
+        }
+
+        self.total = next;
+        self
+    }
+
     fn renumber(&mut self) {
         let mut next = 0u32;
         for (base, bits) in &mut self.slots {
