@@ -27,7 +27,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use oxidd::bdd::{BDDFunction, BDDManagerRef};
-use oxidd::{BooleanFunction, Function, Manager, ManagerRef};
+use oxidd::{BooleanFunction, Manager, ManagerRef};
 
 use lookahead_engine::symbolic::budget::DiagramBudget;
 
