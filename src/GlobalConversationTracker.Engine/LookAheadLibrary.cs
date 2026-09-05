@@ -48,6 +48,26 @@ namespace GlobalConversationTracker.Engine
         }
 
         /// <summary>
+        /// How long any one read may wait for the engine, in milliseconds.
+        /// </summary>
+        /// <remarks>
+        /// <para>NOT A PERFORMANCE LIMIT. A search is bounded by the time budget inside the
+        /// request, which the engine enforces itself and reports as having stopped it. This
+        /// is the answer to a child that will never answer at all - the case a blocking
+        /// read cannot tell from a slow one - and it is deliberately far longer than
+        /// anything legitimate.</para>
+        ///
+        /// <para>A read that passes it ENDS THE ENGINE: the child is killed and this object
+        /// throws from then on. Recovering from that - saying so in the game, and starting
+        /// another - is de-bnjy.1.2 and de-bnjy.1.3.</para>
+        /// </remarks>
+        public static int DeadlineMs
+        {
+            get => EngineHost.Deadline;
+            set => EngineHost.Deadline = value;
+        }
+
+        /// <summary>
         /// The engine's version, for checking it is the one this was built against.
         /// </summary>
         /// <remarks>
@@ -113,6 +133,16 @@ namespace GlobalConversationTracker.Engine
 
             return new LookAheadLibrary(host);
         }
+
+        /// <summary>
+        /// The engine process's id, or 0 once it has gone.
+        /// </summary>
+        /// <remarks>
+        /// The mod now starts a process the player did not, so the log should say which
+        /// one. It also gives a test something exact to watch: whether THIS child ended,
+        /// rather than whether any process of that name did.
+        /// </remarks>
+        public int ProcessId => _host.ProcessId;
 
         /// <summary>How many conversations the index holds.</summary>
         public int ConversationCount => Count(EngineHost.Requests.ConversationCount);

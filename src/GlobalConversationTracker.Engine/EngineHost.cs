@@ -6,6 +6,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace GlobalConversationTracker.Engine
 {
@@ -66,6 +67,22 @@ namespace GlobalConversationTracker.Engine
         /// </remarks>
         private const int ShutdownMs = 2000;
 
+        /// <summary>
+        /// How long any one read may wait for the engine, in milliseconds.
+        /// </summary>
+        /// <remarks>
+        /// <para>NOT A PERFORMANCE LIMIT. What bounds a search is the time budget inside
+        /// the request, which the engine enforces itself and reports as having stopped it;
+        /// this is the answer to a child that will never answer at all, and it should be
+        /// comfortably longer than anything legitimate so that it never fires on a slow
+        /// one. Thirty seconds is far past the largest budget a player can set and far
+        /// short of a session spent waiting.</para>
+        ///
+        /// <para>Settable so a test can prove the deadline fires without waiting thirty
+        /// seconds for it.</para>
+        /// </remarks>
+        internal static int Deadline { get; set; } = 30_000;
+
         private readonly Process _child;
         private readonly Stream _toChild;
         private readonly Stream _fromChild;
@@ -76,6 +93,30 @@ namespace GlobalConversationTracker.Engine
             _child = child;
             _toChild = child.StandardInput.BaseStream;
             _fromChild = child.StandardOutput.BaseStream;
+        }
+
+        /// <summary>
+        /// The child's process id, or 0 once it has gone.
+        /// </summary>
+        /// <remarks>
+        /// Worth having in a log line. A player reporting a process they did not start can
+        /// be answered from the log rather than from guesswork, and a test can watch the
+        /// exact child rather than counting processes by name and hoping no other test is
+        /// running one.
+        /// </remarks>
+        internal int ProcessId
+        {
+            get
+            {
+                try
+                {
+                    return _child.Id;
+                }
+                catch (Exception)
+                {
+                    return 0;
+                }
+            }
         }
 
         /// <summary>
@@ -148,6 +189,12 @@ namespace GlobalConversationTracker.Engine
                     $"the look-ahead engine at '{executable}' would not start.");
             }
 
+            // Adopted so it cannot outlive a game that was KILLED rather than closed - see
+            // ProcessJob. Best effort by design: an engine that is running but not adopted
+            // is a mod that works with one failure mode back, and there is nothing useful
+            // to do here about a machine that would not make a job object.
+            ProcessJob.Adopt(child);
+
             return new EngineHost(child);
         }
 
@@ -219,14 +266,21 @@ namespace GlobalConversationTracker.Engine
         /// Reads exactly <paramref name="count"/> bytes, or says the engine has gone.
         /// </summary>
         /// <remarks>
-        /// A pipe read returns what is available rather than what was asked for, so the
-        /// loop is not optional: a large response arrives in pieces, and taking the first
-        /// piece for the whole would misread the next frame's length out of the middle of
-        /// this one.
+        /// <para>A pipe read returns what is available rather than what was asked for, so
+        /// the loop is not optional: a large response arrives in pieces, and taking the
+        /// first piece for the whole would misread the next frame's length out of the
+        /// middle of this one.</para>
         ///
-        /// THIS IS WHERE A DEADLINE GOES - de-bnjy.1.1.3. Zero from a pipe means the far
-        /// end has closed it, which this reports; what it cannot yet tell apart is a child
-        /// that is thinking from a child that will never answer.
+        /// <para>EVERY READ HAS A DEADLINE - de-bnjy.1.1.3 - because "the child is
+        /// thinking" and "the child will never answer" look identical to a blocking read,
+        /// and telling them apart is the whole reason the engine was moved out of process.
+        /// A read that has not finished by <see cref="Deadline"/> ends the engine: the
+        /// child is killed and this host is closed, so nothing later reads the tail of an
+        /// answer that arrived after everyone stopped waiting.</para>
+        ///
+        /// <para>The deadline restarts per read rather than bounding the whole answer,
+        /// which is the right shape: a large response arrives in many pieces and none of
+        /// them should be waited on for longer than the last.</para>
         /// </remarks>
         private byte[] ReadExactly(int count, string what)
         {
@@ -234,10 +288,30 @@ namespace GlobalConversationTracker.Engine
             int filled = 0;
             while (filled < count)
             {
+                // ReadAsync rather than Read, only so that there is something to stop
+                // waiting on. The task itself cannot be cancelled - a pending pipe read is
+                // the operating system's, not ours - so what happens on a timeout is that
+                // this stops waiting and kills the child, which makes the abandoned read
+                // fail and the buffer it was filling unreachable.
+                Task<int> reading = _fromChild.ReadAsync(buffer, filled, count - filled);
+
                 int read;
                 try
                 {
-                    read = _fromChild.Read(buffer, filled, count - filled);
+                    if (!reading.Wait(Deadline))
+                    {
+                        Kill();
+                        throw new TimeoutException(
+                            $"the look-ahead engine did not answer within {Deadline} ms "
+                            + $"while {what} was being read. It has been stopped.");
+                    }
+
+                    read = reading.Result;
+                }
+                catch (AggregateException failed)
+                    when (failed.InnerException is IOException gone)
+                {
+                    throw Died($"reading {what}", gone);
                 }
                 catch (IOException gone)
                 {
@@ -253,6 +327,25 @@ namespace GlobalConversationTracker.Engine
             }
 
             return buffer;
+        }
+
+        /// <summary>Ends the child now, and marks this host unusable.</summary>
+        /// <remarks>
+        /// Both halves matter. Killing without closing would leave a host whose next call
+        /// blocks on a pipe with nothing behind it; closing without killing would leave the
+        /// orphan the job object is a second line of defence against.
+        /// </remarks>
+        private void Kill()
+        {
+            _closed = true;
+            try
+            {
+                _child.Kill();
+            }
+            catch (Exception)
+            {
+                // Already gone, which is one of the ways a read times out.
+            }
         }
 
         /// <summary>
