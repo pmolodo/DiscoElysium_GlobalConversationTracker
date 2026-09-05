@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using GlobalConversationTracker.Engine;
 using GlobalConversationTracker.Session;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
@@ -58,16 +59,34 @@ namespace GlobalConversationTracker
         private static bool _enabled = true;
         private static IGlobalStateLog? _log;
 
-        /// <summary>The native engine and the index it reads, or null if there is none.</summary>
+        /// <summary>The engine and the index it reads, or null if there is none.</summary>
         /// <remarks>
-        /// Opened once, lazily, at the first response menu rather than at plugin load: the
-        /// index is tens of megabytes and the cache check it enables needs a loaded
-        /// dialogue database, neither of which belongs in the frame that draws the main
-        /// menu. Null afterwards means the library or the index is not there, and the
-        /// managed engine simply carries on.
+        /// Opened once. Null afterwards means the engine or the index is not there, and
+        /// the managed engine simply carries on.
         /// </remarks>
         private static LookAheadIndex? _bridge;
         private static bool _bridgeOpened;
+
+        /// <summary>The open, started at load and running off the game's threads.</summary>
+        /// <remarks>
+        /// <para>OPENING COSTS MORE THAN IT DID. It was a fifteen-megabyte index parse,
+        /// which is why it was made lazy - at the first response menu rather than at plugin
+        /// load, so that it was not in the frame that draws the main menu. Since de-bnjy.1
+        /// there is a process launch in front of that, and the same argument applies one
+        /// level out: the cost moved, so the answer has to move with it.</para>
+        ///
+        /// <para>So it is started at load and done on a thread of its own, and a menu drawn
+        /// before it finishes is answered by the managed engine - which is what a menu gets
+        /// anyway when there is no index at all. Nobody waits: not the main menu, which is
+        /// why this is not synchronous at load, and not the first conversation, which is why
+        /// it is no longer lazy.</para>
+        ///
+        /// <para>THE TASK IS THE ONLY THING THAT TOUCHES WHAT IT IS BUILDING. Neither the
+        /// engine nor the index it holds is thread-safe, so nothing reads the result until
+        /// the task has finished and handed it over - see <see cref="Bridge"/>, which
+        /// returns null rather than looking at a half-built one.</para>
+        /// </remarks>
+        private static Task<LookAheadIndex?>? _warming;
 
         /// <summary>What the bridge said about the options of the menu being drawn.</summary>
         /// <remarks>
@@ -224,6 +243,10 @@ namespace GlobalConversationTracker
             _branchUncertainHtml = Validate(branchUncertainHtml, nameof(branchUncertainHtml));
             _markUncertain = markUncertain;
             Configure(enabled, stateBudget, timeBudgetMs, memoryBudgetMb, diagnostics);
+
+            // Started now and finished elsewhere, so that neither the main menu nor the
+            // first conversation waits for a process launch and a fifteen-megabyte parse.
+            BeginOpening();
 
             // Two hooks, and they are not interchangeable. The menu one is where the whole
             // list of options exists, which is the only place a single bridge call can
@@ -402,7 +425,66 @@ namespace GlobalConversationTracker
             }
         }
 
-        /// <summary>The bridge, opened on first use, or null where there is none.</summary>
+        /// <summary>
+        /// Starts opening the engine, off the game's threads. Called once, at load.
+        /// </summary>
+        /// <remarks>
+        /// See <see cref="_warming"/> for why this is not done here and now. A second call
+        /// is ignored rather than starting a second engine, which matters because
+        /// <see cref="Install"/> is called again by the in-game suites.
+        /// </remarks>
+        private static void BeginOpening()
+        {
+            if (_warming != null || _bridgeOpened)
+            {
+                return;
+            }
+
+            IGlobalStateLog? log = _log;
+            string? modDirectory = _modDirectory;
+            if (log == null || modDirectory == null)
+            {
+                return;
+            }
+
+            // Read here rather than inside the task, so the task borrows nothing that a
+            // later Install could change underneath it.
+            string pluginDirectory = NativeEngineCheck.PluginDirectory;
+            _warming = Task.Run(() => Opened(pluginDirectory, modDirectory, log));
+        }
+
+        /// <summary>Opens the bridge, turning any failure into null and a log line.</summary>
+        /// <remarks>
+        /// NOTHING MAY ESCAPE THIS. It runs on a thread nobody is waiting on, and an
+        /// exception there would be an unobserved task fault rather than anything a player
+        /// or a log reader would ever see.
+        /// </remarks>
+        private static LookAheadIndex? Opened(
+            string pluginDirectory, string modDirectory, IGlobalStateLog log)
+        {
+            try
+            {
+                return LookAheadIndex.Open(pluginDirectory, modDirectory, log);
+            }
+            catch (Exception error)
+            {
+                // A missing or unrunnable engine arrives here from the attempt to start it,
+                // rather than from anything this file does.
+                log.Warning(
+                    $"{LogPrefix} the look-ahead engine is unavailable "
+                    + $"({error.GetType().Name}: {error.Message}). "
+                    + "The managed engine is answering on its own.");
+                return null;
+            }
+        }
+
+        /// <summary>The bridge, or null where there is none YET or at all.</summary>
+        /// <remarks>
+        /// The two nulls are deliberately not distinguished, because the caller does the
+        /// same thing about both: the managed engine answers this menu. A menu drawn while
+        /// the engine is still starting is therefore answered exactly as a menu is when
+        /// there is no index deployed at all.
+        /// </remarks>
         private static LookAheadIndex? Bridge()
         {
             if (_bridgeOpened)
@@ -410,29 +492,23 @@ namespace GlobalConversationTracker
                 return _bridge;
             }
 
-            _bridgeOpened = true;
-            IGlobalStateLog? log = _log;
-            if (log == null || _modDirectory == null)
+            Task<LookAheadIndex?>? warming = _warming;
+            if (warming == null)
+            {
+                // Nothing started it, which means Install did not run or had nothing to
+                // work with. Opening one here would put the whole cost in this frame.
+                return null;
+            }
+
+            if (!warming.IsCompleted)
             {
                 return null;
             }
 
-            try
-            {
-                _bridge = LookAheadIndex.Open(
-                    NativeEngineCheck.PluginDirectory, _modDirectory, log);
-            }
-            catch (Exception error)
-            {
-                // A missing or unrunnable engine arrives here from the attempt to start it,
-                // rather than from anything this file does.
-                log.Warning(
-                    $"{LogPrefix} the native look-ahead is unavailable "
-                    + $"({error.GetType().Name}: {error.Message}). "
-                    + "The managed engine is answering on its own.");
-                _bridge = null;
-            }
-
+            _bridgeOpened = true;
+            // Faulted rather than returning null is not expected - Opened catches its own -
+            // but an unobserved fault here would be a null reference several frames later.
+            _bridge = warming.Status == TaskStatus.RanToCompletion ? warming.Result : null;
             return _bridge;
         }
 
