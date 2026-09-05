@@ -197,6 +197,19 @@ fn writes_of(graph: &LookAheadGraph, cyclic: &HashSet<DialogueNodeId>, slots: us
         .collect();
 
     for node in graph.nodes() {
+        // THE ENGINE WRITES SLOTS TOO, and missing that is what made this measurement
+        // report a class that does not exist. A rolled check records its own result in
+        // `flag_slot` and `failed_flag_slot`, and a `seen_slot` closes a one-time entry;
+        // none of those is a parsed action, so a scan of actions alone calls them "never
+        // written". Counting them here is what makes the unwritten column mean what it says.
+        for slot in [node.flag_slot, node.failed_flag_slot, node.seen_slot, node.once_slot] {
+            if let Ok(slot) = usize::try_from(slot) {
+                if slot < slots {
+                    found[slot].written = true;
+                }
+            }
+        }
+
         for action in &node.actions {
             let slot = action.slot();
             if slot < 0 || slot as usize >= slots {

@@ -16,6 +16,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::core::action::DialogueActionKind;
 use crate::core::guard::GuardExpression;
 use crate::core::state::{StateSymbols, ONCE_PREFIX, SEEN_PREFIX};
 use crate::core::types::{DialogueCheckKind, DialogueNodeId};
@@ -440,12 +441,53 @@ fn keeping_only_read_slots(
 ) -> (Vec<LookAheadNode>, StateSymbols) {
     let reads = DataLayout::read_by_nodes(nodes.iter(), &symbols);
 
+    // AND WHAT SOMETHING WRITES, which is the other half of the same rule.
+    //
+    // A slot a guard reads but nothing in the group writes cannot change during a search:
+    // the seed puts the world's value in it and nothing ever moves it. Carrying it costs a
+    // column in every state vector and a variable in every diagram, to hold a constant.
+    //
+    // WRITTEN MEANS WRITTEN BY ANYTHING, NOT BY AN ACTION. Getting that wrong is what broke
+    // the first two attempts at this trim, and it broke them silently in ANSWERS: a rolled
+    // check records its own result in `flag_slot` and `failed_flag_slot`, and the ENGINE
+    // writes those, not any parsed action. Counting only actions classified them as never
+    // written, dropped them, and `renumber` turned them into -1 - so the check could no
+    // longer record whether it had passed, the pass branch resolved somewhere else, and
+    // five scenarios in tests/branch_shapes.rs drew the wrong colour.
+    //
+    // The same is true of `seen_slot`. `once_slot` is -1 at this point - those are interned
+    // later, by `LookAheadGraph::new` - and is included so that moving the interning earlier
+    // cannot quietly reintroduce the same bug.
+    let mut written = vec![false; symbols.count()];
+    let mut mark = |slot: i32, written: &mut Vec<bool>| {
+        if let Ok(slot) = usize::try_from(slot) {
+            if slot < written.len() {
+                written[slot] = true;
+            }
+        }
+    };
+    for node in &nodes {
+        mark(node.flag_slot, &mut written);
+        mark(node.failed_flag_slot, &mut written);
+        mark(node.seen_slot, &mut written);
+        mark(node.once_slot, &mut written);
+        for action in &node.actions {
+            // Only these two carry a slot; money, clock and unmodelled actions do not.
+            if matches!(
+                action.kind(),
+                DialogueActionKind::Assign | DialogueActionKind::Increment
+            ) {
+                mark(action.slot(), &mut written);
+            }
+        }
+    }
+
     let keep: Vec<bool> = (0..symbols.count())
         .map(|slot| match symbols.name_of(slot) {
             Some(name) => {
                 name.starts_with(SEEN_PREFIX)
                     || name.starts_with(ONCE_PREFIX)
-                    || reads.contains(name)
+                    || (reads.contains(name) && written[slot])
             }
             // A slot with no name is one this table never interned, so there is nothing
             // to keep and nothing pointing at it.
