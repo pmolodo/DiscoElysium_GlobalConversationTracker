@@ -121,6 +121,19 @@ TOTAL_ROWS=$(( ${#CONVERSATIONS[@]} * ${#PROFILES[@]} ))
 DONE_ROWS=0
 STARTED=$(date +%s)
 
+# EVERY ROW THIS RUN WILL DO, in the order it will do them, so that at any point the run
+# can say which rows are still ahead of it - which is what the weighted estimate needs and
+# a count of rows cannot give. Must match the loop order below exactly.
+ROW_KEYS=()
+for conversation in "${CONVERSATIONS[@]}"; do
+    for profile in "${PROFILES[@]}"; do
+        ROW_KEYS+=("$conversation:$profile")
+    done
+done
+
+# The rows already finished, as key=seconds, accumulated as the run goes.
+DONE_SPEC=""
+
 # h:mm:ss. A run of this length is watched rather than read afterwards, and seconds since
 # the epoch is not something a person can watch.
 clock() {
@@ -130,21 +143,44 @@ clock() {
 # WHERE THE RUN IS, after every row.
 #
 # Two numbers rather than one, because they bracket an honest answer and neither does it
-# alone. The estimate is the mean row so far spread over what is left, which reads LONG
-# early on: each conversation's heavy profiles run first, so the first rows of every six
-# are the slowest ones. The worst case is every remaining row spending every engine's cap
-# in full, which is the number that says whether this can possibly finish overnight.
+# alone. The estimate is WEIGHTED BY WHAT EACH REMAINING ROW HAS COST BEFORE, taken from
+# past runs under measurements/logs and scaled by the pace this run is actually going at -
+# see tools/matrix-remaining.awk. The worst case is every remaining row spending every
+# engine's cap in full, which is the number that says whether this can possibly finish
+# overnight.
+#
+# THE FLAT MEAN IS STILL THE FALLBACK, and says so when it is used. It reads LONG early on,
+# because each conversation's heavy profiles run first, and that is the whole reason the
+# weights are worth having.
 progress() {
     DONE_ROWS=$(( DONE_ROWS + 1 ))
     local now
     now=$(date +%s)
     local elapsed=$(( now - STARTED ))
     local left=$(( TOTAL_ROWS - DONE_ROWS ))
-    printf '    %d/%d (%d%%)  row %s  elapsed %s  est. left ~%s  worst case %s\n' \
+
+    DONE_SPEC="${DONE_SPEC}${DONE_SPEC:+;}${ROW_KEYS[$(( DONE_ROWS - 1 ))]}=$(( now - ROW_STARTED ))"
+
+    local left_spec="" i
+    for (( i = DONE_ROWS; i < TOTAL_ROWS; i++ )); do
+        left_spec="${left_spec}${left_spec:+;}${ROW_KEYS[$i]}"
+    done
+
+    local estimate="" note=""
+    if [ -n "$left_spec" ] && [ "${#PAST_TSVS[@]}" -gt 0 ]; then
+        estimate="$(awk -v engines="$ENGINE_NAMES" -v done="$DONE_SPEC" -v left="$left_spec" \
+            -f "$ROOT/tools/matrix-remaining.awk" "${PAST_TSVS[@]}" 2>/dev/null)"
+    fi
+    if [ -z "$estimate" ]; then
+        estimate=$(( elapsed * left / DONE_ROWS ))
+        note=" (flat)"
+    fi
+
+    printf '    %d/%d (%d%%)  row %s  elapsed %s  est. left ~%s%s  worst case %s\n' \
         "$DONE_ROWS" "$TOTAL_ROWS" $(( DONE_ROWS * 100 / TOTAL_ROWS )) \
         "$(clock $(( now - ROW_STARTED )))" \
         "$(clock "$elapsed")" \
-        "$(clock $(( elapsed * left / DONE_ROWS )))" \
+        "$(clock "$estimate")" "$note" \
         "$(clock $(( left * ENGINE_COUNT * ROW_SECONDS )))"
 }
 
@@ -165,9 +201,18 @@ if [ -z "$HEADER" ]; then
     exit 1
 fi
 
-# How many engines a row measures, counted from the header rather than from a second
-# reading of ENGINES: one verdict column each, whatever the selection was.
+# WHICH engines a row measures, and how many, counted from the header rather than from a
+# second reading of ENGINES: one verdict column each, whatever the selection was.
+ENGINE_NAMES=$(printf '%s' "$HEADER" | tr '\t' '\n' | sed -n 's/_verdict$//p' | paste -sd, -)
 ENGINE_COUNT=$(printf '%s' "$HEADER" | tr '\t' '\n' | grep -c '_verdict$')
+
+# WHAT PAST RUNS COST, for the weighted estimate. This run's own folder is excluded: its
+# rows are the ones being calibrated, and letting them weigh themselves would drag every
+# ratio towards one as the run went on.
+PAST_TSVS=()
+while IFS= read -r tsv; do
+    [ -n "$tsv" ] && PAST_TSVS+=("$tsv")
+done < <(find "$OUT/logs" -name 'performance-matrix-*.tsv' -not -path "$LOGS/*" 2>/dev/null)
 
 echo "$TOTAL_ROWS rows, ${ROW_SECONDS}s per engine per row, started $(date '+%H:%M:%S')"
 
