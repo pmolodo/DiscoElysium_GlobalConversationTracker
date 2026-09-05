@@ -88,6 +88,25 @@ namespace GlobalConversationTracker
         /// </remarks>
         private static Task<LookAheadIndex?>? _warming;
 
+        /// <summary>Whether the engine has died, which is final for this session.</summary>
+        /// <remarks>
+        /// Set once by <see cref="EngineDied"/> and never cleared. It is what makes the
+        /// message appear once and the feature stay off - the hooks are removed as well,
+        /// but a hook that is mid-call when the engine goes still has to find its way out.
+        /// </remarks>
+        private static bool _engineDied;
+
+        /// <summary>
+        /// The look-ahead's OWN Harmony instance, so it can take its own hooks off.
+        /// </summary>
+        /// <remarks>
+        /// Its own rather than the plugin's, decided in de-bnjy.1.2. Unpatching is by id,
+        /// and the plugin's id covers the tracking hooks, the HUD counts and the option
+        /// colours - none of which have anything to do with the engine, and one of which
+        /// records what the player has read. An engine that dies must not cost that.
+        /// </remarks>
+        private static Harmony? _harmony;
+
         /// <summary>What the bridge said about the options of the menu being drawn.</summary>
         /// <remarks>
         /// <para>Filled once per menu, read once per option. This is the whole reason the
@@ -166,6 +185,16 @@ namespace GlobalConversationTracker
         /// </remarks>
         internal const string DefaultSeenColorHtml = "#7C2F2A";
 
+        /// <summary>
+        /// Appended to the plugin's Harmony id to make this patch's own.
+        /// </summary>
+        /// <remarks>
+        /// Derived from the plugin's rather than written out, so the two cannot drift apart
+        /// and so the look-ahead's id is recognisably the plugin's in any Harmony
+        /// diagnostic that lists them.
+        /// </remarks>
+        private const string LookAheadPatchSuffix = ".lookahead";
+
         /// <summary>The marker for an option whose crawl finished and found something.</summary>
         private const string FoundMarker = "*";
 
@@ -177,7 +206,12 @@ namespace GlobalConversationTracker
         /// <summary>
         /// Applies the patch. Call once, from plugin load, after the session exists.
         /// </summary>
-        /// <param name="harmony">The plugin's Harmony instance.</param>
+        /// <param name="harmony">
+        /// The plugin's Harmony instance, used ONLY for its id. This patch installs through
+        /// an instance of its own, derived from that id, so that it can take its own hooks
+        /// off when the engine dies without touching the tracking hooks - see
+        /// <see cref="EngineDied"/>.
+        /// </param>
         /// <param name="session">The session novelty is read from.</param>
         /// <param name="log">Where hook failures are reported.</param>
         /// <param name="modDirectory">
@@ -248,12 +282,23 @@ namespace GlobalConversationTracker
             // first conversation waits for a process launch and a fifteen-megabyte parse.
             BeginOpening();
 
+            // A SECOND INSTALL WOULD ORPHAN THE FIRST INSTANCE, and hooks nothing holds an
+            // instance for cannot be taken off again. Load calls this once; a test may not.
+            _harmony?.UnpatchSelf();
+            _engineDied = false;
+
+            // AN INSTANCE OF ITS OWN, whose id is the plugin's with a suffix. Unpatching is
+            // by id, so hooks that share one cannot be removed separately - and these two
+            // have to come off, when the engine dies, without taking the tracking hooks
+            // with them.
+            _harmony = new Harmony(harmony.Id + LookAheadPatchSuffix);
+
             // Two hooks, and they are not interchangeable. The menu one is where the whole
             // list of options exists, which is the only place a single bridge call can
             // cover all of them; the text one is where a marker can be attached to an
             // option's own string.
-            harmony.PatchAll(typeof(ResponseMenuPatch));
-            harmony.PatchAll(typeof(ChooseResponseTextPatch));
+            _harmony.PatchAll(typeof(ResponseMenuPatch));
+            _harmony.PatchAll(typeof(ChooseResponseTextPatch));
         }
 
         /// <summary>Changes suite-scoped behavior without reinstalling the hook.</summary>
@@ -415,6 +460,12 @@ namespace GlobalConversationTracker
                     }
                 }
             }
+            catch (EngineDiedException died)
+            {
+                // NOT A FAILED CALL. The engine itself has gone, so there is nothing to
+                // retry and nothing to compare against for the rest of the session.
+                EngineDied(died);
+            }
             catch (Exception error)
             {
                 // The whole point of running both engines is that this one is not yet
@@ -478,6 +529,82 @@ namespace GlobalConversationTracker
             }
         }
 
+        /// <summary>
+        /// The engine has gone: say so once, take the hooks off, and stop for good.
+        /// </summary>
+        /// <remarks>
+        /// <para>NO RESTART, deliberately, and the user asked for it that way: an engine
+        /// that failed on a given menu will fail on it again, so a respawn loop is a stutter
+        /// rather than a recovery. What brings the feature back is restarting the game.</para>
+        ///
+        /// <para>THE HOOKS COME OFF rather than a flag being checked in them. Harmony can
+        /// genuinely undo itself, and unpatching by this class's OWN Harmony id takes off
+        /// exactly the two look-ahead patches - which is why they were given an instance of
+        /// their own. Everything else the plugin does keeps running: the tracking hooks
+        /// above all, because losing what the player has read because a search process died
+        /// would turn a cosmetic failure into data loss.</para>
+        ///
+        /// <para>Once. Every path in reaches this, and a message repeated on every response
+        /// menu after the engine has gone would be worse than the silence it replaced.</para>
+        /// </remarks>
+        private static void EngineDied(EngineDiedException died)
+        {
+            if (_engineDied)
+            {
+                return;
+            }
+
+            _engineDied = true;
+
+            string advice = died.Death == EngineDeath.OutOfMemory
+                ? "It ran out of memory. Lowering LookAheadMemoryBudgetMb may help."
+                : "It stopped unexpectedly.";
+            _log?.Warning(
+                $"{LogPrefix} the look-ahead engine has gone and will not be restarted. "
+                + $"{advice} Dialogue options will be drawn without look-ahead markers for "
+                + "the rest of this session; restart the game to bring the feature back. "
+                + "Tracking, the counts and the option colours are unaffected. "
+                + $"({died.Death}: {died.Message})");
+
+            // The bridge first, so nothing is left holding a dead engine, and then the
+            // hooks, so nothing calls in again while this is happening.
+            try
+            {
+                _bridge?.Dispose();
+            }
+            catch (Exception)
+            {
+                // It is already dead; disposing it is tidiness, not a step that can fail
+                // in a way anybody can act on.
+            }
+
+            _bridge = null;
+            _bridgeOpened = true;
+            _menuAnswers = null;
+            _questions.Clear();
+
+            try
+            {
+                // UnpatchSelf, not UnpatchAll(id): the id overload is obsolete in the
+                // Harmony this builds against, and UnpatchAll now means EVERYTHING - which
+                // would take the tracking hooks with it, the one outcome this whole
+                // arrangement exists to prevent. The compiler says so; note that the
+                // published API reference does not.
+                _harmony?.UnpatchSelf();
+            }
+            catch (Exception error)
+            {
+                // A hook that will not come off is not a reason to stop: _engineDied is
+                // already set, so the patches that remain do nothing anyway. Said out loud
+                // because it would otherwise be invisible.
+                _log?.Warning(
+                    $"{LogPrefix} the look-ahead hooks could not be removed "
+                    + $"({error.GetType().Name}: {error.Message}); they will do nothing.");
+            }
+
+            _harmony = null;
+        }
+
         /// <summary>The bridge, or null where there is none YET or at all.</summary>
         /// <remarks>
         /// The two nulls are deliberately not distinguished, because the caller does the
@@ -487,6 +614,11 @@ namespace GlobalConversationTracker
         /// </remarks>
         private static LookAheadIndex? Bridge()
         {
+            if (_engineDied)
+            {
+                return null;
+            }
+
             if (_bridgeOpened)
             {
                 return _bridge;
