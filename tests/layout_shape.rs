@@ -363,3 +363,78 @@ fn what_each_group_carries() {
          layout and never runs a search, so two runs agree exactly."
     );
 }
+
+
+/// Every live slot in one group, with how it is written.
+///
+/// Exists because "conversation 14 has one counter" is a strong claim drawn from a
+/// histogram, and a histogram is exactly the shape of summary that hides a mistake in the
+/// classifier. This prints the slots themselves so the claim can be read rather than
+/// trusted.
+///
+/// `CONVERSATION=14 cargo test --test layout_shape -- --ignored --nocapture list_the_slots`
+#[test]
+#[ignore = "a listing; run it deliberately"]
+fn list_the_slots() {
+    let conversation: i32 = std::env::var("CONVERSATION")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(14);
+
+    let Some(path) = common::conversation_index() else {
+        eprintln!("no conversation index; skipping.");
+        return;
+    };
+    let index = read_index(&path).expect("the index reads");
+    let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+        eprintln!("conversation {conversation} does not build; skipping.");
+        return;
+    };
+
+    let symbols = graph.symbols().clone();
+    let reads = DataLayout::read_by(&graph);
+    let passes_time = DataLayout::group_passes_time(&graph);
+    let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, passes_time)
+        .keeping_only_read(&symbols, &reads);
+    let cyclic = on_a_cycle(&graph);
+    let writes = writes_of(&graph, &cyclic, symbols.count());
+
+    let mut rows: Vec<(String, u8, String)> = Vec::new();
+    for slot in 0..symbols.count() {
+        let Some((_, bits)) = layout.slot(slot) else { continue };
+        if bits == 0 {
+            continue;
+        }
+        let name = symbols.name_of(slot).unwrap_or("?").to_string();
+        let write = &writes[slot];
+        let how = if !write.written {
+            "never written".to_string()
+        } else if write.incremented {
+            format!(
+                "INCREMENTED at {} site(s){}{}",
+                write.increment_sites,
+                if write.every_increment_is_once { ", all once-guarded" } else { "" },
+                if write.increments_on_a_cycle { ", ON A CYCLE" } else { "" },
+            )
+        } else {
+            format!("assigned, largest {}", write.max_assigned)
+        };
+        rows.push((name, bits, how));
+    }
+
+    rows.sort();
+    println!(
+        "conversation {conversation}: {} live slots, {} variables\n",
+        rows.len(),
+        layout.total_vars(),
+    );
+    for (name, bits, how) in &rows {
+        println!("  {bits}b  {name:<44} {how}");
+    }
+
+    let counters = rows.iter().filter(|(_, bits, _)| *bits > 1).count();
+    println!("\n{counters} slot(s) wider than one bit.");
+    if let Some((_, bits)) = layout.clock() {
+        println!("plus the clock at {bits} bits");
+    }
+}
