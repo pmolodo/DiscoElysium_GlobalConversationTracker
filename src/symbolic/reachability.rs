@@ -161,6 +161,25 @@ pub struct Budget {
     /// useful guarantee: the budget can be overspent by about this long's worth of growth,
     /// whatever the sets happen to cost at that moment.
     pub check_gap: std::time::Duration,
+
+    /// The fraction of the MACHINE's memory to leave free, or zero for no such guard.
+    ///
+    /// ## Why this is needed when the store is preallocated
+    ///
+    /// It looks unnecessary, because the node store is one allocation made before the
+    /// search starts (de-0a3a) and cannot grow - so there appears to be nothing left to
+    /// watch. There is. de-mnrb measured what a node really costs and found the unique
+    /// table is 15.7 bytes of it, growing as nodes are inserted: about forty per cent of a
+    /// full manager is allocated DURING the search, not before it.
+    ///
+    /// That growth is unbounded by anything except [`Self::memory`], which is a budget
+    /// rather than a fact about the machine. Another process can take the memory this one
+    /// was counting on, and the failure is not a graceful one - it is an allocation that
+    /// aborts, which the plugin cannot catch and which takes the game with it.
+    ///
+    /// The forward crawl has had this guard since d43670d and it measured at about no cost
+    /// (-0.1 per cent), so the same reserve is used here rather than a second number.
+    pub system_reserve: f64,
     /// Stop as soon as this says yes about an entry the search has just reached.
     ///
     /// THE MOST IMPORTANT KNOB HERE, and the one the first measurement lacked. The
@@ -189,6 +208,7 @@ impl Default for Budget {
             report_every: 20_000,
             report_gap: std::time::Duration::ZERO,
             check_gap: std::time::Duration::ZERO,
+            system_reserve: crate::engine::system_memory::DEFAULT_RESERVE,
             halt_on: None,
         }
     }
@@ -230,6 +250,16 @@ pub struct ReachabilityStats {
     /// a measurement of a representation can say - and a run that dies on an unwrap says
     /// the same thing while destroying the numbers that would have shown how it got there.
     pub out_of_memory: bool,
+    /// Whether the MACHINE ran out, which is the opposite kind of answer.
+    ///
+    /// [`Self::out_of_memory`] says the search spent the allowance it was given: a result,
+    /// and about the representation. This says the machine could not supply what the search
+    /// was still entitled to ask for, which says nothing about the representation at all -
+    /// the row is not a measurement and wants running again with the memory free.
+    ///
+    /// Flattening the two into one word is how a gap in a table gets read as a finding
+    /// (de-e33h), so they are separate fields and separate verdicts.
+    pub out_of_system_memory: bool,
     /// Cost checks that could not be decided because money is not in the layout.
     pub unaffordable_unknown: usize,
     /// Actions skipped because the layout does not carry what they touch.
@@ -331,6 +361,21 @@ impl<'a> Reachability<'a> {
         let mut until_check = cadence;
         let mut last_check = began;
 
+        // THE MACHINE'S OWN LIMIT, watched on the same cadence as the budget's. See
+        // `Budget::system_reserve`: the unique table grows during the search, so there is
+        // real allocation to guard even though the node store is not.
+        //
+        // Built with an interval of one because the cadence above is already the throttle -
+        // it retunes toward `check_gap`, about a second - so a reading here is a syscall a
+        // second rather than the crawl's every four thousand states. None means the
+        // platform cannot be asked, which turns the guard off rather than faking it.
+        let mut runway = if budget.system_reserve > 0.0 {
+            crate::engine::system_memory::Runway::every(budget.system_reserve, 1)
+        } else {
+            None
+        };
+        let mut charged = this.vars.memory_used();
+
         'search: while let Some(id) = queue.pop_front() {
             // Take the pending states and leave nothing behind. An entry can be queued
             // more than once before it is reached, and the second visit has nothing to do.
@@ -362,10 +407,25 @@ impl<'a> Reachability<'a> {
                     until_check = cadence;
                 }
 
-                if budget.memory > 0 && this.vars.memory_used() >= budget.memory {
+                let used = this.vars.memory_used();
+
+                if budget.memory > 0 && used >= budget.memory {
                     this.stats.out_of_memory = true;
                     ran_out = true;
                     break;
+                }
+
+                // CHECKED SECOND, so that a search which has spent its own allowance is
+                // reported as having spent it. The two mean opposite things and only one
+                // of them is a result.
+                if let Some(runway) = runway.as_mut() {
+                    let since = used.saturating_sub(charged) as u64;
+                    charged = used;
+                    if runway.is_low(since) {
+                        this.stats.out_of_system_memory = true;
+                        ran_out = true;
+                        break;
+                    }
                 }
 
                 if let Some(report) = &budget.on_progress {

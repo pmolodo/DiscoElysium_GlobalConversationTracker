@@ -536,6 +536,9 @@ fn backward(
         // land closer to the budget it names.
         report_every: if every.is_some() { 500 } else { 20_000 },
         check_gap: if every.is_some() { CHECK_GAP } else { std::time::Duration::ZERO },
+        // The measurement allowance is far larger than the shipped one, so the machine is
+        // the real ceiling here and the guard matters more, not less.
+        system_reserve: lookahead_engine::engine::system_memory::DEFAULT_RESERVE,
         report_gap: every.unwrap_or_default(),
         on_progress: every.map(|_| {
             Box::new(
@@ -567,6 +570,11 @@ fn backward(
     Row {
         verdict: if stats.halted_at.is_some() {
             "found"
+        } else if stats.out_of_system_memory {
+            // THE MACHINE, not the budget. de-e33h asked for these to be told apart, and
+            // this is the backward engine's half of it: the row is not a result and wants
+            // running again with the memory free.
+            "no-ram"
         } else if stats.out_of_memory {
             "no-room"
         } else if stats.reached_fixed_point {

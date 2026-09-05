@@ -371,6 +371,9 @@ fn finding_one_unseen_entry_in_a_group_that_is_otherwise_seen() {
             report_every: 20_000,
             report_gap: std::time::Duration::ZERO,
             check_gap: std::time::Duration::ZERO,
+            // Off: this measures the SEARCH, and a machine-dependent stop would make the
+            // numbers depend on what else was running.
+            system_reserve: 0.0,
             on_progress: None,
             // Stop the moment the quarry is reached - the whole point of the exercise.
             halt_on: Some(Box::new(move |id| id == quarry)),
@@ -488,6 +491,9 @@ fn what_the_expensive_conversations_cost() {
             report_every: 5_000,
             report_gap: std::time::Duration::ZERO,
             check_gap: std::time::Duration::ZERO,
+            // Off: this measures the SEARCH, and a machine-dependent stop would make the
+            // numbers depend on what else was running.
+            system_reserve: 0.0,
             on_progress: Some(Box::new(move |steps, reached, held, largest, _bytes| {
                 println!(
                     "         ... {conversation}: {steps} steps, {reached} entries, \
@@ -525,4 +531,158 @@ fn what_the_expensive_conversations_cost() {
             stats.actions_ignored,
         );
     }
+}
+
+
+/// The MACHINE's limit stops the search, and says so in its own word.
+///
+/// ## Why this needs proving rather than assuming
+///
+/// The guard looks unnecessary. The node store is one allocation made before the search
+/// starts and cannot grow (de-0a3a), so there appears to be nothing left to watch. There
+/// is: de-mnrb measured the unique table at 15.7 of a node's 36.7 bytes, and it grows AS
+/// NODES ARE INSERTED - about forty per cent of a full manager is allocated during the
+/// search. That growth is bounded only by a budget, which is a decision, not by the machine,
+/// which is a fact.
+///
+/// ## How it is provoked without exhausting anything
+///
+/// A reserve of 0.99 asks for ninety-nine per cent of the machine to stay free, which no
+/// running machine satisfies - so the guard fires on its first reading. That tests the
+/// wiring, which is the part that can be wrong: whether the check runs at all, whether it
+/// reaches the stats, and whether the verdict is distinguishable from the budget's.
+///
+/// EXHAUSTING REAL MEMORY IS NOT AN ALTERNATIVE. It would need most of the machine's RAM,
+/// take the rest of the test run with it, and be at the mercy of whatever else is running.
+#[test]
+fn the_machine_running_low_stops_the_search_and_is_not_called_no_room() {
+    let Some(path) = common::conversation_index() else {
+        eprintln!("no conversation index; skipping.");
+        return;
+    };
+    let index = read_index(&path).expect("the index reads");
+    let world = common::measurement_save();
+
+    let conversation = 1030;
+    let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+        eprintln!("conversation {conversation} does not build; skipping.");
+        return;
+    };
+    let start = DialogueNodeId::new(conversation, 0);
+    if graph.get(start).is_none() {
+        eprintln!("no entry 0 in conversation {conversation}; skipping.");
+        return;
+    }
+
+    let symbols = graph.symbols().clone();
+    let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false)
+        .keeping_only_read(&symbols, &DataLayout::read_by(&graph));
+    let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
+    let mut compiler = GuardCompiler::new(&vars)
+        .with_world(&world)
+        .with_constant_clock(DataLayout::group_passes_time(&graph));
+    let seed = lookahead_engine::symbolic::reachability::seed_of(&graph, &world, &vars);
+
+    let budget = Budget {
+        steps: usize::MAX,
+        time: std::time::Duration::from_secs(60),
+        // GENEROUS, so that the budget cannot be what stops this. If the two guards were
+        // confused with each other the run would still stop, and the test would pass while
+        // proving nothing - so the one being tested has to be the only one that can fire.
+        memory: COMPARISON_MEMORY,
+        // Every step, so the reserve is consulted immediately rather than after twenty
+        // thousand steps of a group that finishes in a few hundred.
+        report_every: 1,
+        report_gap: std::time::Duration::ZERO,
+        check_gap: std::time::Duration::ZERO,
+        system_reserve: 0.99,
+        on_progress: None,
+        halt_on: None,
+    };
+
+    let found = Reachability::explore_within(
+        &graph, start, &seed, &mut compiler, &world, COUNTER_CAP as u32, &budget,
+    );
+    let stats = found.stats();
+
+    // A machine that cannot be read turns the guard off rather than faking an answer, and a
+    // build on such a platform should skip rather than fail.
+    if lookahead_engine::engine::system_memory::read().is_none() {
+        eprintln!("this platform cannot be asked about memory; skipping.");
+        return;
+    }
+
+    assert!(
+        stats.out_of_system_memory,
+        "a reserve of 99 per cent should have stopped the search on its first reading"
+    );
+    assert!(
+        !stats.out_of_memory,
+        "the MACHINE ran out, not the budget - reporting this as no-room is the confusion \
+         de-e33h exists to prevent"
+    );
+    assert!(
+        !stats.reached_fixed_point,
+        "a search stopped by the machine has not finished, and must not claim it has"
+    );
+}
+
+/// And the guard stays out of the way when the machine is fine.
+///
+/// The other half, and the one that would catch a check that fires on every run: the same
+/// group, the same budget, the ordinary reserve. It has to reach a fixed point.
+#[test]
+fn the_ordinary_reserve_does_not_stop_an_ordinary_search() {
+    let Some(path) = common::conversation_index() else {
+        eprintln!("no conversation index; skipping.");
+        return;
+    };
+    let index = read_index(&path).expect("the index reads");
+    let world = common::measurement_save();
+
+    let conversation = 1030;
+    let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+        eprintln!("conversation {conversation} does not build; skipping.");
+        return;
+    };
+    let start = DialogueNodeId::new(conversation, 0);
+    if graph.get(start).is_none() {
+        eprintln!("no entry 0 in conversation {conversation}; skipping.");
+        return;
+    }
+
+    let symbols = graph.symbols().clone();
+    let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false)
+        .keeping_only_read(&symbols, &DataLayout::read_by(&graph));
+    let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
+    let mut compiler = GuardCompiler::new(&vars)
+        .with_world(&world)
+        .with_constant_clock(DataLayout::group_passes_time(&graph));
+    let seed = lookahead_engine::symbolic::reachability::seed_of(&graph, &world, &vars);
+
+    let budget = Budget {
+        steps: usize::MAX,
+        time: std::time::Duration::from_secs(60),
+        memory: COMPARISON_MEMORY,
+        report_every: 1,
+        report_gap: std::time::Duration::ZERO,
+        check_gap: std::time::Duration::ZERO,
+        system_reserve: lookahead_engine::engine::system_memory::DEFAULT_RESERVE,
+        on_progress: None,
+        halt_on: None,
+    };
+
+    let found = Reachability::explore_within(
+        &graph, start, &seed, &mut compiler, &world, COUNTER_CAP as u32, &budget,
+    );
+    let stats = found.stats();
+
+    assert!(
+        !stats.out_of_system_memory,
+        "the ordinary reserve stopped a search this machine had ample room for"
+    );
+    assert!(
+        stats.reached_fixed_point,
+        "conversation {conversation} should reach a fixed point well inside these limits"
+    );
 }
