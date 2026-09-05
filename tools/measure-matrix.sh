@@ -130,10 +130,25 @@ for conversation in "${CONVERSATIONS[@]}"; do
         printf '  %-12s' "$profile"
         ROW_STARTED=$(date +%s)
 
+        # THE ROW LOG GETS EVERYTHING; THE RUN LOG GETS THE PROGRESS LINES.
+        #
+        # A heavy row is half an hour inside one cargo invocation, and redirecting it
+        # wholesale to its own file - which is what this did - meant the only thing being
+        # watched said nothing for half an hour while the interesting lines went somewhere
+        # nobody was looking. Whether a row is watchable and whether its log is complete are
+        # not the same question, so tee answers both: the file keeps the whole output, and
+        # only the lines the test marks with the progress prefix come through to stdout.
+        #
+        # --line-buffered because the point is to see them as they happen; grep block-buffers
+        # into a pipe otherwise and delivers the lot when the row is already over.
+        printf '\n'
         CONVERSATION="$conversation" PROFILE="$profile" NO_HEADER=1 \
             cargo test --release --test performance_matrix \
             --manifest-path "$ROOT/Cargo.toml" \
-            -- --ignored --nocapture > "$log" 2>&1
+            -- --ignored --nocapture 2>&1 \
+            | tee "$log" \
+            | grep --line-buffered -E '^  ~' || true
+        printf '  %-12s' "$profile"
 
         row="$(grep -E "^$conversation\b" "$log" | head -1)"
         if [ -n "$row" ]; then
