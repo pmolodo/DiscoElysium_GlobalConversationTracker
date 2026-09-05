@@ -182,6 +182,10 @@ fn test_red_check_branches() {
     assert_eq!(result.states_explored, 6);
 }
 
+/// A white check with NO flag to record a failure in, which is the only case left that
+/// can still be retried without limit - de-1uy8. The failure has nowhere to be written,
+/// so the state after failing is the state before it, and the loop back through entry B
+/// is bounded by the state budget and nothing else.
 #[test]
 fn test_white_check_retry() {
     let mut symbols = StateSymbols::new();

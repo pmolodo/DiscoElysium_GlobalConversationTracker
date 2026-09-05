@@ -508,9 +508,12 @@ impl<'a> Backward<'a> {
             _ => onward.clone(),
         };
 
-        // Failure: red recorded it in its own flag, white left the state alone, and
-        // anything else has no failing branch at all.
-        let failing = if node.kind == DialogueCheckKind::Red && node.failed_flag_slot >= 0 {
+        // Failure: both kinds recorded it where there was a flag to record it with, a
+        // white check without one left the state alone, and anything else has no failing
+        // branch at all. The same three cases as the forward pass, undone - see
+        // `Reachability::rolled`, which this has to mirror exactly or the two engines
+        // answer different questions.
+        let failing = if node.failed_flag_slot >= 0 {
             image.pre_assign(onward, node.failed_flag_slot as usize, 1)
         } else if node.kind == DialogueCheckKind::White {
             onward.clone()
@@ -521,15 +524,13 @@ impl<'a> Backward<'a> {
 
         let entered = self.pre_charge(node, &landed, image);
 
-        // A check already passed is closed, and a red check already failed is closed too.
+        // A check already passed is closed, and one already failed is closed too.
         let mut open = entered;
         if let Some(passed) = self.flag(node.flag_slot) {
             open = open.and(&passed.not().expect("not")).expect("and");
         }
-        if node.kind == DialogueCheckKind::Red {
-            if let Some(failed) = self.flag(node.failed_flag_slot) {
-                open = open.and(&failed.not().expect("not")).expect("and");
-            }
+        if let Some(failed) = self.flag(node.failed_flag_slot) {
+            open = open.and(&failed.not().expect("not")).expect("and");
         }
 
         open
@@ -956,7 +957,7 @@ mod tests {
         );
     }
 
-    /// A white check can be retried, so both of its branches lead onward.
+    /// A white check leads onward whichever way it rolls.
     #[test]
     fn a_white_check_leads_onward_down_both_branches() {
         agree(
@@ -970,6 +971,33 @@ mod tests {
             ],
             &TestWorld::new(),
             2,
+            true,
+        );
+    }
+
+    /// A FAILED white check leaves its failure behind, which is the half the test above
+    /// cannot see: both branches lead to entry 2 there, so it passes whether the failing
+    /// one records anything or not.
+    ///
+    /// Here entry 3 is guarded on the failure flag, so it is reachable ONLY down the
+    /// failing branch and only if that branch writes the flag. de-1uy8: the crawl and the
+    /// forward fixed point started recording it in b15b1aa and the pre-image did not, so
+    /// the two engines disagreed about exactly this entry - forward yes, backward no,
+    /// which is the direction that loses a marker.
+    #[test]
+    fn a_failed_white_check_records_its_failure() {
+        agree(
+            vec![
+                Entry::new(0).links(&[1]),
+                Entry::new(1)
+                    .kind(DialogueCheckKind::White)
+                    .flag("check.jump")
+                    .links(&[2]),
+                Entry::new(2).guard(r#"Variable["check.jump_failed"]"#).links(&[3]),
+                Entry::new(3),
+            ],
+            &TestWorld::new(),
+            3,
             true,
         );
     }

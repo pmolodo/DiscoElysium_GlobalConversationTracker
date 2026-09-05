@@ -663,8 +663,8 @@ impl<'a> Reachability<'a> {
         states: &BDDFunction,
         image: &mut ActionImage<'a>,
     ) -> BDDFunction {
-        // A check already passed is closed, and a red check already failed is closed too -
-        // a red check cannot be retried.
+        // A check already passed is closed, and one already failed is closed too - neither
+        // kind can be retried once the roll has been recorded.
         let mut open = states.clone();
         if let Some(passed) = self.flag(node.flag_slot) {
             open = open.and(&passed.not().expect("not")).expect("and");
@@ -685,8 +685,8 @@ impl<'a> Reachability<'a> {
             _ => entered.clone(),
         };
 
-        // Failure: red records it and cannot be retried, white leaves the state alone so
-        // it can be.
+        // Failure: both kinds record it where there is a flag to record it with, and a
+        // white check without one leaves the state alone, so only that case is retryable.
         let failure = if node.failed_flag_slot >= 0 {
             image.assign(&entered, node.failed_flag_slot as usize, 1)
         } else if node.kind == DialogueCheckKind::White {
