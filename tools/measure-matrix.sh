@@ -59,7 +59,6 @@ fi
 not_measured=0
 
 PROFILES=(
-    all-seen
     deepest-1
     deepest-5
     deepest-10

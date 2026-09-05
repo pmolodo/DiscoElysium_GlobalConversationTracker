@@ -307,6 +307,40 @@ fn what_each_group_carries() {
             }
         }
 
+        // HOW MANY ENTRIES THE CRAWL COULD EVER REACH, by links alone with guards ignored.
+        //
+        // The upper bound on what any search can find, and the number the fixed point's
+        // entries_reached has to be read against: a search that has reached all of these has
+        // found every entry there is to find, and anything it does afterwards is refining
+        // DATA sets that cannot add an entry. For the question the look-ahead actually asks -
+        // is any unseen entry reachable - that later work changes no answer.
+        let start = DialogueNodeId::new(conversation, 0);
+        let mut seen_from_start = HashSet::new();
+        if graph.get(start).is_some() {
+            let mut queue = std::collections::VecDeque::new();
+            seen_from_start.insert(start);
+            queue.push_back(start);
+            while let Some(id) = queue.pop_front() {
+                let Some(node) = graph.get(id) else { continue };
+                for &to in &node.links {
+                    if seen_from_start.insert(to) {
+                        queue.push_back(to);
+                    }
+                }
+            }
+        }
+        let real_entries = seen_from_start
+            .iter()
+            .filter(|id| graph.get(**id).map(|n| !n.is_group).unwrap_or(false))
+            .count();
+        println!(
+            "      {} of {} entries reachable from {}:0 by links ({} non-group)",
+            seen_from_start.len(),
+            graph.count(),
+            conversation,
+            real_entries,
+        );
+
         // PRINTED BECAUSE A ZERO IN THE CYCLIC COLUMN IS ALSO WHAT A BROKEN CYCLE FINDER
         // REPORTS. A dialogue group is full of hubs - a menu you return to - so a plausible
         // count here is what says the column above means anything.

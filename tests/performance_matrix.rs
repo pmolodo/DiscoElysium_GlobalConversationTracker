@@ -11,7 +11,6 @@
 //! Six conversations - the five heaviest plus 362, the largest in the game - against eleven
 //! profiles describing how much of the group the player has read:
 //!
-//! - everything seen, which the no-improvement shortcut should refuse outright;
 //! - the deepest 1, 5 and 10 entries unseen, which are the deliberately hard cases;
 //! - 95, 90, 75, 50, 25, 10 and 5 per cent seen, drawn at random, which are the shapes a
 //!   real save actually has.
@@ -40,18 +39,19 @@
 //! The seed is the percentage, so a row is reproducible and two rows are not accidentally
 //! the same draw.
 //!
-//! ## What the all-seen row is NOT
+//! ## Why there is no all-seen row any more
 //!
-//! It is not what the mod costs on a fully-read save. This calls `evaluate` directly, and
-//! the no-improvement shortcut that makes that case free lives one level up, in the bridge's
-//! `answer` - so these rows show the raw engine being asked a question the mod would never
-//! put to it, and the numbers are large. On conversation 28 the row reads 222,400 states and
-//! half a second; through the bridge the same profile costs zero states.
+//! There was one, as a ceiling: nothing unseen means nothing can stop the search early, so
+//! it said how much there was to explore at all. It is gone for two reasons.
 //!
-//! Kept anyway, and deliberately: it is the CEILING for the group. Every other row on the
-//! same conversation is a search that can stop early, so the all-seen row says how much
-//! there was to explore in the first place, which is what makes the rest legible as
-//! fractions of something.
+//! IT IS NOT A SCENARIO ANYBODY RUNS. The mod never asks it - the bridge's no-improvement
+//! shortcut answers a fully-read save without starting a search, so the row measured the raw
+//! engine being asked a question it is never asked. On conversation 28 it read 222,400
+//! states where the same profile through the bridge costs zero.
+//!
+//! AND A BACKWARD SEARCH CANNOT RUN IT AT ALL. Backward starts from a target and works out
+//! which states reach it; with nothing unseen there is no target, so the row has no meaning
+//! on that side and cannot be compared across engines - which is what this file is for.
 //!
 //! ## What the whole grid said at 256 MB, 2026-09-04
 //!
@@ -113,12 +113,13 @@
 //!
 //! ### The adversarial rows are all the same row
 //!
-//! Within a conversation, all-seen and deepest-1, -5 and -10 cost the forward crawl exactly
-//! the same number of states - 170,870 on 368, four times over. The deepest entries by edge
-//! analysis are the ones the guards shut, so seeding them changes nothing the search can
-//! find and it explores the whole space regardless. That is the correct worst case and it is
-//! what these rows are for; it is not a falloff curve, and tests/unseen_falloff.rs exists
-//! because measuring one needs a different seeding entirely.
+//! Within a conversation, deepest-1, -5 and -10 cost the forward crawl exactly the same
+//! number of states - 170,870 on 368, three times over, and the same as the all-seen row did
+//! before it was removed. The deepest entries by edge analysis are the ones the guards shut,
+//! so seeding them changes nothing the search can find and it explores the whole space
+//! regardless. That is the correct worst case and it is what these rows are for; it is not a
+//! falloff curve, and tests/unseen_falloff.rs exists because measuring one needs a different
+//! seeding entirely.
 //!
 //! ## Running it
 //!
@@ -261,13 +262,11 @@ const NOT_MEASURED: &str = "NOT-MEASURED";
 
 const COUNTER_CAP: i32 = 16;
 
-
-
 /// How much of a group a profile has read.
 #[derive(Debug, Clone, Copy)]
 enum Profile {
     /// Everything seen. Nothing to find, and the shortcut should say so without searching.
-    AllSeen,
+
     /// The n structurally deepest entries unseen: the adversarial case.
     DeepestUnseen(usize),
     /// This percentage of entries seen, the rest unseen, drawn at random: the typical case.
@@ -277,15 +276,15 @@ enum Profile {
 impl Profile {
     fn label(self) -> String {
         match self {
-            Profile::AllSeen => "all-seen".to_string(),
+
             Profile::DeepestUnseen(n) => format!("deepest-{n}"),
             Profile::PercentSeen(p) => format!("{p}pc-seen"),
         }
     }
 }
 
-const PROFILES: [Profile; 11] = [
-    Profile::AllSeen,
+const PROFILES: [Profile; 10] = [
+
     Profile::DeepestUnseen(1),
     Profile::DeepestUnseen(5),
     Profile::DeepestUnseen(10),
@@ -409,7 +408,7 @@ fn unseen_for(
     candidates: &[DialogueNodeId],
 ) -> HashSet<DialogueNodeId> {
     match profile {
-        Profile::AllSeen => HashSet::new(),
+
         Profile::DeepestUnseen(n) => candidates.iter().take(n).copied().collect(),
         Profile::PercentSeen(percent) => {
             // The seed IS the percentage, as de-raed asks: reproducible, and different for
