@@ -36,42 +36,36 @@
 use std::ffi::{c_char, c_int, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
-use std::sync::Arc;
 
-use crate::index::{read_index_with_header, Index, IndexHeader, VariableTable};
+use crate::service::{Service, Status};
 
+// THE NUMBERS COME FROM [`Status`] RATHER THAN BEING RESTATED HERE. There are two front
+// ends over the same work now - this one and the pipe in [`crate::host`] - and a code that
+// meant one thing over the ABI and another over the pipe would be the worst kind of
+// mismatch, since both sides would look correct in isolation. The .NET `Status` enum is
+// kept in step with these by hand, which is one place rather than two.
 /// What an entry point returns. Zero is success; everything else is a reason.
-pub const GCT_OK: c_int = 0;
+pub const GCT_OK: c_int = Status::Ok as c_int;
 /// A pointer argument was null, or a handle was not one this library handed out.
-pub const GCT_BAD_HANDLE: c_int = -1;
+pub const GCT_BAD_HANDLE: c_int = Status::BadHandle as c_int;
 /// A string argument was not valid UTF-8, or a path could not be read.
-pub const GCT_BAD_ARGUMENT: c_int = -2;
+pub const GCT_BAD_ARGUMENT: c_int = Status::BadArgument as c_int;
 /// The index could not be read.
-pub const GCT_INDEX_UNREADABLE: c_int = -3;
+pub const GCT_INDEX_UNREADABLE: c_int = Status::IndexUnreadable as c_int;
 /// Something panicked. The engine is still standing; the call did nothing.
-pub const GCT_PANIC: c_int = -4;
+pub const GCT_PANIC: c_int = Status::Panic as c_int;
 /// No such conversation in the index.
-pub const GCT_NO_SUCH_CONVERSATION: c_int = -5;
+pub const GCT_NO_SUCH_CONVERSATION: c_int = Status::NoSuchConversation as c_int;
 /// An answer could not be turned into JSON. Should not happen; reported anyway.
-pub const GCT_SERIALISE_FAILED: c_int = -6;
+pub const GCT_SERIALISE_FAILED: c_int = Status::SerialiseFailed as c_int;
 
 /// The engine, behind a handle the caller keeps.
 ///
-/// Holds the index, which is tens of megabytes and takes a moment to parse. Read once when
-/// the plugin loads and kept for the session; building it per response menu would put that
-/// parse inside the frame that draws the menu.
-pub struct Engine {
-    index: Index,
-    /// The database's variable table, where the caller deployed one.
-    ///
-    /// Optional, and the mod works without it - see [`crate::bridge::SnapshotWorld`]. Its
-    /// own file rather than something read out of the index because it describes VARIABLES
-    /// and the index describes conversations; the extractor writes them separately and the
-    /// measurements already read it from there.
-    declared: Option<Arc<VariableTable>>,
-    /// What the index said it was, or `None` where it had no header.
-    header: Option<IndexHeader>,
-}
+/// A [`Service`] and the C ownership rules around it, and nothing else: the work moved out
+/// so that a second front end could reach it without going through a DLL. What is left
+/// here is the pointer checking, the panic catching and the string ownership - the three
+/// things that are about the ABI rather than about the engine.
+pub struct Engine(Service);
 
 /// Runs `work`, turning any panic into [`GCT_PANIC`].
 ///
@@ -149,23 +143,14 @@ pub unsafe extern "C" fn gct_engine_open(
         let Some(path) = (unsafe { borrowed(index_path) }) else {
             return GCT_BAD_ARGUMENT;
         };
+        let variables = unsafe { borrowed(variables_path) }.map(PathBuf::from);
 
-        // Read before the index, which is the expensive one: a table that will not read
-        // costs nothing here and would otherwise be discovered after a 15 MB parse.
-        let declared = unsafe { borrowed(variables_path) }
-            .and_then(|path| VariableTable::read(&PathBuf::from(path)).ok())
-            .map(Arc::new);
-
-        match read_index_with_header(&PathBuf::from(path)) {
-            Ok((index, header)) => {
-                let engine = Box::new(Engine { index, declared, header });
-                unsafe { *out = Box::into_raw(engine) };
+        match Service::open(&PathBuf::from(path), variables.as_deref()) {
+            Ok(service) => {
+                unsafe { *out = Box::into_raw(Box::new(Engine(service))) };
                 GCT_OK
             }
-            // Including an index whose header names a version this build does not read.
-            // Refused outright rather than half-understood: it would pass a content check
-            // while missing fields the engine has since started reading.
-            Err(_) => GCT_INDEX_UNREADABLE,
+            Err(status) => status as c_int,
         }
     })
 }
@@ -200,7 +185,7 @@ pub unsafe extern "C" fn gct_conversation_count(
             return GCT_BAD_HANDLE;
         };
 
-        unsafe { *out = engine.index.len() as c_int };
+        unsafe { *out = engine.0.conversation_count() };
         GCT_OK
     })
 }
@@ -218,9 +203,7 @@ pub unsafe extern "C" fn gct_variable_count(handle: *mut Engine, out: *mut c_int
             return GCT_BAD_HANDLE;
         };
 
-        unsafe {
-            *out = engine.declared.as_ref().map_or(0, |table| table.len()) as c_int;
-        }
+        unsafe { *out = engine.0.variable_count() };
         GCT_OK
     })
 }
@@ -242,12 +225,12 @@ pub unsafe extern "C" fn gct_entry_count(
             return GCT_BAD_HANDLE;
         };
 
-        match engine.index.get(&conversation) {
-            Some(conversation) => {
-                unsafe { *out = conversation.entries.len() as c_int };
+        match engine.0.entry_count(conversation) {
+            Ok(count) => {
+                unsafe { *out = count };
                 GCT_OK
             }
-            None => GCT_NO_SUCH_CONVERSATION,
+            Err(status) => status as c_int,
         }
     })
 }
@@ -278,9 +261,9 @@ pub unsafe extern "C" fn gct_conversation_hash(
             return GCT_BAD_HANDLE;
         };
 
-        match engine.index.get(&conversation) {
-            Some(conversation) => write_text(&conversation.hash, out),
-            None => GCT_NO_SUCH_CONVERSATION,
+        match engine.0.conversation_hash(conversation) {
+            Ok(hash) => write_text(hash, out),
+            Err(status) => status as c_int,
         }
     })
 }
@@ -297,7 +280,7 @@ pub unsafe extern "C" fn gct_index_format(handle: *mut Engine, out: *mut c_int) 
             return GCT_BAD_HANDLE;
         };
 
-        unsafe { *out = engine.header.map_or(0, |header| header.format) };
+        unsafe { *out = engine.0.index_format() };
         GCT_OK
     })
 }
@@ -323,9 +306,9 @@ pub unsafe extern "C" fn gct_questions(
             return GCT_BAD_HANDLE;
         };
 
-        match crate::bridge::questions_for(&engine.index, conversation) {
+        match engine.0.questions(conversation) {
             Ok(questions) => write_json(&questions, out),
-            Err(_) => GCT_NO_SUCH_CONVERSATION,
+            Err(status) => status as c_int,
         }
     })
 }
@@ -358,14 +341,10 @@ pub unsafe extern "C" fn gct_look_ahead(
             return GCT_BAD_ARGUMENT;
         };
 
-        let parsed: crate::bridge::LookAheadRequest = match serde_json::from_str(text) {
-            Ok(parsed) => parsed,
-            Err(_) => return GCT_BAD_ARGUMENT,
-        };
-
-        let response =
-            crate::bridge::answer(&engine.index, engine.declared.clone(), &parsed);
-        write_json(&response, out)
+        match engine.0.look_ahead(text) {
+            Ok(response) => write_json(&response, out),
+            Err(status) => status as c_int,
+        }
     })
 }
 
@@ -502,7 +481,7 @@ mod tests {
     fn a_request_that_is_not_json_is_a_bad_argument() {
         // No index needed: the handle is checked first, so this uses a real engine only
         // where one is required. Here the argument is what is wrong.
-        let engine = Box::into_raw(Box::new(Engine { index: Index::new(), declared: None, header: None }));
+        let engine = Box::into_raw(Box::new(Engine(Service::empty())));
         let request = CString::new("not json at all").unwrap();
         let mut out: *mut c_char = ptr::null_mut();
 
@@ -516,7 +495,7 @@ mod tests {
     /// Asking about a conversation the index does not hold says so.
     #[test]
     fn questions_about_an_absent_conversation_are_refused() {
-        let engine = Box::into_raw(Box::new(Engine { index: Index::new(), declared: None, header: None }));
+        let engine = Box::into_raw(Box::new(Engine(Service::empty())));
         let mut out: *mut c_char = ptr::null_mut();
 
         let code = unsafe { gct_questions(engine, 631, &mut out) };
@@ -529,7 +508,7 @@ mod tests {
     /// relies on for every JSON answer.
     #[test]
     fn a_json_answer_round_trips_and_frees() {
-        let engine = Box::into_raw(Box::new(Engine { index: Index::new(), declared: None, header: None }));
+        let engine = Box::into_raw(Box::new(Engine(Service::empty())));
         // An empty group answers nothing, but the request is well-formed, so the response
         // is a real one - which is what this is checking the handling of.
         let request = CString::new(

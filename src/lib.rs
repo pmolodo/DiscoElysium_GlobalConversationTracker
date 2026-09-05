@@ -11,8 +11,14 @@ pub mod symbolic;
 /// What crosses between the plugin and this engine, and what it means.
 pub mod bridge;
 
+/// The engine's work, with no transport attached to it.
+pub mod service;
+
 /// The C ABI the game plugin reaches this engine through.
 pub mod ffi;
+
+/// The same work, spoken to over a pipe by a process that is not the game.
+pub mod host;
 
 /// Builds small graphs for tests, the way the database writes them.
 #[cfg(test)]
