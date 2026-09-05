@@ -823,7 +823,11 @@ impl LookAheadEngine {
         let passed = node.flag_slot >= 0 && state.is_set(node.flag_slot as usize);
         let failed = node.failed_flag_slot >= 0 && state.is_set(node.failed_flag_slot as usize);
 
-        if passed || (node.kind == DialogueCheckKind::Red && failed) {
+        // A check already resolved is closed, whichever way it went and whichever kind it
+        // is. The game keeps failed white checks in FailedWhiteChecks and only reopens one
+        // when the skill rank rises or a modifier lowers the target; neither is modelled
+        // here, so a failure closes it for the rest of the crawl. See de-1uy8.
+        if passed || failed {
             return results;
         }
 
@@ -839,11 +843,14 @@ impl LookAheadEngine {
         };
         results.push(success);
 
-        // Failure branch
-        if node.kind == DialogueCheckKind::Red && node.failed_flag_slot >= 0 {
+        // Failure branch. Both kinds record it where there is a flag to record it with -
+        // parse_flags mints `<flag>_failed` for white as well as red, and only the engine
+        // was declining to use it.
+        if node.failed_flag_slot >= 0 {
             results.push(entered.with(node.failed_flag_slot as usize, 1));
         } else if node.kind == DialogueCheckKind::White {
-            // Failed white check: state unchanged, can retry
+            // No flag to record the failure with, so it stays retryable and the state
+            // budget is what bounds the loop.
             results.push(entered);
         }
 

@@ -630,10 +630,8 @@ impl<'a> Reachability<'a> {
         if let Some(passed) = self.flag(node.flag_slot) {
             open = open.and(&passed.not().expect("not")).expect("and");
         }
-        if node.kind == DialogueCheckKind::Red {
-            if let Some(failed) = self.flag(node.failed_flag_slot) {
-                open = open.and(&failed.not().expect("not")).expect("and");
-            }
+        if let Some(failed) = self.flag(node.failed_flag_slot) {
+            open = open.and(&failed.not().expect("not")).expect("and");
         }
 
         if !open.satisfiable() {
@@ -650,7 +648,7 @@ impl<'a> Reachability<'a> {
 
         // Failure: red records it and cannot be retried, white leaves the state alone so
         // it can be.
-        let failure = if node.kind == DialogueCheckKind::Red && node.failed_flag_slot >= 0 {
+        let failure = if node.failed_flag_slot >= 0 {
             image.assign(&entered, node.failed_flag_slot as usize, 1)
         } else if node.kind == DialogueCheckKind::White {
             entered

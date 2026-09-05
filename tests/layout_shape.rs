@@ -310,6 +310,31 @@ fn what_each_group_carries() {
         // PRINTED BECAUSE A ZERO IN THE CYCLIC COLUMN IS ALSO WHAT A BROKEN CYCLE FINDER
         // REPORTS. A dialogue group is full of hubs - a menu you return to - so a plausible
         // count here is what says the column above means anything.
+        // CHECKS BY KIND, and how many are on a cycle.
+        //
+        // de-1uy8: a failed WHITE check is modelled as leaving the state completely
+        // unchanged, so it can be retried without limit, where the game locks it until a
+        // modifier or a skill value changes (FailedWhiteChecks in the game's own code). A
+        // white check on a cycle is therefore a loop nothing but the budget stops, and the
+        // count of those is what says whether that matters for a given group.
+        let mut white = (0usize, 0usize);
+        let mut red = (0usize, 0usize);
+        for node in graph.nodes() {
+            let seat = match node.kind {
+                lookahead_engine::core::types::DialogueCheckKind::White => &mut white,
+                lookahead_engine::core::types::DialogueCheckKind::Red => &mut red,
+                _ => continue,
+            };
+            seat.0 += 1;
+            if cyclic.contains(&node.id) {
+                seat.1 += 1;
+            }
+        }
+        println!(
+            "      checks: {} white ({} on a cycle), {} red ({} on a cycle)",
+            white.0, white.1, red.0, red.1,
+        );
+
         let clock = layout.clock().map(|(_, bits)| bits).unwrap_or(0);
         println!(
             "      {} of {} entries lie on a cycle",

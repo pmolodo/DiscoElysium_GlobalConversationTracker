@@ -189,17 +189,47 @@ fn a_red_check_closes_once_decided() {
 
 // ---- white checks -------------------------------------------------------------
 
-/// Retryable: only success closes a white check, so a previous failure leaves it open.
+/// A failed white check is CLOSED, the same as a red one - which is an approximation, and
+/// the reasoning for it is worth having in full.
 ///
-/// That is the whole difference from a red check, and it is why a failed white check must
-/// not write a failure flag.
+/// ## What the game does
+///
+/// It keeps failed white checks in `FailedWhiteChecks` - a real store, persisted across
+/// saves by `FailedWhiteChecksPersister` - and reopens one only when
+/// `IsFailedWhiteCheckPossible` says the odds have actually improved:
+///
+/// ```text
+///     if (you.GetSkill(check.SkillType).rankValue > check.LastSkillValue
+///         || check.difficulty + activeModifierBonuses < check.LastTargetValue)
+///         return true;
+/// ```
+///
+/// So a failure closes the check until the skill rank rises above what it was, or a
+/// modifier lowers the effective target below what it was. It is NOT freely retryable,
+/// which is what this test used to assert.
+///
+/// ## What is approximated, and which way it errs
+///
+/// Neither the skill rank nor the modifier expressions are modelled here, so a failure
+/// closes the check for good. That is an UNDER-approximation: where a conversation really
+/// does add a modifier, the crawl will not walk the retry and a marker can go missing.
+/// Missing a marker is the direction this codebase normally refuses.
+///
+/// It is taken deliberately anyway, because the previous model was wrong in the other
+/// direction and unboundedly so - a retryable check on a cycle is a loop nothing but the
+/// state budget stops, and every white check multiplied the states explored. See de-1uy8
+/// for the reopen rule, which is fully specified above and not yet built.
+///
+/// THE SHARPEST CASE IS THE ONE BELOW: a save that already holds `check.white_failed`. The
+/// game would reopen it if the player has levelled the skill since, and this cannot know
+/// that.
 #[test]
-fn a_white_check_closes_only_on_success() {
+fn a_failed_white_check_is_closed_like_a_red_one() {
     let graph = gated(DialogueCheckKind::White, Some("check.white"), false);
     let truth = crate::core::guard_value::GuardValue::from_boolean(true);
 
     let failed_before = TestWorld::new().set_variable("check.white_failed", truth.clone());
-    assert_eq!(run(&graph, &failed_before, &[2]).best, Novelty::UnseenAnyGame);
+    assert_eq!(run(&graph, &failed_before, &[2]).best, Novelty::SeenThisGame);
 
     let passed_before = TestWorld::new().set_variable("check.white", truth);
     assert_eq!(run(&graph, &passed_before, &[2]).best, Novelty::SeenThisGame);
