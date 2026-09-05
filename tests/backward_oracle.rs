@@ -36,6 +36,7 @@ use lookahead_engine::symbolic::backward::{Backward, Budget as BackwardBudget};
 use lookahead_engine::symbolic::known::Known;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
+use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::novelty_search::{best_novelty, Budget as SearchBudget};
 use lookahead_engine::symbolic::portfolio;
 use lookahead_engine::symbolic::reachability::{seed_of, Reachability};
@@ -160,14 +161,19 @@ fn the_backward_search_finds_what_the_explicit_crawl_reaches() {
 
         let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
         let symbols = graph.symbols().clone();
+        let depths = structural_depths(&graph, start);
+        let asked = targets(&depths);
+
+        // A THREAD FOR THE ORACLE, with the manager built inside it - de-fpax. This runs a
+        // forward fixed point and then two backward passes per target over one manager,
+        // which is the arrangement that accumulates; the assertions inside are re-raised
+        // here, so a disagreement still fails the test exactly as it did.
+        let (agreed, surplus, missed, diagram_nodes, took) = on_its_own_thread(|| {
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(&world)
             .with_constant_clock(DataLayout::group_passes_time(&graph));
         let seed = seed_of(&graph, &world, &vars);
-
-        let depths = structural_depths(&graph, start);
-        let asked = targets(&depths);
 
         // A SETTLED forward run, which is what licenses pruning a backward pass: it bounds
         // what can arrive at each entry, and says outright that some entries can never be
@@ -231,6 +237,9 @@ fn the_backward_search_finds_what_the_explicit_crawl_reaches() {
             }
         }
 
+        (agreed, surplus, missed, diagram_nodes, began.elapsed().as_millis())
+        });
+
         println!(
             "{conversation:>6} {:>8} {:>8} {:>8} {:>8} {:>8} {:>9} {:>8}",
             graph.count(),
@@ -239,7 +248,7 @@ fn the_backward_search_finds_what_the_explicit_crawl_reaches() {
             agreed,
             surplus,
             diagram_nodes,
-            began.elapsed().as_millis(),
+            took,
         );
 
         assert!(

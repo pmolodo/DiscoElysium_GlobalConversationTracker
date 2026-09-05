@@ -25,6 +25,7 @@ pub mod backward;
 pub mod budget;
 pub mod data_layout;
 pub mod guard_formula;
+pub mod isolated;
 pub mod known;
 pub mod novelty_search;
 pub mod order;

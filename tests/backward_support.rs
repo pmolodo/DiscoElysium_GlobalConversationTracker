@@ -33,6 +33,7 @@ use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::backward::Backward;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
+use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::vars::DataVars;
 use oxidd::{BooleanFunctionQuant, Function};
 use lookahead_engine::symbolic::budget::DiagramBudget;
@@ -105,11 +106,6 @@ fn what_the_biggest_backward_sets_constrain() {
 
         let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
         let symbols = graph.symbols().clone();
-        let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
-        let mut compiler = GuardCompiler::new(&vars)
-            .with_world(&world)
-            .with_constant_clock(DataLayout::group_passes_time(&graph));
-
         // A spread across the depth range, which is what de-sze.14.4 timed. The DEEPEST
         // entries are not the expensive ones - probing those on conversation 631 found a
         // worst set of five diagram nodes, against a median of 3,942 over the spread - so
@@ -118,6 +114,15 @@ fn what_the_biggest_backward_sets_constrain() {
             depths(&graph, start).into_iter().map(|(id, d)| (d, id)).collect();
         ordered.sort_by_key(|(depth, id)| (*depth, id.conversation_id, id.entry_id));
         let step = (ordered.len() / PROBES).max(1);
+
+        // A THREAD FOR THE PROBES, with the manager built inside it - de-fpax. The slot
+        // numbers that come back are plain data; the sets they were read off are not, and
+        // do not leave.
+        let worst = on_its_own_thread(|| {
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
+        let mut compiler = GuardCompiler::new(&vars)
+            .with_world(&world)
+            .with_constant_clock(DataLayout::group_passes_time(&graph));
 
         let mut worst: Option<(usize, DialogueNodeId, Vec<usize>)> = None;
         for (_, target) in ordered.iter().step_by(step) {
@@ -151,6 +156,9 @@ fn what_the_biggest_backward_sets_constrain() {
                 }
             }
         }
+
+        worst
+        });
 
         let Some((size, target, constrained)) = worst else {
             println!("{conversation:>6}  nothing measurable");

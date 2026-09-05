@@ -34,6 +34,7 @@ use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
+use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::reachability::{seed_of, Budget, Reachability};
 use lookahead_engine::symbolic::vars::DataVars;
 
@@ -80,6 +81,10 @@ fn how_often_the_same_entry_is_stepped() {
         let symbols = graph.symbols().clone();
         let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false)
             .keeping_only_read(&symbols, &DataLayout::read_by(&graph));
+        // A THREAD FOR THE SEARCH, with the manager built inside it - de-fpax. The `Rc`
+        // below is not `Send`, which is exactly right: it is created, used and dropped in
+        // here, and only the counted steps come back out.
+        let (steps, settled) = on_its_own_thread(|| {
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(&world)
@@ -111,11 +116,13 @@ fn how_often_the_same_entry_is_stepped() {
         let found = Reachability::explore_within(
             &graph, start, &seed, &mut compiler, &world, COUNTER_CAP as u32, &budget,
         );
-        let stats = found.stats();
+        let settled = found.stats().reached_fixed_point;
 
         let counts = counts.borrow();
         let mut steps: Vec<usize> = counts.values().copied().collect();
         steps.sort_unstable();
+        (steps, settled)
+        });
 
         let total: usize = steps.iter().sum();
         let median = steps.get(steps.len() / 2).copied().unwrap_or(0);
@@ -130,7 +137,7 @@ fn how_often_the_same_entry_is_stepped() {
              max {max}  busiest tenth took {:.0}% of the work  ({})",
             steps.len(),
             if total > 0 { busiest_tenth as f64 / total as f64 * 100.0 } else { 0.0 },
-            if stats.reached_fixed_point { "finished" } else { "stopped early" },
+            if settled { "finished" } else { "stopped early" },
         );
     }
 

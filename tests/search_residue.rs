@@ -35,6 +35,7 @@ use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
+use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::reachability::{seed_of, Reachability};
 use lookahead_engine::symbolic::vars::DataVars;
 

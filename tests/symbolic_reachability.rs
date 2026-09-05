@@ -30,6 +30,7 @@ use lookahead_engine::engine::engine::{LookAheadEngine, LookAheadOptions};
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
+use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::reachability::{Budget, Reachability};
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::world::world::ILookAheadWorld;

@@ -110,6 +110,7 @@ use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
+use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::known::Known;
 use lookahead_engine::symbolic::novelty_search::{best_novelty, Budget as SearchBudget};
 use lookahead_engine::symbolic::reachability::{seed_of, Budget as ForwardBudget, Reachability};
@@ -232,30 +233,36 @@ fn alone(
     let symbols = graph.symbols().clone();
     let layout = DataLayout::for_graph(graph, COUNTER_CAP, None, false)
         .keeping_only_read(&symbols, &DataLayout::read_by(graph));
-    let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
-    let mut compiler = GuardCompiler::new(&vars)
-        .with_world(world)
-        .with_constant_clock(DataLayout::group_passes_time(graph));
-    let seed = seed_of(graph, world, &vars);
-    let novelty = novelty_of(unseen);
 
-    let known = Known::of(graph);
-    let began = std::time::Instant::now();
-    let answer = best_novelty(
-        graph, start, &seed, &mut compiler, world, COUNTER_CAP as u32, &novelty,
-        &search_budget(), Some(&known),
-    );
+    // A THREAD PER SEARCH, with the manager built inside it. de-fpax; see
+    // `symbolic::isolated` for why the manager has to be created in here rather than handed
+    // in, and de-8hh2.13 for the accumulation it avoids.
+    on_its_own_thread(|| {
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
+        let mut compiler = GuardCompiler::new(&vars)
+            .with_world(world)
+            .with_constant_clock(DataLayout::group_passes_time(graph));
+        let seed = seed_of(graph, world, &vars);
+        let novelty = novelty_of(unseen);
 
-    Run {
-        verdict: format!("{:?}", answer.best),
-        millis: began.elapsed().as_millis(),
-        nodes: vars.node_count(),
-        asked: answer.targets_asked,
-        guards: compiler.guard_cache(),
-        met: answer.met_at.is_some(),
-        backward_millis: began.elapsed().as_millis(),
-        settled: false,
-    }
+        let known = Known::of(graph);
+        let began = std::time::Instant::now();
+        let answer = best_novelty(
+            graph, start, &seed, &mut compiler, world, COUNTER_CAP as u32, &novelty,
+            &search_budget(), Some(&known),
+        );
+
+        Run {
+            verdict: format!("{:?}", answer.best),
+            millis: began.elapsed().as_millis(),
+            nodes: vars.node_count(),
+            asked: answer.targets_asked,
+            guards: compiler.guard_cache(),
+            met: answer.met_at.is_some(),
+            backward_millis: began.elapsed().as_millis(),
+            settled: false,
+        }
+    })
 }
 
 /// A forward run first, then the backward driver told about it.
@@ -274,6 +281,10 @@ fn shared(
     let symbols = graph.symbols().clone();
     let layout = DataLayout::for_graph(graph, COUNTER_CAP, None, false)
         .keeping_only_read(&symbols, &DataLayout::read_by(graph));
+    // A THREAD PER SEARCH, with the manager built inside it - de-fpax. BOTH HALVES SHARE
+    // ONE, and they have to: the forward run's sets are handed to the backward half through
+    // `Known`, and two formulas built over different managers cannot be combined at all.
+    on_its_own_thread(|| {
     let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
     let mut compiler = GuardCompiler::new(&vars)
         .with_world(world)
@@ -324,6 +335,7 @@ fn shared(
         },
         forward_ms,
     )
+    })
 }
 
 fn novelty_of(unseen: &HashSet<DialogueNodeId>) -> impl Fn(DialogueNodeId) -> Novelty + '_ {

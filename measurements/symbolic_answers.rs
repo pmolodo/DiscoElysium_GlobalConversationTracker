@@ -43,6 +43,7 @@ use lookahead_engine::symbolic::backward::Budget as BackwardBudget;
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
+use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::known::Known;
 use lookahead_engine::symbolic::novelty_search::{best_novelty, Budget as SearchBudget, StoppedBy};
 use lookahead_engine::symbolic::reachability::seed_of;
@@ -66,8 +67,6 @@ const ANSWER_CAP: std::time::Duration = std::time::Duration::from_secs(120);
 /// can settle quickly; anything slower is recorded as unknown rather than waited out.
 const CLASSIFY_CAP: std::time::Duration = std::time::Duration::from_secs(5);
 
-/// A thread's stack. Releasing a large diagram walks it recursively.
-const STACK: usize = 512 * 1024 * 1024;
 
 fn main() {
     let Some(path) = common::conversation_index() else {
@@ -268,10 +267,7 @@ fn answer(
 
     // A THREAD PER SEARCH. See the note at the top: this is de-fpax's remedy, and without it
     // this measurement loses whole groups partway through.
-    std::thread::scope(|scope| {
-        std::thread::Builder::new()
-            .stack_size(STACK)
-            .spawn_scoped(scope, || {
+    on_its_own_thread(|| {
                 let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
                 let mut compiler = GuardCompiler::new(&vars)
                     .with_world(world)
@@ -317,9 +313,5 @@ fn answer(
                     millis: began.elapsed().as_millis(),
                     asked: found.targets_asked.to_string(),
                 }
-            })
-            .expect("a thread for the search")
-            .join()
-            .expect("the search thread")
     })
 }

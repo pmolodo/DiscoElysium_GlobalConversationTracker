@@ -35,6 +35,7 @@ use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
+use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::known::Known;
 use lookahead_engine::symbolic::novelty_search::{best_novelty, candidates, Budget};
 use lookahead_engine::symbolic::reachability::seed_of;
@@ -119,38 +120,53 @@ fn compare(
 
     let layout = DataLayout::for_graph(graph, COUNTER_CAP, None, false);
     let symbols = graph.symbols().clone();
-    let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
-    let mut compiler = GuardCompiler::new(&vars)
-        .with_world(world)
-        .with_constant_clock(DataLayout::group_passes_time(graph));
-    let seed = seed_of(graph, world, &vars);
-
     let waiting = candidates(graph, start, &novelty).len();
-    let known = Known::of(graph);
-    let began = std::time::Instant::now();
-    let answer = best_novelty(
-        graph,
-        start,
-        &seed,
-        &mut compiler,
-        world,
-        COUNTER_CAP as u32,
-        &novelty,
-        &Budget { targets: 256, time: std::time::Duration::from_secs(120), ..Default::default() },
-        // The parent map, built once and shared by every candidate's pass.
-        Some(&known),
-    );
-    let backward_ms = began.elapsed().as_millis();
+
+    // A THREAD PER SEARCH, with the manager built inside it - de-fpax. Only plain numbers
+    // come back out, which is what lets the diagram side live and die in there.
+    let (best, backward_ms, asked, stopped) = on_its_own_thread(|| {
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
+        let mut compiler = GuardCompiler::new(&vars)
+            .with_world(world)
+            .with_constant_clock(DataLayout::group_passes_time(graph));
+        let seed = seed_of(graph, world, &vars);
+
+        let known = Known::of(graph);
+        let began = std::time::Instant::now();
+        let answer = best_novelty(
+            graph,
+            start,
+            &seed,
+            &mut compiler,
+            world,
+            COUNTER_CAP as u32,
+            &novelty,
+            &Budget {
+                targets: 256,
+                time: std::time::Duration::from_secs(120),
+                ..Default::default()
+            },
+            // The parent map, built once and shared by every candidate's pass.
+            Some(&known),
+        );
+
+        (
+            format!("{:?}", answer.best),
+            began.elapsed().as_millis(),
+            answer.targets_asked,
+            format!("{:?}", answer.stopped_by),
+        )
+    });
 
     println!(
         "{conversation:>6} {label:>10} {:>7} {:>14} {:>8} {:>14} {:>8} {:>7} {:>8}",
         waiting,
         format!("{:?}", crawled.best),
         crawl_ms,
-        format!("{:?}", answer.best),
+        best,
         backward_ms,
-        answer.targets_asked,
-        format!("{:?}", answer.stopped_by),
+        asked,
+        stopped,
     );
 
     if crawled.budget_exhausted() {
@@ -223,11 +239,6 @@ fn what_one_backward_pass_costs() {
 
         let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
         let symbols = graph.symbols().clone();
-        let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
-        let mut compiler = GuardCompiler::new(&vars)
-            .with_world(&world)
-            .with_constant_clock(DataLayout::group_passes_time(&graph));
-
         // A spread of depths rather than the deepest, so the figure is what an ordinary
         // question costs rather than what the hardest one does.
         let mut ordered: Vec<(usize, DialogueNodeId)> =
@@ -235,25 +246,38 @@ fn what_one_backward_pass_costs() {
         ordered.sort_by_key(|(depth, id)| (*depth, id.conversation_id, id.entry_id));
         let step = (ordered.len() / TARGETS_SAMPLED).max(1);
 
-        let mut times: Vec<u128> = Vec::new();
-        let mut sizes: Vec<usize> = Vec::new();
-        let mut unsettled = 0;
+        // ONE THREAD FOR THE WHOLE SAMPLE rather than one per target - de-fpax. Forty
+        // passes over one manager is exactly the arrangement that accumulates, but they
+        // must share a compiler for the guard cache to be worth anything, so the thread
+        // wraps the sample and the process gets a fresh one per group.
+        let (mut times, mut sizes, unsettled) = on_its_own_thread(|| {
+            let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
+            let mut compiler = GuardCompiler::new(&vars)
+                .with_world(&world)
+                .with_constant_clock(DataLayout::group_passes_time(&graph));
 
-        for (_, target) in ordered.iter().step_by(step) {
-            let began = std::time::Instant::now();
-            let backward = lookahead_engine::symbolic::backward::Backward::reaching(
-                &graph,
-                *target,
-                &mut compiler,
-                &world,
-                COUNTER_CAP as u32,
-            );
-            times.push(began.elapsed().as_millis());
-            sizes.push(backward.stats().diagram_nodes);
-            if !backward.stats().reached_fixed_point {
-                unsettled += 1;
+            let mut times: Vec<u128> = Vec::new();
+            let mut sizes: Vec<usize> = Vec::new();
+            let mut unsettled = 0;
+
+            for (_, target) in ordered.iter().step_by(step) {
+                let began = std::time::Instant::now();
+                let backward = lookahead_engine::symbolic::backward::Backward::reaching(
+                    &graph,
+                    *target,
+                    &mut compiler,
+                    &world,
+                    COUNTER_CAP as u32,
+                );
+                times.push(began.elapsed().as_millis());
+                sizes.push(backward.stats().diagram_nodes);
+                if !backward.stats().reached_fixed_point {
+                    unsettled += 1;
+                }
             }
-        }
+
+            (times, sizes, unsettled)
+        });
 
         times.sort_unstable();
         sizes.sort_unstable();
@@ -322,23 +346,33 @@ fn what_the_portfolio_costs() {
 
         let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
         let symbols = graph.symbols().clone();
-        let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
-        let mut compiler = GuardCompiler::new(&vars)
-            .with_world(&world)
-            .with_constant_clock(DataLayout::group_passes_time(&graph));
-        let seed = seed_of(&graph, &world, &vars);
+        // A THREAD FOR THE PORTFOLIO - de-fpax. It runs a forward slice and then a backward
+        // pass per candidate over one manager, which is the accumulation this avoids.
+        let (best, portfolio_ms, by) = on_its_own_thread(|| {
+            let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
+            let mut compiler = GuardCompiler::new(&vars)
+                .with_world(&world)
+                .with_constant_clock(DataLayout::group_passes_time(&graph));
+            let seed = seed_of(&graph, &world, &vars);
 
-        let answer = lookahead_engine::symbolic::portfolio::best_novelty(
-            &graph,
-            start,
-            &seed,
-            &mut compiler,
-            &world,
-            COUNTER_CAP as u32,
-            &novelty,
-            &lookahead_engine::symbolic::portfolio::Budget::default(),
-            &engine,
-        );
+            let answer = lookahead_engine::symbolic::portfolio::best_novelty(
+                &graph,
+                start,
+                &seed,
+                &mut compiler,
+                &world,
+                COUNTER_CAP as u32,
+                &novelty,
+                &lookahead_engine::symbolic::portfolio::Budget::default(),
+                &engine,
+            );
+
+            (
+                format!("{:?}", answer.best),
+                answer.elapsed.as_millis(),
+                format!("{:?}", answer.by),
+            )
+        });
 
         println!(
             "{conversation:>6} {:>8} {:>14} {:>8} {:>16} {:>8} {:>18}",
@@ -349,9 +383,9 @@ fn what_the_portfolio_costs() {
                 if crawled.budget_exhausted() { "*" } else { "" }
             ),
             crawl_ms,
-            format!("{:?}", answer.best),
-            answer.elapsed.as_millis(),
-            format!("{:?}", answer.by),
+            best,
+            portfolio_ms,
+            by,
         );
     }
 
