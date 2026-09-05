@@ -162,6 +162,20 @@ pub struct Budget {
     /// whatever the sets happen to cost at that moment.
     pub check_gap: std::time::Duration,
 
+    /// Called with each entry as it is taken off the queue, for a measurement that wants
+    /// the shape of the work rather than its total.
+    ///
+    /// EXISTS TO TELL TWO FAILURES APART, which the totals cannot. A search doing 14,000
+    /// steps over 960 entries might be re-propagating the same handful of entries
+    /// thousands of times - which SCC-ordered iteration fixes - or stepping each entry a
+    /// dozen times where every step is expensive, which it does not. Only the per-entry
+    /// distribution separates them, and de-3x76.3 should not be built before it is known
+    /// which one is happening.
+    ///
+    /// None in every production path, where it costs an `is_some` per step.
+    #[allow(clippy::type_complexity)]
+    pub on_step: Option<Box<dyn Fn(DialogueNodeId)>>,
+
     /// The fraction of the MACHINE's memory to leave free, or zero for no such guard.
     ///
     /// ## Why this is needed when the store is preallocated
@@ -208,6 +222,7 @@ impl Default for Budget {
             report_every: 20_000,
             report_gap: std::time::Duration::ZERO,
             check_gap: std::time::Duration::ZERO,
+            on_step: None,
             system_reserve: crate::engine::system_memory::DEFAULT_RESERVE,
             halt_on: None,
         }
@@ -385,6 +400,9 @@ impl<'a> Reachability<'a> {
             };
 
             this.stats.steps += 1;
+            if let Some(watch) = &budget.on_step {
+                watch(id);
+            }
 
             until_check -= 1;
             if until_check == 0 {

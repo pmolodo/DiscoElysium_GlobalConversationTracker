@@ -373,6 +373,7 @@ fn finding_one_unseen_entry_in_a_group_that_is_otherwise_seen() {
             check_gap: std::time::Duration::ZERO,
             // Off: this measures the SEARCH, and a machine-dependent stop would make the
             // numbers depend on what else was running.
+            on_step: None,
             system_reserve: 0.0,
             on_progress: None,
             // Stop the moment the quarry is reached - the whole point of the exercise.
@@ -493,6 +494,7 @@ fn what_the_expensive_conversations_cost() {
             check_gap: std::time::Duration::ZERO,
             // Off: this measures the SEARCH, and a machine-dependent stop would make the
             // numbers depend on what else was running.
+            on_step: None,
             system_reserve: 0.0,
             on_progress: Some(Box::new(move |steps, reached, held, largest, _bytes| {
                 println!(
@@ -595,6 +597,7 @@ fn the_machine_running_low_stops_the_search_and_is_not_called_no_room() {
         report_every: 1,
         report_gap: std::time::Duration::ZERO,
         check_gap: std::time::Duration::ZERO,
+        on_step: None,
         system_reserve: 0.99,
         on_progress: None,
         halt_on: None,
@@ -667,6 +670,7 @@ fn the_ordinary_reserve_does_not_stop_an_ordinary_search() {
         report_every: 1,
         report_gap: std::time::Duration::ZERO,
         check_gap: std::time::Duration::ZERO,
+        on_step: None,
         system_reserve: lookahead_engine::engine::system_memory::DEFAULT_RESERVE,
         on_progress: None,
         halt_on: None,

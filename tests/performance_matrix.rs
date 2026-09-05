@@ -538,6 +538,7 @@ fn backward(
         check_gap: if every.is_some() { CHECK_GAP } else { std::time::Duration::ZERO },
         // The measurement allowance is far larger than the shipped one, so the machine is
         // the real ceiling here and the guard matters more, not less.
+        on_step: None,
         system_reserve: lookahead_engine::engine::system_memory::DEFAULT_RESERVE,
         report_gap: every.unwrap_or_default(),
         on_progress: every.map(|_| {
