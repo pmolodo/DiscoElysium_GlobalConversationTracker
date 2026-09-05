@@ -250,8 +250,8 @@ fn a_link_between_components_always_climbs() {
         // BOTH ORDERING RANKINGS. They disagree about what happens inside a component and
         // must not disagree about this. `Fifo` is excluded because it makes no ordering
         // claim - it exists to be the baseline, not to honour a guarantee.
-        for ranking in [Ranking::PerEntry, Ranking::PerComponent] {
-            let order = IterationOrder::of(&graph).ranked(ranking);
+        for ranking in [Ranking::PerEntry, Ranking::PerComponent, Ranking::PerDistance] {
+            let order = IterationOrder::of_from(&graph, DialogueNodeId::new(conversation, 0)).ranked(ranking);
 
             for node in graph.nodes() {
                 for &child in &node.links {
@@ -399,7 +399,7 @@ fn what_the_searches_cost_in_the_order() {
             graph.count(), shape.components(), shape.largest_component(),
         );
 
-        for ranking in [Ranking::Fifo, Ranking::PerComponent, Ranking::PerEntry] {
+        for ranking in [Ranking::Fifo, Ranking::PerComponent, Ranking::PerEntry, Ranking::PerDistance] {
             measure(&graph, start, &world, ranking);
         }
     }
@@ -420,6 +420,7 @@ fn measure(
     let label = match ranking {
         Ranking::PerComponent => "per-comp",
         Ranking::PerEntry => "per-entry",
+        Ranking::PerDistance => "per-dist",
         Ranking::Fifo => "fifo",
     };
     {

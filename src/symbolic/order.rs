@@ -58,7 +58,7 @@
 //! settled comparison is how a slower path gets used by accident.
 
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
 
 use crate::core::types::DialogueNodeId;
 use crate::graph::graph::LookAheadGraph;
@@ -78,6 +78,11 @@ pub struct IterationOrder {
     /// decomposition that produces one produces the other and keeping both lets the ranking
     /// be changed on a built order for nothing.
     position: HashMap<DialogueNodeId, u32>,
+    /// Links traversed to arrive at each entry from the group's start, ignoring guards.
+    ///
+    /// Empty unless the order was built by [`Self::of_from`], which is the only constructor
+    /// that knows where a crawl begins. [`Ranking::PerDistance`] reads it.
+    distance: HashMap<DialogueNodeId, u32>,
     ranking: Ranking,
     /// How many strongly connected components the group has.
     components: usize,
@@ -85,10 +90,10 @@ pub struct IterationOrder {
     largest: usize,
 }
 
-/// How much a rank separates. All three agree that a component precedes what follows it,
+/// How much a rank separates. All of them agree that a component precedes what follows it,
 /// except [`Ranking::Fifo`], which is the baseline that separates nothing.
 ///
-/// THREE ARRANGEMENTS AND NO RULE THAT PICKS BETWEEN THEM. That is the honest state: the
+/// FOUR ARRANGEMENTS AND NO RULE THAT PICKS BETWEEN THEM. That is the honest state: the
 /// obvious predictor is the size of the largest component, and it is disqualified -
 /// conversation 631 is 84 per cent one component and 14 is 75 per cent, nearly the same
 /// shape, and they want opposite rankings. So the choice is made per group from
@@ -115,6 +120,26 @@ pub enum Ranking {
     /// information. Kept, and pinned to conversation 14, because `PerEntry` there cost SIX
     /// TIMES the pops of a plain queue and reached fewer entries in the same time.
     PerComponent,
+    /// Component first, then LINKS FROM THE START, then the push order.
+    ///
+    /// The tie-break `PerEntry` should have used. `PerEntry` separates the members of a
+    /// component by the position at which the walk happened to close them, which depends on
+    /// the DFS root and on the order links are declared in - it carries nothing about the
+    /// graph, and imposing a total order out of nothing is what starves a big component.
+    /// This separates them by how far a crawl has to walk to arrive, which is a fact about
+    /// the graph and a good proxy for which entries feed which.
+    ///
+    /// A PARTIAL REFINEMENT, deliberately: entries the same distance from the start tie, and
+    /// fall back to the push order. That is the right amount of information to add, where a
+    /// total order is more than the graph supports.
+    ///
+    /// It costs no direction of its own. Information runs start-to-target forwards and
+    /// target-to-start backwards, so a forward pass wants the nearest entry first and a
+    /// backward pass the furthest - which is the same reading-from-opposite-ends that the
+    /// component number already gets. Needs [`IterationOrder::of_from`], which is the only
+    /// constructor told where the crawl begins; without it every distance is zero and this
+    /// degrades to `PerComponent`.
+    PerDistance,
     /// No separation at all: every entry ranks equal, so the worklist is a plain queue.
     ///
     /// THE BASELINE EVERY MEASUREMENT IS READ AGAINST, and the only arrangement that does
@@ -192,11 +217,37 @@ impl IterationOrder {
         Self {
             component: component_of,
             position,
-
+            distance: HashMap::new(),
             ranking: Ranking::default(),
             components: walk.components.len(),
             largest,
         }
+    }
+
+    /// The same, told where a crawl begins, so distances can be worked out.
+    ///
+    /// Required by [`Ranking::PerDistance`] and harmless to every other ranking. One BFS
+    /// over the links on top of the Tarjan pass, and target-independent like everything else
+    /// here - so a driver asking about hundreds of candidates pays for it once.
+    pub fn of_from(graph: &LookAheadGraph, start: DialogueNodeId) -> Self {
+        let mut this = Self::of(graph);
+
+        // The start is walked FROM without being recorded as arrived at, matching
+        // `novelty_search::link_distances`: it gets a distance only if a link leads back to
+        // it, and otherwise stays at zero, which is where a forward pass wants it anyway.
+        let mut queue = VecDeque::from([(start, 0u32)]);
+        while let Some((id, here)) = queue.pop_front() {
+            let Some(node) = graph.get(id) else { continue };
+            for &child in &node.links {
+                if graph.get(child).is_none() || this.distance.contains_key(&child) {
+                    continue;
+                }
+                this.distance.insert(child, here + 1);
+                queue.push_back((child, here + 1));
+            }
+        }
+
+        this
     }
 
     /// The order for a named group, under whatever ranking measurement picked for it.
@@ -205,7 +256,8 @@ impl IterationOrder {
     /// [`Self::of`] takes the default and is for callers that do not. See
     /// [`Ranking::for_conversation`].
     pub fn for_conversation(graph: &LookAheadGraph, conversation: i32) -> Self {
-        Self::of(graph).ranked(Ranking::for_conversation(conversation))
+        Self::of_from(graph, DialogueNodeId::new(conversation, 0))
+            .ranked(Ranking::for_conversation(conversation))
     }
 
     /// The same order, read the other way within a component.
@@ -229,10 +281,20 @@ impl IterationOrder {
     /// the tie to the push order; under [`Ranking::PerEntry`] they are separated.
     ///
     /// An entry the graph does not hold ranks first, and is never queued.
-    pub fn rank_of(&self, id: DialogueNodeId) -> u32 {
+    pub fn rank_of(&self, id: DialogueNodeId) -> u64 {
+        let component = || self.component.get(&id).copied().unwrap_or(0) as u64;
         match self.ranking {
-            Ranking::PerComponent => self.component.get(&id).copied().unwrap_or(0),
-            Ranking::PerEntry => self.position.get(&id).copied().unwrap_or(0),
+            Ranking::PerComponent => component(),
+            Ranking::PerEntry => self.position.get(&id).copied().unwrap_or(0) as u64,
+            // COMPONENT IN THE HIGH HALF, DISTANCE IN THE LOW, so one integer orders by the
+            // component first and by the distance only within it. Packed rather than
+            // compared as a pair because the worklist wants a single key it can read from
+            // either end, and a pair would need the direction flip applied to both halves
+            // separately - the same thing, spelled twice.
+            Ranking::PerDistance => {
+                let within = self.distance.get(&id).copied().unwrap_or(0) as u64;
+                (component() << 32) | within
+            }
             // Everything ties, so the worklist's tie-break - the push order - is the whole
             // of the order, which is exactly a queue.
             Ranking::Fifo => 0,
@@ -289,7 +351,7 @@ pub enum Direction {
 /// same push, and so carry the same id.
 #[derive(PartialEq, Eq)]
 struct Queued {
-    priority: u32,
+    priority: u64,
     seq: u64,
     id: DialogueNodeId,
 }
@@ -337,7 +399,7 @@ impl<'a> Worklist<'a> {
             // underflow: a rank is a position among the entries, so it is far below
             // `u32::MAX` for any graph that fits in memory.
             priority: match self.direction {
-                Direction::Forward => u32::MAX - rank,
+                Direction::Forward => u64::MAX - rank,
                 Direction::Backward => rank,
             },
             seq: self.pushed,
@@ -484,7 +546,7 @@ mod tests {
     use crate::test_graph::{node, Entry, GraphBuilder};
 
     /// Every entry's rank, by entry id, for a graph whose ids are all in one conversation.
-    fn ranks(graph: &LookAheadGraph) -> HashMap<i32, u32> {
+    fn ranks(graph: &LookAheadGraph) -> HashMap<i32, u64> {
         let order = IterationOrder::of(graph);
         graph.nodes().map(|n| (n.id.entry_id, order.rank_of(n.id))).collect()
     }
@@ -634,7 +696,7 @@ mod tests {
         assert!(order.rank_of(node(0)) < order.rank_of(node(1)), "and the way in is below");
 
         // Ranks number the components, so they run 0..components and not 0..entries.
-        let mut seen: Vec<u32> = graph.nodes().map(|node| order.rank_of(node.id)).collect();
+        let mut seen: Vec<u64> = graph.nodes().map(|node| order.rank_of(node.id)).collect();
         seen.sort_unstable();
         assert_eq!(seen, vec![0, 1, 1, 1]);
     }
@@ -671,6 +733,47 @@ mod tests {
         assert_eq!(shared.components(), distinct.components());
         assert_eq!(shared.largest_component(), distinct.largest_component());
         assert_eq!(shared.component_of(node(2)), distinct.component_of(node(2)));
+    }
+
+    /// `PerDistance` orders a component's members by how far a crawl walks to reach them.
+    #[test]
+    fn per_distance_separates_a_component_by_links_from_the_start() {
+        // 1 -> 2 -> 3 -> 1 is one component, entered at 1, so within it the distances from
+        // the start are 1, 2 and 3. Tarjan's closure order need not agree with that.
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(Entry::new(1).links(&[2]))
+            .add(Entry::new(2).links(&[3]))
+            .add(Entry::new(3).links(&[1, 4]))
+            .add(Entry::new(4))
+            .build();
+        let order = IterationOrder::of_from(&graph, node(0)).ranked(Ranking::PerDistance);
+
+        assert!(order.rank_of(node(1)) < order.rank_of(node(2)), "nearer ranks lower");
+        assert!(order.rank_of(node(2)) < order.rank_of(node(3)));
+
+        // AND THE COMPONENT STILL COMES FIRST. The distance is only a tie-break inside one,
+        // so it may never lift a member above something the component leads to.
+        assert!(order.rank_of(node(0)) < order.rank_of(node(1)), "the way in is below");
+        assert!(order.rank_of(node(3)) < order.rank_of(node(4)), "and the tail is above");
+    }
+
+    /// Without a start there are no distances, so `PerDistance` falls back to the component.
+    #[test]
+    fn per_distance_without_a_start_is_per_component() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(Entry::new(1).links(&[2]))
+            .add(Entry::new(2).links(&[1]))
+            .build();
+
+        let blind = IterationOrder::of(&graph).ranked(Ranking::PerDistance);
+        assert_eq!(
+            blind.rank_of(node(1)),
+            blind.rank_of(node(2)),
+            "with every distance zero the members tie, as PerComponent leaves them",
+        );
+        assert!(blind.rank_of(node(0)) < blind.rank_of(node(1)), "and the order still holds");
     }
 
     /// Every entry ties under `Fifo`, so the worklist hands them back as they were pushed.
