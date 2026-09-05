@@ -535,7 +535,24 @@ impl<'a> Reachability<'a> {
         }
 
         this.stats.actions_ignored = image.ignored();
-        this.stats.reached_fixed_point = !ran_out;
+        // EVERY WAY OF STOPPING EARLY, not just the budget. This read `!ran_out`, and
+        // `ran_out` is set only by the step and time budgets - so a run that exhausted the
+        // diagram manager, or one stopped by `halt_on`, broke out of the loop above and then
+        // reported that it had SETTLED.
+        //
+        // THAT IS A SOUNDNESS BUG AND NOT A REPORTING ONE. `Known::with_forward` copies this
+        // into `forward_settled`, and a settled forward run is the one thing allowed to
+        // REFUSE a state: `Known::restricted` intersects a backward pass against it. Pruning
+        // against a set that merely stopped growing early removes states the crawl can
+        // genuinely reach, which is how a marker gets lost. It is latent today only because
+        // pruning is off by default. `Backward` has always got this right.
+        //
+        // Caught on conversation 14, which reported a fixed point over 893 entries where a
+        // run that admitted to being incomplete had reached 905 - and then panicked on the
+        // next diagram operation, out of nodes. A settled run is a superset of every partial
+        // one over the same graph and seed, so that pair cannot both be true.
+        this.stats.reached_fixed_point =
+            !ran_out && !this.stats.out_of_memory && this.stats.halted_at.is_none();
         this.stats.elapsed = began.elapsed();
         this.finish();
         this
