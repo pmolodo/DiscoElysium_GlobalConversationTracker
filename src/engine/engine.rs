@@ -182,8 +182,9 @@ fn state_bytes(slot_count: usize) -> usize {
 /// Because the telling has no failure path. `HashSet::insert` and `VecDeque::push_back`
 /// grow by doubling, and when the allocator refuses they reach
 /// `std::alloc::handle_alloc_error`, which prints to stderr and ABORTS THE PROCESS - it is
-/// not a panic, so nothing can catch it. This engine ships as a native library inside the
-/// game's own process, where that is the player's session rather than a lost marker.
+/// not a panic, so nothing can catch it. An abort now costs the engine's own process
+/// rather than the player's session - de-bnjy.1 moved it out of the game's address space -
+/// but a crawl that dies is still a menu with no answer, and a verdict beats a corpse.
 ///
 /// `try_reserve` asks the same allocator for the same room and returns an error instead, so
 /// running out becomes a verdict: [`LookAheadLimit::NoMemory`], which the caller can tell

@@ -29,20 +29,22 @@
 //! corrupt or hostile four bytes is a four-gigabyte allocation, which is a crash rather
 //! than an error - and the point of this module is that failures are legible.
 //!
-//! ## The requests are the C ABI's calls, minus the one that has no meaning here
+//! ## The requests are the old C ABI's calls, minus the two with no meaning here
 //!
-//! Ten of the eleven entry points in [`crate::ffi`] come across as request kinds.
-//! `gct_string_free` does not: there is no shared heap between two processes, so a string
-//! that crosses is a copy the receiver owns, and a whole class of mistake goes with it.
+//! Ten of the eleven entry points the plugin used to `DllImport` come across as request
+//! kinds. `gct_string_free` does not: there is no shared heap between two processes, so a
+//! string that crosses is a copy the receiver owns, and a whole class of mistake goes with
+//! it. Nor does `gct_engine_close`: the process is the handle, so closing it is closing the
+//! process.
 //!
 //! ## What a failure looks like
 //!
 //! A response always carries a [`Status`]. A request that names a conversation the index
 //! does not hold is `NoSuchConversation` with no payload; a panic inside the work is
-//! `Panic`, caught here exactly as the C ABI catches it, because a serving process that
-//! dies of a bad request is worse than one that answers with a code. What is NOT a status
-//! is a look-ahead the engine could not serve: that comes back as a successful response
-//! whose body carries `error`, so the caller has one thing to parse.
+//! `Panic`, caught here rather than allowed to end the loop, because a serving process
+//! that dies of a bad request is worse than one that answers with a code. What is NOT a
+//! status is a look-ahead the engine could not serve: that comes back as a successful
+//! response whose body carries `error`, so the caller has one thing to parse.
 
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -91,7 +93,7 @@ pub enum Request {
 
 /// What came back.
 ///
-/// `status` is always present and is the same number the C ABI returns. The payload
+/// `status` is always present and is the number [`Status`] has always carried. The payload
 /// fields are populated by the calls that have one and absent otherwise, rather than being
 /// a tagged union, because the .NET side reads one field per call and a union would make
 /// it read a discriminant first to learn what it already knew from what it asked.
@@ -185,14 +187,12 @@ pub fn read_frame(input: &mut impl Read) -> std::io::Result<Option<Vec<u8>>> {
 ///
 /// `engine` is the process's single engine, which starts empty and is filled by
 /// [`Request::Open`]. Every other call needs one, and a call that arrives before the open
-/// is [`Status::BadHandle`] - the same code the C ABI gives for a handle that is not one it
-/// handed out, and for the same reason: the caller asked the engine something before there
-/// was an engine.
+/// is [`Status::BadHandle`] - what that code meant when there were handles, and what it
+/// means now: the caller asked the engine something before there was an engine.
 pub fn answer(engine: &mut Option<Service>, request: Request) -> Response {
-    // The same rule the C ABI lives by, for the same reason one level out: a panic must
-    // not end the process, because the process is what the game is waiting on. Here it
-    // could unwind out of the serve loop instead of into managed frames, which is less
-    // dangerous and just as final.
+    // A panic must not end the process, because the process is what the game is waiting
+    // on. It would unwind out of the serve loop, which is quieter than unwinding into
+    // managed frames used to be and just as final.
     let work = AssertUnwindSafe(|| answer_unguarded(engine, request));
     catch_unwind(work).unwrap_or_else(|_| Response::bare(Status::Panic))
 }
@@ -268,8 +268,8 @@ pub fn serve(input: impl Read, output: impl Write) -> std::io::Result<()> {
         };
 
         // A response that will not serialise is a bug here rather than in the caller, and
-        // there is nowhere to report it but the status - so it is answered with the same
-        // code the C ABI uses and the loop continues.
+        // there is nowhere to report it but the status - so it is answered with the code
+        // that means exactly that, and the loop continues.
         let body = serde_json::to_vec(&response).unwrap_or_else(|_| {
             serde_json::to_vec(&Response::bare(Status::SerialiseFailed))
                 .expect("a status-only response always serialises")
@@ -384,7 +384,7 @@ mod tests {
         assert_eq!(answers[0].text.as_deref(), Some(env!("CARGO_PKG_VERSION")));
     }
 
-    /// Everything else does, and says so with the code the C ABI uses for the same thing.
+    /// Everything else does, and says so with the code that has always meant it.
     #[test]
     fn a_call_before_the_open_is_a_bad_handle() {
         let answers = served(&[

@@ -8,18 +8,23 @@ using Xunit.Abstractions;
 namespace GlobalConversationTracker.LookAhead.Tests
 {
     /// <summary>
-    /// Can managed code load the Rust look-ahead library and get a right answer back?
+    /// Can managed code reach the Rust look-ahead engine and get a right answer back?
     /// </summary>
     /// <remarks>
-    /// <para>The walking skeleton for de-i5xj. It proves the part that cannot be proved
-    /// by reading: that the crate's <c>cdylib</c> builds into something this platform's
-    /// loader accepts, that the calling convention agrees, and that a handle survives a
-    /// round trip. Everything the bridge will carry later rides on those three facts.</para>
+    /// <para>The walking skeleton for de-i5xj. It proves the part that cannot be proved by
+    /// reading: that the crate builds into something this platform will run, that the two
+    /// sides agree about what crosses, and that an engine survives a round trip.
+    /// Everything the bridge carries rides on those three facts.</para>
     ///
-    /// <para>Opt-in, the same way the corpus suites are. The library is a build artefact
-    /// and the index is extracted game content, and neither is committed - so where they
-    /// have not been produced these pass silently rather than failing on a machine that
-    /// was never going to have them. Produce them with
+    /// <para>SINCE de-bnjy.1 the engine is a child PROCESS rather than a library this
+    /// process loads, so the first of those three is about a binary that starts and speaks
+    /// the protocol rather than about a loader accepting a <c>cdylib</c>. What the tests
+    /// ask did not change with it.</para>
+    ///
+    /// <para>Opt-in, the same way the corpus suites are. The engine is a build artefact and
+    /// the index is extracted game content, and neither is committed - so where they have
+    /// not been produced these pass silently rather than failing on a machine that was
+    /// never going to have them. Produce them with
     /// <c>cargo build</c> and
     /// <c>dotnet run --project tools/DialogueExtract -- conversation-index</c>.</para>
     /// </remarks>

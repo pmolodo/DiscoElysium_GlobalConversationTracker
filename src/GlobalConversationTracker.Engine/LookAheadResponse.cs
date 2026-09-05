@@ -138,8 +138,8 @@ namespace GlobalConversationTracker.Engine
                 : null;
         }
 
-        /// <summary>Reads what <c>gct_look_ahead</c> returned.</summary>
-        /// <param name="json">The library's answer.</param>
+        /// <summary>Reads what the engine's <c>look_ahead</c> call answered.</summary>
+        /// <param name="json">The engine's answer.</param>
         /// <exception cref="ArgumentNullException">The JSON is null.</exception>
         /// <exception cref="FormatException">It is not a response document.</exception>
         public static LookAheadResponse Parse(string json)
@@ -186,7 +186,7 @@ namespace GlobalConversationTracker.Engine
             catch (JsonException error)
             {
                 throw new FormatException(
-                    "the look-ahead library's answer could not be read: " + error.Message,
+                    "the look-ahead engine's answer could not be read: " + error.Message,
                     error);
             }
         }

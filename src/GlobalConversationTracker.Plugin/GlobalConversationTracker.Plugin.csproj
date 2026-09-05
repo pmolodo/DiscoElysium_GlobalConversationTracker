@@ -55,10 +55,11 @@
             LinkBase="GlobalConversationTracker.Session" />
         <!--
       The managed side of the bridge to the Rust look-ahead - see de-i5xj. Compiled
-      in for the same reason as the rest, and with one extra benefit: the DllImport
-      then lives in THIS assembly, and the runtime probes for a native library
-      beside the assembly that declares it. That is the plugin's own folder, which
-      is exactly where the native library is deployed.
+      in for the same reason as the rest, and with one extra benefit: EngineHost
+      then lives in THIS assembly, and it looks for the engine executable beside the
+      assembly it is in. That is the plugin's own folder, which is exactly where the
+      engine is deployed. (It used to be a DllImport and the same argument applied
+      to the loader's probing path; de-bnjy.1 changed the mechanism, not the reason.)
     -->
         <Compile Include="..\GlobalConversationTracker.Engine\**\*.cs"
             Exclude="..\GlobalConversationTracker.Engine\bin\**;..\GlobalConversationTracker.Engine\obj\**"
@@ -111,12 +112,12 @@
         <Message Condition="'$(NativeLookAheadDir)' == ''" Importance="high"
             Text="No Rust look-ahead engine found; the plugin will report the bridge as unavailable. Run: cargo build --release" />
         <!--
-        And the cdylib this used to deploy, removed. Nothing loads it any more, but the
-        payload predicate takes every GlobalConversationTracker*.dll out of this folder -
-        so one left behind by an earlier build would be shipped, and a thirty-megabyte
-        library nobody opens is the kind of thing that goes unnoticed for a year. The
-        crate still builds it and src/ffi.rs still tests it; see de-bnjy.1.1.4, which
-        retires the C ABI once the pipe has been proved in the game.
+        And the cdylib this used to deploy, swept up. The crate no longer builds one and
+        src/ffi.rs is gone (de-bnjy.1.1.4), but the payload predicate takes every
+        GlobalConversationTracker*.dll out of this folder - so one an earlier build left
+        here would still be shipped, and a thirty-megabyte library nobody opens is the
+        kind of thing that goes unnoticed for a year. Harmless once every output folder
+        has been rebuilt; cheap enough to leave.
       -->
         <Delete Files="$(OutDir)GlobalConversationTracker.Native.dll" />
     </Target>
@@ -124,8 +125,8 @@
     <!--
     The conversation index the look-ahead reads, trimmed to what a crawl consults - 47.7 MB
     down to 14.3 MB, and about 1.2 MB inside a release archive. Named to match the payload
-    predicate for the same reason the native library is, so nothing about deployment has to
-    learn it exists.
+    predicate for the same reason the engine executable is, so nothing about deployment has
+    to learn it exists.
 
     Conditional again: a checkout without the extracted game data still builds, and the
     plugin says at load that it has no index to open rather than failing here. The
@@ -152,7 +153,7 @@
     of the 10,645 are numbers, so this is worth about one variable in seventy-five - and
     those are exactly the ones the counting guards ask about.
 
-    Renamed on the way in for the same reason the index and the native library are: the
+    Renamed on the way in for the same reason the index and the engine are: the
     deployment predicate takes $AssemblyName*, so a file called variables.jsonl would be
     built, ignored, and never noticed missing.
   -->

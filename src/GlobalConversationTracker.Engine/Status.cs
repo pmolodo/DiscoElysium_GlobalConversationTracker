@@ -10,11 +10,11 @@ namespace GlobalConversationTracker.Engine
     /// saved - but the names and numbers must match, and <c>BridgeTests</c> checks the ones
     /// a test can provoke.</para>
     ///
-    /// <para>ONE SET OF NUMBERS FOR BOTH WAYS ACROSS. The Rust enum is the source: its
-    /// discriminants are what the C ABI returns as an integer, and what a response over the
-    /// pipe carries in its <c>status</c> field. A code that meant one thing over the ABI and
-    /// another over the pipe would be the kind of mismatch where both sides look right in
-    /// isolation, which is why neither restates them.</para>
+    /// <para>THE NUMBERS OUTLIVED THE TRANSPORT. They were a C ABI's return codes, and they
+    /// kept their values when the engine became a process: a response over the pipe carries
+    /// the same integer in its <c>status</c> field. Renumbering them would have bought
+    /// nothing but a chance to get one wrong, and the in-game harness has logs full of the
+    /// old ones.</para>
     /// </remarks>
     public enum Status
     {

@@ -3,22 +3,22 @@
 //!
 //! ## Why this is a layer of its own
 //!
-//! The work used to live inside the C ABI, which meant it was reachable only by something
+//! The work used to live inside a C ABI, which meant it was reachable only by something
 //! that could load a DLL - and loading a DLL into the game's own process is exactly the
-//! arrangement de-bnjy.1 is undoing, because a library that dies takes the game with it.
-//! There are now two front ends: [`crate::ffi`], which is the C ABI as it always was, and
-//! [`crate::host`], which reads framed requests from a pipe. Neither owns the work.
+//! arrangement de-bnjy.1 undid, because a library that dies takes the game with it. The
+//! work came out here so that [`crate::host`] could reach it without a loader, and the ABI
+//! was retired once nothing needed it.
 //!
 //! So nothing here knows about pointers, C strings, frames or processes. It takes plain
-//! Rust arguments, hands back plain Rust values, and reports a failure as a [`Status`] -
-//! which the C ABI returns as its integer code and the pipe puts in a field.
+//! Rust arguments, hands back plain Rust values, and reports a failure as a [`Status`],
+//! which the pipe puts in a field.
 //!
-//! ## The status numbers ARE the C ABI's
+//! ## The status numbers are the ones that used to be a C ABI's
 //!
-//! [`Status`] is `repr(i32)` and its discriminants are the `GCT_` constants, which
-//! `ffi.rs` now derives from it rather than restating. Two front ends and one set of
-//! numbers: a code that means one thing over the ABI cannot come to mean another over the
-//! pipe, and the .NET `Status` enum stays in step with both by staying in step with one.
+//! [`Status`] is `repr(i32)` and its discriminants were the `GCT_` constants. They kept
+//! their numbers when the transport changed, deliberately: the .NET `Status` enum is
+//! matched by number, the in-game harness has logs full of them, and renumbering a set of
+//! codes buys nothing but a chance to get one wrong.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -216,11 +216,11 @@ impl Service {
 mod tests {
     use super::*;
 
-    /// The numbers are the C ABI's, and this is what says so.
+    /// The numbers, written down so they cannot drift.
     ///
-    /// Written out one at a time rather than derived, because a test that computes the
-    /// same thing the code computes proves nothing. If one of these ever changes, the .NET
-    /// `Status` enum changes with it and that is a deliberate act, not a refactor.
+    /// One at a time rather than derived, because a test that computes the same thing the
+    /// code computes proves nothing. If one of these ever changes, the .NET `Status` enum
+    /// changes with it and that is a deliberate act, not a refactor.
     #[test]
     fn the_status_numbers_are_the_ones_that_cross() {
         assert_eq!(Status::Ok as i32, 0);

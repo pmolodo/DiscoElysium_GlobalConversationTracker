@@ -8,25 +8,27 @@ using GlobalConversationTracker.Engine;
 namespace GlobalConversationTracker
 {
     /// <summary>
-    /// Says whether the native look-ahead library loaded, in one log line at startup.
+    /// Says whether the look-ahead engine is reachable, in one log line at startup.
     /// </summary>
     /// <remarks>
     /// <para>The look-ahead is moving from C# into Rust (de-i5xj), and the part that
     /// cannot be checked anywhere but here is whether the plugin can reach it INSIDE THE
-    /// GAME. The unit tests prove the library loads under a test runner, which is the
-    /// same runtime family - BepInEx 6 runs IL2CPP plugins on CoreCLR - but not the same
-    /// process, the same folder, or the same loader state.</para>
+    /// GAME. The unit tests prove the engine starts under a test runner, from a folder
+    /// that is not the deployed one, launched by a process that is not the game.</para>
     ///
-    /// <para>So this is deliberately small: call the library, write what it said, and
-    /// never throw. It is a smoke test that ships, not a feature. What it buys is that a
-    /// bridge which is broken says so in the log on every launch, rather than being
-    /// discovered later through a marker that is quietly wrong.</para>
+    /// <para>So this is deliberately small: ask the engine, write what it said, and never
+    /// throw. It is a smoke test that ships, not a feature. What it buys is that a bridge
+    /// which is broken says so in the log on every launch, rather than being discovered
+    /// later through a marker that is quietly wrong.</para>
     ///
-    /// <para>NOTHING HERE MAY FAIL THE LOAD. A missing or unloadable library is a mod
-    /// with one fewer capability, not a game that will not start - so every failure is
-    /// caught and logged, including the ones that arrive as a
-    /// <see cref="DllNotFoundException"/> from the first call rather than from anything
-    /// this file does.</para>
+    /// <para>SINCE de-bnjy.1 THE ENGINE IS A CHILD PROCESS, so what this proves is
+    /// stronger than it was: that the executable is deployed, that this machine will run
+    /// it, and that it speaks the protocol. Reading a version out of a loaded library
+    /// only ever proved the loader was happy.</para>
+    ///
+    /// <para>NOTHING HERE MAY FAIL THE LOAD. An engine that will not start is a mod with
+    /// one fewer capability, not a game that will not start - so every failure is caught
+    /// and logged.</para>
     /// </remarks>
     internal static class NativeEngineCheck
     {
@@ -57,8 +59,8 @@ namespace GlobalConversationTracker
         internal const string VariablesFileName = "GlobalConversationTracker.Variables.jsonl";
 
         /// <summary>
-        /// Reports what the native library says about itself, and about the index if one
-        /// is deployed.
+        /// Reports what the engine says about itself, and about the index if one is
+        /// deployed.
         /// </summary>
         internal static void Report(ManualLogSource log)
         {

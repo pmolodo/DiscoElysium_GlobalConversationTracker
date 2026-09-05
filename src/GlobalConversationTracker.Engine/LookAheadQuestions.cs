@@ -73,7 +73,7 @@ namespace GlobalConversationTracker.Engine
         /// <summary>Every entry in the group, because any of them may have been seen.</summary>
         public IReadOnlyList<NodeRef> Entries { get; }
 
-        /// <summary>Reads what <c>gct_questions</c> returned.</summary>
+        /// <summary>Reads what the engine's <c>questions</c> call answered.</summary>
         /// <param name="json">The engine's answer.</param>
         /// <exception cref="ArgumentNullException">The JSON is null.</exception>
         /// <exception cref="FormatException">It is not a questions document.</exception>
@@ -102,10 +102,10 @@ namespace GlobalConversationTracker.Engine
             catch (JsonException error)
             {
                 // Rethrown rather than swallowed. The only thing that produces this is the
-                // native library, so a document that will not parse means the two sides
-                // disagree about the format - which must be loud, not permissive.
+                // engine, so a document that will not parse means the two sides disagree
+                // about the format - which must be loud, not permissive.
                 throw new FormatException(
-                    "the look-ahead library's questions could not be read: " + error.Message,
+                    "the look-ahead engine's questions could not be read: " + error.Message,
                     error);
             }
         }

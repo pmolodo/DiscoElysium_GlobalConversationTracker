@@ -4,10 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [lib]
-# rlib for the tests, benches and the CLI; cdylib for the plugin, which runs inside the
-# game's Mono runtime and reaches this through DllImport. See de-i5xj.1 - the look-ahead
-# is moving out of C# and this is how it gets back in.
-crate-type = ["rlib", "cdylib"]
+# rlib, and only rlib: for the tests, the benches, the CLI and the engine host. There was
+# a cdylib here for the plugin to DllImport, which is how the look-ahead first got back
+# into C# (de-i5xj.1); the plugin now spawns the host binary instead (de-bnjy.1), so
+# nothing loads this crate as a library any more and building a thirty-megabyte one on
+# every build bought nothing.
+crate-type = ["rlib"]
 
 # THE ENGINE AS A PROCESS the game talks to over a pipe, rather than a library it loads -
 # de-bnjy.1. Named explicitly, and NOT in src/bin/ where Cargo would find it by itself,

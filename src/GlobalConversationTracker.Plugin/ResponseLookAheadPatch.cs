@@ -424,8 +424,8 @@ namespace GlobalConversationTracker
             }
             catch (Exception error)
             {
-                // A missing native library arrives here as a DllNotFoundException from the
-                // first call rather than from anything this file does.
+                // A missing or unrunnable engine arrives here from the attempt to start it,
+                // rather than from anything this file does.
                 log.Warning(
                     $"{LogPrefix} the native look-ahead is unavailable "
                     + $"({error.GetType().Name}: {error.Message}). "

@@ -20,7 +20,7 @@ namespace GlobalConversationTracker
     /// <para>Written to the log rather than returned, because the only thing that can run
     /// this is the game and the only thing that can read it afterwards is the harness. That
     /// is the same channel <see cref="NativeEngineCheck"/> uses and for the same reason: a
-    /// probe command would need the native library deployed beside the PROBE as well as
+    /// probe command would need the engine executable deployed beside the PROBE as well as
     /// beside the plugin, which is a second deployment to keep right in order to test the
     /// first.</para>
     ///

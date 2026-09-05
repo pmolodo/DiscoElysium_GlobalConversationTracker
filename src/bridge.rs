@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 //! What crosses between the plugin and this engine, and what it means.
 //!
-//! [`crate::ffi`] is the unsafe shell - pointers, panics, lifetimes. This is the part
-//! worth reading: the question the plugin asks, the snapshot of the world it asks it
-//! against, and the answer that comes back. All of it ordinary Rust, so all of it
-//! testable without a pointer in sight.
+//! [`crate::host`] is the shell - frames, processes, the pipe. This is the part worth
+//! reading: the question the plugin asks, the snapshot of the world it asks it against,
+//! and the answer that comes back. All of it ordinary Rust, so all of it testable without
+//! starting anything.
 //!
 //! ## Two calls, and why not one
 //!
