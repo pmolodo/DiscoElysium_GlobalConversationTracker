@@ -110,6 +110,54 @@ namespace GlobalConversationTracker.LookAhead.Tests
         }
 
         /// <summary>
+        /// An engine killed under the mod's feet is reported as a death, not as a hiccup.
+        /// </summary>
+        /// <remarks>
+        /// The case de-bnjy.1.2 turns on. A call that could not be served comes back as an
+        /// error inside a response and leaves the engine standing; this is the engine
+        /// itself going, and the mod has to be able to tell the two apart because only one
+        /// of them ends the feature for the session.
+        ///
+        /// Killed from outside rather than provoked from within, which is the honest
+        /// simulation: whatever actually kills an engine - an abort, the machine, a player
+        /// with a task manager - reaches this side as a pipe that stopped.
+        /// </remarks>
+        [Fact]
+        public void AnEngineKilledUnderneathIsReportedAsADeath()
+        {
+            string? index = NativeLookAhead.Index;
+            if (NativeLookAhead.Engine == null || index == null)
+            {
+                _output.WriteLine("the engine or the index is missing; skipping.");
+                return;
+            }
+
+            using LookAheadLibrary engine = LookAheadLibrary.Open(index);
+            using (Process child = Process.GetProcessById(engine.ProcessId))
+            {
+                child.Kill();
+                child.WaitForExit();
+            }
+
+            EngineDiedException died = Assert.Throws<EngineDiedException>(
+                () => engine.EntryCount(631));
+            _output.WriteLine($"{died.Death}: {died.Message}");
+
+            // Crashed rather than OutOfMemory, because the engine said nothing about an
+            // allocation - which is the point of the default: a reason is claimed only on
+            // the engine's own words.
+            Assert.Equal(EngineDeath.Crashed, died.Death);
+
+            // AND IT KEEPS SAYING SO. A second ask must not degrade into "the pipe is
+            // closed", which would be a worse account of the same event - and the mod asks
+            // again, because a menu is drawn again.
+            EngineDiedException again = Assert.Throws<EngineDiedException>(
+                () => engine.ConversationCount);
+            Assert.Equal(died.Death, again.Death);
+            Assert.Equal(died.Message, again.Message);
+        }
+
+        /// <summary>
         /// The deadline is a knob with a value, and the default is the documented one.
         /// </summary>
         /// <remarks>

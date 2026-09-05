@@ -83,16 +83,128 @@ namespace GlobalConversationTracker.Engine
         /// </remarks>
         internal static int Deadline { get; set; } = 30_000;
 
+        /// <summary>
+        /// How many lines of the engine's stderr to keep.
+        /// </summary>
+        /// <remarks>
+        /// The TAIL, because a process that dies says what matters last. Bounded because
+        /// the alternative is holding whatever a long-running engine chose to print for as
+        /// long as it ran, in the address space of the game.
+        /// </remarks>
+        private const int LastWordsLines = 20;
+
+        /// <summary>
+        /// What Rust's allocator prints before it aborts, in the form it prints it.
+        /// </summary>
+        /// <remarks>
+        /// <c>std::alloc::handle_alloc_error</c> writes "memory allocation of N bytes
+        /// failed" and aborts - not a panic, so nothing inside the engine can catch it, and
+        /// the message on stderr is the only account of it that exists. Matching on the
+        /// engine's OWN WORDS rather than on an exit code, because Windows reports an abort
+        /// as the same status whatever caused it.
+        /// </remarks>
+        private const string AllocationFailed = "memory allocation of";
+
+        /// <summary>
+        /// How long to wait for a dying engine's last words, in milliseconds.
+        /// </summary>
+        /// <remarks>
+        /// Short. This runs on the thread that was waiting for an answer, so it is time the
+        /// game spends on a failure it has already suffered - and a process that has broken
+        /// its pipe is either already gone or is not going to explain itself.
+        /// </remarks>
+        private const int LastWordsMs = 250;
+
         private readonly Process _child;
         private readonly Stream _toChild;
         private readonly Stream _fromChild;
+        private readonly Queue<string> _lastWords = new Queue<string>();
         private bool _closed;
+
+        /// <summary>
+        /// How it died, once it has. Null while it is alive or merely closed.
+        /// </summary>
+        /// <remarks>
+        /// KEPT so that every later call reports the SAME death rather than a fresh and
+        /// less informative failure. A caller that asks again after the engine has gone
+        /// should be told what happened the first time, not that a pipe is closed - the
+        /// first account is the one with the engine's own words in it.
+        /// </remarks>
+        private EngineDiedException? _died;
 
         private EngineHost(Process child)
         {
             _child = child;
             _toChild = child.StandardInput.BaseStream;
             _fromChild = child.StandardOutput.BaseStream;
+
+            // DRAINED, ALWAYS. A redirected stream nobody reads is a child that blocks once
+            // it has filled the pipe - a hang whose cause is a diagnostic message, which
+            // would be a poor joke - so the reader is attached before anything is asked of
+            // it and runs until the stream ends.
+            child.ErrorDataReceived += Remember;
+            child.BeginErrorReadLine();
+        }
+
+        /// <summary>Keeps the last few lines the engine wrote to its stderr.</summary>
+        private void Remember(object sender, DataReceivedEventArgs line)
+        {
+            if (line.Data == null)
+            {
+                // The stream ended, which is not a line.
+                return;
+            }
+
+            lock (_lastWords)
+            {
+                _lastWords.Enqueue(line.Data);
+                while (_lastWords.Count > LastWordsLines)
+                {
+                    _lastWords.Dequeue();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Waits, briefly, for the last of the engine's stderr to arrive.
+        /// </summary>
+        /// <remarks>
+        /// <para>THE READER IS ASYNCHRONOUS, so the line that explains a death can still be
+        /// in flight when the pipe breaks and this side notices. Without this the message
+        /// naming an allocation failure would be there or not depending on how the threads
+        /// happened to interleave, which is the worst kind of diagnostic.</para>
+        ///
+        /// <para>The documented way to be sure is the pair: the timed overload for the
+        /// process, then the parameterless one, which is the only one that waits for the
+        /// event handlers - "call the WaitForExit() overload that takes no parameter after
+        /// receiving a true from this overload", per
+        /// https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.process.waitforexit.
+        /// The parameterless one is reached ONLY after the timed one says the process has
+        /// gone, so it cannot wait indefinitely for a child that is still running.</para>
+        /// </remarks>
+        private void SettleLastWords()
+        {
+            try
+            {
+                if (_child.WaitForExit(LastWordsMs))
+                {
+                    _child.WaitForExit();
+                }
+            }
+            catch (Exception)
+            {
+                // Never started, or already reaped. Either way there is nothing to wait for
+                // and whatever was captured is all there will be.
+            }
+        }
+
+        /// <summary>The tail of what the engine said, or empty if it said nothing.</summary>
+        private string LastWords()
+        {
+            lock (_lastWords)
+            {
+                return string.Join(Environment.NewLine, _lastWords);
+            }
         }
 
         /// <summary>
@@ -161,11 +273,11 @@ namespace GlobalConversationTracker.Engine
             {
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
-                // INHERITED, not redirected. The engine says nothing there unless something
-                // has gone wrong, and a redirected stream nobody drains is a child that
-                // blocks once it has filled the pipe - a hang whose cause is a diagnostic
-                // message, which would be a poor joke.
-                RedirectStandardError = false,
+                // CAPTURED, because it is the only account of an abort that exists: Rust's
+                // allocator prints what it could not get and then ends the process, with no
+                // panic for anything to catch. Drained on a reader thread from the moment
+                // the child starts - see the constructor - so the pipe cannot fill.
+                RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
             };
@@ -211,6 +323,14 @@ namespace GlobalConversationTracker.Engine
         /// <exception cref="InvalidOperationException">The engine stopped answering.</exception>
         internal Answer Ask(string requestJson)
         {
+            // The death first, and repeated verbatim: an engine that has gone should keep
+            // saying how, rather than degrading into "the pipe is closed" on the second ask.
+            if (_died != null)
+            {
+                throw new EngineDiedException(
+                    _died.Death, _died.Message, _died.LastWords);
+            }
+
             if (_closed)
             {
                 throw new InvalidOperationException(
@@ -301,9 +421,12 @@ namespace GlobalConversationTracker.Engine
                     if (!reading.Wait(Deadline))
                     {
                         Kill();
-                        throw new TimeoutException(
+                        _died = new EngineDiedException(
+                            EngineDeath.Unresponsive,
                             $"the look-ahead engine did not answer within {Deadline} ms "
-                            + $"while {what} was being read. It has been stopped.");
+                            + $"while {what} was being read. It has been stopped.",
+                            LastWords());
+                        throw _died;
                     }
 
                     read = reading.Result;
@@ -352,14 +475,27 @@ namespace GlobalConversationTracker.Engine
         /// The engine is not there any more, said with whatever can be found out about why.
         /// </summary>
         /// <remarks>
-        /// The exit code is the useful half and is only available once the process has
+        /// <para>The exit code is the useful half and is only available once the process has
         /// actually gone, so this asks rather than assumes. A child still running with a
         /// broken pipe is a different fault from one that exited, and the message says
         /// which - because the whole point of moving out of process is that this failure is
-        /// legible instead of fatal.
+        /// legible instead of fatal.</para>
+        ///
+        /// <para>THE HOST IS DEAD AFTER THIS, whatever the caller does with the exception.
+        /// A pipe that broke once does not mend, and a host that kept answering calls with
+        /// a fresh failure each time would turn one report into one per response menu.</para>
+        ///
+        /// <para>The KIND of death comes from the engine's own words rather than from its
+        /// exit code, because Windows reports an abort as the same status whatever caused
+        /// it - see <see cref="AllocationFailed"/>. Anything the engine did not explain is
+        /// <see cref="EngineDeath.Crashed"/>, which is the honest answer rather than a
+        /// guess between two messages only one of which a player can act on.</para>
         /// </remarks>
-        private InvalidOperationException Died(string doing, Exception? cause)
+        private EngineDiedException Died(string doing, Exception? cause)
         {
+            _closed = true;
+            SettleLastWords();
+
             string ended;
             try
             {
@@ -372,8 +508,21 @@ namespace GlobalConversationTracker.Engine
                 ended = "and nothing can be learned about how it ended";
             }
 
-            return new InvalidOperationException(
-                $"the look-ahead engine stopped answering while {doing}: {ended}.", cause);
+            string lastWords = LastWords();
+            EngineDeath death = lastWords.Contains(AllocationFailed)
+                ? EngineDeath.OutOfMemory
+                : EngineDeath.Crashed;
+
+            string said = lastWords.Length == 0
+                ? " It said nothing on its way out."
+                : $" It last said: {lastWords}";
+
+            _died = new EngineDiedException(
+                death,
+                $"the look-ahead engine stopped answering while {doing}: {ended}.{said}",
+                lastWords,
+                cause);
+            return _died;
         }
 
         /// <inheritdoc/>
