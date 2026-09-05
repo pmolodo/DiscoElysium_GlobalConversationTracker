@@ -37,12 +37,42 @@ impl DiagramBudget {
     /// node again starts empty - `unique_table: Vec::new()` - and grows as nodes are
     /// actually inserted, so an empty manager has not yet paid for it.
     ///
-    /// 32 leaves that growth about eight bytes a node, which is the shape of a table of
-    /// four-byte indices at a sensible load factor. It is deliberately not tuned to the
-    /// construction measurement alone: sizing to 24 would spend the budget exactly on the
-    /// parts that can be counted today and let the table push a full manager past it.
-    /// de-mnrb is to measure a FILLED manager and replace this with the real number.
-    pub const BYTES_PER_NODE: usize = 32;
+    /// ## NOW MEASURED, and 32 was an undercount (de-mnrb)
+    ///
+    /// `what_a_node_costs_once_the_table_has_grown` fills one manager and reads the
+    /// allocator as it grows, so the MARGINAL cost of a node - the table's share, which
+    /// construction cannot show - is measured rather than reasoned:
+    ///
+    /// ```text
+    ///        nodes     held MB      grown MB  marginal B/node
+    ///      5968824       761.0          89.0            15.6
+    ///     11781351       848.1         176.0            15.7
+    ///     17536674       934.7         262.7            15.8
+    ///     23254780      1020.1         348.1            15.7
+    /// ```
+    ///
+    /// Flat from six million nodes to twenty-three, so there is no late doubling waiting to
+    /// surprise a full manager. 21.0 preallocated plus 15.7 grown is 36.7 BYTES A NODE, and
+    /// the eight this used to leave for the table was half what the table takes.
+    ///
+    /// What that cost: a manager built for 1 GB spent 1020 of its 1024 MB while holding
+    /// 23.3 million of the 33.5 million nodes the budget said it had bought - it ran out of
+    /// real memory at 69 per cent of its stated capacity. Every search that spends its
+    /// allowance was overshooting, and `DataVars::memory_used` could not report it because
+    /// it prices nodes at this same constant.
+    ///
+    /// ## Why FORTY rather than 37
+    ///
+    /// 37 would be the measurement and nothing more. The marginal figure comes from one
+    /// synthetic diagram shape, and how densely a real diagram packs the unique table is
+    /// not guaranteed to match it - so the number that matters is a CEILING, and a ceiling
+    /// wants margin on the side that cannot hurt. Being too generous costs unused budget,
+    /// which shows up as a search giving up early; being too tight costs a process that
+    /// spends past what it was allowed, which on a player's machine is the game.
+    ///
+    /// Forty leaves about nine per cent over the measurement and still keeps construction
+    /// above half the budget (21.0/40), which is what the test below asserts.
+    pub const BYTES_PER_NODE: usize = 40;
 
     /// How many nodes there are per apply-cache entry.
     ///
