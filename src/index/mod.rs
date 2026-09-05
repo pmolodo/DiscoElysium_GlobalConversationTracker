@@ -459,7 +459,7 @@ fn keeping_only_read_slots(
     // later, by `LookAheadGraph::new` - and is included so that moving the interning earlier
     // cannot quietly reintroduce the same bug.
     let mut written = vec![false; symbols.count()];
-    let mut mark = |slot: i32, written: &mut Vec<bool>| {
+    let mark = |slot: i32, written: &mut Vec<bool>| {
         if let Ok(slot) = usize::try_from(slot) {
             if slot < written.len() {
                 written[slot] = true;
