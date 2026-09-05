@@ -106,15 +106,61 @@ pub struct Budget {
     /// the same bargain the forward crawl makes with its clock.
     pub memory: usize,
     /// Called every `report_every` steps with the step count, entries reached, the
-    /// diagram nodes held in total, and the LARGEST single set.
+    /// diagram nodes held in total, the LARGEST single set, and the BYTES the manager is
+    /// using.
     ///
-    /// The last of those is the one to watch. The total sums each entry's set separately,
-    /// so it climbs both when sets get harder and merely when more entries have one, and
-    /// those are different problems - the first says the representation is failing, the
-    /// second only says the search is making progress.
+    /// The bytes are the last argument and the only one that can be read against
+    /// [`Self::memory`], because they are the same quantity the check above uses. The node
+    /// sums are not: they count what the entry sets REFERENCE, and the manager holds more
+    /// than that - nodes not yet collected, and the apply cache. On conversation 362 the
+    /// sets summed to ten million nodes while the manager held thirty-eight million, so a
+    /// progress line built from the sums reads a quarter of the true figure and a row looks
+    /// far from a budget it is about to spend.
+    ///
+    /// Of the two sums, the LARGEST SINGLE SET is the one to watch. The total sums each
+    /// entry's set separately, so it climbs both when sets get harder and merely when more
+    /// entries have one, and those are different problems - the first says the
+    /// representation is failing, the second only says the search is making progress.
     #[allow(clippy::type_complexity)]
-    pub on_progress: Option<Box<dyn Fn(usize, usize, usize, usize)>>,
+    pub on_progress: Option<Box<dyn Fn(usize, usize, usize, usize, usize)>>,
     pub report_every: usize,
+
+    /// The least wall time between two calls to [`Self::on_progress`]; zero for none.
+    ///
+    /// ## Why a second cadence, when `report_every` is already one
+    ///
+    /// Because the two are paid for differently and wanted at different rates. Asking
+    /// whether the memory budget is spent is cheap and wants asking OFTEN, since everything
+    /// between two asks is overshoot. Gathering the report is not: it walks every entry's
+    /// set for a node count, which is O(entries) and grows with them.
+    ///
+    /// With one cadence those trade against each other, and a step count cannot settle it
+    /// anyway - twenty thousand steps is a moment early on and minutes once the sets are
+    /// large, so a run either says nothing for half an hour or floods the log at the start.
+    /// A CLOCK is the thing a person watching actually wants, so the step count decides how
+    /// often the question is asked and this decides how often it is answered.
+    ///
+    /// Zero keeps the old behaviour exactly: report on every cadence hit.
+    pub report_gap: std::time::Duration,
+
+    /// The wall time [`Self::report_every`] should aim at, retuning itself to hold it;
+    /// zero to leave the step count fixed.
+    ///
+    /// ## Why a step count cannot be set by hand
+    ///
+    /// Because what a step costs moves by orders of magnitude WITHIN one search. Early on
+    /// the sets are small and twenty thousand steps go by in a moment; once they are large
+    /// the same twenty thousand take minutes. So any fixed number is both far too often at
+    /// the start and far too rare at the end, and the end is when somebody is watching.
+    ///
+    /// This makes the count follow the clock instead: after each check the interval is
+    /// scaled toward this target, damped to at most a halving or a doubling each time so
+    /// one unusually slow step cannot collapse it.
+    ///
+    /// IT ALSO BOUNDS THE MEMORY OVERSHOOT IN TIME RATHER THAN IN STEPS, which is the more
+    /// useful guarantee: the budget can be overspent by about this long's worth of growth,
+    /// whatever the sets happen to cost at that moment.
+    pub check_gap: std::time::Duration,
     /// Stop as soon as this says yes about an entry the search has just reached.
     ///
     /// THE MOST IMPORTANT KNOB HERE, and the one the first measurement lacked. The
@@ -141,6 +187,8 @@ impl Default for Budget {
             memory: crate::engine::engine::DEFAULT_MEMORY_BUDGET,
             on_progress: None,
             report_every: 20_000,
+            report_gap: std::time::Duration::ZERO,
+            check_gap: std::time::Duration::ZERO,
             halt_on: None,
         }
     }
@@ -272,7 +320,16 @@ impl<'a> Reachability<'a> {
         queue.push_back(start);
 
         let began = std::time::Instant::now();
+        let mut last_report = began;
         let mut ran_out = false;
+
+        // THE CADENCE RETUNES ITSELF. See `Budget::check_gap`: a step is microseconds early
+        // on and seconds once the sets are large, so a fixed count cannot hold a time
+        // target. `cadence` is steps between checks and moves toward whatever holds
+        // `check_gap`; a countdown rather than a modulo, because the divisor changes.
+        let mut cadence = budget.report_every.max(1);
+        let mut until_check = cadence;
+        let mut last_check = began;
 
         'search: while let Some(id) = queue.pop_front() {
             // Take the pending states and leave nothing behind. An entry can be queued
@@ -284,7 +341,27 @@ impl<'a> Reachability<'a> {
 
             this.stats.steps += 1;
 
-            if this.stats.steps % budget.report_every == 0 {
+            until_check -= 1;
+            if until_check == 0 {
+                until_check = cadence;
+
+                if !budget.check_gap.is_zero() {
+                    // Aim the next run of steps at `check_gap`, damped so one slow step
+                    // cannot collapse the cadence to nothing and one fast stretch cannot
+                    // send it somewhere it will never come back from. Halve or double at
+                    // most, and never leave the range where the check is worth making.
+                    let took = last_check.elapsed();
+                    last_check = std::time::Instant::now();
+                    let wanted = if took.is_zero() {
+                        cadence * 2
+                    } else {
+                        let scale = budget.check_gap.as_secs_f64() / took.as_secs_f64();
+                        (cadence as f64 * scale.clamp(0.5, 2.0)) as usize
+                    };
+                    cadence = wanted.clamp(1, 1_000_000);
+                    until_check = cadence;
+                }
+
                 if budget.memory > 0 && this.vars.memory_used() >= budget.memory {
                     this.stats.out_of_memory = true;
                     ran_out = true;
@@ -292,14 +369,20 @@ impl<'a> Reachability<'a> {
                 }
 
                 if let Some(report) = &budget.on_progress {
-                    let sizes: Vec<usize> =
-                        this.sets.values().map(|s| s.node_count()).collect();
-                    report(
-                        this.stats.steps,
-                        this.sets.len(),
-                        sizes.iter().sum(),
-                        sizes.iter().copied().max().unwrap_or(0),
-                    );
+                    // The gathering below is the expensive half, so the clock is consulted
+                    // before it rather than inside the callback. See `Budget::report_gap`.
+                    if last_report.elapsed() >= budget.report_gap {
+                        last_report = std::time::Instant::now();
+                        let sizes: Vec<usize> =
+                            this.sets.values().map(|s| s.node_count()).collect();
+                        report(
+                            this.stats.steps,
+                            this.sets.len(),
+                            sizes.iter().sum(),
+                            sizes.iter().copied().max().unwrap_or(0),
+                            this.vars.memory_used(),
+                        );
+                    }
                 }
             }
 

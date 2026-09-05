@@ -163,7 +163,22 @@ const HEAVIEST: [i32; 6] = [362, 368, 631, 14, 28, 1030];
 /// picked capacity is what made this unequal before - 2^22 nodes is a hard ceiling of
 /// about 134 MB, half what the crawl was allowed, and conversations 631 and 14 reported
 /// "no room" at exactly 4,194,304 nodes, which was that ceiling and not the budget.
-const MEMORY: usize = DiagramBudget::measurement().memory();
+/// Override with `ROW_MEMORY_MB`, for the one conversation that wants more than the rest.
+///
+/// A run reported as a measurement should say which allowance it used, the same way it
+/// should say which time cap - two rows given different budgets are not comparable, and
+/// nothing in a TSV records the budget.
+fn memory() -> usize {
+    std::env::var("ROW_MEMORY_MB")
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .map(|mb| mb * 1024 * 1024)
+        .unwrap_or_else(|| DiagramBudget::measurement().memory())
+}
+
+fn budget() -> DiagramBudget {
+    DiagramBudget::new(memory())
+}
 
 /// How long one engine may spend on one row.
 ///
@@ -188,6 +203,54 @@ fn row_time() -> std::time::Duration {
         .unwrap_or(DEFAULT_ROW_SECONDS);
     std::time::Duration::from_secs(seconds)
 }
+
+/// How often a row should say where it has got to, or None to say nothing until it ends.
+///
+/// ## Why a row needs this at all
+///
+/// Because a heavy row is half an hour of silence. Both engines already had the hook - the
+/// crawl reports on a clock, the fixed point every so many steps - and both were passed
+/// None here, so a run that took an hour and twenty-seven minutes printed sixty-six lines
+/// and nothing in between. There is no percentage to give: neither engine knows how much
+/// is left, only how much it has spent. So progress is what it HAS spent, which is the
+/// number that matters anyway, because spending the budget is how these rows end.
+///
+/// Off by default: the lines go into the row's log, and a run that is not being watched
+/// does not want them.
+fn progress_every() -> Option<std::time::Duration> {
+    std::env::var("PROGRESS_SECONDS")
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .filter(|seconds| *seconds > 0)
+        .map(std::time::Duration::from_secs)
+}
+
+/// How often the fixed point looks up from its work, against the five seconds it SPEAKS.
+///
+/// Two rates because they cost differently: looking up is a clock read and a memory
+/// question, and is wanted often enough that the budget cannot be overspent by much;
+/// gathering the line walks every entry's set for a node count, and is wanted only as often
+/// as somebody can read it. The forward crawl needs no equivalent - it is already on a
+/// clock of its own.
+const CHECK_GAP: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Bytes as gigabytes, for a line a person reads while waiting.
+fn gb(bytes: usize) -> String {
+    format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
+}
+
+/// A duration as m:ss, for the same reason.
+fn mmss(elapsed: std::time::Duration) -> String {
+    let seconds = elapsed.as_secs();
+    format!("{}m{:02}s", seconds / 60, seconds % 60)
+}
+
+/// The prefix every progress line carries.
+///
+/// It must NOT start with a conversation number: tools/measure-matrix.sh picks the row out
+/// of the log with `grep -E "^$conversation\b"`, and a progress line that matched would be
+/// recorded as the row and the real one thrown away.
+const PROGRESS: &str = "  ~";
 
 /// The verdict for a row nothing was learned from, in both engines' columns.
 ///
@@ -390,11 +453,25 @@ fn forward(
     };
 
     let began = std::time::Instant::now();
+    let allowance = memory();
+    let every = progress_every();
     let result = LookAheadEngine::new(LookAheadOptions {
         state_budget: usize::MAX,
-        memory_budget: MEMORY,
+        memory_budget: allowance,
         time_budget: row_time(),
         counter_cap: COUNTER_CAP,
+        // The crawl's own clock decides when, so there is nothing to throttle here.
+        progress_interval: every.unwrap_or_default(),
+        on_progress: every.map(|_| {
+            Box::new(move |_node, states: usize, reached: usize, bytes: usize, elapsed| {
+                println!(
+                    "{PROGRESS} fwd {:>7}  {states:>12} states  {reached:>6} reached  {} / {}",
+                    mmss(elapsed),
+                    gb(bytes),
+                    gb(allowance),
+                );
+            }) as Box<dyn Fn(_, _, _, _, _) + Send + Sync>
+        }),
         ..Default::default()
     })
     .evaluate(graph, start, world, novelty);
@@ -424,14 +501,14 @@ fn backward(
 
     let layout = DataLayout::for_graph(graph, COUNTER_CAP, None, false)
         .keeping_only_read(symbols, &DataLayout::read_by(graph));
-    // From MEMORY, so the diagram and the crawl are held to one number rather than two
+    // From the same allowance, so the diagram and the crawl are held to one number rather than two
     // that happen to agree.
     //
     // FALLIBLY, because the alternative is not a wrong number but a dead process: the
     // manager preallocates its node store and that allocation aborts. A None here means the
     // machine could not supply the budget, which is not a finding about the search - the
     // row is NOT MEASURED and wants running again with the memory free.
-    let Some(vars) = DataVars::try_new(&layout, symbols, DiagramBudget::new(MEMORY)) else {
+    let Some(vars) = DataVars::try_new(&layout, symbols, budget()) else {
         return Row {
             verdict: NOT_MEASURED,
             millis: began.elapsed().as_millis(),
@@ -445,19 +522,45 @@ fn backward(
 
     let seed = seed_of(graph, world, &vars);
     let quarry: HashSet<DialogueNodeId> = unseen.clone();
-    let budget = Budget {
+    let allowance = memory();
+    let every = progress_every();
+    let bwd_budget = Budget {
         steps: usize::MAX,
         time: row_time(),
-        memory: MEMORY,
-        report_every: 20_000,
-        on_progress: None,
+        memory: allowance,
+        // A STARTING GUESS ONLY when progress is on: `check_gap` retunes it from here to
+        // whatever holds a second, because no fixed step count can - twenty thousand steps
+        // is a moment early on and minutes once the sets are large, and the minutes end is
+        // exactly where somebody is watching. Checking every second also bounds the memory
+        // overshoot in time rather than in steps, which can only make the no-room verdict
+        // land closer to the budget it names.
+        report_every: if every.is_some() { 500 } else { 20_000 },
+        check_gap: if every.is_some() { CHECK_GAP } else { std::time::Duration::ZERO },
+        report_gap: every.unwrap_or_default(),
+        on_progress: every.map(|_| {
+            Box::new(
+                move |steps: usize,
+                      reached: usize,
+                      held: usize,
+                      largest: usize,
+                      bytes: usize| {
+                    println!(
+                        "{PROGRESS} bwd {:>7}  {steps:>10} steps  {reached:>6} reached  \
+                         {held:>11} set nodes  largest {largest:>9}  {} / {}",
+                        mmss(began.elapsed()),
+                        gb(bytes),
+                        gb(allowance),
+                    );
+                },
+            ) as Box<dyn Fn(usize, usize, usize, usize, usize)>
+        }),
         // The same early exit the forward crawl has: the question is whether ANY unseen
         // entry is reachable, not what the whole reachable set is.
         halt_on: Some(Box::new(move |id| quarry.contains(&id))),
     };
 
     let found = Reachability::explore_within(
-        graph, start, &seed, &mut compiler, world, COUNTER_CAP as u32, &budget,
+        graph, start, &seed, &mut compiler, world, COUNTER_CAP as u32, &bwd_budget,
     );
     let stats = found.stats();
 
@@ -543,13 +646,13 @@ fn both_engines_over_every_profile() {
             // the backstop for the race this check openly cannot close: another process can
             // take the memory between the answer here and the allocation there, and the
             // allocation aborts rather than failing.
-            if !DiagramBudget::measurement().can_be_supplied() {
+            if !budget().can_be_supplied() {
                 eprintln!(
                     "NOT MEASURED: {conversation} {} - this machine could not supply the \
                      {} MB budget. The row is not a result; run it again with the memory \
                      free.",
                     profile.label(),
-                    MEMORY / (1024 * 1024),
+                    memory() / (1024 * 1024),
                 );
                 println!(
                     "{conversation}\t{}\t{}\t{}\t{NOT_MEASURED}\t?\t?\t{NOT_MEASURED}\t?\t?\t?",

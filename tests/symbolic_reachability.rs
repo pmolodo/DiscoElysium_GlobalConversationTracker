@@ -369,6 +369,8 @@ fn finding_one_unseen_entry_in_a_group_that_is_otherwise_seen() {
             time: COMPARISON_TIME,
             memory: COMPARISON_MEMORY,
             report_every: 20_000,
+            report_gap: std::time::Duration::ZERO,
+            check_gap: std::time::Duration::ZERO,
             on_progress: None,
             // Stop the moment the quarry is reached - the whole point of the exercise.
             halt_on: Some(Box::new(move |id| id == quarry)),
@@ -484,7 +486,9 @@ fn what_the_expensive_conversations_cost() {
             time: std::time::Duration::from_secs(120),
             memory: 0,
             report_every: 5_000,
-            on_progress: Some(Box::new(move |steps, reached, held, largest| {
+            report_gap: std::time::Duration::ZERO,
+            check_gap: std::time::Duration::ZERO,
+            on_progress: Some(Box::new(move |steps, reached, held, largest, _bytes| {
                 println!(
                     "         ... {conversation}: {steps} steps, {reached} entries, \
                      {held} diagram nodes, largest set {largest}"

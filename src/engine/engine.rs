@@ -36,7 +36,17 @@ pub struct LookAheadOptions {
     pub memory_budget: usize,
     pub time_budget: Duration,
     pub time_check_interval: usize,
-    pub on_progress: Option<Box<dyn Fn(DialogueNodeId, usize, usize, Duration) + Send + Sync>>,
+    /// Called every [`Self::progress_interval`] with where the crawl is: the entry it is
+    /// standing on, the states held, the entries reached, the BYTES those states occupy,
+    /// and how long it has been going.
+    ///
+    /// THE BYTES ARE THE ONE TO WATCH, and the reason they are passed rather than left to
+    /// be worked out: [`Self::memory_budget`] is what stops this crawl in practice - on the
+    /// six-gigabyte matrix every heavy row ended by spending all of it - so a progress line
+    /// without them cannot say how close the end is. The state count cannot stand in for
+    /// them either, because the same 200,000 states cost 136 MB in one conversation and
+    /// 455 MB in another.
+    pub on_progress: Option<Box<dyn Fn(DialogueNodeId, usize, usize, usize, Duration) + Send + Sync>>,
     pub progress_interval: Duration,
     pub on_state_reached: Option<Box<dyn Fn(DialogueNodeId, &LookAheadState, usize) + Send + Sync>>,
     pub state_sample_interval: usize,
@@ -103,7 +113,7 @@ impl LookAheadOptions {
     pub fn memory_budget(mut self, bytes: usize) -> Self { self.memory_budget = bytes; self }
     pub fn time_budget(mut self, budget: Duration) -> Self { self.time_budget = budget; self }
     pub fn time_check_interval(mut self, interval: usize) -> Self { self.time_check_interval = interval; self }
-    pub fn on_progress<F>(mut self, f: F) -> Self where F: Fn(DialogueNodeId, usize, usize, Duration) + Send + Sync + 'static { self.on_progress = Some(Box::new(f)); self }
+    pub fn on_progress<F>(mut self, f: F) -> Self where F: Fn(DialogueNodeId, usize, usize, usize, Duration) + Send + Sync + 'static { self.on_progress = Some(Box::new(f)); self }
     pub fn progress_interval(mut self, interval: Duration) -> Self { self.progress_interval = interval; self }
     pub fn on_state_reached<F>(mut self, f: F) -> Self where F: Fn(DialogueNodeId, &LookAheadState, usize) + Send + Sync + 'static { self.on_state_reached = Some(Box::new(f)); self }
     pub fn state_sample_interval(mut self, interval: usize) -> Self { self.state_sample_interval = interval; self }
@@ -548,7 +558,13 @@ impl LookAheadEngine {
                     if let Some(nr) = next_report {
                         if now >= nr {
                             if let Some(report) = &self.options.on_progress {
-                                report(current.node, seen.len(), reached.len(), now - start_time.unwrap());
+                                report(
+                                    current.node,
+                                    seen.len(),
+                                    reached.len(),
+                                    frontier_bytes,
+                                    now - start_time.unwrap(),
+                                );
                             }
                             next_report = Some(now + self.options.progress_interval);
                         }

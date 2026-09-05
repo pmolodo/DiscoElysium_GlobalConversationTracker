@@ -728,7 +728,7 @@ fn a_long_crawl_reports_that_it_is_still_going() {
         // would be testing silence while claiming to test noise.
         progress_interval: Duration::from_nanos(1),
         time_check_interval: 1,
-        on_progress: Some(Box::new(move |_, _, _, _| {
+        on_progress: Some(Box::new(move |_, _, _, _, _| {
             counter.fetch_add(1, Ordering::Relaxed);
         })),
         state_budget: 500,
@@ -755,7 +755,7 @@ fn nothing_is_reported_when_nobody_is_listening() {
             progress_interval: Duration::ZERO,
             ..Default::default()
         }
-        .on_progress(move |_, _, _, _| {
+        .on_progress(move |_, _, _, _, _| {
             counter.fetch_add(1, Ordering::SeqCst);
         }),
     );
