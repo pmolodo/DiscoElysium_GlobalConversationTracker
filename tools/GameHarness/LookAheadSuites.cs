@@ -213,6 +213,48 @@ namespace GlobalConversationTracker.Harness
         public static Somewhere Noid { get; } =
             new Somewhere("at-noid", 368, "Noid, under the mural");
 
+        /// <summary>
+        /// The flowers thrown off the Whirling's roof - the one place in the game where a
+        /// RED CHECK is the first thing a menu offers.
+        /// </summary>
+        /// <remarks>
+        /// <para>Conversation 656, WHIRLING ROOF ORB / handeye catch. Its shape, read off
+        /// the shipped index: 0 START to 1, 1 to 27, 27 is one narration line, and 27 leads
+        /// to exactly two entries - 3, "Move your hand, fast!", carrying DifficultyRed, and
+        /// 7, "[Discard chance.]". One advance and the menu is a red check and a
+        /// decline.</para>
+        ///
+        /// <para>EVERY GUARD ON THAT PATH IS EMPTY, so it opens from any save and nothing
+        /// about where the player stands decides whether the check appears. That is what
+        /// makes it a fixture rather than a place: the save below is borrowed, and any
+        /// other would do.</para>
+        ///
+        /// <para>de-8hh2.9 recorded that no red check was in an opening menu, having looked
+        /// at the four conversations the harness already had saves for. The game has 111
+        /// red-check entries across 76 conversations; this is one of them, and the variable
+        /// its outcomes are sorted by names it -
+        /// <c>whirling.klaasje_flower_red_check_grab</c>.</para>
+        /// </remarks>
+        /// <remarks>
+        /// ZERO ADVANCES, measured rather than read off the index. Entry 27 is a narration
+        /// line and the shape suggested one advance would be needed to get past it; the
+        /// menu is in fact up as soon as the conversation is, which is what the run said
+        /// and what the number here now records.
+        /// </remarks>
+        public static Somewhere KlaasjeFlower { get; } =
+            new Somewhere("at-the-fan", 656, "the flowers off the Whirling's roof", 0);
+
+        /// <summary>
+        /// A global state with nothing recorded in it, so everything is unseen anywhere.
+        /// </summary>
+        /// <remarks>
+        /// Shared with the branch-shape rows, which name it in
+        /// <c>testing/scenarios/branch-shapes.json</c>. The simplest fixture there is: no
+        /// entry has been read, so nothing about the recording can explain what a marker
+        /// turns out to be.
+        /// </remarks>
+        private const string EmptyState = "global-state-empty.json";
+
         /// <summary>The global state all three money scenarios share.</summary>
         /// <remarks>
         /// Every entry of the conversation except 80, so reaching 80 is the only way to
@@ -296,7 +338,7 @@ namespace GlobalConversationTracker.Harness
             new[]
             {
                 Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff, AllSeen,
-                EngineDeath,
+                EngineDeath, RedCheck,
             }.Concat(BranchShapes).ToArray();
 
         /// <summary>The suites a run does when it is not told which to do.</summary>
@@ -445,6 +487,42 @@ namespace GlobalConversationTracker.Harness
                     "dialogue statuses are being tracked",
                     true,
                     "tracking is unaffected by the switch"),
+            });
+
+        /// <summary>
+        /// A RED check on screen, which no scenario had ever put there.
+        /// </summary>
+        /// <remarks>
+        /// <para>de-8hh2.9's option (2), which turned out to exist: a save that stands
+        /// where a red check is the first thing offered. See <see cref="KlaasjeFlower"/>
+        /// for the shape of conversation 656 and why any save reaches it.</para>
+        ///
+        /// <para>DELIBERATELY MODEST TO BEGIN WITH. It claims that the menu draws and that
+        /// the two entries are the ones the index names; what the markers and the Pass /
+        /// Fail line should be is left unclaimed until a run has been LOOKED at, because
+        /// this repository's rule is measure, do not reason and nothing here has ever been
+        /// on screen. The eight shapes on a red check - the rest of de-8hh2.9 - come after
+        /// that, and de-8hh2.15's colours are readable off the same screenshot.</para>
+        ///
+        /// <para>Declared here rather than in <c>testing/scenarios/suites.json</c> only
+        /// while it is unclaimed: a row that asserts nothing about markers has nothing for
+        /// the offline executor to run. It should move there once it makes a claim both
+        /// sides can check.</para>
+        /// </remarks>
+        public static LookAheadSuite RedCheck { get; } = new LookAheadSuite(
+            "red-check",
+            "a red check is drawn, and the mod draws on it",
+            EmptyState,
+            new[]
+            {
+                new LookAheadScenario(
+                    KlaasjeFlower.Save,
+                    KlaasjeFlower.Conversation,
+                    KlaasjeFlower.What,
+                    Array.Empty<OptionExpectation>(),
+                    markers: MarkerPolicy.Ignored,
+                    advances: KlaasjeFlower.Advances,
+                    branchPolicy: BranchPolicy.Ignored),
             });
 
         /// <summary>
