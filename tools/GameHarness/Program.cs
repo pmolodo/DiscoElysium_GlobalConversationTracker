@@ -51,6 +51,21 @@ namespace GlobalConversationTracker.Harness
         /// <returns>0 when every check passed.</returns>
         public static int Main(string[] args)
         {
+            // FIRST, AND BEFORE ANY WINDOW IS TOUCHED. Awareness cannot be changed once a
+            // process has used a window or a device context, and every verb below either
+            // measures a window or captures the screen. Said once here rather than in each
+            // of them, which also catches the in-game tests: they reach these verbs by
+            // calling Main.
+            DisplayScaling.ScalingReport scaling = DisplayScaling.Enable();
+
+            // Silent at 100% with awareness in hand, which is the ordinary case and has
+            // nothing to say. A scaled display is worth a line even when it worked, since
+            // it changes what a screenshot in the artifacts folder is a picture of.
+            if (!scaling.Aware || scaling.ScalePercent != 100)
+            {
+                Console.WriteLine($"display:   {scaling.What}");
+            }
+
             var options = Options.Parse(args);
             if (options == null)
             {
