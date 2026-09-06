@@ -57,6 +57,12 @@ path = "measurements/backward_support.rs"
 name = "guard_depth"
 path = "measurements/guard_depth.rs"
 
+# A SNAPSHOT rather than a measurement: it dumps every parsed guard to a file named by
+# GUARD_SNAPSHOT, to be diffed across a change to the parser.
+[[example]]
+name = "guard_snapshot"
+path = "measurements/guard_snapshot.rs"
+
 [[example]]
 name = "guard_stack"
 path = "measurements/guard_stack.rs"
@@ -106,6 +112,12 @@ path = "measurements/search_residue.rs"
 [[example]]
 name = "shared_symbolic"
 path = "measurements/shared_symbolic.rs"
+
+# A GENERATOR rather than a measurement: two of its three passes write the committed files
+# under analysis/.
+[[example]]
+name = "static_analysis"
+path = "measurements/static_analysis.rs"
 
 [[example]]
 name = "unread_slots"

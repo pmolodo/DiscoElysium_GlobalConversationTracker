@@ -14,10 +14,10 @@
 //!
 //! ## How
 //!
-//! `GUARD_SNAPSHOT=<path> cargo test --release --test guard_snapshot -- --ignored`
+//! `GUARD_SNAPSHOT=<path> cargo run --release --example guard_snapshot`
 //!
 //! It is kept rather than deleted because the next person to touch the parser wants it, and
-//! it costs nothing while it is ignored.
+//! it costs nothing while nothing runs it.
 
 use std::fmt::Write as _;
 use std::fs;
@@ -25,11 +25,10 @@ use std::fs;
 use lookahead_engine::index::read_index;
 use lookahead_engine::parser::guard_parser::parse_guard;
 
+#[path = "../tests/common/mod.rs"]
 mod common;
 
-#[test]
-#[ignore = "a snapshot; run it deliberately, on both sides of a parser change"]
-fn what_the_parser_makes_of_every_guard() {
+fn main() {
     let out = std::env::var("GUARD_SNAPSHOT")
         .expect("set GUARD_SNAPSHOT to the file to write");
     let Some(path) = common::conversation_index() else {

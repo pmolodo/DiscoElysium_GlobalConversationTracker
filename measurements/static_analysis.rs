@@ -27,15 +27,48 @@
 //! more than it saved ONCE WIRED PER OPTION. Precomputing it removes exactly that
 //! objection: the cost moves to a build step that runs once.
 //!
-//! Regenerate with:
-//!   cargo test --release --test static_analysis -- --ignored --nocapture
+//! Regenerate both committed files with:
+//!   cargo run --release --example static_analysis
+//!
+//! or one stage at a time: groups, reachability, coverage.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 
 use lookahead_engine::index::{links_of, read_index, Index};
 
+#[path = "../tests/common/mod.rs"]
 mod common;
+
+/// THREE PASSES OVER THE SAME DATABASE, run in order by default and singly by name.
+///
+/// The first two write the committed files under `analysis/` and share the whole link-
+/// walking apparatus below; the third reports what a start can reach and writes nothing.
+/// Regenerating one of the two committed files without the other is the case the argument
+/// exists for - they are separate answers and a reader should be able to refresh one.
+///
+/// NOTHING IN THE REPOSITORY READS `analysis/` YET. The files are committed and the
+/// prefilter they exist for is not built; that is de-asw.3's story rather than this file's,
+/// but it is worth knowing before treating a stale file as a bug.
+fn main() {
+    match std::env::args().nth(1).as_deref() {
+        None => {
+            partition_the_database_into_conversation_groups();
+            measure_link_reachability_from_every_entry();
+            how_much_of_a_loaded_group_can_a_start_actually_reach();
+        }
+        Some("groups") => partition_the_database_into_conversation_groups(),
+        Some("reachability") => measure_link_reachability_from_every_entry(),
+        Some("coverage") => how_much_of_a_loaded_group_can_a_start_actually_reach(),
+        Some(other) => {
+            eprintln!(
+                "unknown pass {other:?}; expected groups, reachability or coverage, or no \
+                 argument at all to run the three in order"
+            );
+            std::process::exit(2);
+        }
+    }
+}
 
 /// Where the committed answers live.
 const ANALYSIS_DIR: &str = "analysis";
@@ -154,8 +187,6 @@ fn write_answer(name: &str, body: &str) {
     println!("wrote {} ({} bytes)", out.display(), body.len() + 1);
 }
 
-#[test]
-#[ignore = "regenerates committed analysis files; run deliberately"]
 fn partition_the_database_into_conversation_groups() {
     let Some(path) = common::conversation_index() else { return };
     let index = read_index(&path).expect("the index reads");
@@ -195,8 +226,6 @@ fn partition_the_database_into_conversation_groups() {
     assert!(!groups.is_empty(), "the database yielded no groups");
 }
 
-#[test]
-#[ignore = "regenerates committed analysis files; run deliberately"]
 fn measure_link_reachability_from_every_entry() {
     let Some(path) = common::conversation_index() else { return };
     let index = read_index(&path).expect("the index reads");
@@ -242,8 +271,6 @@ fn measure_link_reachability_from_every_entry() {
 /// Measured per start as the reachable entries against the entries in the group the search
 /// would LOAD - `index::discover_group`'s forward closure, which is what
 /// `build_group_graph` builds and therefore what the group-wide check scans.
-#[test]
-#[ignore = "a whole-database pass; run deliberately"]
 fn how_much_of_a_loaded_group_can_a_start_actually_reach() {
     let Some(path) = common::conversation_index() else { return };
     let index = read_index(&path).expect("the index reads");

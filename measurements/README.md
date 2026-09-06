@@ -15,6 +15,21 @@ for examples in `examples/` and these live beside their logs. Being examples als
 them out of `cargo test`, which used to compile and link every one of them on the way to
 running none of them.
 
+**Not everything here produces a number**, and the directory's name undersells it. Two of
+its contents are a different kind of thing, and they are here because the split that
+matters is "runs in the suite" against "run by hand" - a second directory for two files
+would be a distinction nobody remembers:
+
+- `static_analysis.rs` is a GENERATOR. Two of its three passes write the committed files
+  under `analysis/`. Nothing in the repository reads those yet - the prefilter they exist
+  for was measured and reverted, see de-asw.3 - so a stale one is not by itself a bug.
+- `guard_snapshot.rs` is a SNAPSHOT. It dumps every parsed guard to the file named by
+  `GUARD_SNAPSHOT`, to be run on both sides of a parser change and diffed. Identical output
+  over 26,210 guards is the equivalence claim; a diff is the list that changed meaning.
+
+What they have in common with the measurements is the thing that got them moved: none of
+them passes or fails on its own, so none of them belongs in `tests/`.
+
 Run one the way anything slow is run here - through `tools/run-logged.sh`, so there is a
 log to read afterwards:
 
