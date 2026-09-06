@@ -371,9 +371,14 @@ fn the_driver_answers_what_the_engine_answers() {
             expected.best,
         );
 
-        // And the portfolio, which is what a caller would actually run. It may fall back
-        // to the crawl, so it can never do worse than the crawl - that is the whole
-        // point of it - and this is where that would show if it did.
+        // And the portfolio, which is what a caller would actually run.
+        //
+        // IT NO LONGER FALLS BACK TO THE CRAWL, so this assertion changed meaning on
+        // 2026-09-06 without changing a character: it used to be guaranteed by
+        // construction - the portfolio ran the crawl when its own halves came up short -
+        // and it is now a CLAIM ABOUT THE SEARCHES, that the forward slice and the backward
+        // driver between them find whatever the crawl finds. That is the premise the crawl
+        // was retired on, and this is the test that can falsify it.
         let portfolio = portfolio::best_novelty(
             &graph,
             start,
@@ -382,13 +387,13 @@ fn the_driver_answers_what_the_engine_answers() {
             &world,
             COUNTER_CAP as u32,
             &novelty,
+            graph.best_linked_class(start, &novelty).unwrap_or(Novelty::SeenThisGame),
             &portfolio::Budget::default(),
-            &engine,
         );
         assert!(
             portfolio.best >= expected.best,
             "conversation {conversation}: the portfolio said {:?} where the engine said \
-             {:?}, and falling back should have made that impossible",
+             {:?}, so there IS a case the crawl answers and the two symbolic halves do not",
             portfolio.best,
             expected.best,
         );

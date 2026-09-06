@@ -363,8 +363,10 @@ fn what_the_portfolio_costs() {
                 &world,
                 COUNTER_CAP as u32,
                 &novelty,
+                graph
+                    .best_linked_class(start, &novelty)
+                    .unwrap_or(Novelty::SeenThisGame),
                 &lookahead_engine::symbolic::portfolio::Budget::default(),
-                &engine,
             );
 
             (

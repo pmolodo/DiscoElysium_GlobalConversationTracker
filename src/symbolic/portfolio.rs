@@ -1,5 +1,19 @@
 // SPDX-License-Identifier: MIT
-//! Ask backwards first, and fall back to the crawl when the answer does not come.
+//! Work in from the start, then in from the target, and let the halves share what they find.
+//!
+//! ## The backward driver is the fallback
+//!
+//! It was the crawl until 2026-09-06. The forward slice ran, then the backward driver, and
+//! an unsettled backward driver handed the question to `LookAheadEngine`. That third stage
+//! is gone with the crawl itself: there is no measured case where the crawl answers a group
+//! the backward driver cannot, and the two lower bounds it took the better of were only ever
+//! different in the direction the backward half was already better at.
+//!
+//! So an unsettled backward driver is now the END of the search rather than the middle of
+//! it, and what it found is reported as what it is - a LOWER BOUND, with
+//! [`Answered::Partly`] saying so. Every class it refused, it refused completely; an
+//! unasked candidate might have carried a better one. That is the same contract the crawl's
+//! own `budget_exhausted` had, and the caller reads it the same way.
 //!
 //! ## Why a portfolio rather than a choice
 //!
@@ -24,9 +38,10 @@
 //! cost. What tracks it is how big the diagrams get, which is a fact about the answer and
 //! so no use for choosing before running.
 //!
-//! So this does not choose. It gives the backward driver a budget, takes the answer when
-//! it settles, and runs the crawl when it does not. The group that would have been slow
-//! pays the budget rather than the whole run.
+//! So this does not choose. It spends a slice going forwards, hands what that reached to
+//! the backward driver, and takes what the backward driver returns - settled, or as the
+//! lower bound it is. The group that would have been slow pays its budget and says so,
+//! rather than paying it and then paying for a whole crawl as well.
 //!
 //! ## What the budget is protecting against
 //!
@@ -41,7 +56,6 @@ use std::time::Duration;
 use oxidd::bdd::BDDFunction;
 
 use crate::core::types::{DialogueNodeId, Novelty};
-use crate::engine::engine::LookAheadEngine;
 use crate::graph::graph::LookAheadGraph;
 use crate::symbolic::guard_formula::GuardCompiler;
 use crate::symbolic::known::Known;
@@ -49,18 +63,19 @@ use crate::symbolic::novelty_search::{self, StoppedBy};
 use crate::symbolic::reachability::{self, Reachability};
 use crate::world::world::ILookAheadWorld;
 
-/// Which search produced an answer.
+/// Which search produced an answer, and whether it is one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Answered {
     /// The forward pass reached an entry worth reporting and stopped there.
     Forwards,
-    /// The backward driver settled within its budget.
+    /// The backward driver settled within its budget, so the answer is exact.
     Backwards,
-    /// The backward driver did not settle, and the crawl was run instead.
-    Crawl,
-    /// The backward driver did not settle and the crawl then gave up too, so the answer
-    /// is a lower bound from whichever got furthest.
-    NeitherCompletely,
+    /// The backward driver did not settle, so [`PortfolioAnswer::best`] is a LOWER BOUND.
+    ///
+    /// The classes it refused it refused completely, but a candidate it never reached
+    /// might have carried a better one. Nothing runs after this - see the module note on
+    /// why the crawl that used to is gone.
+    Partly,
 }
 
 /// What the portfolio found.
@@ -72,10 +87,16 @@ pub struct PortfolioAnswer {
     pub witness: Option<DialogueNodeId>,
     /// How many candidates the backward driver asked about before stopping.
     pub targets_asked: usize,
+    /// Why the backward driver stopped, or `Nothing` when the slice answered first.
+    ///
+    /// Carried out rather than reduced to [`Answered::Partly`], because a caller reporting
+    /// an incomplete answer has to say WHICH ration ran out - the candidates, the clock, or
+    /// a single pass that could not finish - and those want different responses.
+    pub stopped_by: StoppedBy,
     pub elapsed: Duration,
 }
 
-/// How long to let the backward driver try before falling back.
+/// How long each half of the search gets.
 pub struct Budget {
     /// The forward slice run BEFORE the backward driver, or zero to skip it.
     ///
@@ -125,7 +146,57 @@ impl Default for Budget {
     }
 }
 
+/// One forward pass, halting on any entry of the class it was asked for.
+///
+/// `wanted` is the class and not a floor: an entry of a LOWER class is not what this pass
+/// was sent to find, and stopping at one would answer a different question - see
+/// [`hunted_class`].
+#[allow(clippy::too_many_arguments)]
+fn forwards_for<'a, F>(
+    graph: &LookAheadGraph,
+    start: DialogueNodeId,
+    seed: &BDDFunction,
+    compiler: &mut GuardCompiler<'a>,
+    world: &dyn ILookAheadWorld,
+    counter_cap: u32,
+    wanted: Novelty,
+    novelty: &F,
+    within: Duration,
+) -> Reachability<'a>
+where
+    F: Fn(DialogueNodeId) -> Novelty,
+{
+    // THE SET RATHER THAN THE CLOSURE, because `halt_on` outlives this call and cannot
+    // borrow `novelty`. One pass over the entries to build it, against a search that is
+    // thousands of diagram operations.
+    let quarry: HashSet<DialogueNodeId> = graph
+        .nodes()
+        .map(|node| node.id)
+        .filter(|id| novelty(*id) == wanted)
+        .collect();
+
+    Reachability::explore_within(
+        graph,
+        start,
+        seed,
+        compiler,
+        world,
+        counter_cap,
+        &reachability::Budget {
+            time: within,
+            halt_on: Some(Box::new(move |id| quarry.contains(&id))),
+            ..Default::default()
+        },
+    )
+}
+
 /// The best novelty reachable beyond `start`, from whichever search answers first.
+///
+/// `hunting` is the class the forward slice looks for, and the caller must have established
+/// that it is the best class link-reachable from `start` -
+/// [`LookAheadGraph::best_linked_class`] is what establishes it. A caller that passes a
+/// class which is NOT the best reachable gets a lower bound where it thinks it has an
+/// answer, because the slice would then be able to halt with something better still unseen.
 #[allow(clippy::too_many_arguments)]
 pub fn best_novelty<'a, F>(
     graph: &LookAheadGraph,
@@ -135,39 +206,52 @@ pub fn best_novelty<'a, F>(
     world: &dyn ILookAheadWorld,
     counter_cap: u32,
     novelty: F,
+    hunting: Novelty,
     budget: &Budget,
-    engine: &LookAheadEngine,
 ) -> PortfolioAnswer
 where
     F: Fn(DialogueNodeId) -> Novelty,
 {
     let began = std::time::Instant::now();
 
-    // IN FROM THE START, FIRST. The forward pass is asked the question directly - halt on
-    // any entry whose novelty beats what a crawl would settle for - so where it can answer
-    // it answers here and nothing else runs.
-    let forwards = (!budget.forwards.is_zero()).then(|| {
-        // THE SET RATHER THAN THE CLOSURE, because `halt_on` outlives this call and cannot
-        // borrow `novelty`. One pass over the entries to build it, against a search that is
-        // thousands of diagram operations.
-        let wanted: HashSet<DialogueNodeId> = graph
-            .nodes()
-            .map(|node| node.id)
-            .filter(|id| novelty(*id) > Novelty::SeenThisGame)
-            .collect();
+    // THE START IS A RESULT LIKE ANY OTHER, and the cheapest one there is: `hunting` is the
+    // best class anything reachable carries, the start included, so a start already
+    // carrying it settles the question before a diagram is touched.
+    //
+    // It cannot fire for an ordinary option - there the caller's baseline IS the start's
+    // own class, and it refused a search that could only match it. It fires for one outcome
+    // of a rolled check, whose baseline is where that outcome LANDS: a check no save has
+    // displayed, opening something this save has read, outranks its own outcome.
+    if hunting > Novelty::SeenThisGame && novelty(start) == hunting {
+        return PortfolioAnswer {
+            best: hunting,
+            by: Answered::Forwards,
+            witness: Some(start),
+            targets_asked: 0,
+            stopped_by: StoppedBy::Nothing,
+            elapsed: began.elapsed(),
+        };
+    }
 
-        Reachability::explore_within(
-            graph,
-            start,
-            seed,
-            compiler,
-            world,
-            counter_cap,
-            &reachability::Budget {
-                time: budget.forwards,
-                halt_on: Some(Box::new(move |id| wanted.contains(&id))),
-                ..Default::default()
-            },
+    // IN FROM THE START, FIRST, HUNTING ONE CLASS. Where it halts, that is the answer and
+    // nothing else runs - which is only true because of WHICH class it hunts, and that is
+    // the caller's to establish: the best class any link from here reaches, so nothing the
+    // pass could have walked past outranks what it stopped at.
+    //
+    // PASSED IN RATHER THAN WORKED OUT HERE, because the caller has already walked the
+    // links to decide whether to search at all - `bridge::class_worth_hunting` - and the
+    // answer to "is anything better than the baseline reachable" and "which class should
+    // the slice hunt" is the same walk over the same graph. Doing it here would be doing it
+    // twice per start, once per outcome of every rolled check.
+    //
+    // THE FLOOR IS NEVER HUNTED. `SeenThisGame` is not a quarry - every entry that is not
+    // unseen carries it, so a pass sent after it halts on the first thing it touches and
+    // calls the floor an answer. A caller with nothing to hunt has nothing to search for
+    // and should not be here at all, and this is what makes arriving anyway harmless.
+    let forwards = (hunting > Novelty::SeenThisGame && !budget.forwards.is_zero()).then(|| {
+        forwards_for(
+            graph, start, seed, compiler, world, counter_cap, hunting, &novelty,
+            budget.forwards,
         )
     });
 
@@ -178,6 +262,7 @@ where
                 by: Answered::Forwards,
                 witness: Some(halted_at),
                 targets_asked: 0,
+                stopped_by: StoppedBy::Nothing,
                 elapsed: began.elapsed(),
             };
         }
@@ -211,35 +296,20 @@ where
         known.as_ref(),
     );
 
-    if backwards.stopped_by == StoppedBy::Nothing {
-        return PortfolioAnswer {
-            best: backwards.best,
-            by: Answered::Backwards,
-            witness: backwards.witness,
-            targets_asked: backwards.targets_asked,
-            elapsed: began.elapsed(),
-        };
-    }
-
-    // It did not settle, so what it found is a lower bound rather than an answer - every
-    // class it refused, it refused completely, but an unasked candidate might have carried
-    // a better one. Run the crawl and take the better of the two, which is sound because
-    // both are lower bounds and neither can overstate a class it never reached.
-    let crawled = engine.evaluate(graph, start, world, &novelty);
-    let best = crawled.best.max(backwards.best);
-    let by = if crawled.budget_exhausted() {
-        Answered::NeitherCompletely
-    } else {
-        Answered::Crawl
-    };
-
+    // SETTLED OR NOT, THIS IS THE ANSWER. A backward driver that ran out of candidates or
+    // clock has established a lower bound and nothing else here can improve on it - see the
+    // module note on the crawl that used to run at this point. The caller is told which it
+    // is, and reads an unsettled one exactly as it read an exhausted crawl.
     PortfolioAnswer {
-        best,
-        by,
-        // Only when the backward search is what found it: a witness the crawl produced
-        // would be a different fact, and there is no reason to guess at one.
-        witness: backwards.witness.filter(|_| backwards.best >= crawled.best),
+        best: backwards.best,
+        by: if backwards.stopped_by == StoppedBy::Nothing {
+            Answered::Backwards
+        } else {
+            Answered::Partly
+        },
+        witness: backwards.witness,
         targets_asked: backwards.targets_asked,
+        stopped_by: backwards.stopped_by,
         elapsed: began.elapsed(),
     }
 }
@@ -252,7 +322,6 @@ mod tests {
     use std::collections::HashSet;
 
     use crate::core::guard_value::GuardValue;
-    use crate::engine::engine::LookAheadOptions;
     use crate::symbolic::data_layout::DataLayout;
     use crate::symbolic::reachability::seed_of;
     use crate::symbolic::vars::DataVars;
@@ -271,22 +340,33 @@ mod tests {
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(world);
         let seed = seed_of(graph, world, &vars);
-        let engine = LookAheadEngine::new(LookAheadOptions {
-            counter_cap: CAP,
-            ..Default::default()
-        });
+
+        // The caller's job, as it is the bridge's: one walk of the links names the class,
+        // and the search is not asked to work it out again. The floor when nothing is
+        // unseen, which is a fixture the bridge would have refused before calling.
+        let hunting = graph
+            .best_linked_class(node(0), &novelty)
+            .unwrap_or(Novelty::SeenThisGame);
 
         best_novelty(
-            graph,
-            node(0),
-            &seed,
-            &mut compiler,
-            world,
-            CAP as u32,
-            novelty,
-            budget,
-            &engine,
+            graph, node(0), &seed, &mut compiler, world, CAP as u32, novelty, hunting, budget,
         )
+    }
+
+    /// A novelty function over both classes, for the fixtures about which one is hunted.
+    fn classes<'a>(
+        unseen_anywhere: &'a [i32],
+        unseen_here: &'a [i32],
+    ) -> impl Fn(DialogueNodeId) -> Novelty + 'a {
+        move |id| {
+            if unseen_anywhere.contains(&id.entry_id) {
+                Novelty::UnseenAnyGame
+            } else if unseen_here.contains(&id.entry_id) {
+                Novelty::UnseenThisGame
+            } else {
+                Novelty::SeenThisGame
+            }
+        }
     }
 
     fn unseen(ids: &[i32]) -> impl Fn(DialogueNodeId) -> Novelty + '_ {
@@ -316,6 +396,107 @@ mod tests {
         assert_eq!(answer.targets_asked, 0, "and no candidate was asked about");
     }
 
+    /// THE START ANSWERS FOR ITSELF, without a diagram operation.
+    ///
+    /// The start carries the class being hunted, so there is nothing to search for: it is
+    /// already the best anything reachable carries. Reported forwards, witnessed by the
+    /// start, with no candidate asked about.
+    #[test]
+    fn a_start_carrying_the_hunted_class_answers_before_any_search() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(Entry::new(1))
+            .build();
+
+        // Only the start is unseen anywhere, which is the shape a rolled check makes when
+        // its outcome opens something already read - see the bridge's own test.
+        let answer = run(&graph, &TestWorld::new(), classes(&[0], &[]), &Budget::default());
+
+        assert_eq!(answer.best, Novelty::UnseenAnyGame);
+        assert_eq!(answer.by, Answered::Forwards);
+        assert_eq!(answer.witness, Some(node(0)), "the start is what proved it");
+        assert_eq!(answer.targets_asked, 0);
+    }
+
+    /// And a start on the floor answers nothing, however starved the search is.
+    #[test]
+    fn a_start_on_the_floor_is_not_an_answer() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(Entry::new(1))
+            .build();
+
+        let starved = Budget {
+            forwards: Duration::ZERO,
+            backwards: Duration::ZERO,
+            each: Duration::ZERO,
+            targets: 64,
+        };
+        let answer = run(&graph, &TestWorld::new(), classes(&[], &[]), &starved);
+
+        assert_eq!(answer.best, Novelty::SeenThisGame);
+        assert_ne!(answer.witness, Some(node(0)));
+    }
+
+    /// THE SLICE HUNTS THE BEST CLASS REACHABLE, not the first entry that beats "seen".
+    ///
+    /// 1 is unseen HERE and sits between the start and 2, which is unseen ANYWHERE. A pass
+    /// halting on anything above the floor stops at 1 and reports unseen-here as the best
+    /// there is, which is a red marker where orange is right. It has to walk past 1.
+    #[test]
+    fn the_slice_walks_past_a_lower_class_to_reach_the_top_rung() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(Entry::new(1).links(&[2]))
+            .add(Entry::new(2))
+            .build();
+
+        let answer = run(&graph, &TestWorld::new(), classes(&[2], &[1]), &Budget::default());
+
+        assert_eq!(answer.best, Novelty::UnseenAnyGame);
+        assert_eq!(answer.by, Answered::Forwards);
+        assert_eq!(answer.witness, Some(node(2)), "and 2 is what it stopped at, not 1");
+    }
+
+    /// And hunts the rung below when the top one is nowhere reachable.
+    #[test]
+    fn the_slice_hunts_the_lower_class_when_there_is_no_top_rung() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(Entry::new(1).links(&[2]))
+            .add(Entry::new(2))
+            .build();
+
+        let answer = run(&graph, &TestWorld::new(), classes(&[], &[1, 2]), &Budget::default());
+
+        assert_eq!(answer.best, Novelty::UnseenThisGame);
+        assert_eq!(answer.by, Answered::Forwards);
+        assert_eq!(answer.witness, Some(node(1)), "the nearest of the class it hunts");
+    }
+
+    /// Nothing unseen anywhere in reach: no slice runs at all, and the answer is settled.
+    ///
+    /// THE FLOOR IS NOT A QUARRY, which is what this fixture is really about. Every entry
+    /// that is not unseen carries `SeenThisGame`, so a slice sent after it would halt on
+    /// the first entry it touched and report the floor as an answer found forwards. The
+    /// caller refuses a search it cannot improve on before reaching here - see
+    /// `bridge::class_worth_hunting` - and this is what makes arriving anyway harmless.
+    #[test]
+    fn a_group_with_nothing_unseen_is_answered_without_hunting() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(Entry::new(1).links(&[2]))
+            .add(Entry::new(2))
+            .build();
+
+        let answer = run(&graph, &TestWorld::new(), classes(&[], &[]), &Budget::default());
+
+        assert_eq!(answer.best, Novelty::SeenThisGame);
+        assert_eq!(answer.by, Answered::Backwards);
+        assert_eq!(answer.stopped_by, StoppedBy::Nothing);
+        assert_eq!(answer.witness, None);
+    }
+
     /// The same, with the forward slice starved, so the backward driver is what answers.
     ///
     /// STARVED RATHER THAN REMOVED, because the two paths have to keep agreeing: this is
@@ -336,10 +517,14 @@ mod tests {
         assert_eq!(answer.witness, Some(node(2)));
     }
 
-    /// A budget of nothing forces the fallback, which is how the fallback gets tested
-    /// without a conversation big enough to be slow.
+    /// A budget of nothing ends the search rather than handing it on.
+    ///
+    /// THERE IS NOTHING AFTER THE BACKWARD DRIVER since the crawl was retired, so what a
+    /// starved search returns is the whole answer: the floor, marked as the lower bound it
+    /// is. The caller's job is to say "not established" rather than "nothing there", and
+    /// `Answered::Partly` is what tells it which.
     #[test]
-    fn an_unsettled_backward_search_falls_back_to_the_crawl() {
+    fn an_unsettled_backward_search_reports_a_lower_bound() {
         let graph = GraphBuilder::new()
             .add(Entry::new(0).links(&[1]))
             .add(Entry::new(1).links(&[2]))
@@ -347,7 +532,7 @@ mod tests {
             .build();
 
         // THE FORWARD SLICE IS STARVED TOO, or it would answer this fixture outright and
-        // the crawl - which is what this test is about - would never run.
+        // the unsettled path - which is what this test is about - would never be reached.
         let starved = Budget {
             forwards: Duration::ZERO,
             backwards: Duration::ZERO,
@@ -356,17 +541,22 @@ mod tests {
         };
         let answer = run(&graph, &TestWorld::new(), unseen(&[2]), &starved);
 
-        assert_eq!(answer.by, Answered::Crawl);
-        assert_eq!(answer.best, Novelty::UnseenAnyGame, "the crawl should have answered");
+        assert_eq!(answer.by, Answered::Partly);
+        assert_ne!(answer.stopped_by, StoppedBy::Nothing, "and it says which ration ran out");
+        assert_eq!(
+            answer.best,
+            Novelty::SeenThisGame,
+            "the floor, because nothing was established - not a claim that 2 is unreachable",
+        );
+        assert_eq!(answer.witness, None);
     }
 
-    /// The fallback must not lose what the backward search had already established.
+    /// A guard nothing can open is a settled NO, not a lower bound.
     ///
-    /// Both are lower bounds, so the answer is the better of the two - and a crawl that
-    /// gives up early could otherwise throw away a class the backward search had already
-    /// proved reachable.
+    /// The distinction the caller draws everything from: this answer says the floor AND
+    /// says it is established, so an option is left unmarked rather than marked uncertain.
     #[test]
-    fn the_answer_is_the_better_of_the_two_lower_bounds() {
+    fn a_settled_search_that_finds_nothing_says_so() {
         let graph = GraphBuilder::new()
             .add(Entry::new(0).links(&[1]))
             .add(Entry::new(1).guard(r#"Variable["shut"]"#).links(&[2]))
@@ -374,9 +564,12 @@ mod tests {
             .build();
         let world = TestWorld::new().set_variable("shut", GuardValue::from_boolean(false));
 
-        // Nothing is reachable, so both halves agree on the floor and neither invents one.
+        // Nothing is reachable, so the slice halts on nothing and the backward driver
+        // refuses every candidate - completely, which is what makes this an answer.
         let answer = run(&graph, &world, unseen(&[2]), &Budget::default());
         assert_eq!(answer.best, Novelty::SeenThisGame);
+        assert_eq!(answer.by, Answered::Backwards);
+        assert_eq!(answer.stopped_by, StoppedBy::Nothing);
         assert_eq!(answer.witness, None);
     }
 }

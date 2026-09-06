@@ -1022,15 +1022,19 @@ where
     // option already scores its own novelty; an outcome already scores the best of the
     // entries it leads to directly, which only the engine can work out because the guards
     // on the check's own flag decide which children are live.
-    let destination = match branch {
-        None => novelty(id),
-        Some(branch) => engine
-            .branch_destinations(graph, id, world, branch)
-            .into_iter()
-            .map(&novelty)
-            .max()
-            .unwrap_or(Novelty::SeenThisGame),
+    // WHERE THE SEARCH IS MEASURED FROM, and both cases now name actual entries: the
+    // option itself, or the entries the outcome opens. The baseline is their best class,
+    // and they are also where the refusal walks from - one fact, used twice, so a walk can
+    // never be measuring from somewhere the baseline did not come from.
+    let from: Vec<DialogueNodeId> = match branch {
+        None => vec![id],
+        Some(branch) => engine.branch_destinations(graph, id, world, branch),
     };
+    let destination = from
+        .iter()
+        .map(|id| novelty(*id))
+        .max()
+        .unwrap_or(Novelty::SeenThisGame);
 
     let answered = |best: Novelty, complete, states, nodes, stopped: &str| LookAheadAnswer {
         start,
@@ -1045,15 +1049,18 @@ where
         stopped_by: stopped.to_string(),
     };
 
-    // NOTHING BETTER IS REACHABLE, so there is no crawl to run.
+    // NOTHING BETTER IS REACHABLE, so there is no search to run.
     //
     // A COMPLETE ANSWER, not a gave-up one: this establishes that nothing outranks the
-    // baseline, which is exactly what a finished crawl finding nothing would. And `best`
+    // baseline, which is exactly what a finished search finding nothing would. And `best`
     // is the baseline rather than the floor, because that is what was established - the
     // start reaches where it reaches, and nothing beyond it does better.
-    if !worth_crawling(graph, id, destination, &novelty) {
+    //
+    // WHERE IT DOES NOT REFUSE, it has named the class the search should hunt, and that
+    // walk is not done again further in. See `class_worth_hunting`.
+    let Some(_hunting) = class_worth_hunting(graph, &from, destination, &novelty) else {
         return answered(destination, true, 0, 0, "none");
-    }
+    };
 
     let result = match branch {
         None => engine.evaluate(graph, id, world, &novelty),
@@ -1084,39 +1091,62 @@ fn limit_name(limit: crate::core::types::LookAheadLimit) -> &'static str {
     }
 }
 
-/// Whether a crawl from this start could find anything worth reporting.
+/// The class a search from these starts should hunt, or `None` when there is nothing to find.
+///
+/// FROM WHAT THE OUTCOME OPENS, for a branch, and from the option itself for an option.
+/// That is what makes "a start is a result like any other" true here: the starts ARE the
+/// baseline - the outcome's own destinations, whose best class is what `destination` is -
+/// so scoring them can never manufacture an improvement, while an entry beyond them can.
+///
+/// It walked from the CHECK until 2026-09-06, and over-approximated by doing so: the
+/// check's own class, and the other outcome's half of the graph, both counted. The first of
+/// those is not a safe over-approximation but a wrong answer waiting to happen - the check
+/// is the option the player is standing on, not somewhere passing leads.
 ///
 /// THE ONE PLACE THE QUESTION IS ASKED, for an ordinary option and for each outcome of a
-/// rolled check alike. A crawl exists to find something that OUTRANKS a baseline: the
+/// rolled check alike. A search exists to find something that OUTRANKS a baseline: the
 /// option's own novelty for an ordinary option, and where the outcome LANDS for a branch.
 /// Both cases refuse for the same two reasons, in the same order, so neither can drift
 /// from the other and a rule added here reaches all three paths at once.
 ///
+/// ONE ANSWER RATHER THAN A YES OR NO, since 2026-09-06. It used to return whether a search
+/// was worth running, and the search then walked the same links again to decide which class
+/// to hunt - the same question twice per start, and once per outcome of every rolled check.
+/// The walk names the class, so the refusal and the target are one fact: `None` is the
+/// refusal, and anything else is what the forward slice is sent after.
+///
 /// NOTHING OUTRANKS THE TOP RUNG. Text no save has read is as novel as anything gets, so
-/// there is nothing for a search to find and the answer is settled without building a
-/// state - forward or backward, since this is decided before any strategy is chosen.
+/// there is nothing for a search to find and the answer is settled without walking at all -
+/// forward or backward, since this is decided before any strategy is chosen.
 ///
-/// AND NOTHING IS REACHABLE THAT WOULD BEAT IT. The walk that decides this is a few
-/// thousand pointer-follows against a crawl budgeted at 200,000 states, and it stops early
-/// whenever the answer is yes - so the case it costs anything in is the case where it
-/// saves a whole crawl. See LookAheadEngine::reaches_potential_improvement.
+/// AND NOTHING IS REACHABLE THAT WOULD BEAT IT. That walk is a few thousand pointer-follows
+/// against a search that is thousands of diagram operations, and it stops early whenever it
+/// meets the top rung - so the case it costs anything in is the case where it saves a whole
+/// search. See [`LookAheadGraph::best_linked_class`].
 ///
-/// FOR A BRANCH IT WALKS FROM THE CHECK rather than from that outcome's own destinations,
-/// which OVER-approximates: it can answer yes for a branch whose own half of the graph
-/// holds nothing. That direction is the safe one - it costs a crawl that finds nothing,
-/// never a wrong answer - and the branch's own destinations are not a cheaper place to
-/// start the walk from.
-fn worth_crawling<F>(
+/// A BRANCH'S DESTINATIONS ARE COMPUTED ANYWAY, for the baseline, so walking from them
+/// costs nothing extra and is strictly tighter than walking from the check: the other
+/// outcome's half of the graph is no longer counted for this one.
+fn class_worth_hunting<F>(
     graph: &LookAheadGraph,
-    start: DialogueNodeId,
+    starts: &[DialogueNodeId],
     baseline: Novelty,
     novelty: F,
-) -> bool
+) -> Option<Novelty>
 where
     F: Fn(DialogueNodeId) -> Novelty,
 {
-    baseline < Novelty::UnseenAnyGame
-        && LookAheadEngine::reaches_potential_improvement(graph, start, baseline, novelty)
+    // The cheap half first: nothing outranks the top rung, so a baseline there is settled
+    // without walking anything at all.
+    if baseline >= Novelty::UnseenAnyGame {
+        return None;
+    }
+
+    starts
+        .iter()
+        .filter_map(|start| graph.best_linked_class(*start, &novelty))
+        .max()
+        .filter(|best| *best > baseline)
 }
 
 #[cfg(test)]
@@ -1159,7 +1189,7 @@ mod branch_wire_tests {
         };
 
         assert!(
-            !worth_crawling(&graph, node(0), novelty(node(0)), novelty),
+            class_worth_hunting(&graph, &[node(0)], novelty(node(0)), novelty).is_none(),
             "the option should be refused: nothing outranks unseen-this-game here",
         );
 
@@ -1193,9 +1223,97 @@ mod branch_wire_tests {
         let novelty = |_: DialogueNodeId| Novelty::UnseenAnyGame;
 
         assert!(
-            !worth_crawling(&graph, node(0), Novelty::UnseenAnyGame, novelty),
+            class_worth_hunting(&graph, &[node(0)], Novelty::UnseenAnyGame, novelty).is_none(),
             "nothing outranks the top rung, so there is nothing to search for",
         );
+    }
+
+    /// THE REFUSAL KNOWS WHICH CLASS IT SAW, which it did not until 2026-09-06.
+    ///
+    /// Same graph, same baseline, two novelty functions that differ only in the class the
+    /// reachable entry carries. The old walk stopped at the first entry beating the
+    /// baseline and could not tell these apart from each other; the answer here is the
+    /// same either way, and what changed is that the class is now available to the search
+    /// that follows - see `symbolic::portfolio`.
+    #[test]
+    fn the_refusal_is_decided_by_the_best_class_reachable() {
+        let graph = check_landing_on_something_read();
+
+        // Unseen-here everywhere: nothing outranks an unseen-here baseline.
+        let here_only = |_: DialogueNodeId| Novelty::UnseenThisGame;
+        assert_eq!(
+            class_worth_hunting(&graph, &[node(0)], Novelty::UnseenThisGame, here_only),
+            None,
+            "reachable, but not better than the baseline, so there is nothing to hunt",
+        );
+
+        // One entry past the check is unseen ANYWHERE, and that outranks the same baseline.
+        let one_top_rung = |id: DialogueNodeId| {
+            if id == node(2) { Novelty::UnseenAnyGame } else { Novelty::UnseenThisGame }
+        };
+        assert_eq!(
+            class_worth_hunting(&graph, &[node(0)], Novelty::UnseenThisGame, one_top_rung),
+            Some(Novelty::UnseenAnyGame),
+            "and the class it names is what the forward slice is sent after",
+        );
+    }
+
+    /// A BRANCH IS MEASURED FROM WHAT IT OPENS, not from the check.
+    ///
+    /// THE CASE THAT SETTLED THE RULE. 0 is a white check no save has displayed; passing
+    /// opens 1, which this save has READ. Walking from the check would count the check's
+    /// own top rung and report that passing leads somewhere unread - it does not, it leads
+    /// to 1, and the check is the option the player is standing on. Walking from 1, which
+    /// is where the baseline came from, cannot make that mistake.
+    ///
+    /// The `fan-reaches-gives-up` shape is this, one rung down, and it is what caught it.
+    #[test]
+    fn a_branch_is_measured_from_its_destinations_and_not_from_the_check() {
+        let graph = check_landing_on_something_read();
+
+        // The check is unseen anywhere; everything it opens has been read here.
+        let novelty = |id: DialogueNodeId| {
+            if id == node(0) { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
+        };
+
+        // Passing opens 1. From there, nothing outranks the floor - 2 is read as well.
+        assert_eq!(
+            class_worth_hunting(&graph, &[node(1)], Novelty::SeenThisGame, novelty),
+            None,
+            "the check's own class is not something passing leads to",
+        );
+
+        // And walking from the check would have said otherwise, which is the bug.
+        assert_eq!(
+            class_worth_hunting(&graph, &[node(0)], Novelty::SeenThisGame, novelty),
+            Some(Novelty::UnseenAnyGame),
+        );
+    }
+
+    /// What lies BEYOND a destination is still found, which is the half that must not break.
+    #[test]
+    fn something_past_what_an_outcome_opens_is_still_hunted() {
+        let graph = check_landing_on_something_read();
+
+        // Passing opens 1, which is read; 2 lies past it and no save has read that.
+        let novelty = |id: DialogueNodeId| {
+            if id == node(2) { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
+        };
+
+        assert_eq!(
+            class_worth_hunting(&graph, &[node(1)], Novelty::SeenThisGame, novelty),
+            Some(Novelty::UnseenAnyGame),
+        );
+    }
+
+    /// Nothing unseen at all is refused without a search, and says so as `None`.
+    #[test]
+    fn a_group_with_nothing_unseen_is_refused() {
+        let graph = check_landing_on_something_read();
+        let read = |_: DialogueNodeId| Novelty::SeenThisGame;
+
+        assert_eq!(graph.best_linked_class(node(0), read), None);
+        assert_eq!(class_worth_hunting(&graph, &[node(0)], Novelty::SeenThisGame, read), None);
     }
 
     /// An outcome's answer round-trips as JSON, naming which outcome it is.

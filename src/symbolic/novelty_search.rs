@@ -125,8 +125,8 @@ pub struct NoveltyAnswer {
 /// a candidate would make every search succeed instantly on a lie. `evaluate` skips them
 /// for the same reason.
 ///
-/// The start itself is a candidate only if a link leads back to it, which mirrors
-/// `evaluate` scoring whatever it arrives at rather than where it began.
+/// The start is a candidate, at distance zero - see [`link_distances`] for why it stopped
+/// depending on a link leading back to it.
 pub fn candidates<F>(
     graph: &LookAheadGraph,
     start: DialogueNodeId,
@@ -137,9 +137,9 @@ where
 {
     let distances = link_distances(graph, start);
 
-    // No filtering of the start here: `link_distances` records an entry only once a link
-    // has ARRIVED at it, so the start appears exactly when something leads back to it,
-    // which is exactly when `evaluate` would score it.
+    // No filtering of the start here either: `link_distances` records it at distance zero,
+    // so it sorts first within its class - which is where a candidate that needs no walking
+    // at all belongs.
     let mut worth: Vec<(usize, usize, i32, i32, DialogueNodeId)> = distances
         .iter()
         .filter_map(|(id, distance)| {
@@ -239,11 +239,17 @@ fn link_distances(
     start: DialogueNodeId,
 ) -> HashMap<DialogueNodeId, usize> {
     let mut distance: HashMap<DialogueNodeId, usize> = HashMap::new();
-    // The start is walked FROM without being recorded as arrived at, which is what gives
-    // it a distance only when a link leads back to it - and so makes it a candidate
-    // exactly when `evaluate` would score it. Should that happen it is queued a second
-    // time, and expanding it again costs one pass over links already recorded.
+    // THE START IS AT DISTANCE ZERO FROM ITSELF, and a candidate like anything else.
+    //
+    // It used to be recorded only when a link led back to it, on the reading that a search
+    // reports what it arrives at rather than where it began. That reading does not survive
+    // a rolled check: there the baseline is where an OUTCOME lands, which sits below the
+    // check's own class whenever the outcome opens something already read, and the check
+    // entry then outranks the baseline without any walking at all. So the start is a
+    // result like any other, here and in `LookAheadGraph::best_linked_class` - one rule,
+    // and no search with a special case for where it began.
     let mut queue = VecDeque::from([(start, 0usize)]);
+    distance.insert(start, 0);
 
     while let Some((id, here)) = queue.pop_front() {
         let Some(node) = graph.get(id) else { continue };
@@ -308,6 +314,52 @@ mod tests {
             &Budget::default(),
             None,
         )
+    }
+
+    /// THE START IS A CANDIDATE, at distance zero, whether or not a link leads back to it.
+    ///
+    /// It used to be one only round a loop. That reading does not survive a rolled check,
+    /// where the baseline is where an OUTCOME lands and the check entry can outrank it -
+    /// see `LookAheadGraph::best_linked_class`, which now says the same thing.
+    #[test]
+    fn the_start_is_a_candidate_at_distance_zero() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(Entry::new(1))
+            .build();
+
+        let novelty = novel(&[0], Novelty::UnseenAnyGame);
+        let ordered = candidates(&graph, node(0), &novelty);
+
+        assert_eq!(ordered, vec![node(0)], "the start, and nothing else is unseen");
+    }
+
+    /// And it sorts FIRST within its class, being the one that needs no walking at all.
+    #[test]
+    fn the_start_is_asked_about_before_anything_further_away() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(Entry::new(1).links(&[2]))
+            .add(Entry::new(2))
+            .build();
+
+        let novelty = novel(&[0, 2], Novelty::UnseenAnyGame);
+        let ordered = candidates(&graph, node(0), &novelty);
+
+        assert_eq!(ordered, vec![node(0), node(2)]);
+    }
+
+    /// A group is never a candidate, the start included.
+    #[test]
+    fn a_start_that_is_a_group_is_not_a_candidate() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).group().links(&[1]))
+            .add(Entry::new(1))
+            .build();
+
+        let novelty = novel(&[0], Novelty::UnseenAnyGame);
+
+        assert!(candidates(&graph, node(0), &novelty).is_empty());
     }
 
     #[test]

@@ -125,15 +125,27 @@ fn an_ungained_thought_is_the_saves_answer() {
     assert_eq!(run(&graph, &without, &[2]).best, Novelty::SeenThisGame);
 }
 
+/// THE NODE THE CRAWL IS SEEDED AT IS NOT SCORED, because it is not arrived at.
+///
+/// A marker says what lies BEYOND, and for one outcome of a rolled check the seed node is
+/// the CHECK - scoring it would report the option the player is standing on as something
+/// that outcome leads to. What the crawl scores is what it arrives at, which for a branch
+/// is exactly what that outcome opens.
+///
+/// The rule that a start is a result like any other lives where the start IS what the
+/// outcome opens: `bridge::class_worth_hunting` walks from the destinations, and
+/// `LookAheadGraph::best_linked_class` scores the node it is given.
 #[test]
-fn the_start_node_is_not_scored() {
-    // The marker says what lies BEYOND an option, so the option's own novelty is not it.
+fn the_seed_node_is_not_scored() {
     let graph = GraphBuilder::new()
         .add(Entry::new(0).links(&[1]))
         .add(Entry::new(1))
         .build();
 
     assert_eq!(run(&graph, &TestWorld::new(), &[0]).best, Novelty::SeenThisGame);
+
+    // What lies beyond it is scored, as it always was.
+    assert_eq!(run(&graph, &TestWorld::new(), &[1]).best, Novelty::UnseenAnyGame);
 }
 
 #[test]

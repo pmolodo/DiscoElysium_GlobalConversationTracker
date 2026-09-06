@@ -517,6 +517,17 @@ impl LookAheadEngine {
             }
         }
 
+        // WHAT IT ARRIVES AT IS WHAT IT SCORES, and `start` is not arrived at: it is where
+        // the seed states were built, and for one outcome of a rolled check it is the CHECK
+        // rather than anything that outcome opens. Scoring it there would report the option
+        // the player is standing on as something passing leads to - which is not an
+        // over-approximation, it is a wrong answer, and the branch shapes say so
+        // (`fan-reaches-gives-up`, measured 2026-09-06).
+        //
+        // So the crawl scores destinations onward, which for a branch is exactly the set a
+        // search seeded at those destinations would score. The rule that the start is a
+        // result like any other lives where the START IS the destination - see
+        // `bridge::class_worth_hunting`, which walks from what the outcome opens.
         let mut best = Novelty::SeenThisGame;
         let mut stopped_by = LookAheadLimit::None;
 
