@@ -839,6 +839,22 @@ namespace GlobalConversationTracker
                 : null;
         }
 
+        /// <summary>Whether this option is one the mod drew a Pass / Fail line under.</summary>
+        /// <remarks>
+        /// The same lookup <see cref="BranchLineFor"/> makes, without composing the line -
+        /// for a caller that needs to know the line is THERE rather than what it says. See
+        /// <see cref="CheckBandInsetPatch"/>, which has to know which buttons carry one.
+        /// </remarks>
+        internal static bool HasBranchLine(DialogueEntry entry)
+        {
+            if (!_enabled || _session == null || entry == null)
+            {
+                return false;
+            }
+
+            return _menuAnswers?.OutcomesOf(new NodeRef(entry.conversationID, entry.id)) != null;
+        }
+
         /// <summary>Wall time since a stopwatch timestamp, in milliseconds.</summary>
         private static double Milliseconds(long since)
         {

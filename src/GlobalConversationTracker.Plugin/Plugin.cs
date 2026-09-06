@@ -495,6 +495,15 @@ namespace GlobalConversationTracker
                         logLookAheadBudgetExceeded.Value,
                         keepLookAheadStates.Value)));
 
+            // Not in the condition below: the band inset is presentation for a line that
+            // only the look-ahead draws, so it is never the reason to keep the hooks in
+            // place - with everything else off there is no line for it to make room under.
+            TryInstall(
+                "SunshineResponseButton.Update",
+                "a check's band is shortened so its Pass / Fail line is drawn on black",
+                "Pass / Fail lines will stay on the check's own colour, where they cannot be read",
+                () => CheckBandInsetPatch.Install(harmony, log));
+
             if (!recording && !recordingOrbs && !resyncing && !resyncingOrbs
                 && !resettingCurrentSave && !showingCount && !colouringNovelOptions
                 && !markingLookAhead)
