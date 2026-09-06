@@ -323,6 +323,40 @@ impl<'a> Reachability<'a> {
         Self::explore_knowing(graph, start, seed, compiler, world, counter_cap, budget, &order)
     }
 
+    /// What entering `start` by one outcome leaves, without exploring anything.
+    ///
+    /// THE STATE THE OUTCOME HANDS ON, which is what a search about that outcome is really
+    /// seeded with: its links are walked from here, and everything past them knows nothing
+    /// about the roll except what this carries.
+    ///
+    /// The backward driver is what wants it. Its sets say "arriving HERE, the target is
+    /// reachable", and a check's set unions both ways in - so asking it about the check
+    /// answers about either roll. Asked instead about the check's children, with this, it
+    /// answers about one. See `novelty_search::best_novelty`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn entry_states(
+        graph: &LookAheadGraph,
+        start: DialogueNodeId,
+        branch: StartBranch,
+        seed: &BDDFunction,
+        compiler: &mut GuardCompiler<'a>,
+        world: &dyn ILookAheadWorld,
+        counter_cap: u32,
+    ) -> BDDFunction {
+        let vars = compiler.vars();
+        let mut image = ActionImage::new(vars, counter_cap);
+        let mut this = Self {
+            vars,
+            sets: HashMap::new(),
+            stats: ReachabilityStats::default(),
+        };
+
+        match graph.get(start) {
+            Some(node) => this.enter_branch(node, branch, seed, compiler, world, &mut image),
+            None => vars.bottom(),
+        }
+    }
+
     /// The same, exploring ONE OUTCOME of a start that rolls.
     ///
     /// A white or red check is entered in two ways, and the mod draws its halves apart -

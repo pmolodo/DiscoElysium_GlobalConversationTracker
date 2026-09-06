@@ -55,7 +55,7 @@ use std::time::Duration;
 
 use oxidd::bdd::BDDFunction;
 
-use crate::core::types::{DialogueNodeId, Novelty};
+use crate::core::types::{DialogueNodeId, Novelty, StartBranch};
 use crate::graph::graph::LookAheadGraph;
 use crate::symbolic::guard_formula::GuardCompiler;
 use crate::symbolic::known::Known;
@@ -155,6 +155,7 @@ impl Default for Budget {
 fn forwards_for<'a, F>(
     graph: &LookAheadGraph,
     start: DialogueNodeId,
+    branch: StartBranch,
     seed: &BDDFunction,
     compiler: &mut GuardCompiler<'a>,
     world: &dyn ILookAheadWorld,
@@ -175,9 +176,10 @@ where
         .filter(|id| novelty(*id) == wanted)
         .collect();
 
-    Reachability::explore_within(
+    Reachability::explore_branch_within(
         graph,
         start,
+        branch,
         seed,
         compiler,
         world,
@@ -201,6 +203,7 @@ where
 pub fn best_novelty<'a, F>(
     graph: &LookAheadGraph,
     start: DialogueNodeId,
+    branch: StartBranch,
     seed: &BDDFunction,
     compiler: &mut GuardCompiler<'a>,
     world: &dyn ILookAheadWorld,
@@ -250,7 +253,7 @@ where
     // and should not be here at all, and this is what makes arriving anyway harmless.
     let forwards = (hunting > Novelty::SeenThisGame && !budget.forwards.is_zero()).then(|| {
         forwards_for(
-            graph, start, seed, compiler, world, counter_cap, hunting, &novelty,
+            graph, start, branch, seed, compiler, world, counter_cap, hunting, &novelty,
             budget.forwards,
         )
     });
@@ -271,13 +274,26 @@ where
     // AND IN FROM THE TARGET, TOLD WHAT THE FIRST HALF REACHED. A backward pass that meets
     // those sets has proved its target reachable and stops there - the two searches meet in
     // the middle rather than one starting over where the other gave up. See `Known`.
+    //
+    // WHERE THE SEARCH BEGINS IS WHAT IS HANDED OVER, and for one outcome of a rolled start
+    // that is its destinations holding what entering by that outcome left - never the check
+    // itself, whose pre-entry states are reachable by either roll and would let a meet
+    // there prove the wrong thing.
+    let from = novelty_search::Where::of(
+        graph, start, branch, seed, compiler, world, counter_cap,
+    );
     let known = forwards.as_ref().map(|found| {
-        Known::of_from(graph, start).from(start, seed).with_forward(found)
+        let mut known = Known::of_from(graph, start);
+        for (id, states) in from.known_pairs() {
+            known = known.from(id, states);
+        }
+        known.with_forward(found)
     });
 
     let backwards = novelty_search::best_novelty(
         graph,
         start,
+        branch,
         seed,
         compiler,
         world,
@@ -322,6 +338,7 @@ mod tests {
     use std::collections::HashSet;
 
     use crate::core::guard_value::GuardValue;
+    use crate::core::types::DialogueCheckKind;
     use crate::symbolic::data_layout::DataLayout;
     use crate::symbolic::reachability::seed_of;
     use crate::symbolic::vars::DataVars;
@@ -349,8 +366,71 @@ mod tests {
             .unwrap_or(Novelty::SeenThisGame);
 
         best_novelty(
-            graph, node(0), &seed, &mut compiler, world, CAP as u32, novelty, hunting, budget,
+            graph, node(0), StartBranch::Either, &seed, &mut compiler, world, CAP as u32,
+            novelty, hunting, budget,
         )
+    }
+
+    /// The whole portfolio, asked about ONE OUTCOME of a rolled start.
+    fn run_branch<F>(
+        graph: &LookAheadGraph,
+        world: &TestWorld,
+        branch: StartBranch,
+        novelty: F,
+    ) -> PortfolioAnswer
+    where
+        F: Fn(DialogueNodeId) -> Novelty,
+    {
+        let symbols = graph.symbols().clone();
+        let layout = DataLayout::for_graph(graph, CAP, None, false);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
+        let mut compiler = GuardCompiler::new(&vars).with_world(world);
+        let seed = seed_of(graph, world, &vars);
+
+        // The caller's walk, as the bridge's would be: from what the outcome opens, so the
+        // class hunted is the best that outcome can reach.
+        let hunting = graph
+            .get(node(0))
+            .map(|start| start.links.clone())
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|id| graph.best_linked_class(*id, &novelty))
+            .max()
+            .unwrap_or(Novelty::SeenThisGame);
+
+        best_novelty(
+            graph, node(0), branch, &seed, &mut compiler, world, CAP as u32, novelty,
+            hunting, &Budget::default(),
+        )
+    }
+
+    /// BOTH HALVES OF THE PORTFOLIO ANSWER ABOUT ONE OUTCOME, and only that one.
+    ///
+    /// 0 is a white check; 2 lies past what passing opens and no save has read it. Failing
+    /// must not find it - and the forward slice, the backward driver and the meet between
+    /// them are three separate ways it could, so this asks the whole thing rather than a
+    /// half of it.
+    #[test]
+    fn an_outcome_is_answered_from_its_own_half_of_the_check() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).kind(DialogueCheckKind::White).flag("roll").links(&[1, 3]))
+            .add(Entry::new(1).guard(r#"Variable["roll"] == true"#).links(&[2]))
+            .add(Entry::new(2))
+            .add(Entry::new(3).guard(r#"Variable["roll"] == false"#))
+            .build();
+        let world = TestWorld::new().set_variable("roll", GuardValue::from_boolean(false));
+
+        let passing = run_branch(&graph, &world, StartBranch::Pass, unseen(&[2]));
+        assert_eq!(passing.best, Novelty::UnseenAnyGame);
+        assert_eq!(passing.witness, Some(node(2)));
+
+        let failing = run_branch(&graph, &world, StartBranch::Fail, unseen(&[2]));
+        assert_eq!(
+            failing.best,
+            Novelty::SeenThisGame,
+            "the pass flag is what opens 1, and failing does not set it",
+        );
+        assert_eq!(failing.witness, None);
     }
 
     /// A novelty function over both classes, for the fixtures about which one is hunted.

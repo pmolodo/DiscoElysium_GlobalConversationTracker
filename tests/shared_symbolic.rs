@@ -104,7 +104,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use lookahead_engine::core::types::{DialogueNodeId, Novelty};
+use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
 use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::budget::DiagramBudget;
@@ -248,8 +248,8 @@ fn alone(
         let known = Known::of(graph);
         let began = std::time::Instant::now();
         let answer = best_novelty(
-            graph, start, &seed, &mut compiler, world, COUNTER_CAP as u32, &novelty,
-            &search_budget(), Some(&known),
+            graph, start, StartBranch::Either, &seed, &mut compiler, world,
+            COUNTER_CAP as u32, &novelty, &search_budget(), Some(&known),
         );
 
         Run {
@@ -318,8 +318,8 @@ fn shared(
     // the forward half here and now, and the two answer different questions.
     let backward_began = std::time::Instant::now();
     let answer = best_novelty(
-        graph, start, &seed, &mut compiler, world, COUNTER_CAP as u32, &novelty,
-        &search_budget(), Some(&known),
+        graph, start, StartBranch::Either, &seed, &mut compiler, world, COUNTER_CAP as u32,
+        &novelty, &search_budget(), Some(&known),
     );
 
     (

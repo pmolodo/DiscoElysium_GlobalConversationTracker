@@ -28,7 +28,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
-use lookahead_engine::core::types::{DialogueNodeId, Novelty};
+use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
 use lookahead_engine::engine::engine::{LookAheadEngine, LookAheadOptions};
 use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
@@ -340,6 +340,7 @@ fn the_driver_answers_what_the_engine_answers() {
         let answer = best_novelty(
             &graph,
             start,
+            StartBranch::Either,
             &seed,
             &mut compiler,
             &world,
@@ -382,6 +383,7 @@ fn the_driver_answers_what_the_engine_answers() {
         let portfolio = portfolio::best_novelty(
             &graph,
             start,
+            StartBranch::Either,
             &seed,
             &mut compiler,
             &world,

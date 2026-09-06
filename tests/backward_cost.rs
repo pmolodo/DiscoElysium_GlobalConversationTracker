@@ -29,7 +29,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use lookahead_engine::core::types::{DialogueNodeId, Novelty};
+use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
 use lookahead_engine::engine::engine::{LookAheadEngine, LookAheadOptions};
 use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
@@ -136,6 +136,7 @@ fn compare(
         let answer = best_novelty(
             graph,
             start,
+            StartBranch::Either,
             &seed,
             &mut compiler,
             world,
@@ -358,6 +359,7 @@ fn what_the_portfolio_costs() {
             let answer = lookahead_engine::symbolic::portfolio::best_novelty(
                 &graph,
                 start,
+                StartBranch::Either,
                 &seed,
                 &mut compiler,
                 &world,

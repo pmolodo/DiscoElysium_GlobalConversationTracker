@@ -36,11 +36,12 @@ use std::collections::{HashMap, VecDeque};
 
 use oxidd::bdd::BDDFunction;
 
-use crate::core::types::{DialogueNodeId, Novelty};
+use crate::core::types::{DialogueNodeId, Novelty, StartBranch};
 use crate::graph::graph::LookAheadGraph;
 use crate::symbolic::backward::Backward;
 use crate::symbolic::guard_formula::GuardCompiler;
 use crate::symbolic::known::Known;
+use crate::symbolic::reachability::Reachability;
 use crate::world::world::ILookAheadWorld;
 
 /// Every novelty class better than "seen", best first.
@@ -125,8 +126,8 @@ pub struct NoveltyAnswer {
 /// a candidate would make every search succeed instantly on a lie. `evaluate` skips them
 /// for the same reason.
 ///
-/// The start is a candidate, at distance zero - see [`link_distances`] for why it stopped
-/// depending on a link leading back to it.
+/// The start is a candidate, at distance zero - see [`link_distances_from`] for why it
+/// stopped depending on a link leading back to it.
 pub fn candidates<F>(
     graph: &LookAheadGraph,
     start: DialogueNodeId,
@@ -135,9 +136,21 @@ pub fn candidates<F>(
 where
     F: Fn(DialogueNodeId) -> Novelty,
 {
-    let distances = link_distances(graph, start);
+    candidates_from(graph, &[start], novelty)
+}
 
-    // No filtering of the start here either: `link_distances` records it at distance zero,
+/// The same, from several starts - what one outcome of a rolled check reaches.
+pub fn candidates_from<F>(
+    graph: &LookAheadGraph,
+    starts: &[DialogueNodeId],
+    novelty: &F,
+) -> Vec<DialogueNodeId>
+where
+    F: Fn(DialogueNodeId) -> Novelty,
+{
+    let distances = link_distances_from(graph, starts);
+
+    // No filtering of the starts here either: they are recorded at distance zero,
     // so it sorts first within its class - which is where a candidate that needs no walking
     // at all belongs.
     let mut worth: Vec<(usize, usize, i32, i32, DialogueNodeId)> = distances
@@ -162,11 +175,82 @@ where
     worth.into_iter().map(|(_, _, _, _, id)| id).collect()
 }
 
+/// Where a search begins: one or more entries, and the states it holds arriving at them.
+///
+/// TWO SHAPES, AND THEY ARE THE SAME QUESTION ASKED FROM DIFFERENT PLACES.
+///
+/// An ordinary search begins at its start, holding the world's seed - what it holds
+/// ARRIVING there, before that entry's own guard, cost or actions. One entry, one set.
+///
+/// A search about one outcome of a rolled start begins at the start's CHILDREN, holding
+/// what entering the start by that outcome left. It cannot begin at the check itself: a
+/// backward set there answers about either roll, since the pre-image unions both ways in,
+/// and this is exactly the question that needs them apart.
+pub struct Where {
+    at: Vec<DialogueNodeId>,
+    holding: BDDFunction,
+}
+
+impl Where {
+    /// The starting position for this outcome of this start.
+    #[allow(clippy::too_many_arguments)]
+    pub fn of<'a>(
+        graph: &LookAheadGraph,
+        start: DialogueNodeId,
+        branch: StartBranch,
+        seed: &BDDFunction,
+        compiler: &mut GuardCompiler<'a>,
+        world: &dyn ILookAheadWorld,
+        counter_cap: u32,
+    ) -> Self {
+        if branch == StartBranch::Either {
+            return Self { at: vec![start], holding: seed.clone() };
+        }
+
+        let holding = Reachability::entry_states(
+            graph, start, branch, seed, compiler, world, counter_cap,
+        );
+        let at = graph
+            .get(start)
+            .map(|node| node.links.clone())
+            .unwrap_or_default();
+
+        Self { at, holding }
+    }
+
+    /// The entries this search starts at, which are what candidates are measured from.
+    fn nodes(&self) -> Vec<DialogueNodeId> {
+        self.at.clone()
+    }
+
+    /// Whether a backward pass says the target is reachable from here.
+    fn reaches(&self, backward: &Backward) -> bool {
+        self.at.iter().any(|id| backward.reachable_from(*id, &self.holding))
+    }
+
+    /// What an earlier search may treat as already known, for the meet.
+    ///
+    /// The pairs are (entry, states arriving there), which is what [`Known::from`] takes.
+    /// For an outcome that is its destinations, NOT the check: telling the backward driver
+    /// that the check's pre-entry states are known would let a meet there prove a target
+    /// reachable by the other roll.
+    pub fn known_pairs(&self) -> Vec<(DialogueNodeId, &BDDFunction)> {
+        self.at.iter().map(|id| (*id, &self.holding)).collect()
+    }
+}
+
 /// The best novelty reachable beyond `start`, by asking about candidates in turn.
+///
+/// ONE OUTCOME OF A ROLLED START IS ASKED ABOUT AT ITS DESTINATIONS, not at the start.
+/// A backward set says "arriving HERE, the target is reachable", and a check's set unions
+/// both ways in - so asking it about the check answers about either roll, which is not the
+/// question. Asked instead about the check's children, holding what entering by this
+/// outcome left, it answers about one. See [`Where::of`].
 #[allow(clippy::too_many_arguments)]
 pub fn best_novelty<'a, F>(
     graph: &LookAheadGraph,
     start: DialogueNodeId,
+    branch: StartBranch,
     seed: &BDDFunction,
     compiler: &mut GuardCompiler<'a>,
     world: &dyn ILookAheadWorld,
@@ -179,7 +263,8 @@ where
     F: Fn(DialogueNodeId) -> Novelty,
 {
     let began = std::time::Instant::now();
-    let ordered = candidates(graph, start, &novelty);
+    let from = Where::of(graph, start, branch, seed, compiler, world, counter_cap);
+    let ordered = candidates_from(graph, &from.nodes(), &novelty);
     let mut answer = NoveltyAnswer {
         best: Novelty::SeenThisGame,
         witness: None,
@@ -210,7 +295,7 @@ where
         // stopped the pass early - a state an earlier search can hold at some entry is one
         // this pass has shown reaches the target - so the fixed point is deliberately
         // incomplete and `reachable_from` would be asking the wrong question of it.
-        if backward.stats().met_at.is_some() || backward.reachable_from(start, seed) {
+        if backward.stats().met_at.is_some() || from.reaches(&backward) {
             // The best class is asked about first and exhausted before the next one is
             // begun, so the first candidate that answers yes carries the answer.
             answer.best = novelty(target);
@@ -233,10 +318,15 @@ where
     answer
 }
 
-/// How far each entry is from `start`, following links and ignoring guards.
-fn link_distances(
+/// How far each entry is from the starts, following links and ignoring guards.
+///
+/// SEVERAL STARTS, because one outcome of a rolled check has several: the search is about
+/// what that outcome opens, so the entries worth asking about are the ones ITS half of the
+/// graph reaches. Measuring from the check instead would offer the other outcome's entries
+/// as candidates, and every one of them would cost a backward pass to refuse.
+fn link_distances_from(
     graph: &LookAheadGraph,
-    start: DialogueNodeId,
+    starts: &[DialogueNodeId],
 ) -> HashMap<DialogueNodeId, usize> {
     let mut distance: HashMap<DialogueNodeId, usize> = HashMap::new();
     // THE START IS AT DISTANCE ZERO FROM ITSELF, and a candidate like anything else.
@@ -248,8 +338,12 @@ fn link_distances(
     // entry then outranks the baseline without any walking at all. So the start is a
     // result like any other, here and in `LookAheadGraph::best_linked_class` - one rule,
     // and no search with a special case for where it began.
-    let mut queue = VecDeque::from([(start, 0usize)]);
-    distance.insert(start, 0);
+    let mut queue = VecDeque::new();
+    for start in starts {
+        if distance.insert(*start, 0).is_none() {
+            queue.push_back((*start, 0usize));
+        }
+    }
 
     while let Some((id, here)) = queue.pop_front() {
         let Some(node) = graph.get(id) else { continue };
@@ -273,6 +367,7 @@ mod tests {
     use std::collections::HashSet;
 
     use crate::core::guard_value::GuardValue;
+    use crate::core::types::DialogueCheckKind;
     use crate::symbolic::data_layout::DataLayout;
     use crate::symbolic::reachability::seed_of;
     use crate::symbolic::vars::DataVars;
@@ -306,6 +401,7 @@ mod tests {
         best_novelty(
             graph,
             node(0),
+            StartBranch::Either,
             &seed,
             &mut compiler,
             world,
@@ -314,6 +410,100 @@ mod tests {
             &Budget::default(),
             None,
         )
+    }
+
+    /// The same search, about ONE OUTCOME of a rolled start.
+    fn search_branch<F>(
+        graph: &LookAheadGraph,
+        world: &TestWorld,
+        branch: StartBranch,
+        novelty: F,
+    ) -> NoveltyAnswer
+    where
+        F: Fn(DialogueNodeId) -> Novelty,
+    {
+        let symbols = graph.symbols().clone();
+        let layout = DataLayout::for_graph(graph, CAP, None, false);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
+        let mut compiler = GuardCompiler::new(&vars).with_world(world);
+        let seed = seed_of(graph, world, &vars);
+
+        best_novelty(
+            graph,
+            node(0),
+            branch,
+            &seed,
+            &mut compiler,
+            world,
+            CAP as u32,
+            novelty,
+            &Budget::default(),
+            None,
+        )
+    }
+
+    /// 0 is a white check: passing opens 1 with 2 beyond it, failing opens 3.
+    fn rolled_check() -> LookAheadGraph {
+        GraphBuilder::new()
+            .add(Entry::new(0).kind(DialogueCheckKind::White).flag("roll").links(&[1, 3]))
+            .add(Entry::new(1).guard(r#"Variable["roll"] == true"#).links(&[2]))
+            .add(Entry::new(2))
+            .add(Entry::new(3).guard(r#"Variable["roll"] == false"#))
+            .build()
+    }
+
+    /// AN OUTCOME IS ASKED ABOUT AT ITS DESTINATIONS, so it answers about its own half.
+    ///
+    /// The unseen entry lies past what PASSING opens. Failing must not find it, and would
+    /// if the question were asked at the check - whose backward set unions both rolls.
+    #[test]
+    fn only_the_passing_outcome_reaches_what_passing_opens() {
+        let graph = rolled_check();
+        let world = TestWorld::new().set_variable("roll", GuardValue::from_boolean(false));
+        let unseen = novel(&[2], Novelty::UnseenAnyGame);
+
+        let passing = search_branch(&graph, &world, StartBranch::Pass, &unseen);
+        assert_eq!(passing.best, Novelty::UnseenAnyGame);
+        assert_eq!(passing.witness, Some(node(2)));
+
+        let failing = search_branch(&graph, &world, StartBranch::Fail, &unseen);
+        assert_eq!(
+            failing.best,
+            Novelty::SeenThisGame,
+            "2 is behind the pass flag, and failing does not set it",
+        );
+        assert_eq!(failing.witness, None);
+    }
+
+    /// And the other way round, so neither outcome is answering for both.
+    #[test]
+    fn only_the_failing_outcome_reaches_what_failing_opens() {
+        let graph = rolled_check();
+        let world = TestWorld::new().set_variable("roll", GuardValue::from_boolean(false));
+        let unseen = novel(&[3], Novelty::UnseenAnyGame);
+
+        let failing = search_branch(&graph, &world, StartBranch::Fail, &unseen);
+        assert_eq!(failing.best, Novelty::UnseenAnyGame);
+        assert_eq!(failing.witness, Some(node(3)));
+
+        let passing = search_branch(&graph, &world, StartBranch::Pass, &unseen);
+        assert_eq!(passing.best, Novelty::SeenThisGame);
+    }
+
+    /// An outcome does not offer the other outcome's entries as candidates.
+    ///
+    /// What it costs when it does: a backward pass each, spent to be refused, out of a
+    /// budget of sixty-four.
+    #[test]
+    fn an_outcome_asks_only_about_its_own_half() {
+        let graph = rolled_check();
+        let unseen = novel(&[2, 3], Novelty::UnseenAnyGame);
+
+        let passing = candidates_from(&graph, &[node(1)], &unseen);
+        assert_eq!(passing, vec![node(2)], "3 is the failing half's business");
+
+        let failing = candidates_from(&graph, &[node(3)], &unseen);
+        assert_eq!(failing, vec![node(3)], "and its own destination is a candidate");
     }
 
     /// THE START IS A CANDIDATE, at distance zero, whether or not a link leads back to it.
