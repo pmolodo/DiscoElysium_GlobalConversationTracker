@@ -22,6 +22,8 @@
 //! Both are total statements about all inputs, both are cheap to check, and both are the
 //! kind of thing that stays true for a thousand cases and then does not.
 
+use std::collections::HashSet;
+
 use lookahead_engine::core::action::DialogueAction;
 use lookahead_engine::core::guard::GuardExpression;
 use lookahead_engine::core::guard_value::GuardValue;
@@ -29,8 +31,16 @@ use lookahead_engine::core::state::StateSymbols;
 use lookahead_engine::core::types::{DialogueCheckKind, DialogueNodeId};
 use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::graph::node::LookAheadNode;
+use lookahead_engine::oracle;
 use lookahead_engine::parser::guard_parser::parse_guard;
+use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
+use lookahead_engine::symbolic::guard_formula::GuardCompiler;
+use lookahead_engine::symbolic::isolated::on_its_own_thread;
+use lookahead_engine::symbolic::reachability::{seed_of, Reachability};
+use lookahead_engine::symbolic::vars::DataVars;
+use lookahead_engine::test_graph::{node, Entry, GraphBuilder};
+use lookahead_engine::world::test_world::TestWorld;
 use proptest::prelude::*;
 
 /// The counter cap the rest of the repository measures with.
@@ -296,6 +306,148 @@ proptest! {
         prop_assert!(
             covered.iter().all(|seen| *seen),
             "the layout has variables no slot owns",
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Generated graphs, against the reference walk
+// ---------------------------------------------------------------------------
+
+/// The guards a generated entry can carry.
+///
+/// One of each KIND of answer rather than a variety of expressions: a guard the search can
+/// decide false, one it can decide true only after something has been written, a threshold
+/// on a counter, and one nothing can decide. What is being generated is the SHAPE of the
+/// graph, and richer guards are already covered by the corpus and by the round trip above.
+const GUARDS: [&str; 5] = [
+    "",
+    r#"Variable["open"]"#,
+    r#"not Variable["open"]"#,
+    r#"Variable["count"] >= 2"#,
+    "IsKimHere()",
+];
+
+/// And what it can write: nothing, the flag a guard reads, a counter, and a counter that
+/// only ever climbs one step.
+const SCRIPTS: [&str; 4] = [
+    "",
+    r#"SetVariableValue("open", true)"#,
+    r#"SetVariableValue("count", Variable["count"] + 1)"#,
+    r#"SetVariableValue("count", Variable["count"] +once(1))"#,
+];
+
+/// What the generator says about one entry.
+#[derive(Debug, Clone)]
+struct Shape {
+    guard: usize,
+    script: usize,
+    /// 0 an ordinary entry, 1 a white check, 2 a passive check.
+    kind: usize,
+    /// Whether it costs money, which only the walk can refuse (de-95t6).
+    priced: bool,
+    links: Vec<usize>,
+}
+
+fn shape(entries: usize) -> impl Strategy<Value = Shape> {
+    (
+        0..GUARDS.len(),
+        0..SCRIPTS.len(),
+        0usize..3,
+        any::<bool>(),
+        prop::collection::vec(0..entries, 0..3),
+    )
+        .prop_map(|(guard, script, kind, priced, links)| Shape {
+            guard,
+            script,
+            kind,
+            priced,
+            links,
+        })
+}
+
+/// A graph of generated entries, built by the same builder every other fixture uses.
+fn graph_from(shapes: &[Shape]) -> LookAheadGraph {
+    let mut builder = GraphBuilder::new();
+    for (index, shape) in shapes.iter().enumerate() {
+        let links: Vec<i32> = shape.links.iter().map(|to| *to as i32).collect();
+        let mut entry = Entry::new(index as i32)
+            .guard(GUARDS[shape.guard])
+            .script(SCRIPTS[shape.script])
+            .links(&links);
+        entry = match shape.kind {
+            // A ROLL THAT CLOSES. Every check gets a flag, so a failure is recorded and the
+            // check cannot be retried: a white check with nowhere to record its failure is
+            // retryable for ever, and a generated graph full of them would spend the walk's
+            // whole ceiling on one shape.
+            1 => entry.kind(DialogueCheckKind::White).flag(&format!("roll{index}")),
+            2 => entry.kind(DialogueCheckKind::Passive),
+            _ => entry,
+        };
+        if shape.priced {
+            entry = entry.cost(4);
+        }
+        builder = builder.add(entry);
+    }
+    builder.build()
+}
+
+proptest! {
+    // SIXTY-FOUR CASES, not proptest's default. Each one builds a diagram manager on a
+    // thread of its own and runs a fixed point in it, which is thousands of times the cost
+    // of parsing a guard - and the shapes here are small enough that the interesting ones
+    // turn up early.
+    #![proptest_config(ProptestConfig::with_cases(64))]
+
+    /// The symbolic search reaches every entry the reference walk reaches.
+    ///
+    /// THE LAW THE WHOLE ENGINE RESTS ON, and the one that cannot be checked by comparing
+    /// the two symbolic searches: they share a layout, a guard compiler and their
+    /// approximations, so a fault in any of those is invisible to their agreement.
+    /// `oracle` walks one state at a time and shares none of it.
+    ///
+    /// Containment and not equality. The symbolic side may reach MORE - an undecided guard
+    /// goes through, and no price can be refused because money is not in the layout - and a
+    /// surplus costs precision where a shortfall costs a marker.
+    ///
+    /// Generated rather than written out, because the shapes that break a symbolic search
+    /// are the ones nobody thinks to write: a link back into the middle of a cycle, a guard
+    /// read before anything writes it, a check whose failure branch is the only way on.
+    #[test]
+    fn the_symbolic_search_reaches_what_the_reference_walk_reaches(
+        shapes in (3usize..8).prop_flat_map(|n| prop::collection::vec(shape(n), n..=n)),
+    ) {
+        let graph = graph_from(&shapes);
+        let world = TestWorld::new()
+            .with_money(10)
+            .set_variable("open", GuardValue::from_boolean(false))
+            .set_variable("count", GuardValue::from_number(0.0));
+
+        let walk = oracle::walk(&graph, node(0), &world, COUNTER_CAP);
+        // A walk that ran out of room reaches fewer entries than the graph allows, so it is
+        // not an oracle for this shape and the case proves nothing either way.
+        prop_assume!(!walk.exhausted());
+
+        let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
+        let symbols = graph.symbols().clone();
+
+        // A thread of its own, with the manager built inside it - de-fpax.
+        let symbolic: HashSet<DialogueNodeId> = on_its_own_thread(|| {
+            let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
+            let mut compiler = GuardCompiler::new(&vars).with_world(&world);
+            let seed = seed_of(&graph, &world, &vars);
+            let found = Reachability::explore(
+                &graph, node(0), &seed, &mut compiler, &world, COUNTER_CAP as u32,
+            );
+            found.entries().collect()
+        });
+
+        let missed: Vec<&DialogueNodeId> = walk.entries().difference(&symbolic).collect();
+        prop_assert!(
+            missed.is_empty(),
+            "the symbolic search missed {:?}, which the walk reached, on {:?}",
+            missed,
+            shapes,
         );
     }
 }

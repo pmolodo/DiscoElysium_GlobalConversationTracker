@@ -1020,10 +1020,75 @@ mod tests {
         );
     }
 
-    // NOTHING HERE IS AN INDEPENDENT ORACLE. Every test in this file compares the backward
-    // search against the forward one, and they share a layout, a guard compiler and three
-    // deliberate approximations - so a fault in any of those is invisible to all of them.
-    // de-eonm is what to do about that.
+    /// The awkward shape, against the REFERENCE WALK rather than against the forward
+    /// symbolic search.
+    ///
+    /// Everything else here compares the two symbolic searches, which share a layout, a
+    /// guard compiler and three deliberate approximations, so a fault in any of those is
+    /// invisible to all of them. This asks [`crate::oracle`], which walks one state at a
+    /// time and shares none of it, over the shape that has caught the most bugs in this
+    /// file: a cycle, a once action inside it, a counter, and a threshold on the counter.
+    ///
+    /// Containment rather than equality, and in one direction only. The symbolic side may
+    /// reach more, and a surplus costs precision; reaching LESS would cost a marker.
+    #[test]
+    fn an_awkward_shape_reaches_everything_the_reference_walk_does() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            // A cycle that counts, with the increment marked once.
+            .add(
+                Entry::new(1)
+                    .script(r#"SetVariableValue("count", Variable["count"] +once(1))"#)
+                    .links(&[1, 2, 4]),
+            )
+            // A threshold only a repeated increment could pass.
+            .add(Entry::new(2).guard(r#"Variable["count"] >= 2"#).links(&[3]))
+            .add(Entry::new(3))
+            // And a branch behind a flag the cycle never sets, which nothing can open.
+            .add(Entry::new(4).guard(r#"Variable["locked"]"#).links(&[5]))
+            .add(Entry::new(5))
+            .build();
+        let symbols = graph.symbols().clone();
+        // `count` is declared a NUMBER, and it has to be. The walk reads a tracked slot
+        // back through the world's idea of its type - see `BoundContext::get_variable` -
+        // so a counter the world has never heard of comes back as a boolean,
+        // `try_as_number` refuses it, and `count >= 2` is undecidable and therefore
+        // permissive. The symbolic side compiles the same comparison against the slot's
+        // bits and decides it. Without this line the two disagree about the fixture rather
+        // than about the once slot, which is what this test is for. de-sze.5.4 is the real
+        // fix: the index does not carry declared types yet.
+        let world = TestWorld::new()
+            .set_variable("locked", GuardValue::from_boolean(false))
+            .set_variable("count", GuardValue::from_number(0.0));
+
+        let walk = crate::oracle::walk(&graph, node(0), &world, CAP);
+        assert!(!walk.exhausted(), "the fixture should be exhaustible");
+
+        let layout = DataLayout::for_graph(&graph, CAP, None, false);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
+        let mut compiler = GuardCompiler::new(&vars).with_world(&world);
+        let seed = seed_of(&graph, &world, &vars);
+
+        for id in graph.nodes().map(|n| n.id).collect::<Vec<_>>() {
+            if !walk.reached(id) {
+                continue;
+            }
+            let backward = Backward::reaching(&graph, id, &mut compiler, &world, CAP as u32);
+            assert!(
+                backward.reachable_from(node(0), &seed),
+                "the walk got to {id} and the backward pass refused it",
+            );
+        }
+
+        // The locked branch is out of reach both ways, which is what stops this test
+        // passing vacuously by calling everything reachable.
+        assert!(!walk.reached(node(5)));
+        let backward = Backward::reaching(&graph, node(5), &mut compiler, &world, CAP as u32);
+        assert!(
+            !backward.reachable_from(node(0), &seed),
+            "a branch behind a guard nothing sets should be out of reach",
+        );
+    }
 
     /// What the module claims about pruning, asserted rather than described.
     ///

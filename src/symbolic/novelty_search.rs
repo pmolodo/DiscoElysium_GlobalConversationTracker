@@ -707,8 +707,95 @@ mod tests {
         assert_eq!(answer.witness, Some(node(1)));
     }
 
-    // AND NOTHING HERE IS INDEPENDENT EITHER: these fixtures are checked against the same
-    // machinery that answers them. See de-eonm.
+    /// The answer the reference walk gives, on the driver's own shapes.
+    ///
+    /// The acceptance criterion for the whole driver, and the only one here that is about
+    /// the product rather than about the parts. Every other test in this file is checked
+    /// against the same machinery that answers it; [`crate::oracle`] walks one state at a
+    /// time and shares none of it.
+    ///
+    /// AT LEAST, not exactly. The symbolic side over-approximates - undecided guards go
+    /// through, no cost can be refused - so it may report a better novelty than the walk
+    /// finds. Reporting a WORSE one would mean a marker lost, and that is what this
+    /// forbids.
+    #[test]
+    fn the_driver_agrees_with_the_reference_walk_on_its_own_fixtures() {
+        let shut = TestWorld::new().set_variable("shut", GuardValue::from_boolean(false));
+        let plain = TestWorld::new();
+
+        // Name, graph, world, and which entries are unseen.
+        let fixtures: Vec<(&str, LookAheadGraph, &TestWorld, Vec<i32>)> = vec![
+            (
+                "a false guard blocks",
+                GraphBuilder::new()
+                    .add(Entry::new(0).links(&[1]))
+                    .add(Entry::new(1).guard(r#"Variable["shut"]"#).links(&[2]))
+                    .add(Entry::new(2))
+                    .build(),
+                &shut,
+                vec![2],
+            ),
+            (
+                "an unknown guard does not block",
+                GraphBuilder::new()
+                    .add(Entry::new(0).links(&[1]))
+                    .add(Entry::new(1).guard("IsKimHere()").links(&[2]))
+                    .add(Entry::new(2))
+                    .build(),
+                &plain,
+                vec![2],
+            ),
+            (
+                "actions unlock their own downstream guards",
+                GraphBuilder::new()
+                    .add(Entry::new(0).links(&[1]))
+                    .add(
+                        Entry::new(1)
+                            .script(r#"SetVariableValue("opened", true)"#)
+                            .links(&[2]),
+                    )
+                    .add(Entry::new(2).guard(r#"Variable["opened"]"#))
+                    .build(),
+                &plain,
+                vec![2],
+            ),
+            (
+                "groups are traversed but never scored",
+                GraphBuilder::new()
+                    .add(Entry::new(0).links(&[1]))
+                    .add(Entry::new(1).group().links(&[2]))
+                    .add(Entry::new(2))
+                    .build(),
+                &plain,
+                vec![1],
+            ),
+            (
+                "cycles terminate",
+                GraphBuilder::new()
+                    .add(Entry::new(0).links(&[1]))
+                    .add(Entry::new(1).links(&[2]))
+                    .add(Entry::new(2).links(&[1]))
+                    .build(),
+                &plain,
+                vec![2],
+            ),
+        ];
+
+        for (name, graph, world, unseen) in fixtures {
+            let novelty = novel(&unseen, Novelty::UnseenAnyGame);
+            let walk = crate::oracle::walk(&graph, node(0), world, CAP);
+            assert!(!walk.exhausted(), "{name}: the fixture should be exhaustible");
+            let expected = walk.best_novelty(&novelty);
+            let answer = search(&graph, world, &novelty);
+
+            assert!(
+                answer.best >= expected,
+                "{name}: the driver said {:?} where the walk found {expected:?}, which is \
+                 a marker lost",
+                answer.best,
+            );
+        }
+    }
 
     /// A group is never a candidate, however novel the save says it is.
     #[test]
