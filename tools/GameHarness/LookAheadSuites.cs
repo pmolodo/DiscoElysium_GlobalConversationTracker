@@ -338,8 +338,8 @@ namespace GlobalConversationTracker.Harness
             new[]
             {
                 Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff, AllSeen,
-                EngineDeath, RedCheck,
-            }.Concat(BranchShapes).ToArray();
+                RedCheck,
+            }.Concat(BranchShapes).Append(EngineDeath).ToArray();
 
         /// <summary>The suites a run does when it is not told which to do.</summary>
         /// <remarks>
@@ -354,11 +354,54 @@ namespace GlobalConversationTracker.Harness
         /// way when the plumbing rather than the algorithm is in question, since the
         /// offline check cannot see whether the patch is wired up at all.</para>
         /// </remarks>
+        /// <remarks>
+        /// <para><see cref="EngineDeath"/> IS LAST, and both lists say so rather than
+        /// leaving it to <see cref="InRunOrder"/>. It kills the look-ahead engine and the
+        /// mod does not restart one, so every suite after it in the same launch sees a game
+        /// with no look-ahead and fails every claim it makes about a marker or a line.
+        /// Measured 2026-09-05: with it seventh, the eight branch-shape suites that follow
+        /// lost all sixteen of their Pass / Fail claims, having passed the same claims
+        /// twenty lines earlier under <see cref="Pristine"/>.</para>
+        /// </remarks>
         public static IReadOnlyList<LookAheadSuite> Default =>
             new[]
             {
-                Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff, EngineDeath,
-            }.Concat(BranchShapes).ToArray();
+                Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff,
+            }.Concat(BranchShapes).Append(EngineDeath).ToArray();
+
+        /// <summary>
+        /// The suites in the order they can actually be run: anything that ends the
+        /// session's look-ahead goes last, and everything else keeps its place.
+        /// </summary>
+        /// <remarks>
+        /// <para>THE DECLARED LISTS ARE ALREADY IN THIS ORDER, so for a default run this
+        /// changes nothing. It is for the order a person types - <c>--suite
+        /// engine-death,red-check</c> is a reasonable thing to ask for and a guaranteed
+        /// false failure without this, since the second suite would be measuring a mod
+        /// whose engine the first one killed.</para>
+        ///
+        /// <para>Reordering rather than refusing, because the request is not ambiguous:
+        /// every named suite still runs, and the only thing decided here is which of them
+        /// can still be believed. The caller says so out loud when the order changes.</para>
+        ///
+        /// <para>Stable within each half, so a run's output stays in the order it was asked
+        /// for apart from the one suite that has to move.</para>
+        /// </remarks>
+        /// <param name="suites">The suites to run, in the order they were asked for.</param>
+        /// <returns>The same suites, with the session-ending ones last.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="suites"/> is null.</exception>
+        public static IReadOnlyList<LookAheadSuite> InRunOrder(
+            IReadOnlyList<LookAheadSuite> suites)
+        {
+            if (suites == null)
+            {
+                throw new ArgumentNullException(nameof(suites));
+            }
+
+            return suites.Where(suite => !suite.KillsTheEngine)
+                .Concat(suites.Where(suite => suite.KillsTheEngine))
+                .ToArray();
+        }
 
         /// <summary>
         /// The forward scan spends as it walks.

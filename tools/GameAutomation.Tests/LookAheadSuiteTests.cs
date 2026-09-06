@@ -59,6 +59,63 @@ namespace GlobalConversationTracker.Automation.Tests
             Assert.Equal(LookAheadSuites.Default, LookAheadSuites.Select(null));
         }
 
+        /// <summary>
+        /// The one suite that ends the session's look-ahead, and the only one, since the
+        /// rule below is about it and a second one would want its own thought.
+        /// </summary>
+        [Fact]
+        public void OnlyTheEngineDeathSuiteKillsTheEngine()
+        {
+            Assert.True(LookAheadSuites.EngineDeath.KillsTheEngine);
+            Assert.Equal(
+                new[] { LookAheadSuites.EngineDeath },
+                LookAheadSuites.All.Where(suite => suite.KillsTheEngine).ToArray());
+        }
+
+        /// <summary>
+        /// A killed engine is not restarted, so anything after the suite that kills one is
+        /// measuring a mod without a look-ahead. Both declared lists have to end with it.
+        /// </summary>
+        /// <remarks>
+        /// Measured 2026-09-05, which is why this test exists: with engine-death seventh of
+        /// fifteen, the eight branch-shape suites after it lost all sixteen of their Pass /
+        /// Fail claims - claims the same white check had passed under 'pristine' a few
+        /// suites earlier, in the same launch.
+        /// </remarks>
+        [Fact]
+        public void ADeclaredRunEndsWithTheSuiteThatKillsTheEngine()
+        {
+            Assert.Equal(LookAheadSuites.EngineDeath, LookAheadSuites.Default.Last());
+            Assert.Equal(LookAheadSuites.EngineDeath, LookAheadSuites.All.Last());
+        }
+
+        [Fact]
+        public void AskingForTheKillingSuiteFirstStillRunsItLast()
+        {
+            LookAheadSuite[] asked =
+            {
+                LookAheadSuites.EngineDeath, LookAheadSuites.Money, LookAheadSuites.RedCheck,
+            };
+
+            Assert.Equal(
+                new[]
+                {
+                    LookAheadSuites.Money, LookAheadSuites.RedCheck, LookAheadSuites.EngineDeath,
+                },
+                LookAheadSuites.InRunOrder(asked));
+        }
+
+        [Fact]
+        public void RunOrderLeavesEverythingElseWhereItWas()
+        {
+            Assert.Equal(LookAheadSuites.Default, LookAheadSuites.InRunOrder(LookAheadSuites.Default));
+            Assert.Equal(LookAheadSuites.All, LookAheadSuites.InRunOrder(LookAheadSuites.All));
+
+            LookAheadSuite[] asked = { LookAheadSuites.RedCheck, LookAheadSuites.Money };
+
+            Assert.Equal(asked, LookAheadSuites.InRunOrder(asked));
+        }
+
         [Fact]
         public void SuiteNamesAreDistinct()
         {

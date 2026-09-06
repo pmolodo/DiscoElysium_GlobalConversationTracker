@@ -479,6 +479,21 @@ namespace GlobalConversationTracker.Harness
         /// <summary>The scenarios, in the order they run.</summary>
         public IReadOnlyList<LookAheadScenario> Scenarios { get; }
 
+        /// <summary>
+        /// Whether running this suite leaves the game without a look-ahead engine.
+        /// </summary>
+        /// <remarks>
+        /// <para>A killed engine is not restarted - see
+        /// <see cref="LookAheadScenario.KillEngineFirst"/> - so the suite that kills one
+        /// ends the session's look-ahead for every suite after it in the same launch. That
+        /// is the mod behaving as designed and the harness's problem to schedule around:
+        /// <see cref="LookAheadSuites.InRunOrder"/> puts such a suite last.</para>
+        ///
+        /// <para>Computed from the scenarios rather than declared beside them, so it cannot
+        /// disagree with what the suite actually does.</para>
+        /// </remarks>
+        public bool KillsTheEngine => Scenarios.Any(scenario => scenario.KillEngineFirst);
+
         /// <summary>Mod settings to change for the run.</summary>
         public IReadOnlyDictionary<string, string> PluginSettings { get; }
 

@@ -263,6 +263,21 @@ namespace GlobalConversationTracker.Harness
             bool keepOpen,
             Report report)
         {
+            // A suite that kills the look-ahead engine ends it for the whole launch, so it
+            // goes last whatever order it was asked for in. Said out loud, because the run
+            // is about to report its suites in an order nobody typed.
+            IReadOnlyList<LookAheadSuite> asked = suites;
+            suites = LookAheadSuites.InRunOrder(suites);
+            if (!suites.SequenceEqual(asked))
+            {
+                Console.WriteLine(
+                    "order:     "
+                    + string.Join(", ", suites.Where(suite => suite.KillsTheEngine)
+                        .Select(suite => $"'{suite.Name}'"))
+                    + " moved last: it kills the look-ahead engine, which is not restarted, "
+                    + "so anything after it would be measuring a mod that has none");
+            }
+
             string logPath = Path.Combine(
                 FilePaths.FolderOf(game, nameof(game)), "BepInEx", "LogOutput.log");
             string saveGames = GameProfile.SavesFolder;
