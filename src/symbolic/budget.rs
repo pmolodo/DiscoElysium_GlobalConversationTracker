@@ -39,9 +39,9 @@ impl DiagramBudget {
     ///
     /// ## NOW MEASURED, and 32 was an undercount (de-mnrb)
     ///
-    /// `what_a_node_costs_once_the_table_has_grown` fills one manager and reads the
-    /// allocator as it grows, so the MARGINAL cost of a node - the table's share, which
-    /// construction cannot show - is measured rather than reasoned:
+    /// `measurements/manager_memory.rs` fills one manager and reads the allocator as it
+    /// grows, so the MARGINAL cost of a node - the table's share, which construction cannot
+    /// show - is measured rather than reasoned:
     ///
     /// ```text
     ///        nodes     held MB      grown MB  marginal B/node

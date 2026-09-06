@@ -260,9 +260,9 @@ fn input_that_stops_mid_expression_is_refused_rather_than_crashing() {
 ///
 /// Both measured, both worth keeping honest:
 ///
-/// - ELEVEN is the deepest guard in the shipped database, of 26,210 (tests/guard_depth.rs),
-///   so everything real is accepted with room to spare - and the whole database is re-parsed
-///   by that test, which is what says so.
+/// - ELEVEN is the deepest guard in the shipped database, of 26,210, measured by
+///   measurements/guard_depth.rs - so everything real is accepted with room to spare. The
+///   whole database is re-parsed by tests/guard_depth.rs, which is what keeps saying so.
 /// - 800 is where walking a tree overflows a one-megabyte stack, the Windows main-thread
 ///   default, in a debug build; 2,875 in a release one (measurements/guard_stack.rs). The limit is
 ///   under a third of the pessimistic figure.

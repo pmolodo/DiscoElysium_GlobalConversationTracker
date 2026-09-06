@@ -27,9 +27,6 @@
 //! - Live bytes return to the baseline after each search -> NO LEAK. Look at the drop.
 //! - Live bytes climb search over search -> a leak, and the manager is where to look.
 
-use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::atomic::{AtomicUsize, Ordering};
-
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::budget::DiagramBudget;
@@ -41,44 +38,18 @@ use lookahead_engine::symbolic::vars::DataVars;
 #[path = "../tests/common/mod.rs"]
 mod common;
 
-/// An allocator that keeps a running total of what is held.
+/// The shared counting allocator, asked a different question.
 ///
-/// The same counting trick `tests/manager_memory.rs` uses for a different question - what a
-/// manager asks for when it is built. This one watches what is still held after it is
-/// dropped, which is the leak question.
-struct Counting;
+/// `tests/manager_memory.rs` uses it to ask what a manager takes when it is BUILT. This
+/// asks what is still held after one is dropped, which is the leak question - same counter,
+/// read at a different moment.
+#[path = "../tests/common/counting_allocator.rs"]
+mod counting_allocator;
 
-static LIVE: AtomicUsize = AtomicUsize::new(0);
-
-unsafe impl GlobalAlloc for Counting {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        LIVE.fetch_add(layout.size(), Ordering::Relaxed);
-        unsafe { System.alloc(layout) }
-    }
-
-    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
-        LIVE.fetch_sub(layout.size(), Ordering::Relaxed);
-        unsafe { System.dealloc(pointer, layout) }
-    }
-
-    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        LIVE.fetch_add(layout.size(), Ordering::Relaxed);
-        unsafe { System.alloc_zeroed(layout) }
-    }
-
-    unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        LIVE.fetch_add(new_size, Ordering::Relaxed);
-        LIVE.fetch_sub(layout.size(), Ordering::Relaxed);
-        unsafe { System.realloc(pointer, layout, new_size) }
-    }
-}
+use counting_allocator::{live, Counting};
 
 #[global_allocator]
 static ALLOCATOR: Counting = Counting;
-
-fn live() -> usize {
-    LIVE.load(Ordering::Relaxed)
-}
 
 fn mb(bytes: usize) -> f64 {
     bytes as f64 / (1024.0 * 1024.0)

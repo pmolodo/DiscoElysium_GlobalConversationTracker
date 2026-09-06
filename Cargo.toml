@@ -54,8 +54,17 @@ name = "backward_support"
 path = "measurements/backward_support.rs"
 
 [[example]]
+name = "guard_depth"
+path = "measurements/guard_depth.rs"
+
+[[example]]
 name = "guard_stack"
 path = "measurements/guard_stack.rs"
+
+# The half of tests/manager_memory.rs that has to FILL a manager to answer anything.
+[[example]]
+name = "manager_memory"
+path = "measurements/manager_memory.rs"
 
 # Four stages of one investigation behind one `main`, picked by name - see the note there.
 [[example]]

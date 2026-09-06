@@ -8,10 +8,11 @@
 //! a depth limit, and a depth limit needs a number: high enough to accept everything real,
 //! low enough to be safe on the smallest stack this code can find itself on.
 //!
-//! The deepest guard in the shipped database is ELEVEN levels, of 26,210 (tests/
-//! guard_depth.rs). What is not known without measuring is the other end - and it cannot be
-//! taken from a plain `cargo test` run, because a test thread's stack is generous. This code
-//! runs inside the game, on whatever thread the dialogue system calls it from.
+//! The deepest guard in the shipped database is ELEVEN levels, of 26,210
+//! (measurements/guard_depth.rs). What is not known without measuring is the other end -
+//! and it cannot be taken from a plain `cargo test` run, because a test thread's stack is
+//! generous. This code runs inside the game, on whatever thread the dialogue system calls
+//! it from.
 //!
 //! ## What changed, and why this file no longer measures the parser
 //!
