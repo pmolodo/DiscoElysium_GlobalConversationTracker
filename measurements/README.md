@@ -1,7 +1,31 @@
 # Measurements
 
-Where the long-running measurements in `tests/` put their results. Nothing under here is
-committed except this file.
+The long-running measurements themselves, and under `logs/` what they produced. Nothing
+under here is committed except the measurements and this file.
+
+## Why they are not in `tests/`
+
+A test passes or fails on its own; a measurement produces a number a person reads. The two
+were being confused - this repository has already had a measurement's figures quoted as
+though a test had verified them - and a measurement that asserts nothing still looks green
+when it is run, which is what invites that mistake. See de-18bo.
+
+They are Cargo EXAMPLES, named in `Cargo.toml` with an explicit `path` because Cargo looks
+for examples in `examples/` and these live beside their logs. Being examples also takes
+them out of `cargo test`, which used to compile and link every one of them on the way to
+running none of them.
+
+Run one the way anything slow is run here - through `tools/run-logged.sh`, so there is a
+log to read afterwards:
+
+    tools/run-logged.sh cargo answers -- cargo run --release --example symbolic_answers
+
+    RUN_LOG_DIR=measurements/logs CONVERSATION=14 \
+      tools/run-logged.sh cargo slots -- cargo run --release --example layout_shape -- slots
+
+`layout_shape` is the one that takes an argument: `groups` (the default) counts the slot
+classes per group, `slots` lists one group's slots so the classifier behind the counts can
+be read rather than trusted.
 
 ## Where a run's results are
 

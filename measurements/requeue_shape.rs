@@ -19,7 +19,7 @@
 //!
 //! ## How to read it
 //!
-//! `cargo test --test requeue_shape -- --ignored --nocapture`
+//! `cargo run --release --example requeue_shape`
 //!
 //! A long tail - a maximum far above the median - says redundant re-propagation, and
 //! de-3x76.3 is worth building. A flat distribution says the steps are all real work, and
@@ -38,6 +38,7 @@ use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::reachability::{seed_of, Budget, Reachability};
 use lookahead_engine::symbolic::vars::DataVars;
 
+#[path = "../tests/common/mod.rs"]
 mod common;
 
 /// The cap every symbolic measurement in this repository uses.
@@ -57,9 +58,7 @@ const GROUPS: [i32; 4] = [14, 631, 368, 1030];
 /// whole question.
 const CAP: std::time::Duration = std::time::Duration::from_secs(90);
 
-#[test]
-#[ignore = "a measurement; run it deliberately"]
-fn how_often_the_same_entry_is_stepped() {
+fn main() {
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
         return;

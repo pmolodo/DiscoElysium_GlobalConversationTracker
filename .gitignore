@@ -50,7 +50,9 @@ uv.lock
 
 /target
 
-# Raw output from the measurement runs; the TSVs beside them are what is kept.
+# What the measurement runs produced. The measurements THEMSELVES, beside this directory,
+# are committed; their results are not - a row is a wall-clock time on one machine, and a
+# committed baseline like that goes stale silently. See measurements/README.md.
 /measurements/logs/
 
 # Place to stash miscellaneous testing logs we want to keep around

@@ -247,7 +247,7 @@ impl DataLayout {
     /// partial order is still a valid layout rather than a lost slot. Money and the clock
     /// follow the slots, as they always have.
     ///
-    /// See de-3x76.10. `tests/order_sensitivity.rs` is the caller.
+    /// See de-3x76.10. `measurements/order_sensitivity.rs` is the caller.
     pub fn in_slot_order(mut self, order: &[usize]) -> Self {
         let mut next = 0u32;
         let mut placed = vec![false; self.slots.len()];

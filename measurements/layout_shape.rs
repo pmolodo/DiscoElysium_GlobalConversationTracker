@@ -32,7 +32,7 @@
 //! does not predict the thing being optimised. Variables might, and the split by class
 //! might; that is what this is for.
 //!
-//! Run it with `cargo test --test layout_shape -- --ignored --nocapture`.
+//! Run it with `cargo run --release --example layout_shape`.
 
 use std::collections::{HashMap, HashSet};
 
@@ -42,7 +42,26 @@ use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 
+#[path = "../tests/common/mod.rs"]
 mod common;
+
+/// TWO MEASUREMENTS IN ONE EXAMPLE, chosen by argument, because they share the classifier.
+///
+/// An example is one file with one `main`, so the alternative was two files - and the two
+/// would have had to duplicate `writes_of`, `on_a_cycle` and `bits_for`, or lift them
+/// somewhere both could see. The listing exists precisely to check the classifier the
+/// summary is drawn from, so splitting them apart from it is the one arrangement that
+/// would defeat the point of having it.
+fn main() {
+    match std::env::args().nth(1).as_deref() {
+        None | Some("groups") => what_each_group_carries(),
+        Some("slots") => list_the_slots(),
+        Some(other) => {
+            eprintln!("unknown argument {other:?}; expected 'groups' (the default) or 'slots'");
+            std::process::exit(2);
+        }
+    }
+}
 
 /// How many bits it takes to represent 0..=max, mirroring the layout's own rule.
 fn bits_for(max: u32) -> u8 {
@@ -242,8 +261,6 @@ fn writes_of(graph: &LookAheadGraph, cyclic: &HashSet<DialogueNodeId>, slots: us
     found
 }
 
-#[test]
-#[ignore = "a measurement; run it deliberately"]
 fn what_each_group_carries() {
     let Some(path) = common::conversation_index() else {
         eprintln!("no conversation index; skipping.");
@@ -450,9 +467,7 @@ fn what_each_group_carries() {
 /// classifier. This prints the slots themselves so the claim can be read rather than
 /// trusted.
 ///
-/// `CONVERSATION=14 cargo test --test layout_shape -- --ignored --nocapture list_the_slots`
-#[test]
-#[ignore = "a listing; run it deliberately"]
+/// `CONVERSATION=14 cargo run --release --example layout_shape -- slots`
 fn list_the_slots() {
     let conversation: i32 = std::env::var("CONVERSATION")
         .ok()

@@ -21,6 +21,7 @@ use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::core::state::{ONCE_PREFIX, SEEN_PREFIX};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 
+#[path = "../tests/common/mod.rs"]
 mod common;
 
 const HEAVIEST: [i32; 6] = [362, 368, 631, 14, 28, 1030];
@@ -36,9 +37,7 @@ const HEAVIEST: [i32; 6] = [362, 368, 631, 14, 28, 1030];
 /// measurement that overstated its own case, which is the worst kind.
 const KEPT_PREFIXES: [&str; 2] = [SEEN_PREFIX, ONCE_PREFIX];
 
-#[test]
-#[ignore = "a measurement, not a test: run it with --ignored --release"]
-fn how_many_slots_a_search_carries_that_nothing_reads() {
+fn main() {
     let Some(path) = common::conversation_index() else { return };
     let index = read_index(&path).expect("the index reads");
 

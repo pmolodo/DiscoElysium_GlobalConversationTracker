@@ -264,7 +264,7 @@ fn input_that_stops_mid_expression_is_refused_rather_than_crashing() {
 ///   so everything real is accepted with room to spare - and the whole database is re-parsed
 ///   by that test, which is what says so.
 /// - 800 is where walking a tree overflows a one-megabyte stack, the Windows main-thread
-///   default, in a debug build; 2,875 in a release one (tests/guard_stack.rs). The limit is
+///   default, in a debug build; 2,875 in a release one (measurements/guard_stack.rs). The limit is
 ///   under a third of the pessimistic figure.
 #[test]
 fn nesting_deeper_than_anything_real_is_refused_rather_than_fatal() {

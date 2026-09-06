@@ -44,7 +44,7 @@
 //! layout uses, so this cannot drift from what the engine actually consults - and it already
 //! includes a rolled check's own pass and fail flags.
 //!
-//! Run it with `cargo test --test live_ranges -- --ignored --nocapture`.
+//! Run it with `cargo run --release --example live_ranges`.
 
 use std::collections::{HashMap, HashSet};
 
@@ -53,6 +53,7 @@ use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 
+#[path = "../tests/common/mod.rs"]
 mod common;
 
 const COUNTER_CAP: i32 = 16;
@@ -60,9 +61,7 @@ const COUNTER_CAP: i32 = 16;
 /// The group that fails, and the ones that finish, to read it against.
 const GROUPS: [i32; 6] = [362, 28, 368, 14, 631, 1030];
 
-#[test]
-#[ignore = "a measurement; run it deliberately"]
-fn how_much_of_the_state_is_dead_at_the_average_entry() {
+fn main() {
     let Some(path) = common::conversation_index() else {
         eprintln!("no conversation index; skipping.");
         return;

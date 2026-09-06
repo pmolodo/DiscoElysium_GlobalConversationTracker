@@ -34,10 +34,50 @@ oxidd = "0.12.0"
 proptest = "1.0"
 
 # MEASUREMENTS LIVE HERE, not in tests/. A test passes or fails on its own; a measurement
-# produces a number a person reads, and the two were being confused - see de-18bo, which
-# carries moving the rest of them across. Run one with:
+# produces a number a person reads, and the two were being confused - see de-18bo. Run one
+# with:
 #
 #     tools/run-logged.sh cargo answers -- cargo run --release --example symbolic_answers
+#
+# An example rather than a test because that is what these are: a `main` somebody runs, not
+# a claim the suite can check. It also takes them out of `cargo test`, which used to compile
+# and link every one of them on the way to running none.
+#
+# EACH NEEDS ITS PATH SPELLED OUT. Cargo looks for examples in examples/, and these live in
+# measurements/ beside the logs they produce.
 [[example]]
 name = "symbolic_answers"
 path = "measurements/symbolic_answers.rs"
+
+[[example]]
+name = "guard_stack"
+path = "measurements/guard_stack.rs"
+
+# Two measurements behind one `main`, picked by argument - see the note on `main` there.
+[[example]]
+name = "layout_shape"
+path = "measurements/layout_shape.rs"
+
+[[example]]
+name = "live_ranges"
+path = "measurements/live_ranges.rs"
+
+[[example]]
+name = "order_sensitivity"
+path = "measurements/order_sensitivity.rs"
+
+[[example]]
+name = "reachable_states"
+path = "measurements/reachable_states.rs"
+
+[[example]]
+name = "requeue_shape"
+path = "measurements/requeue_shape.rs"
+
+[[example]]
+name = "search_residue"
+path = "measurements/search_residue.rs"
+
+[[example]]
+name = "unread_slots"
+path = "measurements/unread_slots.rs"

@@ -31,7 +31,7 @@
 //! past its own limit and this has to go well past it - then USE it the way the engine does
 //! and let it fall out of scope. On threads of known stack size, walking up until one dies.
 //!
-//! Run it deliberately: `cargo test --test guard_stack -- --ignored --nocapture`. A thread
+//! Run it deliberately: `cargo run --release --example guard_stack`. A thread
 //! that overflows takes the process with it, which is why every step prints before it tries:
 //! the last line printed is the answer.
 
@@ -83,9 +83,7 @@ fn survives_here(depth: usize, stack: usize) -> bool {
 }
 
 /// How deep is safe, on the stack size worth knowing about.
-#[test]
-#[ignore = "a measurement; it ends by overflowing a thread on purpose"]
-fn how_deep_a_tree_can_be_walked() {
+fn main() {
     // A megabyte is the default main-thread stack on Windows, which is the smallest place
     // this code could plausibly run.
     let stack = 1024 * 1024;

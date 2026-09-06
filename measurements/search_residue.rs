@@ -22,7 +22,7 @@
 //!
 //! ## How to read it
 //!
-//! `cargo test --test search_residue -- --ignored --nocapture`.
+//! `cargo run --release --example search_residue`.
 //!
 //! - Live bytes return to the baseline after each search -> NO LEAK. Look at the drop.
 //! - Live bytes climb search over search -> a leak, and the manager is where to look.
@@ -38,6 +38,7 @@ use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::reachability::{seed_of, Reachability};
 use lookahead_engine::symbolic::vars::DataVars;
 
+#[path = "../tests/common/mod.rs"]
 mod common;
 
 /// An allocator that keeps a running total of what is held.
@@ -95,9 +96,7 @@ const CONVERSATION: i32 = 28;
 /// more is what says whether the trend continues or settles.
 const SEARCHES: usize = 5;
 
-#[test]
-#[ignore = "a measurement; run it deliberately"]
-fn what_one_search_leaves_behind_for_the_next() {
+fn main() {
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
         return;

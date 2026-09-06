@@ -34,7 +34,7 @@
 //!
 //! A spread says the opposite: that a better order exists and is worth looking for.
 //!
-//! Run it with `cargo test --test order_sensitivity -- --ignored --nocapture`.
+//! Run it with `cargo run --release --example order_sensitivity`.
 
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::index::{build_group_graph, read_index};
@@ -45,6 +45,7 @@ use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::reachability::{seed_of, Budget, Reachability};
 use lookahead_engine::symbolic::vars::DataVars;
 
+#[path = "../tests/common/mod.rs"]
 mod common;
 
 const COUNTER_CAP: i32 = 16;
@@ -78,9 +79,7 @@ fn shuffled(count: usize, seed: u64) -> Vec<usize> {
     order
 }
 
-#[test]
-#[ignore = "a measurement; run it deliberately"]
-fn whether_the_variable_order_changes_what_a_search_costs() {
+fn main() {
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
         return;

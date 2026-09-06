@@ -34,7 +34,7 @@
 //! terminal value down by the exponent range and back up at the end, so the precision goes
 //! where it is needed.
 //!
-//! Run it with `cargo test --test reachable_states -- --ignored --nocapture`.
+//! Run it with `cargo run --release --example reachable_states`.
 
 use oxidd::util::{IsFloatingPoint, SatCountCache};
 use oxidd::{BooleanFunction, Function};
@@ -48,6 +48,7 @@ use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::reachability::{seed_of, Budget, Reachability};
 use lookahead_engine::symbolic::vars::DataVars;
 
+#[path = "../tests/common/mod.rs"]
 mod common;
 
 const COUNTER_CAP: i32 = 16;
@@ -98,9 +99,7 @@ impl IsFloatingPoint for Count {
     const MIN_EXP: i32 = f64::MIN_EXP;
 }
 
-#[test]
-#[ignore = "a measurement; run it deliberately"]
-fn whether_the_failing_group_reaches_more_states_or_just_holds_them_worse() {
+fn main() {
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
         return;

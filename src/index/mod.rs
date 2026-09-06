@@ -404,7 +404,7 @@ pub fn build_group_graph(
 /// ## Why it is worth doing
 ///
 /// Between a quarter and nearly a half of a group's slots are like this - measured, in
-/// `tests/unread_slots.rs` - and a state-at-a-time search's cost is dominated by copying and
+/// `measurements/unread_slots.rs` - and a state-at-a-time search's cost is dominated by copying and
 /// comparing the slot vector, about seventy per cent of the per-state cost on the widest
 /// group. The slots are written by actions, copied for every state, hashed and compared,
 /// and can never change an answer.
