@@ -13,8 +13,8 @@ Genuinely instant things - `ls`, `git status`, reading a file - do not need it.
 ```sh
 tools/run-logged.sh cargo full-suite -- cargo test --release
 RUN_LOG_DIR=measurements/logs \
-  CONVERSATION=631 tools/run-logged.sh cargo iteration-order -- \
-  cargo test --release --test iteration_order -- --ignored --nocapture
+  CONVERSATION=631 tools/run-logged.sh cargo shared-symbolic -- \
+  cargo run --release --example shared_symbolic
 ```
 
 It tees the whole output to `testing/logs/<date>_<time>_<revision>_<tool>_<verb>.txt`
