@@ -31,6 +31,7 @@ use crate::core::state::{
 };
 use crate::graph::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
+use crate::world::world::MONEY_QUERY;
 
 /// Minutes in a day; the clock is wrapped into `0..MINUTES_IN_DAY`.
 const MINUTES_IN_DAY: u32 = 1440;
@@ -111,6 +112,24 @@ impl DataLayout {
         };
 
         Self { slots, money, clock, total: next }
+    }
+
+    /// The layout a search over a whole group gets, which is what the product runs.
+    ///
+    /// Widths from the graph, a balance where something in the group reads one, the clock
+    /// left to [`GuardCompiler::with_constant_clock`], and every slot nothing reads
+    /// dropped. Four callers had these three lines copied out - the bridge and the three
+    /// halves of the performance matrix - which is how the matrix came to measure a
+    /// different layout from the one that ships. Stated once instead.
+    ///
+    /// [`GuardCompiler::with_constant_clock`]: crate::symbolic::guard_formula::GuardCompiler::with_constant_clock
+    pub fn for_group(
+        graph: &LookAheadGraph,
+        world: &dyn crate::world::world::ILookAheadWorld,
+        counter_cap: i32,
+    ) -> Self {
+        Self::for_graph(graph, counter_cap, Self::money_ceiling(graph, world.money()), false)
+            .keeping_only_read(graph.symbols(), &Self::read_by(graph))
     }
 
     /// How many decision-diagram variables the layout uses.
@@ -292,6 +311,63 @@ impl DataLayout {
     /// The variable run for money, if it is tracked.
     pub fn money(&self) -> Option<(u32, u8)> {
         self.money
+    }
+
+    /// The widest balance a search over this group can hold, or `None` where nothing in it
+    /// can read one - which is what [`Self::for_graph`] wants for `money_max`.
+    ///
+    /// ## Only where something asks
+    ///
+    /// Money is a REGISTER rather than a bit, thirteen variables wide for a save carrying
+    /// fifty-one real, and every one of them is depth every diagram in the group pays for.
+    /// Two things read it: an option with a price, and a guard calling `MoneyAmount`. A
+    /// group with neither can gain and lose all it likes and no answer depends on the
+    /// balance, so it is not worth a variable - the same rule the slots are laid out by.
+    ///
+    /// ## Why the ceiling is the start plus every gain
+    ///
+    /// A register SATURATES, and the two directions are not equally bad. A balance clipped
+    /// DOWN refuses an option the player can afford, which loses a marker; one that is
+    /// merely wide costs diagram nodes. So the ceiling has to be at least every balance the
+    /// group can produce, and the sum of what its entries add is that - with one exception,
+    /// a `GainMoney` inside a cycle, which can be collected repeatedly and climb past it.
+    /// The sum is over the entries and not over the paths, so that case saturates and can
+    /// lose a marker; it is noted rather than fixed, because bounding it properly means
+    /// knowing how often a cycle can turn, which is the same question the counter cap
+    /// answers by decree.
+    pub fn money_ceiling(graph: &LookAheadGraph, starting: i32) -> Option<u32> {
+        let read = graph
+            .nodes()
+            .any(|node| node.is_cost_option() || Self::guard_reads_money(&node.guard));
+        if !read {
+            return None;
+        }
+
+        let gained: i64 = graph
+            .nodes()
+            .flat_map(|node| &node.actions)
+            .filter(|action| action.kind() == DialogueActionKind::GainMoney)
+            .map(|action| i64::from(action.value().max(0)))
+            .sum();
+
+        let ceiling = i64::from(starting.max(0)) + gained;
+        Some(ceiling.min(i64::from(u32::MAX)) as u32)
+    }
+
+    /// Whether a guard asks what the player is carrying.
+    fn guard_reads_money(guard: &GuardExpression) -> bool {
+        match guard {
+            GuardExpression::Call(name, args) => {
+                name == MONEY_QUERY || args.iter().any(Self::guard_reads_money)
+            }
+            GuardExpression::Not(inner) => Self::guard_reads_money(inner),
+            GuardExpression::And(a, b)
+            | GuardExpression::Or(a, b)
+            | GuardExpression::Comparison(_, a, b) => {
+                Self::guard_reads_money(a) || Self::guard_reads_money(b)
+            }
+            GuardExpression::Variable(_) | GuardExpression::Literal(_) => false,
+        }
     }
 
     /// The variable run for the clock, if it is tracked.

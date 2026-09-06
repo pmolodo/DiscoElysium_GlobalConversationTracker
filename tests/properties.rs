@@ -344,8 +344,8 @@ struct Shape {
     script: usize,
     /// 0 an ordinary entry, 1 a white check, 2 a passive check.
     kind: usize,
-    /// Whether it costs money, which only the walk can refuse (de-95t6).
-    priced: bool,
+    /// 0 free, 1 priced every time, 2 priced once - the three ways a purse is read.
+    price: usize,
     links: Vec<usize>,
 }
 
@@ -354,14 +354,14 @@ fn shape(entries: usize) -> impl Strategy<Value = Shape> {
         0..GUARDS.len(),
         0..SCRIPTS.len(),
         0usize..3,
-        any::<bool>(),
+        0usize..3,
         prop::collection::vec(0..entries, 0..3),
     )
-        .prop_map(|(guard, script, kind, priced, links)| Shape {
+        .prop_map(|(guard, script, kind, price, links)| Shape {
             guard,
             script,
             kind,
-            priced,
+            price,
             links,
         })
 }
@@ -384,9 +384,14 @@ fn graph_from(shapes: &[Shape]) -> LookAheadGraph {
             2 => entry.kind(DialogueCheckKind::Passive),
             _ => entry,
         };
-        if shape.priced {
-            entry = entry.cost(4);
-        }
+        // FOUR CENTIMES OUT OF TEN, so a path can afford two prices and not three - which is
+        // the only interesting size. A price nobody can meet closes an entry for a reason
+        // the guards already cover, and one everybody can meet is not a price.
+        entry = match shape.price {
+            1 => entry.cost(4),
+            2 => entry.cost(4).cost_once(),
+            _ => entry,
+        };
         builder = builder.add(entry);
     }
     builder.build()
@@ -407,8 +412,12 @@ proptest! {
     /// `oracle` walks one state at a time and shares none of it.
     ///
     /// Containment and not equality. The symbolic side may reach MORE - an undecided guard
-    /// goes through, and no price can be refused because money is not in the layout - and a
-    /// surplus costs precision where a shortfall costs a marker.
+    /// goes through, and a counter saturating at the cap holds together values the walk
+    /// tells apart - and a surplus costs precision where a shortfall costs a marker.
+    ///
+    /// The generated shapes carry PRICES, in the two forms that read a purse differently:
+    /// paid every time, and paid once. Money is in the layout here, as it is in the product,
+    /// so a price the walk refuses is one the search has to refuse too.
     ///
     /// Generated rather than written out, because the shapes that break a symbolic search
     /// are the ones nobody thinks to write: a link back into the middle of a cycle, a guard
@@ -428,7 +437,7 @@ proptest! {
         // not an oracle for this shape and the case proves nothing either way.
         prop_assume!(!walk.exhausted());
 
-        let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
+        let layout = DataLayout::for_group(&graph, &world, COUNTER_CAP);
         let symbols = graph.symbols().clone();
 
         // A thread of its own, with the manager built inside it - de-fpax.

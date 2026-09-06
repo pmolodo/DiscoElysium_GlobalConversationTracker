@@ -714,10 +714,10 @@ mod tests {
     /// against the same machinery that answers it; [`crate::oracle`] walks one state at a
     /// time and shares none of it.
     ///
-    /// AT LEAST, not exactly. The symbolic side over-approximates - undecided guards go
-    /// through, no cost can be refused - so it may report a better novelty than the walk
-    /// finds. Reporting a WORSE one would mean a marker lost, and that is what this
-    /// forbids.
+    /// AT LEAST, not exactly. The symbolic side over-approximates - an undecided guard goes
+    /// through, a saturated counter holds together values a walk tells apart - so it may
+    /// report a better novelty than the walk finds. Reporting a WORSE one would mean a
+    /// marker lost, and that is what this forbids.
     #[test]
     fn the_driver_agrees_with_the_reference_walk_on_its_own_fixtures() {
         let shut = TestWorld::new().set_variable("shut", GuardValue::from_boolean(false));

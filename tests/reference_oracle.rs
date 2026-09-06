@@ -18,11 +18,14 @@
 //!
 //! ## The direction a disagreement is allowed to run
 //!
-//! The symbolic side may reach MORE. Its guards let an undecided answer through, money is
-//! not in its layout so no cost can be refused (de-95t6), and a once action fires every time
-//! round a loop while de-sze.15 is open - three deliberate over-approximations. A set that
-//! is too big loses precision; one that is too small loses markers. So the assertion is
-//! containment, and the surplus is reported rather than tolerated silently.
+//! The symbolic side may reach MORE. Its guards let an undecided answer through, and a
+//! counter that saturates at the cap holds together values a walk tells apart - deliberate
+//! over-approximations. A set that is too big loses precision; one that is too small loses
+//! markers. So the assertion is containment, and the surplus is reported rather than
+//! tolerated silently.
+//!
+//! MONEY USED TO BE ONE OF THEM and no longer is (de-95t6). Conversation 511 is where it
+//! showed: eight entries of surplus, all of them three undecidable cost checks, now none.
 //!
 //! ## Why a walk that gives up proves nothing
 //!
@@ -154,7 +157,9 @@ fn the_forward_search_reaches_what_the_reference_walk_reaches() {
     for conversation in conversations(&CHECKABLE) {
         let Some((graph, start, walk)) = group(&index, conversation, &world) else { continue };
 
-        let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
+        // THE PRODUCT'S OWN LAYOUT, money included where the group reads it. A comparison
+        // against a layout nothing ships would check an engine nobody runs.
+        let layout = DataLayout::for_group(&graph, &world, COUNTER_CAP);
         let symbols = graph.symbols().clone();
 
         // A THREAD OF ITS OWN, with the manager built inside it - de-fpax. The entry set and
@@ -191,11 +196,11 @@ fn the_forward_search_reaches_what_the_reference_walk_reaches() {
             stats.steps,
         );
 
-        // A surplus is expected, but it should be explainable rather than mysterious. The
-        // two known sources are an undecided guard let through and a cost check that cannot
-        // be refused because money is not in the layout - and with a save holding no money
-        // at all, the second is the one that bites: the walk declines every priced option
-        // and the symbolic search takes them all.
+        // A surplus is allowed, but it should be explainable rather than mysterious - so the
+        // two things that produce one are printed beside it: guards the compiler could not
+        // read, and prices it could not decide. THE SECOND SHOULD NOW BE ZERO on any group
+        // that carries money, and a run where it is not is a group whose layout was built
+        // without a balance rather than a fact about the content (de-95t6).
         if surplus > 0 {
             println!(
                 "         {surplus} extra: {fallbacks} guard fallbacks, {} cost checks \
@@ -234,7 +239,9 @@ fn the_backward_search_finds_what_the_reference_walk_reaches() {
     for conversation in conversations(&CHECKABLE) {
         let Some((graph, start, walk)) = group(&index, conversation, &world) else { continue };
 
-        let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
+        // THE PRODUCT'S OWN LAYOUT, money included where the group reads it. A comparison
+        // against a layout nothing ships would check an engine nobody runs.
+        let layout = DataLayout::for_group(&graph, &world, COUNTER_CAP);
         let symbols = graph.symbols().clone();
         let depths = structural_depths(&graph, start);
         let asked = targets(&depths);
@@ -398,7 +405,9 @@ fn the_driver_and_the_portfolio_find_what_the_reference_walk_finds() {
         };
 
         let expected = walk.best_novelty(&novelty);
-        let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
+        // THE PRODUCT'S OWN LAYOUT, money included where the group reads it. A comparison
+        // against a layout nothing ships would check an engine nobody runs.
+        let layout = DataLayout::for_group(&graph, &world, COUNTER_CAP);
         let symbols = graph.symbols().clone();
 
         let (driver, answer, took) = on_its_own_thread(|| {

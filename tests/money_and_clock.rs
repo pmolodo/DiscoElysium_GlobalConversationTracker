@@ -308,6 +308,81 @@ fn what_money_and_the_clock_cost_the_encoding() {
     }
 }
 
+/// What the balance costs AS SHIPPED, which is money alone and only where a group reads it.
+///
+/// The measurement above prices both registers together against a hand-picked ceiling, and
+/// answers the encoding question de-sze asked. This one answers the product question de-95t6
+/// asks, and they are not the same configuration: the clock is still a constant, and the
+/// ceiling is [`DataLayout::money_ceiling`]'s - the balance the save starts with plus
+/// everything the group can add to it - rather than 8,191 for every group alike.
+///
+/// A GROUP THAT NEVER ASKS PAYS NOTHING, and the table has to show that rather than assume
+/// it: `money_ceiling` returns nothing where no option carries a price and no guard calls
+/// `MoneyAmount`, and such a group's two rows are identical by construction.
+#[test]
+#[ignore = "a measurement, not a test: tools/measure-symbolic.sh runs it one per process"]
+fn what_the_money_register_costs_as_shipped() {
+    let Some(path) = common::conversation_index() else { return };
+    let index = read_index(&path).expect("the index reads");
+    let world = common::measurement_save();
+
+    println!(
+        "{:>6} {:>6} {:>6} {:>21} {:>7} {:>21} {:>7} {:>7}",
+        "conv", "vars", "+money", "without", "ms", "with", "ms", "gaps",
+    );
+
+    for conversation in conversations() {
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        let start = DialogueNodeId::new(conversation, 0);
+        if graph.get(start).is_none() {
+            continue;
+        }
+
+        let Some(target) = deep_reachable_target(&graph, start) else {
+            println!("{conversation:>6}  no reachable target; skipped");
+            continue;
+        };
+
+        let unseen: HashSet<DialogueNodeId> = HashSet::from([target]);
+        let novelty = |id: DialogueNodeId| {
+            if unseen.contains(&id) { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
+        };
+
+        let ceiling = DataLayout::money_ceiling(
+            &graph,
+            lookahead_engine::world::world::ILookAheadWorld::money(&world),
+        );
+        let (without, _) = ask(&graph, start, &world, &novelty, None, false);
+        let (with, layout) = ask(&graph, start, &world, &novelty, ceiling, false);
+
+        println!(
+            "{conversation:>6} {:>6} {:>6} {:>21} {:>7} {:>21} {:>7} {:>7}",
+            without.vars,
+            with.vars - without.vars,
+            without.answer,
+            without.milliseconds,
+            with.answer,
+            with.milliseconds,
+            with.fallbacks,
+        );
+
+        println!(
+            "         ceiling {ceiling:?}, {:?} bits; {} guards compiled without, {} with",
+            layout.money().map(|(_, bits)| bits),
+            without.compiled,
+            with.compiled,
+        );
+
+        if without.answer != with.answer {
+            println!(
+                "         THE ANSWER CHANGED. A balance the search can spend refuses \
+                 options a balance it cannot see accepts, so a difference here is the \
+                 register earning its variables - or, the other way, a marker lost."
+            );
+        }
+    }
+}
+
 /// Asks one group's question, with or without the two registers, and says what it cost.
 fn ask(
     graph: &LookAheadGraph,

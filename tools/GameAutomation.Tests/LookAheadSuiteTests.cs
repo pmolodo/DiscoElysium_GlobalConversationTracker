@@ -377,11 +377,15 @@ namespace GlobalConversationTracker.Automation.Tests
 
             Assert.Contains("no-such-suite", error.Message);
             Assert.Contains("pristine", error.Message);
+            Assert.Contains("money", error.Message);
 
             // A SUITE THAT IS SWITCHED OFF IS NOT A SUITE THAT EXISTS, as far as a name
-            // goes: it is not built, so asking for it by name is refused like a typo. The
-            // message lists what CAN be run, which is the useful half.
-            Assert.DoesNotContain("money", error.Message);
+            // goes: `BuildDefined` skips it, so asking for it by name is refused like a
+            // typo and the message lists only what CAN be run. NOTHING EXERCISES THAT
+            // NOW - the money suite was the one disabled definition and it is back on
+            // (de-95t6), so there is no name to assert the absence of. The rule lives in
+            // LookAheadSuites.BuildDefined and in the `disabled` sentence's own
+            // documentation until something is switched off again.
         }
 
         [Fact]

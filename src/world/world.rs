@@ -7,6 +7,14 @@ use crate::core::state::StateSymbols;
 use crate::core::state::LookAheadState;
 use crate::core::state::{ITEM_PREFIX, TASK_PREFIX, THOUGHT_PREFIX};
 
+/// The guard-language call that asks what the player is carrying, in centimes.
+///
+/// Named once because three places have to agree about it: this file intercepts it so a
+/// guard is answered from the search's own balance rather than the world's, the guard
+/// compiler decides it against the money register, and the layout only spends variables on
+/// money where something asks. A fourth spelling would be a slot silently untracked.
+pub const MONEY_QUERY: &str = "MoneyAmount";
+
 /// Everything outside the dialogue graph that the look-ahead needs to know.
 pub trait ILookAheadWorld: Send + Sync {
     fn money(&self) -> i32;
@@ -169,7 +177,7 @@ impl IGuardContext for BoundContext<'_> {
                     None => self.world.query(name, arguments),
                 }
             }
-            "MoneyAmount" => {
+            MONEY_QUERY => {
                 if let Some(state) = self.state {
                     GuardValue::from_number(state.money() as f64)
                 } else {

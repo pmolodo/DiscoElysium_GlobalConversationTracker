@@ -337,7 +337,7 @@ namespace GlobalConversationTracker.Harness
         public static IReadOnlyList<LookAheadSuite> All =>
             new[]
             {
-                SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff, AllSeen,
+                Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff, AllSeen,
                 RedCheck,
             }.Concat(BranchShapes).Append(EngineDeath).ToArray();
 
@@ -366,7 +366,7 @@ namespace GlobalConversationTracker.Harness
         public static IReadOnlyList<LookAheadSuite> Default =>
             new[]
             {
-                SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff,
+                Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff,
             }.Concat(BranchShapes).Append(EngineDeath).ToArray();
 
         /// <summary>
@@ -403,14 +403,15 @@ namespace GlobalConversationTracker.Harness
                 .ToArray();
         }
 
-        // THE MONEY SUITE IS SWITCHED OFF, and its definition says why - see the `disabled`
-        // sentence in testing/scenarios/suites.json, and de-95t6. The property that named
-        // it is gone with it rather than left to throw: `FromDefinition` refuses a name the
-        // table does not build, which is what catches a typo, and a name that is disabled
-        // rather than absent must not be the one exception to that.
-        //
-        // What comes back when the money layout lands is this property and its two entries
-        // in the lists below. Nothing about the definition itself changes.
+        /// <summary>
+        /// The forward scan spends as it walks.
+        /// </summary>
+        /// <remarks>
+        /// DEFINED IN <c>testing/scenarios/suites.json</c>, which is also what
+        /// <c>tests/scenario_suites.rs</c> runs. The three balances, the entries and the
+        /// argument for them are all there; what is left here is the name.
+        /// </remarks>
+        public static LookAheadSuite Money => FromDefinition("money");
 
     /// <summary>
     /// Reads look-ahead-stats.json and checks it adds up.

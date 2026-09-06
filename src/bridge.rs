@@ -1042,8 +1042,7 @@ where
     F: Fn(DialogueNodeId) -> Novelty,
 {
     let symbols = graph.symbols().clone();
-    let layout = DataLayout::for_graph(graph, COUNTER_CAP, None, false)
-        .keeping_only_read(&symbols, &DataLayout::read_by(graph));
+    let layout = DataLayout::for_group(graph, world, COUNTER_CAP);
     let vars = DataVars::try_new(&layout, &symbols, request.diagram_budget())?;
     let mut compiler = GuardCompiler::new(&vars)
         .with_world(world)

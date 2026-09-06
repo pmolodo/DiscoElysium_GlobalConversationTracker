@@ -16,7 +16,6 @@
   "suites": [
     {
       "suite": "money",
-      "disabled": "TEMPORARY, and tracked as de-95t6. The symbolic search does not model money: Reachability::affordable is a no-op that counts unaffordable_unknown and lets every cost through, and charge records the FACT of having paid without a balance to pay it from. So an option leading only to something the player cannot afford comes back orange where this suite says none - not a search that gave up, a search that is confidently wrong. It was sound while the crawl answered, which subtracted as it walked. Re-enable with the money layout; nothing else about this definition changes.",
       "what": "the forward scan spends as it walks",
       "why": "Conversation 451 gates a 0.50 real purchase behind a 50.00 one, and the staged global state leaves entry 80 - the only one a speaker buyer reaches - unseen. An option is therefore orange exactly when the crawl could afford both, which is what the three balances separate. The middle one is the point: a scan that checked an option's price without subtracting what the path already spent would mark it.",
       "state": "global-conversation-state.json",

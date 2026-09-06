@@ -680,8 +680,7 @@ fn forward_backward(
 ) -> Cells {
     let began = std::time::Instant::now();
 
-    let layout = DataLayout::for_graph(graph, COUNTER_CAP, None, false)
-        .keeping_only_read(symbols, &DataLayout::read_by(graph));
+    let layout = DataLayout::for_group(graph, world, COUNTER_CAP);
     let Some(vars) = DataVars::try_new(&layout, symbols, budget()) else {
         return Cells::absent(NOT_MEASURED, Engine::ForwardBackward);
     };
@@ -736,8 +735,7 @@ fn symbolic_forward(
 ) -> Cells {
     let began = std::time::Instant::now();
 
-    let layout = DataLayout::for_graph(graph, COUNTER_CAP, None, false)
-        .keeping_only_read(symbols, &DataLayout::read_by(graph));
+    let layout = DataLayout::for_group(graph, world, COUNTER_CAP);
     // From the same allowance, so the diagram and the search are held to one number rather than two
     // that happen to agree.
     //
@@ -858,8 +856,7 @@ fn symbolic_backward(
 ) -> Cells {
     let began = std::time::Instant::now();
 
-    let layout = DataLayout::for_graph(graph, COUNTER_CAP, None, false)
-        .keeping_only_read(symbols, &DataLayout::read_by(graph));
+    let layout = DataLayout::for_group(graph, world, COUNTER_CAP);
     let Some(vars) = DataVars::try_new(&layout, symbols, budget()) else {
         return Cells::absent(NOT_MEASURED, Engine::Backward);
     };

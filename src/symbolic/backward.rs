@@ -72,8 +72,10 @@
 //! thing that turns this into an answer to the question the look-ahead actually asks.
 //! Nothing else should call this in a loop of its own.
 //!
-//! The money approximation is inherited from the forward pass unchanged: a cost option is
-//! treated as affordable, because money is not in the layout.
+//! Money is read the way the forward pass reads it: where the layout carries a balance, a
+//! price is a constraint on the way in and a subtraction on the way through, and both are
+//! undone here in the reverse of the order they happen. Where it does not, every price is
+//! affordable and the approximation is inherited unchanged.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -487,11 +489,17 @@ impl<'a> Backward<'a> {
             return self.vars.bottom();
         }
 
-        // The guard is tested on the way IN, so it is the last thing undone. Affordability
-        // is where the forward pass gives up on money and lets everything through; doing
-        // anything else here would disagree with it.
+        // The price is tested on the way in, after the guard and before anything is paid,
+        // so undoing runs the other way: the payment is already undone inside `pre_charge`
+        // and what is left is the constraint the purse had to satisfy BEFORE it.
+        let afforded = self.affordable(node, &inner);
+        if !afforded.satisfiable() {
+            return self.vars.bottom();
+        }
+
+        // And the guard is tested first of all, so it is the last thing undone.
         let (may_be_true, _) = self.guard_of(node, compiler);
-        inner.and(&may_be_true).expect("and")
+        afforded.and(&may_be_true).expect("and")
     }
 
     /// A rolled check, backwards: the states that reach `onward` down either branch.
@@ -580,11 +588,87 @@ impl<'a> Backward<'a> {
             current = image.pre_assign(&current, node.seen_slot as usize, 1);
         }
 
-        if node.is_cost_option() && node.cost_once && node.once_slot >= 0 {
-            current = image.pre_assign(&current, node.once_slot as usize, 1);
+        if node.is_cost_option() {
+            current = self.pre_pay(node, &current, image);
         }
 
         current
+    }
+
+    /// Paying, undone: the mirror of `Reachability::pay`, branch for branch.
+    ///
+    /// Forward, a price paid once splits - the states that had not paid hand over the money
+    /// and come out with the slot raised, and the states that had are left alone. So
+    /// backwards there are two ways to have arrived, told apart by that slot, and the
+    /// assignment is undone before "it was clear" is conjoined: `pre_assign` frees the
+    /// variable, so a conjunction the other way round would constrain the wrong state.
+    fn pre_pay(
+        &self,
+        node: &LookAheadNode,
+        onward: &BDDFunction,
+        image: &mut ActionImage<'a>,
+    ) -> BDDFunction {
+        let price = node.cost.max(0) as u32;
+
+        let Some(paid) = self.already_paid(node) else {
+            return self.pre_spend(onward, price);
+        };
+
+        let fresh = image.pre_assign(onward, node.once_slot as usize, 1);
+        let fresh = self.pre_spend(&fresh, price);
+        let fresh = fresh.and(&paid.not().expect("not")).expect("and");
+
+        let spent = onward.and(&paid).expect("and");
+
+        fresh.or(&spent).expect("or")
+    }
+
+    /// The states from which `money := money - amount` lands in `states`.
+    ///
+    /// The pre-image includes states that SATURATED - a purse below the price, landing on
+    /// zero - which forward could never have entered. They are removed by
+    /// [`Self::affordable`], which runs after this and is where the price is a constraint
+    /// rather than an arithmetic step.
+    fn pre_spend(&self, states: &BDDFunction, amount: u32) -> BDDFunction {
+        match self.vars.money_ops() {
+            Some(money) => money
+                .pre_saturating_sub(states, amount)
+                .expect("unspending money"),
+            None => states.clone(),
+        }
+    }
+
+    /// Which states could afford this node, exactly as the forward pass decides it.
+    ///
+    /// A backward pass that read a price differently from the forward one would answer a
+    /// different question, and the two are checked against each other and against the
+    /// reference walk - so this is deliberately the same three lines.
+    fn affordable(&self, node: &LookAheadNode, states: &BDDFunction) -> BDDFunction {
+        if !node.is_cost_option() {
+            return states.clone();
+        }
+
+        let Some(money) = self.vars.money_ops() else {
+            return states.clone();
+        };
+
+        let enough = states.and(&money.at_least(node.cost.max(0) as u32)).expect("and");
+
+        match self.already_paid(node) {
+            Some(paid) => {
+                let free = states.and(&paid).expect("and");
+                enough.or(&free).expect("or")
+            }
+            None => enough,
+        }
+    }
+
+    /// "This entry's price has already been paid", where it is one that is paid once.
+    fn already_paid(&self, node: &LookAheadNode) -> Option<BDDFunction> {
+        if !node.is_cost_option() || !node.cost_once {
+            return None;
+        }
+        self.flag(node.once_slot)
     }
 
     /// The states in which this node has not been seen.
@@ -741,7 +825,15 @@ mod tests {
         let graph = builder.build();
         let symbols = graph.symbols().clone();
 
-        let layout = DataLayout::for_graph(&graph, CAP, None, false);
+        // MONEY WHERE THE FIXTURE READS IT, by the same rule the product lays out by - so a
+        // priced fixture here exercises the balance rather than the approximation that was
+        // there before it.
+        let layout = DataLayout::for_graph(
+            &graph,
+            CAP,
+            DataLayout::money_ceiling(&graph, world.money()),
+            false,
+        );
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(world);
         let seed = seed_of(&graph, world, &vars);
@@ -1018,6 +1110,78 @@ mod tests {
             2,
             false,
         );
+    }
+
+    /// A price the purse cannot meet closes the option, in both directions.
+    ///
+    /// The whole of de-95t6 in one fixture: before the layout carried a balance this was
+    /// reachable, because `affordable` counted the question and let every price through.
+    #[test]
+    fn a_price_the_purse_cannot_meet_is_not_entered() {
+        let entries = || {
+            vec![
+                Entry::new(0).links(&[1]),
+                Entry::new(1).cost(10).links(&[2]),
+                Entry::new(2),
+            ]
+        };
+
+        agree(entries(), &TestWorld::new().with_money(5), 2, false);
+        agree(entries(), &TestWorld::new().with_money(10), 2, true);
+    }
+
+    /// And what is spent is gone, which is the claim a price CHECK alone does not make.
+    ///
+    /// The middle fixture of the money suite in miniature: two prices of six out of a purse
+    /// of ten. A search that tested each price against the starting balance would take
+    /// both, and mark an option leading somewhere the player cannot reach.
+    #[test]
+    fn spending_leaves_less_for_the_next_price() {
+        let entries = || {
+            vec![
+                Entry::new(0).links(&[1]),
+                Entry::new(1).cost(6).links(&[2]),
+                Entry::new(2).cost(6).links(&[3]),
+                Entry::new(3),
+            ]
+        };
+
+        agree(entries(), &TestWorld::new().with_money(10), 3, false);
+        agree(entries(), &TestWorld::new().with_money(12), 3, true);
+    }
+
+    /// A price paid once is free the second time round, however empty the purse is by then.
+    ///
+    /// The shop door a path comes back through. Entry 1 costs everything the player has, so
+    /// a second visit is affordable only because the once slot says it has been paid for -
+    /// and the counter behind it needs that second visit to reach three.
+    #[test]
+    fn a_price_paid_once_is_free_the_second_time() {
+        let entries = || {
+            vec![
+                Entry::new(0).links(&[1]),
+                Entry::new(1).cost(6).cost_once().links(&[2]),
+                Entry::new(2)
+                    .script(r#"SetVariableValue("rounds", Variable["rounds"] + 1)"#)
+                    .links(&[1, 3]),
+                Entry::new(3).guard(r#"Variable["rounds"] >= 3"#).links(&[4]),
+                Entry::new(4),
+            ]
+        };
+
+        let broke = TestWorld::new()
+            .with_money(6)
+            .set_variable("rounds", GuardValue::from_number(0.0));
+        agree(entries(), &broke, 4, true);
+
+        // And the same shape with the price payable every time is closed after the first,
+        // which is what says the test above is about the once slot rather than about the
+        // loop.
+        let every_time = |mut entries: Vec<Entry>| {
+            entries[1] = Entry::new(1).cost(6).links(&[2]);
+            entries
+        };
+        agree(every_time(entries()), &broke, 4, false);
     }
 
     /// The awkward shape, against the REFERENCE WALK rather than against the forward

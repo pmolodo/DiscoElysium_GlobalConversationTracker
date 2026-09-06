@@ -78,6 +78,17 @@ pub fn seed_of(
         set = set.and(&holds).expect("and");
     }
 
+    // AND THE PURSE, where the layout carries one. A seed that left money free would start
+    // the search rich AND poor at once, which is the over-approximation that makes every
+    // price affordable down some path and undoes the whole of `affordable` - see de-95t6.
+    // Clamped like a slot: `DataLayout::money_ceiling` is built to be wide enough, and an
+    // empty seed would report nothing reachable at all.
+    if let Some(money) = vars.money_ops() {
+        let ceiling = money.register().ceiling();
+        let holds = money.equals((state.money().max(0) as u32).min(ceiling));
+        set = set.and(&holds).expect("and");
+    }
+
     set
 }
 
@@ -277,7 +288,12 @@ pub struct ReachabilityStats {
     /// Flattening the two into one word is how a gap in a table gets read as a finding
     /// (de-e33h), so they are separate fields and separate verdicts.
     pub out_of_system_memory: bool,
-    /// Cost checks that could not be decided because money is not in the layout.
+    /// Cost checks that could not be decided because THIS layout carries no balance.
+    ///
+    /// It carries one wherever the group reads money - see `DataLayout::money_ceiling` - so
+    /// a run over a real group with a priced option should report zero here. A number above
+    /// zero means the layout was built without money and every price was let through, which
+    /// is the over-approximation de-95t6 removed and not a property of the content.
     pub unaffordable_unknown: usize,
     /// Actions skipped because the layout does not carry what they touch.
     pub actions_ignored: usize,
@@ -860,11 +876,8 @@ impl<'a> Reachability<'a> {
 
         let mut current = states.clone();
 
-        // A cost paid once records that in its own slot. The money itself is not in the
-        // layout, so what is modelled is the RECORD of having paid - which is what stops
-        // a loop charging twice, and is the half that affects reachability.
-        if node.is_cost_option() && node.cost_once && node.once_slot >= 0 {
-            current = image.assign(&current, node.once_slot as usize, 1);
+        if node.is_cost_option() {
+            current = self.pay(node, &current, image);
         }
 
         if node.seen_slot >= 0 {
@@ -922,19 +935,86 @@ impl<'a> Reachability<'a> {
         }
     }
 
+    /// Paying this entry's price, and recording the payment where it is made only once.
+    ///
+    /// The states that have already paid keep their money and are left exactly as they
+    /// are; the rest hand over the price and come out with the slot raised. Splitting is
+    /// what makes the middle fixture of the money suite work: a search that checked a
+    /// price without subtracting what the path had already spent would mark an option
+    /// leading somewhere the player can no longer afford.
+    ///
+    /// Nothing here can go below zero, because [`Self::affordable`] has already removed
+    /// the states that could not pay.
+    fn pay(
+        &self,
+        node: &LookAheadNode,
+        states: &BDDFunction,
+        image: &mut ActionImage<'a>,
+    ) -> BDDFunction {
+        let price = node.cost.max(0) as u32;
+
+        // Payable every time, or with nowhere to record having paid: everyone pays.
+        let Some(paid) = self.already_paid(node) else {
+            return self.spend(states, price);
+        };
+
+        let spent = states.and(&paid).expect("and");
+        let fresh = states.and(&paid.not().expect("not")).expect("and");
+        let fresh = self.spend(&fresh, price);
+        let fresh = image.assign(&fresh, node.once_slot as usize, 1);
+
+        spent.or(&fresh).expect("or")
+    }
+
+    /// `money := money - amount`, where the layout carries money and otherwise nothing.
+    fn spend(&self, states: &BDDFunction, amount: u32) -> BDDFunction {
+        match self.vars.money_ops() {
+            Some(money) => money.saturating_sub(states, amount).expect("spending money"),
+            None => states.clone(),
+        }
+    }
+
     /// Which states can afford this node.
     ///
-    /// MONEY IS NOT IN THE LAYOUT, so for a node with a cost this cannot be decided, and
-    /// the permissive answer is the only safe one: refusing would prune a branch a richer
-    /// path opens, and this may only over-approximate. Counted rather than passed over
-    /// silently, because an affordability check that never refuses is a difference from
-    /// the explicit search that should be visible in the numbers.
+    /// The states holding at least the price, where the layout carries money - and every
+    /// state, counted as undecided, where it does not. A layout without money cannot refuse
+    /// anything, and the permissive answer is the only safe one there: refusing would prune
+    /// a branch a richer path opens, and this may only over-approximate.
+    ///
+    /// A COST CHARGED ONCE IS FREE THE SECOND TIME. Its once slot records that it has been
+    /// paid, and a state carrying that slot enters however empty the purse is - which is
+    /// the rule that lets a path come back through a shop door it has already paid at.
     fn affordable(&mut self, node: &LookAheadNode, states: &BDDFunction) -> BDDFunction {
-        if node.is_cost_option() {
-            self.stats.unaffordable_unknown += 1;
+        if !node.is_cost_option() {
+            return states.clone();
         }
 
-        states.clone()
+        let Some(money) = self.vars.money_ops() else {
+            self.stats.unaffordable_unknown += 1;
+            return states.clone();
+        };
+
+        let enough = states.and(&money.at_least(node.cost.max(0) as u32)).expect("and");
+
+        match self.already_paid(node) {
+            Some(paid) => {
+                let free = states.and(&paid).expect("and");
+                enough.or(&free).expect("or")
+            }
+            None => enough,
+        }
+    }
+
+    /// "This entry's price has already been paid", where it is one that is paid once.
+    ///
+    /// `None` where the question does not arise - an unpriced entry, a price payable every
+    /// time, or one with no slot to remember the payment in - so a caller can tell "no
+    /// state has paid" from "there is nothing to have paid".
+    fn already_paid(&self, node: &LookAheadNode) -> Option<BDDFunction> {
+        if !node.is_cost_option() || !node.cost_once {
+            return None;
+        }
+        self.flag(node.once_slot)
     }
 
     /// A slot's "is set" formula, for a slot number that may be -1 for "no slot".

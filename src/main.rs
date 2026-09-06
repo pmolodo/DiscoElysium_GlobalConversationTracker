@@ -135,7 +135,7 @@ fn branch_destinations(
     const COUNTER_CAP: i32 = 16;
 
     let symbols = graph.symbols().clone();
-    let layout = DataLayout::for_graph(graph, COUNTER_CAP, None, false);
+    let layout = DataLayout::for_group(graph, world, COUNTER_CAP);
     let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
     let mut compiler = GuardCompiler::new(&vars).with_world(world);
     let seed = seed_of(graph, world, &vars);

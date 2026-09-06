@@ -38,7 +38,7 @@ use crate::core::guard_value::{GuardValue, GuardValueKind};
 use crate::core::state::{ITEM_PREFIX, TASK_PREFIX, THOUGHT_PREFIX};
 use crate::core::types::{DialogueNodeId, Ternary};
 use crate::symbolic::vars::DataVars;
-use crate::world::world::ILookAheadWorld;
+use crate::world::world::{ILookAheadWorld, MONEY_QUERY};
 
 /// A guard as two sets of data states: where it may hold, and where it may fail.
 #[derive(Clone)]
@@ -692,7 +692,7 @@ impl<'a> GuardCompiler<'a> {
 
         let value = literal.try_as_number()?;
         match name.as_str() {
-            "MoneyAmount" => {
+            MONEY_QUERY => {
                 let ops = self.vars.money_ops()?;
                 let holds = ops.compare(op, value as i64)?;
                 Some(self.decided(holds))
@@ -835,7 +835,7 @@ impl<'a> GuardCompiler<'a> {
     /// from search state and so varies between states; anything else is answered by the
     /// world and is the same at every state.
     fn search_can_change(name: &str) -> bool {
-        matches!(name, "MoneyAmount")
+        matches!(name, MONEY_QUERY)
             || Self::slot_backed_query(name).is_some()
             || crate::core::clock::ClockTime::owns(name)
     }
@@ -993,7 +993,7 @@ impl<'a> GuardCompiler<'a> {
 
     /// Whether an expression is a call to `MoneyAmount`.
     fn names_money(expression: &GuardExpression) -> bool {
-        matches!(expression, GuardExpression::Call(name, _) if name == "MoneyAmount")
+        matches!(expression, GuardExpression::Call(name, _) if name == MONEY_QUERY)
     }
 
     /// What the world says an untracked variable is, as a condition.
