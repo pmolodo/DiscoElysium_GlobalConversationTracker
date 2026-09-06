@@ -41,6 +41,7 @@ use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
+use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::reachability::{seed_of, Budget, Reachability};
 use lookahead_engine::symbolic::vars::DataVars;
 
@@ -121,54 +122,47 @@ fn whether_the_variable_order_changes_what_a_search_costs() {
                 natural.clone().in_slot_order(&shuffled(slots, attempt as u64 * 0x9E37_79B9))
             };
 
-            // ONE THREAD PER ORDER, WITH A FAT STACK, and it is the DROP that needs it
-            // rather than the search. Releasing a large diagram walks it recursively
-            // (de-fpax), so five managers built and released in sequence on an ordinary
-            // stack overflowed on the second - after the first had already printed its row,
-            // which is exactly how that failure looks: a measurement that dies once it has
-            // said something plausible.
+            // ONE THREAD PER ORDER, and it is the DROP that needs it rather than the
+            // search. Releasing a large diagram walks it recursively (de-fpax), so five
+            // managers built and released in sequence on one thread overflowed on the
+            // second - after the first had already printed its row, which is exactly how
+            // that failure looks: a measurement that dies once it has said something
+            // plausible.
             //
-            // Scoped, so the graph and the world can be borrowed rather than cloned per
-            // order, and joined immediately so only one manager is ever alive.
-            let (held, largest, entries) = std::thread::scope(|scope| {
-                std::thread::Builder::new()
-                    .stack_size(512 * 1024 * 1024)
-                    .spawn_scoped(scope, || {
-                        let vars =
-                            DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
-                        let mut compiler = GuardCompiler::new(&vars)
-                            .with_world(&world)
-                            .with_constant_clock(passes_time);
-                        let seed = seed_of(&graph, &world, &vars);
+            // Scoped by the helper, so the graph and the world are borrowed rather than
+            // cloned per order, and joined before the next one starts so only ever one
+            // manager is alive.
+            let (held, largest, entries) = on_its_own_thread(|| {
+                let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
+                let mut compiler = GuardCompiler::new(&vars)
+                    .with_world(&world)
+                    .with_constant_clock(passes_time);
+                let seed = seed_of(&graph, &world, &vars);
 
-                        let budget = Budget {
-                            steps: STEPS,
-                            time: std::time::Duration::from_secs(600),
-                            memory: DiagramBudget::over_a_group().memory(),
-                            report_every: 20_000,
-                            report_gap: std::time::Duration::ZERO,
-                            check_gap: std::time::Duration::ZERO,
-                            on_progress: None,
-                            on_step: None,
-                            system_reserve: 0.0,
-                            halt_on: None,
-                        };
+                let budget = Budget {
+                    steps: STEPS,
+                    time: std::time::Duration::from_secs(600),
+                    memory: DiagramBudget::over_a_group().memory(),
+                    report_every: 20_000,
+                    report_gap: std::time::Duration::ZERO,
+                    check_gap: std::time::Duration::ZERO,
+                    on_progress: None,
+                    on_step: None,
+                    system_reserve: 0.0,
+                    halt_on: None,
+                };
 
-                        let found = Reachability::explore_within(
-                            &graph,
-                            start,
-                            &seed,
-                            &mut compiler,
-                            &world,
-                            COUNTER_CAP as u32,
-                            &budget,
-                        );
-                        let stats = found.stats();
-                        (vars.node_count(), stats.largest_set, stats.entries_reached)
-                    })
-                    .expect("a measurement thread")
-                    .join()
-                    .expect("the measurement thread")
+                let found = Reachability::explore_within(
+                    &graph,
+                    start,
+                    &seed,
+                    &mut compiler,
+                    &world,
+                    COUNTER_CAP as u32,
+                    &budget,
+                );
+                let stats = found.stats();
+                (vars.node_count(), stats.largest_set, stats.entries_reached)
             });
 
             println!(

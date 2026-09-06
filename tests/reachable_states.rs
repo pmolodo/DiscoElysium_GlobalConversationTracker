@@ -44,6 +44,7 @@ use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
+use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::reachability::{seed_of, Budget, Reachability};
 use lookahead_engine::symbolic::vars::DataVars;
 
@@ -128,59 +129,46 @@ fn whether_the_failing_group_reaches_more_states_or_just_holds_them_worse() {
             .keeping_only_read(&symbols, &DataLayout::read_by(&graph));
         let total_vars = layout.total_vars();
 
-        // A fat stack for the same reason tests/order_sensitivity.rs uses one: releasing a
-        // large diagram walks it recursively (de-fpax).
-        let row = std::thread::scope(|scope| {
-            std::thread::Builder::new()
-                .stack_size(512 * 1024 * 1024)
-                .spawn_scoped(scope, || {
-                    let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
-                    let mut compiler = GuardCompiler::new(&vars)
-                        .with_world(&world)
-                        .with_constant_clock(DataLayout::group_passes_time(&graph));
-                    let seed = seed_of(&graph, &world, &vars);
+        // A thread of its own for the same reason tests/order_sensitivity.rs takes one:
+        // releasing a large diagram walks it recursively (de-fpax).
+        let row = on_its_own_thread(|| {
+            let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
+            let mut compiler = GuardCompiler::new(&vars)
+                .with_world(&world)
+                .with_constant_clock(DataLayout::group_passes_time(&graph));
+            let seed = seed_of(&graph, &world, &vars);
 
-                    let budget = Budget {
-                        steps: STEPS,
-                        time: std::time::Duration::from_secs(600),
-                        memory: DiagramBudget::over_a_group().memory(),
-                        report_every: 20_000,
-                        report_gap: std::time::Duration::ZERO,
-                        check_gap: std::time::Duration::ZERO,
-                        on_progress: None,
-                        on_step: None,
-                        system_reserve: 0.0,
-                        halt_on: None,
-                    };
+            let budget = Budget {
+                steps: STEPS,
+                time: std::time::Duration::from_secs(600),
+                memory: DiagramBudget::over_a_group().memory(),
+                report_every: 20_000,
+                report_gap: std::time::Duration::ZERO,
+                check_gap: std::time::Duration::ZERO,
+                on_progress: None,
+                on_step: None,
+                system_reserve: 0.0,
+                halt_on: None,
+            };
 
-                    let found = Reachability::explore_within(
-                        &graph, start, &seed, &mut compiler, &world, COUNTER_CAP as u32,
-                        &budget,
-                    );
-                    let stats = found.stats();
+            let found = Reachability::explore_within(
+                &graph, start, &seed, &mut compiler, &world, COUNTER_CAP as u32, &budget,
+            );
+            let stats = found.stats();
 
-                    // THE LARGEST SINGLE SET, which is the one the file's own guidance says
-                    // to watch: a total over entries climbs merely because more entries have
-                    // a set, where the largest says whether the representation is failing.
-                    let mut cache: SatCountCache<Count, std::collections::hash_map::RandomState> =
-                        SatCountCache::default();
-                    let biggest = found
-                        .entries()
-                        .filter_map(|id| found.states_at(id))
-                        .max_by_key(|set| set.node_count())
-                        .map(|set| set.sat_count(total_vars, &mut cache).0)
-                        .unwrap_or(0.0);
+            // THE LARGEST SINGLE SET, which is the one the file's own guidance says to
+            // watch: a total over entries climbs merely because more entries have a set,
+            // where the largest says whether the representation is failing.
+            let mut cache: SatCountCache<Count, std::collections::hash_map::RandomState> =
+                SatCountCache::default();
+            let biggest = found
+                .entries()
+                .filter_map(|id| found.states_at(id))
+                .max_by_key(|set| set.node_count())
+                .map(|set| set.sat_count(total_vars, &mut cache).0)
+                .unwrap_or(0.0);
 
-                    (
-                        stats.entries_reached,
-                        vars.node_count(),
-                        stats.largest_set,
-                        biggest,
-                    )
-                })
-                .expect("a measurement thread")
-                .join()
-                .expect("the measurement thread")
+            (stats.entries_reached, vars.node_count(), stats.largest_set, biggest)
         });
 
         let (entries, held, largest, states) = row;
