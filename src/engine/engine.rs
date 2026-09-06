@@ -1,4 +1,6 @@
-use crate::core::types::{DialogueNodeId, Novelty, DialogueCheckKind, Ternary, LookAheadLimit};
+use crate::core::types::{
+    DialogueCheckKind, DialogueNodeId, LookAheadLimit, Novelty, StartBranch, Ternary,
+};
 use crate::core::state::LookAheadState;
 use crate::core::action::{CounterCaps, DialogueAction};
 use crate::graph::graph::LookAheadGraph;
@@ -231,38 +233,14 @@ fn room_for(
 /// much memory on one conversation as another for no reason anybody chose.
 pub const DEFAULT_MEMORY_BUDGET: usize = 256 * 1024 * 1024;
 
-/// Which outcome of a rolled start a crawl explores.
-///
-/// A white or red check is the one node that can be entered in two ways: the roll passes
-/// and its success flag is set, or it fails and - for a red check - its failure flag is.
-/// [`LookAheadEngine::enter_rolled`] builds both, in that order, and this picks between
-/// them.
-///
-/// WHY THE ORDER IS LOAD BEARING: `Pass` and `Fail` are positions in that vector, not a
-/// re-derivation of the roll. Anything that reorders `enter_rolled` has to reorder these
-/// with it, which is why they are defined next to each other in the same file.
-///
-/// A start that does not roll leaves exactly one state, and that state is its `Pass`; its
-/// `Fail` is empty, because there is no failure to explore. The bridge asks for branches
-/// only where the start is a white or red check, so that case is a definition rather than
-/// a situation - but it is the definition that keeps `Fail` from quietly meaning `Pass`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StartBranch {
-    /// Both, when the start rolls. What an ordinary crawl wants: the answer is the best
-    /// anything reachable can offer, and which side of a roll it lay on does not change it.
-    Either,
-
-    /// The roll passed.
-    Pass,
-
-    /// The roll failed. EMPTY WHERE THERE IS NO SUCH BRANCH - a red check with no failure
-    /// flag has nowhere to fail to, and the honest answer is that the crawl found nothing
-    /// rather than that it explored the pass branch twice.
-    Fail,
-}
-
 impl StartBranch {
     /// The states this branch keeps, out of everything entering the start produced.
+    ///
+    /// WHY THE ORDER IS LOAD BEARING HERE: `Pass` and `Fail` are positions in the vector
+    /// [`LookAheadEngine::enter_rolled`] builds, not a re-derivation of the roll, so
+    /// anything that reorders that has to reorder this with it. The enum itself lives in
+    /// `core::types` and means the ROLL - the symbolic search builds the two cases as
+    /// separate formulas and has no vector to index.
     fn take(self, entered: Vec<LookAheadState>) -> Vec<LookAheadState> {
         match self {
             StartBranch::Either => entered,

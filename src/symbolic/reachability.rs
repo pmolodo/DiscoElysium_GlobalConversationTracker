@@ -43,7 +43,7 @@ use std::collections::HashMap;
 use oxidd::bdd::BDDFunction;
 use oxidd::{BooleanFunction, Function};
 
-use crate::core::types::{DialogueCheckKind, DialogueNodeId, Ternary};
+use crate::core::types::{DialogueCheckKind, DialogueNodeId, StartBranch, Ternary};
 use crate::engine::engine::LookAheadEngine;
 use crate::graph::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
@@ -323,6 +323,32 @@ impl<'a> Reachability<'a> {
         Self::explore_knowing(graph, start, seed, compiler, world, counter_cap, budget, &order)
     }
 
+    /// The same, exploring ONE OUTCOME of a start that rolls.
+    ///
+    /// A white or red check is entered in two ways, and the mod draws its halves apart -
+    /// see [`StartBranch`] and de-8hh2.6. Everything after the start's own entry is
+    /// identical: the branch selects which of the two cases entering the check leaves, and
+    /// the search carries on from there knowing nothing about how it began.
+    ///
+    /// [`StartBranch::Either`] is the ordinary search and takes both, so
+    /// [`Self::explore_within`] is this with `Either` and no caller has to say so.
+    #[allow(clippy::too_many_arguments)]
+    pub fn explore_branch_within(
+        graph: &LookAheadGraph,
+        start: DialogueNodeId,
+        branch: StartBranch,
+        seed: &BDDFunction,
+        compiler: &mut GuardCompiler<'a>,
+        world: &dyn ILookAheadWorld,
+        counter_cap: u32,
+        budget: &Budget,
+    ) -> Self {
+        let order = IterationOrder::of(graph);
+        Self::explore_branch_knowing(
+            graph, start, branch, seed, compiler, world, counter_cap, budget, &order,
+        )
+    }
+
     /// The same, given an order worked out for this group already.
     ///
     /// For a caller that runs several searches over one graph: the order depends on nothing
@@ -341,6 +367,25 @@ impl<'a> Reachability<'a> {
         budget: &Budget,
         order: &IterationOrder,
     ) -> Self {
+        Self::explore_branch_knowing(
+            graph, start, StartBranch::Either, seed, compiler, world, counter_cap, budget,
+            order,
+        )
+    }
+
+    /// One outcome of a rolled start, given an order worked out for this group already.
+    #[allow(clippy::too_many_arguments)]
+    pub fn explore_branch_knowing(
+        graph: &LookAheadGraph,
+        start: DialogueNodeId,
+        branch: StartBranch,
+        seed: &BDDFunction,
+        compiler: &mut GuardCompiler<'a>,
+        world: &dyn ILookAheadWorld,
+        counter_cap: u32,
+        budget: &Budget,
+        order: &IterationOrder,
+    ) -> Self {
         let vars = compiler.vars();
         let mut image = ActionImage::new(vars, counter_cap);
         let mut this = Self {
@@ -350,9 +395,10 @@ impl<'a> Reachability<'a> {
         };
 
         // Entering the start node is a step like any other, so the seed is what arrives
-        // AT it rather than what leaves it.
+        // AT it rather than what leaves it - and where the start ROLLS, which of the two
+        // ways in this search is about.
         let Some(start_node) = graph.get(start) else { return this };
-        let entered = this.enter(start_node, seed, compiler, world, &mut image);
+        let entered = this.enter_branch(start_node, branch, seed, compiler, world, &mut image);
         if !entered.satisfiable() {
             return this;
         }
@@ -590,6 +636,58 @@ impl<'a> Reachability<'a> {
     /// Mirrors `LookAheadEngine::enter`, which is the requirement rather than a nicety: a
     /// symbolic search that disagrees with the explicit one is measuring a different
     /// question. Guard first, then affordability, then the node's kind.
+    /// Entering a node, keeping only one outcome where it rolls.
+    ///
+    /// ONLY THE START IS ENTERED THIS WAY. Every node the search walks ON to is entered
+    /// both ways, because a check met in the middle of a path can be passed or failed and
+    /// the search is asking what is reachable, not what one roll does. The branch is a fact
+    /// about the QUESTION - which half of the option the mod is drawing - and so belongs to
+    /// the one node the question is about.
+    fn enter_branch(
+        &mut self,
+        node: &LookAheadNode,
+        branch: StartBranch,
+        states: &BDDFunction,
+        compiler: &mut GuardCompiler<'a>,
+        world: &dyn ILookAheadWorld,
+        image: &mut ActionImage<'a>,
+    ) -> BDDFunction {
+        if branch == StartBranch::Either {
+            return self.enter(node, states, compiler, world, image);
+        }
+
+        let rolls = matches!(node.kind, DialogueCheckKind::Red | DialogueCheckKind::White);
+        if !rolls {
+            // A start that does not roll has one way in, and every branch names it - except
+            // `Fail`, which names a failure that does not exist. That is the definition
+            // that keeps a failing outcome from quietly exploring the passing one.
+            return match branch {
+                StartBranch::Fail => self.vars.bottom(),
+                _ => self.enter(node, states, compiler, world, image),
+            };
+        }
+
+        let allowed = {
+            let (may_be_true, _) = self.guard_of(node, compiler);
+            states.and(&may_be_true).expect("and")
+        };
+        if !allowed.satisfiable() {
+            return self.vars.bottom();
+        }
+
+        let allowed = self.affordable(node, &allowed);
+        if !allowed.satisfiable() {
+            return self.vars.bottom();
+        }
+
+        let (success, failure) = self.rolled_cases(node, &allowed, image);
+        match branch {
+            StartBranch::Pass => success,
+            StartBranch::Fail => failure,
+            StartBranch::Either => success.or(&failure).expect("or"),
+        }
+    }
+
     fn enter(
         &mut self,
         node: &LookAheadNode,
@@ -663,6 +761,22 @@ impl<'a> Reachability<'a> {
         states: &BDDFunction,
         image: &mut ActionImage<'a>,
     ) -> BDDFunction {
+        let (success, failure) = self.rolled_cases(node, states, image);
+        success.or(&failure).expect("or")
+    }
+
+    /// The two ways a roll can go, kept apart.
+    ///
+    /// ONE PLACE BUILDS BOTH, and [`Self::rolled`] unions them. A search about one outcome
+    /// takes one of them instead - see [`Self::enter_branch`] - and taking it here rather
+    /// than re-deriving the roll elsewhere is what keeps the two from drifting: a rule
+    /// added to the failing case reaches both callers at once.
+    fn rolled_cases(
+        &mut self,
+        node: &LookAheadNode,
+        states: &BDDFunction,
+        image: &mut ActionImage<'a>,
+    ) -> (BDDFunction, BDDFunction) {
         // A check already passed is closed, and one already failed is closed too - neither
         // kind can be retried once the roll has been recorded.
         let mut open = states.clone();
@@ -674,7 +788,7 @@ impl<'a> Reachability<'a> {
         }
 
         if !open.satisfiable() {
-            return self.vars.bottom();
+            return (self.vars.bottom(), self.vars.bottom());
         }
 
         let entered = self.charge(node, &open, image);
@@ -695,7 +809,7 @@ impl<'a> Reachability<'a> {
             self.vars.bottom()
         };
 
-        success.or(&failure).expect("or")
+        (success, failure)
     }
 
     /// Paying the cost, marking the entry seen, and applying its actions.
@@ -829,5 +943,92 @@ impl<'a> Reachability<'a> {
 
     pub fn stats(&self) -> &ReachabilityStats {
         &self.stats
+    }
+}
+
+#[cfg(test)]
+mod branch_tests {
+    use super::*;
+    use crate::core::guard_value::GuardValue;
+    use crate::symbolic::budget::DiagramBudget;
+    use crate::symbolic::data_layout::DataLayout;
+    use crate::symbolic::vars::DataVars;
+    use crate::test_graph::{node, Entry, GraphBuilder};
+    use crate::world::test_world::TestWorld;
+
+    const CAP: i32 = 16;
+
+    /// 0 is a white check. Passing opens 1 and 2 beyond it; failing opens 3.
+    fn check() -> LookAheadGraph {
+        GraphBuilder::new()
+            .add(Entry::new(0).kind(DialogueCheckKind::White).flag("roll").links(&[1, 3]))
+            .add(Entry::new(1).guard(r#"Variable["roll"] == true"#).links(&[2]))
+            .add(Entry::new(2))
+            .add(Entry::new(3).guard(r#"Variable["roll"] == false"#))
+            .build()
+    }
+
+    /// Which entries the search reached, from the given outcome of the start.
+    fn reached(graph: &LookAheadGraph, branch: StartBranch) -> Vec<i32> {
+        let world = TestWorld::new().set_variable("roll", GuardValue::from_boolean(false));
+        let symbols = graph.symbols().clone();
+        let layout = DataLayout::for_graph(graph, CAP, None, false);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
+        let mut compiler = GuardCompiler::new(&vars).with_world(&world);
+        let seed = seed_of(graph, &world, &vars);
+
+        let found = Reachability::explore_branch_within(
+            graph,
+            node(0),
+            branch,
+            &seed,
+            &mut compiler,
+            &world,
+            CAP as u32,
+            &Budget::default(),
+        );
+
+        let mut entries: Vec<i32> = found
+            .entries()
+            .filter(|id| {
+                found.states_at(*id).map(|states| states.satisfiable()).unwrap_or(false)
+            })
+            .map(|id| id.entry_id)
+            .collect();
+        entries.sort();
+        entries
+    }
+
+    /// The passing outcome walks the passing half, and only that half.
+    #[test]
+    fn passing_reaches_what_the_pass_flag_opens() {
+        assert_eq!(reached(&check(), StartBranch::Pass), vec![0, 1, 2]);
+    }
+
+    /// And the failing outcome the other, which is the whole point of asking twice.
+    #[test]
+    fn failing_reaches_what_the_pass_flag_shuts() {
+        assert_eq!(reached(&check(), StartBranch::Fail), vec![0, 3]);
+    }
+
+    /// An ordinary search takes both, which is what it did before there were branches.
+    #[test]
+    fn either_reaches_both_halves() {
+        assert_eq!(reached(&check(), StartBranch::Either), vec![0, 1, 2, 3]);
+    }
+
+    /// A start that does not roll has one way in, and `Fail` names a failure it has not got.
+    #[test]
+    fn a_start_that_does_not_roll_has_no_failing_outcome() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(Entry::new(1))
+            .build();
+
+        assert_eq!(reached(&graph, StartBranch::Pass), vec![0, 1]);
+        assert!(
+            reached(&graph, StartBranch::Fail).is_empty(),
+            "a failure that does not exist reaches nothing, rather than passing twice",
+        );
     }
 }

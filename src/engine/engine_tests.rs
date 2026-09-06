@@ -17,7 +17,8 @@ use std::time::Duration;
 
 use crate::core::guard_value::GuardValue;
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, LookAheadLimit, Novelty};
-use crate::engine::engine::{LookAheadEngine, LookAheadOptions, LookAheadResult, StartBranch};
+use crate::core::types::StartBranch;
+use crate::engine::engine::{LookAheadEngine, LookAheadOptions, LookAheadResult};
 use crate::graph::graph::LookAheadGraph;
 use crate::test_graph::{node, Entry, GraphBuilder};
 use crate::world::test_world::TestWorld;

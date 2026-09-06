@@ -9,7 +9,8 @@ use lookahead_engine::bridge::{
 use lookahead_engine::core::types::{DialogueNodeId, Novelty};
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::world::test_world::TestWorld;
-use lookahead_engine::engine::engine::{LookAheadEngine, LookAheadOptions, StartBranch};
+use lookahead_engine::core::types::StartBranch;
+use lookahead_engine::engine::engine::{LookAheadEngine, LookAheadOptions};
 
 #[derive(Parser, Debug)]
 #[command(name = "lookahead-offline")]

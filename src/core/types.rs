@@ -130,3 +130,35 @@ pub enum LookAheadLimit {
     /// covered.
     NoMemory = 4,
 }
+
+/// Which outcome of a rolled start a search explores.
+///
+/// A white or red check is the one node that can be entered in two ways: the roll passes
+/// and its success flag is set, or it fails and - for a red check - its failure flag is.
+/// A search told which of those it is exploring answers about that outcome alone, which is
+/// what lets the mod draw a check's two halves apart - see de-8hh2.6.
+///
+/// HERE RATHER THAN BESIDE ONE ENGINE, since 2026-09-06. It began as a crawl's parameter,
+/// where `Pass` and `Fail` were positions in the vector `enter_rolled` built. Both engines
+/// need it now, and neither owns it: the symbolic search builds the two cases as separate
+/// formulas rather than as a vector, so the meaning has to be the ROLL rather than an
+/// index into anything.
+///
+/// A start that does not roll leaves exactly one way in, and that way is its `Pass`; its
+/// `Fail` is empty, because there is no failure to explore. The bridge asks for branches
+/// only where the start is a white or red check, so that case is a definition rather than
+/// a situation - but it is the definition that keeps `Fail` from quietly meaning `Pass`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartBranch {
+    /// Both, when the start rolls. What an ordinary search wants: the answer is the best
+    /// anything reachable can offer, and which side of a roll it lay on does not change it.
+    Either,
+
+    /// The roll passed.
+    Pass,
+
+    /// The roll failed. EMPTY WHERE THERE IS NO SUCH BRANCH - a red check with no failure
+    /// flag has nowhere to fail to, and the honest answer is that the search found nothing
+    /// rather than that it explored the pass branch twice.
+    Fail,
+}
