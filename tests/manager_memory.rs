@@ -286,7 +286,6 @@ fn what_a_node_costs_once_the_table_has_grown() {
     let mut accumulated = manager.with_manager_shared(BDDFunction::f);
     let mut seed = 0x2545_F491_4F6C_DD1Du64;
     let mut last: Option<(usize, usize)> = None;
-    let mut marginal = 0.0f64;
     // EVERY reading, so the figure taken at the end is the MEDIAN rather than the last one.
     // The last is not safe to use: once the store is nearly full the manager starts
     // refusing and collecting, the node count goes DOWN between samples, and the marginal
@@ -299,7 +298,7 @@ fn what_a_node_costs_once_the_table_has_grown() {
         let total = live() - before;
         let grown = total - empty;
 
-        marginal = match last {
+        let marginal = match last {
             Some((was_held, was_total)) if held > was_held => {
                 let step = (total - was_total) as f64 / (held - was_held) as f64;
                 marginals.push(step);
@@ -326,7 +325,7 @@ fn what_a_node_costs_once_the_table_has_grown() {
 
     assert!(!marginals.is_empty(), "no sample grew the store, so nothing was measured");
     marginals.sort_by(|a, b| a.partial_cmp(b).expect("no NaN"));
-    marginal = marginals[marginals.len() / 2];
+    let marginal = marginals[marginals.len() / 2];
 
     let preallocated = empty as f64 / capacity as f64;
     let real = preallocated + marginal;

@@ -92,7 +92,6 @@ fn the_suite_still_asks_the_biggest_conversations() {
 fn the_engine_finds_nothing_either() {
     let Some(path) = common::conversation_index() else { return };
     let index = read_index(&path).expect("the index reads");
-    let world = common::measurement_save();
 
     let table = suites::table();
     let suite = table.suite(SUITE);

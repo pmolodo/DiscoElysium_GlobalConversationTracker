@@ -17,7 +17,7 @@ use std::collections::HashSet;
 use lookahead_engine::bridge::{
     answer, questions_for, LookAheadRequest, NodeRef, SnapshotWorld, WireValue, WorldSnapshot,
 };
-use lookahead_engine::core::types::{DialogueNodeId, Novelty};
+use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::index::{build_group_graph, read_index};
 
 mod common;

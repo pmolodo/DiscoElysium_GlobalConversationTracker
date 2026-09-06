@@ -51,12 +51,6 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
-use lookahead_engine::core::action::DialogueAction;
-use lookahead_engine::core::guard::GuardExpression;
-use lookahead_engine::core::state::StateSymbols;
-use lookahead_engine::core::types::{DialogueCheckKind, DialogueNodeId, Novelty};
-use lookahead_engine::graph::graph::LookAheadGraph;
-use lookahead_engine::graph::node::LookAheadNode;
 use lookahead_engine::symbolic::budget::DiagramBudget;
 
 /// An allocator with a HEAP CAP: it refuses once this binary's live bytes would pass one.
