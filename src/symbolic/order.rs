@@ -477,6 +477,8 @@ mod tests {
             .build();
 
         let order = IterationOrder::of(&graph);
+        assert_eq!(order.len(), graph.count(), "every entry is ranked");
+        assert!(!order.is_empty());
         assert_eq!(order.largest_component(), 2, "1 and 2 are one component");
         assert_eq!(order.components(), 3, "the start, the loop, and the tail");
 
@@ -596,8 +598,6 @@ mod tests {
         assert_eq!(queue.pop(), None);
     }
 
-    /// Every entry is ranked, and a rank is its component rather than its own position.
-    #[test]
     /// The guarantee, stated as it is stated on the type: across components, rank rises.
     #[test]
     fn a_link_between_components_always_climbs() {
