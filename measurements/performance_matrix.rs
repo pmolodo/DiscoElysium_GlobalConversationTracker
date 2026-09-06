@@ -509,9 +509,44 @@ fn engines() -> Vec<Engine> {
 
 fn conversations(default: &[i32]) -> Vec<i32> {
     match std::env::var("CONVERSATION") {
-        Ok(named) => named.split(',').filter_map(|id| id.trim().parse().ok()).collect(),
+        Ok(named) => named
+            .split(',')
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map(|id| {
+                id.parse().unwrap_or_else(|_| {
+                    refuse(&format!("CONVERSATION={id:?} is not a conversation id"))
+                })
+            })
+            .collect(),
         Err(_) => default.to_vec(),
     }
+}
+
+/// Stops the run, saying why, rather than measuring something nobody asked for.
+///
+/// ## Why this is worth an exit rather than a shrug
+///
+/// Both selections used to DROP what they did not recognise - an unparseable id fell out of
+/// a `filter_map`, an unknown label out of a `filter` - so a typo produced an empty
+/// selection, no rows, and a silent exit 0. `tools/measure-matrix.sh` decides a row crashed
+/// by the absence of a row line, so every row of a mistyped run came back CRASHED.
+///
+/// That is a FOURTH outcome landing in the most alarming of the three the matrix exists to
+/// keep apart - `no-room` and `CRASHED` are results, `NOT-MEASURED` is a run to repeat - and
+/// a full run is hours, so it would not be noticed until a TSV full of CRASHED was being
+/// read as a discovery about the search. See de-uxyw.
+///
+/// Exit 2 rather than a panic: a panic would print a backtrace into the row log and still
+/// leave the script guessing, where a named refusal on stderr is the whole message.
+fn refuse(why: &str) -> ! {
+    eprintln!("{why}");
+    eprintln!(
+        "profiles: {}",
+        PROFILES.iter().map(|p| p.label()).collect::<Vec<_>>().join(", "),
+    );
+    eprintln!("conversations: any group id the index carries, comma separated");
+    std::process::exit(2);
 }
 
 /// Which profiles this process should measure, by label.
@@ -526,13 +561,17 @@ fn conversations(default: &[i32]) -> Vec<i32> {
 /// script is what makes the results survivable.
 fn profiles() -> Vec<Profile> {
     match std::env::var("PROFILE") {
-        Ok(named) => {
-            let wanted: Vec<&str> = named.split(',').map(str::trim).collect();
-            PROFILES
-                .into_iter()
-                .filter(|profile| wanted.contains(&profile.label().as_str()))
-                .collect()
-        }
+        Ok(named) => named
+            .split(',')
+            .map(str::trim)
+            .filter(|label| !label.is_empty())
+            .map(|label| {
+                PROFILES
+                    .into_iter()
+                    .find(|profile| profile.label() == label)
+                    .unwrap_or_else(|| refuse(&format!("PROFILE={label:?} is not a profile")))
+            })
+            .collect(),
         Err(_) => PROFILES.to_vec(),
     }
 }
@@ -981,15 +1020,25 @@ fn main() {
     }
 
     for conversation in conversations(&HEAVIEST) {
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        // SAID OUT LOUD, all three of them. A conversation that yields no rows used to
+        // `continue` in silence, and silence is indistinguishable from a dead process to
+        // the script, which decides a row crashed by the absence of a row line. The row is
+        // still absent - there is genuinely nothing to measure - but the log now says which
+        // of the three reasons it was, rather than leaving CRASHED to be read as a finding.
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            eprintln!("conversation {conversation}: no group builds from it; no rows");
+            continue;
+        };
         let start = DialogueNodeId::new(conversation, 0);
         if graph.get(start).is_none() {
+            eprintln!("conversation {conversation}: the group has no entry 0; no rows");
             continue;
         }
 
         let symbols = graph.symbols().clone();
         let reachable = candidates(&graph, start);
         if reachable.is_empty() {
+            eprintln!("conversation {conversation}: nothing is reachable from its start; no rows");
             continue;
         }
 

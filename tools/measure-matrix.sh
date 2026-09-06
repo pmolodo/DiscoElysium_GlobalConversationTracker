@@ -274,7 +274,23 @@ for conversation in "${CONVERSATIONS[@]}"; do
                 { print > rowlog; fflush(rowlog) }
                 /^  ~/ { print; fflush() }
               ' || true
+        status=${PIPESTATUS[0]}
         printf '  %-12s' "$profile"
+
+        # EXIT 2 IS "YOU ASKED FOR SOMETHING THAT DOES NOT EXIST", and it stops the run.
+        #
+        # The measurement refuses an unknown profile or a conversation id that is not one,
+        # rather than quietly selecting nothing (de-uxyw). Without this the refusal looked
+        # exactly like a crash - no row line in the log - so a mistyped sixty-six row run
+        # produced sixty-six CRASHED rows and took its several seconds over each of them.
+        # There is nothing to measure and nothing to retry, so say what it said and stop.
+        if [ "$status" -eq 2 ]; then
+            echo "REFUSED"
+            sed 's/^/  /' "$log"
+            echo
+            echo "nothing was measured; fix the selection and run again" >&2
+            exit 2
+        fi
 
         row="$(grep -E "^$conversation\b" "$log" | head -1)"
         if [ -n "$row" ]; then
