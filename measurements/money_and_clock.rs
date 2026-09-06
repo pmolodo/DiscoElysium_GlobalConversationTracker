@@ -45,7 +45,47 @@ use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::symbolic::budget::DiagramBudget;
 
+#[path = "../tests/common/mod.rs"]
 mod common;
+
+/// FOUR STAGES OF ONE INVESTIGATION, run in order by default and singly by name.
+///
+/// They are not four separate measurements that happen to share a file. `touches` counts
+/// how much of a group is even about money, which is what says whether the two numbers
+/// after it mean anything; the compiler cost is the honest upper bound the search cost has
+/// to be read against; and the shipped figure is the same question asked of the layout the
+/// product actually builds. Reading any one alone invites the mistake the module note warns
+/// about - taking a cost for a verdict.
+///
+/// TWO OF THESE USED TO RUN IN EVERY `cargo test`. They were `#[test]` without `#[ignore]`,
+/// and neither asserts anything at all - four functions, zero assertions in the file - so
+/// the suite printed two tables nobody read and called them green. That is exactly the
+/// confusion de-18bo exists to end, which is why the whole file moved rather than being
+/// split: there was no test half to leave behind.
+///
+/// The heavy two are the ones `tools/measure-symbolic.sh` drives one conversation per
+/// process, by name.
+fn main() {
+    match std::env::args().nth(1).as_deref() {
+        None => {
+            how_much_of_the_measured_groups_is_about_money_or_the_clock();
+            what_the_registers_cost_the_guard_compiler();
+            what_money_and_the_clock_cost_the_encoding();
+            what_the_money_register_costs_as_shipped();
+        }
+        Some("touches") => how_much_of_the_measured_groups_is_about_money_or_the_clock(),
+        Some("compiler") => what_the_registers_cost_the_guard_compiler(),
+        Some("encoding") => what_money_and_the_clock_cost_the_encoding(),
+        Some("shipped") => what_the_money_register_costs_as_shipped(),
+        Some(other) => {
+            eprintln!(
+                "unknown stage {other:?}; expected touches, compiler, encoding or shipped, \
+                 or no argument at all to run the four in order"
+            );
+            std::process::exit(2);
+        }
+    }
+}
 
 /// The counter cap every symbolic measurement here uses.
 const COUNTER_CAP: i32 = 16;
@@ -121,7 +161,6 @@ fn touches(graph: &LookAheadGraph) -> Touches {
 /// the question is not a measurement of anything. The whole epic's warning is about
 /// content that compares a balance or a time, and it is worth knowing on the record how
 /// much of that there is.
-#[test]
 fn how_much_of_the_measured_groups_is_about_money_or_the_clock() {
     let Some(path) = common::conversation_index() else { return };
     let index = read_index(&path).expect("the index reads");
@@ -165,7 +204,6 @@ fn how_much_of_the_measured_groups_is_about_money_or_the_clock() {
 ///
 /// Compiling every guard in the group has no such escape. It is also the honest upper
 /// bound on what the registers cost, since no search compiles more than all of them.
-#[test]
 fn what_the_registers_cost_the_guard_compiler() {
     let Some(path) = common::conversation_index() else { return };
     let index = read_index(&path).expect("the index reads");
@@ -243,8 +281,6 @@ fn compile_every_guard(
 /// The cost is the difference. Everything else about the run is held identical - the same
 /// group, the same start, the same target, the same budget - so what moves is what the
 /// registers cost.
-#[test]
-#[ignore = "a measurement, not a test: tools/measure-symbolic.sh runs it one per process"]
 fn what_money_and_the_clock_cost_the_encoding() {
     let Some(path) = common::conversation_index() else { return };
     let index = read_index(&path).expect("the index reads");
@@ -319,8 +355,6 @@ fn what_money_and_the_clock_cost_the_encoding() {
 /// A GROUP THAT NEVER ASKS PAYS NOTHING, and the table has to show that rather than assume
 /// it: `money_ceiling` returns nothing where no option carries a price and no guard calls
 /// `MoneyAmount`, and such a group's two rows are identical by construction.
-#[test]
-#[ignore = "a measurement, not a test: tools/measure-symbolic.sh runs it one per process"]
 fn what_the_money_register_costs_as_shipped() {
     let Some(path) = common::conversation_index() else { return };
     let index = read_index(&path).expect("the index reads");

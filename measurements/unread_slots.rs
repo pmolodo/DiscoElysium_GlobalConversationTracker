@@ -13,7 +13,7 @@
 //!
 //! This measures the size of that, because it decides whether the trim is worth building.
 //!
-//! Run it with `--ignored --release`.
+//! Run it with `cargo run --release --example unread_slots`.
 
 use std::collections::HashSet;
 

@@ -12,20 +12,34 @@
 # it, so a crashed row can still be read afterwards - and so can the run before this one.
 #
 # Usage:
-#   tools/measure-symbolic.sh <test-name> [conversation ...]
+#   tools/measure-symbolic.sh <measurement> [stage] [conversation ...]
 #
 # Examples:
-#   tools/measure-symbolic.sh finding_one_unseen_entry_in_a_group_that_is_otherwise_seen
-#   tools/measure-symbolic.sh what_the_expensive_conversations_cost 631
-#   TEST_BINARY=backward_cost tools/measure-symbolic.sh what_one_backward_pass_costs
+#   tools/measure-symbolic.sh symbolic_answers
+#   tools/measure-symbolic.sh shared_symbolic 631
+#   tools/measure-symbolic.sh backward_support 368 631
+#   tools/measure-symbolic.sh money_and_clock shipped 28
+#
+# THE MEASUREMENT IS AN EXAMPLE under measurements/, named the way Cargo.toml names it.
+# It used to be a test NAME plus a TEST_BINARY saying which binary to find it in; an
+# example is its own binary, so the two collapsed into one argument. That pairing had also
+# gone stale - its documented default named a test file that no longer exists, so running
+# this with no arguments could not work at all.
+#
+# A measurement holding several stages behind one `main` - money_and_clock, layout_shape -
+# takes the stage name as a second argument. Anything that parses as a number is read as a
+# conversation, so the stage is optional and order still reads naturally.
 set -u
 
-TEST_NAME="${1:-finding_one_unseen_entry_in_a_group_that_is_otherwise_seen}"
+MEASUREMENT="${1:-symbolic_answers}"
 shift || true
 
-# Which test binary the named test lives in. There is more than one measurement now, and
-# they are not all in symbolic_reachability - the backward ones are in backward_cost.
-TEST_BINARY="${TEST_BINARY:-symbolic_reachability}"
+# An argument that is not a number is the stage to run; conversations are numbers.
+STAGE=""
+if [ $# -gt 0 ] && ! printf '%s' "$1" | grep -qE '^[0-9]+$'; then
+    STAGE="$1"
+    shift
+fi
 
 # The five groups that drive the cost, unless told otherwise.
 CONVERSATIONS=("$@")
@@ -38,24 +52,24 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # ONE FOLDER PER RUN, and under measurements/ rather than target/ - a `cargo clean` should
 # not take measurements with it, and a run's logs only mean anything as a set. LOG_DIR
 # still overrides the whole thing, which is what a one-off comparison wants.
+RUN_NAME="${MEASUREMENT}${STAGE:+-$STAGE}"
 LOG_DIR="${LOG_DIR:-$(RUN_LOG_DIR="$ROOT/measurements/logs" \
-    "$ROOT/tools/run-logged.sh" --folder-only measure "$TEST_NAME")}"
+    "$ROOT/tools/run-logged.sh" --folder-only measure "$RUN_NAME")}"
 mkdir -p "$LOG_DIR"
 
-echo "measuring ${TEST_NAME}, one process per conversation"
+echo "measuring ${RUN_NAME}, one process per conversation"
 echo "logs in ${LOG_DIR}"
 echo
 
 # Build once, so a compile does not get charged to the first conversation's timing.
-cargo build --release --tests --quiet || exit 1
+cargo build --release --example "${MEASUREMENT}" --quiet || exit 1
 
 for conversation in "${CONVERSATIONS[@]}"; do
-    log="${LOG_DIR}/${TEST_NAME}-${conversation}.log"
+    log="${LOG_DIR}/${RUN_NAME}-${conversation}.log"
     echo "=== conversation ${conversation} ==="
 
-    CONVERSATION="${conversation}" cargo test --release \
-        --test "${TEST_BINARY}" "${TEST_NAME}" \
-        -- --ignored --nocapture --test-threads=1 >"${log}" 2>&1
+    CONVERSATION="${conversation}" cargo run --release --quiet \
+        --example "${MEASUREMENT}" ${STAGE:+-- "$STAGE"} >"${log}" 2>&1
     status=$?
 
     # A crash is a data point, not a reason to stop. Report how it died and carry on.
@@ -65,7 +79,13 @@ for conversation in "${CONVERSATIONS[@]}"; do
     fi
 
     # The measurement's own rows, whatever happened after them.
-    grep -E "^ +[0-9]+ +[0-9]+|quarry|guards |\.\.\. " "${log}" | sed 's/^/  /'
+    #
+    # THE `===` HEADINGS COUNT AS ROWS. Several measurements say their finding on one -
+    # backward_support's is "worst target 1030:359, largest set 649 diagram nodes" - and
+    # without them a run of one of those printed nothing at all under the conversation it
+    # had just measured, which reads as a row that produced no output rather than one this
+    # summary does not know the shape of. The full log is still where everything is.
+    grep -E "^ +[0-9]+ +[0-9]+|^=== |quarry|guards |\.\.\. " "${log}" | sed 's/^/  /'
     echo
 done
 

@@ -38,6 +38,7 @@ use lookahead_engine::symbolic::vars::DataVars;
 use oxidd::{BooleanFunctionQuant, Function};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 
+#[path = "../tests/common/mod.rs"]
 mod common;
 
 const COUNTER_CAP: i32 = 16;
@@ -90,9 +91,7 @@ fn depths(graph: &LookAheadGraph, start: DialogueNodeId) -> HashMap<DialogueNode
     depth
 }
 
-#[test]
-#[ignore = "a measurement, not a test: tools/measure-symbolic.sh runs it one per process"]
-fn what_the_biggest_backward_sets_constrain() {
+fn main() {
     let Some(path) = common::conversation_index() else { return };
     let index = read_index(&path).expect("the index reads");
     let world = common::measurement_save();

@@ -52,6 +52,17 @@ every recorded TSV had nothing behind it except the newest one's.
 measurement it ran. It used to write under `target/`, where a `cargo clean` took the
 measurements with it.
 
+It runs a symbolic measurement ONE CONVERSATION PER PROCESS, which is what keeps a crash
+costing one row rather than every row after it:
+
+    tools/measure-symbolic.sh shared_symbolic 631
+    tools/measure-symbolic.sh backward_support 368 631
+    tools/measure-symbolic.sh money_and_clock shipped 28
+
+The first argument is the example's name. A measurement with several stages behind one
+`main` takes the stage second; anything that looks like a number is read as a conversation,
+so the stage can be left out.
+
 ## Why nothing here is committed
 
 The TSVs used to be, on the argument that the rows are small and worth diffing. They are

@@ -50,8 +50,17 @@ name = "symbolic_answers"
 path = "measurements/symbolic_answers.rs"
 
 [[example]]
+name = "backward_support"
+path = "measurements/backward_support.rs"
+
+[[example]]
 name = "guard_stack"
 path = "measurements/guard_stack.rs"
+
+# Four stages of one investigation behind one `main`, picked by name - see the note there.
+[[example]]
+name = "money_and_clock"
+path = "measurements/money_and_clock.rs"
 
 # Two measurements behind one `main`, picked by argument - see the note on `main` there.
 [[example]]
@@ -84,6 +93,10 @@ path = "measurements/requeue_shape.rs"
 [[example]]
 name = "search_residue"
 path = "measurements/search_residue.rs"
+
+[[example]]
+name = "shared_symbolic"
+path = "measurements/shared_symbolic.rs"
 
 [[example]]
 name = "unread_slots"

@@ -100,7 +100,7 @@
 //!
 //! So run this ONE CONVERSATION PER PROCESS, the way every other measurement here is run:
 //!
-//!     CONVERSATION=631 cargo test --release --test shared_symbolic -- --ignored --nocapture
+//!     CONVERSATION=631 cargo run --release --example shared_symbolic
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -117,6 +117,7 @@ use lookahead_engine::symbolic::reachability::{seed_of, Budget as ForwardBudget,
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::world::world::ILookAheadWorld;
 
+#[path = "../tests/common/mod.rs"]
 mod common;
 
 const COUNTER_CAP: i32 = 16;
@@ -345,9 +346,7 @@ fn novelty_of(unseen: &HashSet<DialogueNodeId>) -> impl Fn(DialogueNodeId) -> No
 }
 
 /// What sharing a partial forward run does to the backward driver.
-#[test]
-#[ignore = "a measurement, not a test: run it with --ignored --release"]
-fn what_sharing_a_forward_run_buys() {
+fn main() {
     let Some(path) = common::conversation_index() else { return };
     let index = read_index(&path).expect("the index reads");
     let world = common::measurement_save();
