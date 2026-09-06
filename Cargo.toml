@@ -66,6 +66,13 @@ path = "measurements/live_ranges.rs"
 name = "order_sensitivity"
 path = "measurements/order_sensitivity.rs"
 
+# Driven by tools/measure-matrix.sh, one row per process, for hours. Runnable by hand for
+# a single row: CONVERSATION=368 PROFILE=deepest-1 cargo run --release --example
+# performance_matrix
+[[example]]
+name = "performance_matrix"
+path = "measurements/performance_matrix.rs"
+
 [[example]]
 name = "reachable_states"
 path = "measurements/reachable_states.rs"

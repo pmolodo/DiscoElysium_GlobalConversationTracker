@@ -47,7 +47,7 @@ impl<'a> DataVars<'a> {
     ///
     /// A None is not a finding about anything being measured - the search never ran - so a
     /// caller should report the row as NOT MEASURED rather than folding it in with results.
-    /// See `tests/performance_matrix.rs`, which does.
+    /// See `measurements/performance_matrix.rs`, which does.
     ///
     /// [`Self::new`] stays for the many callers whose budget is a fixed small one chosen in
     /// the same file; there is nothing for them to react to.

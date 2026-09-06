@@ -230,14 +230,14 @@
 //! One conversation per process, because a diagram manager that runs out of nodes takes the
 //! whole process with it and a crash in the fourth row should not cost the other five:
 //!
-//!     CONVERSATION=368 cargo test --release --test performance_matrix -- --ignored --nocapture
+//!     CONVERSATION=368 cargo run --release --example performance_matrix
 //!
 //! `CONVERSATION`, `PROFILE` and `ENGINES` each narrow the grid, and all three take a
 //! comma-separated list. A third engine triples what a full run costs, so being able to
 //! ask one question of one group is not a convenience:
 //!
-//!     CONVERSATION=14 PROFILE=deepest-1 ENGINES=symbwd cargo test --release \
-//!         --test performance_matrix -- --ignored --nocapture
+//!     CONVERSATION=14 PROFILE=deepest-1 ENGINES=symbwd cargo run --release \
+//!         --example performance_matrix
 //!
 //! THE HEADER FOLLOWS THE SELECTION - a run that names one engine prints that engine's
 //! columns and no others, so a narrowed run is never a wide row with holes in it. Ask for
@@ -265,6 +265,7 @@ use lookahead_engine::symbolic::reachability::{seed_of, Budget, Reachability};
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::symbolic::budget::DiagramBudget;
 
+#[path = "../tests/common/mod.rs"]
 mod common;
 
 /// The six heaviest groups, 362 included.
@@ -950,9 +951,7 @@ fn symbolic_backward(
 /// The columns every row starts with, whichever engines ran.
 const ROW_COLUMNS: [&str; 4] = ["conv", "entries", "profile", "unseen"];
 
-#[test]
-#[ignore = "a long measurement, not a test: run it with --ignored --release"]
-fn every_engine_over_every_profile() {
+fn main() {
     let Some(path) = common::conversation_index() else { return };
     let engines = engines();
 

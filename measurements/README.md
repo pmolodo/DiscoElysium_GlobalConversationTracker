@@ -70,7 +70,7 @@ shape of the comparison, and it makes the question "against what?" impossible to
 | column | meaning |
 |---|---|
 | `conv`, `entries` | the conversation group and its size |
-| `profile` | how much of the group the profile has read (see `tests/performance_matrix.rs`) |
+| `profile` | how much of the group the profile has read (see `measurements/performance_matrix.rs`) |
 | `unseen` | how many entries that leaves unread |
 | `fwd_verdict` | `found`, `not-there`, `gave-up`, plus `no-room` when the diagram filled its budget and `no-ram` when the machine did |
 | `fwd_ms`, `fwd_nodes`, `fwd_setsum` | what it cost: manager nodes held, and the per-entry sets summed |

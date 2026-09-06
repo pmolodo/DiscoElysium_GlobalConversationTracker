@@ -23,13 +23,14 @@
 # ENGINES and PROFILES each take a comma or space separated list and narrow the grid the
 # same way the conversation arguments do. The engines are fwd (the symbolic forward
 # search), bwd (the backward one) and fwdbwd (the switching method the game actually runs:
-# a forward slice, then the backward driver told what it found) - see the note at the top
-# of tests/performance_matrix.rs for what each is and how to read an older run, whose
-# columns may spell two of these differently.
+# a forward slice, then the backward driver told what it found) - see the note at the
+# top of measurements/performance_matrix.rs for what each is and how to read an older
+# run, whose columns may spell two of these differently.
 #
-# STOPPING IT MID-RUN NEEDS MORE THAN KILLING THE SHELL. Every row is a fresh cargo and a
-# fresh test binary, so killing the terminal or the job leaves the script looping and
-# starting new ones - which then hold the test binary open and fail the next build with
+# STOPPING IT MID-RUN NEEDS MORE THAN KILLING THE SHELL. Every row is a fresh cargo and
+# a fresh measurement binary, so killing the terminal or the job leaves the script
+# looping and starting new ones - which then hold that binary open and fail the next
+# build with
 # LNK1104, from a run nobody thinks is still going. Kill by command line:
 #
 #   powershell -NoProfile -Command "Get-CimInstance Win32_Process |
@@ -67,9 +68,9 @@ fi
 # scrolled past an hour ago is not a warning.
 not_measured=0
 
-# Every profile the test knows, unless a run names the ones it wants. A single row is a
-# reasonable thing to ask for: the heavy groups spend the full cap per engine, so the
-# whole grid is hours and one question is often one row.
+# Every profile the measurement knows, unless a run names the ones it wants. A single
+# row is a reasonable thing to ask for: the heavy groups spend the full cap per engine,
+# so the whole grid is hours and one question is often one row.
 if [ -n "${PROFILES:-}" ]; then
     IFS=', ' read -r -a PROFILES <<< "$PROFILES"
 else
@@ -87,14 +88,14 @@ else
     )
 fi
 
-# WHICH ENGINES EACH ROW MEASURES, passed through to the test. Unset means all three -
-# fwd, bwd, fwdbwd - which is what the grid is for; naming one or two is how a question
+# WHICH ENGINES EACH ROW MEASURES, passed through to it. Unset means all three - fwd,
+# bwd, fwdbwd - which is what the grid is for; naming one or two is how a question
 # about a single engine gets asked without paying for the others.
 #
 #   ENGINES=bwd tools/measure-matrix.sh 14
 #
-# EXPORTED ONLY WHEN IT HAS A VALUE. The test reads an empty ENGINES as "all", so this is
-# belt and braces - but an empty selection exported into a measurement is the kind of thing
+# EXPORTED ONLY WHEN IT HAS A VALUE. It reads an empty ENGINES as "all", so this is belt
+# and braces - but an empty selection exported into a measurement is the kind of thing
 # that should not have two chances to mean nothing.
 if [ -n "${ENGINES:-}" ]; then
     export ENGINES
@@ -116,10 +117,10 @@ crashed_row() {
 }
 
 # THE CAP EACH ENGINE GETS, which the run needs a copy of to say anything about how long
-# it has left. The test's own default is ten minutes (DEFAULT_ROW_SECONDS in
-# tests/performance_matrix.rs); this passes whatever is set through unchanged, and EACH
-# ENGINE gets it separately, so a row's worst case is this times the number of engines
-# measured, plus the build and the index read.
+# it has left. The measurement's own default is ten minutes (DEFAULT_ROW_SECONDS in
+# measurements/performance_matrix.rs); this passes whatever is set through unchanged, and
+# EACH ENGINE gets it separately, so a row's worst case is this times the number of
+# engines measured, plus the build and the index read.
 ROW_SECONDS="${ROW_SECONDS:-600}"
 export ROW_SECONDS
 
@@ -193,17 +194,18 @@ progress() {
 # Built once, up front. Letting each row build would put a compile inside the timing of
 # whichever row happened to run first.
 echo "building..."
-cargo build --release --tests --manifest-path "$ROOT/Cargo.toml" >/dev/null 2>&1
+cargo build --release --example performance_matrix \
+    --manifest-path "$ROOT/Cargo.toml" >/dev/null 2>&1
 
 # ASKED FOR RATHER THAN WRITTEN DOWN. The column names follow the engine selection, and a
 # copy kept here would be wrong for any narrowed run and silently wrong for a renamed
 # column - which is the mistake de-zovl exists to correct, in the one place it would still
 # be possible to make.
-HEADER="$(HEADER_ONLY=1 cargo test --release --test performance_matrix \
-    --manifest-path "$ROOT/Cargo.toml" -- --ignored --nocapture 2>/dev/null \
+HEADER="$(HEADER_ONLY=1 cargo run --release --quiet --example performance_matrix \
+    --manifest-path "$ROOT/Cargo.toml" 2>/dev/null \
     | grep -m1 '^conv')"
 if [ -z "$HEADER" ]; then
-    echo "could not read the column names from the test - did the build fail?" >&2
+    echo "could not read the column names from the measurement - did the build fail?" >&2
     exit 1
 fi
 
@@ -232,6 +234,14 @@ for conversation in "${CONVERSATIONS[@]}"; do
         printf '  %-12s' "$profile"
         ROW_STARTED=$(date +%s)
 
+        # CREATED EMPTY FIRST, because a row can produce NO output at all and the awk below
+        # only creates the file on its first write. Under `cargo test` that could not happen
+        # - the test harness always printed something - but a `cargo run` that exits without
+        # printing leaves no log, and then the CRASHED message names a file that is not
+        # there and `grep` says so. An empty log is the honest artefact of a row that said
+        # nothing.
+        : > "$log"
+
         # THE ROW LOG GETS EVERYTHING; THE RUN LOG GETS THE PROGRESS LINES.
         #
         # A heavy row is half an hour inside one cargo invocation, and redirecting it
@@ -239,7 +249,7 @@ for conversation in "${CONVERSATIONS[@]}"; do
         # watched said nothing for half an hour while the interesting lines went somewhere
         # nobody was looking. Whether a row is watchable and whether its log is complete are
         # not the same question, so tee answers both: the file keeps the whole output, and
-        # only the lines the test marks with the progress prefix come through to stdout.
+        # only the lines the measurement marks with the progress prefix reach stdout.
         #
         # AWK RATHER THAN `tee | grep --line-buffered`, which does both jobs in one process
         # and flushes explicitly after every line it passes on.
@@ -258,9 +268,8 @@ for conversation in "${CONVERSATIONS[@]}"; do
         # because the alternative was proven guilty.
         printf '\n'
         CONVERSATION="$conversation" PROFILE="$profile" NO_HEADER=1 \
-            cargo test --release --test performance_matrix \
-            --manifest-path "$ROOT/Cargo.toml" \
-            -- --ignored --nocapture 2>&1 \
+            cargo run --release --quiet --example performance_matrix \
+            --manifest-path "$ROOT/Cargo.toml" 2>&1 \
             | awk -v rowlog="$log" '
                 { print > rowlog; fflush(rowlog) }
                 /^  ~/ { print; fflush() }
