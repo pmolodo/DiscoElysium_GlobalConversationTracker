@@ -140,7 +140,7 @@ impl IterationOrder {
         }
     }
 
-    /// The same, told where a crawl begins, so distances can be worked out.
+    /// The same, told where a search begins, so distances can be worked out.
     ///
     /// One BFS
     /// over the links on top of the Tarjan pass, and target-independent like everything else

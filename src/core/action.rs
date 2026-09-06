@@ -16,7 +16,7 @@ pub enum DialogueActionKind {
     /// Recognised, and deliberately doing nothing - see [`crate::core::modelling`].
     ///
     /// Applies exactly as `Unmodelled` does, which is the point: the difference between
-    /// the two is not what the crawl does with them but whether anybody has decided.
+    /// the two is not what the search does with them but whether anybody has decided.
     /// One is a stub somebody argued for; the other is a gap nobody has looked at.
     Declared = 6,
 }
@@ -39,7 +39,7 @@ pub struct DialogueAction {
 /// One knob with an override, rather than the C#'s two. There, `CounterCapForSlot`
 /// SUPPLANTS `CounterCap` instead of falling back to it - it is consulted for every slot
 /// once supplied - so a caller wanting to special-case one variable has to answer for all
-/// of them and re-state the default itself. The offline crawler duplicates the literal
+/// of them and re-state the default itself. The offline search duplicates the literal
 /// 16 to do it. Here the per-slot function answers `None` for anything it has no opinion
 /// about and the default applies, so there is one place the default lives.
 pub struct CounterCaps<'a> {
@@ -217,7 +217,7 @@ impl DialogueAction {
                         day_minutes = LookAheadState::wrap_minutes(day_minutes + action.value);
                     }
                 }
-                // Both write nothing, and for the same reason from the crawl's point of
+                // Both write nothing, and for the same reason from the search's point of
                 // view: there is no slot to put anything in. What separates them is
                 // whether that was decided or merely not yet looked at.
                 DialogueActionKind::Unmodelled | DialogueActionKind::Declared => {}

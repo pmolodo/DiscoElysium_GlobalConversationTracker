@@ -72,7 +72,7 @@ pub struct Suite {
 /// The mirror of the `inGame` key, and there for the same reason. An in-game run sees the
 /// handful of options a menu composed; this sees the conversation. Where a suite's real
 /// subject is a rule rather than a menu - "no option that is itself unread anywhere is ever
-/// crawled" - asking it of the whole group is the stronger form AND the honest one, since
+/// searched" - asking it of the whole group is the stronger form AND the honest one, since
 /// the menu-wide marker policies say nothing that can be checked without a menu.
 #[derive(Debug, Deserialize)]
 pub struct OfflineClaim {

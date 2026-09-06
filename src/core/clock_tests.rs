@@ -175,7 +175,7 @@ fn owns_claims_the_hour_queries() {
 
 /// The day questions are held apart from the hour ones, and the separation is the point.
 ///
-/// `owns` marks what a crawl's own `PassTime` can change, which is what makes holding the
+/// `owns` marks what a search's own `PassTime` can change, which is what makes holding the
 /// clock still an approximation. The day cannot change within a conversation at all, so
 /// these are exact - answered, but never through `owns`.
 #[test]

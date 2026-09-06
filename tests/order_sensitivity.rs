@@ -21,7 +21,7 @@
 //! tests/symbolic_compression.rs compares the natural order against its exact REVERSE and
 //! finds little difference. That is a weak probe of a space of n! orders: reversal mirrors
 //! the order, it does not rearrange it, so adjacent variables stay adjacent. It also
-//! measures a different object - a union of whole crawl states, entry included - where the
+//! measures a different object - a union of whole search states, entry included - where the
 //! fixed point keeps one set per entry with no entry variable at all.
 //!
 //! ## What this does instead

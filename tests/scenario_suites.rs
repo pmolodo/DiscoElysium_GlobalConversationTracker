@@ -46,7 +46,6 @@ use std::collections::HashSet;
 
 use lookahead_engine::bridge::{answer, LookAheadAnswer, LookAheadRequest, NodeRef, WorldSnapshot};
 use lookahead_engine::core::types::{DialogueNodeId, Novelty};
-use lookahead_engine::engine::engine::LookAheadEngine;
 use lookahead_engine::index::{build_group_graph, read_index};
 
 mod common;
@@ -165,7 +164,7 @@ fn stage(
                 // FROM THE SAVE, and the difference between a run and no run. An ordinary
                 // option is often guarded on a dialogue variable - 451:86 is guarded on
                 // whether Siileng has the sneakers to sell - and a world that cannot answer
-                // stops the crawl before it builds a state, so the option draws nothing
+                // stops the search before it builds a state, so the option draws nothing
                 // where the game draws a marker.
                 variables: fixtures::variables_in_save(&scenario.save),
                 ..Default::default()
@@ -312,8 +311,8 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
 /// abandoned - it did not finish in twenty minutes. THE REASON IS WORTH KEEPING: a rolled
 /// check reports its two outcomes even when the option itself is refused, and an outcome
 /// that lands on an entry THIS SAVE HAS READ has the bottom rung as its baseline, from
-/// where an unseen-this-game entry does outrank it. So the branch crawls run, in their
-/// hundreds, over the largest conversations in the game. Those crawls are correct and are
+/// where an unseen-this-game entry does outrank it. So the branch searches run, in their
+/// hundreds, over the largest conversations in the game. Those searches are correct and are
 /// not what these suites are about.
 #[test]
 fn every_offline_claim_holds_over_the_whole_group() {
@@ -429,8 +428,8 @@ fn every_offline_claim_holds_over_the_whole_group() {
                 // keeping: a rolled check reports its two outcomes even when the option is
                 // refused, and an outcome landing on an entry THIS SAVE HAS READ has the
                 // bottom rung as its baseline, from where an unseen-this-game entry does
-                // outrank it - so the branch crawls run, in their hundreds, over the
-                // largest conversations in the game. Those crawls are correct and are not
+                // outrank it - so the branch searches run, in their hundreds, over the
+                // largest conversations in the game. Those searches are correct and are not
                 // what this suite is about.
                 _ => about
                     .iter()
@@ -438,14 +437,12 @@ fn every_offline_claim_holds_over_the_whole_group() {
                         let id = DialogueNodeId::from(**node);
                         let own = staged.novelty(id);
                         own < Novelty::UnseenAnyGame
-                            && LookAheadEngine::reaches_potential_improvement(
-                                &staged.graph,
-                                id,
-                                own,
-                                |id| staged.novelty(id),
-                            )
+                            && staged
+                                .graph
+                                .best_linked_class(id, |id| staged.novelty(id))
+                                .is_some_and(|best| best > own)
                     })
-                    .map(|node| format!("{}:{} is still worth a crawl", node.conversation, node.entry))
+                    .map(|node| format!("{}:{} is still worth a search", node.conversation, node.entry))
                     .collect::<Vec<_>>(),
             };
 
@@ -465,7 +462,7 @@ fn every_offline_claim_holds_over_the_whole_group() {
 
     assert!(failures.is_empty(), "\n{}", failures.join("\n"));
     assert!(asked > 0, "{TABLE} makes no offline claim, so this checked nothing");
-    eprintln!("{asked} entries refused a crawl, as claimed");
+    eprintln!("{asked} entries refused a search, as claimed");
 }
 
 /// The definition names a marker the mod can draw, and says something in every suite.

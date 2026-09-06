@@ -48,26 +48,35 @@ shape of the comparison, and it makes the question "against what?" impossible to
 | `conv`, `entries` | the conversation group and its size |
 | `profile` | how much of the group the profile has read (see `tests/performance_matrix.rs`) |
 | `unseen` | how many entries that leaves unread |
-| `explicit_verdict` | `found`, `not-there`, or `gave-up` - the explicit crawl |
-| `explicit_ms`, `explicit_states` | what it cost |
-| `symfwd_verdict` | as above, plus `no-room` when the diagram filled its budget and `no-ram` when the machine did |
-| `symfwd_ms`, `symfwd_nodes`, `symfwd_setsum` | what it cost: manager nodes held, and the per-entry sets summed |
-| `symbwd_verdict` | as `symfwd`, except that there is no `no-ram`: its manager is allocated up front, so a machine that cannot supply the budget gives `NOT-MEASURED` before anything runs |
-| `symbwd_ms`, `symbwd_nodes` | what it cost |
-| `symbwd_asked`, `symbwd_cands` | candidates asked about, out of candidates waiting - one fixed point was paid per candidate asked |
+| `fwd_verdict` | `found`, `not-there`, `gave-up`, plus `no-room` when the diagram filled its budget and `no-ram` when the machine did |
+| `fwd_ms`, `fwd_nodes`, `fwd_setsum` | what it cost: manager nodes held, and the per-entry sets summed |
+| `bwd_verdict` | as `fwd`, except that there is no `no-ram`: its manager is allocated up front, so a machine that cannot supply the budget gives `NOT-MEASURED` before anything runs |
+| `bwd_ms`, `bwd_nodes` | what it cost |
+| `bwd_asked`, `bwd_cands` | candidates asked about, out of candidates waiting - one fixed point was paid per candidate asked |
+| `fwdbwd_verdict` | the same, for the switching method the game actually runs |
+| `fwdbwd_ms`, `fwdbwd_by`, `fwdbwd_asked` | what it cost, and which half answered - `Forwards` where the slice halted, `Backwards` where the driver settled, `Partly` where it did not and the answer is a lower bound |
 | any column `CRASHED` | that row took its process down; its log says how |
 | any column `NOT-MEASURED` | the row never ran; see below |
 
-### The columns are three engines, on two axes
+### The columns are two searches and the method that switches between them
 
-`explicit` is the crawl that is wired in today. `symfwd` and `symbwd` are both symbolic -
-a decision diagram per entry rather than a state at a time - and they differ in DIRECTION:
-`symfwd` walks links from the start, `symbwd` computes pre-images from a target, one
-candidate at a time, stopping at the first candidate proved reachable.
+`fwd` walks links from the start, a decision diagram per entry. `bwd` computes pre-images
+from a target, one candidate at a time, stopping at the first candidate proved reachable.
+`fwdbwd` is what the game actually runs: a forward slice hunting the best class anything
+reachable carries, and where that does not answer, the backward driver told what the slice
+found. The first two are its halves measured alone, which is what makes the third readable.
 
-A run whose columns are called `fwd` and `bwd` is from before de-zovl, and its `bwd` is
-`symfwd`: no backward search was measured. Two such runs can be compared with each other
-and neither says anything about backward.
+**READING AN OLDER RUN, and the names have moved twice.**
+
+| the columns say | what they were |
+|---|---|
+| `fwd`, `bwd`, `fwdbwd` | today's, all symbolic |
+| `explicit`, `symfwd`, `symbwd` | older names. `symfwd` is today's `fwd` and `symbwd` today's `bwd`; `explicit` measured a state-at-a-time search, which nothing measures now |
+| `fwd`, `bwd` and nothing else | older still. `fwd` is the state-at-a-time search and `bwd` is today's `fwd`; no backward search was measured at all |
+
+So a `fwd` column means opposite things at the two ends of that table, and the way to tell
+is what else is in the header. `tools/matrix-remaining.awk` decides it the same way when it
+reuses old rows as weights.
 
 Not every run holds all three. `ENGINES` narrows the selection and the header follows it,
 so a narrowed run is a narrower row rather than a wide one with holes; read the header

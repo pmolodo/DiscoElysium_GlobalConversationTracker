@@ -14,7 +14,7 @@ pub trait ILookAheadWorld: Send + Sync {
     fn day_counter(&self) -> i32;
     fn is_clock_locked(&self) -> bool;
     fn get_variable(&self, name: &str) -> GuardValue;
-    /// Whether the player holds an item WHEN THE CRAWL STARTS.
+    /// Whether the player holds an item WHEN THE SEARCH STARTS.
     ///
     /// Two callers, and the difference between them is the whole point of the name.
     ///
@@ -24,19 +24,19 @@ pub trait ILookAheadWorld: Send + Sync {
     ///   value and this is simply the answer.
     ///
     /// What it must never do is answer a guard about a TRACKED item. Once `GainItem` or
-    /// `LoseItem` has run, the truth is in the crawl's state and this is stale. The old
+    /// `LoseItem` has run, the truth is in the search's state and this is stale. The old
     /// name, `has_item`, read as the general question and invited exactly that: it
     /// returns a plain `bool`, so it looks authoritative everywhere. Using it for a
-    /// tracked item reports the starting inventory forever and the crawl stops seeing its
+    /// tracked item reports the starting inventory forever and the search stops seeing its
     /// own purchases.
     fn initially_has_item(&self, name: &str) -> bool;
 
-    /// Whether a journal task is active WHEN THE CRAWL STARTS.
+    /// Whether a journal task is active WHEN THE SEARCH STARTS.
     ///
     /// The same two callers and the same restriction as [`Self::initially_has_item`].
     fn initially_task_active(&self, name: &str) -> bool;
 
-    /// Whether a thought is in the cabinet WHEN THE CRAWL STARTS.
+    /// Whether a thought is in the cabinet WHEN THE SEARCH STARTS.
     ///
     /// What `IsTHCPresent` asks, and the same two callers again. GAINED, not
     /// internalised: see [`crate::core::state::THOUGHT_PREFIX`] for why those are
@@ -47,11 +47,11 @@ pub trait ILookAheadWorld: Send + Sync {
     fn is_seen(&self, node: DialogueNodeId) -> bool;
 }
 
-/// What a crawl consults that outlives any one state: the symbol table and the world.
+/// What a search consults that outlives any one state: the symbol table and the world.
 ///
 /// Deliberately holds NO state. An earlier version stored the state being evaluated and
 /// had a `bind` method, which cannot be made to typecheck: the stored reference took the
-/// same lifetime as the symbols and the world, so binding one of the crawl's own
+/// same lifetime as the symbols and the world, so binding one of the search's own
 /// short-lived states required it to outlive the whole search. Handing out a short-lived
 /// [`BoundContext`] instead lets each state be borrowed for exactly the guard evaluation
 /// that reads it, and leaves this shareable as `&CrawlContext`.
@@ -65,7 +65,7 @@ impl<'w> CrawlContext<'w> {
         Self { symbols, world }
     }
 
-    /// A view that answers guards from `state` where the crawl tracks a slot, and from
+    /// A view that answers guards from `state` where the search tracks a slot, and from
     /// the world otherwise.
     pub fn bound<'s>(&self, state: &'s LookAheadState) -> BoundContext<'s>
     where
@@ -92,7 +92,7 @@ impl BoundContext<'_> {
     /// A query about a named subject, answered from the slot that tracks it if there is
     /// one and from the world otherwise.
     ///
-    /// Shared by the three queries shaped this way. TRACKED means the crawl's own actions
+    /// Shared by the three queries shaped this way. TRACKED means the search's own actions
     /// have been moving it, so the state is the truth and the world is stale. UNTRACKED
     /// means no action in this group touches it, so its starting value is its only value
     /// and the world can simply be asked - falling through to `query` instead, which most
@@ -140,14 +140,14 @@ impl IGuardContext for BoundContext<'_> {
     }
 
     fn query(&self, name: &str, arguments: &[GuardValue]) -> GuardValue {
-        // Clock queries answered from crawl state
+        // Clock queries answered from search state
         if self.state.is_some() && ClockTime::owns(name) {
             let day_minutes = self.state.unwrap().day_minutes();
             let day_counter = self.world.day_counter();
             return ClockTime::answer(name, arguments, day_minutes, day_counter);
         }
 
-        // The day, which is not the clock. A crawl's `PassTime` moves the time of day and
+        // The day, which is not the clock. A search's `PassTime` moves the time of day and
         // never the day counter, so these need no state and are exact with or without
         // one. Answered here rather than by each world because they are a comparison
         // against `day_counter`, which the world already supplies - see
@@ -176,7 +176,7 @@ impl IGuardContext for BoundContext<'_> {
                     self.world.query(name, arguments)
                 }
             }
-            // The three questions the crawl's own actions can change the answer to:
+            // The three questions the search's own actions can change the answer to:
             // inventory, journal, thought cabinet. Each is answered from a slot where
             // this group moves the subject and from the world where it does not.
             "CheckItem" => {

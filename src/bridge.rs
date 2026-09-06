@@ -9,7 +9,7 @@
 //! ## Two calls, and why not one
 //!
 //! THE ENGINE ASKS THE QUESTIONS. [`questions_for`] walks a group's parsed guards and
-//! returns every question a crawl over it can ask - by the exact key the answer must come
+//! returns every question a search over it can ask - by the exact key the answer must come
 //! back under. The plugin then answers those keys and hands them over in
 //! [`LookAheadRequest`].
 //!
@@ -26,7 +26,7 @@
 //! ## The world crosses as a snapshot
 //!
 //! Not as callbacks. The C# already treats it that way - `GameLookAheadWorld` is built
-//! per response menu and caches each query for the life of the crawl - so nothing is lost,
+//! per response menu and caches each query for the life of the search - so nothing is lost,
 //! and what is gained is that no Rust frame ever calls back into managed code.
 //!
 //! Anything the plugin does not answer reads UNKNOWN, which is the permissive direction:
@@ -357,13 +357,13 @@ pub struct WorldSnapshot {
     /// The same answers, in the order [`Questions::queries`] listed the keys.
     #[serde(default)]
     pub query_values: Vec<WireValue>,
-    /// Items held when the crawl starts.
+    /// Items held when the search starts.
     #[serde(default)]
     pub items: HashSet<String>,
-    /// Journal tasks active when the crawl starts.
+    /// Journal tasks active when the search starts.
     #[serde(default)]
     pub tasks: HashSet<String>,
-    /// Thoughts in the cabinet when the crawl starts.
+    /// Thoughts in the cabinet when the search starts.
     #[serde(default)]
     pub thoughts: HashSet<String>,
     /// Entries whose skill check the plugin says PASSES.
@@ -538,7 +538,7 @@ pub fn query_key(name: &str, arguments: &[GuardValue]) -> String {
     format!("{name}({})", rendered.join(", "))
 }
 
-/// Everything a crawl over one group can ask the world.
+/// Everything a search over one group can ask the world.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Questions {
     /// The conversations the group covers, so the plugin knows what it committed to.
@@ -580,16 +580,16 @@ pub struct LookAheadRequest {
     /// the same 200,000 of them cost 136 MB in one conversation and 455 MB in another. What
     /// a player sets is memory and time.
     ///
-    /// It survives on the wire because it is the only limit that can stop a crawl BEFORE
+    /// It survives on the wire because it is the only limit that can stop a search BEFORE
     /// ITS FIRST EXPANSION, and the in-game suites need one that does. A suite that starves
-    /// a crawl is checking that giving up is distinguishable from finding nothing (de-pvq),
-    /// which needs the crawl to reliably not finish.
+    /// a search is checking that giving up is distinguishable from finding nothing (de-pvq),
+    /// which needs the search to reliably not finish.
     ///
     /// THE MEMORY BUDGET CANNOT DO THAT JOB, and measuring says why. It is checked when a
     /// node is dequeued, against what the frontier holds - which after seeding is one
     /// state. The ceiling fan's group, which is what the branch-shape scenarios stand in,
     /// carries TWELVE SLOTS: about 96 bytes a state, so a megabyte holds some eleven
-    /// thousand of them and the whole crawl is over long before the first check fires. A
+    /// thousand of them and the whole search is over long before the first check fires. A
     /// megabyte is the smallest a player can express, and it is four orders of magnitude
     /// too coarse. A state budget of one, by contrast, is compared against a frontier that
     /// already holds the seed, so it stops the search having looked at nothing.
@@ -618,7 +618,7 @@ pub struct LookAheadRequest {
     /// state carries one slot per tracked variable in its group, so a budget counted in
     /// states bought between 136 and 455 megabytes depending on which conversation the
     /// player was standing in - which is not a quantity anybody outside this repository
-    /// can set meaningfully. See de-e23q and tests/crawl_memory.rs.
+    /// can set meaningfully. See de-e23q.
     #[serde(default)]
     pub memory_budget_mb: usize,
 
@@ -629,14 +629,12 @@ impl LookAheadRequest {
     /// The engine options this request asks for.
     /// What the diagram manager may allocate, from the player's memory budget.
     ///
-    /// THE SAME NUMBER THE CRAWL WAS GIVEN, spent differently: it bought kept states, and
-    /// buys diagram nodes here. Asked for FALLIBLY at the other end - the manager
-    /// preallocates its node store and that allocation aborts rather than failing, so a
-    /// machine that cannot supply it must be found out about before it is spent. See
-    /// de-0a3a and `DataVars::try_new`.
+    /// Asked for FALLIBLY at the other end - the manager preallocates its node store and
+    /// that allocation aborts rather than failing, so a machine that cannot supply it must
+    /// be found out about before it is spent. See de-0a3a and `DataVars::try_new`.
     fn diagram_budget(&self) -> DiagramBudget {
         let bytes = if self.memory_budget_mb == 0 {
-            crate::engine::engine::LookAheadOptions::default().memory_budget
+            DiagramBudget::DEFAULT_MEMORY_BUDGET
         } else {
             self.memory_budget_mb * 1024 * 1024
         };
@@ -658,10 +656,9 @@ impl LookAheadRequest {
         // search give up on demand so the mod's uncertain marker can be checked. See
         // `Self::state_budget` and `tests/branch_shapes.rs`.
         //
-        // The crawl starved on kept states. This engine has none, so the same intent is
-        // spent on the rations it does have: at most that many candidates, and no time to
-        // finish one - which is what a search that cannot establish anything looks like
-        // from here. The number means "how little", exactly as it did.
+        // It is spent on the rations this engine has: at most that many candidates, and no
+        // time to finish one, which is what a search that cannot establish anything looks
+        // like from here. The number means "how little", and nothing else.
         if self.state_budget > 0 {
             return portfolio::Budget {
                 forwards: std::time::Duration::ZERO,
@@ -697,14 +694,14 @@ impl LookAheadRequest {
 /// to say so up front.
 ///
 /// WHY NOT ONE ANSWER WITH THE PAIR INSIDE IT, which is what this was. Because every rule
-/// about a start then needed a second, branch-shaped version of itself: "refuse a crawl
+/// about a start then needed a second, branch-shaped version of itself: "refuse a search
 /// that cannot improve on where this lands" had to be restated inside the branch code, and
 /// the top-rung guard that followed it was a separate fix rather than a consequence of the
 /// first. Two outcomes that ARE two starts get the rules once.
 ///
 /// It also fixes a smaller thing that was simply wrong: the combined answer reported ZERO
 /// states explored and zero entries reached for a rolled check, because the pair it was
-/// derived from carried no cost at all - so every crawl a check ran was invisible to the
+/// derived from carried no cost at all - so every search a check ran was invisible to the
 /// diagnostics. Each outcome now carries its own figures like any other start.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LookAheadAnswer {
@@ -725,7 +722,7 @@ pub struct LookAheadAnswer {
     /// THE SAME QUANTITY IN BOTH CASES, which is the point of flattening: for an ordinary
     /// option it is the option's own novelty, and for an outcome it is the best novelty
     /// among the entries that outcome leads to DIRECTLY. Either way it is the baseline a
-    /// crawl has to beat to be worth running, and the thing the mod colours the word by.
+    /// search has to beat to be worth running, and the thing the mod colours the word by.
     #[serde(default)]
     pub destination: i32,
     /// 0 seen, 1 unseen this game, 2 unseen in any game.
@@ -735,9 +732,9 @@ pub struct LookAheadAnswer {
     /// Whether the search settled. False means `best` is a lower bound.
     pub complete: bool,
     pub elapsed_ms: u64,
-    /// How many states the crawl explored.
+    /// How many states were enumerated.
     ///
-    /// Carried because the plugin's diagnostics are about what a crawl COSTS, and a time
+    /// Carried because the plugin's diagnostics are about what an ANSWER COSTS, and a time
     /// alone cannot say whether a menu was slow because the search was large or because
     /// the machine was busy. This is the number that is the same on both.
     #[serde(default)]
@@ -748,7 +745,7 @@ pub struct LookAheadAnswer {
     /// What stopped it: "none", "states" or "time".
     ///
     /// More than [`Self::complete`] says, and the difference is what a player tuning the
-    /// budgets needs: a crawl that ran out of STATES wants a bigger state budget, and one
+    /// budgets needs: a search that ran out of STATES wants a bigger state budget, and one
     /// that ran out of TIME on the same states wants a slower machine or a longer clock.
     /// A single "it gave up" cannot tell them which dial to turn.
     #[serde(default)]
@@ -766,15 +763,15 @@ pub const FAIL: &str = "fail";
 
 /// What one outcome is called on the wire.
 ///
-/// `Either` never reaches here: it is what an ordinary crawl asks for, and an ordinary
-/// crawl is the `None` case, which carries no branch name at all. Naming it would put a
+/// `Either` never reaches here: it is what an ordinary option asks for, and an ordinary
+/// option is the `None` case, which carries no branch name at all. Naming it would put a
 /// third value on the wire for a thing the mod does not draw.
 fn branch_name(branch: StartBranch) -> &'static str {
     match branch {
         StartBranch::Pass => PASS,
         StartBranch::Fail => FAIL,
         StartBranch::Either => {
-            unreachable!("an ordinary crawl is asked for with no branch, not with Either")
+            unreachable!("an ordinary option is asked for with no branch, not with Either")
         }
     }
 }
@@ -813,7 +810,7 @@ impl LookAheadResponse {
     }
 }
 
-/// Every question a crawl over `conversation`'s group can ask.
+/// Every question a search over `conversation`'s group can ask.
 pub fn questions_for(index: &Index, conversation: i32) -> Result<Questions, String> {
     let (graph, group) = build_group_graph(index, conversation)?;
     Ok(questions_of(&graph, group))
@@ -872,7 +869,7 @@ fn sorted(names: HashSet<String>) -> Vec<String> {
 /// Walks one guard, collecting what it asks the world.
 ///
 /// The three subject-taking queries are pulled out by subject rather than left as opaque
-/// calls, because the engine answers those from crawl state when the group moves them -
+/// calls, because the engine answers those from search state when the group moves them -
 /// `BoundContext::query` intercepts exactly these - and the plugin needs to supply the
 /// STARTING value for each, not an answer to the call.
 fn collect(
@@ -947,25 +944,20 @@ fn collect(
     }
 }
 
-/// Answers one request.
+/// Answers one request, from the symbolic portfolio.
 ///
-/// Runs the ordinary crawl rather than the symbolic portfolio.
-///
-/// THE CROSSING IS TRUSTED AS OF 2026-09-04, so that is no longer why. It was the original
-/// reason - the crawl is the engine both sides already agree about, so a wrong answer here
-/// was a marshalling bug rather than a question of which search was right - and the
-/// evidence has since accumulated: `tests/bridge_contract.rs` puts the same world through
-/// JSON and in-process and requires the identical crawl to agree, over real groups; the
+/// THE CROSSING IS TRUSTED, which is why the answer can be built here rather than checked
+/// against something simpler: `tests/bridge_contract.rs` puts one world through JSON and
+/// asks the same question without it, over real groups, and requires the same answer; the
 /// in-game suites check snapshot agreement per suite and report zero differences across
 /// variables, items, tasks, checks and entries; and the wire's shape is pinned by
 /// `tests/request_size.rs`.
 ///
-/// WHAT KEEPS THE PORTFOLIO OUT NOW IS THE PORTFOLIO, not the bridge, and none of it is
-/// about marshalling: the symbolic search is the engine with the unexplained stack overflow
-/// (de-fpax, de-8hh2.13), it commits its whole memory budget up front through an allocation
-/// that aborts rather than fails (de-0a3a), and on every profile a real save actually has it
-/// is slower than the crawl it would replace - so it needs the forward-or-backward heuristic
-/// (de-a1wb) before it is an improvement at all. See de-bnjy.2.
+/// TWO THINGS ABOUT THIS ENGINE ARE STILL OPEN, and a reader chasing a failure should know
+/// them: an unexplained stack overflow on some conversations (de-fpax, de-8hh2.13), and a
+/// manager that commits its whole memory budget up front through an allocation that aborts
+/// rather than fails - which is why [`DataVars::try_new`] is asked fallibly here (de-0a3a).
+/// Neither is about marshalling.
 ///
 /// `declared` is the database's variable table where it has been deployed beside the
 /// index; see [`SnapshotWorld`] for what it is for and what its absence costs.
@@ -1030,11 +1022,10 @@ pub fn answer(
 
 /// How high a counter is modelled before it saturates.
 ///
-/// THE CRAWL'S OWN CAP, and it has to be: the two engines answer the same question about
-/// the same save, and a counter that saturates at a different height in one of them is a
-/// different question. `LookAheadOptions::default().counter_cap` is where it comes from,
-/// and this is the value that has been measured everywhere - `tests/performance_matrix.rs`
-/// and the symbolic tests all use 16.
+/// SIXTEEN, AND EVERY MEASUREMENT IN THE REPOSITORY WAS MADE AT IT -
+/// `tests/performance_matrix.rs` and the symbolic tests all use this number. Changing it
+/// changes which states a search can tell apart, so a run measured under one cap says
+/// nothing about a search under another.
 const COUNTER_CAP: i32 = 16;
 
 /// The answers for one request, from inside the thread that owns the diagram.
@@ -1169,10 +1160,10 @@ where
         witness: witness.map(NodeRef::from),
         complete,
         elapsed_ms: began.elapsed().as_millis() as u64,
-        // A SET-BASED SEARCH DOES NOT ENUMERATE STATES, so the crawl's count of them has no
-        // successor here and is reported as the zero it is. What this search counts instead
-        // is candidates asked about, which is `nodes_reached`'s nearest true relative: the
-        // entries it had to consider before it could answer.
+        // A SET-BASED SEARCH DOES NOT ENUMERATE STATES, so a count of them is meaningless
+        // here and reported as the zero it is. What this search counts instead is candidates
+        // asked about, which is `nodes_reached`'s nearest true relative: the entries it had
+        // to consider before it could answer.
         states_explored: 0,
         nodes_reached: asked,
         stopped_by: stopped.to_string(),
@@ -1207,10 +1198,10 @@ where
 
 /// The name a stopped search crosses the wire under.
 ///
-/// THE WORDS ARE THE CRAWL'S, deliberately, because the C# side and the harness read them
+/// THE WORDS ARE THE WIRE'S, and they do not change, because the C# side and the harness read them
 /// and what they MEAN has not changed: a ration ran out, and which one decides whether a
 /// player can do anything about it. What has changed is which rations exist - a set-based
-/// search has candidates and a clock where the crawl had states and bytes.
+/// search has candidates and a clock where a state-at-a-time one would have states and bytes.
 fn stopped_name(stopped: novelty_search::StoppedBy) -> &'static str {
     match stopped {
         novelty_search::StoppedBy::Nothing => "none",
@@ -1233,10 +1224,10 @@ fn stopped_name(stopped: novelty_search::StoppedBy) -> &'static str {
 /// baseline - the outcome's own destinations, whose best class is what `destination` is -
 /// so scoring them can never manufacture an improvement, while an entry beyond them can.
 ///
-/// It walked from the CHECK until 2026-09-06, and over-approximated by doing so: the
-/// check's own class, and the other outcome's half of the graph, both counted. The first of
-/// those is not a safe over-approximation but a wrong answer waiting to happen - the check
-/// is the option the player is standing on, not somewhere passing leads.
+/// WALKING FROM THE CHECK INSTEAD would count the check's own class and the other
+/// outcome's half of the graph. The second is a safe over-approximation - it costs a search
+/// that finds nothing. The first is not: the check is the option the player is standing on,
+/// so counting it says passing leads somewhere it does not.
 ///
 /// THE ONE PLACE THE QUESTION IS ASKED, for an ordinary option and for each outcome of a
 /// rolled check alike. A search exists to find something that OUTRANKS a baseline: the
@@ -1244,11 +1235,11 @@ fn stopped_name(stopped: novelty_search::StoppedBy) -> &'static str {
 /// Both cases refuse for the same two reasons, in the same order, so neither can drift
 /// from the other and a rule added here reaches all three paths at once.
 ///
-/// ONE ANSWER RATHER THAN A YES OR NO, since 2026-09-06. It used to return whether a search
-/// was worth running, and the search then walked the same links again to decide which class
-/// to hunt - the same question twice per start, and once per outcome of every rolled check.
-/// The walk names the class, so the refusal and the target are one fact: `None` is the
-/// refusal, and anything else is what the forward slice is sent after.
+/// ONE ANSWER RATHER THAN A YES OR NO. A yes would have to be followed by the same walk
+/// again inside the search, to decide which class to hunt - the same question twice per
+/// start, and once per outcome of every rolled check. The walk names the class, so the
+/// refusal and the target are one fact: `None` is the refusal, and anything else is what
+/// the forward slice is sent after.
 ///
 /// NOTHING OUTRANKS THE TOP RUNG. Text no save has read is as novel as anything gets, so
 /// there is nothing for a search to find and the answer is settled without walking at all -
@@ -1328,7 +1319,7 @@ mod branch_wire_tests {
     ///
     /// 0 is the check. Passing opens 1, which this save has read, and 2 lies past it;
     /// failing opens 3. Nothing anywhere is unseen in any game, which is what makes the
-    /// OPTION not worth crawling while one of its OUTCOMES still is.
+    /// OPTION not worth searching while one of its OUTCOMES still is.
     fn check_landing_on_something_read() -> LookAheadGraph {
         GraphBuilder::new()
             .add(Entry::new(0).kind(DialogueCheckKind::White).flag("roll").links(&[1, 3]))
@@ -1343,7 +1334,7 @@ mod branch_wire_tests {
     /// THE BUG THE ONE-PLACE REFUSAL FIXED. "Nothing outranks the OPTION" and "nothing
     /// outranks where this OUTCOME lands" are different questions whenever an outcome
     /// lands lower than the option does, and the branches used to be handed the option's
-    /// answer. Here the option is unseen-this-game and nothing beats that, so no crawl
+    /// answer. Here the option is unseen-this-game and nothing beats that, so no search
     /// runs for it - but passing lands on text this save has READ, and the unread entry
     /// past it outranks that. The pass half has an asterisk to draw; it used to draw none.
     #[test]
@@ -1393,13 +1384,12 @@ mod branch_wire_tests {
         );
     }
 
-    /// THE REFUSAL KNOWS WHICH CLASS IT SAW, which it did not until 2026-09-06.
+    /// THE REFUSAL KNOWS WHICH CLASS IT SAW, and that is what the search after it needs.
     ///
     /// Same graph, same baseline, two novelty functions that differ only in the class the
-    /// reachable entry carries. The old walk stopped at the first entry beating the
-    /// baseline and could not tell these apart from each other; the answer here is the
-    /// same either way, and what changed is that the class is now available to the search
-    /// that follows - see `symbolic::portfolio`.
+    /// reachable entry carries. A walk that stopped at the first entry beating the baseline
+    /// would answer both the same way and name neither class - see `symbolic::portfolio`
+    /// for what the class is for.
     #[test]
     fn the_refusal_is_decided_by_the_best_class_reachable() {
         let graph = check_landing_on_something_read();
@@ -1614,7 +1604,7 @@ mod tests {
         assert_eq!(found.variables, vec!["jam.asked".to_string()]);
     }
 
-    /// The three the engine answers from crawl state are pulled out by SUBJECT, because
+    /// The three the engine answers from search state are pulled out by SUBJECT, because
     /// what the plugin must supply for them is a starting value rather than an answer.
     #[test]
     fn the_slot_backed_queries_are_asked_for_by_subject() {
@@ -1940,11 +1930,11 @@ mod tests {
     ///
     /// Load-bearing, because the marker comes from here rather than from the managed
     /// engine: a budget the plugin configured and this engine ignored would be a dial
-    /// connected to nothing, and the in-game suite that starves a crawl would stop
+    /// connected to nothing, and the in-game suite that starves a search would stop
     /// testing anything at all.
     ///
     /// The one place the two units meet, and a factor of a million is the kind of mistake
-    /// that turns a 256 MB allowance into a 256 byte one - which would stop every crawl
+    /// that turns a 256 MB allowance into a 256 byte one - which would stop every search
     /// instantly and look like the engine being broken rather than a unit being wrong.
     #[test]
     fn a_memory_budget_crosses_as_megabytes_and_arrives_as_bytes() {
@@ -1983,7 +1973,7 @@ mod tests {
 
         assert_eq!(
             request.diagram_budget().memory(),
-            crate::engine::engine::DEFAULT_MEMORY_BUDGET,
+            DiagramBudget::DEFAULT_MEMORY_BUDGET,
         );
         assert!(request.diagram_budget().memory() > 0, "the default turned the budget off");
     }
@@ -2031,8 +2021,10 @@ mod tests {
             world: WorldSnapshot::default(),
         };
 
-        let default = crate::engine::engine::LookAheadOptions::default();
-        assert_eq!(request.diagram_budget().memory(), default.memory_budget);
+        assert_eq!(
+            request.diagram_budget().memory(),
+            DiagramBudget::DEFAULT_MEMORY_BUDGET,
+        );
 
         // No number of the player's, so every part of the search keeps its own pacing.
         assert_eq!(request.search_budget().backwards, portfolio::Budget::default().backwards);

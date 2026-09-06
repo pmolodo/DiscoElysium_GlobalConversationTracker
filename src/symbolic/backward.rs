@@ -60,7 +60,7 @@
 //! ## What it is allowed to get wrong
 //!
 //! The same one-directional approximation as everything else symbolic here: guards come
-//! from `may_be_true`, so a state may be included that the real crawl could not reach the
+//! from `may_be_true`, so a state may be included that the real search could not reach the
 //! target from. What must never happen is the reverse - a state excluded that can. A
 //! backward NO against a forward YES is a bug in the pre-image, not an approximation, and
 //! `tests/backward_oracle.rs` exists to catch it.
@@ -326,11 +326,11 @@ impl<'a> Backward<'a> {
                 }
 
                 let Some(node) = graph.get(parent) else { continue };
-                // Entering the parent has to leave the crawl somewhere that can go on to
+                // Entering the parent has to leave the search somewhere that can go on to
                 // reach the target through this child.
                 let before = this.pre_enter(node, &delta, compiler, world, &mut image);
                 // NARROWED TO WHAT CAN ACTUALLY ARRIVE HERE, where a SETTLED forward run
-                // says. A state no crawl can hold at this entry cannot carry a path from
+                // says. A state no search can hold at this entry cannot carry a path from
                 // the seed to the target through it, so dropping it changes no answer and
                 // makes every set from here up smaller. `restricted` is the identity unless
                 // the forward run settled - a partial one may prove, never refuse.
@@ -433,7 +433,7 @@ impl<'a> Backward<'a> {
     /// The mirror of `Reachability::enter`, case for case. The requirement is not
     /// elegance but agreement: a backward pass that reads a node differently from the
     /// forward one is answering a different question, and the oracle test would catch it
-    /// as an unreachable entry the crawl walks to.
+    /// as an unreachable entry the search walks to.
     fn pre_enter(
         &mut self,
         node: &LookAheadNode,
@@ -674,7 +674,7 @@ impl<'a> Backward<'a> {
     /// The states from which ENTERING `node` goes on to reach the target.
     ///
     /// Before rather than after, which is what lets a query be answered without running
-    /// anything forwards: a crawl that begins by entering `node` holding the seed reaches
+    /// anything forwards: a search that begins by entering `node` holding the seed reaches
     /// the target exactly when the seed meets this set. An "after entering" set would
     /// need the seed pushed through that first entry by some other means, and the only
     /// thing that could do it is the forward search this exists to avoid.
@@ -682,10 +682,10 @@ impl<'a> Backward<'a> {
         self.sets.get(&node)
     }
 
-    /// Whether a crawl that starts by entering `node` in any state in `states` reaches
+    /// Whether a search that starts by entering `node` in any state in `states` reaches
     /// the target.
     ///
-    /// `states` is the SEED - what the crawl holds on arrival at `node`, before that
+    /// `states` is the SEED - what the search holds on arrival at `node`, before that
     /// node's own guard, cost or actions have been considered. `seed_of` produces one.
     pub fn reachable_from(&self, node: DialogueNodeId, states: &BDDFunction) -> bool {
         match self.sets.get(&node) {
@@ -882,8 +882,8 @@ mod tests {
                 Entry::new(2).guard(r#"Variable["count"] >= 3"#).links(&[3]),
                 Entry::new(3),
             ],
-            // Declared numeric, so the explicit crawl can decide the comparison too - see
-            // the note in `an_awkward_shape_reaches_everything_the_explicit_crawl_does`.
+            // Declared numeric, so a comparison against the slot's bits is decidable - see
+            // the note on `Reachability`'s guard compilation, which decides it the same way.
             &TestWorld::new().set_variable("count", GuardValue::from_number(0.0)),
             3,
             false,
@@ -980,7 +980,7 @@ mod tests {
     /// one records anything or not.
     ///
     /// Here entry 3 is guarded on the failure flag, so it is reachable ONLY down the
-    /// failing branch and only if that branch writes the flag. de-1uy8: the crawl and the
+    /// failing branch and only if that branch writes the flag. de-1uy8: the search and the
     /// forward fixed point started recording it in b15b1aa and the pre-image did not, so
     /// the two engines disagreed about exactly this entry - forward yes, backward no,
     /// which is the direction that loses a marker.
@@ -1020,88 +1020,10 @@ mod tests {
         );
     }
 
-    /// The awkward shape, against the EXPLICIT crawl rather than against the forward
-    /// symbolic search.
-    ///
-    /// Everything else here compares the two symbolic searches, which share their
-    /// approximations and so cannot catch one. This asks the engine the plugin actually
-    /// runs, over the shape that has caught the most bugs in this file: a cycle, a once
-    /// action inside it, a counter, and a threshold on the counter.
-    ///
-    /// Containment rather than equality, and in one direction only. The symbolic side may
-    /// reach more - it does here, because de-sze.15 lets the once action fire every time
-    /// round - and a surplus costs precision. Reaching LESS would cost a marker.
-    #[test]
-    fn an_awkward_shape_reaches_everything_the_explicit_crawl_does() {
-        use crate::engine::engine::{LookAheadEngine, LookAheadOptions};
-        use crate::core::types::Novelty;
-        use std::collections::HashSet;
-        use std::sync::{Arc, Mutex};
-
-        let graph = GraphBuilder::new()
-            .add(Entry::new(0).links(&[1]))
-            // A cycle that counts, with the increment marked once.
-            .add(
-                Entry::new(1)
-                    .script(r#"SetVariableValue("count", Variable["count"] +once(1))"#)
-                    .links(&[1, 2, 4]),
-            )
-            // A threshold only a repeated increment could pass.
-            .add(Entry::new(2).guard(r#"Variable["count"] >= 2"#).links(&[3]))
-            .add(Entry::new(3))
-            // And a branch behind a flag the cycle never sets, which nothing can open.
-            .add(Entry::new(4).guard(r#"Variable["locked"]"#).links(&[5]))
-            .add(Entry::new(5))
-            .build();
-        let symbols = graph.symbols().clone();
-        // `count` is declared a NUMBER, and it has to be. The explicit engine reads a
-        // tracked slot back through the world's idea of its type - see
-        // `BoundContext::get_variable` - so a counter the world has never heard of comes
-        // back as a boolean, `try_as_number` refuses it, and `count >= 2` is undecidable
-        // and therefore permissive. The symbolic side compiles the same comparison against
-        // the slot's bits and decides it. Without this line the two disagree about the
-        // fixture rather than about the once slot, which is what this test is for.
-        // de-sze.5.4 is the real fix: the index does not carry declared types yet.
-        let world = TestWorld::new()
-            .set_variable("locked", GuardValue::from_boolean(false))
-            .set_variable("count", GuardValue::from_number(0.0));
-
-        let walked: Arc<Mutex<HashSet<DialogueNodeId>>> = Arc::default();
-        let sink = Arc::clone(&walked);
-        let engine = LookAheadEngine::new(LookAheadOptions {
-            state_sample_interval: 1,
-            counter_cap: CAP,
-            on_state_reached: Some(Box::new(move |id, _state, _count| {
-                sink.lock().expect("the sink").insert(id);
-            })),
-            ..Default::default()
-        });
-        let result = engine.evaluate(&graph, node(0), &world, |_| Novelty::SeenThisGame);
-        assert!(!result.budget_exhausted(), "the fixture should be exhaustible");
-        let walked = walked.lock().expect("the sink").clone();
-
-        let layout = DataLayout::for_graph(&graph, CAP, None, false);
-        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
-        let mut compiler = GuardCompiler::new(&vars).with_world(&world);
-        let seed = seed_of(&graph, &world, &vars);
-
-        for id in graph.nodes().map(|n| n.id).collect::<Vec<_>>() {
-            let backward = Backward::reaching(&graph, id, &mut compiler, &world, CAP as u32);
-            let says = backward.reachable_from(node(0), &seed);
-            if walked.contains(&id) {
-                assert!(says, "the crawl walked to {id} and the backward pass refused it");
-            }
-        }
-
-        // The locked branch is out of reach both ways, which is what stops this test
-        // passing vacuously by calling everything reachable.
-        assert!(!walked.contains(&node(5)));
-        let backward = Backward::reaching(&graph, node(5), &mut compiler, &world, CAP as u32);
-        assert!(
-            !backward.reachable_from(node(0), &seed),
-            "a branch behind a guard nothing sets should be out of reach",
-        );
-    }
+    // NOTHING HERE IS AN INDEPENDENT ORACLE. Every test in this file compares the backward
+    // search against the forward one, and they share a layout, a guard compiler and three
+    // deliberate approximations - so a fault in any of those is invisible to all of them.
+    // de-eonm is what to do about that.
 
     /// What the module claims about pruning, asserted rather than described.
     ///

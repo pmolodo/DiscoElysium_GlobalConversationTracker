@@ -33,12 +33,12 @@
 //!
 //! ## What is still not covered, and is not pretended to be
 //!
-//! - THE STATE ITSELF. The crawl's frontier now GROWS FALLIBLY - see `room_for` - so the
+//! - THE STATE ITSELF. The search's frontier now GROWS FALLIBLY - see `room_for` - so the
 //!   two collections that hold every state it has seen report instead of aborting. What
 //!   they hold does not: a `StateKey` keeps its slots on the heap, and cloning one
 //!   allocates infallibly like anything else. The collections are where the memory goes and
 //!   where the failing ask happens, so this converts the realistic case rather than making
-//!   the crawl allocation-safe.
+//!   the search allocation-safe.
 //! - THE STACK. A deep recursion overflows a guard page and aborts, and that is uncatchable
 //!   too - see de-fpax, which is a real occurrence rather than a worry. A heap cap says
 //!   nothing about it.
@@ -188,7 +188,7 @@ static ALLOCATOR: Capped = Capped;
 /// FOUR MEGABYTES, and the number is a compromise with one job on each side. It has to be
 /// big enough that libtest, the panic machinery and the formatting of a failure message all
 /// still work while the cap is on - a test that ran out of memory while reporting that
-/// something ran out of memory would be a poor joke. It has to be small enough that a crawl
+/// something ran out of memory would be a poor joke. It has to be small enough that a search
 /// reaches it in a moment rather than after filling the machine.
 const HEADROOM: usize = 4 * 1024 * 1024;
 
@@ -290,253 +290,9 @@ fn a_budget_the_machine_can_meet_is_not_refused() {
     );
 }
 
-/// A graph built to blow up, so the failure can be provoked at a size a test can afford.
-///
-/// ## Why synthetic
-///
-/// Every memory measurement in this repository runs on real conversation groups, so the
-/// failure is only ever observed where the shipped content happens to reach it - and a test
-/// that needs six gigabytes to be interesting is a test nobody runs. A graph built to branch
-/// is bounded by what the test asks for rather than by what the database contains.
-///
-/// ## The shape
-///
-/// A binary tree of `depth` levels: every node links to two children, and every node is
-/// unseen, so nothing prunes and the frontier doubles per level. `2^depth - 1` nodes, and a
-/// crawl that walks all of them.
-fn branching(depth: u32) -> LookAheadGraph {
-    let symbols = StateSymbols::new();
-    let mut nodes = Vec::new();
-
-    let count = (1u32 << depth) - 1;
-    for id in 0..count {
-        // The heap of a binary tree: the children of `id` are `2id + 1` and `2id + 2`, and
-        // a node whose children fall past the end is a leaf.
-        let links: Vec<DialogueNodeId> = [2 * id + 1, 2 * id + 2]
-            .into_iter()
-            .filter(|child| *child < count)
-            .map(|child| DialogueNodeId::new(1, child as i32))
-            .collect();
-
-        nodes.push(LookAheadNode::new(
-            DialogueNodeId::new(1, id as i32),
-            false,
-            DialogueCheckKind::None,
-            GuardExpression::always_true(),
-            Vec::<DialogueAction>::new(),
-            links,
-            0,
-            false,
-            false,
-            -1,
-            -1,
-            false,
-            -1,
-        ));
-    }
-
-    LookAheadGraph::new(nodes, symbols).expect("a binary tree is a graph")
-}
-
-/// A crawl over a graph built to branch ends with a verdict, not with a dead process.
-///
-/// ## What this covers that the tests above do not
-///
-/// Those are about the SYMBOLIC side, where the whole allowance is reserved up front and
-/// can therefore be asked about. This is the forward crawl, which has no such reservation:
-/// it grows its frontier a state at a time and is stopped by the budget the caller set. What
-/// can be checked of it is that the budget is honoured and reported - that a search too big
-/// for its allowance comes back saying so.
-///
-/// It is NOT a test that the crawl survives the machine running out; see the note at the top
-/// of this file. Nothing here makes that true, and pretending otherwise with a passing test
-/// would be worse than the gap.
-#[test]
-fn a_crawl_too_big_for_its_budget_says_so_instead_of_dying() {
-    use lookahead_engine::engine::engine::{LookAheadEngine, LookAheadOptions};
-    use lookahead_engine::world::test_world::TestWorld;
-
-    // Building 65,535 nodes is itself a large allocation, so this waits its turn like the
-    // rest - a tree built while another test has the allocator armed would be refused, and
-    // a Vec's growth is not fallible.
-    let _alone = alone();
-
-    // Sixteen levels is 65,535 nodes, which builds in well under a second and is far more
-    // than the budget below allows the search to hold.
-    let graph = branching(16);
-    let world = TestWorld::new();
-
-    let engine = LookAheadEngine::new(LookAheadOptions {
-        // A budget that stops the search early, so the reported outcome is the budget's.
-        memory_budget: 64 * 1024,
-        ..Default::default()
-    });
-
-    let result = engine.evaluate(
-        &graph,
-        DialogueNodeId::new(1, 0),
-        &world,
-        // NOTHING IS SEEN, so nothing prunes and the search has every reason to keep going.
-        |_| Novelty::UnseenThisGame,
-    );
-
-    assert!(
-        result.budget_exhausted(),
-        "a 65,535 node tree fitted in 64 KB, so this measured nothing; the budget or the \
-         tree needs to move",
-    );
-
-    // The assertion that matters is that there is a `result` to read at all - the process
-    // is here, the search reported, and the caller can decide what to draw.
-    println!(
-        "{} states over {} entries, stopped by {:?}",
-        result.states_explored, result.nodes_reached, result.stopped_by,
-    );
-}
-
-/// And a crawl the ALLOCATOR refuses says so, rather than taking the process with it.
-///
-/// ## The difference from the test above
-///
-/// That one is about the budget the CALLER set: the search behaved and reported. This is
-/// the allocator saying no inside a budget the search had not reached, which is a fact
-/// about the machine and not about the algorithm - and which, until the frontier grew
-/// fallibly, was not a report at all. `HashSet::insert` and `VecDeque::push_back` reach
-/// `handle_alloc_error` when they cannot grow, and that ABORTS: no panic to catch, no
-/// result to read, and inside the game, no session.
-///
-/// ## Why the two verdicts are kept apart
-///
-/// They want opposite responses. `Memory` says a player who wants more markers can raise
-/// their budget; `NoMemory` says the budget is not the problem and the machine had nothing
-/// to give. A single "it gave up" cannot tell them which.
-#[test]
-fn a_crawl_the_allocator_refuses_reports_it_rather_than_aborting() {
-    use lookahead_engine::core::types::LookAheadLimit;
-    use lookahead_engine::engine::engine::{LookAheadEngine, LookAheadOptions};
-    use lookahead_engine::world::test_world::TestWorld;
-
-    let _alone = alone();
-
-    // BIG ENOUGH TO OUTGROW THE CAP, which is the whole design of this test: the frontier
-    // has to pass HEADROOM while the SAME crawl, uncapped, still finishes in a moment - so
-    // that the refusal is demonstrably the cap's and not the graph's. Sixteen levels is
-    // 65,535 states, several megabytes of frontier, and under a second uncapped.
-    let graph = branching(16);
-    let world = TestWorld::new();
-
-    let engine = LookAheadEngine::new(LookAheadOptions {
-        // NO BUDGET THAT CAN FIRE FIRST, so nothing but the allocator stops it. A budget
-        // that fired would make this a slower copy of the test above.
-        memory_budget: usize::MAX,
-        state_budget: usize::MAX,
-        time_budget: std::time::Duration::ZERO,
-        ..Default::default()
-    });
-
-    let (result, refusals) = under_a_heap_cap(|| {
-        engine.evaluate(
-            &graph,
-            DialogueNodeId::new(1, 0),
-            &world,
-            |_| Novelty::UnseenThisGame,
-        )
-    });
-
-    assert!(refusals > 0, "the frontier never grew past the threshold, so nothing was refused");
-    assert_eq!(
-        result.stopped_by,
-        LookAheadLimit::NoMemory,
-        "the allocator refused and the crawl reported {:?}",
-        result.stopped_by,
-    );
-    assert!(
-        result.budget_exhausted(),
-        "a refused crawl has to read as unfinished, or its answer is taken as settled",
-    );
-
-    // Unarmed, the same crawl finishes - which is what says the refusal was the
-    // allocator's and not a property of this graph.
-    let finished = engine.evaluate(
-        &graph,
-        DialogueNodeId::new(1, 0),
-        &world,
-        |_| Novelty::UnseenThisGame,
-    );
-    assert_eq!(finished.stopped_by, LookAheadLimit::None);
-}
-
-/// A crawl gives up before it takes the last of the MACHINE'S memory.
-///
-/// ## Why this is a separate guard from every other limit
-///
-/// Because the others are promises about the search and this is a promise about the box. A
-/// 256 MB budget is honoured perfectly on a machine with 100 MB free, right up to the
-/// allocation that ends the process - and the step before that is worse, because a process
-/// that takes a machine to its last page makes everything on it wait on a disk, this game
-/// included.
-///
-/// ## How it is provoked without provoking it
-///
-/// THE RESERVE IS THE DIAL, so a test turns it up instead of filling memory. Asking a crawl
-/// to leave 99.9% of the machine alone means the machine is already below its reserve
-/// before the first state, and the guard fires immediately - the same code path a full
-/// machine would take, on a machine that is not full. Nothing here allocates anything
-/// unusual, and nothing on the system is disturbed.
-#[test]
-fn a_crawl_leaves_the_machine_something_and_says_when_it_cannot() {
-    use lookahead_engine::core::types::LookAheadLimit;
-    use lookahead_engine::engine::engine::{LookAheadEngine, LookAheadOptions};
-    use lookahead_engine::engine::system_memory;
-    use lookahead_engine::world::test_world::TestWorld;
-
-    let _alone = alone();
-
-    if system_memory::read().is_none() {
-        eprintln!("this platform cannot be asked what it has; the reserve is off. Skipping.");
-        return;
-    }
-
-    let graph = branching(12);
-    let world = TestWorld::new();
-    let start = DialogueNodeId::new(1, 0);
-    let unseen = |_: DialogueNodeId| Novelty::UnseenThisGame;
-
-    let starved = LookAheadEngine::new(LookAheadOptions {
-        memory_budget: usize::MAX,
-        state_budget: usize::MAX,
-        time_budget: std::time::Duration::ZERO,
-        // Leave the machine 99.9% of itself, which no machine running this has spare.
-        system_reserve: 0.999,
-        // Read on every state, so the verdict lands on the first one rather than after a
-        // runway's worth. The cadence is what the reserve is measured through, not part of
-        // what it means.
-        system_check_interval: 1,
-        ..Default::default()
-    });
-
-    let result = starved.evaluate(&graph, start, &world, unseen);
-    assert_eq!(
-        result.stopped_by,
-        LookAheadLimit::NoMemory,
-        "a crawl told to leave the whole machine alone reported {:?}",
-        result.stopped_by,
-    );
-
-    // AND THE DEFAULT LETS IT RUN, which is the half that says the guard is a guard rather
-    // than a switch that turns the feature off. A twentieth of a machine that is running a
-    // test suite is spare, or the suite would not be running.
-    let ordinary = LookAheadEngine::new(LookAheadOptions {
-        memory_budget: usize::MAX,
-        state_budget: usize::MAX,
-        time_budget: std::time::Duration::ZERO,
-        ..Default::default()
-    });
-
-    let finished = ordinary.evaluate(&graph, start, &world, unseen);
-    assert_eq!(
-        finished.stopped_by,
-        LookAheadLimit::None,
-        "the default reserve stopped an ordinary crawl on a machine with room",
-    );
-}
+// WHAT IS NOT COVERED HERE: a search that runs out of room mid-flight, as against one
+// that is refused the room up front. The manager preallocates, so the abort this file is
+// about can only happen at construction - DiagramBudget::can_be_supplied reserves the same
+// bytes fallibly first, and the tests above are that claim. A search that spends its
+// allowance while running reports it as a verdict instead, which is
+// symbolic::reachability's business rather than this file's.

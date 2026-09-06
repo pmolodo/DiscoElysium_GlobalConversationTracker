@@ -6,11 +6,10 @@ use clap::Parser;
 use lookahead_engine::bridge::{
     answer, LookAheadAnswer, LookAheadRequest, NodeRef, WorldSnapshot,
 };
-use lookahead_engine::core::types::{DialogueNodeId, Novelty};
+use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::world::test_world::TestWorld;
 use lookahead_engine::core::types::StartBranch;
-use lookahead_engine::engine::engine::{LookAheadEngine, LookAheadOptions};
 
 #[derive(Parser, Debug)]
 #[command(name = "lookahead-offline")]
@@ -61,7 +60,7 @@ struct Args {
     #[arg(long)]
     clock_locked: bool,
 
-    /// Report where each outcome of this entry's roll leads, and crawl nothing.
+    /// Report where each outcome of this entry's roll leads, and search nothing.
     ///
     /// What an in-game fixture needs and cannot read off the index by hand: both
     /// branches of a check link into the same group, and which of its children are
@@ -115,6 +114,38 @@ fn half(branch: &LookAheadAnswer) -> String {
     format!("{}{}", rung(branch.destination), asterisk)
 }
 
+/// The entries one outcome of a rolled start opens, guards and costs considered.
+///
+/// See `novelty_search::Where::destinations`, which is what does the work. Built here
+/// rather than exposed from the bridge because this is a tool's convenience: the bridge
+/// computes the same set for its baseline and does not need to hand it out.
+fn branch_destinations(
+    graph: &lookahead_engine::graph::graph::LookAheadGraph,
+    world: &TestWorld,
+    start: DialogueNodeId,
+    branch: StartBranch,
+) -> Vec<DialogueNodeId> {
+    use lookahead_engine::symbolic::budget::DiagramBudget;
+    use lookahead_engine::symbolic::data_layout::DataLayout;
+    use lookahead_engine::symbolic::guard_formula::GuardCompiler;
+    use lookahead_engine::symbolic::novelty_search::Where;
+    use lookahead_engine::symbolic::reachability::seed_of;
+    use lookahead_engine::symbolic::vars::DataVars;
+
+    const COUNTER_CAP: i32 = 16;
+
+    let symbols = graph.symbols().clone();
+    let layout = DataLayout::for_graph(graph, COUNTER_CAP, None, false);
+    let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
+    let mut compiler = GuardCompiler::new(&vars).with_world(world);
+    let seed = seed_of(graph, world, &vars);
+
+    let from = Where::of(
+        graph, start, branch, &seed, &mut compiler, world, COUNTER_CAP as u32,
+    );
+    from.destinations(graph, &mut compiler, world, COUNTER_CAP as u32)
+}
+
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
@@ -122,7 +153,7 @@ fn main() -> anyhow::Result<()> {
 
     // The whole reachable GROUP, not the one conversation. Links cross conversation
     // boundaries, and clipping at the boundary would throw away most of the region a
-    // crawl can actually walk - crawling from WHIRLING / LENA INTRO's 511 entries
+    // search can actually walk - searching from WHIRLING / LENA INTRO's 511 entries
     // reaches 1,844 nodes across three conversations.
     let (graph, group) = build_group_graph(&index, args.conversation_id)
         .map_err(anyhow::Error::msg)?;
@@ -138,23 +169,10 @@ fn main() -> anyhow::Result<()> {
         .with_day_counter(args.day_counter)
         .with_clock_locked(args.clock_locked);
 
-    // Run look-ahead on each option node (non-group, has outgoing links)
-    let default_options = LookAheadOptions::default();
-    let engine = LookAheadEngine::new(LookAheadOptions {
-        memory_budget: if args.memory_budget_mb == 0 {
-            default_options.memory_budget
-        } else {
-            args.memory_budget_mb * 1024 * 1024
-        },
-        time_budget: std::time::Duration::from_millis(args.time_budget_ms),
-        collect_trace: args.trace,
-        ..Default::default()
-    });
-
     if let Some(entry_id) = args.branches_of {
         let start = DialogueNodeId::new(args.conversation_id, entry_id);
         for branch in [StartBranch::Pass, StartBranch::Fail] {
-            let destinations = engine.branch_destinations(&graph, start, &world, branch);
+            let destinations = branch_destinations(&graph, &world, start, branch);
             let names: Vec<String> =
                 destinations.iter().map(|id| format!("{}", id)).collect();
             println!(
@@ -224,80 +242,78 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let mut results = Vec::new();
-    let mut skipped = 0usize;
-
-    // Simplified novelty: unseen if not in the conversation being crawled.
-    let novelty = |id: DialogueNodeId| {
-        if id.conversation_id == args.conversation_id {
-            Novelty::SeenThisGame
-        } else {
-            Novelty::UnseenAnyGame
-        }
-    };
-
-    for node in graph.nodes() {
-        if node.is_group || node.links.is_empty() {
-            continue; // Skip groups and terminal nodes
-        }
-
-        // The same question the plugin asks before it builds any crawl state, asked here
-        // for the same reason: if nothing outranks this option, no walk can produce a
-        // marker. Asking it keeps this tool and the game agreeing about which options are
-        // worth crawling - without it the tool reports crawls, and costs, that the game
-        // never pays.
-        //
-        // Asked of what this option can REACH rather than of the whole loaded group. A
-        // group runs to 16,558 entries while a start reaches 1,144 on average, so the
-        // group version answers yes for a great many options whose own corner of the
-        // graph holds nothing worth finding.
-        if !LookAheadEngine::reaches_potential_improvement(
-            &graph,
-            node.id,
-            novelty(node.id),
-            novelty,
-        ) {
-            skipped += 1;
-            continue;
-        }
-
-        let result = engine.evaluate(&graph, node.id, &world, novelty);
-        results.push((node.id, result));
-    }
+    // THE SAME CALL THE MOD MAKES, for every option at once. This loop used to build its
+    // own engine, ask its own refusal question and read its own result type, which meant a
+    // tool that could disagree with the game about which options are worth searching and
+    // what one costs. `answer` is what the game asks, so what comes out here is what a
+    // player would see.
+    //
+    // Simplified novelty: unseen if not in the conversation being asked about.
+    let mut starts: Vec<NodeRef> = graph
+        .nodes()
+        .filter(|node| !node.is_group && !node.links.is_empty())
+        .map(|node| NodeRef {
+            conversation: node.id.conversation_id,
+            entry: node.id.entry_id,
+        })
+        .collect();
 
     // The graph holds its nodes in a hash map, so iteration order varies between runs.
-    // Sort before reporting: this is a tool whose output people diff against a previous
-    // run, and a shuffled list would look like a change every time.
-    results.sort_by_key(|(id, _)| (id.conversation_id, id.entry_id));
-    eprintln!(
-        "{} option(s) crawled, {} skipped with no novelty headroom",
-        results.len(),
-        skipped
+    // Sort before asking: this is a tool whose output people diff against a previous run,
+    // and a shuffled list would look like a change every time.
+    starts.sort_by_key(|start| (start.conversation, start.entry));
+
+    let unseen: HashSet<NodeRef> = graph
+        .nodes()
+        .filter(|node| node.id.conversation_id != args.conversation_id)
+        .map(|node| NodeRef {
+            conversation: node.id.conversation_id,
+            entry: node.id.entry_id,
+        })
+        .collect();
+
+    let response = answer(
+        &index,
+        None,
+        &LookAheadRequest {
+            conversation: args.conversation_id,
+            starts,
+            unseen_any_game: unseen.into_iter().collect(),
+            unseen_this_game: Default::default(),
+            state_budget: 0,
+            time_budget_ms: args.time_budget_ms,
+            memory_budget_mb: args.memory_budget_mb,
+            world: WorldSnapshot::default(),
+        },
     );
 
-    // Output
+    if let Some(error) = &response.error {
+        anyhow::bail!("{error}");
+    }
+
+    let settled = response.answers.iter().filter(|a| a.complete).count();
+    eprintln!(
+        "{} answer(s), {} settled",
+        response.answers.len(),
+        settled,
+    );
+
     if args.json {
-        let output: Vec<serde_json::Value> = results.iter().map(|(id, r)| {
-            serde_json::json!({
-                "node": format!("{}", id),
-                "best": format!("{:?}", r.best),
-                "states_explored": r.states_explored,
-                "nodes_reached": r.nodes_reached,
-                "budget_exhausted": r.budget_exhausted(),
-                "stopped_by": format!("{:?}", r.stopped_by),
-            })
-        }).collect();
-        println!("{}", serde_json::to_string_pretty(&output)?);
+        println!("{}", serde_json::to_string_pretty(&response.answers)?);
     } else {
-        for (id, result) in results {
-            println!("{} -> {}", id, result);
-            if args.trace {
-                if let Some(trace) = &result.trace {
-                    for h in &trace.hottest_nodes {
-                        println!("  {}", h);
-                    }
-                }
-            }
+        for answer in &response.answers {
+            println!(
+                "{}:{}{} -> best {}, {}{}",
+                answer.start.conversation,
+                answer.start.entry,
+                answer.branch.as_deref().map(|b| format!(" ({b})")).unwrap_or_default(),
+                answer.best,
+                if answer.complete { "settled" } else { "a lower bound" },
+                answer
+                    .witness
+                    .map(|w| format!(", proved by {}:{}", w.conversation, w.entry))
+                    .unwrap_or_default(),
+            );
         }
     }
 

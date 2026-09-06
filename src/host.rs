@@ -85,7 +85,7 @@ pub enum Request {
     ConversationHash { conversation: i32 },
     /// What version the open index says it is; 0 where it has no header.
     IndexFormat,
-    /// Every question a crawl over one conversation's group can ask.
+    /// Every question a search over one conversation's group can ask.
     Questions { conversation: i32 },
     /// Answer a look-ahead request, whose body is the JSON the wire already uses.
     LookAhead { request: String },

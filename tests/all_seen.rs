@@ -3,7 +3,7 @@
 //!
 //! ## What moved out of here
 //!
-//! This file used to hold the all-seen claim itself - that no option is worth crawling once
+//! This file used to hold the all-seen claim itself - that no option is worth searching once
 //! every entry is recorded - and its own list of five conversations to ask it of. Both are
 //! gone. The claim is now `nothingIsWorthCrawling` in `testing/scenarios/suites.json` and
 //! is run by `scenario_suites.rs`, over the same rows `tools/GameHarness` builds the
@@ -27,7 +27,6 @@
 //!   disagree, the prefilter is either wrong or pointless.
 
 use lookahead_engine::core::types::{DialogueNodeId, Novelty};
-use lookahead_engine::engine::engine::LookAheadEngine;
 use lookahead_engine::index::{build_group_graph, read_index};
 
 mod common;
@@ -107,12 +106,13 @@ fn the_engine_finds_nothing_either() {
             continue;
         }
 
-        let engine = LookAheadEngine::default();
-        let result = engine.evaluate(&graph, start, &world, |_| Novelty::SeenThisGame);
-
+        // ASKED OF THE LINKS RATHER THAN OF A SEARCH. What the suite claims is that there
+        // is nothing TO find, which is the refusal the bridge makes before any search is
+        // built - one walk of the links, and no diagram at all. Stronger as well as
+        // cheaper: a search that finds nothing might be a search that gave up.
         assert_eq!(
-            result.best,
-            Novelty::SeenThisGame,
+            graph.best_linked_class(start, |_| Novelty::SeenThisGame),
+            None,
             "conversation {conversation} ({}) found novelty where everything is seen",
             scenario.save,
         );

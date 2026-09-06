@@ -11,7 +11,7 @@
 //! The first draft of the trim guessed those names - `IsPassiveCheck`, `IsRedCheck`,
 //! `IsWhiteCheck` and the rest - and every one of the eleven was wrong. Nothing would have
 //! failed: the trimmed index would simply have contained no skill checks at all, every
-//! `determine_kind` would have answered `None`, the crawl would have walked through every
+//! `determine_kind` would have answered `None`, the search would have walked through every
 //! check as though it were ordinary dialogue, and the markers would have been quietly
 //! wrong in the direction that shows content the player cannot reach.
 //!

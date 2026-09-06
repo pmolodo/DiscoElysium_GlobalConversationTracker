@@ -65,7 +65,7 @@
 //! ## Pruning is sound, and switched off until de-fpax lands
 //!
 //! Narrowing a backward pass by a SETTLED forward run is the half that could shorten a
-//! refusal. tests/backward_oracle.rs checks it against the explicit crawl on every target
+//! refusal. tests/backward_oracle.rs checks it against the explicit search on every target
 //! of every group it can check both ways, and the pruned answer has never differed from the
 //! plain one. It is nonetheless OFF by default, because turning it on costs stability:
 //!

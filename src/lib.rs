@@ -4,7 +4,6 @@ pub mod core;
 pub mod parser;
 pub mod graph;
 pub mod world;
-pub mod engine;
 pub mod index;
 pub mod symbolic;
 
@@ -21,6 +20,6 @@ pub mod host;
 #[cfg(test)]
 pub(crate) mod test_graph;
 
-/// Tests that cross module boundaries, and so belong to no single module.
-#[cfg(test)]
-mod integration_tests;
+// Guards, costs, once slots and cycles are covered in `symbolic::reachability` and
+// `symbolic::backward`, over their own fixtures. de-eonm carries what those fixtures
+// cannot be: an oracle independent of the searches they check.

@@ -45,13 +45,13 @@ const HIDDEN_NOT_ENOUGH_FIELD: &str = "HiddenNotEnough";
 /// ## Why this is public
 ///
 /// The index the mod ships is TRIMMED - the full one is 50 MB and nine tenths of it is
-/// prose, titles and articy ids that no crawl consults. Trimming means someone, somewhere,
+/// prose, titles and articy ids that no search consults. Trimming means someone, somewhere,
 /// deciding which fields survive, and that list has to be this list.
 ///
 /// It is not a hypothetical risk. The first attempt at the trim guessed these names -
 /// `IsPassiveCheck`, `IsRedCheck`, `IsWhiteCheck` and so on - and every one was wrong. A
 /// trimmed index built on that guess would have dropped every check kind, and NOTHING
-/// WOULD HAVE FAILED: entries would simply have stopped being checks, the crawl would have
+/// WOULD HAVE FAILED: entries would simply have stopped being checks, the search would have
 /// walked straight through them, and the markers would have been quietly wrong.
 ///
 /// The extractor is C# and cannot share a constant with this, so `tests/shipped_index.rs`
@@ -396,15 +396,15 @@ pub fn build_group_graph(
 ///
 /// ## Why it is exact
 ///
-/// A conversation group is closed under links, so a crawl over it only ever evaluates
+/// A conversation group is closed under links, so a search over it only ever evaluates
 /// guards belonging to it. A slot no guard in the group reads cannot change which entries
 /// are reachable, whatever an action writes to it - it is write-only for the length of
-/// any crawl. So this removes no information: it removes carrying.
+/// any search. So this removes no information: it removes carrying.
 ///
 /// ## Why it is worth doing
 ///
 /// Between a quarter and nearly a half of a group's slots are like this - measured, in
-/// `tests/unread_slots.rs` - and the explicit crawl's cost is dominated by copying and
+/// `tests/unread_slots.rs` - and a state-at-a-time search's cost is dominated by copying and
 /// comparing the slot vector, about seventy per cent of the per-state cost on the widest
 /// group. The slots are written by actions, copied for every state, hashed and compared,
 /// and can never change an answer.
@@ -417,10 +417,10 @@ pub fn build_group_graph(
 /// ## What is kept
 ///
 /// - Every name any guard reads, which [`DataLayout::read_by_nodes`] computes, including
-///   the subjects of the queries answered from crawl state and a rolled check's own pass
+///   the subjects of the queries answered from search state and a rolled check's own pass
 ///   and fail flags.
 /// - The engine's bookkeeping, `seen:` and `once:`. No guard mentions either and every
-///   crawl depends on both - a seen marker is what closes a once-only check, a once
+///   search depends on both - a seen marker is what closes a once-only check, a once
 ///   marker is what stops a purchase being charged twice.
 ///
 /// `once:` slots do not exist yet at this point - [`LookAheadGraph::new`] interns them,
@@ -431,9 +431,9 @@ pub fn build_group_graph(
 /// ## Where a mistake would show
 ///
 /// In ANSWERS, not in performance: a slot index is baked into the nodes, so a
-/// misnumbering sends a read somewhere else rather than degrading quietly. Every crawl
+/// misnumbering sends a read somewhere else rather than degrading quietly. Every search
 /// test asserts on what a search finds, `tests/corpus.rs` runs the builders over the whole
-/// shipped database, and `tests/backward_oracle.rs` compares this crawl against the
+/// shipped database, and `tests/backward_oracle.rs` compares this search against the
 /// symbolic search, which numbers its own variables independently.
 fn keeping_only_read_slots(
     nodes: Vec<LookAheadNode>,

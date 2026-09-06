@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
-//! Does anything ever branch on the XP flags the crawl models?
+//! Does anything ever branch on the XP flags the search models?
 //!
-//! `XPPicoSetBool` and its siblings assign a variable, and the crawl models that. The
+//! `XPPicoSetBool` and its siblings assign a variable, and the search models that. The
 //! question is whether it needs to: a variable no guard in the group READS is constant as
 //! far as reachability is concerned, and modelling the write costs a slot - which is a
 //! decision-diagram variable - for nothing.
 //!
 //! The distinction that matters is not "does any guard anywhere read an XP variable".
-//! Plenty do. It is whether a guard reads one THAT A CRAWL OVER THE SAME GROUP CAN WRITE,
+//! Plenty do. It is whether a guard reads one THAT A SEARCH OVER THE SAME GROUP CAN WRITE,
 //! because only then does the value depend on the path taken. Anywhere else the world
 //! answers it once and the slot is dead weight.
 
@@ -95,7 +95,7 @@ fn is_any_xp_flag_both_written_and_read_inside_one_group() {
     }
 
     // Now the question that actually decides whether modelling pays: within ONE group,
-    // does a crawl write a flag that a guard in the same group reads?
+    // does a search write a flag that a guard in the same group reads?
     println!("\nper group, an XP flag both written by an action and read by a guard:");
     let mut any_group_needs_them = false;
 
@@ -155,9 +155,9 @@ fn is_any_xp_flag_both_written_and_read_inside_one_group() {
     println!(
         "\nverdict: {}",
         if any_group_needs_them {
-            "at least one group branches on a flag its own crawl can set - keep modelling them"
+            "at least one group branches on a flag its own search can set - keep modelling them"
         } else {
-            "no group reads a flag its own crawl writes - the slots are dead weight"
+            "no group reads a flag its own search writes - the slots are dead weight"
         },
     );
 

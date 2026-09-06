@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 //! What is still not modelled in the conversation the epic is about?
 //!
-//! Conversation 631's group is the shape that drives the cost - the explicit crawl cannot
+//! Conversation 631's group is the shape that drives the cost - the explicit search cannot
 //! exhaust it - so it is the one symbolic reachability has to be tried on. A trial is
 //! only worth anything if the model underneath is honest: every guard the compiler cannot
 //! read becomes "undecided everywhere" and every action it cannot model is silently not

@@ -176,7 +176,7 @@ const NOT_A_VARIABLE: [&str; 3] = ["_format", "_formatVersion", "_derived_simx"]
 ///
 /// An ordinary option's guard asks about the world in a way a check's rarely does. 451:86
 /// - buy the Faln sneakers - is guarded on `jam.siileng_faln_sneakers == true`, and a
-/// world that cannot answer it stops the crawl before it builds a single state: the engine
+/// world that cannot answer it stops the search before it builds a single state: the engine
 /// reports the floor over zero states, and the option draws nothing where the game draws
 /// orange. The answer is in the save the in-game run loads, so it is read from there
 /// rather than copied into the definition beside the expectation, for the same reason
@@ -265,8 +265,8 @@ struct Recorded {
 /// loads everything reachable from the one that is open, and Joyce's runs to 2,857 entries
 /// across many. Classifying only the open conversation's entries and letting the rest fall
 /// through to "never seen anywhere" is not a small inaccuracy - it invents the top rung
-/// almost everywhere, so a crawl that should be refused finds something to walk towards.
-/// Measured: it made 2,629 of Joyce's 2,857 entries look worth crawling under a fixture
+/// almost everywhere, so a search that should be refused finds something to walk towards.
+/// Measured: it made 2,629 of Joyce's 2,857 entries look worth searching under a fixture
 /// that records every entry in the game.
 ///
 /// A conversation the state says nothing about contributes nothing, which is the same

@@ -1,19 +1,17 @@
 // SPDX-License-Identifier: MIT
 //! Work in from the start, then in from the target, and let the halves share what they find.
 //!
-//! ## The backward driver is the fallback
+//! ## The backward driver is the last word
 //!
-//! It was the crawl until 2026-09-06. The forward slice ran, then the backward driver, and
-//! an unsettled backward driver handed the question to `LookAheadEngine`. That third stage
-//! is gone with the crawl itself: there is no measured case where the crawl answers a group
-//! the backward driver cannot, and the two lower bounds it took the better of were only ever
-//! different in the direction the backward half was already better at.
+//! There is no third stage. An unsettled backward driver is the END of the search, and what
+//! it found is reported as what it is - a LOWER BOUND, with [`Answered::Partly`] saying so.
+//! Every class it refused, it refused completely; an unasked candidate might have carried a
+//! better one.
 //!
-//! So an unsettled backward driver is now the END of the search rather than the middle of
-//! it, and what it found is reported as what it is - a LOWER BOUND, with
-//! [`Answered::Partly`] saying so. Every class it refused, it refused completely; an
-//! unasked candidate might have carried a better one. That is the same contract the crawl's
-//! own `budget_exhausted` had, and the caller reads it the same way.
+//! A state-at-a-time search could be run here instead, and would answer some groups this
+//! one gives up on. Nothing measured says which: the two lower bounds would differ only in
+//! the direction the backward half is already better at, and paying for a second whole
+//! search to find that out is what the budgets below exist to avoid.
 //!
 //! ## Why a portfolio rather than a choice
 //!
@@ -22,7 +20,7 @@
 //! deep in each group:
 //!
 //! ```text
-//!   conv  entries crawlms   medms   maxms  mednodes  maxnodes   afford
+//!   conv  entries wholems   medms   maxms  mednodes  maxnodes   afford
 //!    368     4724     491     247   78798     60693    362652        1
 //!    631     4514     702       7     392      3942     29372      100
 //!     14     3594     680     100   11167     13462    110128        6
@@ -30,8 +28,10 @@
 //!   1030     1476       1     121    6592      4911    336934        0
 //! ```
 //!
-//! `afford` is how many candidates the backward driver can be asked about before one crawl
-//! would have been cheaper. Conversation 631 affords a hundred; 368 affords one. The
+//! `wholems` is one pass over the WHOLE group, which is what a per-candidate search is
+//! priced against: it answers about every entry at once, so a driver that asks about enough
+//! candidates one at a time eventually costs more than it. `afford` is how many candidates
+//! that buys. Conversation 631 affords a hundred; 368 affords one. The
 //! largest strongly connected component does not separate them - 368 is 27% and 1030 is
 //! 93% and both lose, while 631 at 84% wins - and neither does entry count, since 368 and
 //! 631 are within five per cent of each other in size and differ by thirty-five times in
@@ -41,7 +41,7 @@
 //! So this does not choose. It spends a slice going forwards, hands what that reached to
 //! the backward driver, and takes what the backward driver returns - settled, or as the
 //! lower bound it is. The group that would have been slow pays its budget and says so,
-//! rather than paying it and then paying for a whole crawl as well.
+//! rather than paying it and then paying for a whole search as well.
 //!
 //! ## What the budget is protecting against
 //!
@@ -73,8 +73,7 @@ pub enum Answered {
     /// The backward driver did not settle, so [`PortfolioAnswer::best`] is a LOWER BOUND.
     ///
     /// The classes it refused it refused completely, but a candidate it never reached
-    /// might have carried a better one. Nothing runs after this - see the module note on
-    /// why the crawl that used to is gone.
+    /// might have carried a better one. Nothing runs after this - see the module note.
     Partly,
 }
 
@@ -150,7 +149,7 @@ impl Default for Budget {
 ///
 /// `wanted` is the class and not a floor: an entry of a LOWER class is not what this pass
 /// was sent to find, and stopping at one would answer a different question - see
-/// [`hunted_class`].
+/// [`best_novelty`] for where the class comes from and why halting on it is an answer.
 #[allow(clippy::too_many_arguments)]
 fn forwards_for<'a, F>(
     graph: &LookAheadGraph,
@@ -313,9 +312,9 @@ where
     );
 
     // SETTLED OR NOT, THIS IS THE ANSWER. A backward driver that ran out of candidates or
-    // clock has established a lower bound and nothing else here can improve on it - see the
-    // module note on the crawl that used to run at this point. The caller is told which it
-    // is, and reads an unsettled one exactly as it read an exhausted crawl.
+    // clock has established a lower bound and nothing else here improves on it - see the
+    // module note. The caller is told which it is, and an unsettled answer is read as the
+    // bound it is rather than as a claim that nothing is there.
     PortfolioAnswer {
         best: backwards.best,
         by: if backwards.stopped_by == StoppedBy::Nothing {
@@ -599,10 +598,9 @@ mod tests {
 
     /// A budget of nothing ends the search rather than handing it on.
     ///
-    /// THERE IS NOTHING AFTER THE BACKWARD DRIVER since the crawl was retired, so what a
-    /// starved search returns is the whole answer: the floor, marked as the lower bound it
-    /// is. The caller's job is to say "not established" rather than "nothing there", and
-    /// `Answered::Partly` is what tells it which.
+    /// NOTHING RUNS AFTER THE BACKWARD DRIVER, so what a starved search returns is the
+    /// whole answer: the floor, marked as the lower bound it is. The caller's job is to say
+    /// "not established" rather than "nothing there", and `Answered::Partly` tells it which.
     #[test]
     fn an_unsettled_backward_search_reports_a_lower_bound() {
         let graph = GraphBuilder::new()

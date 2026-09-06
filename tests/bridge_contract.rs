@@ -10,7 +10,7 @@
 //! Not against the symbolic searches, and not against the C#. What is being tested here is
 //! the crossing - that a world put into JSON and taken out again is the world the engine
 //! would have been given in-process. So the two sides of the comparison run the identical
-//! crawl, and any difference is marshalling.
+//! search, and any difference is marshalling.
 
 use std::collections::HashSet;
 
@@ -18,16 +18,15 @@ use lookahead_engine::bridge::{
     answer, questions_for, LookAheadRequest, NodeRef, SnapshotWorld, WireValue, WorldSnapshot,
 };
 use lookahead_engine::core::types::{DialogueNodeId, Novelty};
-use lookahead_engine::engine::engine::LookAheadEngine;
 use lookahead_engine::index::{build_group_graph, read_index};
 
 mod common;
 
-/// Small enough to crawl exhaustively, so the comparison is about the crossing rather
+/// Small enough to search exhaustively, so the comparison is about the crossing rather
 /// than about a budget running out at different moments.
 const CHECKABLE: [i32; 3] = [1123, 484, 1066];
 
-/// For the key agreement, which does no crawling and so can afford the groups that
+/// For the key agreement, which does no searching and so can afford the groups that
 /// actually ask things: 631 and 368 between them cover items, tasks, thoughts, the clock
 /// and several hundred world queries. A key that did not match would be missed entirely on
 /// a group with one query in it.
@@ -178,26 +177,29 @@ fn an_answer_survives_the_crossing() {
         let parsed: LookAheadRequest = serde_json::from_str(&text).expect("it comes back");
         let crossed = answer(&index, None, &parsed);
 
-        // And in-process, with no crossing at all.
-        let world = SnapshotWorld::new(snapshot);
-        let direct = LookAheadEngine::default().evaluate(&graph, start, &world, |id| {
-            if unseen.contains(&NodeRef::from(id)) {
-                Novelty::UnseenAnyGame
-            } else {
-                Novelty::SeenThisGame
-            }
-        });
+        // And the same request WITHOUT the crossing, which is what this compares against.
+        //
+        // THE SAME ENGINE ON BOTH SIDES, deliberately. What is being tested is whether a
+        // round trip through JSON changes an answer, so anything else that differed between
+        // the two sides would be measuring something other than the crossing.
+        let direct = answer(&index, None, &request);
 
         assert!(crossed.error.is_none(), "{:?}", crossed.error);
+        assert!(direct.error.is_none(), "{:?}", direct.error);
         assert_eq!(crossed.answers.len(), 1);
+        assert_eq!(direct.answers.len(), 1);
 
         println!(
             "{conversation}: crossed {:?}, direct {:?}",
-            crossed.answers[0].best, direct.best,
+            crossed.answers[0].best, direct.answers[0].best,
         );
         assert_eq!(
-            crossed.answers[0].best, direct.best as i32,
+            crossed.answers[0].best, direct.answers[0].best,
             "conversation {conversation}: the crossing changed the answer",
+        );
+        assert_eq!(
+            crossed.answers[0].destination, direct.answers[0].destination,
+            "conversation {conversation}: the crossing changed the baseline",
         );
 
         compared += 1;

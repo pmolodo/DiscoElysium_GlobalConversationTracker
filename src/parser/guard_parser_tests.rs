@@ -16,7 +16,7 @@ use crate::parser::guard_parser::parse_guard;
 use crate::world::test_world::TestWorld;
 use crate::world::world::ILookAheadWorld;
 
-/// Adapts a world to the guard-evaluation interface, without a crawl state.
+/// Adapts a world to the guard-evaluation interface, without a search state.
 struct WorldContext<'a>(&'a TestWorld);
 
 impl IGuardContext for WorldContext<'_> {

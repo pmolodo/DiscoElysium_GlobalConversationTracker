@@ -80,7 +80,7 @@ impl<'a> DataVars<'a> {
     /// counts a node once per set that uses it, and sharing between sets is most of what
     /// makes a diagram cheap - so that sum is an upper bound that can exceed the truth
     /// several times over. For a budget, and above all for a budget that is meant to be
-    /// comparable with the forward crawl's (de-e23q), the number wanted is what is actually
+    /// comparable with the forward search's (de-e23q), the number wanted is what is actually
     /// held.
     pub fn node_count(&self) -> usize {
         self.manager.with_manager_shared(|m| m.num_inner_nodes())

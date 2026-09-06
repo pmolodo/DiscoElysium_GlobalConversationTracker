@@ -6,21 +6,21 @@
 //! nothing else, so they can be computed once, checked in, and read back instantly
 //! instead of being recomputed per option at runtime.
 //!
-//! 1. WHICH CONVERSATIONS FORM A GROUP. Conversations link to each other, and the crawl
+//! 1. WHICH CONVERSATIONS FORM A GROUP. Conversations link to each other, and the search
 //!    loads the whole group a start belongs to. Partitioning the database into groups
 //!    says how big that job ever gets.
 //!
 //! 2. WHAT EACH START CAN REACH. From a given entry, following links and ignoring
 //!    everything else, which entries can be arrived at. This is a strict upper bound on
-//!    what any crawl can reach, however clever - a guard can only ever refuse a link, it
+//!    what any search can reach, however clever - a guard can only ever refuse a link, it
 //!    cannot create one.
 //!
 //! ## Why the second one is worth having
 //!
 //! `LookAheadEngine::has_potential_improvement` currently asks whether ANY entry in the
 //! group outranks the option. That is the whole group, including everything no path from
-//! this option leads to. Asked against the reachable set instead, it refuses more crawls
-//! and never refuses a crawl that could have found something.
+//! this option leads to. Asked against the reachable set instead, it refuses more searches
+//! and never refuses a search that could have found something.
 //!
 //! A stateless prefilter of this shape was built in C#, measured and reverted - see
 //! de-asw.3 - because it pruned only 0.5 to 4 per cent in the hub-connected case and cost
@@ -202,7 +202,7 @@ fn measure_link_reachability_from_every_entry() {
     let index = read_index(&path).expect("the index reads");
     let links = entry_links(&index);
 
-    // Every entry is a possible start: the look-ahead crawls from whichever option the
+    // Every entry is a possible start: the look-ahead searches from whichever option the
     // player is looking at, not from a conversation's first line.
     println!("{} entries, each a possible start", links.len());
 
@@ -239,7 +239,7 @@ fn measure_link_reachability_from_every_entry() {
 /// ancestor was reverted for pruning 0.5 to 4 per cent, so this has to be compared
 /// against that rather than admired on its own.
 ///
-/// Measured per start as the reachable entries against the entries in the group the crawl
+/// Measured per start as the reachable entries against the entries in the group the search
 /// would LOAD - `index::discover_group`'s forward closure, which is what
 /// `build_group_graph` builds and therefore what the group-wide check scans.
 #[test]
@@ -271,7 +271,7 @@ fn how_much_of_a_loaded_group_can_a_start_actually_reach() {
         let reached = reachable_from(&links, start).len();
         let held = *loaded.get(&start.0).unwrap_or(&reached);
         // Grouped by how big the loaded group is, because the whole question only matters
-        // where the group is large - a crawl over 40 entries costs nothing either way.
+        // where the group is large - a search over 40 entries costs nothing either way.
         let bucket = match held {
             0..=99 => "     <100",
             100..=999 => "  100-999",

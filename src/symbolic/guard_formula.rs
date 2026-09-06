@@ -4,7 +4,7 @@
 //! ## Two rails, because a guard is three-valued
 //!
 //! The engine's guards answer True, False or Unknown, and [`crate::core::types::Ternary`]
-//! lets Unknown through - a crawl must not refuse a branch merely because it cannot
+//! lets Unknown through - a search must not refuse a branch merely because it cannot
 //! decide one. A single formula cannot express that: negating "may be true" gives
 //! "must be false", which is a different thing.
 //!
@@ -71,7 +71,7 @@ pub struct GuardCompiler<'a> {
     vars: &'a DataVars<'a>,
     /// Where a variable no action writes gets its value.
     ///
-    /// Such a variable is CONSTANT for the whole crawl - the seed reads it once and
+    /// Such a variable is CONSTANT for the whole search - the seed reads it once and
     /// nothing moves it - so with a world in hand it compiles to a literal rather than
     /// falling back. Between 30% and 47% of the distinct variables the biggest
     /// conversations' guards mention are of this kind, so it is not a corner.
@@ -87,7 +87,7 @@ pub struct GuardCompiler<'a> {
     /// Queries answered as constants that a DECLARED decision writes.
     ///
     /// A world query is answered once and reused at every state, which is exact only
-    /// while nothing moves it. `crawl_can_change` names the ones the crawl moves through
+    /// while nothing moves it. `search_can_change` names the ones the search moves through
     /// slots; [`crate::core::modelling`] names the ones something moves through an action
     /// the model has decided to skip. Those compile cleanly and so appear nowhere in the
     /// fallback counts - which is right, they are not gaps - but they are approximations,
@@ -182,7 +182,7 @@ impl<'a> GuardCompiler<'a> {
     /// enough to change what a coarse question like `IsNight()` answers.
     ///
     /// What it costs. Where the group does move the clock, this can report a branch
-    /// CLOSED that the real crawl would walk - the unsafe direction, and the only place
+    /// CLOSED that the real search would walk - the unsafe direction, and the only place
     /// in this compiler that is true. A guard that only opens once time has passed is
     /// judged against the starting hour and refused. Accepted knowingly; the count is
     /// exposed so the exposure is visible rather than assumed.
@@ -338,17 +338,17 @@ impl<'a> GuardCompiler<'a> {
             GuardExpression::Comparison(op, left, right) => self.compare(op, left, right),
 
             // A world query - HasItem, IsTaskActive, MoneyAmount, the clock, and every
-            // other thing the crawl asks the game rather than its own state. Undecided
+            // other thing the search asks the game rather than its own state. Undecided
             // here, which is the permissive answer, and counted so the fallback rate can
             // be measured against real content.
-            // Inventory, journal and thought-cabinet questions, which the crawl DOES
+            // Inventory, journal and thought-cabinet questions, which the search DOES
             // change - GainItem and LoseItem write an `item:` slot, GainTask and
             // FinishTask a `task:` one, GainThought a `thought:` one, and
             // `BoundContext::query` answers all three from exactly those slots. This
             // mirrors that.
             //
             // Where the group has no such slot, the subject is one no action here
-            // touches, so it is constant for the crawl and the world answers it - the
+            // touches, so it is constant for the search and the world answers it - the
             // same rule as an untracked variable. That is also what keeps the variable
             // count down: a slot exists only for something the group actually
             // manipulates, not for every item in the game.
@@ -363,7 +363,7 @@ impl<'a> GuardCompiler<'a> {
                             // starting value is the only value, and the world answers
                             // directly. `BoundContext::query` does exactly the same, and
                             // the mirroring is the point - a compiler more decisive than
-                            // the engine it models would prune branches the real crawl
+                            // the engine it models would prune branches the real search
                             // walks.
                             //
                             // What neither may do is answer this way for a TRACKED
@@ -408,7 +408,7 @@ impl<'a> GuardCompiler<'a> {
 
             // The clock, held at whatever the world says and not moved by the
             // conversation. See `with_constant_clock` for why, and what it costs: this is
-            // the one approximation here that can close a branch the crawl would walk.
+            // the one approximation here that can close a branch the search would walk.
             GuardExpression::Call(name, args)
                 if self.constant_clock && crate::core::clock::ClockTime::owns(name) =>
             {
@@ -425,19 +425,19 @@ impl<'a> GuardCompiler<'a> {
                 }
             }
 
-            // A query the CRAWL cannot change is a constant, and the engine says which
+            // A query the SEARCH cannot change is a constant, and the engine says which
             // those are: `BoundContext::query` intercepts MoneyAmount, CheckItem,
             // IsTaskActive and the clock, and lets everything else fall through to the
-            // world - which does not change while a crawl runs. So anything not
+            // world - which does not change while a search runs. So anything not
             // intercepted has the same answer at every state, and asking the world once
             // is exactly what the engine does at every step.
             //
             // Worth the trouble: IsKimHere alone is 691 of the roughly 1,200 world
             // queries the five biggest conversations make.
             GuardExpression::Call(name, args)
-                if !Self::crawl_can_change(name) && self.world.is_some() =>
+                if !Self::search_can_change(name) && self.world.is_some() =>
             {
-                // Constant for the CRAWL, which is not the same as constant. Something
+                // Constant for the SEARCH, which is not the same as constant. Something
                 // the model has decided to skip may write it, and where that is so the
                 // question is noted rather than passed over silently.
                 if crate::core::modelling::for_query(name).is_some() {
@@ -512,7 +512,7 @@ impl<'a> GuardCompiler<'a> {
             return compiled;
         }
 
-        // A query the CRAWL cannot change is a constant, and a comparison against one is
+        // A query the SEARCH cannot change is a constant, and a comparison against one is
         // arithmetic on two knowns. `DayCount() >= 2` is the shape, and it was the single
         // largest remaining fallback category in the corpus.
         if let Some(compiled) = self.constant_comparison(op, left, right) {
@@ -531,14 +531,14 @@ impl<'a> GuardCompiler<'a> {
                 return self.comparison(Self::mirrored(op), &name, literal);
             }
             // Money, where the layout does not carry it. It must NOT be answered from
-            // the world: the crawl changes it - `BoundContext::query` reads it from crawl
+            // the world: the search changes it - `BoundContext::query` reads it from search
             // state - so the world's starting balance would close a branch a richer path
             // opens, which is the unsafe direction. The reason says so rather than blaming
             // the shape of the expression, which is what it used to do and which sent
             // somebody looking at the parser.
             if Self::names_money(left) || Self::names_money(right) {
                 return self.undecided(
-                    "comparison: money, which the crawl changes and this layout does not carry",
+                    "comparison: money, which a search changes and this layout does not carry",
                     format!("({left} {op} {right})"),
                 );
             }
@@ -614,7 +614,7 @@ impl<'a> GuardCompiler<'a> {
         // Untracked, so constant, and compared THE WAY THE ENGINE COMPARES: the world's
         // value against the literal, through GuardValue::equals, which is kind-sensitive
         // - a boolean never equals a number. Doing the comparison on a converted integer
-        // instead would answer differently from the crawl for a variable the world
+        // instead would answer differently from the search for a variable the world
         // reports as a boolean.
         //
         // Without this an equality on an untracked variable fell back while a BARE
@@ -829,12 +829,12 @@ impl<'a> GuardCompiler<'a> {
         }
     }
 
-    /// Whether a crawl's own actions can change what this query answers.
+    /// Whether a search's own actions can change what this query answers.
     ///
     /// Mirrors the interception list in `BoundContext::query`. Anything here is answered
-    /// from crawl state and so varies between states; anything else is answered by the
+    /// from search state and so varies between states; anything else is answered by the
     /// world and is the same at every state.
-    fn crawl_can_change(name: &str) -> bool {
+    fn search_can_change(name: &str) -> bool {
         matches!(name, "MoneyAmount")
             || Self::slot_backed_query(name).is_some()
             || crate::core::clock::ClockTime::owns(name)
@@ -842,7 +842,7 @@ impl<'a> GuardCompiler<'a> {
 
     /// The slot prefix a query is answered from, for the queries that have one.
     ///
-    /// One list, read by both the compiler and `crawl_can_change`, because a query
+    /// One list, read by both the compiler and `search_can_change`, because a query
     /// answered from a slot in one place and from the world in the other would give two
     /// different answers for the same state. `BoundContext::query` intercepts exactly
     /// these three.
@@ -858,7 +858,7 @@ impl<'a> GuardCompiler<'a> {
     /// What a clock question answers at the world's time, with the conversation ignored.
     ///
     /// Answered by `ClockTime` against the world's `day_minutes` and `day_counter`, which
-    /// is exactly what the engine does for a crawl that has not moved the clock - not
+    /// is exactly what the engine does for a search that has not moved the clock - not
     /// through `world.query`, which knows nothing about hours.
     fn clock_answer(&self, name: &str, args: &[GuardExpression]) -> Option<bool> {
         let world = self.world?;
@@ -907,10 +907,10 @@ impl<'a> GuardCompiler<'a> {
 
         let world = self.world?;
 
-        // The day, which the crawl cannot move and the world need not be asked about -
+        // The day, which the search cannot move and the world need not be asked about -
         // it is a comparison against `day_counter`, and `BoundContext::query` answers it
         // the same way. Mirroring the engine here is the whole requirement: a compiler
-        // that refused a question the crawl answers would leave a branch open the crawl
+        // that refused a question the search answers would leave a branch open the search
         // closes, and one that answered differently would be worse than either.
         let answer = if crate::core::clock::ClockTime::owns_day(name) {
             crate::core::clock::ClockTime::day_answer(name, &values, world.day_counter())
@@ -921,18 +921,18 @@ impl<'a> GuardCompiler<'a> {
         if answer.kind() == GuardValueKind::Unknown { None } else { Some(answer) }
     }
 
-    /// A comparison one of whose sides is a query the crawl cannot change.
+    /// A comparison one of whose sides is a query the search cannot change.
     ///
     /// `None` when this is not such a comparison, so the caller carries on rather than
     /// treating it as a failure.
     ///
     /// ## Why this is safe and answering money the same way would not be
     ///
-    /// A query the crawl cannot change has the same answer at every state the crawl can
+    /// A query the search cannot change has the same answer at every state the search can
     /// reach, so asking the world once is exactly what the engine does at every step -
     /// `BoundContext::query` lets anything it does not intercept fall through to the
     /// world. `MoneyAmount` IS intercepted, so it is excluded here by
-    /// [`Self::crawl_can_change`], and answering it from the world's starting balance
+    /// [`Self::search_can_change`], and answering it from the world's starting balance
     /// would close a branch a richer path opens.
     fn constant_comparison(
         &mut self,
@@ -953,7 +953,7 @@ impl<'a> GuardCompiler<'a> {
             },
         };
 
-        if Self::crawl_can_change(&name) {
+        if Self::search_can_change(&name) {
             return None;
         }
 
@@ -1124,7 +1124,7 @@ mod tests {
 
     /// A money comparison stays undecided where the layout does not carry money.
     ///
-    /// The crawl CHANGES money, so answering it from the world's starting balance would
+    /// The search CHANGES money, so answering it from the world's starting balance would
     /// close a branch a richer path opens - the unsafe direction. What changes is the
     /// reason: it now names money instead of blaming the shape of the expression.
     #[test]
@@ -1204,7 +1204,7 @@ mod tests {
         // A world query the compiler cannot read.
         let compiled = compiler.compile(&GuardExpression::Call("IsKimHere".to_string(), vec![]));
 
-        // Permissive in BOTH directions: the crawl may take the branch and may not.
+        // Permissive in BOTH directions: the search may take the branch and may not.
         assert!(compiled.may_be_true.valid());
         assert!(compiled.may_be_false.valid());
         assert!(!compiled.is_decided());
@@ -1414,7 +1414,7 @@ mod tests {
     /// The rule that makes the whole approximation safe.
     ///
     /// An undecided operand must leave the conjunction takeable, because the engine's
-    /// `can_pass` lets Unknown through. Anything else would prune a branch the real crawl
+    /// `can_pass` lets Unknown through. Anything else would prune a branch the real search
     /// walks, and a reachable set built from these formulas would MISS states.
     #[test]
     fn an_undecided_operand_leaves_a_conjunction_takeable() {
@@ -1536,7 +1536,7 @@ mod tests {
     /// A TRACKED item is never answered from the world, however tempting.
     ///
     /// The starting inventory is stale the moment GainItem runs, so reading it for a
-    /// tracked item would make the crawl blind to its own purchases. That is the mirror
+    /// tracked item would make the search blind to its own purchases. That is the mirror
     /// of the mistake the untracked case invites, and the reason both sit behind one
     /// deliberately-named pair of methods.
     #[test]

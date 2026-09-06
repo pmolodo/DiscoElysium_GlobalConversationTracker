@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MIT
-//! How a crawl's DATA state maps onto decision-diagram variables.
+//! How a search's DATA state maps onto decision-diagram variables.
 //!
 //! ## Explicit control, symbolic data
 //!
-//! The entry a crawl is sitting on stays an ordinary value - there are a few thousand of
-//! them and they are enumerated anyway - while everything the crawl carries WITH it
+//! The entry a search is sitting on stays an ordinary value - there are a few thousand of
+//! them and they are enumerated anyway - while everything the search carries WITH it
 //! becomes decision-diagram variables. So a reachability pass keeps one set of data
 //! states per entry, rather than one set of (entry, data) pairs, and the entry never
 //! costs a variable.
 //!
 //! That is the opposite of what [`super::StateEncoding`] does, and deliberately. That one
-//! encodes the entry too, because it is measuring how a set of whole crawl states
+//! encodes the entry too, because it is measuring how a set of whole search states
 //! compresses. This one is for computing with, where keeping the control explicit means
 //! the image of one edge is a formula about data alone.
 //!
@@ -51,13 +51,13 @@ pub struct DataLayout {
 }
 
 impl DataLayout {
-    /// Lays out variables for the data a crawl over `graph` can carry.
+    /// Lays out variables for the data a search over `graph` can carry.
     ///
     /// `counter_cap` is the ceiling an incremented slot saturates at, which is what makes
     /// it finite and therefore what bounds its width.
     ///
     /// `money_max` and `track_clock` say whether those two are worth variables at all. A
-    /// crawl over a graph with no cost options and no `PassTime` never moves either, and
+    /// search over a graph with no cost options and no `PassTime` never moves either, and
     /// spending bits on a constant is pure cost - see the measurements on
     /// `super::StateEncoding`, where money and the clock never moved once.
     pub fn for_graph(
@@ -139,10 +139,10 @@ impl DataLayout {
     ///
     /// ## This one is exact, not an approximation
     ///
-    /// A conversation group is closed under links, so a crawl over it only ever evaluates
+    /// A conversation group is closed under links, so a search over it only ever evaluates
     /// guards belonging to it. A slot that no guard in the group reads therefore cannot
     /// change which entries are reachable, whatever any action writes to it - it is
-    /// write-only for the length of the crawl. Dropping it removes a variable and changes
+    /// write-only for the length of the search. Dropping it removes a variable and changes
     /// no answer at all, which is a different and better thing than
     /// [`Self::without_visit_flags`], where the saving is paid for in precision.
     ///
@@ -151,7 +151,7 @@ impl DataLayout {
     /// A great deal, because the content is full of bookkeeping the dialogue never reads
     /// back. Conversation 631's group writes 45 `XP.` accomplishment latches and reads
     /// two of them; the other 43 are variables the rest of the game cares about and this
-    /// crawl cannot.
+    /// search cannot.
     ///
     /// ## What must be kept even though no guard names it
     ///
@@ -170,7 +170,7 @@ impl DataLayout {
     pub fn keeping_only_read(mut self, symbols: &StateSymbols, reads: &HashSet<String>) -> Self {
         for slot in 0..self.slots.len() {
             let Some(name) = symbols.name_of(slot) else { continue };
-            // The engine's own bookkeeping, which no guard mentions and every crawl needs.
+            // The engine's own bookkeeping, which no guard mentions and every search needs.
             if name.starts_with(SEEN_PREFIX) || name.starts_with(ONCE_PREFIX) {
                 continue;
             }
@@ -306,7 +306,7 @@ impl DataLayout {
     /// those are collected under the prefixes the symbol table stores them with.
     ///
     /// The rolled checks' pass and fail flags are added too. Nothing NAMES them, but
-    /// `LookAheadEngine::enter_rolled` reads them to decide whether a check can be
+    /// `Reachability::rolled_cases` reads them to decide whether a check can be
     /// attempted, so a layout without them would let a check be retried for ever.
     pub fn read_by(graph: &LookAheadGraph) -> HashSet<String> {
         Self::read_by_nodes(graph.nodes(), graph.symbols())
@@ -357,7 +357,7 @@ impl DataLayout {
     }
 
     /// The names one guard reads, including the subjects of the queries answered from
-    /// crawl state.
+    /// search state.
     fn read_by_guard(guard: &GuardExpression, names: &mut HashSet<String>) {
         match guard {
             GuardExpression::Variable(name) => {

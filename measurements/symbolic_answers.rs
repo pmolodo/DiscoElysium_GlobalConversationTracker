@@ -13,7 +13,7 @@
 //! own, because a deep entry that IS reachable is proved the moment the backward pass meets
 //! the seed, and that is usually instant.
 //!
-//! `deepest-unreachable-N` takes the N deepest entries the crawl provably CANNOT reach.
+//! `deepest-unreachable-N` takes the N deepest entries no path can reach.
 //! Those are the expensive ones: a no has to be proved, which means driving the fixed point
 //! to completion rather than stumbling on a yes. Where a group has fewer than N unreachable
 //! entries the set is topped up from the deepest remaining, and where none can be
@@ -195,7 +195,7 @@ fn profiles(
     out
 }
 
-/// Which of the deepest entries the crawl provably cannot reach.
+/// Which of the deepest entries the search provably cannot reach.
 ///
 /// Deepest first, stopping once `wanted` are in hand. A candidate whose pass does not settle
 /// inside [`CLASSIFY_CAP`] is counted undecided rather than assumed either way - a backward

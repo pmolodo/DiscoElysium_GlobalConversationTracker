@@ -31,7 +31,7 @@ pub struct LookAheadNode {
     /// Assigned by [`crate::graph::graph::LookAheadGraph::new`] rather than passed to
     /// [`LookAheadNode::new`], because interning a name mutates the symbol table and the
     /// graph is what owns it. Doing it there is what lets the table be FROZEN before a
-    /// crawl starts: the crawl only ever reads slots, never creates them.
+    /// search starts: the search only ever reads slots, never creates them.
     pub once_slot: i32,          // -1 if none
 }
 

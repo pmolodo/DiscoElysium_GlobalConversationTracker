@@ -233,7 +233,7 @@ proptest! {
     /// than giving every slot the same number of bits, which is what keeps conversation
     /// 631's group near 350 variables instead of 1,700 - and the risk that buys is a slot
     /// one bit too narrow for a value some action assigns, which does not fail. It stores a
-    /// DIFFERENT NUMBER, silently, and the crawl carries on with a state that does not
+    /// DIFFERENT NUMBER, silently, and the search carries on with a state that does not
     /// exist.
     ///
     /// A generated action set is the natural way to ask, because the case that breaks is

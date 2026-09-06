@@ -19,7 +19,7 @@
 # of what remains has not.
 #
 # Usage:
-#     awk -v engines=explicit,symfwd,symbwd \
+#     awk -v engines=fwd,bwd,fwdbwd \
 #         -v done='14:deepest-1=126;28:deepest-5=310' \
 #         -v left='14:deepest-5;14:deepest-10' \
 #         -f tools/matrix-remaining.awk <past run TSVs>
@@ -76,6 +76,20 @@ FNR == 1 {
     conv_column = 0
     profile_column = 0
 
+    # WHICH ERA THIS FILE IS FROM, decided before anything is renamed, because `fwd` has
+    # meant two different searches and only the company it keeps says which.
+    #
+    #   oldest      fwd, bwd                 - fwd is a state-at-a-time search, bwd is the
+    #                                          symbolic forward one.
+    #   middle      explicit, symfwd, symbwd - symfwd is today's fwd, symbwd today's bwd.
+    #   current     fwd, bwd, fwdbwd         - direction is what tells them apart.
+    era_current = 0
+    era_middle = 0
+    for (i = 1; i <= NF; i++) {
+        if ($i == "fwdbwd_ms") era_current = 1
+        if ($i == "explicit_ms") era_middle = 1
+    }
+
     for (i = 1; i <= NF; i++) {
         name = $i
         if (name == "conv") {
@@ -84,13 +98,17 @@ FNR == 1 {
             profile_column = i
         } else if (name ~ /_ms$/) {
             engine = substr(name, 1, length(name) - 3)
-            # BEFORE de-zovl the columns were called fwd and bwd, and neither was a
-            # backward search: fwd is the explicit crawl and bwd is the symbolic FORWARD
-            # one. Those runs still hold usable weights, under the names they meant.
-            if (engine == "fwd") {
-                engine = "explicit"
-            } else if (engine == "bwd") {
-                engine = "symfwd"
+            if (era_middle) {
+                # de-zovl's names for the two that survive.
+                if (engine == "symfwd") engine = "fwd"
+                else if (engine == "symbwd") engine = "bwd"
+            } else if (!era_current) {
+                # The oldest runs. `bwd` was the symbolic forward search and is a usable
+                # weight for today's `fwd`. Its `fwd` was a state-at-a-time search that
+                # nothing measures now, so it keeps a name nothing asks about rather than
+                # poisoning the column that bears that name today.
+                if (engine == "bwd") engine = "fwd"
+                else if (engine == "fwd") engine = "explicit"
             }
             column_engine[i] = engine
         }

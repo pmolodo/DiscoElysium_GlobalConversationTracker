@@ -185,7 +185,7 @@ impl Service {
         self.header.map_or(0, |header| header.format)
     }
 
-    /// Every question a crawl over one conversation's group can ask the world.
+    /// Every question a search over one conversation's group can ask the world.
     ///
     /// The caller answers these keys and hands them back in a look-ahead request; see
     /// [`crate::bridge::Questions`] for why the engine names its own keys rather than

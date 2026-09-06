@@ -72,7 +72,7 @@ struct Row {
     save: String,
     /// The state budget to run at, or 0 for no such limit.
     ///
-    /// What a row starves a crawl with, so that a shape only an unfinished search can
+    /// What a row starves a search with, so that a shape only an unfinished search can
     /// produce is reachable at all. TEST-ONLY since de-7z0f: no player setting writes it,
     /// and the memory budget cannot do the job - see `LookAheadRequest::state_budget`.
     #[serde(rename = "stateBudget")]

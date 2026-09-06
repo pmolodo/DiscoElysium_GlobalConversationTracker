@@ -151,7 +151,7 @@ fn how_much_of_the_guard_corpus_compiles() {
         // shape rate: the symbol table only holds names an ACTION mentions, because that
         // is what interns them. A guard reading a variable no action in the group ever
         // writes finds nothing in the table and falls back - even though such a variable
-        // is CONSTANT for the whole crawl and so is the easiest thing there is to decide.
+        // is CONSTANT for the whole search and so is the easiest thing there is to decide.
         let mut distinct: Vec<&String> = mentioned.iter().collect();
         distinct.sort();
         distinct.dedup();
@@ -208,7 +208,7 @@ fn how_much_of_the_guard_corpus_compiles() {
 /// This has to be asked separately, because `build_group_graph` turns a parse failure
 /// into `always_true` - the same shape as "this entry has no guard". So a guard the
 /// parser cannot read is invisible to the measurement above, which skips literals, AND
-/// invisible to the crawl, which simply walks through it. A high rate here would mean
+/// invisible to the search, which simply walks through it. A high rate here would mean
 /// both the compile figures and the engine's own answers are being taken over content
 /// nobody has read.
 #[test]

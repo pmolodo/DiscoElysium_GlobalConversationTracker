@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MIT
 //! The question the look-ahead actually asks, answered one target at a time.
 //!
-//! [`crate::engine::engine::LookAheadEngine::evaluate`] returns the best novelty among the
-//! entries a start can reach, and returns early the moment it sees the best there is. So
-//! the answer is a MAXIMUM over an ordered enum, and the way to compute a maximum is not
-//! to compute the set it is a maximum of.
+//! What the mod asks for is the best novelty among the entries a start can reach, and
+//! nothing beyond the best there is. So the answer is a MAXIMUM over an ordered enum, and
+//! the way to compute a maximum is not to compute the set it is a maximum of.
 //!
 //! This asks [`Backward`] about one candidate at a time and stops at the first one that
 //! can be reached.
@@ -27,9 +26,9 @@
 //!
 //! ## What it costs when the answer is no
 //!
-//! One fixed point per candidate, against one crawl for all of them. That is the trade the
+//! One fixed point per candidate, against one search for all of them. That is the trade the
 //! whole approach rests on and the reason [`Budget`] exists: a group with a long candidate
-//! list, every one of them unreachable, is where the forward crawl should win, and
+//! list, every one of them unreachable, is where a forward pass should win, and
 //! de-sze.14.4 is where that crossover gets measured rather than assumed.
 
 use std::collections::{HashMap, VecDeque};
@@ -96,7 +95,7 @@ pub struct NoveltyAnswer {
     /// The entry that proved it, when something did.
     ///
     /// Worth returning rather than throwing away. A marker with a reason behind it can be
-    /// explained, and a disagreement with the crawl can be investigated from the entry
+    /// explained, and a disagreement with the search can be investigated from the entry
     /// both engines disagree about rather than from the whole group.
     pub witness: Option<DialogueNodeId>,
     /// How many candidates were asked about.
@@ -708,104 +707,8 @@ mod tests {
         assert_eq!(answer.witness, Some(node(1)));
     }
 
-    /// The answer the engine gives, on the engine's own shapes.
-    ///
-    /// The acceptance criterion for the whole driver, and the only one that is about the
-    /// product rather than about the parts. Each fixture is one the engine's tests already
-    /// use, so a disagreement is a disagreement about something already understood.
-    ///
-    /// AT LEAST, not exactly. The symbolic side over-approximates - undecided guards go
-    /// through, no cost can be refused - so it may report a better novelty than the crawl
-    /// finds. Reporting a WORSE one would mean a marker lost, and that is what this
-    /// forbids.
-    #[test]
-    fn the_driver_agrees_with_the_engine_on_its_own_fixtures() {
-        use crate::engine::engine::{LookAheadEngine, LookAheadOptions};
-
-        let shut = TestWorld::new().set_variable("shut", GuardValue::from_boolean(false));
-        let plain = TestWorld::new();
-
-        // Name, graph, world, and which entries are unseen.
-        let fixtures: Vec<(&str, LookAheadGraph, &TestWorld, Vec<i32>)> = vec![
-            (
-                "a false guard blocks",
-                GraphBuilder::new()
-                    .add(Entry::new(0).links(&[1]))
-                    .add(Entry::new(1).guard(r#"Variable["shut"]"#).links(&[2]))
-                    .add(Entry::new(2))
-                    .build(),
-                &shut,
-                vec![2],
-            ),
-            (
-                "an unknown guard does not block",
-                GraphBuilder::new()
-                    .add(Entry::new(0).links(&[1]))
-                    .add(Entry::new(1).guard("IsKimHere()").links(&[2]))
-                    .add(Entry::new(2))
-                    .build(),
-                &plain,
-                vec![2],
-            ),
-            (
-                "actions unlock their own downstream guards",
-                GraphBuilder::new()
-                    .add(Entry::new(0).links(&[1]))
-                    .add(
-                        Entry::new(1)
-                            .script(r#"SetVariableValue("opened", true)"#)
-                            .links(&[2]),
-                    )
-                    .add(Entry::new(2).guard(r#"Variable["opened"]"#))
-                    .build(),
-                &plain,
-                vec![2],
-            ),
-            (
-                "groups are traversed but never scored",
-                GraphBuilder::new()
-                    .add(Entry::new(0).links(&[1]))
-                    .add(Entry::new(1).group().links(&[2]))
-                    .add(Entry::new(2))
-                    .build(),
-                &plain,
-                vec![1],
-            ),
-            (
-                "cycles terminate",
-                GraphBuilder::new()
-                    .add(Entry::new(0).links(&[1]))
-                    .add(Entry::new(1).links(&[2]))
-                    .add(Entry::new(2).links(&[1]))
-                    .build(),
-                &plain,
-                vec![2],
-            ),
-        ];
-
-        for (name, graph, world, unseen) in fixtures {
-            let novelty = novel(&unseen, Novelty::UnseenAnyGame);
-            let engine = LookAheadEngine::new(LookAheadOptions {
-                counter_cap: CAP,
-                ..Default::default()
-            });
-            let expected = engine.evaluate(&graph, node(0), world, &novelty).best;
-            let answer = search(&graph, world, &novelty);
-
-            assert!(
-                answer.best >= expected,
-                "{name}: the driver said {:?} where the engine said {expected:?}, which \
-                 is a marker lost",
-                answer.best,
-            );
-            assert_eq!(
-                answer.best, expected,
-                "{name}: the driver said {:?} and the engine said {expected:?} - a \
-                 surplus rather than a loss, but an unexplained one",
-                answer.best,
-            );
-        }
-    }
+    // AND NOTHING HERE IS INDEPENDENT EITHER: these fixtures are checked against the same
+    // machinery that answers them. See de-eonm.
 
     /// A group is never a candidate, however novel the save says it is.
     #[test]

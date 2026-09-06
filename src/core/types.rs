@@ -100,7 +100,7 @@ pub fn ternary_or(left: Ternary, right: Ternary) -> Ternary {
     }
 }
 
-/// What ended a crawl before it explored everything reachable.
+/// What ended a search before it explored everything reachable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum LookAheadLimit {
@@ -112,7 +112,7 @@ pub enum LookAheadLimit {
     /// The limit that governs by default, because it is the one that means the same thing
     /// in every conversation. A state carries one slot per tracked variable in its group, so
     /// a budget counted in STATES buys between 136 and 455 megabytes depending on which
-    /// conversation the player is standing in - measured, see tests/crawl_memory.rs - and a
+    /// conversation the player is standing in - measured - and a
     /// number that elastic protects nothing in particular. See de-e23q.
     Memory = 3,
 
@@ -138,11 +138,9 @@ pub enum LookAheadLimit {
 /// A search told which of those it is exploring answers about that outcome alone, which is
 /// what lets the mod draw a check's two halves apart - see de-8hh2.6.
 ///
-/// HERE RATHER THAN BESIDE ONE ENGINE, since 2026-09-06. It began as a crawl's parameter,
-/// where `Pass` and `Fail` were positions in the vector `enter_rolled` built. Both engines
-/// need it now, and neither owns it: the symbolic search builds the two cases as separate
-/// formulas rather than as a vector, so the meaning has to be the ROLL rather than an
-/// index into anything.
+/// HERE RATHER THAN BESIDE ONE SEARCH, because more than one thing asks the question: the
+/// forward pass, the backward driver and the refusal walk in front of them all take it.
+/// It names the ROLL rather than an index into anything a particular search builds.
 ///
 /// A start that does not roll leaves exactly one way in, and that way is its `Pass`; its
 /// `Fail` is empty, because there is no failure to explore. The bridge asks for branches

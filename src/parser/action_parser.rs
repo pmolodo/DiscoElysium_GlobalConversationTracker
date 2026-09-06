@@ -248,7 +248,7 @@ fn translate_call(call: Invocation, symbols: &mut StateSymbols, actions: &mut Ve
         // SetFlag writes as `Variable[...]`.
         //
         // Left unmodelled, a path that opens only after a SetFlag stays closed for the
-        // crawl, so it misses reachable states and can lose a marker - the failure that
+        // search, so it misses reachable states and can lose a marker - the failure that
         // shows nothing rather than something wrong.
         "SetFlag" | "UnsetFlag" => {
             let raised = call.name == "SetFlag";
@@ -261,7 +261,7 @@ fn translate_call(call: Invocation, symbols: &mut StateSymbols, actions: &mut Ve
         //
         //     Lua.Run("Variable[\"reputation.<name>\"] = Variable[\"reputation.<name>\"] + 1")
         //
-        // wrapped in the same `once()` the crawl already models. `ReputationLowers` is the
+        // wrapped in the same `once()` the search already models. `ReputationLowers` is the
         // same with -1.
         //
         // Not scorekeeping, whatever the name suggests: conversation 631's guards read
@@ -299,7 +299,7 @@ fn translate_call(call: Invocation, symbols: &mut StateSymbols, actions: &mut Ve
         //
         //     if not Variable[var] then Variable[var] = true; xp = xp + amount end
         //
-        // The experience is not crawl state and the crawl has no use for it. The VARIABLE
+        // The experience is not search state and the search has no use for it. The VARIABLE
         // is, and guards read it like any other. Assigning 1 unconditionally rather than
         // only when unset comes to the same thing, because the value is only ever 1.
         "XPPicoSetBool" | "XPTinySetBool" | "XPMinorSetBool" | "XPStandardSetBool"
@@ -322,8 +322,8 @@ fn translate_call(call: Invocation, symbols: &mut StateSymbols, actions: &mut Ve
         // `Inventory.CanBeGained` refuses a thought already gained, so a second call
         // changes nothing - and a thought the player has FORGOTTEN can never be regained,
         // which this does not model. That direction is safe: forgetting costs a skill
-        // point and no crawl can do it, so a thought the save says is forgotten is one
-        // the crawl was never going to be told about anyway.
+        // point and no search can do it, so a thought the save says is forgotten is one
+        // the search was never going to be told about anyway.
         "GainThought" => {
             let slot = symbols.thought(&unquote(call.args.first().unwrap_or(&String::new())));
             actions.push(DialogueAction::assign(slot, 1, call.name));

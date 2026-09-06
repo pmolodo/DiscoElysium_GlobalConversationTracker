@@ -17,12 +17,12 @@ pub const TASK_PREFIX: &str = "task:";
 /// exactly one thought writer, `GainThought`, and it adds to `gainedThoughts` and nothing
 /// else. Internalising is the player spending a cabinet slot and hours of game time, and
 /// forgetting costs a skill point, so `IsTHCCooking` and `IsTHCFixed` are constants for
-/// the length of any crawl and get no slot.
+/// the length of any search and get no slot.
 pub const THOUGHT_PREFIX: &str = "thought:";
 pub const ONCE_PREFIX: &str = "once:";
 pub const SEEN_PREFIX: &str = "seen:";
 
-/// Maps every named thing the crawl can read or write onto a slot index.
+/// Maps every named thing the search can read or write onto a slot index.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateSymbols {
     indices: HashMap<String, usize, ahash::RandomState>,
@@ -296,4 +296,56 @@ impl Default for LookAheadState {
     fn default() -> Self {
         Self::empty(0, 0, 0)
     }
+}
+
+/// The state a search starts in: what the world says about every slot the graph has.
+///
+/// HERE RATHER THAN IN A SEARCH, because it is a fact about the world and the graph and
+/// not about any way of walking them. Every search that starts anywhere starts here.
+///
+/// Seeding is not a detail. A symbolic run seeded with every data state explores paths that
+/// need an item the player does not have and reports entries no real search can reach; two
+/// searches only agree if they start together.
+pub fn seed_state(
+    graph: &crate::graph::graph::LookAheadGraph,
+    world: &dyn crate::world::world::ILookAheadWorld,
+) -> LookAheadState {
+    let symbols = graph.symbols();
+    let mut state = LookAheadState::empty(symbols.count(), world.money(), world.day_minutes());
+
+    for slot in 0..symbols.count() {
+        if let Some(name) = symbols.name_of(slot) {
+            if let Some(stripped) = name.strip_prefix("item:") {
+                if world.initially_has_item(stripped) {
+                    state = state.with(slot, 1);
+                }
+            } else if let Some(stripped) = name.strip_prefix("task:") {
+                if world.initially_task_active(stripped) {
+                    state = state.with(slot, 1);
+                }
+            } else if let Some(stripped) = name.strip_prefix("thought:") {
+                if world.initially_has_thought(stripped) {
+                    state = state.with(slot, 1);
+                }
+            } else if !name.starts_with("once:") && !name.starts_with("seen:") {
+                let val = world.get_variable(name);
+                if val.kind() == crate::core::guard_value::GuardValueKind::Boolean && val.boolean() {
+                    state = state.with(slot, 1);
+                } else if val.kind() == crate::core::guard_value::GuardValueKind::Number
+                    && val.number() != 0.0
+                {
+                    state = state.with(slot, val.number() as i32);
+                }
+            }
+        }
+    }
+
+    // Seed seen slots from save
+    for node in graph.nodes() {
+        if node.seen_slot >= 0 && world.is_seen(node.id) {
+            state = state.with(node.seen_slot as usize, 1);
+        }
+    }
+
+    state
 }

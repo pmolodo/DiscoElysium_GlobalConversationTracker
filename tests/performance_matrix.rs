@@ -17,11 +17,11 @@
 //! | `symfwd` | `Reachability::explore_within` | a set per entry | forwards |
 //! | `symbwd` | `novelty_search::best_novelty` over `Backward` | a set per entry | backwards |
 //!
-//! EXPLICIT is the crawl that is wired in today - the one the plugin calls, and the only
+//! EXPLICIT is the search that is wired in today - the one the plugin calls, and the only
 //! one anything outside these measurements uses. Its queue holds (entry, state) pairs, so
 //! an entry reachable in a thousand data states is popped a thousand times.
 //!
-//! SYMBOLIC FORWARD walks `node.links` from the start exactly as the crawl does; what
+//! SYMBOLIC FORWARD walks `node.links` from the start exactly as the search does; what
 //! differs is that one decision diagram per entry holds every data state reached there at
 //! once. Symbolic in the data, forwards in direction.
 //!
@@ -41,7 +41,7 @@
 //!
 //! ## What the backward column costs, and why that is the whole question
 //!
-//! When the answer is NO it pays one fixed point PER CANDIDATE, where the crawl pays one
+//! When the answer is NO it pays one fixed point PER CANDIDATE, where the search pays one
 //! walk for all of them. So the rule the portfolio needs should fall out of two numbers a
 //! row already has - how many candidates were waiting, and what one pass cost:
 //!
@@ -49,7 +49,7 @@
 //!   formula only if a guard on some path to the target reads it, and a write erases its
 //!   slot, which is the cone-of-influence reduction a forward search needs a separate
 //!   analysis to get.
-//! - MANY UNREACHABLE CANDIDATES favours forward, because one crawl refuses all of them.
+//! - MANY UNREACHABLE CANDIDATES favours forward, because one search refuses all of them.
 //!
 //! ## The grid
 //!
@@ -103,7 +103,7 @@
 //! SUPERSEDED TWICE OVER, AND KEPT AS HISTORY.
 //!
 //! THE COLUMNS ARE NOT WHAT THEY SAY. This run predates de-zovl, so its "forward" is the
-//! explicit crawl and its "backward" is the SYMBOLIC FORWARD search - the two columns
+//! explicit search and its "backward" is the SYMBOLIC FORWARD search - the two columns
 //! renamed above. Nothing below is a measurement of a backward search, and the headings
 //! are left as `explicit` and `symfwd` to stop it being read as one.
 //!
@@ -134,20 +134,20 @@
 //!   explicit: found, 0ms, 2-100 states      symfwd: found, 5-15ms, 30-55K nodes
 //! ```
 //!
-//! ### The explicit crawl wins almost everywhere, and it is not close
+//! ### The explicit search wins almost everywhere, and it is not close
 //!
-//! On the profiles a real save actually has - any of the random percentages - the crawl
+//! On the profiles a real save actually has - any of the random percentages - the search
 //! answers in under a millisecond and the symbolic forward search takes five to fifteen.
 //! Not a disaster in either case, but there is no argument for the diagram there: it is
 //! slower on every single row.
 //!
-//! On the adversarial profiles the crawl gives up in about four hundred milliseconds and
+//! On the adversarial profiles the search gives up in about four hundred milliseconds and
 //! the symbolic one spends A MINUTE to give up as well. Five of the six conversations end
 //! that way.
 //!
 //! ### Conversation 28 is the exception, and the whole case
 //!
-//! It ANSWERS where the crawl cannot: 50 milliseconds against 490 spent giving up. That is
+//! It ANSWERS where the search cannot: 50 milliseconds against 490 spent giving up. That is
 //! what a symbolic search is for, and it is one conversation in six. Anything that decides
 //! between engines per option (de-a1wb) has to find the 28-shaped groups cheaply, because
 //! guessing wrong costs a minute.
@@ -156,7 +156,7 @@
 //!
 //! Worth recording because it was nearly missed. The manager PREALLOCATES its node capacity
 //! and refuses to grow past it, and that capacity was a hand-picked 2^22 - about 134 MB,
-//! half the crawl's allowance. On that setting 631 and 14 both read NO ROOM.
+//! half the search's allowance. On that setting 631 and 14 both read NO ROOM.
 //!
 //! Derive the capacity from the budget instead and they separate: 631 runs out of TIME at
 //! 6.4 million nodes, and only 14 genuinely fails to fit, stopping at exactly the 8,388,608
@@ -165,7 +165,7 @@
 //!
 //! ### The adversarial rows are all the same row
 //!
-//! Within a conversation, deepest-1, -5 and -10 cost the explicit crawl exactly the same
+//! Within a conversation, deepest-1, -5 and -10 cost the explicit search exactly the same
 //! number of states - 170,870 on 368, three times over, and the same as the all-seen row did
 //! before it was removed. The deepest entries by edge analysis are the ones the guards shut,
 //! so seeding them changes nothing the search can find and it explores the whole space
@@ -187,7 +187,7 @@
 //! ```
 //!
 //! THE BACKWARD SEARCH IS THE ONLY ONE THAT ANSWERS, and it answers in two thirds of a
-//! second. The crawl spends twenty seconds and six gigabytes to give up; the symbolic
+//! second. The search spends twenty seconds and six gigabytes to give up; the symbolic
 //! forward search spends ELEVEN MINUTES and ninety million nodes to give up. Neither
 //! failure is the ration talking - both were given the whole measurement budget, which is
 //! what de-e33h asked for and what the 256 MB history above could not say.
@@ -218,7 +218,7 @@
 //! the backward sets are over-approximations, so a state missing from one genuinely cannot
 //! reach the target.
 //!
-//! That is the row both forward searches fail. At the old 256 MB setting the crawl gave up
+//! That is the row both forward searches fail. At the old 256 MB setting the search gave up
 //! in 390ms having explored 133,089 states, and the symbolic forward search read NO ROOM
 //! at 8.4 million nodes after 55 seconds; this settles it in under half a second on 28
 //! thousand. It is one row against a run at a different allowance, so it is a shape rather
@@ -252,7 +252,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use lookahead_engine::core::state::StateSymbols;
 use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
-use lookahead_engine::engine::engine::{LookAheadEngine, LookAheadOptions};
+use lookahead_engine::symbolic::portfolio;
 use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
@@ -279,10 +279,10 @@ const HEAVIEST: [i32; 6] = [362, 368, 631, 14, 28, 1030];
 /// is where the search actually stops, so it gets the shared measurement budget and the
 /// default the plugin runs under is left alone.
 ///
-/// Both engines take it: the crawl in bytes directly, the diagram through
+/// Both engines take it: the search in bytes directly, the diagram through
 /// [`DiagramBudget`], which turns it into a node capacity and a cache capacity. A hand-
 /// picked capacity is what made this unequal before - 2^22 nodes is a hard ceiling of
-/// about 134 MB, half what the crawl was allowed, and conversations 631 and 14 reported
+/// about 134 MB, half what the search was allowed, and conversations 631 and 14 reported
 /// "no room" at exactly 4,194,304 nodes, which was that ceiling and not the budget.
 /// Override with `ROW_MEMORY_MB`, for the one conversation that wants more than the rest.
 ///
@@ -330,7 +330,7 @@ fn row_time() -> std::time::Duration {
 /// ## Why a row needs this at all
 ///
 /// Because a heavy row is half an hour of silence. Both engines already had the hook - the
-/// crawl reports on a clock, the fixed point every so many steps - and both were passed
+/// search reports on a clock, the fixed point every so many steps - and both were passed
 /// None here, so a run that took an hour and twenty-seven minutes printed sixty-six lines
 /// and nothing in between. There is no percentage to give: neither engine knows how much
 /// is left, only how much it has spent. So progress is what it HAS spent, which is the
@@ -351,7 +351,7 @@ fn progress_every() -> Option<std::time::Duration> {
 /// Two rates because they cost differently: looking up is a clock read and a memory
 /// question, and is wanted often enough that the budget cannot be overspent by much;
 /// gathering the line walks every entry's set for a node count, and is wanted only as often
-/// as somebody can read it. The forward crawl needs no equivalent - it is already on a
+/// as somebody can read it. The forward search needs no equivalent - it is already on a
 /// clock of its own.
 const CHECK_GAP: std::time::Duration = std::time::Duration::from_secs(1);
 
@@ -419,30 +419,36 @@ const PROFILES: [Profile; 10] = [
 
 /// The three searches a row can hold, named for what they actually do.
 ///
-/// NOT `fwd` AND `bwd`. Those were the old names and only one of the two axes is direction:
-/// the first two columns are both forward searches and differ in how they carry data, and
-/// only the third reverses direction. See the note at the top of this file.
+/// DIRECTION IS WHAT TELLS THEM APART, which is why the names are what they are: every
+/// engine here carries its data the same way - a decision diagram per entry - so a prefix
+/// saying so would distinguish nothing.
+///
+/// READING AN OLD RUN: a folder whose columns say `symfwd`/`symbwd` is this pair under
+/// older names, and one whose columns say `fwd`/`bwd` and nothing else is older still,
+/// where `bwd` is what this file calls `fwd`. See measurements/README.md.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Engine {
-    /// `LookAheadEngine::evaluate`: one data state at a time, forwards.
-    Explicit,
-    /// `Reachability::explore_within`: a set per entry, still forwards.
-    SymbolicForward,
+    /// `Reachability::explore_within`: a set per entry, forwards.
+    Forward,
     /// `novelty_search::best_novelty` over `Backward`: a set per entry, backwards, one
     /// candidate at a time.
-    SymbolicBackward,
+    Backward,
+    /// `portfolio::best_novelty`: a forward slice, then the backward driver told what it
+    /// found. WHAT THE GAME ACTUALLY RUNS, since the bridge was rewired - so this is the
+    /// column that says what a player waits for, and the other two are what it is made of.
+    ForwardBackward,
 }
 
 const ALL_ENGINES: [Engine; 3] =
-    [Engine::Explicit, Engine::SymbolicForward, Engine::SymbolicBackward];
+    [Engine::Forward, Engine::Backward, Engine::ForwardBackward];
 
 impl Engine {
     /// The name `ENGINES` selects it by, and the prefix its columns carry.
     fn label(self) -> &'static str {
         match self {
-            Engine::Explicit => "explicit",
-            Engine::SymbolicForward => "symfwd",
-            Engine::SymbolicBackward => "symbwd",
+            Engine::Forward => "fwd",
+            Engine::Backward => "bwd",
+            Engine::ForwardBackward => "fwdbwd",
         }
     }
 
@@ -450,12 +456,14 @@ impl Engine {
     /// built from these and `tools/measure-matrix.sh` asks the test for it.
     fn columns(self) -> &'static [&'static str] {
         match self {
-            Engine::Explicit => &["verdict", "ms", "states"],
             // Two sizes because neither bounds the other; see `symbolic_forward`.
-            Engine::SymbolicForward => &["verdict", "ms", "nodes", "setsum"],
+            Engine::Forward => &["verdict", "ms", "nodes", "setsum"],
             // `asked` against `cands` is the whole trade this column exists to price: one
-            // fixed point per candidate asked about, against one crawl for all of them.
-            Engine::SymbolicBackward => &["verdict", "ms", "nodes", "asked", "cands"],
+            // fixed point per candidate asked about, against one pass over all of them.
+            Engine::Backward => &["verdict", "ms", "nodes", "asked", "cands"],
+            // `by` is which half answered - the forward slice, the backward driver, or
+            // neither completely - which is the whole question the switching method asks.
+            Engine::ForwardBackward => &["verdict", "ms", "by", "asked"],
         }
     }
 
@@ -560,7 +568,7 @@ fn structurally_reachable(
 /// The entries a profile can be built from: reachable, not the start, and not groups.
 ///
 /// GROUPS ARE EXCLUDED because the game never writes a group's SimStatus, so every group in
-/// the database reads as never displayed and the crawl refuses to score one. Seeding a group
+/// the database reads as never displayed and the search refuses to score one. Seeding a group
 /// as unseen would add an entry that cannot end a search, which would quietly make a row
 /// harder than it claims to be.
 ///
@@ -652,49 +660,71 @@ impl Cells {
     }
 }
 
-fn explicit(
+/// The switching method, which is what the game runs.
+///
+/// THE PORTFOLIO, NOT A THIRD ALGORITHM: a forward slice hunting the best class anything
+/// reachable carries, and then the backward driver told what the slice found. Where the
+/// slice halts, nothing else runs; where it does not, what it reached is handed on and a
+/// backward pass that MEETS it stops there. The other two columns are its halves measured
+/// alone, which is what makes this row readable against them.
+///
+/// The budget is the portfolio's own - the one the bridge hands it, scaled by nothing here
+/// - because what this column is for is what a player waits for. A row measured under a
+/// measurement-sized budget would answer a question nobody asks.
+fn forward_backward(
     graph: &LookAheadGraph,
     start: DialogueNodeId,
     world: &dyn lookahead_engine::world::world::ILookAheadWorld,
+    symbols: &StateSymbols,
     unseen: &HashSet<DialogueNodeId>,
 ) -> Cells {
+    let began = std::time::Instant::now();
+
+    let layout = DataLayout::for_graph(graph, COUNTER_CAP, None, false)
+        .keeping_only_read(symbols, &DataLayout::read_by(graph));
+    let Some(vars) = DataVars::try_new(&layout, symbols, budget()) else {
+        return Cells::absent(NOT_MEASURED, Engine::ForwardBackward);
+    };
+    let mut compiler = GuardCompiler::new(&vars)
+        .with_world(world)
+        .with_constant_clock(DataLayout::group_passes_time(graph));
+    let seed = seed_of(graph, world, &vars);
+
     let novelty = |id: DialogueNodeId| {
         if unseen.contains(&id) { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
     };
 
-    let began = std::time::Instant::now();
-    let allowance = memory();
-    let every = progress_every();
-    let result = LookAheadEngine::new(LookAheadOptions {
-        state_budget: usize::MAX,
-        memory_budget: allowance,
-        time_budget: row_time(),
-        counter_cap: COUNTER_CAP,
-        // The crawl's own clock decides when, so there is nothing to throttle here.
-        progress_interval: every.unwrap_or_default(),
-        on_progress: every.map(|_| {
-            Box::new(move |_node, states: usize, reached: usize, bytes: usize, elapsed| {
-                println!(
-                    "{PROGRESS} explicit {:>7}  {states:>12} states  {reached:>6} reached  {} / {}",
-                    mmss(elapsed),
-                    gb(bytes),
-                    gb(allowance),
-                );
-            }) as Box<dyn Fn(_, _, _, _, _) + Send + Sync>
-        }),
-        ..Default::default()
-    })
-    .evaluate(graph, start, world, novelty);
+    // The caller's walk, as the bridge's is: one pass over the links names the class, and
+    // the search is not asked to work it out again.
+    let hunting = graph
+        .best_linked_class(start, &novelty)
+        .unwrap_or(Novelty::SeenThisGame);
 
-    let verdict = if result.best == Novelty::UnseenAnyGame {
-        "found"
-    } else if result.budget_exhausted() {
-        "gave-up"
-    } else {
-        "not-there"
+    let answer = portfolio::best_novelty(
+        graph,
+        start,
+        StartBranch::Either,
+        &seed,
+        &mut compiler,
+        world,
+        COUNTER_CAP as u32,
+        &novelty,
+        hunting,
+        &portfolio::Budget::default(),
+    );
+
+    let verdict = match answer.by {
+        _ if answer.best > Novelty::SeenThisGame => "found",
+        portfolio::Answered::Partly => "gave-up",
+        _ => "not-there",
     };
 
-    Cells::of(verdict, began.elapsed().as_millis(), &[result.states_explored])
+    Cells(vec![
+        verdict.to_string(),
+        began.elapsed().as_millis().to_string(),
+        format!("{:?}", answer.by),
+        answer.targets_asked.to_string(),
+    ])
 }
 
 fn symbolic_forward(
@@ -708,7 +738,7 @@ fn symbolic_forward(
 
     let layout = DataLayout::for_graph(graph, COUNTER_CAP, None, false)
         .keeping_only_read(symbols, &DataLayout::read_by(graph));
-    // From the same allowance, so the diagram and the crawl are held to one number rather than two
+    // From the same allowance, so the diagram and the search are held to one number rather than two
     // that happen to agree.
     //
     // FALLIBLY, because the alternative is not a wrong number but a dead process: the
@@ -716,7 +746,7 @@ fn symbolic_forward(
     // machine could not supply the budget, which is not a finding about the search - the
     // row is NOT MEASURED and wants running again with the memory free.
     let Some(vars) = DataVars::try_new(&layout, symbols, budget()) else {
-        return Cells::absent(NOT_MEASURED, Engine::SymbolicForward);
+        return Cells::absent(NOT_MEASURED, Engine::Forward);
     };
     let mut compiler = GuardCompiler::new(&vars)
         .with_world(world)
@@ -741,7 +771,7 @@ fn symbolic_forward(
         // The measurement allowance is far larger than the plugin's, so the machine is the
         // real ceiling here and the guard matters more, not less.
         on_step: None,
-        system_reserve: lookahead_engine::engine::system_memory::DEFAULT_RESERVE,
+        system_reserve: lookahead_engine::core::system_memory::DEFAULT_RESERVE,
         report_gap: every.unwrap_or_default(),
         on_progress: every.map(|_| {
             Box::new(
@@ -760,7 +790,7 @@ fn symbolic_forward(
                 },
             ) as Box<dyn Fn(usize, usize, usize, usize, usize)>
         }),
-        // The same early exit the forward crawl has: the question is whether ANY unseen
+        // The same early exit the forward search has: the question is whether ANY unseen
         // entry is reachable, not what the whole reachable set is.
         halt_on: Some(Box::new(move |id| quarry.contains(&id))),
     };
@@ -831,7 +861,7 @@ fn symbolic_backward(
     let layout = DataLayout::for_graph(graph, COUNTER_CAP, None, false)
         .keeping_only_read(symbols, &DataLayout::read_by(graph));
     let Some(vars) = DataVars::try_new(&layout, symbols, budget()) else {
-        return Cells::absent(NOT_MEASURED, Engine::SymbolicBackward);
+        return Cells::absent(NOT_MEASURED, Engine::Backward);
     };
     let mut compiler = GuardCompiler::new(&vars)
         .with_world(world)
@@ -910,7 +940,7 @@ fn symbolic_backward(
     };
 
     // `asked` AGAINST `cands` IS THE POINT. One fixed point was paid per candidate asked
-    // about, where the crawl beside it pays one walk for every candidate there is - so a
+    // about, where the search beside it pays one walk for every candidate there is - so a
     // row where the two numbers are equal and the verdict is not-there is the worst case
     // for this engine, and a row that asked about one of hundreds is its best.
     Cells::of(
@@ -985,11 +1015,11 @@ fn every_engine_over_every_profile() {
             // take the memory between the answer here and the allocation there, and the
             // allocation aborts rather than failing.
             //
-            // ONLY WHEN A DIAGRAM IS ACTUALLY WANTED. A run of the crawl alone allocates
-            // no manager, so refusing it for want of a budget nothing will spend would
-            // throw away the one column that can still be measured on a busy machine.
-            let wants_diagram = engines.iter().any(|engine| *engine != Engine::Explicit);
-            if wants_diagram && !budget().can_be_supplied() {
+            // EVERY ENGINE HERE WANTS ONE, since the explicit search went: it was the only
+            // column that allocated no manager, and the check used to be skipped for a run
+            // of it alone. Now a machine that cannot supply the budget has nothing to
+            // measure at all, which is what NOT-MEASURED says.
+            if !budget().can_be_supplied() {
                 eprintln!(
                     "NOT MEASURED: {conversation} {} - this machine could not supply the \
                      {} MB budget. The row is not a result; run it again with the memory \
@@ -1014,12 +1044,14 @@ fn every_engine_over_every_profile() {
             let measured: Vec<String> = engines
                 .iter()
                 .flat_map(|engine| match engine {
-                    Engine::Explicit => explicit(&graph, start, &world, &unseen).0,
-                    Engine::SymbolicForward => {
+                    Engine::Forward => {
                         symbolic_forward(&graph, start, &world, &symbols, &unseen).0
                     }
-                    Engine::SymbolicBackward => {
+                    Engine::Backward => {
                         symbolic_backward(&graph, start, &world, &symbols, &unseen).0
+                    }
+                    Engine::ForwardBackward => {
+                        forward_backward(&graph, start, &world, &symbols, &unseen).0
                     }
                 })
                 .collect();

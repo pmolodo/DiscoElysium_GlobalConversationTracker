@@ -16,7 +16,7 @@
 //!
 //! ## The meet, which is the interesting one
 //!
-//! A forward search records, per entry, the data states a crawl can hold there. A backward
+//! A forward search records, per entry, the data states a search can hold there. A backward
 //! search from a target records, per entry, the states from which that target is still
 //! reachable. Put them together and a path is complete: if some state can be held at `e`
 //! going forwards AND reaches the target from `e` going backwards, the target is reachable
@@ -36,9 +36,9 @@
 //!
 //! ## The two searches disagree about what a set at an entry means, and it works out
 //!
-//! `Reachability::states_at(e)` holds what a crawl has AFTER entering `e` - its guard
+//! `Reachability::states_at(e)` holds what a search has AFTER entering `e` - its guard
 //! tested, its cost paid, its actions applied - because that is what gets handed to e's
-//! children. `Backward::states_at(c)` holds what a crawl must have ON ARRIVAL at `c`,
+//! children. `Backward::states_at(c)` holds what a search must have ON ARRIVAL at `c`,
 //! before c's own guard.
 //!
 //! So the two do not meet at an entry, they meet across an EDGE: for a link `e -> c`, what
@@ -47,7 +47,7 @@
 //! and answer a question nobody asked.
 //!
 //! The start is the one entry with no incoming edge to meet on, and the seed stands in for
-//! it: the seed is what the crawl holds arriving at the start, which is the same shape as
+//! it: the seed is what the search holds arriving at the start, which is the same shape as
 //! everything else this compares.
 
 use std::cell::RefCell;
@@ -66,7 +66,7 @@ use crate::symbolic::reachability::Reachability;
 enum Arriving {
     /// Exactly these states, and no others.
     Bounded(BDDFunction),
-    /// None at all: the crawl provably never gets here.
+    /// None at all: the search provably never gets here.
     Nothing,
     /// No settled run, or the manager ran out of room working it out. Bounds nothing.
     Unknown,
@@ -89,7 +89,7 @@ pub struct Known {
     order: IterationOrder,
     /// What a forward run left at each entry, AFTER that entry - so, what it can hand on.
     forward: HashMap<DialogueNodeId, BDDFunction>,
-    /// The entry a crawl begins at, and what it holds arriving there.
+    /// The entry a search begins at, and what it holds arriving there.
     start: Option<(DialogueNodeId, BDDFunction)>,
     /// What can arrive at an entry, worked out on demand from [`Self::forward`].
     ///
@@ -129,7 +129,7 @@ impl Known {
         }
     }
 
-    /// The same, told where a crawl begins, so the start-distances can be worked out.
+    /// The same, told where a search begins, so the start-distances can be worked out.
     ///
     /// Without it the members of a component simply tie and the push order decides, which
     /// is a coarser order rather than a wrong one - but it is a measurement reporting
@@ -140,7 +140,7 @@ impl Known {
         this
     }
 
-    /// The same, plus where a crawl begins and what it holds when it does.
+    /// The same, plus where a search begins and what it holds when it does.
     pub fn from(mut self, start: DialogueNodeId, seed: &BDDFunction) -> Self {
         self.start = Some((start, seed.clone()));
         self
@@ -189,7 +189,7 @@ impl Known {
         self.forward_settled
     }
 
-    /// Everything a crawl could be holding when it arrives at `id`.
+    /// Everything a search could be holding when it arrives at `id`.
     ///
     /// ONLY FROM A SETTLED FORWARD RUN, and that restriction is the whole of the soundness
     /// argument. A settled run's sets are complete, so a state outside this can never be
@@ -240,7 +240,7 @@ impl Known {
             Some(bound) => Arriving::Bounded(bound),
             // A settled run reached no parent of this entry and it is not the start, so
             // NOTHING can arrive here at all. Stronger than a bound, and the case worth
-            // having: a backward pass otherwise spends a fixed point on entries the crawl
+            // having: a backward pass otherwise spends a fixed point on entries the search
             // provably never visits.
             None => Arriving::Nothing,
         };
@@ -252,7 +252,7 @@ impl Known {
     /// Whether a settled forward run says NOTHING can arrive at this entry.
     ///
     /// The cheap half of pruning, and it costs no diagram work at all: an entry no reached
-    /// parent hands anything to, and which is not the start, is one the crawl provably
+    /// parent hands anything to, and which is not the start, is one the search provably
     /// never visits.
     fn nothing_arrives(&self, id: DialogueNodeId) -> bool {
         if !self.forward_settled {
@@ -271,7 +271,7 @@ impl Known {
     /// OFF UNLESS ASKED FOR, and the reason is a measurement rather than doubt about
     /// whether it is right. Pruning is SOUND - tests/backward_oracle.rs asks every target
     /// of every group it can check both ways twice, plain and pruned, with the explicit
-    /// crawl as referee, and the two have never differed. What it is not yet is stable:
+    /// search as referee, and the two have never differed. What it is not yet is stable:
     /// turning it on overflows the stack on conversations 631 and then 28, which are the
     /// groups the whole approach exists for.
     ///
@@ -313,9 +313,9 @@ impl Known {
         any.and(&any.not().ok()?).ok()
     }
 
-    /// Whether a crawl could arrive at `id` holding one of `wanted`.
+    /// Whether a search could arrive at `id` holding one of `wanted`.
     ///
-    /// The meet. `wanted` is a backward set - what a crawl must hold arriving at `id` for
+    /// The meet. `wanted` is a backward set - what a search must hold arriving at `id` for
     /// the target to still be reachable - so this asks whether anything already known to
     /// arrive there is in it. Across the incoming edges, because what the forward run holds
     /// at a parent is what that parent hands on; and at the start, against the seed.

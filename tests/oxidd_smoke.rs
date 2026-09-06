@@ -29,7 +29,7 @@ fn a_conjunction_is_true_only_when_both_are() {
     assert!(!both.valid());
 
     // eval is how an encoding gets checked against the explicit engine: build the
-    // formula, then ask it about a concrete assignment the crawl also knows the answer
+    // formula, then ask it about a concrete assignment the search also knows the answer
     // for.
     assert!(both.eval([(0, true), (1, true)]));
     assert!(!both.eval([(0, true), (1, false)]));

@@ -355,7 +355,7 @@ impl<'a> RegisterOps<'a> {
     /// Saturation is many-to-one - every value at or above `ceiling - amount` lands on the
     /// ceiling - so the pre-image of the ceiling is a RANGE rather than a point. Getting
     /// that half wrong would make the backward search report an entry unreachable that the
-    /// crawl walks to, which is the one error direction this file is not allowed.
+    /// search walks to, which is the one error direction this file is not allowed.
     pub fn pre_saturating_add(
         &self,
         states: &BDDFunction,
@@ -729,7 +729,7 @@ mod tests {
     ///
     /// Brute force over every width, every amount and every target set of one value,
     /// because the backward search's one forbidden error is a pre-image that is TOO SMALL:
-    /// it reports an entry unreachable that the crawl walks to. A missing value here is
+    /// it reports an entry unreachable that the search walks to. A missing value here is
     /// that bug, and it would hide behind any test that only checked a few cases.
     #[test]
     fn every_pre_image_is_exactly_what_lands_in_the_target() {

@@ -30,7 +30,7 @@
 //!
 //! - HELD CONSTANT. Guards DO read what it writes, and the model answers them from the
 //!   world instead - the same rule that lets an untracked variable compile to a literal.
-//!   That is exact only while the crawl does not write it, and a group that both writes
+//!   That is exact only while the search does not write it, and a group that both writes
 //!   and reads the same subject is walking a branch the model has judged against a stale
 //!   answer. [`Decision::readers`] names the guard functions to watch, so a report can
 //!   ask whether the group in front of it actually does both - see the modelling-gaps
@@ -53,7 +53,7 @@ impl Decision {
     /// Whether anything can notice this being skipped.
     ///
     /// True when guards read what the writers write, so the model is answering them from
-    /// the world and the answer goes stale the moment the crawl writes it.
+    /// the world and the answer goes stale the moment the search writes it.
     pub fn is_held_constant(&self) -> bool {
         !self.readers.is_empty()
     }
@@ -68,12 +68,12 @@ impl Decision {
     }
 }
 
-/// Questions the crawl treats as constant because NOTHING CAN WRITE THEM.
+/// Questions the search treats as constant because NOTHING CAN WRITE THEM.
 ///
 /// Not decisions at all, which is why they are here rather than in [`DECISIONS`]: there is
 /// no approximation to justify. The game registers 171 Lua functions for dialogue to call,
 /// and among them these have readers and no writer whatsoever - so their answer at the
-/// start of a crawl is their answer at the end of it, and asking the world once is exact.
+/// start of a search is their answer at the end of it, and asking the world once is exact.
 ///
 /// Worth writing down because it does not LOOK exact. An action that gains an item could
 /// plausibly change what `CheckEquipped` answers - putting the thing on - and the audit in
@@ -117,7 +117,7 @@ pub const DECISIONS: &[Decision] = &[
     Decision {
         writers: &["UseSubstanceInHand"],
         readers: &["SubstanceUsedOnce", "SubstanceUsedMore"],
-        why: "Substance use is inventory plus a per-substance counter the crawl has no \
+        why: "Substance use is inventory plus a per-substance counter the search has no \
               reader for in practice: 4 conversations use one, 21 ask about one, and no \
               conversation does both.",
     },
@@ -135,7 +135,7 @@ pub const DECISIONS: &[Decision] = &[
             "RemoveCunoWaitAtFort",
         ],
         readers: &["IsKimHere", "IsKimInParty", "IsCunoInParty"],
-        why: "Who is standing next to you is world state the crawl reads constantly - \
+        why: "Who is standing next to you is world state the search reads constantly - \
               IsKimHere alone is 323 guards, the largest single world query - and these \
               move it. Held at the save's answer because a party model is a model of \
               where everybody is, and the writers are rare: 21 scripts across the \
@@ -156,8 +156,8 @@ pub const DECISIONS: &[Decision] = &[
     Decision {
         writers: &["SellItemGroup", "SellItemGroupWithModifier", "ShowInventoryForPawning"],
         readers: &["MoneyAmount", "CheckItem", "CheckItemGroup", "HasPawnablesInInventory"],
-        why: "Pawning turns items into money, and the crawl models both - but how much \
-              money depends on what is in the inventory, which the crawl only knows about \
+        why: "Pawning turns items into money, and the search models both - but how much \
+              money depends on what is in the inventory, which the search only knows about \
               for items this group itself moved. Three scripts in the database.",
     },
     Decision {
@@ -166,8 +166,8 @@ pub const DECISIONS: &[Decision] = &[
         why: "Retiring a white check is read by the CHECK, not by a guard - so no query \
               here goes stale, and `readers` is empty for that reason rather than because \
               nothing notices. What notices is `ILookAheadWorld::check_passes`, which the \
-              crawl already takes at the world's word for every check; a check retired \
-              mid-conversation is one the world would now refuse and the crawl still \
+              search already takes at the world's word for every check; a check retired \
+              mid-conversation is one the world would now refuse and the search still \
               offers. Two scripts in the database.",
     },
     Decision {
@@ -217,7 +217,7 @@ pub const DECISIONS: &[Decision] = &[
             "TequilaRemoveBodysuit",
         ],
         readers: &[],
-        why: "Moving the player and rearranging the scenery. The crawl holds no location \
+        why: "Moving the player and rearranging the scenery. The search holds no location \
               and no object state, and the only spatial guard in the database, \
               IsExterior, is answered from the world like any other constant.",
     },

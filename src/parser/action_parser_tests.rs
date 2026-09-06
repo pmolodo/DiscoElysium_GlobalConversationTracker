@@ -20,7 +20,7 @@ fn caps() -> CounterCaps<'static> {
     CounterCaps::flat(COUNTER_CAP)
 }
 
-/// Parses and applies, the way the crawl does.
+/// Parses and applies, the way the search does.
 fn run(
     script: &str,
     symbols: &mut StateSymbols,
@@ -183,7 +183,7 @@ fn money_never_goes_negative() {
 #[test]
 fn declared_calls_are_recorded_but_change_nothing() {
     let mut symbols = StateSymbols::new();
-    // Both write state the crawl does not carry: one the character sheet's morale, the
+    // Both write state the search does not carry: one the character sheet's morale, the
     // other the screen. Both have a decision on file saying so, so both parse to a stub
     // rather than to an unknown.
     let actions = parse_actions(
@@ -329,7 +329,7 @@ fn reputation_lowers_and_stops_at_zero() {
     assert_eq!(floor.get(slot), 0);
 }
 
-/// The experience is not crawl state; the variable recording it was awarded is.
+/// The experience is not search state; the variable recording it was awarded is.
 #[test]
 fn an_xp_award_sets_the_variable_it_records_itself_in() {
     let mut symbols = StateSymbols::new();

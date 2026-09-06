@@ -2,7 +2,7 @@
 //! How much memory a decision diagram may spend, and what that buys.
 //!
 //! ONE NUMBER, IN BYTES, IS WHAT A CALLER SETS. It is the same quantity the player's
-//! `LookAheadMemoryBudgetMb` sets and the same one the forward crawl is held to, which is
+//! `LookAheadMemoryBudgetMb` sets, which is
 //! the only way two searches can be read against each other (de-e23q).
 //!
 //! Callers used to pass a node capacity and a cache capacity instead, picked per file:
@@ -87,6 +87,18 @@ impl DiagramBudget {
         Self { memory }
     }
 
+    /// What a player's search gets when they have not said otherwise, in bytes.
+    ///
+    /// 256 MB, which is what every shipped configuration has run under. It buys diagram
+    /// nodes, at [`Self::BYTES_PER_NODE`] apiece.
+    ///
+    /// WHETHER IT IS THE RIGHT ALLOWANCE IS A MEASUREMENT NOBODY HAS MADE. The number was
+    /// arrived at against a different way of spending it - states kept, not nodes held - so
+    /// it is a figure with a history rather than a conclusion about this manager. Changing
+    /// it wants a matrix run either side of the change, since a regression traced to a
+    /// budget that moved in the same commit is not traced at all.
+    pub const DEFAULT_MEMORY_BUDGET: usize = 256 * 1024 * 1024;
+
     /// What a measurement gets: six gigabytes, and the same six for every one of them.
     ///
     /// GENEROUS ON PURPOSE, and shared on purpose. A measurement wants to find where an
@@ -122,7 +134,7 @@ impl DiagramBudget {
     /// The allowance, in bytes.
     ///
     /// `const` so that a measurement can hold the OTHER engine to the same number without
-    /// writing it out twice - the forward crawl takes a budget in bytes directly, and two
+    /// writing it out twice - a budget is stated in bytes, and two
     /// searches are only comparable when they were rationed alike (de-e23q).
     pub const fn memory(&self) -> usize {
         self.memory

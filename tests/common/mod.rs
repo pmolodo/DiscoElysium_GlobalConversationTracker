@@ -228,13 +228,13 @@ fn variable_table() -> Option<std::sync::Arc<lookahead_engine::index::VariableTa
 /// ## What makes it save-shaped rather than test-shaped
 ///
 /// `TestWorld` answers UNKNOWN for anything it has not been told, which is the safe
-/// answer for a crawl and the useless one for a measurement: every guard mentioning an
+/// answer for a search and the useless one for a measurement: every guard mentioning an
 /// unset variable becomes undecidable, and most of the database's variables are unset for
 /// most of a playthrough. A save answers. An unset Lua variable is nil and nil is falsy,
 /// so a variable nobody has written reads FALSE, and the facts a save settles - who is in
 /// the party, what is worn, what is in the thought cabinet - are simply known.
 ///
-/// None of it can be changed by a crawl, which is what makes one answer good for the
+/// None of it can be changed by a search, which is what makes one answer good for the
 /// whole walk.
 pub struct SaveWorld {
     /// Counter variables, which must answer as NUMBERS rather than as false.
@@ -267,7 +267,7 @@ pub struct SaveWorld {
     equipped: HashSet<String>,
     /// Thoughts in the cabinet, by `IsTHCPresent` name.
     ///
-    /// The widest of the three sets and the only one a crawl can add to. The game keeps
+    /// The widest of the three sets and the only one a search can add to. The game keeps
     /// `gainedThoughts` apart from the cooking and fixed effects, and internalising a
     /// thought never leaves that set - so anything cooking or fixed is present too, which
     /// [`SaveWorld::cooking`] and [`SaveWorld::internalised`] maintain rather than leave
@@ -399,7 +399,7 @@ impl ILookAheadWorld for SaveWorld {
     ///
     /// Answered here rather than in [`Self::query`] because `IsTHCPresent` is now
     /// slot-backed: `BoundContext::query` and the guard compiler both ask this for a
-    /// thought the group does not gain, and ask the crawl's own state for one it does.
+    /// thought the group does not gain, and ask the search's own state for one it does.
     fn initially_has_thought(&self, name: &str) -> bool {
         self.gained.contains(name)
     }
@@ -421,7 +421,7 @@ impl ILookAheadWorld for SaveWorld {
             "IsTHCFixed" => membership(&self.fixed),
             // Cooking or fixed, which is a NARROWER question than IsTHCPresent - that one
             // asks whether the thought is in the cabinet at all, is answered from
-            // `initially_has_thought` because a crawl can change it, and used to be
+            // `initially_has_thought` because a search can change it, and used to be
             // answered here as cooking-or-fixed. That was this function's semantics given
             // to that one's name: `THCLuaFunctions.IsTHCCookingOrFixed` is the cooking
             // fallthrough to fixed, while `IsTHCPresent` is `gainedThoughts.Contains`.

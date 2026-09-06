@@ -81,10 +81,10 @@ impl ClockTime {
     /// Whether a query reads the STORY's day counter rather than the time of day.
     ///
     /// Held apart from [`Self::owns`] deliberately, and the distinction is not cosmetic.
-    /// `owns` marks the questions a crawl's own `PassTime` can change the answer to,
+    /// `owns` marks the questions a search's own `PassTime` can change the answer to,
     /// which is exactly what makes holding the clock still an APPROXIMATION. THE DAY
     /// CANNOT CHANGE WITHIN A CONVERSATION - only the time of day can - so these three
-    /// are exact constants for any crawl, and answering them costs nothing and risks
+    /// are exact constants for any search, and answering them costs nothing and risks
     /// nothing.
     ///
     /// Answered here rather than left to each world, even though they are the host's
@@ -92,7 +92,7 @@ impl ClockTime {
     /// [`crate::world::world::ILookAheadWorld`] already exposes. Left to the worlds, all
     /// three would be reimplemented in every one of them and unanswered in most - and
     /// unanswered is what they were: 2 guards in conversation 631's group, 2 in 14's and
-    /// 14 `DayCount` calls in 28's fell back for want of a comparison the crawl could
+    /// 14 `DayCount` calls in 28's fell back for want of a comparison the search could
     /// have made itself.
     pub fn owns_day(name: &str) -> bool {
         matches!(name, "DayCount" | "IsDayFrom" | "IsDayUntil")

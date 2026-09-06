@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 //! Reachability over state SETS, without enumerating the states.
 //!
-//! The measurement the epic exists for. The explicit crawl keeps every `(entry, state)`
-//! pair it has visited in a hash set and exhausts a 200,000-state budget in about half a
-//! second on the shapes that matter; this holds one decision diagram per entry and grows
-//! them until nothing changes.
+//! The measurement the epic exists for. A search that enumerates states holds every
+//! `(entry, state)` pair it has visited, and on the shapes that matter there are hundreds
+//! of thousands of them; this holds one decision diagram per entry and grows them until
+//! nothing changes.
 //!
 //! ## Explicit control, symbolic data
 //!
-//! The entry a crawl sits on stays an ordinary value - there are a few thousand of them
+//! The entry the search sits on stays an ordinary value - there are a few thousand of them
 //! and they are enumerated anyway - while everything carried WITH it is symbolic. So the
 //! state of the search is a map from entry to a set of data states, and a step is a
 //! formula about data alone.
@@ -31,9 +31,9 @@
 //!
 //! The same one-directional approximation as the guard compiler, and for the same reason:
 //! `may_be_true` lets an undecided guard through, so a set here is an OVER-approximation
-//! of what the crawl reaches. It may include a data state the real crawl cannot get to;
-//! it may never miss one. Anything else would make the answer useless, because a missed
-//! state is a missed marker.
+//! of what is truly reachable. It may include a data state no path can produce; it may
+//! never miss one. Anything else would make the answer useless, because a missed state is
+//! a missed marker.
 //!
 //! Money is the exception worth naming, and it is not in the layout at all - see
 //! [`Reachability::unaffordable_unknown`].
@@ -44,7 +44,6 @@ use oxidd::bdd::BDDFunction;
 use oxidd::{BooleanFunction, Function};
 
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, StartBranch, Ternary};
-use crate::engine::engine::LookAheadEngine;
 use crate::graph::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
 use crate::symbolic::action_image::ActionImage;
@@ -53,12 +52,12 @@ use crate::symbolic::order::{Direction, IterationOrder, Worklist};
 use crate::symbolic::vars::DataVars;
 use crate::world::world::ILookAheadWorld;
 
-/// The single data state a crawl starts in, as a set of one.
+/// The single data state a search starts in, as a set of one.
 ///
-/// Mirrors nothing: it ENCODES [`LookAheadEngine::seed`]'s answer, so the two searches
+/// Mirrors nothing: it ENCODES [`crate::core::state::seed_state`]'s answer, so every search
 /// cannot disagree about where they begin. Seeding is not a detail - a symbolic run
 /// started from every data state walks paths that need an item the player has not got,
-/// and reports entries the real crawl cannot reach.
+/// and reports entries no real path reaches.
 ///
 /// A slot the layout is too narrow for is clamped to what it can hold rather than
 /// dropped. That can only happen where the world reports a value larger than any action
@@ -69,7 +68,7 @@ pub fn seed_of(
     world: &dyn ILookAheadWorld,
     vars: &DataVars<'_>,
 ) -> BDDFunction {
-    let state = LookAheadEngine::seed(graph, world);
+    let state = crate::core::state::seed_state(graph, world);
     let mut set = vars.top();
 
     for slot in 0..vars.layout().slot_count() {
@@ -84,8 +83,8 @@ pub fn seed_of(
 
 /// How far a search is allowed to go, and what it should say while it goes.
 ///
-/// A budget for the same reason the explicit crawl has one: without it a search that is
-/// too slow is indistinguishable from one that has hung, and neither reports anything. A
+/// A budget, because without one a search that is too slow is indistinguishable from one
+/// that has hung, and neither reports anything. A
 /// partial answer with `reached_fixed_point` false is worth having - it still says the
 /// entries found SO FAR are genuinely reachable, because every set only grows.
 pub struct Budget {
@@ -96,15 +95,15 @@ pub struct Budget {
 
     /// The most memory the diagram may hold, in bytes, or 0 for no such limit.
     ///
-    /// The counterpart of the forward crawl's memory budget, and the reason both exist: a
-    /// search that gives up after 500,000 steps and one that gives up after 200,000 states
-    /// cannot be compared, because neither number says what either search SPENT. Two
-    /// searches held to the same number of bytes can be. See de-e23q.
+    /// IN BYTES, AND THAT IS THE POINT: a search that gives up after 500,000 steps and one
+    /// that gives up after 200,000 states cannot be compared, because neither number says
+    /// what either search SPENT. Two searches held to the same number of bytes can be. See
+    /// de-e23q.
     ///
     /// CHECKED ON THE PROGRESS CADENCE rather than every step, because asking the manager
     /// its node count is not free and a budget that costs more than it saves is not a
     /// saving. So the diagram can overshoot by up to `report_every` steps' worth of growth -
-    /// the same bargain the forward crawl makes with its clock.
+    /// the same bargain any budget makes with the cost of checking it.
     pub memory: usize,
     /// Called every `report_every` steps with the step count, entries reached, the
     /// diagram nodes held in total, the LARGEST single set, and the BYTES the manager is
@@ -192,14 +191,14 @@ pub struct Budget {
     /// was counting on, and the failure is not a graceful one - it is an allocation that
     /// aborts, which the plugin cannot catch and which takes the game with it.
     ///
-    /// The forward crawl has had this guard since d43670d and it measured at about no cost
+    /// The forward search has had this guard since d43670d and it measured at about no cost
     /// (-0.1 per cent), so the same reserve is used here rather than a second number.
     pub system_reserve: f64,
     /// Stop as soon as this says yes about an entry the search has just reached.
     ///
     /// THE MOST IMPORTANT KNOB HERE, and the one the first measurement lacked. The
     /// look-ahead never wants the reachable data states; it wants to know whether an
-    /// unseen entry can be reached, and `LookAheadEngine::evaluate` already returns the
+    /// unseen entry can be reached, and an answer already returns the
     /// instant it sees one worth the maximum score. Computing a fixed point over the data
     /// answers a far harder question that nobody asked - on conversation 368 the reachable
     /// ENTRIES stopped changing at fifteen thousand steps while the diagrams went on
@@ -215,16 +214,18 @@ impl Default for Budget {
         Self {
             steps: 2_000_000,
             time: std::time::Duration::from_secs(120),
-            // THE SAME NUMBER THE FORWARD CRAWL GETS, which is the point of stating either
-            // of them in bytes: two searches held to the same allowance can be compared,
-            // and a step count against a state count cannot. See de-e23q.
-            memory: crate::engine::engine::DEFAULT_MEMORY_BUDGET,
+            // THE NUMBER THE FORWARD SEARCH GOT, which is the point of stating an allowance
+            // in bytes: two searches held to the same one can be compared, and a step count
+            // against a state count cannot. See de-e23q, and
+            // `DiagramBudget::DEFAULT_MEMORY_BUDGET` for where the number now lives and
+            // what it buys instead.
+            memory: crate::symbolic::budget::DiagramBudget::DEFAULT_MEMORY_BUDGET,
             on_progress: None,
             report_every: 20_000,
             report_gap: std::time::Duration::ZERO,
             check_gap: std::time::Duration::ZERO,
             on_step: None,
-            system_reserve: crate::engine::system_memory::DEFAULT_RESERVE,
+            system_reserve: crate::core::system_memory::DEFAULT_RESERVE,
             halt_on: None,
         }
     }
@@ -292,7 +293,7 @@ pub struct Reachability<'a> {
 impl<'a> Reachability<'a> {
     /// Runs the fixed point from `start`, seeded with `seed` as its set of data states.
     ///
-    /// `seed` is the set the crawl begins in - normally the single state the world seeds,
+    /// `seed` is the set the search begins in - normally the single state the world seeds,
     /// but any set will do, which is what makes this usable for "everything reachable from
     /// anywhere in this group".
     pub fn explore(
@@ -484,10 +485,10 @@ impl<'a> Reachability<'a> {
         //
         // Built with an interval of one because the cadence above is already the throttle -
         // it retunes toward `check_gap`, about a second - so a reading here is a syscall a
-        // second rather than the crawl's every four thousand states. None means the
+        // second rather than the search's every four thousand states. None means the
         // platform cannot be asked, which turns the guard off rather than faking it.
         let mut runway = if budget.system_reserve > 0.0 {
-            crate::engine::system_memory::Runway::every(budget.system_reserve, 1)
+            crate::core::system_memory::Runway::every(budget.system_reserve, 1)
         } else {
             None
         };
@@ -650,7 +651,7 @@ impl<'a> Reachability<'a> {
         // THAT IS A SOUNDNESS BUG AND NOT A REPORTING ONE. `Known::with_forward` copies this
         // into `forward_settled`, and a settled forward run is the one thing allowed to
         // REFUSE a state: `Known::restricted` intersects a backward pass against it. Pruning
-        // against a set that merely stopped growing early removes states the crawl can
+        // against a set that merely stopped growing early removes states the search can
         // genuinely reach, which is how a marker gets lost. It is latent today only because
         // pruning is off by default. `Backward` has always got this right.
         //
@@ -665,9 +666,9 @@ impl<'a> Reachability<'a> {
         this
     }
 
-    /// The data states that entering `node` from `states` can leave the crawl in.
+    /// The data states that entering `node` from `states` can leave the search in.
     ///
-    /// Mirrors `LookAheadEngine::enter`, which is the requirement rather than a nicety: a
+    /// The one place a node is entered, which is the requirement rather than a nicety: a
     /// symbolic search that disagrees with the explicit one is measuring a different
     /// question. Guard first, then affordability, then the node's kind.
     /// Entering a node, keeping only one outcome where it rolls.
@@ -880,7 +881,7 @@ impl<'a> Reachability<'a> {
         //
         // `apply` splits on `already` and leaves spent states alone, which is only half of
         // it: nothing was raising the flag, so no state was ever spent, and a once
-        // increment inside a loop climbed to the counter cap. The explicit crawl does
+        // increment inside a loop climbed to the counter cap. The explicit search does
         // raise it - `DialogueAction::apply` pushes the once slot when something fired -
         // and the two have to agree.
         //
@@ -927,7 +928,7 @@ impl<'a> Reachability<'a> {
     /// the permissive answer is the only safe one: refusing would prune a branch a richer
     /// path opens, and this may only over-approximate. Counted rather than passed over
     /// silently, because an affordability check that never refuses is a difference from
-    /// the explicit crawl that should be visible in the numbers.
+    /// the explicit search that should be visible in the numbers.
     fn affordable(&mut self, node: &LookAheadNode, states: &BDDFunction) -> BDDFunction {
         if node.is_cost_option() {
             self.stats.unaffordable_unknown += 1;
@@ -965,7 +966,7 @@ impl<'a> Reachability<'a> {
             self.sets.values().map(|s| s.node_count()).max().unwrap_or(0);
     }
 
-    /// The entries the crawl can reach.
+    /// The entries the search can reach.
     pub fn entries(&self) -> impl Iterator<Item = DialogueNodeId> + '_ {
         self.sets.keys().copied()
     }

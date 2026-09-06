@@ -307,7 +307,7 @@ fn what_each_group_carries() {
             }
         }
 
-        // HOW MANY ENTRIES THE CRAWL COULD EVER REACH, by links alone with guards ignored.
+        // HOW MANY ENTRIES THE SEARCH COULD EVER REACH, by links alone with guards ignored.
         //
         // The upper bound on what any search can find, and the number the fixed point's
         // entries_reached has to be read against: a search that has reached all of these has

@@ -17,14 +17,15 @@
 # Examples:
 #   tools/measure-matrix.sh                 # every conversation, every profile
 #   tools/measure-matrix.sh 368 631         # just these two
-#   ENGINES=symbwd tools/measure-matrix.sh 14    # one engine, one group
-#   PROFILES=deepest-1 ENGINES=symbwd tools/measure-matrix.sh 14   # one row
+#   ENGINES=bwd tools/measure-matrix.sh 14    # one engine, one group
+#   PROFILES=deepest-1 ENGINES=bwd tools/measure-matrix.sh 14   # one row
 #
 # ENGINES and PROFILES each take a comma or space separated list and narrow the grid the
-# same way the conversation arguments do. The engines are explicit (the crawl), symfwd
-# (the symbolic FORWARD search) and symbwd (the genuine backward one) - see the note at
-# the top of tests/performance_matrix.rs, and de-zovl for why the first two were called
-# fwd and bwd until they were not.
+# same way the conversation arguments do. The engines are fwd (the symbolic forward
+# search), bwd (the backward one) and fwdbwd (the switching method the game actually runs:
+# a forward slice, then the backward driver told what it found) - see the note at the top
+# of tests/performance_matrix.rs for what each is and how to read an older run, whose
+# columns may spell two of these differently.
 #
 # STOPPING IT MID-RUN NEEDS MORE THAN KILLING THE SHELL. Every row is a fresh cargo and a
 # fresh test binary, so killing the terminal or the job leaves the script looping and
@@ -87,10 +88,10 @@ else
 fi
 
 # WHICH ENGINES EACH ROW MEASURES, passed through to the test. Unset means all three -
-# explicit, symfwd, symbwd - which is what the grid is for; naming one or two is how a
-# question about a single engine gets asked without paying for the others.
+# fwd, bwd, fwdbwd - which is what the grid is for; naming one or two is how a question
+# about a single engine gets asked without paying for the others.
 #
-#   ENGINES=symbwd tools/measure-matrix.sh 14
+#   ENGINES=bwd tools/measure-matrix.sh 14
 #
 # EXPORTED ONLY WHEN IT HAS A VALUE. The test reads an empty ENGINES as "all", so this is
 # belt and braces - but an empty selection exported into a measurement is the kind of thing

@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
-//! How many of the slots a crawl carries does anything ever READ?
+//! How many of the slots a search carries does anything ever READ?
 //!
-//! The explicit crawl's cost is dominated by copying and comparing the slot vector - about
+//! The explicit search's cost is dominated by copying and comparing the slot vector - about
 //! seventy per cent of the per-state cost on the widest group, measured (de-f9gt). Every
 //! slot in that vector is copied for every state, whether or not any decision depends on
 //! it.
 //!
 //! The symbolic side already trims: `DataLayout::keeping_only_read` drops any variable no
-//! guard mentions, keeping the engine's own seen- and once-bookkeeping. The explicit crawl
+//! guard mentions, keeping the engine's own seen- and once-bookkeeping. The explicit search
 //! does no equivalent, so it may be carrying slots that are written, copied, hashed and
 //! compared, and can never change an answer.
 //!
@@ -27,7 +27,7 @@ const HEAVIEST: [i32; 6] = [362, 368, 631, 14, 28, 1030];
 
 /// The prefixes the engine uses for its own bookkeeping.
 ///
-/// No guard mentions these and every crawl needs them - a seen marker is what closes a
+/// No guard mentions these and every search needs them - a seen marker is what closes a
 /// once-only check, and a once marker is what stops a purchase being charged twice - so
 /// they are kept whatever the guards read. Same rule `keeping_only_read` applies.
 ///
@@ -38,7 +38,7 @@ const KEPT_PREFIXES: [&str; 2] = [SEEN_PREFIX, ONCE_PREFIX];
 
 #[test]
 #[ignore = "a measurement, not a test: run it with --ignored --release"]
-fn how_many_slots_a_crawl_carries_that_nothing_reads() {
+fn how_many_slots_a_search_carries_that_nothing_reads() {
     let Some(path) = common::conversation_index() else { return };
     let index = read_index(&path).expect("the index reads");
 

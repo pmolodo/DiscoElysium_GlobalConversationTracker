@@ -76,7 +76,7 @@ impl<'a> ActionImage<'a> {
     ///
     /// Money and the clock when they are not laid out, and anything the action parser
     /// could not model. Worth counting rather than silently dropping: an action that does
-    /// not happen is how a symbolic state quietly stops matching the crawl's.
+    /// not happen is how a symbolic state quietly stops matching the search's.
     pub fn ignored(&self) -> usize {
         self.ignored
     }
@@ -115,7 +115,7 @@ impl<'a> ActionImage<'a> {
     /// `states`.
     ///
     /// The exact inverse of [`Self::apply`], and it has to stay exact: a backward search
-    /// built on a pre-image that loses states reports an entry unreachable that the crawl
+    /// built on a pre-image that loses states reports an entry unreachable that the search
     /// walks to, which is the one error direction nothing here is allowed.
     ///
     /// Actions compose in reverse. Forward they apply in order and the last write is the
@@ -150,7 +150,7 @@ impl<'a> ActionImage<'a> {
     fn pre_one(&mut self, states: &BDDFunction, action: &DialogueAction) -> BDDFunction {
         // Money and the clock, undone exactly. Saturation is many-to-one, so the pre-image
         // of the ceiling is a range - getting that half wrong is the one error a backward
-        // search may not make, because it reports an entry unreachable that the crawl
+        // search may not make, because it reports an entry unreachable that the search
         // walks to.
         match action.kind() {
             DialogueActionKind::GainMoney => {
@@ -302,7 +302,7 @@ impl<'a> ActionImage<'a> {
     /// SATURATING, and the ceiling is the width the layout chose from the largest cost the
     /// group can charge. A balance above every price the group asks is indistinguishable
     /// from any other such balance as far as this group's guards are concerned, so
-    /// collapsing them loses nothing a crawl over it could observe.
+    /// collapsing them loses nothing a search over it could observe.
     fn gain_money(&mut self, states: &BDDFunction, amount: i32) -> BDDFunction {
         self.on_money(states, |ops, set| ops.saturating_add(set, amount.max(0) as u32))
     }
@@ -315,7 +315,7 @@ impl<'a> ActionImage<'a> {
     /// `clock := (clock + minutes) mod 1440`, where the layout carries the clock.
     ///
     /// WRAPPING, not saturating: midnight is not a ceiling, and a clock that stuck at
-    /// 23:59 would answer every night-time question wrongly for the rest of the crawl.
+    /// 23:59 would answer every night-time question wrongly for the rest of the search.
     fn pass_time(&mut self, states: &BDDFunction, minutes: i32) -> BDDFunction {
         let modulus = crate::core::clock::ClockTime::MINUTES_IN_DAY as u32;
         self.on_clock(states, |ops, set| {

@@ -26,9 +26,9 @@ pub struct TestWorld {
     /// world queries the five biggest conversations' guards make, more than half.
     ///
     /// Only the name is keyed, not the arguments. Every query worth answering this way is
-    /// one the crawl cannot change and that takes no argument - IsKimHere, IsCunoInParty
+    /// one the search cannot change and that takes no argument - IsKimHere, IsCunoInParty
     /// and the rest of the party and character facts. The three that DO take an argument
-    /// and that a crawl's own actions move - CheckItem, IsTaskActive and IsTHCPresent -
+    /// and that a search's own actions move - CheckItem, IsTaskActive and IsTHCPresent -
     /// are answered from `items`, `tasks` and `thoughts` instead.
     pub queries: HashMap<String, GuardValue>,
 }

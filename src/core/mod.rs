@@ -9,6 +9,13 @@ pub mod clock;
 pub mod modelling;
 pub mod passive_check;
 
+/// What the MACHINE has left, which is a different question from what a budget allows.
+///
+/// Here rather than beside the search that reads it, because every search wants it and
+/// none of them owns it: a budget says what a caller allows, and this says whether the
+/// machine can supply it.
+pub mod system_memory;
+
 /// The ported C# clock suite. In a file of its own rather than inline only because of its
 /// size; small unit tests stay beside what they test.
 #[cfg(test)]

@@ -38,7 +38,7 @@ impl SystemMemory {
 /// ## Volatile, and treated as such
 ///
 /// Two readings a moment apart legitimately differ - the documentation for the call this
-/// uses says so - and everything else on the machine is moving while a crawl runs. So this
+/// uses says so - and everything else on the machine is moving while a search runs. So this
 /// is a guard rail rather than an accounting: it is read periodically, acted on
 /// immediately, and never cached.
 ///
@@ -46,7 +46,7 @@ impl SystemMemory {
 ///
 /// Windows, through `GlobalMemoryStatusEx`, which is what the game runs on. Elsewhere this
 /// returns None and the reserve is not enforced - the tests and the offline tools run
-/// there, and a crawl on a developer's Linux box that runs the machine down is a bad
+/// there, and a search on a developer's Linux box that runs the machine down is a bad
 /// afternoon rather than a lost save. A port would add an arm here and nothing else.
 #[cfg(windows)]
 pub fn read() -> Option<SystemMemory> {
@@ -110,7 +110,7 @@ pub fn read() -> Option<SystemMemory> {
 
 /// How much of the machine a search must leave alone, as a fraction of the total.
 ///
-/// A TWENTIETH. Small enough that it costs a crawl almost nothing on a machine with room,
+/// A TWENTIETH. Small enough that it costs a search almost nothing on a machine with room,
 /// and big enough to be the difference between an operating system that is slow and one
 /// that cannot be got back: the last few per cent is where a machine stops swapping pages
 /// and starts swapping the things it needs to swap pages with.
@@ -125,24 +125,24 @@ fn floor_of(machine: SystemMemory, reserve: f64) -> u64 {
     (machine.total as f64 * reserve) as u64
 }
 
-/// How the crawl keeps track of the machine without asking it constantly.
+/// How the search keeps track of the machine without asking it constantly.
 ///
 /// ## The problem with asking
 ///
-/// `GlobalMemoryStatusEx` is a system call, and the crawl's inner loop runs once per state
+/// `GlobalMemoryStatusEx` is a system call, and the search's inner loop runs once per state
 /// - hundreds of thousands of times. Asking there would put a syscall in the hot loop to
 /// learn something that moves in megabytes while a state costs a hundred bytes.
 ///
 /// ## The problem with not asking
 ///
-/// The crawl is not the only thing on the machine. Tracking its OWN allocations is exact
+/// The search is not the only thing on the machine. Tracking its OWN allocations is exact
 /// and tells you nothing about the game it is running inside, or the browser behind that.
 ///
 /// ## What this does instead
 ///
 /// Reads the truth every [`Self::interval`] states, and between readings subtracts what the
-/// crawl has taken since. That estimate is only ever used to decide WHETHER TO ASK: it can
-/// trigger an early reading, and it can never by itself end a crawl. So the number a
+/// search has taken since. That estimate is only ever used to decide WHETHER TO ASK: it can
+/// trigger an early reading, and it can never by itself end a search. So the number a
 /// verdict rests on is always one the machine gave, and the estimate only buys the syscalls
 /// it saves.
 pub struct Runway {
@@ -151,7 +151,7 @@ pub struct Runway {
     since_reading: usize,
     /// What the machine said at the last reading.
     machine: SystemMemory,
-    /// What the crawl has taken since then.
+    /// What the search has taken since then.
     ///
     /// ONLY EVER UPWARDS, deliberately: nothing here tries to notice a deallocation. The
     /// estimate is meant to be pessimistic, so that where it is wrong it is wrong in the
@@ -206,7 +206,7 @@ impl Runway {
     /// Records `bytes` taken, and says whether the machine is now below its reserve.
     ///
     /// A TRUE ANSWER IS ALWAYS A MEASURED ONE. The estimate decides when to look, never
-    /// what to conclude - so a crawl is never ended by arithmetic about a machine that had
+    /// what to conclude - so a search is never ended by arithmetic about a machine that had
     /// the room after all.
     pub fn is_low(&mut self, bytes: u64) -> bool {
         self.taken = self.taken.saturating_add(bytes);

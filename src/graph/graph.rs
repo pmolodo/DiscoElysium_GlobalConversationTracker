@@ -17,7 +17,7 @@ pub struct LookAheadGraph {
 impl LookAheadGraph {
     /// Builds a graph, assigning the once slots and then freezing the symbol table.
     ///
-    /// Interning happens HERE and nowhere later. A crawl reads slots by index and never
+    /// Interning happens HERE and nowhere later. A search reads slots by index and never
     /// creates one, which is what lets the symbol table be shared as `&StateSymbols`
     /// throughout the search, keeps the state vector's width fixed before the first
     /// state exists, and is a precondition for any symbolic encoding: a decision diagram
@@ -64,7 +64,7 @@ impl LookAheadGraph {
     /// class it does name is a maybe, and what the searches are then sent to establish.
     ///
     /// TWO CALLERS, ONE WALK, and they want the same fact for opposite reasons.
-    /// `bridge::worth_crawling` asks whether anything outranks a baseline, and refuses to
+    /// `bridge::class_worth_hunting` asks whether anything outranks a baseline, and refuses to
     /// search when nothing does. `symbolic::portfolio` asks which class to hunt, because a
     /// forward pass that halts on the best class PRESENT has found the best there is, while
     /// one halting on the first entry that merely beats "seen" may have walked past a

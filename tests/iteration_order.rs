@@ -22,7 +22,7 @@
 //!
 //! THAT THE SEARCHES STILL ANSWER CORRECTLY is checked where it always was, and those are
 //! the tests that matter for soundness: `tests/symbolic_reachability.rs` runs the forward
-//! search against the explicit crawl, and `tests/backward_oracle.rs` runs the backward
+//! search against the explicit search, and `tests/backward_oracle.rs` runs the backward
 //! search against it on every target of every group it can check both ways.
 //!
 //! WHAT THE ORDER IS WORTH is a measurement and does not belong in tests/ - see de-18bo,

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-//! Representing a set of crawl states as one decision diagram.
+//! Representing a set of search states as one decision diagram.
 //!
-//! The explicit crawl keeps every `(entry, state)` pair it has visited in a hash set, and
+//! A search that enumerates states holds every `(entry, state)` pair it has visited, and
 //! that set is what exhausts the budget: 200,000 states in about half a second, on a
 //! shape that then finds nothing. A decision diagram represents a SET rather than its
 //! members, so if the reachable states share structure it can hold far more of them than
@@ -9,7 +9,7 @@
 //!
 //! Whether they DO share structure is the open question, and this module exists to
 //! measure it before anything is built on top. Nothing here computes reachability yet -
-//! it encodes states the explicit crawl already found, unions them, and reports how big
+//! it encodes states already found, unions them, and reports how big
 //! the diagram is against how many states went in. If that ratio is poor there is no
 //! point building a transition relation, and finding that out cheaply is the point.
 //!
@@ -54,7 +54,7 @@ fn bits_for(max: u32) -> usize {
 ///
 /// A slot that held the same value in every state carries no information and would only
 /// add a variable the diagram has to carry. Measuring the sample first and encoding
-/// second is what keeps the variable count near what the crawl actually uses rather than
+/// second is what keeps the variable count near what the search actually uses rather than
 /// near the symbol table's size - for the biggest conversation group that is the
 /// difference between a few dozen variables and 339.
 #[derive(Debug, Default)]
@@ -176,7 +176,7 @@ impl StateEncoding {
 
         // Money is encoded as an offset from its lowest observed value, which is what
         // keeps the width down: the interesting quantity is how far it moved, not how
-        // large it is, and a crawl that never spends anything then costs no variables.
+        // large it is, and a search that never spends anything then costs no variables.
         let money_base = profile.money_min.unwrap_or(0);
         let money_bits = if profile.money_moves() {
             bits_for((profile.money_max - money_base).max(0) as u32)
@@ -284,7 +284,7 @@ fn push_bits(bits: &mut Vec<(u32, bool)>, at: usize, width: usize, value: u32) -
     Some(())
 }
 
-/// A set of crawl states, held as one decision diagram.
+/// A set of search states, held as one decision diagram.
 ///
 /// ## Its manager is its own, and that is deliberate
 ///
