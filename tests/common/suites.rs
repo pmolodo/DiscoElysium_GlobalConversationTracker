@@ -45,6 +45,17 @@ impl Table {
 #[derive(Debug, Deserialize)]
 pub struct Suite {
     pub suite: String,
+    /// Why this suite is not being run, where it is not.
+    ///
+    /// A SENTENCE RATHER THAN A FLAG, and it is not optional for a disabled suite: a
+    /// definition that is switched off without saying why is one nobody can decide to
+    /// switch back on. Both executors skip it and both say the sentence, so a run that is
+    /// missing a claim reports which claim and on whose authority.
+    ///
+    /// Meant to be temporary, and paired with a task. A suite that stays off is a claim
+    /// nobody is making any more, which wants deleting rather than disabling.
+    #[serde(default)]
+    pub disabled: Option<String>,
     /// The global state to stage, by file name under the scenarios folder.
     pub state: String,
     /// The state budget to run at, or 0 for no such limit. Suite-wide, as it is in game.

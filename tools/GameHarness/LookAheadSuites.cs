@@ -337,7 +337,7 @@ namespace GlobalConversationTracker.Harness
         public static IReadOnlyList<LookAheadSuite> All =>
             new[]
             {
-                Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff, AllSeen,
+                SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff, AllSeen,
                 RedCheck,
             }.Concat(BranchShapes).Append(EngineDeath).ToArray();
 
@@ -366,7 +366,7 @@ namespace GlobalConversationTracker.Harness
         public static IReadOnlyList<LookAheadSuite> Default =>
             new[]
             {
-                Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff,
+                SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff,
             }.Concat(BranchShapes).Append(EngineDeath).ToArray();
 
         /// <summary>
@@ -403,15 +403,14 @@ namespace GlobalConversationTracker.Harness
                 .ToArray();
         }
 
-        /// <summary>
-        /// The forward scan spends as it walks.
-        /// </summary>
-        /// <remarks>
-        /// DEFINED IN <c>testing/scenarios/suites.json</c>, which is also what
-        /// <c>tests/scenario_suites.rs</c> runs. The three balances, the entries and the
-        /// argument for them are all there; what is left here is the name.
-        /// </remarks>
-        public static LookAheadSuite Money => FromDefinition("money");
+        // THE MONEY SUITE IS SWITCHED OFF, and its definition says why - see the `disabled`
+        // sentence in testing/scenarios/suites.json, and de-95t6. The property that named
+        // it is gone with it rather than left to throw: `FromDefinition` refuses a name the
+        // table does not build, which is what catches a typo, and a name that is disabled
+        // rather than absent must not be the one exception to that.
+        //
+        // What comes back when the money layout lands is this property and its two entries
+        // in the lists below. Nothing about the definition itself changes.
 
     /// <summary>
     /// Reads look-ahead-stats.json and checks it adds up.
@@ -1075,11 +1074,33 @@ namespace GlobalConversationTracker.Harness
         private static readonly Lazy<IReadOnlyDictionary<string, LookAheadSuite>> _defined =
             new Lazy<IReadOnlyDictionary<string, LookAheadSuite>>(BuildDefined);
 
-        private static IReadOnlyDictionary<string, LookAheadSuite> BuildDefined() =>
-            ScenarioTable.Read().Suites.ToDictionary(
-                definition => definition.Suite,
-                definition => definition.Build(ArtefactChecks),
-                StringComparer.Ordinal);
+        /// <summary>
+        /// The suites the definition file carries, minus the ones it says are switched off.
+        /// </summary>
+        /// <remarks>
+        /// A DISABLED SUITE IS STILL DECLARED and still validated - its rows are read, its
+        /// markers are checked for spelling, and it is one word away from running again -
+        /// but it is not built, so no run does it and no default set includes it. The
+        /// reason it gives is printed, because a green run that quietly does less than it
+        /// did is worse than a red one.
+        /// </remarks>
+        private static IReadOnlyDictionary<string, LookAheadSuite> BuildDefined()
+        {
+            var built = new Dictionary<string, LookAheadSuite>(StringComparer.Ordinal);
+            foreach (ScenarioSuiteDefinition definition in ScenarioTable.Read().Suites)
+            {
+                if (!string.IsNullOrWhiteSpace(definition.Disabled))
+                {
+                    Console.WriteLine(
+                        $"suites:    '{definition.Suite}' is switched off: {definition.Disabled}");
+                    continue;
+                }
+
+                built[definition.Suite] = definition.Build(ArtefactChecks);
+            }
+
+            return built;
+        }
 
         /// <summary>The artefact predicates a suite may name, by the name it uses.</summary>
         /// <remarks>

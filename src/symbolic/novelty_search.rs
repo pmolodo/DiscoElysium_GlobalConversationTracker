@@ -35,6 +35,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use oxidd::bdd::BDDFunction;
+use oxidd::BooleanFunction;
 
 use crate::core::types::{DialogueNodeId, Novelty, StartBranch};
 use crate::graph::graph::LookAheadGraph;
@@ -221,6 +222,60 @@ impl Where {
     /// The entries this search starts at, which are what candidates are measured from.
     fn nodes(&self) -> Vec<DialogueNodeId> {
         self.at.clone()
+    }
+
+    /// The entries this outcome actually OPENS, guards and costs considered.
+    ///
+    /// WHAT THE BASELINE IS MADE OF. A branch's answer is "does this outcome lead anywhere
+    /// better than where it LANDS", and where it lands is this: the first non-group entries
+    /// that can be entered holding what the outcome left. A group is walked through rather
+    /// than to, as everywhere else - it is expanded in place and never scored.
+    ///
+    /// GUARDS ARE HONOURED HERE, unlike in `LookAheadGraph::best_linked_class`. A cheap
+    /// over-approximation is right when the question is whether to spend a search; it is
+    /// wrong for a baseline, where naming a destination nothing can reach would raise the
+    /// bar a real search has to clear and cost a marker.
+    pub fn destinations<'a>(
+        &self,
+        graph: &LookAheadGraph,
+        compiler: &mut GuardCompiler<'a>,
+        world: &dyn ILookAheadWorld,
+        counter_cap: u32,
+    ) -> Vec<DialogueNodeId> {
+        let mut found = Vec::new();
+        let mut seen: Vec<DialogueNodeId> = Vec::new();
+        let mut pending: VecDeque<(DialogueNodeId, BDDFunction)> = self
+            .at
+            .iter()
+            .map(|id| (*id, self.holding.clone()))
+            .collect();
+
+        while let Some((id, arriving)) = pending.pop_front() {
+            let Some(node) = graph.get(id) else { continue };
+            let entered = Reachability::entry_states(
+                graph, id, StartBranch::Either, &arriving, compiler, world, counter_cap,
+            );
+            if !entered.satisfiable() {
+                continue;
+            }
+
+            if !node.is_group {
+                if !found.contains(&id) {
+                    found.push(id);
+                }
+                continue;
+            }
+
+            if seen.contains(&id) {
+                continue;
+            }
+            seen.push(id);
+            for child in &node.links {
+                pending.push_back((*child, entered.clone()));
+            }
+        }
+
+        found
     }
 
     /// Whether a backward pass says the target is reachable from here.

@@ -204,6 +204,14 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
     let mut checked = 0usize;
 
     for suite in &table.suites {
+        // A SUITE THAT SAYS WHY IT IS OFF IS SKIPPED, LOUDLY. See `Suite::disabled`: the
+        // sentence is printed rather than swallowed, so a run that is missing a claim says
+        // which claim and why, and a green suite is never quietly a smaller one.
+        if let Some(why) = &suite.disabled {
+            println!("SKIPPING suite '{}': {why}", suite.suite);
+            continue;
+        }
+
         for scenario in &suite.scenarios {
             // NOTHING TO ASK OFFLINE. Both of the other policies are claims about the
             // options a scenario did NOT name - that nothing else in the menu is marked -
@@ -320,6 +328,11 @@ fn every_offline_claim_holds_over_the_whole_group() {
     let mut asked = 0usize;
 
     for suite in &table.suites {
+        if let Some(why) = &suite.disabled {
+            println!("SKIPPING suite '{}': {why}", suite.suite);
+            continue;
+        }
+
         let Some(claim) = &suite.offline else { continue };
 
         let known = ["nothingIsWorthCrawling", "unseenAnywhereIsNeverCrawled"];

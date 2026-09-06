@@ -91,6 +91,19 @@ namespace GlobalConversationTracker.Harness
         [JsonPropertyName("suite")]
         public string Suite { get; set; } = string.Empty;
 
+        /// <summary>Why this suite is not being run, or empty when it is.</summary>
+        /// <remarks>
+        /// A SENTENCE RATHER THAN A FLAG, and it is not optional for a disabled suite: a
+        /// definition that is switched off without saying why is one nobody can decide to
+        /// switch back on. Both executors skip it and both say the sentence, so a run
+        /// missing a claim reports which claim and on whose authority.
+        ///
+        /// Meant to be temporary, and paired with a task. A suite that stays off is a claim
+        /// nobody is making any more, which wants deleting rather than disabling.
+        /// </remarks>
+        [JsonPropertyName("disabled")]
+        public string Disabled { get; set; } = string.Empty;
+
         /// <summary>What the suite is for, in one line.</summary>
         [JsonPropertyName("what")]
         public string What { get; set; } = string.Empty;

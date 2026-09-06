@@ -48,7 +48,15 @@ use crate::core::guard::GuardExpression;
 use crate::core::guard_value::{GuardValue, GuardValueKind};
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, Novelty, Ternary};
 use crate::core::types::StartBranch;
-use crate::engine::engine::LookAheadEngine;
+use crate::symbolic::budget::DiagramBudget;
+use crate::symbolic::data_layout::DataLayout;
+use crate::symbolic::guard_formula::GuardCompiler;
+use crate::symbolic::isolated;
+use crate::symbolic::novelty_search;
+use crate::symbolic::portfolio;
+use crate::symbolic::reachability::seed_of;
+use crate::symbolic::vars::DataVars;
+use oxidd::bdd::BDDFunction;
 use crate::graph::graph::LookAheadGraph;
 use crate::index::{build_group_graph, Index, VariableTable};
 use crate::world::world::ILookAheadWorld;
@@ -619,23 +627,63 @@ pub struct LookAheadRequest {
 
 impl LookAheadRequest {
     /// The engine options this request asks for.
-    fn options(&self) -> crate::engine::engine::LookAheadOptions {
-        let default = crate::engine::engine::LookAheadOptions::default();
-        crate::engine::engine::LookAheadOptions {
-            state_budget: if self.state_budget == 0 {
-                default.state_budget
-            } else {
-                self.state_budget
-            },
-            memory_budget: if self.memory_budget_mb == 0 {
-                default.memory_budget
-            } else {
-                self.memory_budget_mb * 1024 * 1024
-            },
-            time_budget: std::time::Duration::from_millis(self.time_budget_ms),
-            ..default
+    /// What the diagram manager may allocate, from the player's memory budget.
+    ///
+    /// THE SAME NUMBER THE CRAWL WAS GIVEN, spent differently: it bought kept states, and
+    /// buys diagram nodes here. Asked for FALLIBLY at the other end - the manager
+    /// preallocates its node store and that allocation aborts rather than failing, so a
+    /// machine that cannot supply it must be found out about before it is spent. See
+    /// de-0a3a and `DataVars::try_new`.
+    fn diagram_budget(&self) -> DiagramBudget {
+        let bytes = if self.memory_budget_mb == 0 {
+            crate::engine::engine::LookAheadOptions::default().memory_budget
+        } else {
+            self.memory_budget_mb * 1024 * 1024
+        };
+        DiagramBudget::new(bytes)
+    }
+
+    /// How long each half of the search may take.
+    ///
+    /// THE PLAYER SETS ONE NUMBER and it means the whole answer, so the backward driver
+    /// gets it and the per-candidate cap is kept under it - a candidate allowed longer than
+    /// the whole search would make the outer limit decorative. The forward slice keeps its
+    /// own 50ms: it is sized to be worth the sets it leaves behind, not to finish, and it
+    /// is spent before the clock the player set starts mattering.
+    fn search_budget(&self) -> portfolio::Budget {
+        let default = portfolio::Budget::default();
+
+        // THE STATE BUDGET IS THE KNOB THAT STARVES A SEARCH, and that is all it ever was:
+        // a test-only setting, not on the wire for players, whose whole job is to make a
+        // search give up on demand so the mod's uncertain marker can be checked. See
+        // `Self::state_budget` and `tests/branch_shapes.rs`.
+        //
+        // The crawl starved on kept states. This engine has none, so the same intent is
+        // spent on the rations it does have: at most that many candidates, and no time to
+        // finish one - which is what a search that cannot establish anything looks like
+        // from here. The number means "how little", exactly as it did.
+        if self.state_budget > 0 {
+            return portfolio::Budget {
+                forwards: std::time::Duration::ZERO,
+                backwards: default.backwards,
+                each: std::time::Duration::ZERO,
+                targets: self.state_budget,
+            };
+        }
+
+        if self.time_budget_ms == 0 {
+            return default;
+        }
+
+        let whole = std::time::Duration::from_millis(self.time_budget_ms);
+        portfolio::Budget {
+            forwards: default.forwards.min(whole),
+            backwards: whole,
+            each: default.each.min(whole),
+            targets: default.targets,
         }
     }
+
 }
 
 /// What one option scored.
@@ -951,7 +999,67 @@ pub fn answer(
         }
     };
 
-    let engine = LookAheadEngine::new(request.options());
+    // ON A THREAD OF ITS OWN, and everything the diagram manager owns is built inside it
+    // and dropped inside it - see `symbolic::isolated`. Releasing a large diagram walks it
+    // recursively, so a thread that is going to hold one wants room; the stack is belt and
+    // braces rather than the fix for de-8hh2.13, which is still open.
+    //
+    // ONE THREAD PER REQUEST, not per start. The layout, the variables, the compiled guards
+    // and the seed are facts about the GROUP, and a menu asks about a dozen options in it.
+    let answers = isolated::on_its_own_thread(|| {
+        answer_within(&graph, &world, request, &novelty)
+    });
+
+    match answers {
+        Some(answers) => LookAheadResponse { answers, error: None },
+        // THE MACHINE, not the budget: the manager preallocates its node store and that
+        // allocation aborts rather than failing, so it is asked for fallibly first - see
+        // de-0a3a. Every option is answered "nothing established" rather than the request
+        // failing, because a menu with no markers is what a mod without an engine draws
+        // and the player has seen it before.
+        None => LookAheadResponse {
+            answers: request
+                .starts
+                .iter()
+                .map(|start| unanswered(*start, "no-ram"))
+                .collect(),
+            error: None,
+        },
+    }
+}
+
+/// How high a counter is modelled before it saturates.
+///
+/// THE CRAWL'S OWN CAP, and it has to be: the two engines answer the same question about
+/// the same save, and a counter that saturates at a different height in one of them is a
+/// different question. `LookAheadOptions::default().counter_cap` is where it comes from,
+/// and this is the value that has been measured everywhere - `tests/performance_matrix.rs`
+/// and the symbolic tests all use 16.
+const COUNTER_CAP: i32 = 16;
+
+/// The answers for one request, from inside the thread that owns the diagram.
+///
+/// `None` where the machine could not supply the diagram's memory, which is a fact about
+/// the machine rather than about any option, so it is reported once for all of them.
+fn answer_within<F>(
+    graph: &LookAheadGraph,
+    world: &dyn ILookAheadWorld,
+    request: &LookAheadRequest,
+    novelty: &F,
+) -> Option<Vec<LookAheadAnswer>>
+where
+    F: Fn(DialogueNodeId) -> Novelty,
+{
+    let symbols = graph.symbols().clone();
+    let layout = DataLayout::for_graph(graph, COUNTER_CAP, None, false)
+        .keeping_only_read(&symbols, &DataLayout::read_by(graph));
+    let vars = DataVars::try_new(&layout, &symbols, request.diagram_budget())?;
+    let mut compiler = GuardCompiler::new(&vars)
+        .with_world(world)
+        .with_constant_clock(DataLayout::group_passes_time(graph));
+    let seed = seed_of(graph, world, &vars);
+    let budget = request.search_budget();
+
     let mut answers = Vec::with_capacity(request.starts.len());
 
     for start in &request.starts {
@@ -960,76 +1068,85 @@ pub fn answer(
             // Not an error for the request as a whole: a menu can offer an option the
             // loaded group does not carry, and the honest answer about it is "nothing
             // known" rather than a failed call for every other option too.
-            answers.push(LookAheadAnswer {
-                start: *start,
-                branch: None,
-                destination: Novelty::SeenThisGame as i32,
-                best: Novelty::SeenThisGame as i32,
-                witness: None,
-                complete: false,
-                elapsed_ms: 0,
-                states_explored: 0,
-                nodes_reached: 0,
-                stopped_by: "none".to_string(),
-            });
+            answers.push(unanswered(*start, "none"));
             continue;
         }
 
         // A ROLLED CHECK IS TWO STARTS, because it is two options wearing one line of text
-        // and the mod draws them apart - see de-fes. Two crawls rather than one, and only
+        // and the mod draws them apart - see de-fes. Two searches rather than one, and only
         // here: a menu of ordinary options costs what it did.
         let rolled = matches!(
             graph.get(id).map(|node| node.kind),
             Some(DialogueCheckKind::Red) | Some(DialogueCheckKind::White)
         );
 
-        if rolled {
-            for branch in [StartBranch::Pass, StartBranch::Fail] {
-                answers.push(scored(
-                    &engine, &graph, id, *start, &world, &novelty, Some(branch),
-                ));
-            }
+        let branches: &[StartBranch] = if rolled {
+            &[StartBranch::Pass, StartBranch::Fail]
         } else {
-            answers.push(scored(&engine, &graph, id, *start, &world, &novelty, None));
+            &[StartBranch::Either]
+        };
+
+        for branch in branches {
+            answers.push(scored(
+                graph, id, *start, world, novelty, *branch, &seed, &mut compiler, &budget,
+            ));
         }
     }
 
-    LookAheadResponse { answers, error: None }
+    Some(answers)
+}
+
+/// An option with nothing established about it, and why.
+fn unanswered(start: NodeRef, stopped_by: &str) -> LookAheadAnswer {
+    LookAheadAnswer {
+        start,
+        branch: None,
+        destination: Novelty::SeenThisGame as i32,
+        best: Novelty::SeenThisGame as i32,
+        witness: None,
+        complete: false,
+        elapsed_ms: 0,
+        states_explored: 0,
+        nodes_reached: 0,
+        stopped_by: stopped_by.to_string(),
+    }
 }
 
 /// What one start scored: an ordinary option, or one outcome of a rolled check.
 ///
-/// ONE ROUTINE FOR BOTH, which is the whole of de-8hh2.6. The two differ in exactly two
-/// places - where the baseline comes from, and which of the engine's two entry points runs
-/// - and everything else about them is the same question. They used to be two routines
-/// that had to be kept saying the same thing, and the drift showed: the rule that refuses a
-/// crawl which cannot improve on its baseline had to be restated for branches, and the
-/// top-rung guard that follows from it was a separate fix rather than a consequence.
-fn scored<F>(
-    engine: &LookAheadEngine,
+/// ONE ROUTINE FOR BOTH, which is the whole of de-8hh2.6. The two differ in exactly one
+/// place now - where the search is measured from - and everything else about them is the
+/// same question. They used to be two routines that had to be kept saying the same thing,
+/// and the drift showed: the rule that refuses a search which cannot improve on its
+/// baseline had to be restated for branches, and the top-rung guard that follows from it
+/// was a separate fix rather than a consequence.
+#[allow(clippy::too_many_arguments)]
+fn scored<'a, F>(
     graph: &LookAheadGraph,
     id: DialogueNodeId,
     start: NodeRef,
     world: &dyn ILookAheadWorld,
     novelty: F,
-    branch: Option<StartBranch>,
+    branch: StartBranch,
+    seed: &BDDFunction,
+    compiler: &mut GuardCompiler<'a>,
+    budget: &portfolio::Budget,
 ) -> LookAheadAnswer
 where
     F: Fn(DialogueNodeId) -> Novelty,
 {
     let began = std::time::Instant::now();
 
-    // THE BASELINE, and the one thing the two cases compute differently. An ordinary
-    // option already scores its own novelty; an outcome already scores the best of the
-    // entries it leads to directly, which only the engine can work out because the guards
-    // on the check's own flag decide which children are live.
-    // WHERE THE SEARCH IS MEASURED FROM, and both cases now name actual entries: the
-    // option itself, or the entries the outcome opens. The baseline is their best class,
-    // and they are also where the refusal walks from - one fact, used twice, so a walk can
-    // never be measuring from somewhere the baseline did not come from.
+    // WHERE THE SEARCH IS MEASURED FROM, and both cases name actual entries: the option
+    // itself, or the entries the outcome opens. The baseline is their best class, and they
+    // are also where the refusal walks from - one fact, used twice, so a walk can never be
+    // measuring from somewhere the baseline did not come from.
+    let where_from = novelty_search::Where::of(
+        graph, id, branch, seed, compiler, world, COUNTER_CAP as u32,
+    );
     let from: Vec<DialogueNodeId> = match branch {
-        None => vec![id],
-        Some(branch) => engine.branch_destinations(graph, id, world, branch),
+        StartBranch::Either => vec![id],
+        _ => where_from.destinations(graph, compiler, world, COUNTER_CAP as u32),
     };
     let destination = from
         .iter()
@@ -1037,16 +1154,27 @@ where
         .max()
         .unwrap_or(Novelty::SeenThisGame);
 
-    let answered = |best: Novelty, complete, states, nodes, stopped: &str| LookAheadAnswer {
+    let answered = |best: Novelty,
+                    complete,
+                    witness: Option<DialogueNodeId>,
+                    asked,
+                    stopped: &str| LookAheadAnswer {
         start,
-        branch: branch.map(|branch| branch_name(branch).to_string()),
+        branch: match branch {
+            StartBranch::Either => None,
+            branch => Some(branch_name(branch).to_string()),
+        },
         destination: destination as i32,
         best: best as i32,
-        witness: None,
+        witness: witness.map(NodeRef::from),
         complete,
         elapsed_ms: began.elapsed().as_millis() as u64,
-        states_explored: states,
-        nodes_reached: nodes,
+        // A SET-BASED SEARCH DOES NOT ENUMERATE STATES, so the crawl's count of them has no
+        // successor here and is reported as the zero it is. What this search counts instead
+        // is candidates asked about, which is `nodes_reached`'s nearest true relative: the
+        // entries it had to consider before it could answer.
+        states_explored: 0,
+        nodes_reached: asked,
         stopped_by: stopped.to_string(),
     };
 
@@ -1059,38 +1187,44 @@ where
     //
     // WHERE IT DOES NOT REFUSE, it has named the class the search should hunt, and that
     // walk is not done again further in. See `class_worth_hunting`.
-    let Some(_hunting) = class_worth_hunting(graph, &from, destination, &novelty) else {
-        return answered(destination, true, 0, 0, "none");
+    let Some(hunting) = class_worth_hunting(graph, &from, destination, &novelty) else {
+        return answered(destination, true, None, 0, "none");
     };
 
-    let result = match branch {
-        None => engine.evaluate(graph, id, world, &novelty),
-        Some(branch) => engine.evaluate_from(graph, id, world, &novelty, branch),
-    };
+    let found = portfolio::best_novelty(
+        graph, id, branch, seed, compiler, world, COUNTER_CAP as u32, &novelty, hunting,
+        budget,
+    );
 
     answered(
-        result.best,
-        !result.budget_exhausted(),
-        result.states_explored,
-        result.nodes_reached,
-        limit_name(result.stopped_by),
+        found.best,
+        found.by != portfolio::Answered::Partly,
+        found.witness,
+        found.targets_asked,
+        stopped_name(found.stopped_by),
     )
 }
 
-
-/// The name a limit crosses the wire under.
-fn limit_name(limit: crate::core::types::LookAheadLimit) -> &'static str {
-    match limit {
-        crate::core::types::LookAheadLimit::States => "states",
-        crate::core::types::LookAheadLimit::Memory => "memory",
-        // A DIFFERENT WORD FROM "memory", because they want opposite responses: that one
-        // says a player could raise their budget, this one says the machine had nothing to
-        // give and the budget is not the problem.
-        crate::core::types::LookAheadLimit::NoMemory => "no-ram",
-        crate::core::types::LookAheadLimit::Time => "time",
-        crate::core::types::LookAheadLimit::None => "none",
+/// The name a stopped search crosses the wire under.
+///
+/// THE WORDS ARE THE CRAWL'S, deliberately, because the C# side and the harness read them
+/// and what they MEAN has not changed: a ration ran out, and which one decides whether a
+/// player can do anything about it. What has changed is which rations exist - a set-based
+/// search has candidates and a clock where the crawl had states and bytes.
+fn stopped_name(stopped: novelty_search::StoppedBy) -> &'static str {
+    match stopped {
+        novelty_search::StoppedBy::Nothing => "none",
+        // The candidate budget: the search ran out of things it was allowed to ask about,
+        // which is this engine's "states" - a ceiling on how much work one answer may cost.
+        novelty_search::StoppedBy::Targets => "states",
+        novelty_search::StoppedBy::Time => "time",
+        // A pass that could not finish, which is either its own clock or the diagram
+        // running out of nodes. `out_of_nodes` tells them apart, and the wire has one word
+        // for the pair until something reads them apart.
+        novelty_search::StoppedBy::Incomplete => "memory",
     }
 }
+
 
 /// The class a search from these starts should hunt, or `None` when there is nothing to find.
 ///
@@ -1156,6 +1290,40 @@ mod branch_wire_tests {
     use crate::test_graph::{node, Entry, GraphBuilder};
     use crate::world::test_world::TestWorld;
 
+    /// One start scored, with the diagram apparatus `answer_within` would have built.
+    ///
+    /// The same shape as the real path, small enough to read: the layout, the variables and
+    /// the compiled guards are the group's, and the search is asked one question about one
+    /// outcome.
+    fn score_one<F>(
+        graph: &LookAheadGraph,
+        world: &TestWorld,
+        start: DialogueNodeId,
+        branch: StartBranch,
+        novelty: F,
+    ) -> LookAheadAnswer
+    where
+        F: Fn(DialogueNodeId) -> Novelty,
+    {
+        let symbols = graph.symbols().clone();
+        let layout = DataLayout::for_graph(graph, COUNTER_CAP, None, false);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
+        let mut compiler = GuardCompiler::new(&vars).with_world(world);
+        let seed = seed_of(graph, world, &vars);
+
+        scored(
+            graph,
+            start,
+            NodeRef::from(start),
+            world,
+            novelty,
+            branch,
+            &seed,
+            &mut compiler,
+            &portfolio::Budget::default(),
+        )
+    }
+
     /// A check whose outcomes land on different rungs, both below the top one.
     ///
     /// 0 is the check. Passing opens 1, which this save has read, and 2 lies past it;
@@ -1181,7 +1349,6 @@ mod branch_wire_tests {
     #[test]
     fn a_refused_option_still_lets_each_outcome_ask_for_itself() {
         let graph = check_landing_on_something_read();
-        let engine = LookAheadEngine::default();
         let world = TestWorld::new();
 
         // 1 is read; everything else is unseen this game. Nothing is unseen anywhere.
@@ -1194,9 +1361,7 @@ mod branch_wire_tests {
             "the option should be refused: nothing outranks unseen-this-game here",
         );
 
-        let start = NodeRef::from(node(0));
-        let pass = scored(
-            &engine, &graph, node(0), start, &world, novelty, Some(StartBranch::Pass));
+        let pass = score_one(&graph, &world, node(0), StartBranch::Pass, novelty);
         assert_eq!(pass.branch.as_deref(), Some(PASS));
         assert_eq!(pass.destination, Novelty::SeenThisGame as i32, "passing opens 1");
         assert_eq!(
@@ -1204,8 +1369,7 @@ mod branch_wire_tests {
             "the unread entry past 1 outranks where passing lands, and should be reported",
         );
 
-        let fail = scored(
-            &engine, &graph, node(0), start, &world, novelty, Some(StartBranch::Fail));
+        let fail = score_one(&graph, &world, node(0), StartBranch::Fail, novelty);
         assert_eq!(fail.branch.as_deref(), Some(FAIL));
         assert_eq!(fail.destination, Novelty::UnseenThisGame as i32, "failing opens 3");
         assert_eq!(fail.best, fail.destination, "and nothing past 3 beats it");
@@ -1386,16 +1550,12 @@ mod branch_wire_tests {
         let index = crate::index::Index::new();
         let _ = index;
 
-        let engine = LookAheadEngine::default();
         let world = TestWorld::new();
         let novelty = |_: DialogueNodeId| Novelty::UnseenThisGame;
 
-        let check = NodeRef::from(node(0));
         let outcomes: Vec<LookAheadAnswer> = [StartBranch::Pass, StartBranch::Fail]
             .into_iter()
-            .map(|branch| {
-                scored(&engine, &graph, node(0), check, &world, novelty, Some(branch))
-            })
+            .map(|branch| score_one(&graph, &world, node(0), branch, novelty))
             .collect();
 
         assert_eq!(outcomes.len(), 2);
@@ -1403,8 +1563,7 @@ mod branch_wire_tests {
         assert_eq!(outcomes[1].branch.as_deref(), Some(FAIL));
 
         // 2 rolls nothing, so it is one start and names no outcome.
-        let plain = scored(
-            &engine, &graph, node(2), NodeRef::from(node(2)), &world, novelty, None);
+        let plain = score_one(&graph, &world, node(2), StartBranch::Either, novelty);
         assert_eq!(plain.branch, None);
     }
 }
@@ -1800,15 +1959,15 @@ mod tests {
             world: WorldSnapshot::default(),
         };
 
-        assert_eq!(request.options().memory_budget, 64 * 1024 * 1024);
+        assert_eq!(request.diagram_budget().memory(), 64 * 1024 * 1024);
     }
 
     /// Zero means the engine's own default rather than no budget at all.
     ///
-    /// The opposite convention to the TIME budget, where zero means no limit, and the
-    /// difference is deliberate: a crawl with no clock finishes, and a crawl with no memory
-    /// limit is the thing this budget exists to prevent. An absent setting must not turn
-    /// the protection off.
+    /// The opposite convention to the TIME budget, where zero means "the search's own
+    /// pacing", and the difference is deliberate: a search with no clock still stops, and
+    /// one with no memory limit is the thing this budget exists to prevent. An absent
+    /// setting must not turn the protection off.
     #[test]
     fn an_unset_memory_budget_is_the_default_rather_than_none() {
         let request = LookAheadRequest {
@@ -1823,15 +1982,19 @@ mod tests {
         };
 
         assert_eq!(
-            request.options().memory_budget,
+            request.diagram_budget().memory(),
             crate::engine::engine::DEFAULT_MEMORY_BUDGET,
         );
-        assert!(request.options().memory_budget > 0, "the default turned the budget off");
+        assert!(request.diagram_budget().memory() > 0, "the default turned the budget off");
     }
 
-    /// A time budget on the wire is the one the crawl runs under.
+    /// A time budget on the wire is the one the backward driver runs under.
+    ///
+    /// AND THE PER-CANDIDATE CAP IS KEPT UNDER IT. One candidate allowed longer than the
+    /// whole search would make the player's setting decorative - the first candidate would
+    /// spend it and the outer limit would never be consulted.
     #[test]
-    fn a_time_budget_that_crosses_is_the_budget_the_crawl_runs_under() {
+    fn a_time_budget_that_crosses_is_the_budget_the_search_runs_under() {
         let request = LookAheadRequest {
             conversation: 1,
             starts: Vec::new(),
@@ -1843,18 +2006,18 @@ mod tests {
             world: WorldSnapshot::default(),
         };
 
-        assert_eq!(
-            request.options().time_budget,
-            std::time::Duration::from_millis(250),
-        );
+        let budget = request.search_budget();
+        assert_eq!(budget.backwards, std::time::Duration::from_millis(250));
+        assert!(budget.each <= budget.backwards, "a candidate may not outlast the search");
+        assert!(budget.forwards <= budget.backwards, "nor may the slice before it");
     }
 
-    /// Zero means "this engine's default" for memory and "no limit" for time.
+    /// Zero means "this engine's default" for memory and "the search's own pacing" for time.
     ///
     /// The two zeros mean different things because the plugin's two settings do: the
     /// memory budget has a default it always applies, and the time budget documents zero
-    /// as no limit. Reading either the other way would silently change what a player
-    /// configured.
+    /// as no limit of the player's. Reading either the other way would silently change what
+    /// a player configured.
     #[test]
     fn a_budget_of_zero_means_what_the_plugins_setting_means() {
         let request = LookAheadRequest {
@@ -1868,10 +2031,12 @@ mod tests {
             world: WorldSnapshot::default(),
         };
 
-        let options = request.options();
         let default = crate::engine::engine::LookAheadOptions::default();
-        assert_eq!(options.memory_budget, default.memory_budget);
-        assert_eq!(options.time_budget, std::time::Duration::ZERO);
+        assert_eq!(request.diagram_budget().memory(), default.memory_budget);
+
+        // No number of the player's, so every part of the search keeps its own pacing.
+        assert_eq!(request.search_budget().backwards, portfolio::Budget::default().backwards);
+        assert_eq!(request.search_budget().each, portfolio::Budget::default().each);
     }
 
     /// A value's wire form is what the other side has to write, so it is pinned here.

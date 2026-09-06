@@ -94,13 +94,13 @@ namespace GlobalConversationTracker.Automation.Tests
         {
             LookAheadSuite[] asked =
             {
-                LookAheadSuites.EngineDeath, LookAheadSuites.Money, LookAheadSuites.RedCheck,
+                LookAheadSuites.EngineDeath, LookAheadSuites.Pristine, LookAheadSuites.RedCheck,
             };
 
             Assert.Equal(
                 new[]
                 {
-                    LookAheadSuites.Money, LookAheadSuites.RedCheck, LookAheadSuites.EngineDeath,
+                    LookAheadSuites.Pristine, LookAheadSuites.RedCheck, LookAheadSuites.EngineDeath,
                 },
                 LookAheadSuites.InRunOrder(asked));
         }
@@ -111,7 +111,7 @@ namespace GlobalConversationTracker.Automation.Tests
             Assert.Equal(LookAheadSuites.Default, LookAheadSuites.InRunOrder(LookAheadSuites.Default));
             Assert.Equal(LookAheadSuites.All, LookAheadSuites.InRunOrder(LookAheadSuites.All));
 
-            LookAheadSuite[] asked = { LookAheadSuites.RedCheck, LookAheadSuites.Money };
+            LookAheadSuite[] asked = { LookAheadSuites.RedCheck, LookAheadSuites.Pristine };
 
             Assert.Equal(asked, LookAheadSuites.InRunOrder(asked));
         }
@@ -329,20 +329,22 @@ namespace GlobalConversationTracker.Automation.Tests
         {
             // Two suites, the second reusing the first's save. Staging must still end
             // with the first suite's first save.
-            LookAheadSuite[] suites = { LookAheadSuites.Money, LookAheadSuites.SwitchedOff };
+            LookAheadSuite[] suites = { LookAheadSuites.SwitchedOff, LookAheadSuites.EngineDeath };
 
             IReadOnlyList<string> order = LookAheadRun.StagingOrder(suites);
 
-            Assert.Equal(LookAheadSuites.Money.Scenarios[0].SaveName, order[order.Count - 1]);
+            Assert.Equal(
+                LookAheadSuites.SwitchedOff.Scenarios[0].SaveName,
+                order[order.Count - 1]);
         }
 
         [Fact]
         public void SelectingBySuiteNameFindsIt()
         {
-            IReadOnlyList<LookAheadSuite> selected = LookAheadSuites.Select("money");
+            IReadOnlyList<LookAheadSuite> selected = LookAheadSuites.Select("pristine");
 
             Assert.Single(selected);
-            Assert.Equal("money", selected[0].Name);
+            Assert.Equal("pristine", selected[0].Name);
         }
 
         /// <summary>
@@ -374,13 +376,30 @@ namespace GlobalConversationTracker.Automation.Tests
                 () => LookAheadSuites.Select("no-such-suite"));
 
             Assert.Contains("no-such-suite", error.Message);
-            Assert.Contains("money", error.Message);
+            Assert.Contains("pristine", error.Message);
+
+            // A SUITE THAT IS SWITCHED OFF IS NOT A SUITE THAT EXISTS, as far as a name
+            // goes: it is not built, so asking for it by name is refused like a typo. The
+            // message lists what CAN be run, which is the useful half.
+            Assert.DoesNotContain("money", error.Message);
         }
 
         [Fact]
         public void AScenarioKnowsWhichEntriesItNames()
         {
-            LookAheadScenario scenario = LookAheadSuites.Money.Scenarios[0];
+            // BUILT HERE RATHER THAN TAKEN FROM A SUITE. What is being checked is what a
+            // scenario says about the entries it named, which is true of any scenario - and
+            // reading it out of whichever suite happens to be enabled made this test fail
+            // when the money suite was switched off, over nothing to do with naming.
+            var scenario = new LookAheadScenario(
+                "afford-both",
+                451,
+                "one option named and one not",
+                new[]
+                {
+                    new OptionExpectation(
+                        LookAheadSuites.BuySneakersEntry, Marker.Orange, "named"),
+                });
 
             Assert.True(scenario.Names(LookAheadSuites.BuySneakersEntry));
             Assert.False(scenario.Names(LookAheadSuites.SpeakersOnlyEntry));
@@ -439,7 +458,7 @@ namespace GlobalConversationTracker.Automation.Tests
         public void ASuiteWithNoMatchingScenarioIsNotRun()
         {
             IReadOnlyList<LookAheadSuite> only = LookAheadSuites.Only(
-                new[] { LookAheadSuites.Pristine, LookAheadSuites.Money },
+                new[] { LookAheadSuites.Pristine, LookAheadSuites.SeenElsewhere },
                 new[]
                 {
                     LookAheadSuites.CeilingFan.Save + ":" + LookAheadSuites.CeilingFan.Conversation,

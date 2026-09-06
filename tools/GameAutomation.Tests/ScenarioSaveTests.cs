@@ -51,8 +51,22 @@ namespace GlobalConversationTracker.Automation.Tests
                 .GetInt32();
         }
 
+        /// <summary>
+        /// The money suite's scenarios, read from the DEFINITION rather than from a built
+        /// suite.
+        /// </summary>
+        /// <remarks>
+        /// THE SAVES ARE COMMITTED WHETHER OR NOT THE SUITE RUNS, and what these tests check
+        /// is the saves - that the diffs carry the balances the definition names. The suite
+        /// is switched off while the symbolic search cannot model money (see the `disabled`
+        /// sentence in suites.json), and its fixtures must not rot in the meantime, so this
+        /// reads the table directly and keeps checking them.
+        /// </remarks>
+        private static Harness.ScenarioSuiteDefinition MoneySuite =>
+            Harness.ScenarioTable.Read().Suites.Single(suite => suite.Suite == "money");
+
         private static string[] Scenarios =>
-            Harness.LookAheadSuites.Money.Scenarios.Select(s => s.SaveName).ToArray();
+            MoneySuite.Scenarios.Select(s => s.Save).ToArray();
 
         [Fact]
         public void TheSharedSetupCarriesEverythingButTheMoney()
@@ -120,12 +134,11 @@ namespace GlobalConversationTracker.Automation.Tests
         public void TheMoneyMatchesWhatTheRunExpects()
         {
             // The saves and the expectations live in two places - the committed diffs and
-            // Harness.LookAheadSuites.Money.Scenarios - and a run that disagreed with its own
-            // fixtures would fail in the game, a minute in, saying only that the balance
-            // was wrong.
-            foreach (Harness.LookAheadScenario scenario in Harness.LookAheadSuites.Money.Scenarios)
+            // the money suite's definition - and a run that disagreed with its own fixtures
+            // would fail in the game, a minute in, saying only that the balance was wrong.
+            foreach (Harness.ScenarioDefinition scenario in MoneySuite.Scenarios)
             {
-                Assert.Equal(scenario.Money, MoneyOf(scenario.SaveName));
+                Assert.Equal(scenario.Money, MoneyOf(scenario.Save));
             }
         }
 
