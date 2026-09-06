@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using GlobalConversationTracker.Engine;
 using GlobalConversationTracker.Session;
@@ -42,6 +43,39 @@ namespace GlobalConversationTracker
         /// a run did. Changing the words breaks the runs, not the mod.
         /// </remarks>
         internal const string LogPrefix = "Look-ahead bridge:";
+
+        /// <summary>What has happened, said once and in one place.</summary>
+        /// <remarks>
+        /// Shared by the log line and the on-screen notice so the two cannot drift apart.
+        /// GREPPED BY THE HARNESS, like <see cref="LogPrefix"/>: the engine-death suite
+        /// matches this exact wording and counts it, so changing the words breaks the runs.
+        /// </remarks>
+        internal const string EngineHasGone =
+            "the look-ahead engine has gone and will not be restarted";
+
+        /// <summary>The one thing the player can do about it.</summary>
+        internal const string RestartAdvice = "restart the game to bring the feature back";
+
+        /// <summary>Said when the player has been told on screen, so a run can check.</summary>
+        /// <remarks>
+        /// The notice itself is pixels, and pixels are not something the harness reads. This
+        /// line is the evidence that it was raised; the screenshot beside it is the evidence
+        /// that it was legible.
+        /// </remarks>
+        internal const string NoticeShown = "the player was told on screen";
+
+        /// <summary>
+        /// The thread <see cref="Install"/> ran on, which is the game's own.
+        /// </summary>
+        /// <remarks>
+        /// Unity objects may only be touched from the main thread, and the notice touches
+        /// several. Today the only path into <see cref="EngineDied"/> is the response menu
+        /// being drawn, which IS this thread - but that is a fact about the current call
+        /// sites rather than a guarantee, and a future one (the warm-up task can fail too)
+        /// would otherwise crash the game from inside the handler for a crash. Compared
+        /// rather than trusted, so an off-thread caller loses the notice and keeps the log.
+        /// </remarks>
+        private static int _mainThreadId = -1;
 
         private static GlobalStateSession? _session;
         private static HookFailureLimiter? _failures;
@@ -267,6 +301,9 @@ namespace GlobalConversationTracker
 
             _session = session ?? throw new ArgumentNullException(nameof(session));
             _log = log;
+            // Load runs on the game's own thread, so this is the thread the notice may be
+            // raised from. Captured rather than assumed; see the field.
+            _mainThreadId = Thread.CurrentThread.ManagedThreadId;
             _modDirectory = modDirectory
                 ?? throw new ArgumentNullException(nameof(modDirectory));
             _failures = new HookFailureLimiter(
@@ -596,11 +633,15 @@ namespace GlobalConversationTracker
                 ? "It ran out of memory. Lowering LookAheadMemoryBudgetMb may help."
                 : "It stopped unexpectedly.";
             _log?.Warning(
-                $"{LogPrefix} the look-ahead engine has gone and will not be restarted. "
+                $"{LogPrefix} {EngineHasGone}. "
                 + $"{advice} Dialogue options will be drawn without look-ahead markers for "
-                + "the rest of this session; restart the game to bring the feature back. "
+                + $"the rest of this session; {RestartAdvice}. "
                 + "Tracking, the counts and the option colours are unaffected. "
                 + $"({died.Death}: {died.Message})");
+
+            // ON SCREEN AS WELL AS IN THE LOG, because nobody plays with the log open. The
+            // same two sentences, built from the same pieces as the line above.
+            TellThePlayer($"Look-ahead markers are off. {advice} Please {RestartAdvice}.");
 
             // The bridge first, so nothing is left holding a dead engine, and then the
             // hooks, so nothing calls in again while this is happening.
@@ -639,6 +680,67 @@ namespace GlobalConversationTracker
             }
 
             _harmony = null;
+        }
+
+        /// <summary>
+        /// Puts the notice in front of the player, through the game's own notifications.
+        /// </summary>
+        /// <remarks>
+        /// <para>THE GAME'S OWN CHANNEL RATHER THAN A ROW OF OUR OWN, and the deciding
+        /// argument is WHEN this fires. The engine dies while a response menu is being
+        /// drawn, which is to say in the middle of a conversation - and the HUD counts are
+        /// children of the money display precisely so they FADE OUT during dialogue. A
+        /// notice placed beside them would therefore be invisible at the only moment it is
+        /// worth anything, and would surface later, over some unrelated scene, as a warning
+        /// about something the player had already stopped noticing.</para>
+        ///
+        /// <para><c>NotificationManager</c> is what the game uses to say that money changed
+        /// hands or a thought completed. It draws over dialogue, it is already styled, and
+        /// it decides how long the notice lingers - which is the second open question this
+        /// issue carried, answered by not inventing an answer. <c>Failure</c> is the honest
+        /// type: a feature failed, and the player can act on one of the two reasons.</para>
+        ///
+        /// <para>IT MUST NOT THROW. This runs inside the handler for the engine having
+        /// died; a notice that took the game down would be a worse failure than the one it
+        /// is reporting, and the whole failure budget of this feature is "the asterisk does
+        /// not appear". Every way it can go wrong ends in a log line and nothing else - the
+        /// full message is already in the log by the time this is called.</para>
+        /// </remarks>
+        private static void TellThePlayer(string message)
+        {
+            if (Thread.CurrentThread.ManagedThreadId != _mainThreadId)
+            {
+                // Not a crash and not silent. The log already carries the whole message.
+                _log?.Warning(
+                    $"{LogPrefix} the on-screen notice was skipped because the engine's "
+                    + "death was noticed off the game's main thread, where Unity objects "
+                    + "cannot be touched. The line above is the whole of it.");
+                return;
+            }
+
+            try
+            {
+                if (!NotificationSystem.NotificationManager.HasInstance)
+                {
+                    // Before the HUD exists - a death during the main menu, say. Nothing to
+                    // draw on, and nothing the player is missing yet either.
+                    _log?.Warning(
+                        $"{LogPrefix} there was no notification manager to tell the player "
+                        + "with; the line above is the whole of it.");
+                    return;
+                }
+
+                NotificationSystem.NotificationManager.Singleton.ShowNotification(
+                    NotificationSystem.NotificationType.Failure, message);
+                _log?.Warning($"{LogPrefix} {NoticeShown}: {message}");
+            }
+            catch (Exception error)
+            {
+                _log?.Warning(
+                    $"{LogPrefix} the on-screen notice could not be shown "
+                    + $"({error.GetType().Name}: {error.Message}); the line above is the "
+                    + "whole of it.");
+            }
         }
 
         /// <summary>The bridge, or null where there is none YET or at all.</summary>

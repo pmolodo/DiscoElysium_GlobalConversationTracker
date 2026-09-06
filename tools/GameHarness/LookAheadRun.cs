@@ -1072,7 +1072,8 @@ namespace GlobalConversationTracker.Harness
         private const string MenuPictures = "menus";
 
         /// <summary>
-        /// Photographs a menu that carries a Pass / Fail line, while it is still up.
+        /// Photographs a menu with something on it only a person can judge, while it is
+        /// still up.
         /// </summary>
         /// <remarks>
         /// <para>THE ONE CLAIM THE PROBE CANNOT MAKE. Everything else this run checks is
@@ -1082,8 +1083,10 @@ namespace GlobalConversationTracker.Harness
         /// the second line, and every check here would still pass. A picture is what
         /// separates those two worlds, so one is taken.</para>
         ///
-        /// <para>Only menus that actually carry a line, which is a handful per run - a
-        /// picture of a menu with nothing to show costs the same and proves nothing. Taken
+        /// <para>Only menus that actually have something to show, which is a handful per
+        /// run - a picture of a menu with nothing on it costs the same and proves nothing.
+        /// Two kinds qualify: a menu carrying a Pass / Fail line, and one where the engine
+        /// was killed underneath it, whose notice is drawn by the game over the top. Taken
         /// here rather than at the end because the menu is up NOW; the run moves on to the
         /// next save as soon as this scenario returns.</para>
         ///
@@ -1098,7 +1101,12 @@ namespace GlobalConversationTracker.Harness
             string artifacts,
             string suiteName)
         {
-            if (!options.Any(option => option.Branches() != null))
+            // A killed engine earns a picture too, and for the same reason a check does:
+            // the notice it raises is drawn by the game's own notification panel, over the
+            // menu, and nothing the probe reads can say whether it landed somewhere the
+            // player would see. The log says it was raised; only this says what it looked
+            // like.
+            if (!scenario.KillEngineFirst && !options.Any(option => option.Branches() != null))
             {
                 return;
             }

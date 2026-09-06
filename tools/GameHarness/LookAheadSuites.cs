@@ -643,6 +643,16 @@ namespace GlobalConversationTracker.Harness
                     true,
                     "the mod says the engine has gone, once and only once",
                     times: 1),
+                // THE NOTICE IS PIXELS, and pixels are not something a log check can read.
+                // What this proves is that it was RAISED, through the game's own
+                // notification manager, exactly once - the same once as the line above,
+                // since both hang off the same guard. Whether it was legible is a question
+                // for a screenshot, and the run takes one.
+                new LogExpectation(
+                    "the player was told on screen",
+                    true,
+                    "the player is told in the game, once and only once",
+                    times: 1),
                 new LogExpectation(
                     "dialogue statuses are being tracked",
                     true,
