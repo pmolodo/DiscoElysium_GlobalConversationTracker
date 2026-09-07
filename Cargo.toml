@@ -148,3 +148,11 @@ path = "measurements/unread_slots.rs"
 [[example]]
 name = "parsed_vs_source"
 path = "measurements/parsed_vs_source.rs"
+
+[[example]]
+name = "settles_within"
+path = "measurements/settles_within.rs"
+
+[[example]]
+name = "prune_on_menus"
+path = "measurements/prune_on_menus.rs"

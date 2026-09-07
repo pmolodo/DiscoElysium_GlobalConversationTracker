@@ -666,6 +666,9 @@ impl LookAheadRequest {
                 backwards: default.backwards,
                 each: std::time::Duration::ZERO,
                 targets: self.state_budget,
+                // Nothing to prune with: the forward slice gets no time at all here, so
+                // there is no settled run and `Known` would refuse to narrow anyway.
+                pruning: default.pruning,
             };
         }
 
@@ -679,6 +682,7 @@ impl LookAheadRequest {
             backwards: whole,
             each: default.each.min(whole),
             targets: default.targets,
+            pruning: default.pruning,
         }
     }
 

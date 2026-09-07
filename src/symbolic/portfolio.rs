@@ -122,6 +122,17 @@ pub struct Budget {
     pub each: Duration,
     /// The most candidates to ask about.
     pub targets: usize,
+    /// Whether a SETTLED forward run may narrow the backward passes told about it.
+    ///
+    /// ON, and self-guarding: [`Known`] narrows nothing without `forward_settled`, so a
+    /// group whose slice spends [`Self::forwards`] without settling behaves exactly as it
+    /// would with this off. See the note at the call site for why it was off until
+    /// de-bnjy.9 and what changed.
+    ///
+    /// A FIELD RATHER THAN A LITERAL because it is the only way to measure what it is
+    /// worth: one run cannot show a difference, and both arms have to be the shipped path
+    /// rather than a hand-built search beside it.
+    pub pruning: bool,
 }
 
 impl Default for Budget {
@@ -141,6 +152,11 @@ impl Default for Budget {
             backwards: Duration::from_secs(2),
             each: Duration::from_millis(250),
             targets: 64,
+            // ON. `measurements/settles_within.rs` is why: at the fifty milliseconds above,
+            // 119 of 120 ordinary groups settle and 25 of the 50 that span conversations
+            // do, so most of the game has a settled run to narrow with and nothing was
+            // using it.
+            pruning: true,
         }
     }
 }
@@ -292,8 +308,26 @@ where
     let from = novelty_search::Where::of(
         graph, start, branch, seed, compiler, world, counter_cap,
     );
+    // AND NARROWED BY IT WHERE THE RUN SETTLED. A settled forward run says exactly what can
+    // arrive at an entry, so a backward pass may intersect every pre-image against it, and
+    // an entry the run never reached at all is refused without a fixed point. On
+    // conversation 28 that takes the backward half from 19 ms to 2 - see de-fawk, which
+    // built it, proved it against the explicit crawl in tests/backward_oracle.rs, and then
+    // left it off.
+    //
+    // IT WAS LEFT OFF ON A READING OF FIVE GROUPS, and the reading does not survive the
+    // rest of the game. The argument was that the fifty-millisecond slice above almost
+    // never settles, which is true of the five heaviest groups and false everywhere else:
+    // `measurements/settles_within.rs` puts it at 119 of 120 ordinary groups and 25 of the
+    // 50 that span conversations. Pruning was off for all of them.
+    //
+    // SELF-GUARDING, which is what makes this free rather than a trade. `Known` narrows
+    // nothing unless `forward_settled`, so a group that spends its budget without settling
+    // behaves exactly as it did - no bound, no intersection, no cost. Nothing here raises
+    // the budget; that is de-bnjy.9's other half, and it is spent per start whether or not
+    // it is claimed.
     let known = forwards.as_ref().map(|found| {
-        let mut known = shape.known_from(graph, start);
+        let mut known = shape.known_from(graph, start).pruning(budget.pruning);
         for (id, states) in from.known_pairs() {
             known = known.from(id, states);
         }
@@ -521,6 +555,7 @@ mod tests {
             backwards: Duration::ZERO,
             each: Duration::ZERO,
             targets: 64,
+            ..Budget::default()
         };
         let answer = run(&graph, &TestWorld::new(), classes(&[], &[]), &starved);
 
@@ -627,6 +662,7 @@ mod tests {
             backwards: Duration::ZERO,
             each: Duration::ZERO,
             targets: 64,
+            ..Budget::default()
         };
         let answer = run(&graph, &TestWorld::new(), unseen(&[2]), &starved);
 
