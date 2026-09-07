@@ -49,6 +49,34 @@
 //!    362     1860         3          15
 //! ```
 //!
+//! ## And the diagram side splits again, which is what de-2wtl actually turns on
+//!
+//! A later run, 2026-09-07, with the manager timed apart from the compiler:
+//!
+//! ```text
+//!   conv  entries  graph ms  diagram ms  of it mgr
+//!     28     2186         5          10          9
+//!    368     4724         8          14          9
+//!     14     3594         7          13          9
+//!    631     4514         8          14         10
+//!    362     1860         3          11          9
+//! ```
+//!
+//! THE MANAGER IS NEARLY ALL OF IT - nine or ten milliseconds of ten to fourteen - and the
+//! compiler and seed are the remaining one to five.
+//!
+//! THAT IS THE OPPOSITE WAY ROUND FROM WHAT INVALIDATES. `DataLayout::for_group` reads the
+//! world through `money()` alone - the money ceiling - so the layout, and the manager sized
+//! from it, survives everything else the world does. `GuardCompiler::with_world` folds in
+//! the variables, items, tasks, queries, check outcomes and `is_seen`, and what the player
+//! has SEEN changes on every line they read - which is to say between every pair of menus a
+//! cache would be serving.
+//!
+//! So a workspace keyed on the WORLD SNAPSHOT, which is what de-2wtl's design assumed,
+//! would be thrown away almost every menu and buy nothing. A workspace that keeps the
+//! MANAGER and rebuilds the compiler and seed per request keeps the nine or ten and pays
+//! the one to five, and its invalidation rule is the money ceiling rather than everything.
+//!
 //! EIGHTEEN TO TWENTY-SEVEN MILLISECONDS, all in, on the five heaviest groups in the game.
 //! That is the whole of what an owner outliving the query would stop paying.
 //!
@@ -134,12 +162,12 @@ fn main() {
         search.as_millis(),
     );
     println!(
-        "{:>6}  {:>8}  {:>10}  {:>12}  {:>10}  {:>14}",
-        "conv", "entries", "graph ms", "diagram ms", "search ms", "setup share",
+        "{:>6}  {:>8}  {:>10}  {:>12}  {:>11}  {:>10}  {:>14}",
+        "conv", "entries", "graph ms", "diagram ms", "of it mgr", "search ms", "setup share",
     );
 
     for conversation in conversations {
-        let mut best: Option<(Duration, Duration, Duration, usize)> = None;
+        let mut best: Option<(Duration, Duration, Duration, Duration, usize)> = None;
 
         for _ in 0..repeats {
             let began = Instant::now();
@@ -156,7 +184,7 @@ fn main() {
             }
 
             // ONE THREAD, ONE MANAGER, as everything that builds one must - de-fpax.
-            let (diagram_took, search_took) = isolated::on_its_own_thread(|| {
+            let (diagram_took, manager_took, search_took) = isolated::on_its_own_thread(|| {
                 let symbols = graph.symbols().clone();
                 let world = SnapshotWorld::declaring(
                     WorldSnapshot { day_minutes: 720, day_counter: 1, ..Default::default() },
@@ -170,6 +198,14 @@ fn main() {
                 // the things a changed save invalidates.
                 let layout = DataLayout::for_group(&graph, &world, COUNTER_CAP);
                 let vars = DataVars::new(&layout, &symbols, budget);
+                // THE LAYOUT AND THE MANAGER SEPARATELY FROM THE REST, because they
+                // invalidate on different things and de-2wtl turns on which. `for_group`
+                // reads the world only through `money()` - the money ceiling - so the
+                // layout, and therefore the manager sized from it, survives everything else
+                // the world does. The compiler does not: `with_world` folds in the
+                // variables, the items, the tasks, the queries, the check outcomes and
+                // `is_seen`, and what the player has SEEN changes on every line they read.
+                let manager = building.elapsed();
                 let mut compiler = GuardCompiler::new(&vars)
                     .with_world(&world)
                     .with_constant_clock(DataLayout::group_passes_time(&graph));
@@ -188,23 +224,27 @@ fn main() {
                 );
                 std::hint::black_box(found.stats().entries_reached);
 
-                (built, searching.elapsed())
+                (built, manager, searching.elapsed())
             });
 
-            let row = (graph_took, diagram_took, search_took, graph.count());
+            let row = (graph_took, diagram_took, manager_took, search_took, graph.count());
             best = match best {
                 Some(had) if had.0 + had.1 <= row.0 + row.1 => Some(had),
                 _ => Some(row),
             };
         }
 
-        let Some((graph_took, diagram_took, search_took, entries)) = best else { continue };
+        let Some((graph_took, diagram_took, manager_took, search_took, entries)) = best
+        else {
+            continue;
+        };
         let setup = graph_took + diagram_took;
         let whole = setup + search_took;
         println!(
-            "{conversation:>6}  {entries:>8}  {:>10}  {:>12}  {:>10}  {:>13.0}%",
+            "{conversation:>6}  {entries:>8}  {:>10}  {:>12}  {:>11}  {:>10}  {:>13.0}%",
             graph_took.as_millis(),
             diagram_took.as_millis(),
+            manager_took.as_millis(),
             search_took.as_millis(),
             100.0 * setup.as_secs_f64() / whole.as_secs_f64().max(f64::EPSILON),
         );
