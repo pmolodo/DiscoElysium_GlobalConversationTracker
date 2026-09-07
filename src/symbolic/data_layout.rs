@@ -23,7 +23,7 @@
 //! between about 350 variables and about 1,700.
 
 use crate::core::action::DialogueActionKind;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::core::guard::GuardExpression;
 use crate::core::state::{
@@ -70,6 +70,10 @@ impl DataLayout {
         let slot_count = graph.symbols().count();
         // Every slot is one bit until something proves it needs more.
         let mut widths = vec![1u8; slot_count];
+        // THE FLOOR AN ASSIGN PUTS UNDER A SLOT, kept apart from the total because the
+        // threshold narrowing below may squeeze what an INCREMENT asked for and may never
+        // squeeze this. See `narrow_to_thresholds`.
+        let mut assigned = vec![1u8; slot_count];
 
         for node in graph.nodes() {
             // A cost charged once records that in its own slot, which is boolean.
@@ -82,13 +86,19 @@ impl DataLayout {
                 let slot = slot as usize;
                 let needed = match action.kind() {
                     DialogueActionKind::Increment => bits_for(counter_cap.max(0) as u32),
-                    DialogueActionKind::Assign => bits_for(action.value().max(0) as u32),
+                    DialogueActionKind::Assign => {
+                        let bits = bits_for(action.value().max(0) as u32);
+                        assigned[slot] = assigned[slot].max(bits);
+                        bits
+                    }
                     // Money, clock and unmodelled actions do not write a slot.
                     _ => continue,
                 };
                 widths[slot] = widths[slot].max(needed);
             }
         }
+
+        Self::narrow_to_thresholds(graph, &mut widths, &assigned);
 
         let mut next = 0u32;
         let mut slots = Vec::with_capacity(slot_count);
@@ -112,6 +122,118 @@ impl DataLayout {
         };
 
         Self { slots, money, clock, total: next }
+    }
+
+    /// Squeezes each slot to the largest value its guards can still tell apart.
+    ///
+    /// ## The argument, which is what makes this sound
+    ///
+    /// The guard language has NO ARITHMETIC: a slot is only ever compared against a
+    /// constant, assigned, or incremented. So if every comparison in the group tests a slot
+    /// against constants no larger than `T`, then EVERY VALUE ABOVE `T` ANSWERS ALL OF THEM
+    /// IDENTICALLY - `>= c` is true, `< c` is false and `== c` is false for any `c <= T` -
+    /// and the slot may saturate at `T + 1` instead of at the counter cap.
+    ///
+    /// A cap of 16 is five bits; a slot compared only against 0 and 1 is one.
+    ///
+    /// ## Why it needs no graph analysis at all
+    ///
+    /// de-3x76.2 proposed bounding a counter by the number of sites that write it, which
+    /// needs to know whether those sites sit inside a cycle, which needs an SCC pass. IT
+    /// ALSO NEEDED THE WORLD, because a save can arrive holding more than the group's own
+    /// sites could produce, and `seed_of` clamps it - so that bound could silently corrupt
+    /// a save, and avoiding it would have made the layout world-dependent and cost the kept
+    /// workspace its key.
+    ///
+    /// The threshold bound has neither problem. It holds however many times the slot is
+    /// incremented, whether or not it sits in a cycle, and whatever the save arrives
+    /// holding, because it is an argument about what the GUARDS can distinguish rather than
+    /// about what the slot can reach. Measured against the site-count version it is also
+    /// strictly better: 7.6% against 4.2% on 362, 6.6% against 5.4% on 368, and 1.3%
+    /// against nothing on 14 (`measurements/layout_shape.rs`).
+    ///
+    /// ## The two things it must not do
+    ///
+    /// AN ASSIGN IS NOT SATURATING. `ActionImage::assign` encodes the assigned number
+    /// directly where an increment clamps into the slot's ceiling, so a slot assigned 100
+    /// must keep room for 100 however small its thresholds are. That is what `assigned` is.
+    ///
+    /// A COMPARISON THIS CANNOT READ MUST BLOCK THE NARROWING, not be ignored. The argument
+    /// is that EVERY comparison agrees, so one whose shape is unrecognised - a non-literal
+    /// other side, or the slot handed to a world query - leaves the slot at full width.
+    fn narrow_to_thresholds(graph: &LookAheadGraph, widths: &mut [u8], assigned: &[u8]) {
+        let symbols = graph.symbols();
+        let mut highest: HashMap<usize, u32> = HashMap::new();
+        let mut unreadable: HashSet<usize> = HashSet::new();
+        for node in graph.nodes() {
+            Self::read_comparisons(&node.guard, symbols, &mut highest, &mut unreadable);
+        }
+
+        for (slot, width) in widths.iter_mut().enumerate() {
+            if unreadable.contains(&slot) {
+                continue;
+            }
+            // No comparison at all means the slot is read as a condition, or not read - and
+            // one bit already tells zero from non-zero, so there is nothing to squeeze.
+            let Some(&high) = highest.get(&slot) else { continue };
+            let wanted = bits_for(high.saturating_add(1)).max(assigned[slot]);
+            *width = (*width).min(wanted);
+        }
+    }
+
+    /// Collects, per slot, the largest constant compared against it - and which slots are
+    /// compared in a shape this cannot read.
+    ///
+    /// See [`Self::narrow_to_thresholds`] for why the second is not merely an omission.
+    fn read_comparisons(
+        guard: &GuardExpression,
+        symbols: &StateSymbols,
+        highest: &mut HashMap<usize, u32>,
+        unreadable: &mut HashSet<usize>,
+    ) {
+        match guard {
+            GuardExpression::Comparison(_, a, b) => {
+                for (side, other) in [(a.as_ref(), b.as_ref()), (b.as_ref(), a.as_ref())] {
+                    let Some(slot) = Self::slot_named(side, symbols) else { continue };
+                    let GuardExpression::Literal(value) = other else {
+                        unreadable.insert(slot);
+                        continue;
+                    };
+                    let number = value.number();
+                    if !number.is_finite() || number < 0.0 {
+                        unreadable.insert(slot);
+                        continue;
+                    }
+                    let seen = highest.entry(slot).or_insert(0);
+                    *seen = (*seen).max(number as u32);
+                }
+                Self::read_comparisons(a, symbols, highest, unreadable);
+                Self::read_comparisons(b, symbols, highest, unreadable);
+            }
+            GuardExpression::Not(inner) => {
+                Self::read_comparisons(inner, symbols, highest, unreadable)
+            }
+            GuardExpression::And(a, b) | GuardExpression::Or(a, b) => {
+                Self::read_comparisons(a, symbols, highest, unreadable);
+                Self::read_comparisons(b, symbols, highest, unreadable);
+            }
+            GuardExpression::Call(_, args) => {
+                // A SLOT HANDED TO A QUERY is not something this can reason about at all.
+                for arg in args {
+                    if let Some(slot) = Self::slot_named(arg, symbols) {
+                        unreadable.insert(slot);
+                    }
+                    Self::read_comparisons(arg, symbols, highest, unreadable);
+                }
+            }
+            GuardExpression::Variable(_) | GuardExpression::Literal(_) => {}
+        }
+    }
+
+    /// The slot a guard expression names, if it simply names one.
+    fn slot_named(guard: &GuardExpression, symbols: &StateSymbols) -> Option<usize> {
+        let GuardExpression::Variable(name) = guard else { return None };
+        (0..symbols.count()).find(|slot| symbols.name_of(*slot) == Some(name.as_str()))
     }
 
     /// The layout a search over a whole group gets, which is what the product runs.

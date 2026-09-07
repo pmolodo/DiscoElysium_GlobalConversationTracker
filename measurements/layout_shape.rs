@@ -668,6 +668,54 @@ fn what_each_group_carries() {
             if vars > 0 { (vars - sound) as f64 / vars as f64 * 100.0 } else { 0.0 },
         );
 
+        // AND THE SAME THING WITHOUT ANY GRAPH ANALYSIS AT ALL. The derivation above needs
+        // the site count, and so the cycle analysis behind it - `writes_of` gives up
+        // (`ceiling() == None`) on a slot incremented inside a cycle.
+        //
+        // BUT THE THRESHOLD ARGUMENT DOES NOT NEED THE SITE COUNT. If every guard compares
+        // a slot against constants no larger than T, then every value above T answers all
+        // of them identically, so saturating the slot at T+1 is sound HOWEVER MANY TIMES IT
+        // IS INCREMENTED AND WHETHER OR NOT IT SITS IN A CYCLE. That makes this variant
+        // strictly simpler to ship than the one de-3x76.2 describes, and it also applies to
+        // the cyclic slots the other derivation has to leave alone.
+        //
+        // A slot with no comparison at all is read as a condition - truthy or not - which
+        // one bit already covers, so it keeps the width it has rather than being widened.
+        let mut threshold_only = 0usize;
+        for slot in 0..symbols.count() {
+            let Some((_, bits)) = layout.slot(slot) else { continue };
+            if bits == 0 {
+                continue;
+            }
+            // AN ASSIGN STILL NEEDS ITS OWN VALUE TO FIT. `ActionImage::assign` encodes the
+            // assigned number directly, so unlike an increment it does not saturate into
+            // the slot's ceiling - narrowing below it would encode a value the run cannot
+            // hold. So the floor is the largest thing assigned, and the threshold only
+            // decides how far below the cap the INCREMENTS may be squeezed.
+            let assigned = writes[slot].max_assigned.max(0) as u32;
+            let wanted = if unreadable.contains(&slot) {
+                bits
+            } else {
+                match thresholds.get(&slot) {
+                    Some((_, high)) => bits_for(high.saturating_add(1))
+                        .max(bits_for(assigned))
+                        .min(bits),
+                    None => bits,
+                }
+            };
+            threshold_only += wanted as usize;
+        }
+        // NOW A DRIFT CHECK RATHER THAN A PROPOSAL. This narrowing SHIPPED - it is
+        // `DataLayout::narrow_to_thresholds` - so recomputing it here must find nothing
+        // left to take. Anything other than zero means this measurement and the engine have
+        // come to disagree about what a slot needs, which is the failure the whole file
+        // exists to catch and which caught the clock earlier.
+        println!(
+            "      re-deriving the threshold widths finds {} further variable(s) to take, \
+             and must find none - the engine already applies this",
+            vars - threshold_only,
+        );
+
         // WHAT de-3x76.4 WOULD BUY, which is the only idea in the epic that ELIMINATES a
         // variable rather than narrowing one. If a slot cannot structurally reach the
         // smallest constant any guard compares it against, every one of those guards is
