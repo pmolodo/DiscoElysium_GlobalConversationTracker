@@ -373,11 +373,41 @@ namespace GlobalConversationTracker.Harness
                 // window of a known size, and a run at the machine's own resolution would
                 // still pass every marker check while testing something else.
                 GameWindow window = GameSession.WaitForWindow("disco", timeout);
+                bool rightSize = window.Width == staged.Requested.Width
+                    && window.Height == staged.Requested.Height;
                 report.Check(
-                    window.Width == staged.Requested.Width
-                        && window.Height == staged.Requested.Height,
+                    rightSize,
                     $"the window is the requested {staged.Requested}",
                     $"got {window.Width}x{window.Height}");
+
+                // AND STOP, because the run is already known to be unmeasurable and every
+                // check after this point would be reporting the window rather than the mod.
+                //
+                // It used to record the failure above and carry on, and what came next was
+                // the main-menu wait - which cannot succeed, because the screen references
+                // it compares against were all captured at the requested size. That is five
+                // minutes of retrying followed by a second, vaguer failure, and it cost two
+                // real runs on 2026-09-06: a portrait display at 1080x720 (de-qslk) and a
+                // 637x357 window when the display was reconfigured mid-launch.
+                //
+                // THROWN RATHER THAN RETURNED, so the restore in the finally still runs.
+                // The second of those runs had to be stopped by hand, which skips it and
+                // leaves the player's profile and PlayerPrefs staged.
+                //
+                // The diagnosis is spelled out because it is always the same one: nothing
+                // about the mod decides this, and the thing to go and look at is the
+                // display rather than the run.
+                if (!rightSize)
+                {
+                    throw new InvalidOperationException(
+                        $"The game opened at {window.Width}x{window.Height}, not the "
+                        + $"{staged.Requested.Width}x{staged.Requested.Height} asked for. "
+                        + "Every screen reference this run compares against was captured at "
+                        + "the requested size, so nothing downstream can pass and waiting "
+                        + "for the main menu would only spend five minutes proving it. "
+                        + "Check the display's orientation, resolution and scaling, and run "
+                        + "again.");
+                }
 
                 bool firstScenario = true;
                 // Once per run, not once per scenario. The comparison opens the shipped
