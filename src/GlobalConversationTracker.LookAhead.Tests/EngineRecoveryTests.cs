@@ -232,11 +232,27 @@ namespace GlobalConversationTracker.LookAhead.Tests
             Assert.Equal(1, recovery.Respawns);
         }
 
-        /// <summary>A limit below one is refused rather than quietly meaning "never try".</summary>
+        /// <summary>A limit of zero never respawns, which is the behaviour this replaced.</summary>
+        /// <remarks>
+        /// Kept reachable so a test can get to the give-up path in one death rather than
+        /// six. It is also, exactly, what de-bnjy.1.2 shipped.
+        /// </remarks>
         [Fact]
-        public void LimitBelowOne_IsRejected()
+        public void LimitOfZero_GivesUpOnTheFirstDeath()
         {
-            Assert.Throws<ArgumentOutOfRangeException>(() => new EngineRecovery(limit: 0));
+            var recovery = new EngineRecovery(limit: 0);
+
+            Assert.Equal(RecoveryAction.GiveUp, recovery.RecordDeath(SomeConversation));
+
+            Assert.True(recovery.GivenUp);
+            Assert.Equal(0, recovery.Respawns);
+            Assert.Empty(recovery.Quarantined);
+        }
+
+        /// <summary>A negative limit is refused rather than quietly meaning something.</summary>
+        [Fact]
+        public void NegativeLimit_IsRejected()
+        {
             Assert.Throws<ArgumentOutOfRangeException>(() => new EngineRecovery(limit: -1));
         }
     }

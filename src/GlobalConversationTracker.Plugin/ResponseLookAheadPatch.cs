@@ -54,6 +54,23 @@ namespace GlobalConversationTracker
         internal const string EngineHasGone =
             "the look-ahead engine has gone and will not be restarted";
 
+        /// <summary>What has happened when there is still budget to replace it.</summary>
+        /// <remarks>
+        /// DELIBERATELY NOT A PREFIX OF <see cref="EngineHasGone"/> PAST THE FIRST WORDS.
+        /// That one says "will not be restarted" and the engine-death suite counts it as
+        /// the end of the feature; a respawn is the opposite claim, and a run that could
+        /// not tell the two apart would score every recovery as a shutdown. GREPPED BY THE
+        /// HARNESS in its own right, as is <see cref="EngineReplacementUp"/>, which is the
+        /// other half of the story - this line says one was started, that one says it
+        /// arrived, and a run wants to know which happened.
+        /// </remarks>
+        internal const string EngineReplaced =
+            "the look-ahead engine has gone and a replacement is being started";
+
+        /// <summary>Said when the replacement has arrived and markers resume.</summary>
+        internal const string EngineReplacementUp =
+            "a replacement look-ahead engine is up";
+
         /// <summary>The one thing the player can do about it.</summary>
         internal const string RestartAdvice = "restart the game to bring the feature back";
 
@@ -139,13 +156,36 @@ namespace GlobalConversationTracker
         /// </remarks>
         private static Task<LookAheadIndex?>? _warming;
 
-        /// <summary>Whether the engine has died, which is final for this session.</summary>
+        /// <summary>Whether the engine has died for the LAST time, which is final.</summary>
         /// <remarks>
         /// Set once by <see cref="EngineDied"/> and never cleared. It is what makes the
         /// message appear once and the feature stay off - the hooks are removed as well,
         /// but a hook that is mid-call when the engine goes still has to find its way out.
+        ///
+        /// <para>NOT SET BY EVERY DEATH SINCE de-bnjy.1.3. Most deaths are answered with a
+        /// fresh engine and no message at all; this is only the end of the road, when
+        /// <see cref="_recovery"/> says there have been too many to keep paying for
+        /// another.</para>
         /// </remarks>
         private static bool _engineDied;
+
+        /// <summary>Whether to respawn, what to blame for a death, and when to stop.</summary>
+        /// <remarks>
+        /// de-bnjy.1.3. Replaced rather than reset, and by <see cref="Install"/>, so that
+        /// an in-game suite which installs twice does not inherit the deaths it caused on
+        /// purpose the first time.
+        /// </remarks>
+        private static EngineRecovery _recovery = new EngineRecovery();
+
+        /// <summary>Whether the open now in flight is replacing an engine that died.</summary>
+        /// <remarks>
+        /// WHICH IS NOT THE SAME AS THE FIRST OPEN FAILING. An installation with no engine
+        /// deployed at all fails to open every time and must go on quietly answering with
+        /// the managed engine, so its failures must not spend the recovery budget and must
+        /// never reach the give-up notice. Only a respawn's failure counts, which is what
+        /// this distinguishes - see <see cref="Bridge"/>.
+        /// </remarks>
+        private static bool _respawning;
 
         /// <summary>
         /// The look-ahead's OWN Harmony instance, so it can take its own hooks off.
@@ -323,6 +363,11 @@ namespace GlobalConversationTracker
             // instance for cannot be taken off again. Load calls this once; a test may not.
             _harmony?.UnpatchSelf();
             _engineDied = false;
+            // A FRESH BUDGET AND AN EMPTY STASH. The in-game suites kill the engine on
+            // purpose and then install again; carrying the deaths across would have the
+            // second suite give up on the first one's evidence.
+            _recovery = new EngineRecovery();
+            _respawning = false;
 
             // AN INSTANCE OF ITS OWN, whose id is the plugin's with a suffix. Unpatching is
             // by id, so hooks that share one cannot be removed separately - and these two
@@ -339,12 +384,33 @@ namespace GlobalConversationTracker
         }
 
         /// <summary>Changes suite-scoped behavior without reinstalling the hook.</summary>
+        /// <param name="enabled">Whether to mark options at all.</param>
+        /// <param name="stateBudget">The search-state budget, or 0 for none.</param>
+        /// <param name="timeBudgetMs">The time budget in milliseconds, or 0 for none.</param>
+        /// <param name="memoryBudgetMb">
+        /// The memory budget in megabytes, or 0 for the engine's own default.
+        /// </param>
+        /// <param name="diagnostics">Where to record crawls, or null to record none.</param>
+        /// <param name="recoveryLimit">
+        /// How many engine deaths to answer with a fresh engine before giving up for the
+        /// session; negative leaves the current policy alone, which is what every caller
+        /// that does not care about it passes.
+        /// </param>
+        /// <remarks>
+        /// THE RECOVERY LIMIT IS HERE FOR ONE REASON: an in-game suite cannot otherwise
+        /// reach the give-up path. The default tolerates five deaths, so a suite that
+        /// wanted to see the shutdown notice would have to kill six engines AND win a race
+        /// with each replacement as it came up. Set to zero it never respawns - the
+        /// behaviour de-bnjy.1.2 shipped - and one kill reaches the notice, which is what
+        /// the engine-death suite asks for.
+        /// </remarks>
         internal static void Configure(
             bool enabled,
             int stateBudget,
             int timeBudgetMs,
             int memoryBudgetMb,
-            LookAheadDiagnosticsWriter? diagnostics)
+            LookAheadDiagnosticsWriter? diagnostics,
+            int recoveryLimit = -1)
         {
             _diagnostics?.Flush();
 
@@ -353,6 +419,15 @@ namespace GlobalConversationTracker
             _timeBudgetMs = timeBudgetMs;
             _memoryBudgetMb = memoryBudgetMb;
             _diagnostics = diagnostics != null && diagnostics.Enabled ? diagnostics : null;
+
+            if (recoveryLimit >= 0)
+            {
+                // A NEW POLICY RATHER THAN A SETTING ON THE OLD ONE, so a suite that
+                // changes the limit also starts from an empty stash and an unspent budget.
+                // Changing the number underneath a policy that had already convicted
+                // something would carry the last suite's evidence into this one.
+                _recovery = new EngineRecovery(recoveryLimit);
+            }
 
             // The budgets are not applied to an engine here any more; they travel in the
             // request, and the engine on the other side of the bridge applies them. See
@@ -420,6 +495,14 @@ namespace GlobalConversationTracker
             int conversation,
             List<DialogueNodeId> starts)
         {
+            // CONVICTED OF KILLING ENGINES, so it is not asked again this session. The
+            // options still get a marker - the uncertain one, from MarkerFor - because a
+            // search really did run here and really did not finish.
+            if (_recovery.IsQuarantined(conversation))
+            {
+                return;
+            }
+
             long began = System.Diagnostics.Stopwatch.GetTimestamp();
             try
             {
@@ -481,6 +564,11 @@ namespace GlobalConversationTracker
 
                 _menuAnswers = answered;
 
+                // IT ANSWERED, SO IT IS NOT THE KILLER. A group that killed an engine and
+                // then answered in the fresh one has shown the fault was cumulative rather
+                // than its own, and must not be convicted by whatever dies next.
+                _recovery.RecordAnswered(conversation);
+
                 // RECORDED HERE RATHER THAN WHERE AN OPTION IS DRAWN, and it is the first
                 // time a rolled check's crawls are recorded at all. They used to reach the
                 // diagnostics through MarkerFor, as the one combined answer a check had -
@@ -499,9 +587,10 @@ namespace GlobalConversationTracker
             }
             catch (EngineDiedException died)
             {
-                // NOT A FAILED CALL. The engine itself has gone, so there is nothing to
-                // retry and nothing to compare against for the rest of the session.
-                EngineDied(died);
+                // NOT A FAILED CALL. The engine itself has gone, so there is nothing this
+                // menu can be told - but there may well be a next engine, and the group
+                // that was in flight is what the decision about one turns on.
+                EngineDied(died, conversation);
             }
             catch (Exception error)
             {
@@ -603,12 +692,65 @@ namespace GlobalConversationTracker
         }
 
         /// <summary>
-        /// The engine has gone: say so once, take the hooks off, and stop for good.
+        /// The engine has gone: decide whether to replace it, and act on the decision.
         /// </summary>
         /// <remarks>
-        /// <para>NO RESTART, deliberately, and the user asked for it that way: an engine
-        /// that failed on a given menu will fail on it again, so a respawn loop is a stutter
-        /// rather than a recovery. What brings the feature back is restarting the game.</para>
+        /// <para>de-bnjy.1.3 TURNED THIS FROM A SHUTDOWN INTO A DECISION. It used to stop
+        /// the feature for the session on the first death, on the reasoning that an engine
+        /// which failed on a menu will fail on it again. That reasoning turned out to fit
+        /// the wrong fault: the only death ever observed here (de-fpax) was CUMULATIVE -
+        /// conversation 28's row overflowed the stack as the third row of a run and
+        /// finished in 58 ms in a process of its own - and a fresh process is exactly what
+        /// resets an accumulation. So most deaths are now answered by a new engine and no
+        /// message at all.</para>
+        ///
+        /// <para><see cref="EngineRecovery"/> holds the decision and the reasoning behind
+        /// it, deliberately apart from this method so it can be tested without a game.
+        /// What is here is only the acting on it.</para>
+        /// </remarks>
+        /// <param name="died">How the engine went, which the player is told about if this
+        /// is the last of them.</param>
+        /// <param name="conversation">The group whose request was in flight, or null where
+        /// there was none to blame.</param>
+        private static void EngineDied(EngineDiedException died, int? conversation)
+        {
+            if (_engineDied)
+            {
+                return;
+            }
+
+            RecoveryAction action = _recovery.RecordDeath(conversation);
+            if (action == RecoveryAction.QuarantineAndRespawn && conversation.HasValue)
+            {
+                // SAID OUT LOUD, because from here on that group's options are drawn
+                // uncertain for no reason a log reader could otherwise see.
+                _log?.Warning(
+                    $"{LogPrefix} conversation {conversation.Value} has now killed two "
+                    + "engines, the second of them freshly started, so the fault is the "
+                    + "group's rather than something left behind by earlier searches. It "
+                    + "will not be asked about again this session; its options will be "
+                    + "drawn with the uncertain marker.");
+            }
+
+            if (action != RecoveryAction.GiveUp)
+            {
+                Respawn(died);
+                return;
+            }
+
+            GiveUpOnLookAhead(died);
+        }
+
+        /// <summary>
+        /// The end of the road: say so once, take the hooks off, and stop for good.
+        /// </summary>
+        /// <remarks>
+        /// <para>WHAT THIS WHOLE FILE USED TO DO ON THE FIRST DEATH, and now does only when
+        /// <see cref="EngineRecovery"/> has run out of budget - either because too many
+        /// engines died or because a replacement could not be started at all. Split out
+        /// from <see cref="EngineDied"/> so that <see cref="StartupFailed"/> can reach it
+        /// without pretending an engine died, which would spend the budget a second time
+        /// for the same failure.</para>
         ///
         /// <para>THE HOOKS COME OFF rather than a flag being checked in them. Harmony can
         /// genuinely undo itself, and unpatching by this class's OWN Harmony id takes off
@@ -620,7 +762,7 @@ namespace GlobalConversationTracker
         /// <para>Once. Every path in reaches this, and a message repeated on every response
         /// menu after the engine has gone would be worse than the silence it replaced.</para>
         /// </remarks>
-        private static void EngineDied(EngineDiedException died)
+        private static void GiveUpOnLookAhead(EngineDiedException died)
         {
             if (_engineDied)
             {
@@ -630,10 +772,11 @@ namespace GlobalConversationTracker
             _engineDied = true;
 
             string advice = Advice(died.Death);
+            string recovered = Recoveries();
             _log?.Warning(
                 $"{LogPrefix} {EngineHasGone}. "
-                + $"{advice} Dialogue options will be drawn without look-ahead markers for "
-                + $"the rest of this session; {RestartAdvice}. "
+                + $"{advice}{recovered} Dialogue options will be drawn without look-ahead "
+                + $"markers for the rest of this session; {RestartAdvice}. "
                 + "Tracking, the counts and the option colours are unaffected. "
                 + $"({died.Death}: {died.Message})");
 
@@ -644,7 +787,7 @@ namespace GlobalConversationTracker
             // that passes by in a couple of seconds, so anything past a sentence would be
             // clipped by the edge of the screen before it could be read.
             TellThePlayer(
-                WindowNotice(died.Death),
+                WindowNotice(died.Death, recovered),
                 $"Look-ahead markers are off. {advice} Please {RestartAdvice}.");
 
             // The bridge first, so nothing is left holding a dead engine, and then the
@@ -684,6 +827,80 @@ namespace GlobalConversationTracker
             }
 
             _harmony = null;
+        }
+
+        /// <summary>Throws the dead engine away and starts another, off this frame.</summary>
+        /// <remarks>
+        /// <para>NO NEW MACHINERY, which is the whole reason this is cheap enough to do.
+        /// <see cref="Bridge"/> already returns null while <see cref="_warming"/> is
+        /// incomplete, and a null bridge already means "draw this menu without markers" -
+        /// so clearing the flags and starting a fresh warm-up gets exactly the behaviour
+        /// de-bnjy.1.3 asks for: the menu in front of the player draws unmarked, now, and
+        /// the new engine comes up behind it.</para>
+        ///
+        /// <para>THAT IT IS OFF THIS FRAME IS THE POINT, and the cost it stays off is
+        /// measured rather than assumed: reading the 14.4 MB index takes 173 to 244 ms
+        /// (measurements/repeat_question.rs, 2026-09-07) on top of the process launch, and
+        /// since de-2wtl the warm diagram manager for the group the player is standing in
+        /// goes with the old process too - another sixty-odd milliseconds on the next menu
+        /// (measurements/workspace_menus.rs). None of that may happen while a response menu
+        /// is being drawn.</para>
+        ///
+        /// <para>THE HOOKS STAY ON, unlike the give-up path. They are what will notice the
+        /// new engine when it arrives; taking them off would make the respawn pointless.</para>
+        /// </remarks>
+        private static void Respawn(EngineDiedException died)
+        {
+            _log?.Warning(
+                $"{LogPrefix} {EngineReplaced}; this menu, and any drawn before it "
+                + "arrives, will have no look-ahead markers. "
+                + $"({died.Death}: {died.Message})");
+
+            try
+            {
+                _bridge?.Dispose();
+            }
+            catch (Exception)
+            {
+                // It is already dead; disposing it is tidiness, not a step that can fail
+                // in a way anybody can act on.
+            }
+
+            _bridge = null;
+            _menuAnswers = null;
+
+            // KEYED BY CONVERSATION AND VALIDATED BY GENERATION, so questions cached
+            // against the dead engine describe an object that no longer exists.
+            _questions.Clear();
+
+            // BOTH, and in this order, because BeginOpening refuses to start a second
+            // engine while either says one is already there.
+            _bridgeOpened = false;
+            _warming = null;
+
+            _respawning = true;
+            BeginOpening();
+        }
+
+        /// <summary>What to say about the engines that were replaced without a word.</summary>
+        /// <remarks>
+        /// THE CAUTION de-bnjy.1.3 RAISED: silence through several recoveries and then a
+        /// sudden shutdown message reads as a fresh and unrelated failure. So the message
+        /// that does end the feature accounts for the ones the player never saw, which is
+        /// the only place that history is visible at all.
+        /// </remarks>
+        private static string Recoveries()
+        {
+            int replaced = _recovery.Respawns;
+            if (replaced == 0)
+            {
+                return string.Empty;
+            }
+
+            string crashes = replaced == 1
+                ? "An earlier crash was"
+                : $"{replaced} earlier crashes were";
+            return $" {crashes} recovered from without interrupting play.";
         }
 
         /// <summary>Who is talking, and what has happened to it.</summary>
@@ -733,13 +950,22 @@ namespace GlobalConversationTracker
         /// Blank lines between the parts rather than one paragraph: the window centres
         /// what it is given, and four centred sentences run together read as a wall.
         /// </remarks>
-        private static string WindowNotice(EngineDeath death)
+        private static string WindowNotice(EngineDeath death, string recovered)
         {
             // Only the memory death adds a line. "It stopped unexpectedly" is what the
             // heading already says, in a word.
             string happened = death == EngineDeath.OutOfMemory
                 ? $"{NoticeWhatHappened}\n{OutOfMemoryAdvice}"
                 : NoticeWhatHappened;
+
+            // The recoveries go with what happened rather than in a paragraph of their
+            // own: they are the rest of the sentence "the process crashed", not a separate
+            // piece of news. TrimStart because Recoveries leads with the space that joins
+            // it to the log line, and a line of a centred window must not start with one.
+            if (recovered.Length > 0)
+            {
+                happened += $"\n{recovered.TrimStart()}";
+            }
 
             return string.Join(
                 "\n\n", NoticeHeading, happened, NoticeWhatItCosts, NoticeWhatToDo);
@@ -985,7 +1211,58 @@ namespace GlobalConversationTracker
             // Faulted rather than returning null is not expected - Opened catches its own -
             // but an unobserved fault here would be a null reference several frames later.
             _bridge = warming.Status == TaskStatus.RanToCompletion ? warming.Result : null;
+
+            if (_respawning)
+            {
+                _respawning = false;
+                if (_bridge == null)
+                {
+                    // A REPLACEMENT THAT NEVER CAME UP, which spends from the same budget
+                    // as a death. Otherwise a machine that can no longer start the engine
+                    // at all would be asked to on every menu for the rest of the session
+                    // and the give-up would never fire. Note that this counts ONLY for a
+                    // respawn: an installation with no engine deployed fails the FIRST
+                    // open every time and is supposed to carry on quietly, which is why
+                    // _respawning exists.
+                    StartupFailed();
+                }
+                else
+                {
+                    _log?.Info(
+                        $"{LogPrefix} {EngineReplacementUp}; markers resume with this "
+                        + "response menu.");
+                }
+            }
+
             return _bridge;
+        }
+
+        /// <summary>A replacement engine that could not be started at all.</summary>
+        /// <remarks>
+        /// Tries again until the budget is gone, and then says so the way any last death
+        /// is said. The synthetic <see cref="EngineDiedException"/> is because the give-up
+        /// message is written in terms of how an engine died and this one never lived; it
+        /// carries <see cref="EngineDeath.Crashed"/>, whose advice is the restart, which is
+        /// the right advice here too.
+        /// </remarks>
+        private static void StartupFailed()
+        {
+            if (_recovery.RecordStartupFailure() == RecoveryAction.GiveUp)
+            {
+                GiveUpOnLookAhead(
+                    new EngineDiedException(
+                        EngineDeath.Crashed,
+                        "a replacement look-ahead engine could not be started"));
+                return;
+            }
+
+            _log?.Warning(
+                $"{LogPrefix} a replacement look-ahead engine could not be started; "
+                + "another will be tried.");
+            _bridgeOpened = false;
+            _warming = null;
+            _respawning = true;
+            BeginOpening();
         }
 
         /// <summary>
@@ -1073,6 +1350,16 @@ namespace GlobalConversationTracker
             {
                 // Already the most novel thing there is, so nothing can outrank it.
                 return null;
+            }
+
+            // A QUARANTINED GROUP IS UNCERTAIN, NOT EMPTY. It is the one place where "no
+            // answer" must NOT mean "no marker": a search really did run against this
+            // group, twice, and really did not finish, which is exactly what the uncertain
+            // marker means (de-pvq). Drawing nothing here would say "there is nothing
+            // unread down there" on the strength of two crashes.
+            if (_recovery.IsQuarantined(entry.conversationID))
+            {
+                return _markUncertain ? Draw(_uncertainHtml, UncertainMarker) : null;
             }
 
             // THE ANSWER THAT NAMES NO OUTCOME, which is what an ordinary option gets.

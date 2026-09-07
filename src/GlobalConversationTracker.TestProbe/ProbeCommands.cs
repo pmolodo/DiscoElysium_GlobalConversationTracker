@@ -606,6 +606,9 @@ namespace GlobalConversationTracker.TestProbe
                 ?? throw new ArgumentException("No budget-log setting was given.");
             bool keepStatistics = BoolMember(root, "keepStatistics")
                 ?? throw new ArgumentException("No statistics setting was given.");
+            // Absent means the shipped recovery policy, which is what not mentioning it
+            // means. A suite that wants the shutdown notice sends zero - see de-bnjy.1.3.
+            int recoveryLimit = NumberMember(root, "recoveryLimit") ?? -1;
 
             ProbeLog.Write(
                 "command-started",
@@ -621,7 +624,7 @@ namespace GlobalConversationTracker.TestProbe
                 new object[]
                 {
                     sourcePath, enabled, stateBudget, timeBudgetMs, memoryBudgetMb,
-                    logBudgetExceeded, keepStatistics,
+                    logBudgetExceeded, keepStatistics, recoveryLimit,
                 });
             ProbeLog.Write(
                 "look-ahead-suite-prepared",
@@ -631,7 +634,8 @@ namespace GlobalConversationTracker.TestProbe
                 "timeBudgetMs", timeBudgetMs,
                 "memoryBudgetMb", memoryBudgetMb,
                 "logBudgetExceeded", logBudgetExceeded,
-                "keepStatistics", keepStatistics);
+                "keepStatistics", keepStatistics,
+                "recoveryLimit", recoveryLimit);
         }
 
         /// <summary>

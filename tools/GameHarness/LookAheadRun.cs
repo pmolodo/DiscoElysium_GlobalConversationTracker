@@ -640,7 +640,11 @@ namespace GlobalConversationTracker.Harness
                 Setting(suite, "LookAheadTimeBudgetMs", LookAheadSuites.TestTimeBudgetMs),
                 Setting(suite, "LookAheadMemoryBudgetMb", LookAheadSuites.TestMemoryBudgetMb),
                 Setting(suite, "LogLookAheadBudgetExceeded", false),
-                Setting(suite, "KeepLookAheadStates", false));
+                Setting(suite, "KeepLookAheadStates", false),
+                // Negative unless a suite asks the mod not to replace a killed engine.
+                // Test-only, like the state budget above, and no player setting
+                // corresponds to it either.
+                Setting(suite, LookAheadSuites.TestRecoveryLimitSetting, -1));
         }
 
         private static bool Setting(LookAheadSuite suite, string name, bool fallback) =>

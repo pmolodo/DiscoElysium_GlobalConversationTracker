@@ -98,6 +98,13 @@ namespace GlobalConversationTracker
         /// </param>
         /// <param name="logBudgetExceeded">Whether to log budget overflows.</param>
         /// <param name="keepStatistics">Whether to retain crawl statistics.</param>
+        /// <param name="recoveryLimit">
+        /// How many engine deaths are answered with a fresh engine before the look-ahead
+        /// gives up for the session; negative leaves the shipped policy alone. A SUITE THAT
+        /// WANTS TO SEE THE SHUTDOWN NOTICE PASSES ZERO - the shipped limit is five, so one
+        /// kill otherwise produces a replacement and no notice at all. See
+        /// <c>EngineRecovery</c> and de-bnjy.1.3.
+        /// </param>
         /// <remarks>
         /// A SUITE THAT WANTS TO STARVE A CRAWL ON PURPOSE reaches for the memory budget
         /// now that the state budget is gone (de-7z0f). It cannot promise a give-up after
@@ -112,7 +119,8 @@ namespace GlobalConversationTracker
             int timeBudgetMs,
             int memoryBudgetMb,
             bool logBudgetExceeded,
-            bool keepStatistics)
+            bool keepStatistics,
+            int recoveryLimit)
         {
             Session.ReloadFrom(sourcePath);
 
@@ -129,7 +137,8 @@ namespace GlobalConversationTracker
                     store.DirectoryPath,
                     log,
                     logBudgetExceeded,
-                    keepStatistics));
+                    keepStatistics),
+                recoveryLimit);
         }
 
         /// <summary>Flushes look-ahead diagnostics before a test suite is checked.</summary>

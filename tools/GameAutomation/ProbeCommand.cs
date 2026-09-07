@@ -204,6 +204,13 @@ namespace GlobalConversationTracker.Automation
         /// </param>
         /// <param name="logBudgetExceeded">Whether to log budget overflows.</param>
         /// <param name="keepStatistics">Whether to retain crawl statistics.</param>
+        /// <param name="recoveryLimit">
+        /// How many engine deaths the mod answers with a fresh engine before giving up for
+        /// the session; negative leaves the shipped policy alone. A SUITE THAT KILLS THE
+        /// ENGINE AND EXPECTS THE SHUTDOWN NOTICE MUST SEND ZERO: the shipped limit is
+        /// five, so one kill otherwise produces a silent replacement and the notice the
+        /// suite is waiting for never comes. See de-bnjy.1.3.
+        /// </param>
         public static void SendPrepareLookAheadSuite(
             string saveGamesFolder,
             string fileName,
@@ -212,7 +219,8 @@ namespace GlobalConversationTracker.Automation
             int timeBudgetMs,
             int memoryBudgetMb,
             bool logBudgetExceeded,
-            bool keepStatistics)
+            bool keepStatistics,
+            int recoveryLimit = -1)
         {
             if (string.IsNullOrWhiteSpace(fileName))
             {
@@ -228,7 +236,8 @@ namespace GlobalConversationTracker.Automation
                 "timeBudgetMs", timeBudgetMs,
                 "memoryBudgetMb", memoryBudgetMb,
                 "logBudgetExceeded", logBudgetExceeded,
-                "keepStatistics", keepStatistics);
+                "keepStatistics", keepStatistics,
+                "recoveryLimit", recoveryLimit);
         }
 
         /// <summary>Asks the mod to flush the current suite's diagnostics.</summary>

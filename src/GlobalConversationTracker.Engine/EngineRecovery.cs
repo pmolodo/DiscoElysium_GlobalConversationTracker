@@ -87,19 +87,25 @@ namespace GlobalConversationTracker.Engine
 
         /// <summary>Creates a recovery policy.</summary>
         /// <param name="limit">
-        /// How many deaths to tolerate; <see cref="DefaultLimit"/> when not given. Must be
-        /// at least one, since a limit of zero would give up before the first respawn and
-        /// is better spelled by not using this at all.
+        /// How many deaths to tolerate before giving up; <see cref="DefaultLimit"/> when
+        /// not given.
         /// </param>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="limit"/> is below one.</exception>
+        /// <remarks>
+        /// ZERO IS ALLOWED AND MEANS NEVER RESPAWN - the behaviour de-bnjy.1.2 shipped and
+        /// this issue replaced, where the first death ended the look-ahead for the session.
+        /// It is kept reachable because it is how a test gets to the give-up path in ONE
+        /// death: the alternative is an in-game suite that has to kill six engines and win
+        /// a race with each replacement to do it.
+        /// </remarks>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="limit"/> is negative.</exception>
         public EngineRecovery(int limit = DefaultLimit)
         {
-            if (limit < 1)
+            if (limit < 0)
             {
                 throw new ArgumentOutOfRangeException(
                     nameof(limit),
                     limit,
-                    "a recovery limit below one gives up before it has tried anything");
+                    "a recovery limit cannot be negative");
             }
 
             _limit = limit;

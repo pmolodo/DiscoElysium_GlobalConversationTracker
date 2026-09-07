@@ -66,6 +66,29 @@ namespace GlobalConversationTracker.Harness
         /// </remarks>
         public const string TestStateBudgetSetting = "TestStateBudget";
 
+        /// <summary>
+        /// The suite key that stops the mod replacing a killed engine, and TEST-ONLY.
+        /// </summary>
+        /// <remarks>
+        /// <para>NOT A CONFIGURATION SETTING, for the same reason as
+        /// <see cref="TestStateBudgetSetting"/>: it reaches the mod only through the
+        /// probe's prepare-suite command, and nothing here is written into the player's
+        /// config file.</para>
+        ///
+        /// <para>WHAT IT IS FOR. Since de-bnjy.1.3 a dead engine is REPLACED - the shipped
+        /// policy tolerates five deaths before the look-ahead gives up for the session - so
+        /// a suite that kills one engine and waits for the shutdown notice would wait for
+        /// ever. Zero means never replace, which is exactly the behaviour de-bnjy.1.2
+        /// shipped, and it puts the give-up path one kill away instead of six.</para>
+        ///
+        /// <para>THE HONEST ALTERNATIVE WAS CONSIDERED AND IS A SEPARATE TASK: kill six
+        /// engines with the shipped limit, winning a race with each replacement as it comes
+        /// up. That measures the counter as well as the notice, and it needs harness
+        /// machinery that does not exist yet. This setting buys back the notice coverage
+        /// the recovery change would otherwise have cost, and no more than that.</para>
+        /// </remarks>
+        public const string TestRecoveryLimitSetting = "TestRecoveryLimit";
+
         /// <summary>Siileng's stall, where a 0.50 purchase sits behind a 50.00 one.</summary>
         public const int SiilengConversation = 451;
 
@@ -662,6 +685,22 @@ namespace GlobalConversationTracker.Harness
                     "dialogue statuses are being tracked",
                     true,
                     "tracking survives an engine that died"),
+                // THE MOD MUST NOT HAVE QUIETLY REPLACED IT. With the shipped policy one
+                // kill produces a replacement and no notice at all, and this suite would
+                // then be waiting on a window that was never raised. Asserting the absence
+                // of the respawn line proves the limit above actually reached the mod,
+                // rather than the suite passing for some other reason.
+                new LogExpectation(
+                    "the look-ahead engine has gone and a replacement is being started",
+                    false,
+                    "and it was not quietly replaced, which this suite turns off"),
+            },
+            pluginSettings: new Dictionary<string, string>
+            {
+                // NEVER REPLACE A KILLED ENGINE, which is what puts the shutdown notice one
+                // kill away. See TestRecoveryLimitSetting for why the suite buys the
+                // give-up path this way rather than killing six engines.
+                [TestRecoveryLimitSetting] = "0",
             });
 
         /// <summary>
