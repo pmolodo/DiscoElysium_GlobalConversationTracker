@@ -644,14 +644,24 @@ namespace GlobalConversationTracker.Harness
                     "the mod says the engine has gone, once and only once",
                     times: 1),
                 // THE NOTICE IS PIXELS, and pixels are not something a log check can read.
-                // What this proves is that it was RAISED, through the game's own
-                // notification manager, exactly once - the same once as the line above,
-                // since both hang off the same guard. Whether it was legible is a question
-                // for a screenshot, and the run takes one.
+                // What this proves is that it was RAISED, through one of the game's own
+                // channels, exactly once - the same once as the line above, since both
+                // hang off the same guard. Whether it was legible is a question for a
+                // screenshot, and the run takes one.
                 new LogExpectation(
                     "the player was told on screen",
                     true,
                     "the player is told in the game, once and only once",
+                    times: 1),
+                // AND WHICH CHANNEL, because the mod has two and they are not equally
+                // good. The window waits for the player; the notification it falls back to
+                // passes by in a couple of seconds, on one unwrapped line that was clipped
+                // at both ends at 1280 wide (de-gbl3). Without this the fallback would pass
+                // the check above and look exactly like success.
+                new LogExpectation(
+                    "the player was told on screen in a window",
+                    true,
+                    "and told in a window, not the notification it falls back to",
                     times: 1),
                 new LogExpectation(
                     "dialogue statuses are being tracked",

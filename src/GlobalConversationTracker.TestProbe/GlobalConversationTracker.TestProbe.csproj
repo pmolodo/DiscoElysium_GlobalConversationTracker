@@ -60,6 +60,9 @@
             Private="false" />
         <Reference Include="UnityEngine.CoreModule"
             HintPath="$(BepInExInteropDir)UnityEngine.CoreModule.dll" Private="false" />
+        <!-- Button, whose onClick the dismiss-notice command presses. -->
+        <Reference Include="UnityEngine.UI" HintPath="$(BepInExInteropDir)UnityEngine.UI.dll"
+            Private="false" />
     </ItemGroup>
 
 </Project>

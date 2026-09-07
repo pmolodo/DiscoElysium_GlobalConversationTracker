@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using GlobalConversationTracker.Engine;
 using GlobalConversationTracker.Session;
+using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using HarmonyLib;
 using PixelCrushers.DialogueSystem;
@@ -60,9 +61,26 @@ namespace GlobalConversationTracker
         /// <remarks>
         /// The notice itself is pixels, and pixels are not something the harness reads. This
         /// line is the evidence that it was raised; the screenshot beside it is the evidence
-        /// that it was legible.
+        /// that it was legible. GREPPED BY THE HARNESS and counted, like the two above.
         /// </remarks>
         internal const string NoticeShown = "the player was told on screen";
+
+        /// <summary>Which of the two channels carried it: the window, or the fallback.</summary>
+        /// <remarks>
+        /// <para>Appended to <see cref="NoticeShown"/> rather than replacing it, so the
+        /// count of "was the player told" stays one line whichever channel answered, and a
+        /// run can still ask the sharper question - WHICH channel - by matching the longer
+        /// string. The engine-death suite matches both.</para>
+        ///
+        /// <para>The distinction is worth a word because the two are not equally good: one
+        /// waits for the player, the other passes by in a couple of seconds. A run that
+        /// silently got the passing one would report a success that looked like the
+        /// success it was aiming at.</para>
+        /// </remarks>
+        internal const string NoticeInAWindow = "in a window";
+
+        /// <summary>The fallback's half of <see cref="NoticeInAWindow"/>.</summary>
+        internal const string NoticeInANotification = "in a passing notification";
 
         /// <summary>
         /// The thread <see cref="Install"/> ran on, which is the game's own.
@@ -629,9 +647,7 @@ namespace GlobalConversationTracker
 
             _engineDied = true;
 
-            string advice = died.Death == EngineDeath.OutOfMemory
-                ? "It ran out of memory. Lowering LookAheadMemoryBudgetMb may help."
-                : "It stopped unexpectedly.";
+            string advice = Advice(died.Death);
             _log?.Warning(
                 $"{LogPrefix} {EngineHasGone}. "
                 + $"{advice} Dialogue options will be drawn without look-ahead markers for "
@@ -639,9 +655,15 @@ namespace GlobalConversationTracker
                 + "Tracking, the counts and the option colours are unaffected. "
                 + $"({died.Death}: {died.Message})");
 
-            // ON SCREEN AS WELL AS IN THE LOG, because nobody plays with the log open. The
-            // same two sentences, built from the same pieces as the line above.
-            TellThePlayer($"Look-ahead markers are off. {advice} Please {RestartAdvice}.");
+            // ON SCREEN AS WELL AS IN THE LOG, because nobody plays with the log open.
+            // TWO TEXTS FOR THE TWO CHANNELS, because they are shaped completely
+            // differently: the window wraps, and waits for the player, so it can afford to
+            // name itself and say what was lost; the notification is one unwrapped line
+            // that passes by in a couple of seconds, so anything past a sentence would be
+            // clipped by the edge of the screen before it could be read.
+            TellThePlayer(
+                WindowNotice(died.Death),
+                $"Look-ahead markers are off. {advice} Please {RestartAdvice}.");
 
             // The bridge first, so nothing is left holding a dead engine, and then the
             // hooks, so nothing calls in again while this is happening.
@@ -682,8 +704,73 @@ namespace GlobalConversationTracker
             _harmony = null;
         }
 
+        /// <summary>Who is talking, and what has happened to it.</summary>
+        /// <remarks>
+        /// NAMED, unlike the notification, which had no room to. A window that appears over
+        /// a conversation saying a "look-ahead engine" has crashed, in a game that ships
+        /// nothing of the kind, would send a player looking for the fault in the game.
+        /// </remarks>
+        private const string NoticeHeading =
+            "Global Conversation Tracker Plugin:\nLook-Ahead Engine Crash";
+
+        /// <summary>What happened, in terms of what the thing was for.</summary>
+        private const string NoticeWhatHappened =
+            "The process responsible for determining if dialogue options can potentially "
+            + "lead to unseen dialogue crashed.";
+
+        /// <summary>The one death with an answer of its own.</summary>
+        /// <remarks>
+        /// Names the setting, because it is the only thing the player can change that
+        /// changes the outcome - and a budget that ran out once will run out again on the
+        /// same conversation after the restart, so the restart alone is not the whole
+        /// advice here. Said in the log and in the window from this one constant.
+        /// </remarks>
+        private const string OutOfMemoryAdvice =
+            "It ran out of memory. Lowering LookAheadMemoryBudgetMb may help.";
+
+        /// <summary>Every other death, which has no answer beyond the restart.</summary>
+        private const string StoppedAdvice = "It stopped unexpectedly.";
+
+        /// <summary>What is lost, in the terms the player sees it in.</summary>
+        /// <remarks>
+        /// THE MARKERS ARE DESCRIBED, not named: a player who never read the mod's
+        /// documentation knows the asterisks by sight and by nothing else. The colours are
+        /// the defaults - both are configurable, and a copy that named a colour the player
+        /// had changed would be worse than one that named none.
+        /// </remarks>
+        private const string NoticeWhatItCosts =
+            "As a result, the look-ahead dialogue markers (red or orange '*' characters at "
+            + "the end of dialogue options) will no longer be drawn.";
+
+        /// <summary>The one thing the player can do about it, at length.</summary>
+        private const string NoticeWhatToDo =
+            "Restart game to re-enable dialogue look-ahead.";
+
+        /// <summary>Builds the window's text for the way the engine died.</summary>
+        /// <remarks>
+        /// Blank lines between the parts rather than one paragraph: the window centres
+        /// what it is given, and four centred sentences run together read as a wall.
+        /// </remarks>
+        private static string WindowNotice(EngineDeath death)
+        {
+            // Only the memory death adds a line. "It stopped unexpectedly" is what the
+            // heading already says, in a word.
+            string happened = death == EngineDeath.OutOfMemory
+                ? $"{NoticeWhatHappened}\n{OutOfMemoryAdvice}"
+                : NoticeWhatHappened;
+
+            return string.Join(
+                "\n\n", NoticeHeading, happened, NoticeWhatItCosts, NoticeWhatToDo);
+        }
+
+        /// <summary>What the log says about how the engine died.</summary>
+        private static string Advice(EngineDeath death)
+        {
+            return death == EngineDeath.OutOfMemory ? OutOfMemoryAdvice : StoppedAdvice;
+        }
+
         /// <summary>
-        /// Puts the notice in front of the player, through the game's own notifications.
+        /// Puts the notice in front of the player, in the game's own confirmation window.
         /// </summary>
         /// <remarks>
         /// <para>THE GAME'S OWN CHANNEL RATHER THAN A ROW OF OUR OWN, and the deciding
@@ -694,19 +781,34 @@ namespace GlobalConversationTracker
         /// worth anything, and would surface later, over some unrelated scene, as a warning
         /// about something the player had already stopped noticing.</para>
         ///
-        /// <para><c>NotificationManager</c> is what the game uses to say that money changed
-        /// hands or a thought completed. It draws over dialogue, it is already styled, and
-        /// it decides how long the notice lingers - which is the second open question this
-        /// issue carried, answered by not inventing an answer. <c>Failure</c> is the honest
-        /// type: a feature failed, and the player can act on one of the two reasons.</para>
+        /// <para>A WINDOW RATHER THAN A NOTIFICATION, which is what this used to raise and
+        /// is what <see cref="ShowTheNotice"/> still raises when there is no window to be
+        /// had. A photograph of the notification (de-gbl3, on the killed menu at Siileng)
+        /// settled it: the game draws that channel as a single unwrapped line across the
+        /// foot of the screen, so at 1280 wide the message lost a word off each end, and
+        /// <c>Failure</c> - the honest type for a feature that failed - brings the dice and
+        /// the words CHECK FAILURE with it, which over a response menu reads as a roll the
+        /// player just lost rather than as a mod that has stopped. Both faults are the
+        /// channel's rather than the message's, and neither survives moving channel.</para>
+        ///
+        /// <para><c>ConfirmationController</c> is the window the game asks its own
+        /// questions in - overwrite this save, quit to menu, keep this resolution. It
+        /// wraps its text in a panel, it lives in the Init scene so it exists for as long
+        /// as the game does, and its canvas overrides sorting at 1050, above everything
+        /// the conversation draws. It is a bigger interruption than a notification, which
+        /// is the point: the feature is gone until the game is restarted, and that is
+        /// worth stopping for. It is also the reason nothing else in this mod may ever use
+        /// it - one fatal, once, or it becomes the thing players mod out.</para>
         ///
         /// <para>IT MUST NOT THROW. This runs inside the handler for the engine having
         /// died; a notice that took the game down would be a worse failure than the one it
         /// is reporting, and the whole failure budget of this feature is "the asterisk does
         /// not appear". Every way it can go wrong ends in a log line and nothing else - the
-        /// full message is already in the log by the time this is called.</para>
+        /// full message is already in the log by the time this is called - and every way
+        /// the WINDOW can go wrong ends in the notification instead, which is worse than a
+        /// window and much better than silence.</para>
         /// </remarks>
-        private static void TellThePlayer(string message)
+        private static void TellThePlayer(string window, string line)
         {
             if (Thread.CurrentThread.ManagedThreadId != _mainThreadId)
             {
@@ -718,6 +820,127 @@ namespace GlobalConversationTracker
                 return;
             }
 
+            if (ShowTheWindow(window))
+            {
+                return;
+            }
+
+            ShowTheNotice(line);
+        }
+
+        /// <summary>The window's text as one log line.</summary>
+        /// <remarks>
+        /// The message is four paragraphs, and a log entry that spans lines cannot be
+        /// grepped, counted, or read beside the entries around it - BepInEx prefixes the
+        /// first line only, so the rest arrive looking like something else's output.
+        /// </remarks>
+        private static string OneLine(string message)
+        {
+            return message.Replace("\n", " / ", StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// The sound the game's own confirmations click with, and the bank it is in.
+        /// </summary>
+        /// <remarks>
+        /// The defaults <c>ShowConfirmation</c> declares, passed rather than left off:
+        /// Il2CppInterop generates the game's methods without their optional arguments, so
+        /// there is nothing to leave off, and a silent window would be a quieter thing
+        /// than any confirmation the game raises for itself.
+        /// </remarks>
+        private const string ConfirmSound = "small-switch-full";
+
+        /// <summary>The bank <see cref="ConfirmSound"/> is in.</summary>
+        private const string ConfirmSoundGroup = "gamestart";
+
+        /// <summary>
+        /// Raises the window, and says whether the player ended up looking at one.
+        /// </summary>
+        /// <remarks>
+        /// <para>ONE BUTTON. <c>showCancel: false</c>, because there is nothing to cancel:
+        /// the engine has already gone by the time this is called, and a window offering a
+        /// choice about it would be offering a choice that does not exist.</para>
+        ///
+        /// <para>THE BUTTON CLOSES THE WINDOW ITSELF, rather than trusting that pressing it
+        /// does. The game's bodies are stripped from every export we have, so which half of
+        /// the pair - the button's own handler, or the action handed to it - is what
+        /// actually closes the panel cannot be read anywhere; it can only be run. Of the two
+        /// ways to be wrong, a window that closes twice is harmless and a window that never
+        /// closes has swallowed the player's game, so the close is issued from our side and
+        /// a second one, if the game issues its own, costs nothing.</para>
+        /// </remarks>
+        private static bool ShowTheWindow(string message)
+        {
+            try
+            {
+                if (!ConfirmationController.HasInstance)
+                {
+                    // Before the Init scene's UI exists. Rare, and not silent: the
+                    // notification manager may still be there, and is tried next.
+                    _log?.Warning(
+                        $"{LogPrefix} there was no confirmation window to tell the player "
+                        + "with; a notification will have to do.");
+                    return false;
+                }
+
+                ConfirmationController window = ConfirmationController.Singleton;
+
+                // Nullable because ConvertDelegate is: it answers null for a null
+                // delegate, which is not what it was handed, and the compiler cannot know
+                // that. The window's own parameters are unannotated, so it goes in as it
+                // comes out.
+                Il2CppSystem.Action? dismiss = DelegateSupport.ConvertDelegate<
+                    Il2CppSystem.Action>(new Action(() => Dismiss(window)));
+
+                window.ShowConfirmation(
+                    message, dismiss, dismiss, false, ConfirmSound, ConfirmSoundGroup);
+                _log?.Warning(
+                    $"{LogPrefix} {NoticeShown} {NoticeInAWindow}: {OneLine(message)}");
+                return true;
+            }
+            catch (Exception error)
+            {
+                _log?.Warning(
+                    $"{LogPrefix} the confirmation window could not be opened "
+                    + $"({error.GetType().Name}: {error.Message}); a notification will "
+                    + "have to do.");
+                return false;
+            }
+        }
+
+        /// <summary>Closes the window, from the button that the player pressed.</summary>
+        /// <remarks>
+        /// Runs from the game's own UI event, back across the interop boundary, so it
+        /// swallows what it catches for the same reason everything else here does: an
+        /// exception thrown out of this lands in IL2CPP, which has nothing to catch it.
+        /// </remarks>
+        private static void Dismiss(ConfirmationController window)
+        {
+            try
+            {
+                window.OnCloseConfirmation(true);
+            }
+            catch (Exception error)
+            {
+                _log?.Warning(
+                    $"{LogPrefix} the confirmation window would not close "
+                    + $"({error.GetType().Name}: {error.Message}); the game's own button "
+                    + "should still close it.");
+            }
+        }
+
+        /// <summary>
+        /// The fallback: the passing notification this notice used to be.
+        /// </summary>
+        /// <remarks>
+        /// KEPT, rather than deleted along with the argument for it, because it is the
+        /// only other channel that draws over a conversation. Its two faults - the line
+        /// that does not wrap, the register that reads as a lost roll - both cost less
+        /// than the player never finding out at all, which is what the alternative to a
+        /// fallback is.
+        /// </remarks>
+        private static void ShowTheNotice(string message)
+        {
             try
             {
                 if (!NotificationSystem.NotificationManager.HasInstance)
@@ -726,13 +949,14 @@ namespace GlobalConversationTracker
                     // draw on, and nothing the player is missing yet either.
                     _log?.Warning(
                         $"{LogPrefix} there was no notification manager to tell the player "
-                        + "with; the line above is the whole of it.");
+                        + "with either; the line above is the whole of it.");
                     return;
                 }
 
                 NotificationSystem.NotificationManager.Singleton.ShowNotification(
                     NotificationSystem.NotificationType.Failure, message);
-                _log?.Warning($"{LogPrefix} {NoticeShown}: {message}");
+                _log?.Warning(
+                    $"{LogPrefix} {NoticeShown} {NoticeInANotification}: {message}");
             }
             catch (Exception error)
             {

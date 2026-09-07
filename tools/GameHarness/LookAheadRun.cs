@@ -1022,6 +1022,7 @@ namespace GlobalConversationTracker.Harness
             }
 
             CaptureMenu(scenario, options, window, artifacts, suiteName);
+            DismissTheNotice(scenario, saveGames, watcher, timeout, report);
 
             if (scenario.Markers == MarkerPolicy.Ignored)
             {
@@ -1068,6 +1069,60 @@ namespace GlobalConversationTracker.Harness
             CheckBranchLines(scenario, options, report);
         }
 
+        /// <summary>
+        /// Presses the button on the window the killed engine raised, and checks that it
+        /// goes away again.
+        /// </summary>
+        /// <remarks>
+        /// <para>THE OTHER HALF OF THE PICTURE. A photograph says the window was drawn
+        /// where the player would see it; it cannot say what happens when the player does
+        /// the only thing the window offers. That matters more here than it would for a
+        /// notification, because a window that will not close does not merely fail to
+        /// inform - it sits over the conversation until the process is killed, which is a
+        /// worse outcome than the silence this whole notice replaced.</para>
+        ///
+        /// <para>AFTER THE PHOTOGRAPH, and after the markers have been read, so nothing
+        /// this run reports depends on the window still being up. It runs only for the
+        /// scenario that killed the engine, because that is the only scenario that has a
+        /// window to press.</para>
+        /// </remarks>
+        private static void DismissTheNotice(
+            LookAheadScenario scenario,
+            string saveGames,
+            ProbeWatcher watcher,
+            TimeSpan timeout,
+            Report report)
+        {
+            if (!scenario.KillEngineFirst)
+            {
+                return;
+            }
+
+            Console.WriteLine("        pressing the button on the notice");
+            ProbeCommand.SendDismissNotice(saveGames);
+            ProbeEvent answer = watcher.WaitForEvent("notice-dismissed", timeout, Log);
+
+            // Defaults chosen so that a field that never arrived fails rather than passes:
+            // absent means the probe could not see a window, and could not see it go.
+            bool before = answer.Boolean("before") ?? false;
+            bool after = answer.Boolean("after") ?? true;
+
+            report.Check(
+                before,
+                $"{scenario.SaveName}: the notice was a window waiting to be dismissed",
+                before
+                    ? "it was on screen when the button was pressed"
+                    : "there was no window on screen at all - the notice fell back to the "
+                        + "passing notification, or was never raised");
+            report.Check(
+                !after,
+                $"{scenario.SaveName}: pressing its button closed it",
+                after
+                    ? "it is STILL on screen, which leaves the player's game underneath a "
+                        + "window they cannot get rid of"
+                    : "it is gone, and the conversation is underneath where it was");
+        }
+
         /// <summary>Where a run's menu pictures go, under its artifacts folder.</summary>
         private const string MenuPictures = "menus";
 
@@ -1102,10 +1157,10 @@ namespace GlobalConversationTracker.Harness
             string suiteName)
         {
             // A killed engine earns a picture too, and for the same reason a check does:
-            // the notice it raises is drawn by the game's own notification panel, over the
+            // the notice it raises is drawn by the game's own confirmation window, over the
             // menu, and nothing the probe reads can say whether it landed somewhere the
-            // player would see. The log says it was raised; only this says what it looked
-            // like.
+            // player would see. The log says it was raised, and in which of the mod's two
+            // channels; only this says what it looked like.
             if (!scenario.KillEngineFirst && !options.Any(option => option.Branches() != null))
             {
                 return;

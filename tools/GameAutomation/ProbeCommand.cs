@@ -81,6 +81,15 @@ namespace GlobalConversationTracker.Automation
         /// </remarks>
         public const string KillLookAheadEngine = "kill-look-ahead-engine";
 
+        /// <summary>
+        /// Press the button on the window the mod raises when its engine dies.
+        /// </summary>
+        /// <remarks>
+        /// What a screenshot cannot answer: a modal that will not close is worse than the
+        /// passing notification it replaced, and only pressing it says which kind it is.
+        /// </remarks>
+        public const string DismissNotice = "dismiss-notice";
+
         /// <summary>Ask the game to close itself, so the mod can flush on the way out.</summary>
         public const string Quit = "quit";
 
@@ -253,6 +262,18 @@ namespace GlobalConversationTracker.Automation
         public static void SendKillLookAheadEngine(string saveGamesFolder)
         {
             Send(saveGamesFolder, KillLookAheadEngine);
+        }
+
+        /// <summary>Presses the button on the mod's engine-death window.</summary>
+        /// <remarks>
+        /// The answer comes back as a <c>notice-dismissed</c> event carrying what the
+        /// window looked like before the press and after it, because the press itself
+        /// always succeeds - there is a button either way.
+        /// </remarks>
+        /// <param name="saveGamesFolder">The profile's SaveGames folder.</param>
+        public static void SendDismissNotice(string saveGamesFolder)
+        {
+            Send(saveGamesFolder, DismissNotice);
         }
 
         /// <summary>Asks the game to close itself.</summary>

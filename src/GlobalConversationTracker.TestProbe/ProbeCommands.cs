@@ -134,6 +134,22 @@ namespace GlobalConversationTracker.TestProbe
         /// </remarks>
         internal const string KillLookAheadEngineCommand = "kill-look-ahead-engine";
 
+        /// <summary>
+        /// Press the button on the notice the mod raises when its engine dies.
+        /// </summary>
+        /// <remarks>
+        /// <para>THE HALF OF A MODAL THAT A PICTURE CANNOT SHOW. A photograph says the
+        /// window was drawn, wrapped and legible over the conversation; what it cannot say
+        /// is whether the window goes away again, and a modal that does not is worse than
+        /// the passing notification it replaced - it would sit over the player's game
+        /// until they killed the process.</para>
+        ///
+        /// <para>Through the button's own <c>onClick</c> rather than by clicking pixels.
+        /// The point is what the button does, and driving the mouse to where the button
+        /// was in one screenshot would test the coordinates as much as the behaviour.</para>
+        /// </remarks>
+        internal const string DismissNoticeCommand = "dismiss-notice";
+
         /// <summary>Ask the game to close itself the way a player would.</summary>
         internal const string QuitCommand = "quit";
 
@@ -159,8 +175,24 @@ namespace GlobalConversationTracker.TestProbe
         /// </remarks>
         private const int LoadSettlePolls = 3;
 
+        /// <summary>
+        /// How many polls a pressed notice has to disappear in before it is reported as
+        /// still up.
+        /// </summary>
+        /// <remarks>
+        /// Not zero, which is the same as reading the flag in the frame of the click: the
+        /// game's own windows close on an animation and a coroutine, so a window that shuts
+        /// perfectly could still be visible on the way out. Reported either way - the
+        /// harness is told what was seen and decides - so this only bounds how long a
+        /// window that never closes takes to say so.
+        /// </remarks>
+        private const int DismissSettlePolls = 10;
+
         private static string? _commandPath;
         private static bool _saveApplied;
+        private static bool _dismissPending;
+        private static bool _noticeWasUp;
+        private static int _dismissPolls;
         private int _sinceLastPoll;
         private bool _loadPending;
         private bool _sawLoading;
@@ -213,6 +245,7 @@ namespace GlobalConversationTracker.TestProbe
 
             _sinceLastPoll = 0;
             ReportLoadingFinished();
+            ReportNoticeDismissed();
 
             // Before reading a new command: an advance-to-menu runs across frames, and
             // nothing else may start while it does.
@@ -346,6 +379,9 @@ namespace GlobalConversationTracker.TestProbe
                     case KillLookAheadEngineCommand:
                         KillLookAheadEngine();
                         break;
+                    case DismissNoticeCommand:
+                        DismissNotice();
+                        break;
                     case QuitCommand:
                         // Not a kill. The mod flushes its global state and writes its
                         // look-ahead statistics from Application.quitting, so a run that
@@ -472,6 +508,74 @@ namespace GlobalConversationTracker.TestProbe
                 "KillLookAheadEngine", Array.Empty<object>());
             ProbeLog.Write(
                 "look-ahead-engine-killed", "process", killed is int id ? id : 0);
+        }
+
+        /// <summary>
+        /// Presses the notice's button, and reports whether the notice went away.
+        /// </summary>
+        /// <remarks>
+        /// The answer arrives on a later poll, from <see cref="ReportNoticeDismissed"/>,
+        /// for the same reason a load's does: what is being watched for is something the
+        /// game does after this frame, and reading it in this one would report the window
+        /// as stuck every time it closed on an animation.
+        /// </remarks>
+        private static void DismissNotice()
+        {
+            _noticeWasUp = NoticeIsUp();
+            if (ConfirmationController.HasInstance)
+            {
+                // The button's own handler, which is the thing under test: whether the
+                // window closes when a player presses what a player can press.
+                ConfirmationController.Singleton.Confirm.onClick.Invoke();
+            }
+
+            _dismissPending = true;
+            _dismissPolls = 0;
+        }
+
+        /// <summary>
+        /// Whether any part of the confirmation window is on screen.
+        /// </summary>
+        /// <remarks>
+        /// TWO ANSWERS, OR-ED, because the game's bodies are stripped from every export
+        /// and neither source can be trusted alone: <c>IsVisible</c> is the game's own
+        /// notion and reads as a literal <c>false</c> in the decompilation, which means
+        /// its real getter is unknown rather than known to work; the button's own
+        /// <c>activeInHierarchy</c> is a fact about the scene that cannot be stubbed.
+        /// Either one saying the window is up is enough to call it up.
+        /// </remarks>
+        private static bool NoticeIsUp()
+        {
+            if (!ConfirmationController.HasInstance)
+            {
+                return false;
+            }
+
+            ConfirmationController window = ConfirmationController.Singleton;
+            return window.IsVisible || window.Confirm.gameObject.activeInHierarchy;
+        }
+
+        /// <summary>Says whether a pressed notice has left the screen yet.</summary>
+        private static void ReportNoticeDismissed()
+        {
+            if (!_dismissPending)
+            {
+                return;
+            }
+
+            _dismissPolls++;
+            bool up = NoticeIsUp();
+            if (up && _dismissPolls < DismissSettlePolls)
+            {
+                return;
+            }
+
+            _dismissPending = false;
+            ProbeLog.Write(
+                "notice-dismissed",
+                "before", _noticeWasUp,
+                "after", up,
+                "polls", _dismissPolls);
         }
 
         private static void PrepareLookAheadSuite(JsonElement root)
