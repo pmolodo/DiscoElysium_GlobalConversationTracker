@@ -1,0 +1,11 @@
+{
+  "_format": "json-diff",
+  "_changes": {
+    "areaId": "Whirling-int-f3",
+    "fowUnrevealersStatusCache": {
+      "fog-main": "ACTIVE",
+      "fog-whirling3-bedroom": "ACTIVE",
+      "fog-whirling3-workshop": "ACTIVE"
+    }
+  }
+}

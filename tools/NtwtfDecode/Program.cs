@@ -17,11 +17,13 @@ const string Usage = """
       dotnet run --project tools/NtwtfDecode -- <input> --split --sparse --base <expanded.ntwtf> -o <directory>
       dotnet run --project tools/NtwtfDecode -- --to-lua <directory> --split -o <output.ntwtf.lua>
       dotnet run --project tools/NtwtfDecode -- --pack <expanded.ntwtf> -o <save.ntwtf.zip>
+      dotnet run --project tools/NtwtfDecode -- --each <folder> --split --sparse --base <expanded.ntwtf> -o <directory>
 
     <input> is any of:
       - a packed save archive, {save}.ntwtf.zip, as written to SaveGames
       - a {save}.ntwtf.lua file
       - an expanded .ntwtf save folder containing exactly one such file
+      - with --each, a folder of packed save archives
 
     Packed input with --split writes a complete expanded save: companion archive
     members stay at top level and the Lua split goes in <name>.ntwtf.lua.parts.
@@ -38,6 +40,12 @@ const string Usage = """
           --base PATH     With --split --sparse, diff every save member against this
                           packed save, sparse split directory, or expanded save.
                           JSON uses recursive overlays; other members use text diffs.
+          --each          Treat <input> as a FOLDER OF SAVES and convert every
+                          .ntwtf.zip in it, writing <name>.ntwtf per save under
+                          --output. Anything else in the folder - the game's
+                          thumbnails, Steam's own files - is left alone. A save
+                          that cannot be read is reported and the rest still
+                          run; the exit status is non-zero if any failed.
           --split         Use five table JSON files (Actor.json through
                           Conversation.json) plus trailing.bin in one directory.
           --sparse        With --split, restructure the tables whose shape is
@@ -77,6 +85,7 @@ int Run(string[] argv)
     bool split = false;
     bool sparse = false;
     bool pack = false;
+    bool each = false;
     string? baseline = null;
 
     for (int i = 0; i < argv.Length; i++)
@@ -107,6 +116,9 @@ int Run(string[] argv)
                 break;
             case "--base":
                 baseline = NextArg(argv, ref i, arg);
+                break;
+            case "--each":
+                each = true;
                 break;
             case "--split":
                 split = true;
@@ -150,6 +162,20 @@ int Run(string[] argv)
         }
         Console.WriteLine(ExpandedSave.Pack(input, output));
         return 0;
+    }
+
+    if (each)
+    {
+        if (toLua || pack || !split)
+        {
+            throw new ArgumentException(
+                $"--each converts saves to expanded form, so it needs --split\n\n{Usage}");
+        }
+        if (output is null)
+        {
+            throw new ArgumentException($"--each requires --output <directory>\n\n{Usage}");
+        }
+        return ConvertEach(input, output, indent, sparse, baseline);
     }
 
     if (toLua)
@@ -233,6 +259,82 @@ int Run(string[] argv)
     LuaJson.Write(stream, selected, indent, table);
     stream.WriteByte((byte)'\n');
     stream.Flush();
+    return 0;
+}
+
+/// <summary>
+/// Expands every packed save in <paramref name="folder"/> into its own directory.
+/// </summary>
+/// <remarks>
+/// <para>ONLY THE ARCHIVES. A SaveGames folder is not ours to be tidy about - the game
+/// writes a .jpg thumbnail beside every save and Steam leaves its own file there - so
+/// anything that is not a <c>.ntwtf.zip</c> is passed over rather than treated as input
+/// somebody got wrong.</para>
+///
+/// <para>THE WHOLE FILENAME BECOMES THE DIRECTORY, minus the <c>.zip</c>. It is tempting to
+/// strip the <c>(7_9_2026 11-35-59 PM)</c> the game appends, because the scenarios under
+/// testing/ are named without one - but a real playthrough folder holds several saves whose
+/// display names are identical and whose timestamps are the only thing telling them apart.
+/// Stripping it would silently overwrite all but the last of them.</para>
+///
+/// <para>A SAVE THAT CANNOT BE READ IS REPORTED AND THE REST STILL RUN. Failing on the
+/// third of two hundred and fifty-four would lose the other two hundred and fifty-one and
+/// say less than a list of which ones were bad. The exit status is still non-zero, so
+/// nothing downstream mistakes a partial run for a whole one - the same bargain
+/// tools/measure-matrix.sh makes, for the same reason.</para>
+/// </remarks>
+static int ConvertEach(string folder, string output, int? indent, bool sparse, string? baseline)
+{
+    if (!Directory.Exists(folder))
+    {
+        throw new ArgumentException($"--each needs a folder of saves; '{folder}' is not a folder");
+    }
+
+    string[] saves = Directory
+        .GetFiles(folder, "*" + SaveBlob.ZipExtension)
+        .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+    if (saves.Length == 0)
+    {
+        throw new ArgumentException($"No {SaveBlob.ZipExtension} saves in '{folder}'");
+    }
+
+    Directory.CreateDirectory(output);
+    Console.Error.WriteLine($"{saves.Length} save(s) in {folder}");
+
+    int done = 0;
+    List<string> failed = [];
+    foreach (string save in saves)
+    {
+        // The name minus ".zip", so "X.ntwtf.zip" expands into "X.ntwtf" - the shape the
+        // rest of this tool already reads back.
+        string name = Path.GetFileNameWithoutExtension(save);
+        string destination = Path.Combine(output, name);
+        try
+        {
+            PackedSave packed = SaveBlob.ReadArchive(save);
+            LuaTable tables = LuaTableVisitor.ReadAllTables(packed.LuaBytes, out _);
+            ExpandedSave.Write(destination, packed, tables, indent, sparse, baseline);
+            done++;
+            Console.Error.WriteLine($"  [{done}/{saves.Length}] {name}");
+        }
+        catch (Exception ex) when (IsUserError(ex))
+        {
+            failed.Add($"{name}: {ex.Message}");
+            Console.Error.WriteLine($"  FAILED {name}: {ex.Message}");
+        }
+    }
+
+    Console.Error.WriteLine($"\n{done} of {saves.Length} converted into {output}");
+    if (failed.Count > 0)
+    {
+        Console.Error.WriteLine($"{failed.Count} could not be read:");
+        foreach (string why in failed)
+        {
+            Console.Error.WriteLine($"  {why}");
+        }
+        return ExitFailure;
+    }
     return 0;
 }
 
