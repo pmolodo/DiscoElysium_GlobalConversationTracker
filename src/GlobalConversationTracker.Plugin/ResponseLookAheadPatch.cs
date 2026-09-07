@@ -671,6 +671,30 @@ namespace GlobalConversationTracker
         /// <para>Waits for the process to be gone before returning, so a suite that kills
         /// and then opens a menu cannot race a child that is still on its way out.</para>
         /// </remarks>
+        /// <summary>
+        /// The engine process the mod is currently using, or 0 if it has none yet.
+        /// </summary>
+        /// <remarks>
+        /// <para>TEST-ONLY, and the read-only counterpart of
+        /// <see cref="KillEngineForTesting"/>. A suite that kills an engine and then wants
+        /// to see the REPLACEMENT arrive needs to know when it has, and the alternative is
+        /// sleeping for a guess: the replacement costs a process launch plus a 173-244 ms
+        /// index read, which is fast enough that a fixed wait is either flaky or wasteful.
+        /// Comparing the id against the one that was killed says exactly when it is
+        /// there.</para>
+        ///
+        /// <para>IT GOES THROUGH <see cref="Bridge"/> RATHER THAN READING THE FIELD, which
+        /// is the whole reason this works: the replacement lands in a Task, and Bridge is
+        /// what promotes a finished one to the live bridge. Reading _bridge directly would
+        /// report 0 for ever, because nothing else would ever collect the result until the
+        /// next response menu.</para>
+        ///
+        /// <para>On the game's own thread, like every probe command, which is the thread
+        /// Bridge is otherwise called from.</para>
+        /// </remarks>
+        /// <returns>The engine's process id, or 0 if there is no engine right now.</returns>
+        internal static int EngineProcessForTesting() => Bridge()?.Engine.ProcessId ?? 0;
+
         /// <returns>The process id that was killed, or 0 if there was no engine.</returns>
         internal static int KillEngineForTesting()
         {

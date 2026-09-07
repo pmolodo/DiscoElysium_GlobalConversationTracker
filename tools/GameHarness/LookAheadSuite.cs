@@ -222,6 +222,12 @@ namespace GlobalConversationTracker.Harness
         /// running game is the only place the out-of-process arrangement can be tested
         /// under the failure it exists to survive.
         /// </param>
+        /// <param name="expectsRecovery">
+        /// That the killed engine will be REPLACED rather than mourned, so this scenario
+        /// waits for the replacement instead of for the shutdown notice. de-bnjy.1.3: with
+        /// the shipped policy a kill produces a new engine and no notice at all, and a
+        /// scenario that waited for the window would wait for ever.
+        /// </param>
         /// <exception cref="ArgumentNullException">An argument is null.</exception>
         /// <exception cref="ArgumentException">The policy and the expectation disagree.</exception>
         public LookAheadScenario(
@@ -235,8 +241,17 @@ namespace GlobalConversationTracker.Harness
             BranchPolicy branchPolicy = BranchPolicy.Ignored,
             BranchExpectation? branches = null,
             int? advances = null,
-            bool killEngineFirst = false)
+            bool killEngineFirst = false,
+            bool expectsRecovery = false)
         {
+            if (expectsRecovery && !killEngineFirst)
+            {
+                throw new ArgumentException(
+                    "A scenario that expects a recovery has to kill something first; "
+                    + $"set {nameof(killEngineFirst)} as well.",
+                    nameof(expectsRecovery));
+            }
+
             if (advances < 0)
             {
                 throw new ArgumentOutOfRangeException(
@@ -262,6 +277,7 @@ namespace GlobalConversationTracker.Harness
             BranchPolicy = branchPolicy;
             Advances = advances;
             KillEngineFirst = killEngineFirst;
+            ExpectsRecovery = expectsRecovery;
         }
 
         /// <summary>The staged save's name, without extension.</summary>
@@ -286,6 +302,18 @@ namespace GlobalConversationTracker.Harness
         /// FIRST, and everything after the kill is about a mod with none.
         /// </remarks>
         public bool KillEngineFirst { get; }
+
+        /// <summary>
+        /// Whether the killed engine is expected to be REPLACED rather than mourned.
+        /// </summary>
+        /// <remarks>
+        /// de-bnjy.1.3 made a death be answered with a fresh engine, so the two things a
+        /// suite can ask about a kill are now different runs: the shutdown NOTICE (which
+        /// needs TestRecoveryLimit = 0 to be reachable at all) and the RECOVERY. This says
+        /// which one this scenario is about, and so whether the harness waits for a window
+        /// to dismiss or for a new engine to arrive.
+        /// </remarks>
+        public bool ExpectsRecovery { get; }
 
         /// <summary>The balance to assert, or null not to.</summary>
         public int? Money { get; }
@@ -480,19 +508,39 @@ namespace GlobalConversationTracker.Harness
         public IReadOnlyList<LookAheadScenario> Scenarios { get; }
 
         /// <summary>
-        /// Whether running this suite leaves the game without a look-ahead engine.
+        /// Whether running this suite kills a look-ahead engine at all.
         /// </summary>
         /// <remarks>
-        /// <para>A killed engine is not restarted - see
-        /// <see cref="LookAheadScenario.KillEngineFirst"/> - so the suite that kills one
-        /// ends the session's look-ahead for every suite after it in the same launch. That
-        /// is the mod behaving as designed and the harness's problem to schedule around:
-        /// <see cref="LookAheadSuites.InRunOrder"/> puts such a suite last.</para>
+        /// <para>What <see cref="LookAheadSuites.InRunOrder"/> schedules on: a suite that
+        /// kills anything runs after the suites that kill nothing, so that if its killing
+        /// or its recovery misbehaves the damage is at the end of the run rather than in
+        /// the middle of it.</para>
+        ///
+        /// <para>NOT THE SAME QUESTION AS <see cref="EndsTheLookAhead"/> since de-bnjy.1.3.
+        /// A killed engine is now REPLACED, so killing one is no longer the same as ending
+        /// the session's look-ahead - only a suite that also stops the replacement does
+        /// that.</para>
         ///
         /// <para>Computed from the scenarios rather than declared beside them, so it cannot
         /// disagree with what the suite actually does.</para>
         /// </remarks>
         public bool KillsTheEngine => Scenarios.Any(scenario => scenario.KillEngineFirst);
+
+        /// <summary>
+        /// Whether running this suite leaves the game without a look-ahead engine.
+        /// </summary>
+        /// <remarks>
+        /// <para>THE ONE THAT DECIDES WHETHER A LATER SUITE CAN MEAN ANYTHING. A suite that
+        /// ends the look-ahead makes every claim about a marker or a Pass / Fail line fail
+        /// for every suite after it in the same launch - measured 2026-09-05, when
+        /// engine-death ran seventh and the eight branch-shape suites after it lost all
+        /// sixteen of their claims.</para>
+        ///
+        /// <para>A suite whose kill scenarios all expect a RECOVERY does not end it: it
+        /// waits for the replacement and hands the next suite a working engine.</para>
+        /// </remarks>
+        public bool EndsTheLookAhead =>
+            Scenarios.Any(scenario => scenario.KillEngineFirst && !scenario.ExpectsRecovery);
 
         /// <summary>Mod settings to change for the run.</summary>
         public IReadOnlyDictionary<string, string> PluginSettings { get; }

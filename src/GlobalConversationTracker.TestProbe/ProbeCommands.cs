@@ -135,6 +135,18 @@ namespace GlobalConversationTracker.TestProbe
         internal const string KillLookAheadEngineCommand = "kill-look-ahead-engine";
 
         /// <summary>
+        /// Ask which process the mod's look-ahead engine is, or 0 for none.
+        /// </summary>
+        /// <remarks>
+        /// THE READ-ONLY COUNTERPART OF THE KILL. A suite that kills an engine and
+        /// expects a REPLACEMENT (de-bnjy.1.3) has to know when the replacement is
+        /// there, and a different non-zero id is exactly that. The alternative is a
+        /// sleep long enough to cover a process launch and a 173-244 ms index read,
+        /// which is a guess that is either flaky or slow.
+        /// </remarks>
+        internal const string LookAheadEngineProcessCommand = "look-ahead-engine-process";
+
+        /// <summary>
         /// Press the button on the notice the mod raises when its engine dies.
         /// </summary>
         /// <remarks>
@@ -379,6 +391,9 @@ namespace GlobalConversationTracker.TestProbe
                     case KillLookAheadEngineCommand:
                         KillLookAheadEngine();
                         break;
+                    case LookAheadEngineProcessCommand:
+                        LookAheadEngineProcess();
+                        break;
                     case DismissNoticeCommand:
                         DismissNotice();
                         break;
@@ -508,6 +523,20 @@ namespace GlobalConversationTracker.TestProbe
                 "KillLookAheadEngine", Array.Empty<object>());
             ProbeLog.Write(
                 "look-ahead-engine-killed", "process", killed is int id ? id : 0);
+        }
+
+        /// <summary>Says which process the mod's look-ahead engine currently is.</summary>
+        /// <remarks>
+        /// Zero means the mod has no engine RIGHT NOW, which after a kill means the
+        /// replacement has not arrived yet rather than that it never will - the caller
+        /// polls. See <see cref="LookAheadEngineProcessCommand"/>.
+        /// </remarks>
+        private static void LookAheadEngineProcess()
+        {
+            object? engine = InvokePluginFor(
+                "LookAheadEngineProcess", Array.Empty<object>());
+            ProbeLog.Write(
+                "look-ahead-engine-process", "process", engine is int id ? id : 0);
         }
 
         /// <summary>

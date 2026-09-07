@@ -747,7 +747,7 @@ namespace GlobalConversationTracker.Harness
         /// options drawn without markers because there was never an engine, rather than
         /// because one died. Loud, and it ends the run.
         /// </remarks>
-        private static void KillTheEngine(
+        private static int KillTheEngine(
             string saveGames, ProbeWatcher watcher, TimeSpan timeout)
         {
             Console.WriteLine("        killing the look-ahead engine on purpose");
@@ -765,6 +765,65 @@ namespace GlobalConversationTracker.Harness
             }
 
             Console.WriteLine($"        the engine was process {process}, and is gone");
+            return process;
+        }
+
+        /// <summary>How long to wait for a replacement engine before giving up on it.</summary>
+        /// <remarks>
+        /// A replacement costs a process launch plus a 173-244 ms index read
+        /// (measurements/repeat_question.rs), so this is roughly twenty times what it
+        /// should need. It is a FAILURE bound, not a guess at the duration - the poll below
+        /// returns the moment the new id appears.
+        /// </remarks>
+        private static readonly TimeSpan ReplacementWait = TimeSpan.FromSeconds(20);
+
+        /// <summary>How often to ask whether the replacement has arrived.</summary>
+        private static readonly TimeSpan ReplacementPoll = TimeSpan.FromMilliseconds(250);
+
+        /// <summary>
+        /// Waits until the mod is holding an engine that is NOT the one just killed.
+        /// </summary>
+        /// <remarks>
+        /// <para>de-bnjy.1.3. POLLED RATHER THAN SLEPT: the replacement is fast enough that
+        /// any fixed wait is either flaky or wasteful, and the mod can say which process it
+        /// is holding, so the harness asks instead of guessing.</para>
+        ///
+        /// <para>A DIFFERENT id rather than merely a non-zero one, because the mod reports
+        /// the engine it is using and the dead one's id would satisfy "non-zero" if
+        /// anything were still holding it. Different and non-zero is the replacement and
+        /// nothing else.</para>
+        /// </remarks>
+        private static void WaitForTheReplacement(
+            int killed, string saveGames, ProbeWatcher watcher, TimeSpan timeout)
+        {
+            Console.WriteLine("        waiting for the mod to start a replacement engine");
+            DateTime deadline = DateTime.UtcNow + ReplacementWait;
+
+            while (true)
+            {
+                ProbeCommand.SendLookAheadEngineProcess(saveGames);
+                ProbeEvent answer = watcher.WaitForEvent(
+                    "look-ahead-engine-process", timeout, Log);
+                int engine = answer.Number("process") ?? 0;
+
+                if (engine != 0 && engine != killed)
+                {
+                    Console.WriteLine(
+                        $"        the replacement is process {engine}, and is up");
+                    return;
+                }
+
+                if (DateTime.UtcNow >= deadline)
+                {
+                    throw new InvalidOperationException(
+                        $"No replacement look-ahead engine arrived within {ReplacementWait
+                            .TotalSeconds:0} seconds of killing process {killed}. Either "
+                        + "the mod gave up instead of respawning - check the run's log for "
+                        + "the shutdown notice - or the replacement could not start.");
+                }
+
+                System.Threading.Thread.Sleep(ReplacementPoll);
+            }
         }
 
         private static ProbeEvent OpenConversation(
@@ -782,7 +841,11 @@ namespace GlobalConversationTracker.Harness
             // restarted, so a second attempt has nothing left to kill.
             if (scenario.KillEngineFirst)
             {
-                KillTheEngine(saveGames, watcher, timeout);
+                int killed = KillTheEngine(saveGames, watcher, timeout);
+                if (scenario.ExpectsRecovery)
+                {
+                    WaitForTheReplacement(killed, saveGames, watcher, timeout);
+                }
             }
 
             for (int attempt = 1; ; attempt++)
@@ -1118,8 +1181,11 @@ namespace GlobalConversationTracker.Harness
             TimeSpan timeout,
             Report report)
         {
-            if (!scenario.KillEngineFirst)
+            if (!scenario.KillEngineFirst || scenario.ExpectsRecovery)
             {
+                // A RECOVERY RAISES NO NOTICE, which is the whole claim of de-bnjy.1.3 -
+                // the player is not interrupted for a death the mod can answer itself. So
+                // there is no window here to press, and waiting for one would hang.
                 return;
             }
 
@@ -1186,7 +1252,10 @@ namespace GlobalConversationTracker.Harness
             // menu, and nothing the probe reads can say whether it landed somewhere the
             // player would see. The log says it was raised, and in which of the mod's two
             // channels; only this says what it looked like.
-            if (!scenario.KillEngineFirst && !options.Any(option => option.Branches() != null))
+            // A recovery has no notice to photograph; the picture is evidence about the
+            // window, and this run deliberately produces none.
+            bool raisedANotice = scenario.KillEngineFirst && !scenario.ExpectsRecovery;
+            if (!raisedANotice && !options.Any(option => option.Branches() != null))
             {
                 return;
             }

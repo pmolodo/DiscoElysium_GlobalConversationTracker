@@ -143,6 +143,25 @@ namespace GlobalConversationTracker.Harness
         /// <summary>The other of the pair.</summary>
         public const int InspectSpeakersEntry = 67;
 
+        /// <summary>Siileng's menu as a working engine marks it, at a balance of 5,100.</summary>
+        /// <remarks>
+        /// SHARED BY THE DEATH AND RECOVERY SUITES, which both open on it and both need it
+        /// to mean the same thing: it is the "before" that makes an unmarked menu afterwards
+        /// a CHANGE rather than a claim on its own, and in the recovery suite it is also the
+        /// "after" that says the markers came back. Three copies of it would be three
+        /// chances for one to drift.
+        /// </remarks>
+        private static readonly OptionExpectation[] MarkedSiilengMenu =
+        {
+            new OptionExpectation(
+                BuySneakersEntry, Marker.Orange, "buying the sneakers leads on to the speakers"),
+            new OptionExpectation(
+                InspectSneakersEntry, Marker.Orange, "looking returns to the hub, which still can"),
+            new OptionExpectation(
+                InspectSpeakersEntry, Marker.Orange, "and so does looking at the other"),
+            new OptionExpectation(LeaveEntry, Marker.None, "leaving reaches nothing at all"),
+        };
+
         /// <summary>The option that leaves, reaching nothing.</summary>
         public const int LeaveEntry = 85;
 
@@ -369,7 +388,7 @@ namespace GlobalConversationTracker.Harness
             {
                 Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff, AllSeen,
                 RedCheck,
-            }.Concat(BranchShapes).Append(EngineDeath).ToArray();
+            }.Concat(BranchShapes).Append(EngineRecovery).Append(EngineDeath).ToArray();
 
         /// <summary>The suites a run does when it is not told which to do.</summary>
         /// <remarks>
@@ -386,18 +405,26 @@ namespace GlobalConversationTracker.Harness
         /// </remarks>
         /// <remarks>
         /// <para><see cref="EngineDeath"/> IS LAST, and both lists say so rather than
-        /// leaving it to <see cref="InRunOrder"/>. It kills the look-ahead engine and the
-        /// mod does not restart one, so every suite after it in the same launch sees a game
+        /// leaving it to <see cref="InRunOrder"/>. It kills the look-ahead engine and tells
+        /// the mod not to replace it, so every suite after it in the same launch sees a game
         /// with no look-ahead and fails every claim it makes about a marker or a line.
         /// Measured 2026-09-05: with it seventh, the eight branch-shape suites that follow
         /// lost all sixteen of their Pass / Fail claims, having passed the same claims
         /// twenty lines earlier under <see cref="Pristine"/>.</para>
+        ///
+        /// <para><see cref="EngineRecovery"/> SITS JUST BEFORE IT AND IS SAFE THERE, which
+        /// is the difference between the two: it kills an engine and then waits for the
+        /// replacement, so it hands the next suite a working one. It is still after the
+        /// ordinary suites because a suite that kills anything belongs with the ones that
+        /// do - if its recovery ever stopped working, everything after it would fail the way
+        /// the branch shapes did above, and grouping the killers keeps that blast radius
+        /// where a reader expects it.</para>
         /// </remarks>
         public static IReadOnlyList<LookAheadSuite> Default =>
             new[]
             {
                 Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff,
-            }.Concat(BranchShapes).Append(EngineDeath).ToArray();
+            }.Concat(BranchShapes).Append(EngineRecovery).Append(EngineDeath).ToArray();
 
         /// <summary>
         /// The suites in the order they can actually be run: anything that ends the
@@ -624,23 +651,7 @@ namespace GlobalConversationTracker.Harness
                     "afford-both",
                     SiilengConversation,
                     "with an engine, the balance that marks three options",
-                    new[]
-                    {
-                        new OptionExpectation(
-                            BuySneakersEntry,
-                            Marker.Orange,
-                            "buying the sneakers leads on to the speakers"),
-                        new OptionExpectation(
-                            InspectSneakersEntry,
-                            Marker.Orange,
-                            "looking returns to the hub, which still can"),
-                        new OptionExpectation(
-                            InspectSpeakersEntry,
-                            Marker.Orange,
-                            "and so does looking at the other"),
-                        new OptionExpectation(
-                            LeaveEntry, Marker.None, "leaving reaches nothing at all"),
-                    },
+                    MarkedSiilengMenu,
                     money: 5100,
                     advances: SiilengAdvances,
                     branchPolicy: BranchPolicy.NoneAnywhere),
@@ -701,6 +712,97 @@ namespace GlobalConversationTracker.Harness
                 // kill away. See TestRecoveryLimitSetting for why the suite buys the
                 // give-up path this way rather than killing six engines.
                 [TestRecoveryLimitSetting] = "0",
+            });
+
+        /// <summary>
+        /// An engine that dies is REPLACED, and the markers come back with it.
+        /// </summary>
+        /// <remarks>
+        /// <para>The other half of <see cref="EngineDeath"/>, and the shipped behaviour -
+        /// that suite turns the replacement OFF to reach the shutdown notice, so without
+        /// this one nothing in the game exercises what actually happens when an engine dies
+        /// (de-bnjy.1.3, de-wncd.3).</para>
+        ///
+        /// <para>THE THREE SCENARIOS ARE ONE ARGUMENT, in order:</para>
+        ///
+        /// <para>1. With an engine, the balance that marks three options - the same opening
+        /// as the death suite, so that what follows is a CHANGE from something known rather
+        /// than a claim on its own.</para>
+        ///
+        /// <para>2. The same menu with the engine killed underneath it. Unmarked, because
+        /// the replacement is deliberately not built inside the frame that draws a response
+        /// menu - a process launch plus a 173-244 ms index read has to happen behind it.
+        /// This is the scenario that would hang without <c>expectsRecovery</c>: it waits for
+        /// the new engine instead of for a notice that is never raised.</para>
+        ///
+        /// <para>3. THE SAME MENU AGAIN, MARKED. This is the one that makes the suite worth
+        /// running: it says the respawn is a RECOVERY rather than a quieter failure. Every
+        /// scenario before it would pass just as well against a mod that had given up
+        /// silently.</para>
+        ///
+        /// <para>NO RECOVERY LIMIT IS SET, unlike the death suite - the point is the SHIPPED
+        /// policy, which tolerates five deaths and so answers this single kill with a new
+        /// engine.</para>
+        /// </remarks>
+        public static LookAheadSuite EngineRecovery { get; } = new LookAheadSuite(
+            "engine-recovery",
+            "an engine that dies is replaced, and the markers come back",
+            MoneyState,
+            new[]
+            {
+                new LookAheadScenario(
+                    "afford-both",
+                    SiilengConversation,
+                    "with an engine, the balance that marks three options",
+                    MarkedSiilengMenu,
+                    money: 5100,
+                    advances: SiilengAdvances,
+                    branchPolicy: BranchPolicy.NoneAnywhere),
+                new LookAheadScenario(
+                    "afford-both",
+                    SiilengConversation,
+                    "the menu drawn while the replacement is still coming up",
+                    AllUnmarked("the engine died and its replacement is not up yet"),
+                    money: 5100,
+                    advances: SiilengAdvances,
+                    branchPolicy: BranchPolicy.NoneAnywhere,
+                    killEngineFirst: true,
+                    expectsRecovery: true),
+                new LookAheadScenario(
+                    "afford-both",
+                    SiilengConversation,
+                    "and the same menu once it is, marked again",
+                    MarkedSiilengMenu,
+                    money: 5100,
+                    advances: SiilengAdvances,
+                    branchPolicy: BranchPolicy.NoneAnywhere),
+            },
+            logExpectations: new[]
+            {
+                new LogExpectation(
+                    "the look-ahead engine has gone and a replacement is being started",
+                    true,
+                    "the mod says it is replacing the engine, once",
+                    times: 1),
+                new LogExpectation(
+                    "a replacement look-ahead engine is up",
+                    true,
+                    "and says the replacement arrived"),
+                // THE POINT OF THE WHOLE SUITE, stated as an absence. If this line appears
+                // the mod gave up rather than recovered, and scenario 2 would have passed
+                // anyway because a mod that has given up also draws nothing.
+                new LogExpectation(
+                    "the look-ahead engine has gone and will not be restarted",
+                    false,
+                    "and never gives up, which one death must not cause"),
+                new LogExpectation(
+                    "the player was told on screen",
+                    false,
+                    "and never interrupts the player about it"),
+                new LogExpectation(
+                    "dialogue statuses are being tracked",
+                    true,
+                    "tracking is unaffected throughout"),
             });
 
         /// <summary>

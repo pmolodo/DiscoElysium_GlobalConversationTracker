@@ -63,12 +63,36 @@ namespace GlobalConversationTracker.Automation.Tests
         /// The one suite that ends the session's look-ahead, and the only one, since the
         /// rule below is about it and a second one would want its own thought.
         /// </summary>
+        /// <remarks>
+        /// TWO SUITES KILL AN ENGINE NOW and only one ends the look-ahead, which is the
+        /// distinction de-bnjy.1.3 created: a dead engine is replaced unless something stops
+        /// the replacement, and engine-death is the suite that stops it (TestRecoveryLimit
+        /// = 0) precisely so the shutdown notice is reachable in one kill. engine-recovery
+        /// kills one and waits for its successor, so it hands the next suite a working
+        /// engine.
+        /// </remarks>
         [Fact]
-        public void OnlyTheEngineDeathSuiteKillsTheEngine()
+        public void OnlyTheEngineDeathSuiteEndsTheLookAhead()
         {
-            Assert.True(LookAheadSuites.EngineDeath.KillsTheEngine);
+            Assert.True(LookAheadSuites.EngineDeath.EndsTheLookAhead);
             Assert.Equal(
                 new[] { LookAheadSuites.EngineDeath },
+                LookAheadSuites.All.Where(suite => suite.EndsTheLookAhead).ToArray());
+        }
+
+        /// <summary>Both suites that kill an engine are declared, and they are these two.</summary>
+        /// <remarks>
+        /// Killing is what <c>InRunOrder</c> schedules on, so a third suite that killed an
+        /// engine without anybody noticing would be sorted to the end of every run and
+        /// quietly change what the suites around it measure.
+        /// </remarks>
+        [Fact]
+        public void TheSuitesThatKillAnEngineAreTheTwoThatMeanTo()
+        {
+            Assert.True(LookAheadSuites.EngineRecovery.KillsTheEngine);
+            Assert.False(LookAheadSuites.EngineRecovery.EndsTheLookAhead);
+            Assert.Equal(
+                new[] { LookAheadSuites.EngineRecovery, LookAheadSuites.EngineDeath },
                 LookAheadSuites.All.Where(suite => suite.KillsTheEngine).ToArray());
         }
 

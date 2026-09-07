@@ -170,6 +170,19 @@ namespace GlobalConversationTracker
         }
 
         /// <summary>
+        /// The look-ahead engine's process id, or 0 if the mod has none right now.
+        /// </summary>
+        /// <remarks>
+        /// A HARNESS ENTRY POINT AND NOTHING ELSE, like the one above. It exists so a suite
+        /// that killed an engine can tell when the REPLACEMENT has arrived (de-bnjy.1.3)
+        /// rather than sleeping for a guess: a different, non-zero id is the replacement.
+        /// </remarks>
+        public static int LookAheadEngineProcess()
+        {
+            return ResponseLookAheadPatch.EngineProcessForTesting();
+        }
+
+        /// <summary>
         /// Compares the world the native bridge would send against the one the managed
         /// engine reads, and writes the result to the log.
         /// </summary>

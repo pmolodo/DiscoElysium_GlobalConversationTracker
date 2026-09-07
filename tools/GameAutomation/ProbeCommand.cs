@@ -81,6 +81,9 @@ namespace GlobalConversationTracker.Automation
         /// </remarks>
         public const string KillLookAheadEngine = "kill-look-ahead-engine";
 
+        /// <summary>Asks which process the mod's look-ahead engine is.</summary>
+        public const string LookAheadEngineProcess = "look-ahead-engine-process";
+
         /// <summary>
         /// Press the button on the window the mod raises when its engine dies.
         /// </summary>
@@ -271,6 +274,18 @@ namespace GlobalConversationTracker.Automation
         public static void SendKillLookAheadEngine(string saveGamesFolder)
         {
             Send(saveGamesFolder, KillLookAheadEngine);
+        }
+
+        /// <summary>Asks which process the mod's look-ahead engine currently is.</summary>
+        /// <param name="saveGamesFolder">The profile's SaveGames folder.</param>
+        /// <remarks>
+        /// Answered by a `look-ahead-engine-process` event carrying `process`, which is 0
+        /// while the mod has no engine. A suite that killed one polls this until the id is
+        /// non-zero and different, which is the replacement (de-bnjy.1.3).
+        /// </remarks>
+        public static void SendLookAheadEngineProcess(string saveGamesFolder)
+        {
+            Send(saveGamesFolder, LookAheadEngineProcess);
         }
 
         /// <summary>Presses the button on the mod's engine-death window.</summary>
