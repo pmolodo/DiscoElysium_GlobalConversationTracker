@@ -31,3 +31,6 @@ pub mod test_graph;
 /// and `symbolic::backward` over their own fixtures; this is what those fixtures cannot be,
 /// an oracle independent of the searches they check (de-eonm).
 pub mod oracle;
+
+/// A manager that outlives one query, on the thread that owns it - de-2wtl.
+pub mod workspace;

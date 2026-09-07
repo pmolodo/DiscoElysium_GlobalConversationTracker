@@ -99,6 +99,19 @@ pub struct Service {
     declared: Option<Arc<VariableTable>>,
     /// What the index said it was, or `None` where it had no header.
     header: Option<IndexHeader>,
+    /// The live manager for the group most recently asked about, if there is one.
+    ///
+    /// ONE, not a map. A player stands in one conversation at a time, and a second
+    /// workspace is a second preallocated node store - at the shipped 256 MB that is fine
+    /// and at a measurement's six gigabytes it is not. Keeping one and replacing it makes
+    /// the memory a fact about the budget rather than about how many groups a session has
+    /// walked through.
+    ///
+    /// A `Mutex` because [`Self::look_ahead`] takes `&self` - the host holds one service
+    /// and the FFI shape it grew out of had no `&mut` to offer - and because replacing a
+    /// workspace has to be exclusive: two requests racing to build one would put two
+    /// managers on two threads for the same group.
+    workspace: std::sync::Mutex<Option<crate::workspace::Workspace>>,
 }
 
 impl Service {
@@ -120,14 +133,19 @@ impl Service {
         let (index, header) =
             read_index_with_header(index).map_err(|_| Status::IndexUnreadable)?;
 
-        Ok(Self { index, declared, header })
+        Ok(Self { index, declared, header, workspace: Default::default() })
     }
 
     /// An engine over nothing, for the tests that are about the ARGUMENT rather than the
     /// index.
     #[cfg(test)]
     pub(crate) fn empty() -> Self {
-        Self { index: Index::new(), declared: None, header: None }
+        Self {
+            index: Index::new(),
+            declared: None,
+            header: None,
+            workspace: Default::default(),
+        }
     }
 
     /// How many conversations the index holds.
@@ -208,7 +226,76 @@ impl Service {
         let parsed: crate::bridge::LookAheadRequest =
             serde_json::from_str(request).map_err(|_| Status::BadArgument)?;
 
-        Ok(crate::bridge::answer(&self.index, self.declared.clone(), &parsed))
+        Ok(self.answer_through_workspace(parsed))
+    }
+
+    /// Answers through the live workspace where one serves, and otherwise builds a new one.
+    ///
+    /// ## What a hit skips
+    ///
+    /// The group graph, the layout and the diagram manager - and the manager's WARM-UP,
+    /// which `measurements/manager_reuse.rs` found is the larger half: the first request
+    /// against a fresh manager takes ninety-eight milliseconds where later ones against the
+    /// same manager take fifty-three. What it still pays is the compiled guards and the
+    /// seed, one to five milliseconds, because the world is baked into those and moves every
+    /// line the player reads.
+    ///
+    /// ## And what a miss does
+    ///
+    /// Replaces the workspace, which means DROPPING THE OLD ONE FIRST. Its thread is joined
+    /// in `Drop`, so the old manager is released before the new one is asked for - two
+    /// preallocated node stores at once is what a naive replacement would do, and at a
+    /// measurement's six gigabytes that fails.
+    ///
+    /// A workspace that cannot be opened is not an error: the per-request path still works
+    /// and is what shipped before this, so a machine that cannot hold one answers exactly
+    /// as it used to.
+    fn answer_through_workspace(
+        &self,
+        request: crate::bridge::LookAheadRequest,
+    ) -> crate::bridge::LookAheadResponse {
+        let budget = request.diagram_budget();
+        let group = crate::index::discover_group(&self.index, request.conversation);
+        if group.is_empty() {
+            return crate::bridge::answer(&self.index, self.declared.clone(), &request);
+        }
+
+        let mut held = match self.workspace.lock() {
+            Ok(held) => held,
+            // A poisoned lock means a previous request panicked inside this. The per-request
+            // path is stateless and cannot be poisoned, so it is the honest fallback.
+            Err(_) => return crate::bridge::answer(&self.index, self.declared.clone(), &request),
+        };
+
+        let serves = held.as_ref().is_some_and(|workspace| {
+            workspace.serves(&group, &request.world, self.declared.clone(), budget)
+        });
+
+        if !serves {
+            // DROPPED BEFORE THE NEXT IS BUILT. `take` releases the old thread and its
+            // manager here rather than at the end of the statement that replaces it.
+            *held = None;
+
+            let Ok((graph, group)) =
+                crate::index::build_group_graph(&self.index, request.conversation)
+            else {
+                return crate::bridge::answer(&self.index, self.declared.clone(), &request);
+            };
+            *held = crate::workspace::Workspace::open(
+                graph,
+                group,
+                request.world.clone(),
+                self.declared.clone(),
+                budget,
+            );
+        }
+
+        match held.as_ref().and_then(|workspace| workspace.answer(request.clone())) {
+            Some(answers) => crate::bridge::LookAheadResponse { answers, error: None },
+            // The owner thread is gone, or could never be started. Answer the request the
+            // way this always did rather than failing it.
+            None => crate::bridge::answer(&self.index, self.declared.clone(), &request),
+        }
     }
 }
 

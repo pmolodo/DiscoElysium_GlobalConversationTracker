@@ -633,7 +633,9 @@ impl LookAheadRequest {
     /// Asked for FALLIBLY at the other end - the manager preallocates its node store and
     /// that allocation aborts rather than failing, so a machine that cannot supply it must
     /// be found out about before it is spent. See de-0a3a and `DataVars::try_new`.
-    fn diagram_budget(&self) -> DiagramBudget {
+    /// Public so [`crate::service`] can ask what a request would size a manager to WITHOUT
+    /// building one - which is half of deciding whether a live workspace still serves it.
+    pub fn diagram_budget(&self) -> DiagramBudget {
         let bytes = if self.memory_budget_mb == 0 {
             DiagramBudget::DEFAULT_MEMORY_BUDGET
         } else {
@@ -825,7 +827,9 @@ pub fn questions_for(index: &Index, conversation: i32) -> Result<Questions, Stri
 ///
 /// Split out because [`answer`] needs both the graph and the questions, and building the
 /// group twice per response menu to get them would be paying for the expensive half twice.
-fn questions_of(graph: &LookAheadGraph, group: Vec<i32>) -> Questions {
+/// Public so [`crate::workspace`] can work them out ONCE for a group it will serve many
+/// requests over. They depend on the graph and on nothing a request carries.
+pub fn questions_of(graph: &LookAheadGraph, group: Vec<i32>) -> Questions {
     let mut found = Questions { conversations: group, ..Default::default() };
     let mut variables = HashSet::new();
     let mut queries = HashSet::new();
@@ -1041,7 +1045,7 @@ pub fn answer(
 /// `measurements/performance_matrix.rs` and the symbolic tests all use this number. Changing it
 /// changes which states a search can tell apart, so a run measured under one cap says
 /// nothing about a search under another.
-const COUNTER_CAP: i32 = 16;
+pub const COUNTER_CAP: i32 = 16;
 
 /// The answers for one request, from inside the thread that owns the diagram.
 ///
@@ -1063,7 +1067,6 @@ where
         .with_world(world)
         .with_constant_clock(DataLayout::group_passes_time(graph));
     let seed = seed_of(graph, world, &vars);
-    let budget = request.search_budget();
 
     // ONCE FOR THE MENU, like the manager and the compiler above. The parent map and the
     // SCC decomposition are facts about the LINKS - no start, no world, no budget - and
@@ -1072,6 +1075,34 @@ where
     // `measurements/per_start_setup.rs` priced at 246 ms a menu. See `GroupShape`.
     let shape = GroupShape::of(graph);
 
+    Some(answer_starts(graph, world, request, novelty, &mut compiler, &seed, &shape))
+}
+
+/// The answers for one request, against a manager and a compiler somebody else built.
+///
+/// ## Why this is separated from [`answer_within`]
+///
+/// Because [`crate::workspace`] builds those two ONCE and keeps them, where `answer_within`
+/// builds them per request and drops them. Everything below is what a request costs after
+/// the diagram side exists, and it is the same code either way - which is the point: a
+/// workspace must not be a second implementation of what a menu means.
+///
+/// The caller owns the diagram side, so it also owns the de-fpax invariant: this must run
+/// on the thread that built `compiler`'s manager.
+#[allow(clippy::too_many_arguments)]
+pub fn answer_starts<'a, F>(
+    graph: &LookAheadGraph,
+    world: &dyn ILookAheadWorld,
+    request: &LookAheadRequest,
+    novelty: &F,
+    compiler: &mut GuardCompiler<'a>,
+    seed: &BDDFunction,
+    shape: &GroupShape,
+) -> Vec<LookAheadAnswer>
+where
+    F: Fn(DialogueNodeId) -> Novelty,
+{
+    let budget = request.search_budget();
     let mut answers = Vec::with_capacity(request.starts.len());
 
     for start in &request.starts {
@@ -1100,13 +1131,12 @@ where
 
         for branch in branches {
             answers.push(scored(
-                graph, id, *start, world, novelty, *branch, &seed, &mut compiler, &budget,
-                &shape,
+                graph, id, *start, world, novelty, *branch, seed, compiler, &budget, shape,
             ));
         }
     }
 
-    Some(answers)
+    answers
 }
 
 /// An option with nothing established about it, and why.

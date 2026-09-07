@@ -164,3 +164,7 @@ path = "measurements/cache_split_menu.rs"
 [[example]]
 name = "manager_reuse"
 path = "measurements/manager_reuse.rs"
+
+[[example]]
+name = "workspace_menus"
+path = "measurements/workspace_menus.rs"
