@@ -310,6 +310,27 @@ impl VariableTable {
 /// number is a decision-diagram variable number. An unordered walk would give the same
 /// graph a different variable order on different runs, and make any symbolic measurement
 /// unrepeatable.
+///
+/// ## If this is ever CACHED, do not store a group of one
+///
+/// Computed on demand today, and nothing anywhere persists a group. Whoever changes that
+/// should leave the singletons out and read a miss as "the group is just this
+/// conversation" (de-wncd.2): a stored group of one is a stored default.
+///
+/// MEASURED, and it is most of the table. `measurements/group_census.rs`, 2026-09-07:
+/// 1,372 of the 1,422 distinct groups are a single conversation, and the other 50 carry
+/// fifty-five per cent of the entries. So omitting the singletons takes a group store from
+/// fourteen hundred rows to FIFTY, which is the difference between an artefact worth
+/// arguing about and one that is obviously free.
+///
+/// THE INDEX ALREADY DOES EXACTLY THIS one level down - see `EntryRecord::to_conversation`,
+/// which is absent or short precisely so that a missing element means "this conversation".
+/// A group cache would be the same rule applied to the walk rather than to a link.
+///
+/// The one distinction that has to survive is between a conversation that is a singleton
+/// and one THE INDEX DOES NOT HOLD. The second is already an error at every call site, and
+/// a miss that quietly meant "a group of one" would turn a bad conversation id into a
+/// plausible-looking answer.
 pub fn discover_group(index: &Index, start: i32) -> Vec<i32> {
     let mut group = HashSet::new();
     let mut pending = VecDeque::new();
