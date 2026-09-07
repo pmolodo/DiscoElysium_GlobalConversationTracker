@@ -125,9 +125,12 @@ impl DiagramBudget {
     /// - see [`Self::bytes_per_node`] - so a sweep over the split is a sweep over one
     /// trade rather than over two budgets that happen to differ.
     ///
-    /// FOR MEASURING, not for shipping. The split is a convention with nothing behind it
-    /// and de-1e8l is what puts something behind it; until it does, every shipped caller
-    /// should be taking [`Self::NODES_PER_CACHE_ENTRY`] by going through [`Self::new`].
+    /// FOR MEASURING, not for shipping. de-1e8l has since swept it and the quarter is the
+    /// flat optimum on every heavy group, so [`Self::NODES_PER_CACHE_ENTRY`] is now a
+    /// conclusion rather than a convention and every shipped caller should be taking it by
+    /// going through [`Self::new`]. What remains open is the shipped budget and a whole
+    /// menu rather than a single search, which is de-bnjy.8 - and that is a measurement,
+    /// so it comes through here too.
     ///
     /// # Panics
     ///
