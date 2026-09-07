@@ -15,8 +15,9 @@ namespace GlobalConversationTracker.Harness
     /// </summary>
     /// <remarks>
     /// <para>ONE DEFINITION, TWO WAYS TO EXECUTE IT. A row names everything a scenario is -
-    /// the global state to stage, the save and what it has already read, the budget, the
-    /// conversation and entry, and the line that must come out - and says nothing about how
+    /// the global state to stage, the save and what it has already read, the budget, and
+    /// the line that must come out, over the conversation and entry its check names - and
+    /// says nothing about how
     /// to run it. <see cref="LookAheadSuites.BranchShapes"/> turns each row into an in-game
     /// suite; <c>tests/branch_shapes.rs</c> puts the same row to the engine over the
     /// shipped index. Neither is a mirror of the other, because there is nothing to
@@ -47,17 +48,12 @@ namespace GlobalConversationTracker.Harness
         /// <summary>Where the definition lives, under the repository root.</summary>
         public const string FileName = "branch-shapes.json";
 
-        /// <summary>The conversation every row opens.</summary>
-        [JsonPropertyName("conversation")]
-        public int Conversation { get; set; }
+        /// <summary>The checks, each carrying every shape its line can take.</summary>
+        [JsonPropertyName("checks")]
+        public List<BranchShapeCheck> Checks { get; set; } = new List<BranchShapeCheck>();
 
-        /// <summary>The rolled check every row is about.</summary>
-        [JsonPropertyName("entry")]
-        public int Entry { get; set; }
-
-        /// <summary>The scenarios.</summary>
-        [JsonPropertyName("rows")]
-        public List<BranchShapeRow> Rows { get; set; } = new List<BranchShapeRow>();
+        /// <summary>Every row of every check, in the order the file writes them.</summary>
+        public IEnumerable<BranchShapeRow> Rows => Checks.SelectMany(check => check.Rows);
 
         /// <summary>Reads the definition, from the committed scenarios folder.</summary>
         /// <param name="scenarioRoot">Where the scenarios are, or null to find them.</param>
@@ -84,13 +80,41 @@ namespace GlobalConversationTracker.Harness
                 File.ReadAllText(path),
                 new JsonSerializerOptions { ReadCommentHandling = JsonCommentHandling.Skip });
 
-            if (table == null || table.Rows.Count == 0)
+            if (table == null || !table.Rows.Any())
             {
                 throw new InvalidDataException($"{path} names no scenarios.");
             }
 
             return table;
         }
+    }
+
+    /// <summary>One rolled check, and every shape its Pass / Fail line is asked to take.</summary>
+    /// <remarks>
+    /// GROUPED BY CHECK rather than listed flat, because a shape is a property of the line
+    /// the mod draws and the same code draws it onto a white check's band and a red one's.
+    /// A shape arranged only on the ceiling fan's white check was a shape nobody had seen
+    /// the mod put on a red one - which is the half of de-8hh2.9 that its fixture did not
+    /// finish, and what the second check here closes. The offline executor asks for all
+    /// eight PER CHECK for the same reason.
+    /// </remarks>
+    public sealed class BranchShapeCheck
+    {
+        /// <summary>Which check it is, in one line, for the report.</summary>
+        [JsonPropertyName("what")]
+        public string What { get; set; } = string.Empty;
+
+        /// <summary>The conversation every row of this check opens.</summary>
+        [JsonPropertyName("conversation")]
+        public int Conversation { get; set; }
+
+        /// <summary>The rolled check every row of it is about.</summary>
+        [JsonPropertyName("entry")]
+        public int Entry { get; set; }
+
+        /// <summary>The scenarios.</summary>
+        [JsonPropertyName("rows")]
+        public List<BranchShapeRow> Rows { get; set; } = new List<BranchShapeRow>();
     }
 
     /// <summary>One scenario: the fixture that makes it, and the line it must draw.</summary>

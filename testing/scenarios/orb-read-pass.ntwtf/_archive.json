@@ -1,0 +1,30 @@
+{
+  "_format": "expanded-save-diff",
+  "base": "../at-the-fan.ntwtf",
+  "members": [
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "orb-read-pass.1st.ntwtf.json",
+      "suffix": ".1st.ntwtf.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "orb-read-pass.2nd.ntwtf.json",
+      "suffix": ".2nd.ntwtf.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "orb-read-pass.FOW.json",
+      "suffix": ".FOW.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "orb-read-pass.states.lua",
+      "suffix": ".states.lua"
+    }
+  ]
+}

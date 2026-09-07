@@ -7,8 +7,8 @@
 //! `testing/scenarios/branch-shapes.json`, and each one names the SAME fixture the in-game
 //! suite stages - the same global state file, the same save's read entries, the same
 //! budget, the same conversation and entry - so this runs the scenario rather than
-//! something like it. `BranchShapeTests` on the C# side holds the same rows against the
-//! suites that stage them, so a row cannot describe a run that is not happening.
+//! something like it. `LookAheadSuites.BranchShapes` on the C# side builds its suites out
+//! of that same file, so a row cannot describe a run that is not happening.
 //!
 //! ## Why it is worth having both
 //!
@@ -59,6 +59,19 @@ fn rung(colour: &str) -> i32 {
 
 #[derive(Debug, Deserialize)]
 struct Table {
+    checks: Vec<Check>,
+}
+
+/// One rolled check, and every shape its Pass / Fail line is asked to take.
+///
+/// GROUPED BY CHECK, because a shape is a property of the line the mod draws and the same
+/// code draws it onto a white check's band and a red one's. A shape that had only ever
+/// been arranged on the fan's white check was a shape nobody had seen the mod put on a red
+/// one - which is the half of de-8hh2.9 its fixture did not finish.
+#[derive(Debug, Deserialize)]
+struct Check {
+    /// Which check it is, in one line, for the message a failing row prints.
+    what: String,
     conversation: i32,
     entry: i32,
     rows: Vec<Row>,
@@ -163,22 +176,38 @@ fn every_shape_the_suites_arrange_is_reached_offline() {
     let index = read_index(&path).expect("the shipped index reads");
 
     let table = table();
-    let start = NodeRef { conversation: table.conversation, entry: table.entry };
-    let (graph, group) = build_group_graph(&index, table.conversation)
-        .expect("the fan's group builds");
-    let everything: Vec<NodeRef> =
-        graph.nodes().map(|node| NodeRef::from(node.id)).collect();
+    let mut failures: Vec<String> = Vec::new();
+    let mut shapes = 0;
+
+    for check in &table.checks {
+        shapes += check.rows.len() * 2;
+        failures.extend(disagreements(&index, check));
+    }
+
+    assert!(failures.is_empty(), "\n{}", failures.join("\n"));
+    eprintln!("{shapes} shapes reached offline");
+}
+
+/// Every way one check's rows and the engine disagree, which is nothing when they agree.
+///
+/// ONE CHECK AT A TIME because the graph is the expensive part and it is per check, not
+/// per row: the group is built once here and every row of the check is answered over it.
+fn disagreements(index: &lookahead_engine::index::Index, check: &Check) -> Vec<String> {
+    let start = NodeRef { conversation: check.conversation, entry: check.entry };
+    let (graph, group) = build_group_graph(index, check.conversation)
+        .unwrap_or_else(|error| panic!("{}'s group builds: {error}", check.what));
+    let everything: Vec<NodeRef> = graph.nodes().map(|node| NodeRef::from(node.id)).collect();
 
     let mut failures: Vec<String> = Vec::new();
 
-    for row in &table.rows {
-        // OVER THE WHOLE GROUP, not the conversation the row names. The engine loads
+    for row in &check.rows {
+        // OVER THE WHOLE GROUP, not the conversation the check names. The engine loads
         // everything reachable from it, so every entry it might walk to has to be
         // classified; matching entry ids against one conversation's records lets the rest
         // fall through to "never seen anywhere", which invents the top rung wherever a
-        // group spans more than one conversation. The fan's does not, today - it is the
-        // one conversation - so this changes no answer here, and it is what the reading
-        // means rather than what this fixture happens to allow.
+        // group spans more than one conversation. Neither check's group does, today - each
+        // is the one conversation - so this changes no answer here, and it is what the
+        // reading means rather than what these fixtures happen to allow.
         let recorded: HashSet<(i32, i32)> =
             fixtures::recorded_elsewhere_in_group(&row.state, &group);
         let read_here = fixtures::read_in_save_group(&row.save, &group);
@@ -196,7 +225,7 @@ fn every_shape_the_suites_arrange_is_reached_offline() {
         // The three rungs, exactly as the plugin builds them: read in THIS save wins,
         // then recorded in some other save, then never seen anywhere.
         let request = LookAheadRequest {
-            conversation: table.conversation,
+            conversation: check.conversation,
             starts: vec![start],
             unseen_any_game: everything
                 .iter()
@@ -213,7 +242,7 @@ fn every_shape_the_suites_arrange_is_reached_offline() {
             ..Default::default()
         };
 
-        let response = answer(&index, None, &request);
+        let response = answer(index, None, &request);
         assert!(response.error.is_none(), "{}: {:?}", row.suite, response.error);
 
         // TWO ANSWERS, ONE PER OUTCOME. A check is two options wearing one line of
@@ -222,7 +251,7 @@ fn every_shape_the_suites_arrange_is_reached_offline() {
         let (pass, fail) = response.outcomes(start).unwrap_or_else(|| {
             panic!(
                 "{}: {}:{} did not come back as two outcomes",
-                row.suite, table.conversation, table.entry,
+                row.suite, check.conversation, check.entry,
             )
         });
 
@@ -234,9 +263,10 @@ fn every_shape_the_suites_arrange_is_reached_offline() {
                     Some(marker) => format!("{} with a {marker} asterisk", want.colour),
                 };
                 failures.push(format!(
-                    "{} ({}): {name} should be {wanted}, and the engine draws {} \
+                    "{} (on {}, {}): {name} should be {wanted}, and the engine draws {} \
                      - run it in game with --suite {}",
                     row.suite,
+                    check.what,
                     row.what,
                     Half::describe(got),
                     row.suite,
@@ -245,28 +275,23 @@ fn every_shape_the_suites_arrange_is_reached_offline() {
         }
     }
 
-    assert!(failures.is_empty(), "\n{}", failures.join("\n"));
-    eprintln!("{} shapes reached offline", table.rows.len() * 2);
+    failures
 }
 
-/// The table covers every shape a half can take, and says so by construction.
+/// Every check covers every shape a half can take, and says so by construction.
 ///
 /// EIGHT, AND THE NINTH THAT CANNOT EXIST. Without this the table could lose a row and
 /// still pass, since the test above only checks the rows that are there - and losing a row
 /// is exactly how coverage disappears without anyone deciding to drop it.
+///
+/// PER CHECK, NOT ACROSS THEIR UNION. The same code draws the line onto a white check's
+/// band and a red one's, so a shape arranged only on the fan is a shape nobody has seen
+/// the mod put on a red check - which is precisely the gap de-8hh2.9 left behind and this
+/// table now closes. Counting the union would let a check lose seven of its eight rows
+/// without a word.
 #[test]
-fn the_table_covers_every_shape() {
+fn every_check_covers_every_shape() {
     let table = table();
-
-    let mut seen: HashSet<String> = HashSet::new();
-    for row in &table.rows {
-        for half in [&row.pass, &row.fail] {
-            seen.insert(match half.marker.as_deref() {
-                None => half.colour.clone(),
-                Some(marker) => format!("{}+{marker}", half.colour),
-            });
-        }
-    }
 
     let wanted = [
         "orange",
@@ -279,17 +304,57 @@ fn the_table_covers_every_shape() {
         "darkRed+gaveUp",
     ];
 
-    let missing: Vec<&str> = wanted.iter().copied().filter(|s| !seen.contains(*s)).collect();
-    assert!(missing.is_empty(), "no fixture arranges: {}", missing.join(", "));
+    for check in &table.checks {
+        let mut seen: HashSet<String> = HashSet::new();
+        for row in &check.rows {
+            for half in [&row.pass, &row.fail] {
+                seen.insert(match half.marker.as_deref() {
+                    None => half.colour.clone(),
+                    Some(marker) => format!("{}+{marker}", half.colour),
+                });
+            }
+        }
 
-    // An orange word cannot carry anything: nothing outranks the top rung, so there is
-    // never something beyond it to report and a search that gave up has not made that
-    // doubtful. A row claiming otherwise would be describing a line the mod will not draw.
-    for row in &table.rows {
-        for (name, half) in [("Pass", &row.pass), ("Fail", &row.fail)] {
+        let missing: Vec<&str> =
+            wanted.iter().copied().filter(|shape| !seen.contains(*shape)).collect();
+        assert!(
+            missing.is_empty(),
+            "no fixture arranges, on {}: {}",
+            check.what,
+            missing.join(", "),
+        );
+
+        // An orange word cannot carry anything: nothing outranks the top rung, so there is
+        // never something beyond it to report and a search that gave up has not made that
+        // doubtful. A row claiming otherwise would be describing a line the mod will not
+        // draw.
+        for row in &check.rows {
+            for (name, half) in [("Pass", &row.pass), ("Fail", &row.fail)] {
+                assert!(
+                    half.colour != "orange" || half.marker.is_none(),
+                    "{}: {name} is orange and claims a marker, which cannot be drawn",
+                    row.suite,
+                );
+            }
+        }
+    }
+}
+
+/// No two checks answer to the same suite name.
+///
+/// A suite name is how a row is run in game - `look-ahead --suite <name>` - and how a
+/// failure here names the run that would show the same thing. Two rows sharing one would
+/// make that ambiguous, and the harness builds one suite per row regardless.
+#[test]
+fn every_row_has_its_own_suite_name() {
+    let table = table();
+
+    let mut seen: HashSet<&str> = HashSet::new();
+    for check in &table.checks {
+        for row in &check.rows {
             assert!(
-                half.colour != "orange" || half.marker.is_none(),
-                "{}: {name} is orange and claims a marker, which cannot be drawn",
+                seen.insert(&row.suite),
+                "'{}' names more than one row, and a suite name has to pick one",
                 row.suite,
             );
         }

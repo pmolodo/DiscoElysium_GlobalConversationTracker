@@ -1051,11 +1051,16 @@ namespace GlobalConversationTracker.Harness
         /// about a scenario nobody runs.</para>
         ///
         /// <para>WHAT A ROW BECOMES: a suite of one scenario, staging the row's global
-        /// state, loading its save, opening the fan, and requiring the row's line on every
-        /// rolled check in the menu - which is the fan's 9:50 and nothing else. Markers are
-        /// claimed too, as NONE anywhere: a rolled check draws no marker of its own
-        /// (de-8hh2.2), and every other option in this menu is refused a crawl in every one
-        /// of these fixtures.</para>
+        /// state, loading its save, opening the conversation its check names, and requiring
+        /// the row's line on every rolled check in the menu - which is that one check and
+        /// nothing else, in both menus these rows open. Markers are claimed too, as NONE
+        /// anywhere: a rolled check draws no marker of its own (de-8hh2.2), and every other
+        /// option in these menus is refused a crawl in every one of these fixtures.</para>
+        ///
+        /// <para>TWO CHECKS, EIGHT SHAPES EACH. The ceiling fan's check is WHITE and the
+        /// whirling roof orb's is RED, and the mod draws one line of code onto both bands -
+        /// so a shape only ever arranged on the fan was a shape nobody had seen on a red
+        /// check. See <see cref="KlaasjeFlower"/> for why any save reaches the orb.</para>
         ///
         /// <para>A ROW'S BUDGET, where it names one, is applied exactly as the budget suite
         /// applies its own - see the remarks there on why a state count is the only limit
@@ -1146,20 +1151,20 @@ namespace GlobalConversationTracker.Harness
         private static IReadOnlyList<LookAheadSuite> BuildBranchShapes()
         {
             BranchShapeTable table = BranchShapeTable.Read();
-            return table.Rows
-                .Select(row => new LookAheadSuite(
+            return table.Checks
+                .SelectMany(check => check.Rows.Select(row => new LookAheadSuite(
                     row.Suite,
-                    row.What,
+                    $"{row.What}, on {check.What}",
                     row.State,
                     new[]
                     {
                         new LookAheadScenario(
                             row.Save,
-                            table.Conversation,
+                            check.Conversation,
                             row.What,
                             Array.Empty<OptionExpectation>(),
                             markers: MarkerPolicy.NoneAnywhere,
-                            advances: CeilingFan.Advances,
+                            advances: PlaceOf(check.Conversation).Advances,
                             branchPolicy: BranchPolicy.EveryCheck,
                             branches: new BranchExpectation(
                                 row.Pass.Expected(),
@@ -1172,9 +1177,32 @@ namespace GlobalConversationTracker.Harness
                             [TestStateBudgetSetting] =
                                 row.StateBudget.ToString(CultureInfo.InvariantCulture),
                         }
-                        : null))
+                        : null)))
                 .ToArray();
         }
+
+        /// <summary>The place a branch-shape check is opened from, by its conversation.</summary>
+        /// <remarks>
+        /// WHAT THE DEFINITION CANNOT CARRY. A row names its conversation, and how many
+        /// lines of narration stand between opening that conversation and its first menu is
+        /// a MEASURED property of the place - see <see cref="Somewhere.Advances"/> - which
+        /// already has one home. Looking it up here rather than repeating the number in
+        /// <c>branch-shapes.json</c> keeps the two from disagreeing, and a conversation with
+        /// no place behind it is refused when the table is read rather than when the run
+        /// reaches it.
+        /// </remarks>
+        /// <param name="conversation">The conversation a check opens.</param>
+        /// <returns>Where it is opened from.</returns>
+        /// <exception cref="InvalidDataException">Nothing here stands in that place.</exception>
+        private static Somewhere PlaceOf(int conversation) => conversation switch
+        {
+            9 => CeilingFan,
+            656 => KlaasjeFlower,
+            _ => throw new InvalidDataException(
+                $"{BranchShapeTable.FileName} names conversation {conversation}, and no "
+                + "place here opens it - so nobody has measured how much narration stands "
+                + "in front of its first menu."),
+        };
 
         private static OptionExpectation Unmarked(int entryId, string why) =>
             new OptionExpectation(entryId, Marker.None, why);
