@@ -172,3 +172,7 @@ path = "measurements/workspace_menus.rs"
 [[example]]
 name = "relaxed_settle"
 path = "measurements/relaxed_settle.rs"
+
+[[example]]
+name = "start_relative_layout"
+path = "measurements/start_relative_layout.rs"
