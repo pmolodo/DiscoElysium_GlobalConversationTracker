@@ -747,6 +747,16 @@ namespace GlobalConversationTracker.Harness
         /// options drawn without markers because there was never an engine, rather than
         /// because one died. Loud, and it ends the run.
         /// </remarks>
+        /// <summary>What the last kill killed, for the wait that comes after the menu.</summary>
+        /// <remarks>
+        /// A field rather than an argument because the kill happens in
+        /// <see cref="OpenConversation"/> - before the conversation - and the wait happens
+        /// in <see cref="RunScenario"/> after its menu has been read, with the scenario's
+        /// own checks in between. The run is single-threaded and does one scenario at a
+        /// time, so there is only ever one of these to remember.
+        /// </remarks>
+        private static int _killedEngine;
+
         private static int KillTheEngine(
             string saveGames, ProbeWatcher watcher, TimeSpan timeout)
         {
@@ -765,6 +775,7 @@ namespace GlobalConversationTracker.Harness
             }
 
             Console.WriteLine($"        the engine was process {process}, and is gone");
+            _killedEngine = process;
             return process;
         }
 
@@ -794,8 +805,17 @@ namespace GlobalConversationTracker.Harness
         /// nothing else.</para>
         /// </remarks>
         private static void WaitForTheReplacement(
-            int killed, string saveGames, ProbeWatcher watcher, TimeSpan timeout)
+            LookAheadScenario scenario,
+            string saveGames,
+            ProbeWatcher watcher,
+            TimeSpan timeout)
         {
+            if (!scenario.KillEngineFirst || !scenario.ExpectsRecovery)
+            {
+                return;
+            }
+
+            int killed = _killedEngine;
             Console.WriteLine("        waiting for the mod to start a replacement engine");
             DateTime deadline = DateTime.UtcNow + ReplacementWait;
 
@@ -841,11 +861,7 @@ namespace GlobalConversationTracker.Harness
             // restarted, so a second attempt has nothing left to kill.
             if (scenario.KillEngineFirst)
             {
-                int killed = KillTheEngine(saveGames, watcher, timeout);
-                if (scenario.ExpectsRecovery)
-                {
-                    WaitForTheReplacement(killed, saveGames, watcher, timeout);
-                }
+                KillTheEngine(saveGames, watcher, timeout);
             }
 
             for (int attempt = 1; ; attempt++)
@@ -1110,7 +1126,15 @@ namespace GlobalConversationTracker.Harness
             }
 
             CaptureMenu(scenario, options, window, artifacts, suiteName);
+
+            // BOTH OF THESE ARE "WHAT TO DO ABOUT A KILLED ENGINE ONCE ITS MENU HAS BEEN
+            // DRAWN", and which one applies is the scenario's ExpectsRecovery. They are
+            // here rather than beside the kill because THE MOD DOES NOT KNOW ITS ENGINE
+            // DIED UNTIL SOMETHING ASKS IT ONE - the death surfaces as a failed request
+            // while this menu was being prepared, and nothing before that has either raised
+            // a notice or started a replacement.
             DismissTheNotice(scenario, saveGames, watcher, timeout, report);
+            WaitForTheReplacement(scenario, saveGames, watcher, timeout);
 
             if (scenario.Markers == MarkerPolicy.Ignored)
             {
