@@ -214,20 +214,24 @@ namespace GlobalConversationTracker.Harness
             new Somewhere("at-noid", 368, "Noid, under the mural");
 
         /// <summary>
-        /// The flowers thrown off the Whirling's roof - the one place in the game where a
-        /// RED CHECK is the first thing a menu offers.
+        /// Klaasje's flower, thrown off the Whirling's roof - the one place in the game
+        /// where a RED CHECK is the first thing a menu offers.
         /// </summary>
         /// <remarks>
-        /// <para>Conversation 656, WHIRLING ROOF ORB / handeye catch. Its shape, read off
-        /// the shipped index: 0 START to 1, 1 to 27, 27 is one narration line, and 27 leads
-        /// to exactly two entries - 3, "Move your hand, fast!", carrying DifficultyRed, and
-        /// 7, "[Discard chance.]". One advance and the menu is a red check and a
-        /// decline.</para>
+        /// <para>Conversation 656, which the index calls WHIRLING ROOF ORB / handeye catch.
+        /// The name to use for it is KLAASJE'S FLOWER: that is what the check is about and
+        /// what its own flag says - <c>whirling.klaasje_flower_red_check_grab</c> - and
+        /// "the orb" invites it being read as somewhere else in the Whirling. Its shape,
+        /// read off the shipped index: 0 START to 1, 1 to 27, 27 is one narration line, and
+        /// 27 leads to exactly two entries - 3, "Move your hand, fast!", carrying
+        /// DifficultyRed, and 7, "[Discard chance.]".</para>
         ///
-        /// <para>EVERY GUARD ON THAT PATH IS EMPTY, so it opens from any save and nothing
-        /// about where the player stands decides whether the check appears. That is what
-        /// makes it a fixture rather than a place: the save below is borrowed, and any
-        /// other would do.</para>
+        /// <para>EVERY GUARD ON THAT PATH IS EMPTY, so the check appears from any save and
+        /// nothing about where the player stands decides whether it is offered. IT STANDS AT
+        /// THE FLOWER ANYWAY. It borrowed the ceiling fan's save while that was the only
+        /// thing available, which made every one of its suites report under the name
+        /// `at-the-fan` and read as though the fan's conversation were under test. A
+        /// scenario should stand where its conversation happens even when it need not.</para>
         ///
         /// <para>de-8hh2.9 recorded that no red check was in an opening menu, having looked
         /// at the four conversations the harness already had saves for. The game has 111
@@ -239,10 +243,13 @@ namespace GlobalConversationTracker.Harness
         /// ZERO ADVANCES, measured rather than read off the index. Entry 27 is a narration
         /// line and the shape suggested one advance would be needed to get past it; the
         /// menu is in fact up as soon as the conversation is, which is what the run said
-        /// and what the number here now records.
+        /// and what the number here now records. Measured from the fan's save and checked
+        /// again from the flower's, since a count of advances is a property of the
+        /// conversation rather than of where the player is standing - and a claim like that
+        /// is worth one run rather than an argument.
         /// </remarks>
         public static Somewhere KlaasjeFlower { get; } =
-            new Somewhere("at-the-fan", 656, "the flowers off the Whirling's roof", 0);
+            new Somewhere("at-klaasjes-flower", 656, "Klaasje's flower, off the Whirling's roof", 0);
 
         /// <summary>
         /// A global state with nothing recorded in it, so everything is unseen anywhere.

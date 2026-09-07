@@ -62,33 +62,53 @@
 //! is for is the SECOND question on a group whose forward run has already been paid for,
 //! which is why the backward half is reported apart from the total.
 //!
-//! ## Pruning is sound, and switched off until de-fpax lands
+//! ## Pruning is sound, it does not overflow, and it works - 2026-09-07
 //!
 //! Narrowing a backward pass by a SETTLED forward run is the half that could shorten a
 //! refusal. tests/backward_oracle.rs checks it against the explicit search on every target
 //! of every group it can check both ways, and the pruned answer has never differed from the
-//! plain one. It is nonetheless OFF by default, because turning it on costs stability:
+//! plain one.
+//!
+//! IT USED TO OVERFLOW, and that table is gone because it was not measuring pruning. It
+//! said 28 died with the full bound and 631 died with either, and de-8hh2.13's cause is
+//! what it was recording: something accumulates per thread inside the diagram manager, so
+//! this file's three or four searches in one thread died on the third and pruning only
+//! moved which round that was. The searches each get their own thread now (de-fpax), and
+//! at PRUNING=1 all five groups here run to completion. Nothing overflows.
+//!
+//! WHAT IT BUYS, on the SETTLED rows, which is the only place it applies:
 //!
 //! ```text
-//!   pruning                        conv 28    conv 631
-//!   off                            finishes   finishes
-//!   unreachable entries only       finishes   stack overflow
-//!   and the arriving bound too     overflow   stack overflow
+//!   conv  candidates asked  backward ms off  backward ms on
+//!     28                26               19               2
+//!    368                 1                0               0
+//!    362                 3                0               0
 //! ```
 //!
-//! Each increment breaks another group, and the groups it breaks are the ones the whole
-//! approach is for.
+//! Conversation 28 is the case de-fawk said would decide it - 26 candidates of which 25 are
+//! REFUSALS - and the backward half falls from nineteen milliseconds to two. That is the
+//! thing nothing else measured has touched: a meet can only ever accelerate a YES, and 28's
+//! cost is in its NOs. 368 and 362 ask one and three candidates and were already at zero, so
+//! there was nothing there to improve.
 //!
-//! IT IS PROBABLY NOT THE COST, THOUGH IT LOOKS LIKE IT. de-8hh2.13 established the cause
-//! of these overflows and it is not recursion depth: something accumulates PER THREAD
-//! inside the diagram manager, so twelve identical searches die on the third when they
-//! share a thread and all twelve survive on a thread each. This file runs three or four
-//! whole searches in one thread, and pruning adds diagram work to each - which moves the
-//! round the accumulation kills, rather than proving the work too heavy.
+//! 631 and 14 do not appear because their forward runs DO NOT SETTLE - sixty-six and
+//! sixty-nine seconds and still going - and pruning may only narrow against a settled run.
+//! The small backward differences in their rows are the meet and are noise beside a forward
+//! half that long.
 //!
-//! So the table above is a record of WHERE IT BREAKS TODAY and not a verdict on the idea.
-//! de-fpax is the fix - a thread per search - and this wants re-measuring on top of it
-//! before anything is concluded about what pruning costs. de-fawk carries that.
+//! ## Why it is still off by default, which is now a different reason
+//!
+//! Not stability - that is fixed. It is that THE SHIPPED PATH ALMOST NEVER HAS A SETTLED
+//! FORWARD RUN TO PRUNE WITH. `portfolio::best_novelty` gives its forward slice fifty
+//! milliseconds and halts it the moment it finds what it is hunting, and neither a halted
+//! nor a starved run may narrow anything. So turning the default on would change nothing in
+//! the game while adding a bound to trust.
+//!
+//! ONE CONCRETE THING THAT WOULD CHANGE THAT, and it is a small number: 28's forward run
+//! settles in about FIFTY-SEVEN milliseconds, just past the fifty it is allowed. A forward
+//! budget a little larger would settle it, and the settled run would then pay for itself
+//! twice over on that group - nineteen milliseconds of refusals down to two. Whether that
+//! holds anywhere else is a per-group question, which is de-a1wb's question.
 //!
 //! ## The three heaviest groups take the process down at this profile
 //!
@@ -141,6 +161,16 @@ fn conversations(default: &[i32]) -> Vec<i32> {
         Ok(named) => named.split(',').filter_map(|id| id.trim().parse().ok()).collect(),
         Err(_) => default.to_vec(),
     }
+}
+
+/// Whether the shared run narrows its backward passes. `PRUNING=0` turns it off.
+///
+/// ON BY DEFAULT HERE and off everywhere else, which is the arrangement de-fawk wants
+/// measured: what a settled forward run is worth as a bound is the only thing measured so
+/// far that can shorten a REFUSAL, and a refusal is where the driver's cost is - 25 of
+/// conversation 28's 26 candidates.
+fn pruning() -> bool {
+    std::env::var("PRUNING").map(|on| on.trim() != "0").unwrap_or(true)
 }
 
 /// The same xorshift the matrix uses, so the two measurements draw the same profiles.
@@ -308,10 +338,14 @@ fn shared(
     // PRUNING FOLLOWS THE FORWARD RUN: it does nothing without a settled one, and it is
     // off by default everywhere else. Asked for here because measuring what it costs is
     // half of what this file is for.
+    //
+    // A SWITCH RATHER THAN A CONSTANT since de-fawk, because the number that matters is
+    // the DIFFERENCE and one run cannot show it. `PRUNING=0` runs the same rows with the
+    // narrowing off, so the two can be read against each other on the same machine.
     let known = Known::of(graph)
         .from(start, &seed)
         .with_forward(&forward)
-        .pruning(true);
+        .pruning(pruning());
 
     // THE BACKWARD HALF ON ITS OWN, which is the honest number for the case this feature
     // is actually for: a forward run that happened earlier, for some other question, and

@@ -89,20 +89,27 @@ fn main() {
     // this code could plausibly run.
     let stack = 1024 * 1024;
 
+    // EVERYTHING A READER NEEDS IS PRINTED BEFORE THE WALK, because nothing after it runs.
+    // These two lines used to be a closing summary, which could never appear: the walk ends
+    // by taking the process down, so `deepest`, the bytes-a-level arithmetic and this note
+    // were all dead code that nonetheless implied the run finishes normally - two
+    // contradictory accounts of how to read the output, one of them false (de-wy8q).
     println!("walking up on a {} KB stack:", stack / 1024);
-    let mut deepest = 0;
+    println!("THE LAST 'trying N' LINE IS THE ANSWER: the process dies at that depth.");
+    println!("  last recorded: 2,875 levels here, about 365 bytes a level");
+    println!("  the deepest guard in the shipped database is 11 levels, of 26,210");
+    println!("  MAX_DEPTH in src/parser/guard_parser.rs is 256, between those two\n");
+
     for depth in (25..40_000).step_by(25) {
         println!("  trying {depth}...");
         if !survives_here(depth, stack) {
+            // NOT THE OVERFLOW, which never reaches here - a stack overflow on Windows is
+            // STATUS_STACK_OVERFLOW rather than a panic, so the guard-page handler aborts
+            // the process and `join` never returns at all. This catches an ordinary panic
+            // inside the thread, which would otherwise look like the walk running out of
+            // range.
+            println!("  the thread at {depth} failed WITHOUT overflowing; that is a bug.");
             break;
         }
-        deepest = depth;
     }
-
-    println!(
-        "\nDEEPEST at {} KB: {deepest} levels, about {} bytes a level",
-        stack / 1024,
-        if deepest > 0 { stack / deepest } else { 0 },
-    );
-    println!("the deepest guard in the shipped database is 11 levels");
 }

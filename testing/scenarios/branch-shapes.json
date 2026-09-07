@@ -3,12 +3,17 @@
   "_colours": "orange = unseen in any game, red = unseen this game, darkRed = already read in this save. A marker is one of those three, or gaveUp for a search that did not finish, or absent where nothing beyond the destination outranks it.",
   "_extra": "A row is the whole scenario, and both executors read all of it. If one ever needs something the other cannot use - an in-game screenshot reference, say - it goes under a key naming the executor, 'offline' or 'inGame', so a reader can see at a glance which half of the world it belongs to. NOTHING NEEDS THAT YET and no support for it is built; what the offline executor needs beyond these fields, it reads from the same save the in-game one loads.",
   "_eight": "orange alone (nothing outranks the top rung, so it never carries a marker); red alone, red+orange, red+gaveUp; darkRed alone, darkRed+red, darkRed+orange, darkRed+gaveUp. Rows both differ across the two halves and match, which is what says the halves are read separately.",
-  "_checks": "EVERY CHECK CARRIES ALL EIGHT, which is why the rows are grouped under the check they are drawn on rather than listed flat. A shape is a property of the line the mod draws, and a line drawn on a WHITE check and one drawn on a RED check are drawn by the same code onto different bands - so a shape that only ever appeared on one of them was a shape nobody had seen the mod put on the other. The coverage test asks for the eight per check, not across their union.",
+  "_checks": "GROUPED BY THE CHECK THE LINE IS DRAWN ON rather than listed flat. A shape is a property of the line the mod draws, and a line drawn on a WHITE check and one drawn on a RED check are drawn by the same code onto different bands - so a shape that only ever appeared on one of them was a shape nobody had seen the mod put on the other.",
+  "_halves": "AND PER HALF, NOT PER CHECK, which is the stronger claim and the one the coverage test makes. A check's rows used to be counted with Pass and Fail thrown into one set, so all eight could be present while the FAIL half only ever took the three bare colours - which is exactly what had happened: every markered shape in the table was on a Pass half, and the mod's Fail half had never been seen drawing an asterisk of any kind. Each check now says what each of its halves can take, and the test holds it to that in both directions: a half that claims 'eight' and produces seven fails, and a half that claims 'colours' and produces a marker fails too, since that would mean the graph changed underneath the claim.",
+  "_coverage": "'eight' means every shape in _eight. 'colours' means orange, red and darkRed and NEVER a marker - which is not a gap in the fixtures but a fact about the check: a marker reports something beyond where the half lands that outranks it, so a half landing somewhere with nothing beyond it can never carry one.",
   "checks": [
     {
       "what": "the ceiling fan, whose check is white",
       "conversation": 9,
       "entry": 50,
+      "coverage": { "pass": "eight", "fail": "eight" },
+      "_fail": "FAILING LANDS ON TWO ENTRIES, 9:42 and 9:19, with a subtree past them - so this check is the one that can put every shape on a Fail half, and the five rows named fan-fail-* are what do it. Read off the engine: `--branches-of 50` reports 'Fail leads to 9:42, 9:19'.",
+      "_gaveUp": "A ROW THAT WANTS A GIVE-UP MUST RECORD THE CHECK ITSELF, which is why the two fan-fail-*-gives-up rows record 9:50 where their budget-0 twins do not. The bridge answers a start that already carries the class being hunted WITHOUT SEARCHING - 'the start is a result like any other', and a check no save has displayed outranks its own outcome - so with 9:50 left unseen the answer comes back complete and orange having asked nothing, and no state budget can starve a search that never runs. Both rows were written without it first and both drew a found marker instead of a grey one.",
       "rows": [
         {
           "suite": "fan-nothing-recorded",
@@ -81,20 +86,67 @@
           "stateBudget": 0,
           "pass": { "colour": "darkRed", "marker": "red" },
           "fail": { "colour": "red" }
+        },
+        {
+          "suite": "fan-fail-recorded-elsewhere",
+          "what": "where FAILING lands is recorded elsewhere, so failing reaches text no save has read",
+          "state": "global-state-fan-fail-recorded.json",
+          "save": "at-the-fan",
+          "stateBudget": 0,
+          "pass": { "colour": "orange" },
+          "fail": { "colour": "red", "marker": "orange" }
+        },
+        {
+          "suite": "fan-fail-recorded-gives-up",
+          "what": "the same with the check recorded too, and a budget of one",
+          "state": "global-state-fan-fail-and-check-recorded.json",
+          "save": "at-the-fan",
+          "stateBudget": 1,
+          "pass": { "colour": "orange" },
+          "fail": { "colour": "red", "marker": "gaveUp" }
+        },
+        {
+          "suite": "fan-fail-reaches-unread",
+          "what": "this save has read where failing lands and nothing else, so failing reaches text no save has read",
+          "state": "global-state-empty.json",
+          "save": "fan-read-fail",
+          "stateBudget": 0,
+          "pass": { "colour": "orange" },
+          "fail": { "colour": "darkRed", "marker": "orange" }
+        },
+        {
+          "suite": "fan-fail-reaches-gives-up",
+          "what": "the same with the check recorded, and a budget of one",
+          "state": "global-state-fan-check-recorded.json",
+          "save": "fan-read-fail",
+          "stateBudget": 1,
+          "pass": { "colour": "orange" },
+          "fail": { "colour": "darkRed", "marker": "gaveUp" }
+        },
+        {
+          "suite": "fan-fail-nothing-unread-anywhere",
+          "what": "every entry recorded and this save has read where failing lands, so the best failing reaches is red",
+          "state": "global-state-fan-all-recorded.json",
+          "save": "fan-read-fail",
+          "stateBudget": 0,
+          "pass": { "colour": "red" },
+          "fail": { "colour": "darkRed", "marker": "red" }
         }
       ]
     },
     {
-      "_shape": "The flowers off the Whirling's roof, and the one place in the game where a RED check is the first thing a menu offers. 0 to 1 to 27, and 27 leads to exactly two entries: 3, carrying DifficultyRed, and 7, which declines. Passing 3 reaches 656:8 and a subtree of eight more displayed entries; FAILING reaches 656:24, which is the end of its line and has nothing beyond it - so every marker below is on the Pass half, and the Fail half is only ever a bare colour. Every guard on the path in is empty, which is why these rows borrow the ceiling fan's save for the two that need no reading of their own.",
-      "what": "the whirling roof orb, whose check is red",
+      "_shape": "KLAASJE'S FLOWER, thrown off the Whirling's roof - the index calls the conversation WHIRLING ROOF ORB / handeye catch and the check's own flag names it, whirling.klaasje_flower_red_check_grab. It is the one place in the game where a RED check is the first thing a menu offers. 0 to 1 to 27, and 27 leads to exactly two entries: 3, carrying DifficultyRed, and 7, which declines.",
+      "_fail": "THE FAIL HALF HERE CAN ONLY EVER BE A BARE COLOUR, and that is a property of this check rather than of these fixtures. Passing 3 lands on 656:8 and a subtree of eight more displayed entries; failing lands on 656:24, whose 'to' is empty - so there is never anything beyond the Fail landing to outrank it, and no state of the world can put a marker there. The ceiling fan's check is the opposite and its Fail lands on TWO entries with a subtree past them, which is where the markered shapes are arranged on a Fail half. See the 'fail' key on each check.",
+      "what": "Klaasje's flower, whose check is red",
       "conversation": 656,
       "entry": 3,
+      "coverage": { "pass": "eight", "fail": "colours" },
       "rows": [
         {
           "suite": "orb-nothing-recorded",
           "what": "nothing recorded anywhere, so both outcomes are on the top rung",
           "state": "global-state-empty.json",
-          "save": "at-the-fan",
+          "save": "at-klaasjes-flower",
           "stateBudget": 0,
           "pass": { "colour": "orange" },
           "fail": { "colour": "orange" }
@@ -103,7 +155,7 @@
           "suite": "orb-recorded-elsewhere",
           "what": "the check and where passing lands are recorded elsewhere; failing is not",
           "state": "global-state-orb-pass-recorded.json",
-          "save": "at-the-fan",
+          "save": "at-klaasjes-flower",
           "stateBudget": 0,
           "pass": { "colour": "red", "marker": "orange" },
           "fail": { "colour": "orange" }
@@ -112,7 +164,7 @@
           "suite": "orb-recorded-gives-up",
           "what": "the same, with a budget of one",
           "state": "global-state-orb-pass-recorded.json",
-          "save": "at-the-fan",
+          "save": "at-klaasjes-flower",
           "stateBudget": 1,
           "pass": { "colour": "red", "marker": "gaveUp" },
           "fail": { "colour": "orange" }
@@ -121,7 +173,7 @@
           "suite": "orb-all-recorded",
           "what": "every entry recorded elsewhere and none read here, so both outcomes are red and nothing outranks either",
           "state": "global-state-orb-all-recorded.json",
-          "save": "at-the-fan",
+          "save": "at-klaasjes-flower",
           "stateBudget": 0,
           "pass": { "colour": "red" },
           "fail": { "colour": "red" }

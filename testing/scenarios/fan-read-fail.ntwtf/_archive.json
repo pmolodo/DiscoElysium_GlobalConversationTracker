@@ -1,29 +1,29 @@
 {
   "_format": "expanded-save-diff",
-  "base": "../at-klaasjes-flower.ntwtf",
+  "base": "../at-the-fan.ntwtf",
   "members": [
     {
       "diff": null,
       "kind": "inherit",
-      "name": "orb-read-all.1st.ntwtf.json",
+      "name": "fan-read-fail.1st.ntwtf.json",
       "suffix": ".1st.ntwtf.json"
     },
     {
       "diff": null,
       "kind": "inherit",
-      "name": "orb-read-all.2nd.ntwtf.json",
+      "name": "fan-read-fail.2nd.ntwtf.json",
       "suffix": ".2nd.ntwtf.json"
     },
     {
       "diff": null,
       "kind": "inherit",
-      "name": "orb-read-all.FOW.json",
+      "name": "fan-read-fail.FOW.json",
       "suffix": ".FOW.json"
     },
     {
       "diff": null,
       "kind": "inherit",
-      "name": "orb-read-all.states.lua",
+      "name": "fan-read-fail.states.lua",
       "suffix": ".states.lua"
     }
   ]

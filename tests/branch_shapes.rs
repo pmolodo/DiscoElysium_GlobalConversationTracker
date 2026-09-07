@@ -74,7 +74,21 @@ struct Check {
     what: String,
     conversation: i32,
     entry: i32,
+    /// What each half of this check's line can take.
+    coverage: Coverage,
     rows: Vec<Row>,
+}
+
+/// What each half of one check's line is expected to cover.
+///
+/// PER HALF, WHICH IS THE WHOLE POINT. Counting a check's shapes with Pass and Fail thrown
+/// into one set let all eight be present while the FAIL half only ever took the three bare
+/// colours - and that is exactly what had happened: every markered shape in the table sat
+/// on a Pass half, so the mod's Fail half had never been seen drawing an asterisk at all.
+#[derive(Debug, Deserialize)]
+struct Coverage {
+    pass: String,
+    fail: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -278,51 +292,96 @@ fn disagreements(index: &lookahead_engine::index::Index, check: &Check) -> Vec<S
     failures
 }
 
-/// Every check covers every shape a half can take, and says so by construction.
+/// The eight shapes, in the order the table's `_eight` lists them.
+const EIGHT: [&str; 8] = [
+    "orange",
+    "red",
+    "red+orange",
+    "red+gaveUp",
+    "darkRed",
+    "darkRed+red",
+    "darkRed+orange",
+    "darkRed+gaveUp",
+];
+
+/// The three a half can take when nothing can ever lie beyond where it lands.
+const COLOURS: [&str; 3] = ["orange", "red", "darkRed"];
+
+/// One half's shape, spelled the way `_eight` spells it.
+fn shape(half: &Half) -> String {
+    match half.marker.as_deref() {
+        None => half.colour.clone(),
+        Some(marker) => format!("{}+{marker}", half.colour),
+    }
+}
+
+/// Every half of every check covers what that check says it can, and nothing more.
 ///
 /// EIGHT, AND THE NINTH THAT CANNOT EXIST. Without this the table could lose a row and
 /// still pass, since the test above only checks the rows that are there - and losing a row
 /// is exactly how coverage disappears without anyone deciding to drop it.
 ///
-/// PER CHECK, NOT ACROSS THEIR UNION. The same code draws the line onto a white check's
-/// band and a red one's, so a shape arranged only on the fan is a shape nobody has seen
-/// the mod put on a red check - which is precisely the gap de-8hh2.9 left behind and this
-/// table now closes. Counting the union would let a check lose seven of its eight rows
-/// without a word.
+/// PER CHECK, because the same code draws the line onto a white check's band and a red
+/// one's, so a shape arranged only on the fan is a shape nobody has seen the mod put on a
+/// red check - the gap de-8hh2.9 left behind.
+///
+/// AND PER HALF, which is the stronger claim and the one this used to miss. Pass and Fail
+/// were counted into ONE set per check, so all eight could be present while the Fail half
+/// only ever took the three bare colours - and that is what had happened. Every markered
+/// shape in the table sat on a Pass half; the mod's Fail half had never been seen drawing
+/// an asterisk of any kind, so a fault in that path would have been invisible here.
+///
+/// BOTH DIRECTIONS. A half claiming `eight` that produces seven fails, and a half claiming
+/// `colours` that produces a marker fails too - because that would mean the graph changed
+/// underneath the claim, and the claim is the interesting half of the fixture. Klaasje's
+/// flower says `colours` for its Fail because failing lands on 656:24, whose `to` is empty:
+/// nothing can ever lie beyond it to outrank it.
 #[test]
-fn every_check_covers_every_shape() {
+fn every_half_covers_what_its_check_claims() {
     let table = table();
 
-    let wanted = [
-        "orange",
-        "red",
-        "red+orange",
-        "red+gaveUp",
-        "darkRed",
-        "darkRed+red",
-        "darkRed+orange",
-        "darkRed+gaveUp",
-    ];
-
     for check in &table.checks {
-        let mut seen: HashSet<String> = HashSet::new();
-        for row in &check.rows {
-            for half in [&row.pass, &row.fail] {
-                seen.insert(match half.marker.as_deref() {
-                    None => half.colour.clone(),
-                    Some(marker) => format!("{}+{marker}", half.colour),
-                });
+        // COLLECTED PER HALF FIRST, rather than iterated in the loop below: the two
+        // closures that would pick `pass` and `fail` out of a row are different types, so
+        // an array holding both is not a thing that compiles.
+        let passes: HashSet<String> = check.rows.iter().map(|row| shape(&row.pass)).collect();
+        let fails: HashSet<String> = check.rows.iter().map(|row| shape(&row.fail)).collect();
+
+        for (name, claim, seen) in [
+            ("Pass", &check.coverage.pass, &passes),
+            ("Fail", &check.coverage.fail, &fails),
+        ] {
+            let wanted: &[&str] = match claim.as_str() {
+                "eight" => &EIGHT,
+                "colours" => &COLOURS,
+                other => panic!(
+                    "{}: {name} claims coverage '{other}', which is not one this reads",
+                    check.what,
+                ),
+            };
+
+            let missing: Vec<&str> =
+                wanted.iter().copied().filter(|shape| !seen.contains(*shape)).collect();
+            assert!(
+                missing.is_empty(),
+                "on {}, no fixture puts these on the {name} half: {}",
+                check.what,
+                missing.join(", "),
+            );
+
+            // A half that cannot reach past where it lands must never be given a marker,
+            // and a row claiming one would be describing a line the mod will not draw.
+            if claim == "colours" {
+                let impossible: Vec<&String> =
+                    seen.iter().filter(|shape| shape.contains('+')).collect();
+                assert!(
+                    impossible.is_empty(),
+                    "on {}, the {name} half claims only bare colours but a row arranges: \
+                     {impossible:?} - either the row is wrong or the check's shape changed",
+                    check.what,
+                );
             }
         }
-
-        let missing: Vec<&str> =
-            wanted.iter().copied().filter(|shape| !seen.contains(*shape)).collect();
-        assert!(
-            missing.is_empty(),
-            "no fixture arranges, on {}: {}",
-            check.what,
-            missing.join(", "),
-        );
 
         // An orange word cannot carry anything: nothing outranks the top rung, so there is
         // never something beyond it to report and a search that gave up has not made that
