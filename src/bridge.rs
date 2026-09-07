@@ -792,7 +792,13 @@ pub struct LookAheadResponse {
 }
 
 impl LookAheadResponse {
-    fn failed(reason: String) -> Self {
+    /// A request that was refused, and the reason it was refused for.
+    ///
+    /// Reachable from `service` as well as from here since de-r4e0: the workspace path
+    /// can refuse a request too, and a refusal that could not be spelled the same way
+    /// there came back as an empty answer list instead - which reads as "nothing was
+    /// established" rather than "this was not asked".
+    pub(crate) fn failed(reason: String) -> Self {
         Self { answers: Vec::new(), error: Some(reason) }
     }
 

@@ -291,7 +291,13 @@ impl Service {
         }
 
         match held.as_ref().and_then(|workspace| workspace.answer(request.clone())) {
-            Some(answers) => crate::bridge::LookAheadResponse { answers, error: None },
+            Some(Ok(answers)) => crate::bridge::LookAheadResponse { answers, error: None },
+            // REFUSED, and the reason has to reach the caller. This is the one failure a
+            // positional answer list makes possible - a world answering a different set of
+            // questions than the group asks - and it is refused precisely so that it cannot
+            // pass for an answer. Falling back to the per-request path here would only
+            // reach the same refusal by a longer road (de-r4e0).
+            Some(Err(reason)) => crate::bridge::LookAheadResponse::failed(reason),
             // The owner thread is gone, or could never be started. Answer the request the
             // way this always did rather than failing it.
             None => crate::bridge::answer(&self.index, self.declared.clone(), &request),

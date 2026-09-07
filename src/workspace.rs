@@ -103,7 +103,14 @@ struct Key {
 /// One request for the owner thread, and where to send the answers.
 struct Job {
     request: LookAheadRequest,
-    answers: Sender<Vec<LookAheadAnswer>>,
+    /// The answers, or WHY THERE ARE NONE.
+    ///
+    /// A refusal has to travel as a refusal. It used to come back as an empty answer
+    /// list, which the caller could only read as "nothing was established" - so a world
+    /// answering the wrong questions, the one failure a positional answer list makes
+    /// possible, arrived at the plugin indistinguishable from a search that found
+    /// nothing. de-r4e0.
+    answers: Sender<Result<Vec<LookAheadAnswer>, String>>,
 }
 
 /// A live manager for one group, and the thread that owns it.
@@ -187,7 +194,14 @@ impl Workspace {
     }
 
     /// Answers one request on the owner thread, or `None` if that thread is gone.
-    pub fn answer(&self, request: LookAheadRequest) -> Option<Vec<LookAheadAnswer>> {
+    ///
+    /// The inner `Err` is a request the engine REFUSED and the reason it gave, which is a
+    /// different thing from the `None`: a refusal is an answer about this request, and a
+    /// missing thread is a reason to ask somewhere else.
+    pub fn answer(
+        &self,
+        request: LookAheadRequest,
+    ) -> Option<Result<Vec<LookAheadAnswer>, String>> {
         let (answers, waiting) = std::sync::mpsc::channel();
         self.jobs.send(Job { request, answers }).ok()?;
         waiting.recv().ok()
@@ -247,11 +261,13 @@ fn own(
     while let Ok(job) = inbox.recv() {
         // RESOLVED FIRST, exactly as `bridge::answer` does: the plugin answers the engine's
         // questions positionally, and `resolve` puts those answers back onto their names.
-        // A request whose answers do not line up is refused rather than guessed at, and
-        // comes back as no answers - the caller turns that into "nothing established".
+        // A request whose answers do not line up is refused rather than guessed at, AND THE
+        // REASON TRAVELS WITH THE REFUSAL - see `Job::answers`. Sending an empty answer
+        // list instead, which is what this did, made a misaligned world look exactly like a
+        // search that found nothing (de-r4e0).
         let mut snapshot = job.request.world.clone();
-        if snapshot.resolve(&questions).is_err() {
-            let _ = job.answers.send(Vec::new());
+        if let Err(reason) = snapshot.resolve(&questions) {
+            let _ = job.answers.send(Err(reason));
             continue;
         }
         let world = SnapshotWorld::declaring(snapshot, declared.clone());
@@ -283,7 +299,7 @@ fn own(
 
         // A caller that has gone away is not an error - it means the request was abandoned,
         // and the next one is already waiting.
-        let _ = job.answers.send(answers);
+        let _ = job.answers.send(Ok(answers));
     }
 }
 

@@ -126,6 +126,87 @@ fn a_kept_manager_answers_what_a_fresh_one_answers() {
     );
 }
 
+/// A world answering the wrong questions is REFUSED through a workspace, as it is direct.
+///
+/// de-r4e0, and the reason the agreement test above did not catch it: every world it builds
+/// resolves, so the refusal path was never taken through a workspace. It was taken in
+/// earnest by the plugin, where the whole point of a positional answer list is that a stale
+/// one is caught - and the workspace sent back an empty answer list and no error, which the
+/// caller can only read as "nothing was established" rather than "this was not asked".
+///
+/// Answers positionally through `variable_values`, which is what the plugin uses and what
+/// the agreement test above does not: it names its variables, and a named world has no
+/// length to get wrong.
+#[test]
+fn a_world_answering_the_wrong_questions_is_refused_through_a_workspace() {
+    let Some(path) = common::conversation_index() else { return };
+    let index = read_index(&path).expect("the index reads");
+    let service = Service::open(&path, None).expect("the engine opens over the index");
+
+    let mut refused = 0;
+    for conversation in GROUPS {
+        let Ok(questions) = questions_for(&index, conversation) else { continue };
+
+        // ONE ANSWER TOO FEW, whatever the group asks - and a group that asks for exactly
+        // one would make this an empty list, which `place` reads as "not answering
+        // positionally at all" rather than as a mismatch.
+        if questions.variables.len() < 2 {
+            continue;
+        }
+        let short: Vec<WireValue> = questions
+            .variables
+            .iter()
+            .skip(1)
+            .map(|_| WireValue::Unknown)
+            .collect();
+
+        let world = WorldSnapshot {
+            day_minutes: 720,
+            day_counter: 1,
+            variable_values: short,
+            ..Default::default()
+        };
+        let request = LookAheadRequest {
+            conversation,
+            starts: vec![NodeRef { conversation, entry: 0 }],
+            world,
+            ..Default::default()
+        };
+
+        let through_workspace = service
+            .look_ahead(&serde_json::to_string(&request).expect("a request serialises"))
+            .expect("a well-formed request is answered");
+        let direct = answer(&index, None, &request);
+
+        let reason = through_workspace
+            .error
+            .as_ref()
+            .unwrap_or_else(|| panic!("conversation {conversation} was not refused"));
+        assert!(
+            reason.contains("different list"),
+            "conversation {conversation}: refused for {reason:?}, which is not the mismatch",
+        );
+        assert!(
+            through_workspace.answers.is_empty(),
+            "conversation {conversation}: a refused request still answered something",
+        );
+
+        // THE SAME REFUSAL, WORD FOR WORD, as the path that does not keep a manager. The
+        // two must not drift into refusing for different reasons.
+        assert_eq!(
+            through_workspace.error, direct.error,
+            "conversation {conversation}: the two paths refused differently",
+        );
+        refused += 1;
+    }
+
+    assert!(
+        refused > 0,
+        "nothing was refused, so this test proves nothing - check the groups above still \
+         ask about at least two variables",
+    );
+}
+
 /// A second group in between, so the workspace is genuinely REPLACED rather than only
 /// re-used, and the replacement still answers correctly.
 ///
