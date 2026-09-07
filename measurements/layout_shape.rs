@@ -75,6 +75,89 @@ fn bits_for(max: u32) -> u8 {
     if max == 0 { 1 } else { (u32::BITS - max.leading_zeros()) as u8 }
 }
 
+/// Per slot, the largest constant any guard in the group compares it against.
+///
+/// What makes a narrowed counter SOUND: a value clamped above every constant the guards
+/// test answers each of those comparisons the same way the real value would.
+///
+/// Only the shape `<slot> <op> <literal number>` and its mirror are recognised. A slot
+/// compared in ANY other shape is returned in the second set and must keep its full width:
+/// the threshold argument only holds if every comparison the slot appears in is one this
+/// can see, and a shape it cannot read might distinguish values the clamp would merge.
+///
+/// REPORTING THAT SET IS THE POINT. Ignoring an unreadable comparison would make the
+/// measured saving an UPPER bound that an implementation could not reach, which is exactly
+/// the kind of number that gets quoted as if it were the real one.
+fn compared_constants(
+    graph: &LookAheadGraph,
+    symbols: &lookahead_engine::core::state::StateSymbols,
+) -> (HashMap<usize, u32>, HashSet<usize>) {
+    let mut largest: HashMap<usize, u32> = HashMap::new();
+    let mut unreadable: HashSet<usize> = HashSet::new();
+    for node in graph.nodes() {
+        walk_comparisons(&node.guard, symbols, &mut largest, &mut unreadable);
+    }
+    (largest, unreadable)
+}
+
+/// The slot a guard expression names, if it simply names one.
+fn slot_named(
+    guard: &lookahead_engine::core::guard::GuardExpression,
+    symbols: &lookahead_engine::core::state::StateSymbols,
+) -> Option<usize> {
+    use lookahead_engine::core::guard::GuardExpression as G;
+    let G::Variable(name) = guard else { return None };
+    (0..symbols.count()).find(|slot| symbols.name_of(*slot) == Some(name.as_str()))
+}
+
+/// The recursion behind [`compared_constants`].
+fn walk_comparisons(
+    guard: &lookahead_engine::core::guard::GuardExpression,
+    symbols: &lookahead_engine::core::state::StateSymbols,
+    largest: &mut HashMap<usize, u32>,
+    unreadable: &mut HashSet<usize>,
+) {
+    use lookahead_engine::core::guard::GuardExpression as G;
+
+    match guard {
+        G::Comparison(_, a, b) => {
+            for (side, other) in [(a.as_ref(), b.as_ref()), (b.as_ref(), a.as_ref())] {
+                let Some(slot) = slot_named(side, symbols) else { continue };
+                // The slot IS one side of this comparison. Whether it can be narrowed turns
+                // on whether the other side is a constant this can read.
+                let G::Literal(value) = other else {
+                    unreadable.insert(slot);
+                    continue;
+                };
+                let number = value.number();
+                if !number.is_finite() || number < 0.0 {
+                    unreadable.insert(slot);
+                    continue;
+                }
+                let seen = largest.entry(slot).or_insert(0);
+                *seen = (*seen).max(number as u32);
+            }
+            walk_comparisons(a, symbols, largest, unreadable);
+            walk_comparisons(b, symbols, largest, unreadable);
+        }
+        G::Not(inner) => walk_comparisons(inner, symbols, largest, unreadable),
+        G::And(a, b) | G::Or(a, b) => {
+            walk_comparisons(a, symbols, largest, unreadable);
+            walk_comparisons(b, symbols, largest, unreadable);
+        }
+        G::Call(_, args) => {
+            // A SLOT HANDED TO A QUERY is not a comparison this can reason about at all.
+            for arg in args {
+                if let Some(slot) = slot_named(arg, symbols) {
+                    unreadable.insert(slot);
+                }
+                walk_comparisons(arg, symbols, largest, unreadable);
+            }
+        }
+        G::Variable(_) | G::Literal(_) => {}
+    }
+}
+
 /// The groups the matrix measures, so the rows sit beside its numbers.
 const GROUPS: [i32; 6] = [362, 28, 368, 14, 631, 1030];
 
@@ -471,6 +554,54 @@ fn what_each_group_carries() {
             vars - derived,
             if vars > 0 { (vars - derived) as f64 / vars as f64 * 100.0 } else { 0.0 },
         );
+        // AND WHAT IT WOULD BUY SOUNDLY. The derivation above is UNSAFE on its own:
+        // `seed_of` clamps the save's starting value to the slot's ceiling, and the site
+        // count bounds what the GROUP adds rather than what the SAVE arrives holding - so
+        // narrowing reputation.communist to two bits silently turns a save holding 8 into a
+        // 3 and flips a guard testing >= 5.
+        //
+        // A clamp is sound whenever no guard can tell the difference, so take the ceiling as
+        // the larger of the site count and the biggest constant any guard compares the slot
+        // against. Above that constant every comparison in the group answers the same for
+        // the clamped value and the real one. No world needed, so unlike the world-aware
+        // version this costs the workspace key nothing. de-3x76.2.
+        let (thresholds, unreadable) = compared_constants(&graph, &symbols);
+        let mut sound = 0usize;
+        let mut blocked = 0usize;
+        for slot in 0..symbols.count() {
+            let Some((_, bits)) = layout.slot(slot) else { continue };
+            if bits == 0 {
+                continue;
+            }
+            // A slot read by a comparison this cannot see through keeps its full width: the
+            // clamp is only sound if EVERY comparison agrees, and one that cannot be read
+            // cannot be shown to.
+            let ceiling = match writes[slot].ceiling() {
+                _ if unreadable.contains(&slot) => {
+                    if bits > 1 {
+                        blocked += 1;
+                    }
+                    None
+                }
+                None => None,
+                Some(sites) => Some(sites.max(thresholds.get(&slot).copied().unwrap_or(0))),
+            };
+            let wanted = match ceiling {
+                None => bits,
+                Some(ceiling) => {
+                    let needed = if ceiling <= 1 { 1 } else { bits_for(ceiling) };
+                    needed.min(bits)
+                }
+            };
+            sound += wanted as usize;
+        }
+        println!(
+            "      sound derived widths give {sound} variables against {vars}, saving {} \
+             ({:.1}%); {blocked} counter(s) held back by a comparison it cannot read",
+            vars - sound,
+            if vars > 0 { (vars - sound) as f64 / vars as f64 * 100.0 } else { 0.0 },
+        );
+
         if !narrowed.is_empty() {
             println!("      narrowed: {}", narrowed.join(", "));
         }
