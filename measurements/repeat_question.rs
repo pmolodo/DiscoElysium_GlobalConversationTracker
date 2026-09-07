@@ -67,10 +67,11 @@
 //!
 //! THAT IS THE OPPOSITE WAY ROUND FROM WHAT INVALIDATES. `DataLayout::for_group` reads the
 //! world through `money()` alone - the money ceiling - so the layout, and the manager sized
-//! from it, survives everything else the world does. `GuardCompiler::with_world` folds in
-//! the variables, items, tasks, queries, check outcomes and `is_seen`, and what the player
-//! has SEEN changes on every line they read - which is to say between every pair of menus a
-//! cache would be serving.
+//! from it, survives everything else the world does. The compiler and the seed do not:
+//! `GuardCompiler::with_world` folds in the clock, the variables, the items, the tasks, the
+//! thoughts and the world queries, and the seed carries what has been READ, which moves on
+//! every line. (The compiler never asks `is_seen`; a seen-slot a guard reads is a tracked
+//! variable whose starting value the seed supplies.)
 //!
 //! So a workspace keyed on the WORLD SNAPSHOT, which is what de-2wtl's design assumed,
 //! would be thrown away almost every menu and buy nothing. A workspace that keeps the

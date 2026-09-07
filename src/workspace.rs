@@ -20,10 +20,19 @@
 //! the layout, and the manager sized from it, survives everything else the world does.
 //!
 //! REBUILT PER REQUEST, inside the thread, at one to five milliseconds: the
-//! [`GuardCompiler`] and the seed. `GuardCompiler::with_world` folds in the variables, the
-//! items, the tasks, the queries, the check outcomes and `is_seen` - and what the player has
-//! SEEN changes on every line they read, which is to say between every pair of menus this
-//! would be serving.
+//! [`GuardCompiler`] and the seed. They depend on the world in two different ways, and the
+//! difference matters to anything built on top of this:
+//!
+//! - THE COMPILER folds in the clock, the variables, the items, the tasks, the thoughts and
+//!   the world queries. Those move when the player acts on the world.
+//! - THE SEED carries what has been SEEN - `core::state` seeds a node's seen-slot from
+//!   `world.is_seen` - and that moves on every line the player reads. The compiler never
+//!   asks `is_seen` at all; a seen-slot a guard reads is a tracked VARIABLE, and its
+//!   starting value is the seed's business.
+//!
+//! So between two menus in one conversation, usually only the seed has changed. That is
+//! what makes de-bnjy.11 possible - a forward run settled with the seen-slots left free
+//! over-approximates every world that differs only in what has been read.
 //!
 //! THAT ASYMMETRY IS THE WHOLE DESIGN. de-2wtl originally proposed a workspace "valid for
 //! ONE world snapshot", which would have been thrown away almost every menu and bought
@@ -249,7 +258,8 @@ fn own(
 
         // PER REQUEST, because these are what the world is baked into. One to five
         // milliseconds against the nine or ten the manager cost once, and unlike the
-        // manager they cannot be kept: `is_seen` moves every line the player reads.
+        // manager they cannot be kept: the compiler holds the clock, the variables, the
+        // items, the tasks and the queries, and the seed holds what has been read.
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(&world)
             .with_constant_clock(DataLayout::group_passes_time(&graph));
