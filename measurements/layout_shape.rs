@@ -81,6 +81,7 @@ const GROUPS: [i32; 6] = [362, 28, 368, 14, 631, 1030];
 /// The cap every symbolic measurement in this repository uses.
 const COUNTER_CAP: i32 = 16;
 
+
 /// Which entries lie on a cycle.
 ///
 /// Tarjan's, written with an EXPLICIT STACK rather than recursively. A dialogue group is a
@@ -277,7 +278,16 @@ fn what_each_group_carries() {
 
     println!(
         "{:>5} {:>8} {:>6} {:>6} {:>7} {:>7} {:>7} {:>7} {:>7}",
-        "conv", "entries", "slots", "vars", "unwrit", "once", "acyclic", "cyclic", "clock"
+        "conv", "entries", "slots", "vars", "unwrit", "once", "acyclic", "cyclic", "passes"
+    );
+    // THE CLOCK IS NOT A COLUMN OF NUMBERS ANY MORE. It costs the shipped layout nothing -
+    // the guard compiler folds it in as a constant read from the world - so the only thing
+    // worth saying per group is whether folding it in is EXACT or an approximation, which
+    // is what "passes" says. What carrying it instead would cost is deliberately not
+    // priced here; see the icebox task on the clock.
+    println!(
+        "  passes is whether the group advances the clock, which is the only case where \
+         folding the clock in as a constant approximates rather than answers."
     );
 
     for conversation in GROUPS {
@@ -289,7 +299,13 @@ fn what_each_group_carries() {
         let symbols = graph.symbols().clone();
         let reads = DataLayout::read_by(&graph);
         let passes_time = DataLayout::group_passes_time(&graph);
-        let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, passes_time)
+        // THE LAYOUT THAT SHIPS, which is `DataLayout::for_group` - no clock run at all,
+        // because the guard compiler folds the clock in as a constant from the world. This
+        // used to pass `passes_time` here, and so reported ELEVEN VARIABLES that the engine
+        // does not carry for four of the five groups below (de-3x76.5). Rebuilding the
+        // shipped call rather than calling it: `for_group` takes a world, and this
+        // measurement has none and wants no money run either.
+        let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false)
             .keeping_only_read(&symbols, &reads);
 
         let cyclic = on_a_cycle(&graph);
@@ -399,7 +415,7 @@ fn what_each_group_carries() {
             white.0, white.1, white.2, red.0, red.1, red.2,
         );
 
-        let clock = layout.clock().map(|(_, bits)| bits).unwrap_or(0);
+        let clock = if passes_time { "yes" } else { "no" };
         println!(
             "      {} of {} entries lie on a cycle",
             cyclic.len(),
@@ -414,8 +430,8 @@ fn what_each_group_carries() {
             cyclic_slots.0,
         );
         println!(
-            "      variables: {} unwritten, {} once-only, {} acyclic, {} cyclic, {} clock",
-            unwritten.1, once_only.1, acyclic.1, cyclic_slots.1, clock,
+            "      variables: {} unwritten, {} once-only, {} acyclic, {} cyclic",
+            unwritten.1, once_only.1, acyclic.1, cyclic_slots.1,
         );
         let mut by_width: Vec<(u8, usize)> = widths.into_iter().collect();
         by_width.sort();
@@ -494,7 +510,8 @@ fn list_the_slots() {
     let symbols = graph.symbols().clone();
     let reads = DataLayout::read_by(&graph);
     let passes_time = DataLayout::group_passes_time(&graph);
-    let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, passes_time)
+    // The shipped layout, as above: no clock run, because the compiler folds it in.
+    let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false)
         .keeping_only_read(&symbols, &reads);
     let cyclic = on_a_cycle(&graph);
     let writes = writes_of(&graph, &cyclic, symbols.count());
@@ -534,7 +551,10 @@ fn list_the_slots() {
 
     let counters = rows.iter().filter(|(_, bits, _)| *bits > 1).count();
     println!("\n{counters} slot(s) wider than one bit.");
-    if let Some((_, bits)) = layout.clock() {
-        println!("plus the clock at {bits} bits");
+    if passes_time {
+        println!(
+            "this group advances the clock, so folding the clock in as a constant is an \
+             APPROXIMATION here rather than exact"
+        );
     }
 }
