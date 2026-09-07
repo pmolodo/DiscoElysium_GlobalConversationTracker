@@ -1,6 +1,7 @@
 {
   "_format": "sparse-diff",
   "_changes": {
-    "TASK.report_to_the_tribunal_done": true
+    "TASK.report_to_the_tribunal_done": true,
+    "whirling.sense_may_bells_clicked": true
   }
 }

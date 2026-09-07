@@ -1,0 +1,6 @@
+--- a/at-klaasjes-flower.states.lua
++++ b/at-klaasjes-flower.states.lua
+@@ -129 +129,3 @@ AreaState["collageMode"]={HasEntered=false};
+ AreaState["Scenes/Whirling-int-f2"]={HasEntered=true};
++AreaState["Scenes/Martinaise-ext"]={HasEntered=true};
++ShownOrbs["WHIRLING ROOF ORB / astra menthol"]={OrbSeen=1};

@@ -1,6 +1,16 @@
 {
   "_format": "sparse-diff",
+  "_formatVersion": 1,
   "_changes": {
-    "whirling.sense_may_bells_clicked": true
+    "_derived_simx": {
+      "_conversations": "1500-1159,1156-488,486-306,304-254,250-1,1501",
+      "_at": "10650-12142,12144"
+    },
+    "whirling.sense_may_bells_clicked": true,
+    "Actor": "Cuno",
+    "Conversant": "Cuno",
+    "ActorIndex": "Cuno",
+    "ConversantIndex": "Cuno",
+    "auto.seagull_landmark": false
   }
 }

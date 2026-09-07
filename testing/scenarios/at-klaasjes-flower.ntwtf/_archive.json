@@ -1,7 +1,14 @@
 {
   "_format": "expanded-save-diff",
+  "_formatVersion": 1,
   "base": "../../save_template.ntwtf",
   "members": [
+    {
+      "diff": "at-klaasjes-flower.states.lua.diff",
+      "kind": "text",
+      "name": "at-klaasjes-flower.states.lua",
+      "suffix": ".states.lua"
+    },
     {
       "diff": "at-klaasjes-flower.1st.ntwtf.json",
       "kind": "json",
@@ -19,12 +26,6 @@
       "kind": "inherit",
       "name": "at-klaasjes-flower.FOW.json",
       "suffix": ".FOW.json"
-    },
-    {
-      "diff": null,
-      "kind": "inherit",
-      "name": "at-klaasjes-flower.states.lua",
-      "suffix": ".states.lua"
     }
   ]
 }

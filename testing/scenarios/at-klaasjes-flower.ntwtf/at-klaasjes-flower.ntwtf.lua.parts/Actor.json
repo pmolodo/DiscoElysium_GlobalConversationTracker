@@ -1,8 +1,15 @@
 {
   "_format": "sparse-diff",
+  "_formatVersion": 1,
   "_changes": {
+    "Cuno": {
+      "Bark_Index": 0
+    },
+    "Racist_lorry_driver": {
+      "Bark_Index": 0
+    },
     "You": {
-      "Position_Martinaise_ext": "-25.91247,10.76494,-92.96944,0,0.7906105,0,0.6123194,Martinaise-ext"
+      "Position_Martinaise_ext": "-24.55379,10.76494,-90.32355,0,0.08120078,0,0.9966978,Martinaise-ext"
     }
   }
 }
