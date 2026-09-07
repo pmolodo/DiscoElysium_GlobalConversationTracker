@@ -77,7 +77,10 @@ namespace GlobalConversationTracker.Automation
         /// the one thing a caller must not miss.
         /// </param>
         /// <exception cref="ArgumentNullException">An argument is null.</exception>
-        /// <exception cref="InvalidOperationException">The game is already running.</exception>
+        /// <exception cref="InvalidOperationException">
+        /// The game is already running, or no attached display could hold the window this
+        /// would ask for.
+        /// </exception>
         public static StagedGame Stage(
             string processName,
             string settingsFile,
@@ -100,6 +103,30 @@ namespace GlobalConversationTracker.Automation
                     $"'{processName}' is already running. Close it first: two instances make "
                     + "the capture ambiguous.");
             }
+
+            DisplaySettings requested = screenOverride ?? GameSettings.ReadDisplay(settingsFile);
+
+            // BEFORE ANYTHING IS MOVED, and before the game is launched. A window the
+            // display cannot hold gets clamped, every screen reference this run compares
+            // against was captured at the requested size, and the run then fails on the
+            // window check having already staged the player's profile aside and spent a
+            // launch. The refusal below costs nothing and reads the same diagnosis.
+            //
+            // Only what is CLEARLY impossible: DisplayBounds returns Unknown for a
+            // fullscreen request, for a process that is not measuring real pixels, and for
+            // a machine whose displays it could not read. Those are reported and allowed.
+            DisplayBounds.FitReport fit = DisplayBounds.CanHold(requested);
+            if (fit.Verdict == DisplayBounds.Fit.TooSmall)
+            {
+                throw new InvalidOperationException(
+                    $"The display cannot give the game the {requested} it would be asked "
+                    + $"for: {fit.What}. Every screen reference an in-game run compares "
+                    + "against was captured at that size, so nothing downstream could "
+                    + "pass. Check the display's orientation, resolution and scaling, and "
+                    + "run again.");
+            }
+
+            progress?.Invoke(fit.What);
 
             string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
             string registryBackupPath = Path.Combine(
@@ -128,7 +155,6 @@ namespace GlobalConversationTracker.Automation
                     ? "no profile to move aside; a fresh one will be built"
                     : $"{profileBackup.EntryCount} entries moved to {profileBackup.MovedTo}");
 
-            DisplaySettings requested = screenOverride ?? GameSettings.ReadDisplay(settingsFile);
             var staged = new StagedGame(
                 profileBackup, registryBackupPath, requested, progress, onFailure);
 

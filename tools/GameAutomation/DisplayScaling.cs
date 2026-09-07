@@ -102,6 +102,19 @@ namespace GlobalConversationTracker.Automation
                     + "fraction of the truth and no reference will match");
         }
 
+        /// <summary>
+        /// Whether this process measures the screen in real pixels right now.
+        /// </summary>
+        /// <remarks>
+        /// For code that has to decide whether a measurement of the DESKTOP can be
+        /// trusted, rather than one of a window. <see cref="Enable"/> answers the same
+        /// question but sets awareness as a side effect, which belongs at an entry point
+        /// and nowhere else; this only asks. False does not mean the display is scaled -
+        /// it means a reading taken here may be a fraction of the truth and cannot be used
+        /// to call anything impossible.
+        /// </remarks>
+        public static bool MeasuresRealPixels() => IsAware();
+
         /// <summary>Whether this process already measures in real pixels.</summary>
         private static bool IsAware()
         {
