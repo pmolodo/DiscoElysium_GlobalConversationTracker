@@ -922,10 +922,17 @@ namespace GlobalConversationTracker.Harness
                 {
                     return AdvanceToMenu(scenario, saveGames, watcher, perAttempt, what);
                 }
-                catch (TimeoutException) when (!last)
+                catch (TimeoutException stalled) when (!last)
                 {
+                    // THE REASON, NOT JUST THE FACT. This catch used to discard the
+                    // message, and the two failures it hides are completely different
+                    // things: a wait that ran out, and a command that finished saying the
+                    // conversation reached something other than a menu - which is instant
+                    // and names the outcome. de-wncd.4 was diagnosed twice from logs that
+                    // could not tell them apart.
                     Console.WriteLine(
-                        "        it is open but drew no menu; letting the world settle");
+                        $"        it is open but drew no menu: {stalled.Message}");
+                    Console.WriteLine("        letting the world settle");
                     Thread.Sleep(BetweenOpenAttempts);
                 }
             }
