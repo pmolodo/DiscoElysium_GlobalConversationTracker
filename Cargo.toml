@@ -156,3 +156,7 @@ path = "measurements/settles_within.rs"
 [[example]]
 name = "prune_on_menus"
 path = "measurements/prune_on_menus.rs"
+
+[[example]]
+name = "cache_split_menu"
+path = "measurements/cache_split_menu.rs"

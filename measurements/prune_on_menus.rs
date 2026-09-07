@@ -62,7 +62,6 @@
 //!   cargo run --release --example prune_on_menus
 //! ```
 
-use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
 use lookahead_engine::bridge::{SnapshotWorld, WorldSnapshot};
@@ -80,6 +79,10 @@ use lookahead_engine::symbolic::vars::DataVars;
 
 #[path = "../tests/common/mod.rs"]
 mod common;
+
+#[path = "menu_profile.rs"]
+mod menu_profile;
+use menu_profile::MenuProfile;
 
 const COUNTER_CAP: i32 = 16;
 
@@ -126,28 +129,15 @@ fn main() {
             continue;
         }
 
-        let ranked = deepest_first(&graph, root);
-        let unseen: HashSet<DialogueNodeId> =
-            ranked.iter().take(unseen_wanted).copied().collect();
-        let reaching = can_reach(&graph, &unseen);
-        let starts: Vec<DialogueNodeId> = ranked
-            .iter()
-            .rev()
-            .filter(|id| reaching.contains(*id) && !unseen.contains(*id))
-            .copied()
-            .take(starts_wanted)
-            .collect();
-        if starts.is_empty() {
+        let Some(profile) = MenuProfile::of(&graph, root, unseen_wanted, starts_wanted) else {
             eprintln!("conversation {conversation}: every start would be refused; skipping.");
             continue;
-        }
-
-        let novelty = |id: DialogueNodeId| {
-            if unseen.contains(&id) { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
         };
+        let starts = &profile.starts;
+        let novelty = profile.novelty();
 
-        let off = menu(&graph, &starts, &novelty, budget, false);
-        let on = menu(&graph, &starts, &novelty, budget, true);
+        let off = menu(&graph, starts, &novelty, budget, false);
+        let on = menu(&graph, starts, &novelty, budget, true);
 
         let (Some((off_took, _)), Some((on_took, settled))) = (off, on) else {
             eprintln!("conversation {conversation}: no room for the manager; skipping.");
@@ -227,60 +217,6 @@ where
 
         Some((began.elapsed(), settled))
     })
-}
-
-/// Every entry reachable from `start` by links, deepest first.
-fn deepest_first(graph: &LookAheadGraph, start: DialogueNodeId) -> Vec<DialogueNodeId> {
-    let mut depth: HashMap<DialogueNodeId, usize> = HashMap::new();
-    let mut queue = VecDeque::from([(start, 0usize)]);
-    depth.insert(start, 0);
-    while let Some((id, here)) = queue.pop_front() {
-        let Some(node) = graph.get(id) else { continue };
-        for &child in &node.links {
-            if graph.get(child).is_some() && !depth.contains_key(&child) {
-                depth.insert(child, here + 1);
-                queue.push_back((child, here + 1));
-            }
-        }
-    }
-
-    let mut ranked: Vec<DialogueNodeId> = depth
-        .keys()
-        .copied()
-        // GROUP ENTRIES ARE NOT SCORED - they are walked through and never named as a
-        // destination - so they make poor starts and worse quarry.
-        .filter(|id| *id != start && graph.get(*id).map(|node| !node.is_group).unwrap_or(false))
-        .collect();
-    // DETERMINISTIC, so two arms rank the same entries the same way. DialogueNodeId is not
-    // Ord, so the tie-break is spelled out from its parts.
-    ranked.sort_unstable_by_key(|id| {
-        (std::cmp::Reverse(depth[id]), id.conversation_id, id.entry_id)
-    });
-    ranked
-}
-
-/// Every entry from which some member of `unseen` is link-reachable.
-fn can_reach(
-    graph: &LookAheadGraph,
-    unseen: &HashSet<DialogueNodeId>,
-) -> HashSet<DialogueNodeId> {
-    let mut parents: HashMap<DialogueNodeId, Vec<DialogueNodeId>> = HashMap::new();
-    for node in graph.nodes() {
-        for &child in &node.links {
-            parents.entry(child).or_default().push(node.id);
-        }
-    }
-
-    let mut reaching: HashSet<DialogueNodeId> = HashSet::new();
-    let mut queue: VecDeque<DialogueNodeId> = unseen.iter().copied().collect();
-    while let Some(id) = queue.pop_front() {
-        for &parent in parents.get(&id).map(|v| v.as_slice()).unwrap_or(&[]) {
-            if reaching.insert(parent) {
-                queue.push_back(parent);
-            }
-        }
-    }
-    reaching
 }
 
 fn from_env(name: &str, fallback: usize) -> usize {

@@ -96,9 +96,18 @@ impl DiagramBudget {
     /// nodes - so starving it costs room as well as time. The safe direction to be wrong in
     /// is WIDE, which degrades smoothly, rather than narrow, which can end a search.
     ///
-    /// The sweep is at 512 MB, where the budget binds. Nobody has run it at the shipped
-    /// 256 MB, and nobody has measured a whole MENU against one manager, where the cache is
-    /// warm from the second option onwards.
+    /// AND IT HOLDS AT THE SHIPPED BUDGET AND OVER A WHOLE MENU, which de-1e8l could not
+    /// say - its sweep was single searches at 512 MB. `measurements/cache_split_menu.rs`
+    /// runs a 24-start menu against ONE manager at 256 MB, where the cache is warm from the
+    /// second option onwards, and the optimum does not move. The expected result was that a
+    /// warm cache would want to be wider; instead the curve is flat enough that the fastest
+    /// split is not in the same place twice - 28's moved from a sixteenth to an eighth
+    /// between two runs, 1030's from a quarter to a half.
+    ///
+    /// What DOES reproduce is the asymmetry above, from both ends: 362 prefers the narrowest
+    /// cache monotonically, and 1030 is punished by it (3.5 and 4.7 seconds at a
+    /// sixty-fourth against about 3.2 from an eighth on). No split is best everywhere, so
+    /// the default is the one that is never bad - and that is this one.
     pub const NODES_PER_CACHE_ENTRY: usize = 4;
 
     /// What one apply-cache entry costs, in bytes.
@@ -125,12 +134,12 @@ impl DiagramBudget {
     /// - see [`Self::bytes_per_node`] - so a sweep over the split is a sweep over one
     /// trade rather than over two budgets that happen to differ.
     ///
-    /// FOR MEASURING, not for shipping. de-1e8l has since swept it and the quarter is the
-    /// flat optimum on every heavy group, so [`Self::NODES_PER_CACHE_ENTRY`] is now a
-    /// conclusion rather than a convention and every shipped caller should be taking it by
-    /// going through [`Self::new`]. What remains open is the shipped budget and a whole
-    /// menu rather than a single search, which is de-bnjy.8 - and that is a measurement,
-    /// so it comes through here too.
+    /// FOR MEASURING, not for shipping. de-1e8l swept it and de-bnjy.8 swept it again over
+    /// a whole menu at the shipped budget; the quarter survived both, so
+    /// [`Self::NODES_PER_CACHE_ENTRY`] is a conclusion rather than a convention and every
+    /// shipped caller should be taking it by going through [`Self::new`]. The callers here
+    /// are `measurements/cache_split.rs` and `measurements/cache_split_menu.rs`, and this
+    /// exists for them.
     ///
     /// # Panics
     ///
