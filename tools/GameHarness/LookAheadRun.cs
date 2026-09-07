@@ -50,14 +50,6 @@ namespace GlobalConversationTracker.Harness
         /// </remarks>
         public const string UncertainHtml = "#7A7A7A";
 
-        /// <summary>The same, on a Pass / Fail line, which is not drawn on black.</summary>
-        /// <remarks>
-        /// Must match <c>ResponseLookAheadPatch.DefaultBranchUncertainColorHtml</c>. A
-        /// separate colour because the line sits on the check's own background rather than
-        /// on black, where the option's grey is invisible - see de-8hh2.4.
-        /// </remarks>
-        public const string BranchUncertainHtml = "#F2F2F2";
-
         /// <summary>The colour meaning "this save has already read it".</summary>
         /// <remarks>
         /// A dark red, and the Pass / Fail line's alone - an option never needs it, since
@@ -328,7 +320,6 @@ namespace GlobalConversationTracker.Harness
                 {
                     ["NovelOptionColor"] = OrangeHtml,
                     ["UncertainLookAheadColor"] = UncertainHtml,
-                    ["BranchUncertainLookAheadColor"] = BranchUncertainHtml,
                 },
                 message => Console.WriteLine($"staging:   {message}"));
 
@@ -1280,11 +1271,11 @@ namespace GlobalConversationTracker.Harness
 
             bool uncertain = drawn.Marker == ProbeLog.UncertainMarkerGlyph;
             string colour = drawn.MarkerColourHtml;
-            // THE BRANCH LINE'S UNCERTAIN COLOUR, not the option's. They differ because the
-            // two are drawn on different backgrounds - see de-8hh2.4 - and a reader that
-            // accepted either here would pass a mod drawing the invisible one.
-            if (uncertain
-                && colour.Equals(BranchUncertainHtml, StringComparison.OrdinalIgnoreCase))
+            // THE SAME UNCERTAIN COLOUR THE OPTION USES. The line had one of its own for as
+            // long as it was drawn on the check's own band; it is drawn on black now, like
+            // the option, so one colour covers both and a second would only be a way for
+            // the two to disagree.
+            if (uncertain && colour.Equals(UncertainHtml, StringComparison.OrdinalIgnoreCase))
             {
                 return Marker.Uncertain;
             }

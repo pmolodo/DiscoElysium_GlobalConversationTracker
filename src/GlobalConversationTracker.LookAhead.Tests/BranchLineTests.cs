@@ -17,22 +17,19 @@ namespace GlobalConversationTracker.LookAhead.Tests
         private const string Any = "#AAAAAA";
         private const string This = "#BBBBBB";
         private const string Seen = "#CCCCCC";
-        private const string Gave = "#DDDDDD";
-
         /// <summary>
-        /// The option's uncertain colour, which the line must NOT use.
+        /// The colour for a search that gave up, on the line and on an option alike.
         /// </summary>
         /// <remarks>
-        /// Distinct from <see cref="Gave"/> so that a line reaching for the wrong one of
-        /// the two is a failure rather than a coincidence. They are different colours in
-        /// the shipped mod for a real reason - the line is drawn on the check's background
-        /// and an option on black, see de-8hh2.4 - so a test that let them be equal would
-        /// not be testing the thing that broke.
+        /// There were two, and the line had to reach for its own: it was drawn on the
+        /// check's band rather than on black, where the option's grey was invisible (see
+        /// de-8hh2.4). The band is shortened now and the line falls on black, so there is
+        /// one colour and nothing left for a test to confuse it with.
         /// </remarks>
-        private const string GaveOnAnOption = "#EEEEEE";
+        private const string Gave = "#DDDDDD";
 
         private static MarkerPalette Palette(bool markUncertain = true) =>
-            new MarkerPalette(Any, This, Seen, GaveOnAnOption, Gave, markUncertain);
+            new MarkerPalette(Any, This, Seen, Gave, markUncertain);
 
         /// <summary>The line for a pair of outcomes.</summary>
         private static string Line(Outcomes both, MarkerPalette palette) =>

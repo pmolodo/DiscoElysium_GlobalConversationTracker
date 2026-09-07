@@ -9,16 +9,15 @@ namespace GlobalConversationTracker.Engine
     /// <param name="UnseenThisGame">Reaching text this save has not read.</param>
     /// <param name="Seen">Already read. Used on the branch line only - see the remarks
     /// on <see cref="BranchLine"/>.</param>
-    /// <param name="Uncertain">A search that gave up before it could say.</param>
-    /// <param name="BranchUncertain">The same, on the branch line - see the remarks
-    /// on <see cref="BranchLine"/> for why it is a different colour.</param>
+    /// <param name="Uncertain">A search that gave up before it could say. One colour for
+    /// the option and for the branch line alike: both are drawn on black, since the check's
+    /// band is shortened to make room for the line under it.</param>
     /// <param name="MarkUncertain">Whether a search that gave up says so at all.</param>
     public readonly record struct MarkerPalette(
         string UnseenAnyGame,
         string UnseenThisGame,
         string Seen,
         string Uncertain,
-        string BranchUncertain,
         bool MarkUncertain);
 
     /// <summary>
@@ -135,12 +134,14 @@ namespace GlobalConversationTracker.Engine
                 return coloured;
             }
 
-            // THE BRANCH LINE'S OWN UNCERTAIN COLOUR, not the option's. An option is
-            // drawn on black, where the mid grey the mod uses reads perfectly well; this
-            // line is drawn on the check's own background, where the same grey measured
-            // 1.08:1 and simply could not be seen. See de-8hh2.4.
+            // THE OPTION'S OWN UNCERTAIN COLOUR, which is the only one there is. This line
+            // used to need a second, near-white, because it was drawn on the check's own
+            // background - the option's mid grey measured 1.08:1 against a white check's
+            // band and could not be seen at all (de-8hh2.4). CheckBandInsetPatch shortens
+            // that band so the line falls on black instead, which is what the grey was
+            // chosen against, so the second colour went with the background that needed it.
             return palette.MarkUncertain && !branch.Complete
-                ? coloured + Draw(palette.BranchUncertain, UncertainMarker)
+                ? coloured + Draw(palette.Uncertain, UncertainMarker)
                 : coloured;
         }
 

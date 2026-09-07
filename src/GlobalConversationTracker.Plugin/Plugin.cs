@@ -332,22 +332,18 @@ namespace GlobalConversationTracker
             // HUD offsets and NovelOptionColor for this heading, which was written before
             // either of these two existed; "Display is where the colours and the offsets
             // live" is the reading that covers all five without a special case.
+            //
+            // ONE COLOUR, WHERE THERE WERE TWO. BranchUncertainLookAheadColor stood beside
+            // this one for as long as a check's Pass / Fail line was drawn on the check's
+            // own band, where a colour chosen against black could be invisible - and was,
+            // at 1.08:1. CheckBandInsetPatch puts that line on black like everything else,
+            // so the second setting described a background that no longer occurs.
             var uncertainLookAheadColor = Config.Bind(
                 DisplaySection,
                 "UncertainLookAheadColor",
                 ResponseLookAheadPatch.DefaultUncertainColorHtml,
-                "Colour for the '*?' marker on an option, as #RRGGBB, #RRGGBBAA, or a "
-                + "colour name. An option is drawn on black.");
-            // A SECOND COLOUR FOR A SECOND BACKGROUND. The Pass / Fail line under a check
-            // is drawn on the check's own background - pale for a white check, red for a
-            // red one - where a colour chosen against black can be invisible. It was: the
-            // option grey stood at 1.08:1 against the white check's #857F70.
-            var branchUncertainLookAheadColor = Config.Bind(
-                DisplaySection,
-                "BranchUncertainLookAheadColor",
-                ResponseLookAheadPatch.DefaultBranchUncertainColorHtml,
-                "Colour for the '*?' marker on a check's Pass / Fail line, which is drawn "
-                + "on the check's own background rather than on black.");
+                "Colour for the '*?' marker, as #RRGGBB, #RRGGBBAA, or a colour name. Used "
+                + "on an option and on a check's Pass / Fail line, both drawn on black.");
 
             // The second of the two dials a player has, and the one that answers the
             // question they actually ask: how long the menu takes to appear. It is a
@@ -481,7 +477,6 @@ namespace GlobalConversationTracker
                     novelOptionColor.Value,
                     ResponseLookAheadPatch.DefaultUnseenThisGameColorHtml,
                     uncertainLookAheadColor.Value,
-                    branchUncertainLookAheadColor.Value,
                     markUncertainLookAhead.Value,
                     // No state budget from the config: there is no such setting
                     // any more, and only a test ever sets one.
