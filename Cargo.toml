@@ -108,6 +108,10 @@ name = "performance_matrix"
 path = "measurements/performance_matrix.rs"
 
 [[example]]
+name = "repeat_question"
+path = "measurements/repeat_question.rs"
+
+[[example]]
 name = "reachable_states"
 path = "measurements/reachable_states.rs"
 
