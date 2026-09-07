@@ -52,6 +52,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use oxidd::bdd::BDDFunction;
 use oxidd::BooleanFunction;
@@ -79,7 +80,10 @@ pub struct Known {
     /// TARGET-INDEPENDENT, and rebuilt from scratch by every backward pass today. A driver
     /// that asks about forty candidates walks the whole graph forty times to build the
     /// same map.
-    parents: HashMap<DialogueNodeId, Vec<DialogueNodeId>>,
+    ///
+    /// AND START-INDEPENDENT TOO, which is what the handle is for: see [`GroupShape`], and
+    /// the menu of twenty-four options that used to build twenty-four of these.
+    parents: Arc<HashMap<DialogueNodeId, Vec<DialogueNodeId>>>,
     /// The order to take entries in, so that a loop is finished before what follows it.
     ///
     /// TARGET-INDEPENDENT AND DIRECTION-INDEPENDENT, for the same reason the parent map is
@@ -108,8 +112,43 @@ pub struct Known {
     forward_settled: bool,
 }
 
-impl Known {
-    /// The group's shape alone, with nothing established about it yet.
+/// The half of [`Known`] that is true of the GROUP rather than of one search.
+///
+/// ## Why this is a type of its own
+///
+/// A response menu asks about a dozen options at once - twenty-four when they are rolled
+/// checks, since de-fes makes each outcome its own start - and `bridge::answer_within` runs
+/// every one of them against one manager and one compiler. What it did NOT share was this:
+/// each start built its own parent map and its own Tarjan decomposition, which depend on
+/// the links and on nothing else, and so were twenty-four copies of one answer.
+///
+/// Measured before it existed, `measurements/per_start_setup.rs`, per menu of 24 starts:
+///
+/// ```text
+///   conv  entries  order ms  of_from ms  known ms  per menu ms
+///     28     2186      1.14        1.52      2.95         98.0
+///    368     4724      5.80        3.40      6.94        305.9
+///     14     3594      2.38        3.21      5.44        187.7
+///    631     4514      3.24        4.14      7.02        246.1
+///    362     1860      1.04        1.31      2.56         86.4
+/// ```
+///
+/// For scale: `menu_residue` answers twenty-four starts over conversation 28 in 0.8
+/// seconds, and de-2wtl's whole per-REQUEST setup - the group graph and the diagram side
+/// together - is eighteen to twenty-seven milliseconds. This was the larger waste by an
+/// order of magnitude, and unlike that one it needs nothing that outlives the query.
+///
+/// ## What it does not hold
+///
+/// Anything a forward run established. That is per start, per world and per budget, and it
+/// is what [`Known`] adds on top - see [`Self::known_from`].
+pub struct GroupShape {
+    parents: Arc<HashMap<DialogueNodeId, Vec<DialogueNodeId>>>,
+    order: IterationOrder,
+}
+
+impl GroupShape {
+    /// Works the group's shape out, once, for every search that will run over it.
     pub fn of(graph: &LookAheadGraph) -> Self {
         let mut parents: HashMap<DialogueNodeId, Vec<DialogueNodeId>> = HashMap::new();
         for node in graph.nodes() {
@@ -118,9 +157,47 @@ impl Known {
             }
         }
 
+        Self { parents: Arc::new(parents), order: IterationOrder::of(graph) }
+    }
+
+    /// The order a search over this group should take its entries in.
+    ///
+    /// No start distances, so this is what a caller passes to
+    /// [`crate::symbolic::reachability::Reachability::explore_branch_knowing`] rather than
+    /// letting it build one per search.
+    pub fn order(&self) -> &IterationOrder {
+        &self.order
+    }
+
+    /// This shape as a [`Known`] for one start, sharing everything that can be shared.
+    ///
+    /// The parent map is handed over by handle and the Tarjan decomposition with it; only
+    /// the start distances are worked out, which is one BFS over the links - 0.9 ms of
+    /// conversation 631's 4.1 rather than all of it.
+    pub fn known_from(&self, graph: &LookAheadGraph, start: DialogueNodeId) -> Known {
+        Known {
+            parents: Arc::clone(&self.parents),
+            order: self.order.distanced_from(graph, start),
+            forward: HashMap::new(),
+            start: None,
+            arriving: RefCell::new(HashMap::new()),
+            narrow: false,
+            forward_settled: false,
+        }
+    }
+}
+
+impl Known {
+    /// The group's shape alone, with nothing established about it yet.
+    ///
+    /// Works the shape out for this one search. A caller running SEVERAL searches over one
+    /// group - every option of a response menu is one - should build a [`GroupShape`] once
+    /// and ask it for each of these instead.
+    pub fn of(graph: &LookAheadGraph) -> Self {
+        let shape = GroupShape::of(graph);
         Self {
-            parents,
-            order: IterationOrder::of(graph),
+            parents: shape.parents,
+            order: shape.order,
             forward: HashMap::new(),
             start: None,
             arriving: RefCell::new(HashMap::new()),
@@ -135,9 +212,7 @@ impl Known {
     /// is a coarser order rather than a wrong one - but it is a measurement reporting
     /// less than it could, so a caller that knows the start should say so.
     pub fn of_from(graph: &LookAheadGraph, start: DialogueNodeId) -> Self {
-        let mut this = Self::of(graph);
-        this.order = IterationOrder::of_from(graph, start);
-        this
+        GroupShape::of(graph).known_from(graph, start)
     }
 
     /// The same, plus where a search begins and what it holds when it does.

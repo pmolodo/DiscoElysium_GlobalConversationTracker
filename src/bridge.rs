@@ -52,6 +52,7 @@ use crate::symbolic::budget::DiagramBudget;
 use crate::symbolic::data_layout::DataLayout;
 use crate::symbolic::guard_formula::GuardCompiler;
 use crate::symbolic::isolated;
+use crate::symbolic::known::GroupShape;
 use crate::symbolic::novelty_search;
 use crate::symbolic::portfolio;
 use crate::symbolic::reachability::seed_of;
@@ -1060,6 +1061,13 @@ where
     let seed = seed_of(graph, world, &vars);
     let budget = request.search_budget();
 
+    // ONCE FOR THE MENU, like the manager and the compiler above. The parent map and the
+    // SCC decomposition are facts about the LINKS - no start, no world, no budget - and
+    // every option below wants the same ones. Each used to build its own: twenty-four
+    // Tarjan passes over conversation 631's 4,514 entries for one answer, which
+    // `measurements/per_start_setup.rs` priced at 246 ms a menu. See `GroupShape`.
+    let shape = GroupShape::of(graph);
+
     let mut answers = Vec::with_capacity(request.starts.len());
 
     for start in &request.starts {
@@ -1089,6 +1097,7 @@ where
         for branch in branches {
             answers.push(scored(
                 graph, id, *start, world, novelty, *branch, &seed, &mut compiler, &budget,
+                &shape,
             ));
         }
     }
@@ -1131,6 +1140,7 @@ fn scored<'a, F>(
     seed: &BDDFunction,
     compiler: &mut GuardCompiler<'a>,
     budget: &portfolio::Budget,
+    shape: &GroupShape,
 ) -> LookAheadAnswer
 where
     F: Fn(DialogueNodeId) -> Novelty,
@@ -1193,7 +1203,7 @@ where
 
     let found = portfolio::best_novelty(
         graph, id, branch, seed, compiler, world, COUNTER_CAP as u32, &novelty, hunting,
-        budget,
+        budget, shape,
     );
 
     answered(
@@ -1321,6 +1331,7 @@ mod branch_wire_tests {
             &seed,
             &mut compiler,
             &portfolio::Budget::default(),
+            &GroupShape::of(graph),
         )
     }
 

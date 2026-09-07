@@ -44,7 +44,7 @@ use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated::on_its_own_thread;
-use lookahead_engine::symbolic::known::Known;
+use lookahead_engine::symbolic::known::{GroupShape, Known};
 use lookahead_engine::symbolic::novelty_search::{best_novelty, Budget as SearchBudget};
 use lookahead_engine::symbolic::portfolio;
 use lookahead_engine::symbolic::reachability::{seed_of, Reachability};
@@ -443,6 +443,7 @@ fn the_driver_and_the_portfolio_find_what_the_reference_walk_finds() {
                 &novelty,
                 graph.best_linked_class(start, &novelty).unwrap_or(Novelty::SeenThisGame),
                 &portfolio::Budget::default(),
+                &GroupShape::of(&graph),
             );
 
             (driver.best, answer, began.elapsed().as_millis())

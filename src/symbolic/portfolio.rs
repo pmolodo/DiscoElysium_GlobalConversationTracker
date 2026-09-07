@@ -58,7 +58,7 @@ use oxidd::bdd::BDDFunction;
 use crate::core::types::{DialogueNodeId, Novelty, StartBranch};
 use crate::graph::graph::LookAheadGraph;
 use crate::symbolic::guard_formula::GuardCompiler;
-use crate::symbolic::known::Known;
+use crate::symbolic::known::GroupShape;
 use crate::symbolic::novelty_search::{self, StoppedBy};
 use crate::symbolic::reachability::{self, Reachability};
 use crate::world::world::ILookAheadWorld;
@@ -162,6 +162,7 @@ fn forwards_for<'a, F>(
     wanted: Novelty,
     novelty: &F,
     within: Duration,
+    shape: &GroupShape,
 ) -> Reachability<'a>
 where
     F: Fn(DialogueNodeId) -> Novelty,
@@ -175,7 +176,10 @@ where
         .filter(|id| novelty(*id) == wanted)
         .collect();
 
-    Reachability::explore_branch_within(
+    // KNOWING THE ORDER RATHER THAN BUILDING ONE. The convenience form runs Tarjan over the
+    // whole group itself, and a menu is a dozen starts asking for the same answer - see
+    // [`GroupShape`].
+    Reachability::explore_branch_knowing(
         graph,
         start,
         branch,
@@ -188,6 +192,7 @@ where
             halt_on: Some(Box::new(move |id| quarry.contains(&id))),
             ..Default::default()
         },
+        shape.order(),
     )
 }
 
@@ -198,6 +203,11 @@ where
 /// [`LookAheadGraph::best_linked_class`] is what establishes it. A caller that passes a
 /// class which is NOT the best reachable gets a lower bound where it thinks it has an
 /// answer, because the slice would then be able to halt with something better still unseen.
+///
+/// `shape` is the group's parent map and SCC decomposition, worked out once by the caller.
+/// It changes no answer - it is a fact about the links - and it exists because a response
+/// menu calls this once per option and every one of them wants the same one. See
+/// [`GroupShape`], and [`GroupShape::of`] for what building one per call used to cost.
 #[allow(clippy::too_many_arguments)]
 pub fn best_novelty<'a, F>(
     graph: &LookAheadGraph,
@@ -210,6 +220,7 @@ pub fn best_novelty<'a, F>(
     novelty: F,
     hunting: Novelty,
     budget: &Budget,
+    shape: &GroupShape,
 ) -> PortfolioAnswer
 where
     F: Fn(DialogueNodeId) -> Novelty,
@@ -253,7 +264,7 @@ where
     let forwards = (hunting > Novelty::SeenThisGame && !budget.forwards.is_zero()).then(|| {
         forwards_for(
             graph, start, branch, seed, compiler, world, counter_cap, hunting, &novelty,
-            budget.forwards,
+            budget.forwards, shape,
         )
     });
 
@@ -282,7 +293,7 @@ where
         graph, start, branch, seed, compiler, world, counter_cap,
     );
     let known = forwards.as_ref().map(|found| {
-        let mut known = Known::of_from(graph, start);
+        let mut known = shape.known_from(graph, start);
         for (id, states) in from.known_pairs() {
             known = known.from(id, states);
         }
@@ -366,7 +377,7 @@ mod tests {
 
         best_novelty(
             graph, node(0), StartBranch::Either, &seed, &mut compiler, world, CAP as u32,
-            novelty, hunting, budget,
+            novelty, hunting, budget, &GroupShape::of(graph),
         )
     }
 
@@ -399,7 +410,7 @@ mod tests {
 
         best_novelty(
             graph, node(0), branch, &seed, &mut compiler, world, CAP as u32, novelty,
-            hunting, &Budget::default(),
+            hunting, &Budget::default(), &GroupShape::of(graph),
         )
     }
 

@@ -59,6 +59,7 @@
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
+use std::sync::Arc;
 
 use crate::core::types::DialogueNodeId;
 use crate::graph::graph::LookAheadGraph;
@@ -75,7 +76,14 @@ pub struct IterationOrder {
     /// The primary key, and the part that carries the ordering guarantee: a component is
     /// finished before anything downstream of it begins. It depends on the links alone, so
     /// a driver asking about hundreds of candidates builds it once.
-    component: HashMap<DialogueNodeId, u32>,
+    ///
+    /// BEHIND A HANDLE, because "the links alone" holds across STARTS as well as across
+    /// candidates: every option of a response menu is a different start in the same group,
+    /// and each wants its own [`Self::distance`] over the same decomposition. The Tarjan
+    /// pass is the expensive half - 3.2 ms of conversation 631's 4.1, and 24 starts of it
+    /// was 246 ms a menu before [`Self::distanced_from`] existed - so it is shared rather
+    /// than copied.
+    component: Arc<HashMap<DialogueNodeId, u32>>,
     /// Links traversed to arrive at each entry from the group's start, ignoring guards.
     ///
     /// The tie-break INSIDE a component, where a topological order has nothing to say - and
@@ -132,7 +140,7 @@ impl IterationOrder {
         }
 
         Self {
-            component: component_of,
+            component: Arc::new(component_of),
             distance: HashMap::new(),
 
             components: walk.components.len(),
@@ -146,7 +154,25 @@ impl IterationOrder {
     /// over the links on top of the Tarjan pass, and target-independent like everything else
     /// here - so a driver asking about hundreds of candidates pays for it once.
     pub fn of_from(graph: &LookAheadGraph, start: DialogueNodeId) -> Self {
-        let mut this = Self::of(graph);
+        Self::of(graph).distanced_from(graph, start)
+    }
+
+    /// This decomposition again, with the distances measured from a DIFFERENT start.
+    ///
+    /// For a caller running several searches over one group from several starts, which is
+    /// what a response menu is: the Tarjan pass is shared and only the BFS is repeated. On
+    /// conversation 631 that is 0.9 ms rather than 4.1, and a menu of twenty-four starts
+    /// stops paying twenty-four Tarjan passes for one answer.
+    ///
+    /// The result is exactly what [`Self::of_from`] would have built - that constructor is
+    /// now this one - so nothing about an order's meaning depends on which was used.
+    pub fn distanced_from(&self, graph: &LookAheadGraph, start: DialogueNodeId) -> Self {
+        let mut this = Self {
+            component: Arc::clone(&self.component),
+            distance: HashMap::new(),
+            components: self.components,
+            largest: self.largest,
+        };
 
         // The start is walked FROM without being recorded as arrived at, matching
         // `novelty_search::link_distances`: it gets a distance only if a link leads back to

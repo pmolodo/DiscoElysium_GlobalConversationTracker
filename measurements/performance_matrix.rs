@@ -260,7 +260,7 @@ use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
-use lookahead_engine::symbolic::known::Known;
+use lookahead_engine::symbolic::known::{GroupShape, Known};
 use lookahead_engine::symbolic::novelty_search::{
     best_novelty, Budget as SearchBudget, StoppedBy,
 };
@@ -754,6 +754,10 @@ fn forward_backward(
         &novelty,
         hunting,
         &portfolio::Budget::default(),
+        // ONE START PER ROW HERE, so this builds a shape per search - which is what every
+        // row of this matrix has always paid, and holding that constant is what lets a row
+        // measured today be read against one measured before de-bnjy.10.
+        &GroupShape::of(graph),
     );
 
     let verdict = match answer.by {
