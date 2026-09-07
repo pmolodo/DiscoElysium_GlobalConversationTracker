@@ -160,3 +160,7 @@ path = "measurements/prune_on_menus.rs"
 [[example]]
 name = "cache_split_menu"
 path = "measurements/cache_split_menu.rs"
+
+[[example]]
+name = "manager_reuse"
+path = "measurements/manager_reuse.rs"
