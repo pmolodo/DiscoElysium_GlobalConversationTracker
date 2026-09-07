@@ -71,6 +71,26 @@ namespace GlobalConversationTracker
         internal const string EngineReplacementUp =
             "a replacement look-ahead engine is up";
 
+        /// <summary>What the player is told, in passing, about a crash being recovered from.</summary>
+        /// <remarks>
+        /// ONE SHORT LINE, because the channel is one unwrapped line that passes by in a
+        /// couple of seconds - de-gbl3 measured the fatal notice losing a word off each end
+        /// at 1280 wide, and this has to fit where that did not.
+        /// </remarks>
+        internal const string RecoveryLine =
+            "Look-ahead engine crashed; restarting. Options show '*?' meanwhile.";
+
+        /// <summary>Said when the player has been told about a RECOVERABLE crash.</summary>
+        /// <remarks>
+        /// DELIBERATELY NOT CONTAINING <see cref="NoticeShown"/>. The harness counts that
+        /// string to check the player was told the feature is GONE, exactly once; a
+        /// recovery notice that contained it would be counted as a second shutdown and the
+        /// engine-death suite would fail whenever a recovery had happened first in the same
+        /// launch. Two different events, two different strings to grep.
+        /// </remarks>
+        internal const string RecoveryNoticeShown =
+            "the player was told the engine is restarting";
+
         /// <summary>The one thing the player can do about it.</summary>
         internal const string RestartAdvice = "restart the game to bring the feature back";
 
@@ -186,6 +206,20 @@ namespace GlobalConversationTracker
         /// this distinguishes - see <see cref="Bridge"/>.
         /// </remarks>
         private static bool _respawning;
+
+        /// <summary>Whether a crashed engine is being replaced right now.</summary>
+        /// <remarks>
+        /// <para>THE WINDOW IN WHICH NOTHING CAN BE ANSWERED BUT SOMETHING DID RUN. It
+        /// opens when a death is answered with a respawn and closes when the replacement is
+        /// promoted in <see cref="Bridge"/>, so it covers the menu the engine died on and
+        /// every menu drawn before the new one is up.</para>
+        ///
+        /// <para>What a menu drawn inside it gets is the UNCERTAIN marker rather than
+        /// nothing - see <see cref="MarkerFor"/>. Deliberately NOT the same as the warm-up
+        /// before the first engine has ever opened: nothing has run then, and drawing
+        /// nothing is the honest answer.</para>
+        /// </remarks>
+        private static bool Recovering => _respawning && !_engineDied;
 
         /// <summary>
         /// The look-ahead's OWN Harmony instance, so it can take its own hooks off.
@@ -890,6 +924,13 @@ namespace GlobalConversationTracker
                 // in a way anybody can act on.
             }
 
+            // IN PASSING, NOT IN A WINDOW. The window stops the game and is reserved for
+            // the one fatal message - "one fatal, once, or it becomes the thing players mod
+            // out", per TellThePlayer - and this is the opposite of fatal: the feature is
+            // coming back by itself in a moment. A crash the player can see explains the
+            // '*?' that is about to appear on every option, which silence would not.
+            TellThePlayerInPassing(RecoveryLine);
+
             _bridge = null;
             _menuAnswers = null;
 
@@ -1042,13 +1083,8 @@ namespace GlobalConversationTracker
         /// </remarks>
         private static void TellThePlayer(string window, string line)
         {
-            if (Thread.CurrentThread.ManagedThreadId != _mainThreadId)
+            if (!CanDrawOnScreen())
             {
-                // Not a crash and not silent. The log already carries the whole message.
-                _log?.Warning(
-                    $"{LogPrefix} the on-screen notice was skipped because the engine's "
-                    + "death was noticed off the game's main thread, where Unity objects "
-                    + "cannot be touched. The line above is the whole of it.");
                 return;
             }
 
@@ -1057,7 +1093,41 @@ namespace GlobalConversationTracker
                 return;
             }
 
-            ShowTheNotice(line);
+            ShowTheNotice(line, NoticeShown);
+        }
+
+        /// <summary>Says one line in passing, and never in the window.</summary>
+        /// <remarks>
+        /// FOR THE RECOVERABLE CRASH. The window is reserved for the message that ends the
+        /// feature - see the remarks on <see cref="TellThePlayer"/> for why it may be used
+        /// once and for nothing else - and a crash the mod is already fixing does not
+        /// deserve a modal stop. The player needs enough to explain the '*?' on the menu in
+        /// front of them, which one passing line is.
+        /// </remarks>
+        private static void TellThePlayerInPassing(string line)
+        {
+            if (!CanDrawOnScreen())
+            {
+                return;
+            }
+
+            ShowTheNotice(line, RecoveryNoticeShown);
+        }
+
+        /// <summary>Whether this thread may touch Unity objects, saying so if it may not.</summary>
+        private static bool CanDrawOnScreen()
+        {
+            if (Thread.CurrentThread.ManagedThreadId == _mainThreadId)
+            {
+                return true;
+            }
+
+            // Not a crash and not silent. The log already carries the whole message.
+            _log?.Warning(
+                $"{LogPrefix} the on-screen notice was skipped because the engine's "
+                + "death was noticed off the game's main thread, where Unity objects "
+                + "cannot be touched. The line above is the whole of it.");
+            return false;
         }
 
         /// <summary>The window's text as one log line.</summary>
@@ -1171,7 +1241,7 @@ namespace GlobalConversationTracker
         /// than the player never finding out at all, which is what the alternative to a
         /// fallback is.
         /// </remarks>
-        private static void ShowTheNotice(string message)
+        private static void ShowTheNotice(string message, string shown)
         {
             try
             {
@@ -1188,7 +1258,7 @@ namespace GlobalConversationTracker
                 NotificationSystem.NotificationManager.Singleton.ShowNotification(
                     NotificationSystem.NotificationType.Failure, message);
                 _log?.Warning(
-                    $"{LogPrefix} {NoticeShown} {NoticeInANotification}: {message}");
+                    $"{LogPrefix} {shown} {NoticeInANotification}: {message}");
             }
             catch (Exception error)
             {
@@ -1376,6 +1446,19 @@ namespace GlobalConversationTracker
                 return null;
             }
 
+            // A CRASH BEING RECOVERED FROM IS UNCERTAIN, NOT EMPTY, and for the same
+            // reason as the quarantine below: a search really did run against this menu and
+            // really did not finish, which is exactly what the uncertain marker means
+            // (de-pvq). Drawing nothing would say "there is nothing unread down there" on
+            // the strength of a crash.
+            //
+            // EVERY OPTION, not the ones a crawl had got to. The engine died with the menu
+            // half-answered at best, so nothing here is established either way.
+            if (Recovering)
+            {
+                return Uncertain();
+            }
+
             // A QUARANTINED GROUP IS UNCERTAIN, NOT EMPTY. It is the one place where "no
             // answer" must NOT mean "no marker": a search really did run against this
             // group, twice, and really did not finish, which is exactly what the uncertain
@@ -1383,7 +1466,7 @@ namespace GlobalConversationTracker
             // unread down there" on the strength of two crashes.
             if (_recovery.IsQuarantined(entry.conversationID))
             {
-                return _markUncertain ? Draw(_uncertainHtml, UncertainMarker) : null;
+                return Uncertain();
             }
 
             // THE ANSWER THAT NAMES NO OUTCOME, which is what an ordinary option gets.
@@ -1403,9 +1486,7 @@ namespace GlobalConversationTracker
                 // lower bound, so a search that ran out of budget has not established that
                 // nothing is reachable - only that it did not get there. Drawing nothing
                 // says the first, which is a claim the search did not make.
-                return _markUncertain && !answer.Complete
-                    ? Draw(_uncertainHtml, UncertainMarker)
-                    : null;
+                return answer.Complete ? null : Uncertain();
             }
 
             // Above the option's own novelty, so something was actually reached. That is
@@ -1416,6 +1497,17 @@ namespace GlobalConversationTracker
                 : _unseenThisGameHtml;
             return Draw(colour, FoundMarker);
         }
+
+        /// <summary>The uncertain marker, or nothing where the player turned it off.</summary>
+        /// <remarks>
+        /// THREE PATHS DRAW IT and they mean the same thing each time - a search ran and did
+        /// not establish an answer, so nothing is claimed either way (de-pvq). A crawl that
+        /// ran out of budget, a group quarantined for killing engines, and a menu drawn
+        /// while a crashed engine is being replaced. The setting that turns it off is the
+        /// player's, and it has to turn all three off together.
+        /// </remarks>
+        private static string? Uncertain() =>
+            _markUncertain ? Draw(_uncertainHtml, UncertainMarker) : null;
 
         /// <summary>One marker, in one colour, as the game's text markup.</summary>
         private static string Draw(string colourHtml, string marker) =>

@@ -729,11 +729,14 @@ namespace GlobalConversationTracker.Harness
         /// as the death suite, so that what follows is a CHANGE from something known rather
         /// than a claim on its own.</para>
         ///
-        /// <para>2. The same menu with the engine killed underneath it. Unmarked, because
-        /// the replacement is deliberately not built inside the frame that draws a response
-        /// menu - a process launch plus a 173-244 ms index read has to happen behind it.
-        /// This is the scenario that would hang without <c>expectsRecovery</c>: it waits for
-        /// the new engine instead of for a notice that is never raised.</para>
+        /// <para>2. The same menu with the engine killed underneath it. EVERY OPTION
+        /// UNCERTAIN - a search really did run here and really did not finish, which is what
+        /// '*?' means (de-pvq); drawing nothing would say "there is nothing unread down
+        /// there" on the strength of a crash. The markers are not the real ones because the
+        /// replacement is deliberately not built inside the frame that draws a response menu
+        /// - a process launch plus a 173-244 ms index read has to happen behind it. This is
+        /// also the scenario that would hang without <c>expectsRecovery</c>: it waits for the
+        /// new engine instead of for a modal notice that is never raised.</para>
         ///
         /// <para>3. THE SAME MENU AGAIN, MARKED. This is the one that makes the suite worth
         /// running: it says the respawn is a RECOVERY rather than a quieter failure. Every
@@ -762,7 +765,7 @@ namespace GlobalConversationTracker.Harness
                     "afford-both",
                     SiilengConversation,
                     "the menu drawn while the replacement is still coming up",
-                    AllUnmarked("the engine died and its replacement is not up yet"),
+                    AllUncertain("a search ran here and the engine died before it answered"),
                     money: 5100,
                     advances: SiilengAdvances,
                     branchPolicy: BranchPolicy.NoneAnywhere,
@@ -795,10 +798,23 @@ namespace GlobalConversationTracker.Harness
                     "the look-ahead engine has gone and will not be restarted",
                     false,
                     "and never gives up, which one death must not cause"),
+                // TOLD, BUT NOT STOPPED. The player sees '*?' on every option and needs
+                // to know why, so a passing line says the engine crashed and is
+                // restarting - while the modal window, which is reserved for the one fatal
+                // message, must NOT appear.
+                new LogExpectation(
+                    "the player was told the engine is restarting",
+                    true,
+                    "the player is told the engine is restarting, once",
+                    times: 1),
+                new LogExpectation(
+                    "the player was told the engine is restarting in a passing notification",
+                    true,
+                    "and told in passing rather than in a window that stops the game"),
                 new LogExpectation(
                     "the player was told on screen",
                     false,
-                    "and never interrupts the player about it"),
+                    "and never gets the fatal notice, which is a different message"),
                 new LogExpectation(
                     "dialogue statuses are being tracked",
                     true,
@@ -1357,6 +1373,21 @@ namespace GlobalConversationTracker.Harness
             Unmarked(InspectSneakersEntry, why),
             Unmarked(InspectSpeakersEntry, why),
             Unmarked(LeaveEntry, why),
+        };
+
+        /// <summary>Every option Siileng's hub offers, expected to carry the grey '*?'.</summary>
+        /// <remarks>
+        /// WHAT A MENU GETS WHEN THE ENGINE DIED UNDER IT. Distinct from
+        /// <see cref="AllUnmarked"/> in exactly the way <c>Marker.None</c> is distinct from
+        /// <c>Marker.Uncertain</c>: none is an answer, and this is the absence of one. A
+        /// suite that could not tell them apart would read a crash as "nothing unread here".
+        /// </remarks>
+        private static OptionExpectation[] AllUncertain(string why) => new[]
+        {
+            new OptionExpectation(BuySneakersEntry, Marker.Uncertain, why),
+            new OptionExpectation(InspectSneakersEntry, Marker.Uncertain, why),
+            new OptionExpectation(InspectSpeakersEntry, Marker.Uncertain, why),
+            new OptionExpectation(LeaveEntry, Marker.Uncertain, why),
         };
     }
 }
