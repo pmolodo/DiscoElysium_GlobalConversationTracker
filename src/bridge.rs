@@ -974,6 +974,32 @@ fn collect(
 /// rather than fails - which is why [`DataVars::try_new`] is asked fallibly here (de-0a3a).
 /// Neither is about marshalling.
 ///
+/// The conversations a request's starts live in, sorted and without repeats.
+///
+/// WHAT THE LAYOUT IS NARROWED TO - see [`DataLayout::for_group_entered_at`] and de-3x76.8
+/// - and therefore part of what a kept workspace is valid for.
+///
+/// TAKEN FROM THE STARTS RATHER THAN FROM `request.conversation`, which is almost always
+/// the same single conversation and is not guaranteed to be. The plugin groups its starts
+/// by conversation before sending, so in play this is one id; but nothing on the wire
+/// enforces it, and the tests and measurements do send starts from anywhere in the group.
+/// Narrowing to the named conversation alone would then drop a slot that a start somewhere
+/// else genuinely reads, which is a wrong answer rather than a slower one.
+///
+/// A request with no starts falls back to the conversation it names, so the layout is
+/// narrowed to something rather than to nothing.
+pub fn entered_at_of(request: &LookAheadRequest) -> Vec<i32> {
+    let mut conversations: Vec<i32> =
+        request.starts.iter().map(|start| start.conversation).collect();
+    if conversations.is_empty() {
+        conversations.push(request.conversation);
+    }
+
+    conversations.sort_unstable();
+    conversations.dedup();
+    conversations
+}
+
 /// `declared` is the database's variable table where it has been deployed beside the
 /// index; see [`SnapshotWorld`] for what it is for and what its absence costs.
 pub fn answer(
@@ -1067,7 +1093,15 @@ where
     F: Fn(DialogueNodeId) -> Novelty,
 {
     let symbols = graph.symbols().clone();
-    let layout = DataLayout::for_group(graph, world, COUNTER_CAP);
+    // NARROWED TO WHAT THE REQUEST'S CONVERSATION CAN REACH - de-3x76.8. The group is much
+    // bigger than the conversation the player is standing in, and a slot read only by
+    // guards beyond what this one reaches is carried for nothing.
+    let layout = DataLayout::for_group_entered_at(
+        graph,
+        world,
+        COUNTER_CAP,
+        Some(&entered_at_of(request)),
+    );
     let vars = DataVars::try_new(&layout, &symbols, request.diagram_budget())?;
     let mut compiler = GuardCompiler::new(&vars)
         .with_world(world)

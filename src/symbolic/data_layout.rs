@@ -128,8 +128,93 @@ impl DataLayout {
         world: &dyn crate::world::world::ILookAheadWorld,
         counter_cap: i32,
     ) -> Self {
+        Self::for_group_entered_at(graph, world, counter_cap, None)
+    }
+
+    /// The same, narrowed to what a query ENTERING AT one conversation can reach.
+    ///
+    /// `entered_at` names the conversation the request's starts live in, or `None` for the
+    /// whole group - which is what [`Self::for_group`] passes and what every measurement
+    /// that is about a group rather than a query wants.
+    ///
+    /// ## Why the unit is a conversation and not a start (de-3x76.8)
+    ///
+    /// `read_by` collects every name any guard ANYWHERE in the group reads, and a group is
+    /// much bigger than the conversation a player is standing in - 368 is 4,724 entries
+    /// over five conversations. A slot read only by guards on entries the query cannot
+    /// structurally reach is carried for nothing.
+    ///
+    /// Narrowing per START would save slightly more, and cannot be had.
+    /// `measurements/start_relative_layout.rs` measured all three granularities:
+    ///
+    /// ```text
+    ///  conv   whole   per start   per menu   per conversation
+    ///   368     241   118 (51%)  119 (51%)         124 (49%)
+    ///    14     236   195 (17%)  201 (15%)         193 (18%)
+    ///    28     144    71 (51%)   70 (51%)         104 (28%)
+    /// ```
+    ///
+    /// Per conversation keeps almost all of the saving on the largest group AND IS THE ONLY
+    /// ONE COMPATIBLE WITH THE KEPT MANAGER. `workspace::Workspace` holds a diagram manager
+    /// across requests and `measurements/manager_reuse.rs` prices that at 45 ms a request; a
+    /// layout that moved per menu would rebuild it on every menu and hand back more than
+    /// this saves. A layout that is a property of the CONVERSATION does not move between the
+    /// menus inside it, so the manager survives exactly where it earns its keep - and the
+    /// plugin already sends one request per conversation, so this is the granularity the
+    /// wire has anyway.
+    ///
+    /// ## Why it cannot drop a slot a real path needs
+    ///
+    /// The reachable set is STRUCTURAL - links followed, guards ignored - so it
+    /// over-approximates what any search can walk. A search starts at one of the request's
+    /// starts, which are entries of `entered_at`, so everything it can visit is in the set.
+    pub fn for_group_entered_at(
+        graph: &LookAheadGraph,
+        world: &dyn crate::world::world::ILookAheadWorld,
+        counter_cap: i32,
+        entered_at: Option<&[i32]>,
+    ) -> Self {
+        let reads = match entered_at {
+            Some(conversations) => Self::read_by_some(
+                graph,
+                Self::reachable_from_conversations(graph, conversations),
+            ),
+            None => Self::read_by(graph),
+        };
+
         Self::for_graph(graph, counter_cap, Self::money_ceiling(graph, world.money()), false)
-            .keeping_only_read(graph.symbols(), &Self::read_by(graph))
+            .keeping_only_read(graph.symbols(), &reads)
+    }
+
+    /// Every entry reachable by links from any entry of `conversations`, those included.
+    ///
+    /// Structural only, for the reason given on [`Self::for_group_entered_at`]. A
+    /// conversation the graph does not hold reaches nothing, and the caller then gets a
+    /// layout with no slots - which is why callers pass the conversations the request's
+    /// STARTS live in rather than any taken from somewhere else.
+    fn reachable_from_conversations(
+        graph: &LookAheadGraph,
+        conversations: &[i32],
+    ) -> Vec<crate::core::types::DialogueNodeId> {
+        let mut seen: HashSet<crate::core::types::DialogueNodeId> = HashSet::new();
+        let mut pending = std::collections::VecDeque::new();
+
+        for node in graph.nodes() {
+            if conversations.contains(&node.id.conversation_id) && seen.insert(node.id) {
+                pending.push_back(node.id);
+            }
+        }
+
+        while let Some(id) = pending.pop_front() {
+            let Some(node) = graph.get(id) else { continue };
+            for &next in &node.links {
+                if graph.contains(next) && seen.insert(next) {
+                    pending.push_back(next);
+                }
+            }
+        }
+
+        seen.into_iter().collect()
     }
 
     /// How many decision-diagram variables the layout uses.

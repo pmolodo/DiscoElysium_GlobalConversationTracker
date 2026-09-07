@@ -95,6 +95,18 @@ use crate::symbolic::vars::DataVars;
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Key {
     group: Vec<i32>,
+    /// The conversation the request entered at, which the LAYOUT is narrowed to.
+    ///
+    /// de-3x76.8. A layout built from what one conversation can structurally reach is
+    /// smaller than one built from the whole group - 241 variables to 124 on conversation
+    /// 368 - so it has to be part of what a workspace is valid for.
+    ///
+    /// THIS IS WHY THE NARROWING IS PER CONVERSATION AND NOT PER MENU. The plugin sends one
+    /// request per conversation, so consecutive menus in the conversation the player is
+    /// standing in share this key and share the manager; only walking into another
+    /// conversation of the group rebuilds it. A per-menu layout would rebuild it every
+    /// menu and hand back more than the smaller layout saves.
+    entered_at: Vec<i32>,
     money_ceiling: Option<u32>,
     memory: usize,
     cache_split: usize,
@@ -136,9 +148,13 @@ impl Workspace {
     ///
     /// `world` is used ONLY for the money ceiling that sizes the layout; every request
     /// carries its own world for the compiler and the seed.
+    ///
+    /// `entered_at` is the conversation the requests will start in, which narrows the
+    /// layout - see [`Key::entered_at`].
     pub fn open(
         graph: LookAheadGraph,
         group: Vec<i32>,
+        entered_at: Vec<i32>,
         world: WorldSnapshot,
         declared: Option<Arc<VariableTable>>,
         budget: DiagramBudget,
@@ -146,6 +162,7 @@ impl Workspace {
         let graph = Arc::new(graph);
         let key = Key {
             group: group.clone(),
+            entered_at: entered_at.clone(),
             money_ceiling: ceiling_of(&graph, &world, declared.clone()),
             memory: budget.memory(),
             cache_split: budget.cache_split(),
@@ -160,7 +177,7 @@ impl Workspace {
         let owned = Arc::clone(&graph);
         let thread = std::thread::Builder::new()
             .stack_size(isolated::STACK)
-            .spawn(move || own(owned, group, world, declared, budget, inbox, ready))
+            .spawn(move || own(owned, group, entered_at, world, declared, budget, inbox, ready))
             .ok()?;
 
         // WAITED FOR, because the manager is what can fail and the caller has to be told
@@ -183,11 +200,13 @@ impl Workspace {
     pub fn serves(
         &self,
         group: &[i32],
+        entered_at: &[i32],
         world: &WorldSnapshot,
         declared: Option<Arc<VariableTable>>,
         budget: DiagramBudget,
     ) -> bool {
         self.key.group == group
+            && self.key.entered_at == entered_at
             && self.key.memory == budget.memory()
             && self.key.cache_split == budget.cache_split()
             && self.key.money_ceiling == ceiling_of(&self.graph, world, declared)
@@ -231,6 +250,7 @@ impl Drop for Workspace {
 fn own(
     graph: Arc<LookAheadGraph>,
     group: Vec<i32>,
+    entered_at: Vec<i32>,
     layout_world: WorldSnapshot,
     declared: Option<Arc<VariableTable>>,
     budget: DiagramBudget,
@@ -242,7 +262,8 @@ fn own(
     // ceiling that produced - so a later request whose money moves the ceiling is refused
     // by `serves` rather than answered against a layout that does not fit it.
     let opening = SnapshotWorld::declaring(layout_world, declared.clone());
-    let layout = DataLayout::for_group(&graph, &opening, COUNTER_CAP);
+    let layout =
+        DataLayout::for_group_entered_at(&graph, &opening, COUNTER_CAP, Some(&entered_at));
 
     // FALLIBLY, and reported before any request is accepted: the node store is one big
     // preallocation and asking for it infallibly aborts rather than fails - de-0a3a.

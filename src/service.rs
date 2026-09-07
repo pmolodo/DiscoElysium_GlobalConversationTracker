@@ -256,6 +256,11 @@ impl Service {
     ) -> crate::bridge::LookAheadResponse {
         let budget = request.diagram_budget();
         let group = crate::index::discover_group(&self.index, request.conversation);
+        // WHERE THE STARTS LIVE, which is what the layout is narrowed to and therefore part
+        // of what the workspace is valid for. Almost always the one conversation the
+        // request names - the plugin groups its starts by conversation before sending - but
+        // taken from the starts rather than assumed, because nothing enforces that.
+        let entered_at = crate::bridge::entered_at_of(&request);
         if group.is_empty() {
             return crate::bridge::answer(&self.index, self.declared.clone(), &request);
         }
@@ -268,7 +273,13 @@ impl Service {
         };
 
         let serves = held.as_ref().is_some_and(|workspace| {
-            workspace.serves(&group, &request.world, self.declared.clone(), budget)
+            workspace.serves(
+                &group,
+                &entered_at,
+                &request.world,
+                self.declared.clone(),
+                budget,
+            )
         });
 
         if !serves {
@@ -284,6 +295,7 @@ impl Service {
             *held = crate::workspace::Workspace::open(
                 graph,
                 group,
+                entered_at.clone(),
                 request.world.clone(),
                 self.declared.clone(),
                 budget,
