@@ -75,6 +75,63 @@ fn bits_for(max: u32) -> u8 {
     if max == 0 { 1 } else { (u32::BITS - max.leading_zeros()) as u8 }
 }
 
+/// Slots that every action writes together, with the same value, at the same entry.
+///
+/// de-3x76.9. Two such slots carry the same information twice - a task flag and its mirror,
+/// a variable renamed with the old one kept in step - and one variable could serve both.
+///
+/// THE SIGNATURE IS THE WHOLE TEST. A slot's writes, as (entry, kind, value) sorted; two
+/// slots with the same signature are written by exactly the same actions to exactly the same
+/// values, so nothing a search does can ever tell them apart.
+///
+/// Only slots the LAYOUT CARRIES and that something actually writes are considered. An
+/// unwritten slot has an empty signature and would make every unwritten slot "equivalent",
+/// which is true and useless - that class is what `keeping_only_read` and the unwritten
+/// column above are for.
+fn write_equivalence_classes(
+    graph: &LookAheadGraph,
+    symbols: &lookahead_engine::core::state::StateSymbols,
+    layout: &DataLayout,
+) -> Vec<Vec<usize>> {
+    let mut signatures: HashMap<usize, Vec<(DialogueNodeId, i32, i32)>> = HashMap::new();
+    for node in graph.nodes() {
+        for action in &node.actions {
+            let slot = action.slot();
+            if slot < 0 || slot as usize >= symbols.count() {
+                continue;
+            }
+            signatures.entry(slot as usize).or_default().push((
+                node.id,
+                action.kind() as i32,
+                action.value(),
+            ));
+        }
+    }
+
+    let mut by_signature: HashMap<Vec<(DialogueNodeId, i32, i32)>, Vec<usize>> = HashMap::new();
+    for (slot, mut writes) in signatures {
+        // Carried by the layout, or collapsing it saves nothing that is being paid for.
+        if layout.slot(slot).is_none_or(|(_, bits)| bits == 0) {
+            continue;
+        }
+        writes.sort_by_key(|(id, kind, value)| {
+            (id.conversation_id, id.entry_id, *kind, *value)
+        });
+        by_signature.entry(writes).or_default().push(slot);
+    }
+
+    let mut classes: Vec<Vec<usize>> = by_signature
+        .into_values()
+        .filter(|class| class.len() > 1)
+        .map(|mut class| {
+            class.sort_unstable();
+            class
+        })
+        .collect();
+    classes.sort();
+    classes
+}
+
 /// Per slot, the largest constant any guard in the group compares it against.
 ///
 /// What makes a narrowed counter SOUND: a value clamped above every constant the guards
@@ -601,6 +658,22 @@ fn what_each_group_carries() {
             vars - sound,
             if vars > 0 { (vars - sound) as f64 / vars as f64 * 100.0 } else { 0.0 },
         );
+
+        // WHAT de-3x76.9 WOULD BUY, which that task asked be measured before being built:
+        // slots that every action writes TOGETHER, with the same value, at the same entry.
+        // Two of those carry the same information twice and one variable could do for both.
+        let classes = write_equivalence_classes(&graph, &symbols, &layout);
+        let shared: usize = classes.iter().map(|class| class.len() - 1).sum();
+        println!(
+            "      {} non-trivial write-equivalence class(es), {shared} variable(s) they \
+             could share",
+            classes.len(),
+        );
+        for class in &classes {
+            let names: Vec<&str> =
+                class.iter().map(|slot| symbols.name_of(*slot).unwrap_or("?")).collect();
+            println!("        {}", names.join(" = "));
+        }
 
         if !narrowed.is_empty() {
             println!("      narrowed: {}", narrowed.join(", "));
