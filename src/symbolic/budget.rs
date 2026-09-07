@@ -17,6 +17,12 @@ use oxidd::bdd::{new_manager, BDDManagerRef};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DiagramBudget {
     memory: usize,
+    /// Nodes per apply-cache entry - see [`DiagramBudget::NODES_PER_CACHE_ENTRY`].
+    ///
+    /// A FIELD RATHER THAN ONLY A CONSTANT so that de-1e8l has one place to vary it. Every
+    /// constructor here sets it to the constant, so nothing changes for a caller that does
+    /// not ask; [`DiagramBudget::with_cache_split`] is the only thing that moves it.
+    cache_split: usize,
 }
 
 impl DiagramBudget {
@@ -76,15 +82,77 @@ impl DiagramBudget {
 
     /// How many nodes there are per apply-cache entry.
     ///
-    /// A quarter, which is convention rather than measurement: the cache changes no
-    /// answer, only how much is recomputed, so the split between it and the node store is
-    /// a speed-for-room trade with no obviously right setting. de-1e8l is to measure what
-    /// it should be; until then this is what every caller has always used.
+    /// A quarter, and it was convention until de-1e8l measured it -
+    /// `measurements/cache_split.rs`, which sweeps a sixty-fourth to a half over the heavy
+    /// groups at a held total. Every group with a signal peaks HERE and is flat or worse
+    /// either side: 368 settles fastest at a quarter, and 14 and 631 get furthest in a
+    /// fixed minute at a quarter. Going wider to a half buys nothing anywhere and doubles
+    /// what construction costs.
+    ///
+    /// AND THE FAILURE AT THE OTHER END IS THE ONE NOBODY EXPECTED. de-1e8l predicted that
+    /// too GENEROUS a cache would starve the node store into a no-room; the only no-room in
+    /// the sweep is at a sixty-fourth, the stingiest cache and the row that bought the most
+    /// nodes. A cache is what stops a subproblem being recomputed, and recomputing allocates
+    /// nodes - so starving it costs room as well as time. The safe direction to be wrong in
+    /// is WIDE, which degrades smoothly, rather than narrow, which can end a search.
+    ///
+    /// The sweep is at 512 MB, where the budget binds. Nobody has run it at the shipped
+    /// 256 MB, and nobody has measured a whole MENU against one manager, where the cache is
+    /// warm from the second option onwards.
     pub const NODES_PER_CACHE_ENTRY: usize = 4;
 
-    /// An allowance of this many bytes.
+    /// What one apply-cache entry costs, in bytes.
+    ///
+    /// About twenty, from `tests/manager_memory.rs` counting what construction asks the
+    /// allocator for. It is separated out from [`Self::BYTES_PER_NODE`] because the two
+    /// are not independent: at one entry per four nodes the cache is five of those forty
+    /// bytes, and a caller that changes the split changes what a node costs. See
+    /// [`Self::bytes_per_node`].
+    pub const BYTES_PER_CACHE_ENTRY: usize = 20;
+
+    /// An allowance of this many bytes, split the way every caller has always split it.
     pub const fn new(memory: usize) -> Self {
-        Self { memory }
+        Self { memory, cache_split: Self::NODES_PER_CACHE_ENTRY }
+    }
+
+    /// The same allowance, divided differently between the node store and the apply cache.
+    ///
+    /// ONE NODE PER `nodes_per_entry`, so a SMALLER number is a BIGGER cache: two is a
+    /// cache half the size of the store, sixteen is a sixteenth of it.
+    ///
+    /// THE TOTAL DOES NOT MOVE, which is the whole reason this exists rather than callers
+    /// passing two capacities again. A bigger cache buys fewer nodes out of the same bytes
+    /// - see [`Self::bytes_per_node`] - so a sweep over the split is a sweep over one
+    /// trade rather than over two budgets that happen to differ.
+    ///
+    /// FOR MEASURING, not for shipping. The split is a convention with nothing behind it
+    /// and de-1e8l is what puts something behind it; until it does, every shipped caller
+    /// should be taking [`Self::NODES_PER_CACHE_ENTRY`] by going through [`Self::new`].
+    ///
+    /// # Panics
+    ///
+    /// If `nodes_per_entry` is zero, which would ask for one cache entry per node and
+    /// divide by zero pricing it.
+    pub fn with_cache_split(self, nodes_per_entry: usize) -> Self {
+        assert!(nodes_per_entry > 0, "a cache split of zero is one entry per node");
+        Self { cache_split: nodes_per_entry, ..self }
+    }
+
+    /// What a node costs under THIS split, in bytes.
+    ///
+    /// [`Self::BYTES_PER_NODE`] is this at the default split and is where the reasoning
+    /// lives; what this adds is that the cache's share of it moves when the split does. At
+    /// one entry per four nodes the cache is twenty bytes over four nodes - five - and the
+    /// answer is the forty that constant states. At one per two it is ten, and a node costs
+    /// forty-five, so the same allowance buys about eleven per cent fewer of them.
+    ///
+    /// THAT IS THE TRADE BEING MEASURED, and it only exists if it is priced: leaving the
+    /// cost at forty however the split moved would let a bigger cache be bought with memory
+    /// the budget had already promised to the node store, and the manager would spend past
+    /// its allowance rather than trading inside it.
+    pub fn bytes_per_node(&self) -> usize {
+        Self::BYTES_PER_NODE - (Self::BYTES_PER_CACHE_ENTRY / Self::NODES_PER_CACHE_ENTRY)
+            + (Self::BYTES_PER_CACHE_ENTRY / self.cache_split)
     }
 
     /// What a player's search gets when they have not said otherwise, in bytes.
@@ -141,8 +209,13 @@ impl DiagramBudget {
     }
 
     /// How many diagram nodes it buys.
+    ///
+    /// Under this budget's own split, so a bigger cache buys fewer nodes out of the same
+    /// bytes rather than being added on top of them - see [`Self::bytes_per_node`]. At the
+    /// default split this is the allowance over [`Self::BYTES_PER_NODE`], which is what it
+    /// has always been.
     pub fn nodes(&self) -> usize {
-        self.memory / Self::BYTES_PER_NODE
+        self.memory / self.bytes_per_node()
     }
 
     /// How many apply-cache entries it buys.
@@ -151,7 +224,14 @@ impl DiagramBudget {
     /// be a manager that can remember nothing, which is a pathology rather than a small
     /// budget.
     pub fn cache_entries(&self) -> usize {
-        (self.nodes() / Self::NODES_PER_CACHE_ENTRY).max(1)
+        (self.nodes() / self.cache_split).max(1)
+    }
+
+    /// Nodes per apply-cache entry, as this budget divides them.
+    ///
+    /// [`Self::NODES_PER_CACHE_ENTRY`] unless [`Self::with_cache_split`] moved it.
+    pub fn cache_split(&self) -> usize {
+        self.cache_split
     }
 
     /// A manager sized to this allowance.
@@ -253,5 +333,56 @@ mod tests {
         // Zero would be a manager that can remember nothing, which is a pathology rather
         // than a small budget.
         assert_eq!(DiagramBudget::new(0).cache_entries(), 1);
+    }
+
+    #[test]
+    fn the_default_split_prices_a_node_at_the_constant_that_states_it() {
+        // The two have to agree or every number in BYTES_PER_NODE's own note is about a
+        // manager nobody builds.
+        assert_eq!(
+            DiagramBudget::new(1).bytes_per_node(),
+            DiagramBudget::BYTES_PER_NODE,
+        );
+    }
+
+    #[test]
+    fn a_bigger_cache_is_paid_for_in_nodes_rather_than_added_to_the_budget() {
+        // THE WHOLE POINT OF THE SWEEP de-1e8l is to run. If a wider cache did not cost
+        // nodes, the split would not be a trade and a manager asked for a half-sized cache
+        // would spend half again as much as its allowance said.
+        let allowance = 64 * 1024 * 1024;
+        let quarter = DiagramBudget::new(allowance);
+        let half = quarter.with_cache_split(2);
+        let sixteenth = quarter.with_cache_split(16);
+
+        assert!(half.nodes() < quarter.nodes());
+        assert!(sixteenth.nodes() > quarter.nodes());
+
+        // And what it buys moves the other way, by more than the node count lost.
+        assert!(half.cache_entries() > quarter.cache_entries());
+        assert!(sixteenth.cache_entries() < quarter.cache_entries());
+    }
+
+    #[test]
+    fn no_split_lets_a_manager_ask_for_more_than_the_allowance() {
+        // Nodes at sixteen bytes plus their cache entries at twenty, against the bytes the
+        // budget was given. The unique table grows into the rest, which is why this is a
+        // headroom check rather than an equality.
+        for split in [1, 2, 4, 8, 16, 64] {
+            let budget = DiagramBudget::new(64 * 1024 * 1024).with_cache_split(split);
+            let up_front = budget.nodes() * 16
+                + budget.cache_entries() * DiagramBudget::BYTES_PER_CACHE_ENTRY;
+            assert!(
+                up_front <= budget.memory(),
+                "a split of {split} asks for {up_front} bytes up front out of {}",
+                budget.memory(),
+            );
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "one entry per node")]
+    fn a_split_of_zero_is_refused_rather_than_dividing_by_it() {
+        let _ = DiagramBudget::new(1).with_cache_split(0);
     }
 }

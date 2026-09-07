@@ -54,6 +54,10 @@ name = "backward_support"
 path = "measurements/backward_support.rs"
 
 [[example]]
+name = "cache_split"
+path = "measurements/cache_split.rs"
+
+[[example]]
 name = "guard_depth"
 path = "measurements/guard_depth.rs"
 
