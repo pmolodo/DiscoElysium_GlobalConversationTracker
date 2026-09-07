@@ -73,9 +73,12 @@
 //! What it is NOT is a question the search can necessarily answer. Entries that deep are
 //! often ones the guards shut, so these rows frequently read "explore everything, find
 //! nothing" - and that is exactly the worst case for cost, which is what these rows are for.
-//! A separate measurement, tests/unseen_falloff.rs, exists for the falloff CURVE and seeds
-//! by reach order instead, because a flat "found nothing" series measures nothing about
-//! falloff.
+//! THE FALLOFF CURVE IS A DIFFERENT MEASUREMENT AND NOBODY HAS ONE. It needs seeding by
+//! REACH ORDER rather than by depth, because a flat "found nothing" series measures nothing
+//! about falloff. `tests/unseen_falloff.rs` did it and went in 15969c1 with the
+//! state-at-a-time engine; nothing replaced it, and de-bnjy.5 carries the gap. Said plainly
+//! rather than cited, because this file pointed at that path for months after it stopped
+//! existing.
 //!
 //! RANDOM IS THE TYPICAL CASE. A save does not read a conversation depth-first; it reads
 //! whatever the conversation led it to. Drawing uniformly from the structurally reachable
@@ -170,8 +173,8 @@
 //! before it was removed. The deepest entries by edge analysis are the ones the guards shut,
 //! so seeding them changes nothing the search can find and it explores the whole space
 //! regardless. That is the correct worst case and it is what these rows are for; it is not a
-//! falloff curve, and tests/unseen_falloff.rs exists because measuring one needs a different
-//! seeding entirely.
+//! falloff curve, and measuring one needs a different seeding entirely - see the note above
+//! on why nothing measures it today.
 //!
 //! ## All three engines on one row, at one budget, 2026-09-05
 //!
@@ -264,6 +267,7 @@ use lookahead_engine::symbolic::novelty_search::{
 use lookahead_engine::symbolic::reachability::{seed_of, Budget, Reachability};
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::symbolic::budget::DiagramBudget;
+use lookahead_engine::symbolic::isolated;
 
 #[path = "../tests/common/mod.rs"]
 mod common;
@@ -1086,18 +1090,36 @@ fn main() {
                 continue;
             }
 
+            // EACH ENGINE ON A THREAD OF ITS OWN, which is the one thing this file was not
+            // doing and six other measurements were - de-w0rw. The 6 GB run of 2026-09-06
+            // lost five of sixty rows to `thread 'main' has overflowed its stack`, and the
+            // thread it names is the process's own.
+            //
+            // WHAT MAKES IT THE FIX rather than a bigger stack, measured on de-fpax: what
+            // accumulates is BUILDING A SECOND MANAGER ON A THREAD THAT HAS ALREADY BUILT
+            // ONE, and the third overflows - which is why the deaths were always a third
+            // row. A run here builds a manager per engine per profile per conversation, all
+            // on one thread; a thread per engine means one manager per thread, which is the
+            // arrangement that did not fail in twenty runs where the main thread failed in
+            // eight of twenty. A half-gigabyte stack only moved the rate.
+            //
+            // THE HELPER'S CONSTRAINT IS ALREADY MET: each of these builds its layout, its
+            // manager, its compiled guards and its seed itself, and hands back `Cells` -
+            // strings - so nothing borrowed from a manager crosses the boundary.
             let measured: Vec<String> = engines
                 .iter()
-                .flat_map(|engine| match engine {
-                    Engine::Forward => {
-                        symbolic_forward(&graph, start, &world, &symbols, &unseen).0
-                    }
-                    Engine::Backward => {
-                        symbolic_backward(&graph, start, &world, &symbols, &unseen).0
-                    }
-                    Engine::ForwardBackward => {
-                        forward_backward(&graph, start, &world, &symbols, &unseen).0
-                    }
+                .flat_map(|engine| {
+                    isolated::on_its_own_thread(|| match engine {
+                        Engine::Forward => {
+                            symbolic_forward(&graph, start, &world, &symbols, &unseen).0
+                        }
+                        Engine::Backward => {
+                            symbolic_backward(&graph, start, &world, &symbols, &unseen).0
+                        }
+                        Engine::ForwardBackward => {
+                            forward_backward(&graph, start, &world, &symbols, &unseen).0
+                        }
+                    })
                 })
                 .collect();
 

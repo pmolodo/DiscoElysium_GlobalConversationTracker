@@ -18,11 +18,17 @@
 //!
 //! ## What was tested before, and why it did not settle this
 //!
-//! tests/symbolic_compression.rs compares the natural order against its exact REVERSE and
-//! finds little difference. That is a weak probe of a space of n! orders: reversal mirrors
+//! An earlier probe compared the natural order against its exact REVERSE and
+//! found little difference. That is a weak probe of a space of n! orders: reversal mirrors
 //! the order, it does not rearrange it, so adjacent variables stay adjacent. It also
-//! measures a different object - a union of whole search states, entry included - where the
+//! measured a different object - a union of whole search states, entry included - where the
 //! fixed point keeps one set per entry with no entry variable at all.
+//!
+//! IT IS GONE, and this is the only account of it left. `tests/symbolic_compression.rs` went
+//! in 15969c1 with the state-at-a-time engine, so the weak result above cannot be re-run and
+//! is recorded here rather than cited. That costs nothing: the reason it did not settle the
+//! question is an argument about its SHAPE - reversal is not rearrangement - which does not
+//! depend on the numbers it produced.
 //!
 //! ## What this does instead
 //!

@@ -26,11 +26,18 @@
 //!
 //! ## What the slot count already known does NOT say
 //!
-//! tests/slot_width_cost.rs records slots after the read trim: 362 keeps 102, 28 keeps 136,
+//! Slots after the read trim: 362 keeps 102, 28 keeps 136,
 //! 368 keeps 217, 14 keeps 232, 631 keeps 245. That ranks 631 as the widest - and 631
 //! FINISHES the fixed point in 351 seconds while 14 never finishes at all. So the slot count
 //! does not predict the thing being optimised. Variables might, and the split by class
 //! might; that is what this is for.
+//!
+//! A RECORD RATHER THAN A CITATION. Those five figures were measured by
+//! `tests/slot_width_cost.rs`, which went in 15969c1 along with the state-at-a-time engine
+//! and everything that timed it. They are a property of `DataLayout` rather than of that
+//! engine, so they should still hold - but nothing re-runs them, and a reader who wants
+//! them checked has to measure them again rather than follow a path. Said here because a
+//! citation to a file that is not there reads as though the evidence is one file away.
 //!
 //! Run it with `cargo run --release --example layout_shape`.
 
