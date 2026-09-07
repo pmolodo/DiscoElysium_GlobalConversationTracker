@@ -132,7 +132,12 @@ fn write_equivalence_classes(
     classes
 }
 
-/// Per slot, the largest constant any guard in the group compares it against.
+/// Per slot, the SMALLEST and LARGEST constant any guard in the group compares it against.
+///
+/// The largest is what makes a narrowed counter sound (de-3x76.2). The smallest is what
+/// de-3x76.4 turns on: a slot whose structural maximum is below EVERY constant compared
+/// against it has every one of those guards constant false, so the guards fold and the slot
+/// goes with them - variable elimination rather than narrowing.
 ///
 /// What makes a narrowed counter SOUND: a value clamped above every constant the guards
 /// test answers each of those comparisons the same way the real value would.
@@ -148,13 +153,13 @@ fn write_equivalence_classes(
 fn compared_constants(
     graph: &LookAheadGraph,
     symbols: &lookahead_engine::core::state::StateSymbols,
-) -> (HashMap<usize, u32>, HashSet<usize>) {
-    let mut largest: HashMap<usize, u32> = HashMap::new();
+) -> (HashMap<usize, (u32, u32)>, HashSet<usize>) {
+    let mut seen: HashMap<usize, (u32, u32)> = HashMap::new();
     let mut unreadable: HashSet<usize> = HashSet::new();
     for node in graph.nodes() {
-        walk_comparisons(&node.guard, symbols, &mut largest, &mut unreadable);
+        walk_comparisons(&node.guard, symbols, &mut seen, &mut unreadable);
     }
-    (largest, unreadable)
+    (seen, unreadable)
 }
 
 /// The slot a guard expression names, if it simply names one.
@@ -171,7 +176,7 @@ fn slot_named(
 fn walk_comparisons(
     guard: &lookahead_engine::core::guard::GuardExpression,
     symbols: &lookahead_engine::core::state::StateSymbols,
-    largest: &mut HashMap<usize, u32>,
+    seen: &mut HashMap<usize, (u32, u32)>,
     unreadable: &mut HashSet<usize>,
 ) {
     use lookahead_engine::core::guard::GuardExpression as G;
@@ -191,16 +196,18 @@ fn walk_comparisons(
                     unreadable.insert(slot);
                     continue;
                 }
-                let seen = largest.entry(slot).or_insert(0);
-                *seen = (*seen).max(number as u32);
+                let number = number as u32;
+                let range = seen.entry(slot).or_insert((number, number));
+                range.0 = range.0.min(number);
+                range.1 = range.1.max(number);
             }
-            walk_comparisons(a, symbols, largest, unreadable);
-            walk_comparisons(b, symbols, largest, unreadable);
+            walk_comparisons(a, symbols, seen, unreadable);
+            walk_comparisons(b, symbols, seen, unreadable);
         }
-        G::Not(inner) => walk_comparisons(inner, symbols, largest, unreadable),
+        G::Not(inner) => walk_comparisons(inner, symbols, seen, unreadable),
         G::And(a, b) | G::Or(a, b) => {
-            walk_comparisons(a, symbols, largest, unreadable);
-            walk_comparisons(b, symbols, largest, unreadable);
+            walk_comparisons(a, symbols, seen, unreadable);
+            walk_comparisons(b, symbols, seen, unreadable);
         }
         G::Call(_, args) => {
             // A SLOT HANDED TO A QUERY is not a comparison this can reason about at all.
@@ -208,7 +215,7 @@ fn walk_comparisons(
                 if let Some(slot) = slot_named(arg, symbols) {
                     unreadable.insert(slot);
                 }
-                walk_comparisons(arg, symbols, largest, unreadable);
+                walk_comparisons(arg, symbols, seen, unreadable);
             }
         }
         G::Variable(_) | G::Literal(_) => {}
@@ -641,7 +648,9 @@ fn what_each_group_carries() {
                     None
                 }
                 None => None,
-                Some(sites) => Some(sites.max(thresholds.get(&slot).copied().unwrap_or(0))),
+                Some(sites) => {
+                    Some(sites.max(thresholds.get(&slot).map(|(_, high)| *high).unwrap_or(0)))
+                }
             };
             let wanted = match ceiling {
                 None => bits,
@@ -658,6 +667,38 @@ fn what_each_group_carries() {
             vars - sound,
             if vars > 0 { (vars - sound) as f64 / vars as f64 * 100.0 } else { 0.0 },
         );
+
+        // WHAT de-3x76.4 WOULD BUY, which is the only idea in the epic that ELIMINATES a
+        // variable rather than narrowing one. If a slot cannot structurally reach the
+        // smallest constant any guard compares it against, every one of those guards is
+        // constant false - the guard folds, and a slot nothing reads any more is dropped by
+        // the read trim that already exists.
+        let mut dead: Vec<String> = Vec::new();
+        for slot in 0..symbols.count() {
+            let Some((_, bits)) = layout.slot(slot) else { continue };
+            if bits == 0 || unreadable.contains(&slot) {
+                continue;
+            }
+            let (Some(ceiling), Some((low, _))) =
+                (writes[slot].ceiling(), thresholds.get(&slot).copied())
+            else {
+                continue;
+            };
+            if ceiling < low {
+                dead.push(format!(
+                    "{} reaches {ceiling}, compared against {low} and up",
+                    symbols.name_of(slot).unwrap_or("?"),
+                ));
+            }
+        }
+        println!(
+            "      {} slot(s) whose guards are all structurally dead, and which would go \
+             with them",
+            dead.len(),
+        );
+        for line in &dead {
+            println!("        {line}");
+        }
 
         // WHAT de-3x76.9 WOULD BUY, which that task asked be measured before being built:
         // slots that every action writes TOGETHER, with the same value, at the same entry.
