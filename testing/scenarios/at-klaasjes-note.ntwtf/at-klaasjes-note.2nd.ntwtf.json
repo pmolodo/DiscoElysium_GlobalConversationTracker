@@ -1,0 +1,11 @@
+{
+  "_format": "json-diff",
+  "_changes": {
+    "sunshineClockTimeHolder": {
+      "time": {
+        "dayCounter": 3,
+        "realDayCounter": 3
+      }
+    }
+  }
+}

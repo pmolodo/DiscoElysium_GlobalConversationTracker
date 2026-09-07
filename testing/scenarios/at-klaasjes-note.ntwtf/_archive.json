@@ -9,8 +9,8 @@
       "suffix": ".1st.ntwtf.json"
     },
     {
-      "diff": null,
-      "kind": "inherit",
+      "diff": "at-klaasjes-note.2nd.ntwtf.json",
+      "kind": "json",
       "name": "at-klaasjes-note.2nd.ntwtf.json",
       "suffix": ".2nd.ntwtf.json"
     },

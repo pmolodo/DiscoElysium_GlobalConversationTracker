@@ -3,27 +3,27 @@
   "base": "../../save_template.ntwtf",
   "members": [
     {
-      "diff": "whirling-f3.1st.ntwtf.json",
+      "diff": "at-klaasjes-flower.1st.ntwtf.json",
       "kind": "json",
-      "name": "whirling-f3.1st.ntwtf.json",
+      "name": "at-klaasjes-flower.1st.ntwtf.json",
       "suffix": ".1st.ntwtf.json"
     },
     {
-      "diff": null,
-      "kind": "inherit",
-      "name": "whirling-f3.2nd.ntwtf.json",
+      "diff": "at-klaasjes-flower.2nd.ntwtf.json",
+      "kind": "json",
+      "name": "at-klaasjes-flower.2nd.ntwtf.json",
       "suffix": ".2nd.ntwtf.json"
     },
     {
       "diff": null,
       "kind": "inherit",
-      "name": "whirling-f3.FOW.json",
+      "name": "at-klaasjes-flower.FOW.json",
       "suffix": ".FOW.json"
     },
     {
       "diff": null,
       "kind": "inherit",
-      "name": "whirling-f3.states.lua",
+      "name": "at-klaasjes-flower.states.lua",
       "suffix": ".states.lua"
     }
   ]
