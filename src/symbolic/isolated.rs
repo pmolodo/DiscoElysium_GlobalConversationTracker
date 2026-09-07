@@ -16,6 +16,37 @@
 //! died partway through a sweep, repeatedly, and the workaround until now was one process
 //! per conversation, which only limits the damage rather than avoiding it.
 //!
+//! ## What actually accumulates: a SECOND MANAGER on a thread, not a second search
+//!
+//! Measured 2026-09-06 with `measurements/search_residue.rs`, conversation 28, five searches
+//! at the matrix's six-gigabyte budget, twenty-five runs of each arrangement. The searches
+//! are identical in all of them; only how many threads and how many MANAGERS differ.
+//!
+//! ```text
+//!   arrangement                                                  died
+//!   a manager per search, the process's own thread              8 / 20
+//!   a manager per search, all on one 512 MB spawned thread     13 / 45
+//!   a manager per search, a fresh spawned thread each           0 / 20
+//!   ONE manager, many searches, one spawned thread              0 / 35
+//! ```
+//!
+//! So it is not the number of searches and it is not the stack: a thread may run as many
+//! searches as it likes against ONE manager and never fail, and giving a thread more stack
+//! only leaves the rate where it was. What costs is BUILDING A MANAGER ON A THREAD THAT HAS
+//! ALREADY BUILT ONE - the third is the one that overflows, which is exactly the row the
+//! matrix has always died on.
+//!
+//! THE INVARIANT IS THEREFORE ONE MANAGER PER THREAD, and this helper is how it is kept: a
+//! caller that builds its world inside the closure gets a manager that is the only one its
+//! thread will ever see. A caller that built one outside and searched inside would satisfy
+//! the letter of "everything inside" and not this.
+//!
+//! It also says `bridge::answer` is right as it stands, which was an open question: it takes
+//! one of these threads PER REQUEST and runs a whole menu's starts on it, against one manager
+//! built inside. `measurements/menu_residue.rs` puts that arrangement to
+//! `bridge::answer` directly - forty-five runs, budgets to six gigabytes, up to
+//! twenty-four starts, and once at three hundred and eighty-four - and none of them died.
+//!
 //! ## What has to happen inside the thread, and why the seam is here
 //!
 //! EVERYTHING THE DIAGRAM TOUCHES. The manager, the variable table, the compiled guards and

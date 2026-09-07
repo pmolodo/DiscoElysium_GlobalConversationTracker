@@ -994,10 +994,20 @@ pub fn answer(
     // ON A THREAD OF ITS OWN, and everything the diagram manager owns is built inside it
     // and dropped inside it - see `symbolic::isolated`. Releasing a large diagram walks it
     // recursively, so a thread that is going to hold one wants room; the stack is belt and
-    // braces rather than the fix for de-8hh2.13, which is still open.
+    // braces rather than the fix for de-8hh2.13.
     //
     // ONE THREAD PER REQUEST, not per start. The layout, the variables, the compiled guards
     // and the seed are facts about the GROUP, and a menu asks about a dozen options in it.
+    //
+    // AND THAT IS SAFE, MEASURED, which it was not known to be. What accumulates is a
+    // SECOND MANAGER built on a thread that has already built one - not a second search -
+    // so a request that builds exactly one manager inside its thread and runs every start
+    // against it never reaches the fault, however many starts there are. See the table in
+    // `symbolic::isolated`; `measurements/menu_residue.rs` puts this call itself to it,
+    // forty-five runs at budgets to six gigabytes, and once at three hundred and
+    // eighty-four starts. A thread per start would have cost about twelve milliseconds an
+    // option at the player's default budget, rebuilding the diagram side each time, to buy
+    // nothing.
     let answers = isolated::on_its_own_thread(|| {
         answer_within(&graph, &world, request, &novelty)
     });
