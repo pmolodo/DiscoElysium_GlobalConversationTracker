@@ -28,6 +28,33 @@
 //! This measures which groups fall on which side, so the first change can be made on
 //! evidence and the second argued about separately.
 //!
+//! ## The budget sweep, 2026-09-07, which settles the SECOND change (de-wncd.1)
+//!
+//! `FORWARD_MS` moves the budget, so the question "how many groups settle just past what
+//! they are allowed" is answerable by running this four times:
+//!
+//! ```text
+//!   forward budget    spanning (of 50)    lone (of 120)
+//!              50 ms        25                  119
+//!             100 ms        26                  119
+//!             250 ms        28                  119
+//!            1000 ms        29                  120
+//! ```
+//!
+//! TWENTY TIMES THE BUDGET BUYS FOUR GROUPS. And the spanning row is not a sample - there
+//! are exactly 50 multi-conversation groups in the game (`group_census`), so that column is
+//! the whole population: 25 of them settle at the shipped budget and 29 ever settle at all
+//! within a second.
+//!
+//! The band de-wncd.1 was written about - groups like conversation 28, which needs about 57
+//! ms against the 50 it is given - contains ONE further group between 50 and 100 ms. And
+//! the budget is spent PER START, so buying it costs a 24-start menu 1.2 extra seconds.
+//!
+//! So a per-group rule for raising the forward budget has nothing to win: the groups it
+//! would newly settle are a handful, they are the FAST groups already, and the slow ones
+//! (368, 631, 14) settle at no budget a menu could afford. What the sweep does confirm is
+//! that the FIRST change was right - most of the game settles at the budget it already has.
+//!
 //! ## What it does
 //!
 //! For each group, builds the diagram side exactly as `bridge::answer_within` does and runs
