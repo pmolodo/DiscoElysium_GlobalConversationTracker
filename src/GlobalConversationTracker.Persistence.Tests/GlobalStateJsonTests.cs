@@ -371,7 +371,7 @@ namespace GlobalConversationTracker.Persistence.Tests
             Assert.Equal(GlobalStateLoadOutcome.UnsupportedVersion, result.Outcome);
             Assert.Null(result.State);
             Assert.Contains(
-                "GlobalStateConvert", result.ErrorMessage!, StringComparison.Ordinal);
+                "tools/FormatConvert", result.ErrorMessage!, StringComparison.Ordinal);
             Assert.Throws<InvalidOperationException>(() => result.RequireState());
         }
 

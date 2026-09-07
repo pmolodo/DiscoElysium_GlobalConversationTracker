@@ -101,6 +101,25 @@ namespace GlobalConversationTracker.Persistence
         /// </remarks>
         public const int LegacyPerEntryFormatVersion = 2;
 
+        /// <summary>
+        /// The newest version that wrote each conversation's entry IDs as an ARRAY.
+        /// </summary>
+        /// <remarks>
+        /// <para>Version 3 grouped by status and conversation, as 4 does, and wrote a plain
+        /// array where 4 writes a run-encoded string. Only <see cref="DeserializeLegacy"/>
+        /// and the converter read it; the runtime reader stops at
+        /// <see cref="MinimumReadableFormatVersion"/> and never reaches the array branch.
+        /// </para>
+        ///
+        /// <para>IT HAD NO READER AT ALL UNTIL de-bnjy.7, which is the failure this
+        /// constant exists to have fixed. The runtime refused a version 3 file and told the
+        /// caller to convert it; the converter refused it too, because its bound was
+        /// <see cref="LegacyPerEntryFormatVersion"/> - so a shape this repository had
+        /// written was one nothing could read, while every byte in it was perfectly
+        /// intelligible.</para>
+        /// </remarks>
+        public const int LegacyGroupedArrayFormatVersion = 3;
+
         /// <summary>Name of the root version property.</summary>
         public const string VersionPropertyName = "version";
 
@@ -256,14 +275,20 @@ namespace GlobalConversationTracker.Persistence
                     $"Could not convert '{sourcePath}': {result.ErrorMessage ?? result.Outcome.ToString()}.");
             }
 
+            // EVERY VERSION BELOW THE CURRENT ONE, derived rather than listed. It used to
+            // stop at LegacyPerEntryFormatVersion, which is 2, and that left version 3 as a
+            // shape this repository had WRITTEN and nothing could read: the runtime refused
+            // it and said to convert it, and the converter said it was not a legacy version
+            // it knew (de-bnjy.7). A bound that has to be remembered when a version is added
+            // is a bound that will be forgotten again, so it is computed from FormatVersion
+            // and there is nothing left to update.
             int version = sourceFormatVersion.GetValueOrDefault();
-            if (!sourceFormatVersion.HasValue
-                || version < 1
-                || version > LegacyPerEntryFormatVersion)
+            if (!sourceFormatVersion.HasValue || version < 1 || version >= FormatVersion)
             {
                 throw new InvalidDataException(
                     $"Could not convert '{sourcePath}': format version {version} is not "
-                    + $"a supported legacy version (expected 1 or {LegacyPerEntryFormatVersion}).");
+                    + $"an older version this build can convert (expected 1 to "
+                    + $"{FormatVersion - 1}).");
             }
 
             if (result.SkippedRowCount > 0)
@@ -414,7 +439,8 @@ namespace GlobalConversationTracker.Persistence
                     sourcePath,
                     $"File format version {version} is older than version "
                     + $"{MinimumReadableFormatVersion}, which is the oldest this build "
-                    + "loads. Convert it first with the GlobalStateConvert tool.");
+                    + "loads. It is not damaged and nothing in it is lost - convert it "
+                    + "first:\n  " + FormatStamp.Converter);
             }
 
             if (!root.TryGetProperty(ConversationsPropertyName, out JsonElement conversations))
@@ -436,7 +462,8 @@ namespace GlobalConversationTracker.Persistence
 
             if (version > LegacyPerEntryFormatVersion)
             {
-                ReadGroupedConversations(conversations, state, warnings, ref skippedRowCount);
+                ReadGroupedConversations(
+                    conversations, state, warnings, ref skippedRowCount, version);
             }
             else
             {
@@ -461,8 +488,14 @@ namespace GlobalConversationTracker.Persistence
             JsonElement conversations,
             GlobalConversationState state,
             List<string> warnings,
-            ref int skippedRowCount)
+            ref int skippedRowCount,
+            int version)
         {
+            // WHICH SHAPE THE ENTRY IDS ARE IN, and it is decided by the version rather
+            // than by looking at the value. Version 3 wrote an array and 4 writes a
+            // run-encoded string, so a version 4 file carrying an array is a CORRUPT file
+            // and not an old one - sniffing the value would quietly accept it.
+            bool asArray = version <= LegacyGroupedArrayFormatVersion;
             foreach (JsonProperty status in conversations.EnumerateObject())
             {
                 if (status.Value.ValueKind != JsonValueKind.Object)
@@ -496,31 +529,63 @@ namespace GlobalConversationTracker.Persistence
                         continue;
                     }
 
-                    if (conversation.Value.ValueKind != JsonValueKind.String)
+                    JsonValueKind wanted =
+                        asArray ? JsonValueKind.Array : JsonValueKind.String;
+                    if (conversation.Value.ValueKind != wanted)
                     {
                         skippedRowCount++;
                         AddWarning(
                             warnings,
-                            $"Conversation {conversationId} in '{status.Name}' is {conversation.Value.ValueKind}, expected a run-encoded string; skipped.");
+                            $"Conversation {conversationId} in '{status.Name}' is "
+                            + $"{conversation.Value.ValueKind}, expected "
+                            + (asArray ? "an array of IDs" : "a run-encoded string")
+                            + "; skipped.");
                         continue;
                     }
 
                     List<long> dialogueEntryIds;
-                    try
+                    if (asArray)
                     {
-                        dialogueEntryIds = SparseOrder.UnpackRange(
-                            conversation.Value.GetString() ?? string.Empty,
-                            $"Conversation {conversationId} in '{status.Name}'");
+                        // ONE SKIPPED ROW PER BAD ELEMENT, unlike the run below, because an
+                        // array IS a list with elements in it: a string among the numbers
+                        // costs that entry and nothing else, and the rest of the array
+                        // still says what it says.
+                        dialogueEntryIds = new List<long>();
+                        foreach (JsonElement id in conversation.Value.EnumerateArray())
+                        {
+                            if (id.ValueKind != JsonValueKind.Number
+                                || !id.TryGetInt64(out long entryId))
+                            {
+                                skippedRowCount++;
+                                AddWarning(
+                                    warnings,
+                                    $"Dialogue entry ID in conversation {conversationId} of "
+                                    + $"'{status.Name}' is {id.ValueKind}, expected a "
+                                    + "number; skipped.");
+                                continue;
+                            }
+
+                            dialogueEntryIds.Add(entryId);
+                        }
                     }
-                    catch (InvalidDataException malformed)
+                    else
                     {
-                        // ONE WARNING FOR THE WHOLE RUN, and one skipped row, because a
-                        // malformed run is not a list with a bad element in it - nothing
-                        // in it can be trusted to mean what it says. Counting the entries
-                        // it might have held would be inventing a number.
-                        skippedRowCount++;
-                        AddWarning(warnings, malformed.Message + " skipped.");
-                        continue;
+                        try
+                        {
+                            dialogueEntryIds = SparseOrder.UnpackRange(
+                                conversation.Value.GetString() ?? string.Empty,
+                                $"Conversation {conversationId} in '{status.Name}'");
+                        }
+                        catch (InvalidDataException malformed)
+                        {
+                            // ONE WARNING FOR THE WHOLE RUN, and one skipped row, because a
+                            // malformed run is not a list with a bad element in it - nothing
+                            // in it can be trusted to mean what it says. Counting the entries
+                            // it might have held would be inventing a number.
+                            skippedRowCount++;
+                            AddWarning(warnings, malformed.Message + " skipped.");
+                            continue;
+                        }
                     }
 
                     foreach (long dialogueEntryId in dialogueEntryIds)

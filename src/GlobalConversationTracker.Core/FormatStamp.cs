@@ -53,16 +53,41 @@ public static class FormatStamp
     /// </remarks>
     public const int Unstamped = 1;
 
+    /// <summary>How to bring a file that is refused up to date, named in every message.</summary>
+    /// <remarks>
+    /// A STRICT READER WITHOUT A SIGNPOSTED CONVERTER IS A WALL, which is de-bnjy.3's own
+    /// warning about itself. The refusal below is only useful if the person reading it can
+    /// act on it, and "your file is version 2" is not an instruction.
+    /// </remarks>
+    public const string Converter = "dotnet run --project tools/FormatConvert -- <file>";
+
     /// <summary>
-    /// Checks a file's version against the build's, and refuses one from the future.
+    /// Checks a file's version against the build's, and refuses anything but the current one.
     /// </summary>
+    /// <remarks>
+    /// <para>BOTH DIRECTIONS, and they are different failures with different remedies. A
+    /// file from the FUTURE is one this build cannot fully understand and must not touch. A
+    /// file from the PAST is one the converter can bring forward, and the message says so.
+    /// </para>
+    ///
+    /// <para>REFUSING THE PAST IS THE POINT OF de-bnjy.3, and it is what this method gained
+    /// there. It used to accept anything not newer, which meant an old shape was read by
+    /// whatever branch happened to still handle it - and a legacy branch inside a live
+    /// reader is a place where an old shape ROTS, because nothing else exercises it. A
+    /// converter is a place where one is written down and tested.</para>
+    ///
+    /// <para>IT REFUSES NOTHING TODAY. Every Lua-side format is at version 1 and an
+    /// unstamped file is version 1, so no committed fixture and no file this repository has
+    /// written is turned away. That is the right moment to make a reader strict: the rule
+    /// is in place before there is a second version for it to be wrong about.</para>
+    /// </remarks>
     /// <param name="format">What the format is called, for the message.</param>
     /// <param name="found">The version the file records, or <see cref="Unstamped"/>.</param>
     /// <param name="current">The version this build writes.</param>
     /// <exception cref="InvalidDataException">
-    /// The file is newer than the build. NOT treated as corruption: the file is fine and
-    /// this program is old, and the two want opposite responses - one says overwrite it,
-    /// the other says do not touch it.
+    /// The file is not the current version. NOT treated as corruption in either direction:
+    /// the file is fine and this program is old, or the file is old and convertible, and
+    /// neither says overwrite it.
     /// </exception>
     public static void EnsureReadable(string format, int found, int current)
     {
@@ -76,6 +101,17 @@ public static class FormatStamp
                 + " at most. It was written by a newer build; the file is not damaged, so "
                 + "do not overwrite it - use a build at least as new as the one that wrote "
                 + "it.");
+        }
+
+        if (found < current)
+        {
+            throw new InvalidDataException(
+                $"This {format} file is version "
+                + found.ToString(CultureInfo.InvariantCulture)
+                + ", and this build reads only version "
+                + current.ToString(CultureInfo.InvariantCulture)
+                + ". It is not damaged and nothing in it is lost - convert it first:\n  "
+                + Converter);
         }
     }
 }

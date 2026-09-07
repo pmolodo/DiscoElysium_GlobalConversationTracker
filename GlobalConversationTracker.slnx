@@ -126,7 +126,8 @@
         <Project Path="tools/GlobalStateBenchmark/GlobalStateBenchmark.csproj" />
         <Project Path="tools/GlobalStateCheck.Tests/GlobalStateCheck.Tests.csproj" />
         <Project Path="tools/GlobalStateCheck/GlobalStateCheck.csproj" />
-        <Project Path="tools/GlobalStateConvert/GlobalStateConvert.csproj" />
+        <Project Path="tools/FormatConvert/FormatConvert.csproj" />
+        <Project Path="tools/FormatConvert.Tests/FormatConvert.Tests.csproj" />
     </Folder>
 
 </Solution>
