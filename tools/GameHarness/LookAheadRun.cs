@@ -1254,7 +1254,27 @@ namespace GlobalConversationTracker.Harness
             }
         }
 
-        /// <summary>Checks one half of one line, its colour and its marker.</summary>
+        /// <summary>Checks one half of one line, whole, as the markup it is drawn in.</summary>
+        /// <remarks>
+        /// <para>ONE STRING COMPARISON, against the markup the mod actually drew -
+        /// <c>Pass[#C4453C]*[#FF8C42]</c> - rather than a colour bucket and a marker enum
+        /// checked apart. The two used to be compared through <c>MarkerOn</c>, which maps a
+        /// glyph and a colour onto <see cref="Marker"/>; anything it mapped the same way it
+        /// accepted, and anything it could not map at all it THREW on, which turns a wrong
+        /// colour into a crashed run rather than a failed check.</para>
+        ///
+        /// <para>WHAT THE TEXT CATCHES THAT THE BUCKETS DID NOT: the word itself, so a
+        /// "Pass" drawn where "Fail" belongs is a failure rather than an invisible swap;
+        /// a colour the mod does not use, reported as the hex it is instead of throwing;
+        /// and the exact hex of both the word and its marker, which is the thing a player
+        /// sees and the thing a theme change would move.</para>
+        ///
+        /// <para>The expectation is built from the same constants the mod is configured
+        /// with, so the fixture keeps saying "orange" and "gaveUp" - names a person can
+        /// read - and only the comparison is in hex. A row spelling the hex itself would
+        /// have to be edited whenever the colours moved, which is how sixteen rows come to
+        /// disagree with the mod one at a time.</para>
+        /// </remarks>
         private static void CheckHalf(
             LookAheadScenario scenario,
             ProbeOption option,
@@ -1263,69 +1283,48 @@ namespace GlobalConversationTracker.Harness
             string why,
             Report report)
         {
+            string expected = MarkupOf(drawn.Word, wanted);
+            string actual = drawn.ToString();
+
             report.Check(
-                drawn.ColourHtml.Equals(HtmlOf(wanted.Colour), StringComparison.OrdinalIgnoreCase)
-                    && MarkerOn(drawn) == wanted.Marker,
-                $"{scenario.SaveName}: entry {option.EntryId} says {drawn.Word} in {wanted}",
-                $"it says {drawn.Word} in {Describe(drawn)} - {why}");
+                string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase),
+                $"{scenario.SaveName}: entry {option.EntryId} draws {expected}",
+                $"it draws {actual} - {why}");
         }
 
-        /// <summary>What one half of a drawn line reads as, for the report.</summary>
-        private static string Describe(ProbeBranch drawn)
-        {
-            string colour = drawn.ColourHtml.Equals(OrangeHtml, StringComparison.OrdinalIgnoreCase)
-                ? nameof(BranchColour.Orange)
-                : drawn.ColourHtml.Equals(RedHtml, StringComparison.OrdinalIgnoreCase)
-                    ? nameof(BranchColour.Red)
-                    : drawn.ColourHtml.Equals(SeenHtml, StringComparison.OrdinalIgnoreCase)
-                        ? nameof(BranchColour.DarkRed)
-                        : drawn.ColourHtml;
-
-            Marker marker = MarkerOn(drawn);
-            return marker == Marker.None ? colour : $"{colour} with {marker}";
-        }
-
-        /// <summary>The marker one half of a drawn line carries.</summary>
+        /// <summary>The markup a half would be drawn in if it were what the row claims.</summary>
         /// <remarks>
-        /// Both halves of the answer have to agree - the glyph AND its colour - for the
-        /// same reason the option's own marker is matched whole: a grey '*?' and an orange
-        /// '*' say opposite things, and either one read as the other turns "the search
-        /// gave up" into "the search found something".
+        /// The same shape <see cref="ProbeBranch.ToString"/> produces, so the two can be
+        /// compared as text: the word, its colour in brackets, and where there is a marker
+        /// the glyph and its own colour after it.
         /// </remarks>
-        private static Marker MarkerOn(ProbeBranch drawn)
+        private static string MarkupOf(string word, BranchHalf wanted)
         {
-            if (drawn.Marker == null || drawn.MarkerColourHtml == null)
+            string colour = HtmlOf(wanted.Colour);
+            return wanted.Marker switch
             {
-                return Marker.None;
-            }
-
-            bool uncertain = drawn.Marker == ProbeLog.UncertainMarkerGlyph;
-            string colour = drawn.MarkerColourHtml;
-            // THE SAME UNCERTAIN COLOUR THE OPTION USES. The line had one of its own for as
-            // long as it was drawn on the check's own band; it is drawn on black now, like
-            // the option, so one colour covers both and a second would only be a way for
-            // the two to disagree.
-            if (uncertain && colour.Equals(UncertainHtml, StringComparison.OrdinalIgnoreCase))
-            {
-                return Marker.Uncertain;
-            }
-
-            if (drawn.Marker == ProbeLog.MarkerGlyph)
-            {
-                if (colour.Equals(OrangeHtml, StringComparison.OrdinalIgnoreCase))
-                {
-                    return Marker.Orange;
-                }
-
-                if (colour.Equals(RedHtml, StringComparison.OrdinalIgnoreCase))
-                {
-                    return Marker.Red;
-                }
-            }
-
-            throw new FormatException(
-                $"'{drawn}' carries a marker in no colour the mod uses.");
+                Marker.None => $"{word}[{colour}]",
+                Marker.Uncertain =>
+                    $"{word}[{colour}]{ProbeLog.UncertainMarkerGlyph}[{UncertainHtml}]",
+                Marker.Orange =>
+                    $"{word}[{colour}]{ProbeLog.MarkerGlyph}[{OrangeHtml}]",
+                Marker.Red => $"{word}[{colour}]{ProbeLog.MarkerGlyph}[{RedHtml}]",
+                _ => throw new InvalidDataException(
+                    $"'{wanted.Marker}' is not a marker the mod draws."),
+            };
         }
+
+        // WHAT USED TO BE HERE: a Describe(ProbeBranch) that named a drawn half's colour
+        // bucket, and a MarkerOn(ProbeBranch) that mapped its glyph and colour onto a
+        // Marker. Both are gone with the move to comparing the markup as text - see
+        // CheckHalf. MarkerOn THREW on a colour it could not place, which made a wrong
+        // colour end the run instead of failing one check; the text comparison reports the
+        // hex it found and carries on to the next half.
+        //
+        // The glyph and its colour still have to agree, which was that method's own reason
+        // for existing: a grey '*?' and an orange '*' say opposite things, and either read
+        // as the other turns "the search gave up" into "the search found something". A
+        // whole-string comparison gets that for nothing.
 
         /// <summary>The colour the mod draws one branch state in.</summary>
         private static string HtmlOf(BranchColour colour) => colour switch

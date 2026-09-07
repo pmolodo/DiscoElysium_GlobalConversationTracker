@@ -73,12 +73,12 @@
 //! What it is NOT is a question the search can necessarily answer. Entries that deep are
 //! often ones the guards shut, so these rows frequently read "explore everything, find
 //! nothing" - and that is exactly the worst case for cost, which is what these rows are for.
-//! THE FALLOFF CURVE IS A DIFFERENT MEASUREMENT AND NOBODY HAS ONE. It needs seeding by
-//! REACH ORDER rather than by depth, because a flat "found nothing" series measures nothing
-//! about falloff. `tests/unseen_falloff.rs` did it and went in 15969c1 with the
-//! state-at-a-time engine; nothing replaced it, and de-bnjy.5 carries the gap. Said plainly
-//! rather than cited, because this file pointed at that path for months after it stopped
-//! existing.
+//! THE FALLOFF CURVE IS A DIFFERENT MEASUREMENT AND NOBODY HAS ONE, DELIBERATELY. It needs
+//! seeding by REACH ORDER rather than by depth, because a flat "found nothing" series
+//! measures nothing about falloff. `tests/unseen_falloff.rs` did it and went in 15969c1
+//! with the state-at-a-time engine; de-bnjy.5 is the decision not to replace it, since
+//! nobody wants the curve. Said plainly rather than cited, because this file pointed at
+//! that path for months after it stopped existing.
 //!
 //! RANDOM IS THE TYPICAL CASE. A save does not read a conversation depth-first; it reads
 //! whatever the conversation led it to. Drawing uniformly from the structurally reachable

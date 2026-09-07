@@ -545,35 +545,23 @@ namespace GlobalConversationTracker.Harness
         /// <remarks>
         /// <para>de-8hh2.9's option (2), which turned out to exist: a save that stands
         /// where a red check is the first thing offered. See <see cref="KlaasjeFlower"/>
-        /// for the shape of conversation 656 and why any save reaches it.</para>
+        /// for the shape of conversation 656.</para>
         ///
-        /// <para>DELIBERATELY MODEST TO BEGIN WITH. It claims that the menu draws and that
-        /// the two entries are the ones the index names; what the markers and the Pass /
-        /// Fail line should be is left unclaimed until a run has been LOOKED at, because
-        /// this repository's rule is measure, do not reason and nothing here has ever been
-        /// on screen. The eight shapes on a red check - the rest of de-8hh2.9 - come after
-        /// that, and de-8hh2.15's colours are readable off the same screenshot.</para>
+        /// <para>IN <c>testing/scenarios/suites.json</c> NOW, which is where it always
+        /// belonged. It was declared in code while it claimed nothing - markers and the
+        /// Pass / Fail line both ignored, because nothing here had ever been on screen and
+        /// this repository's rule is measure, do not reason - and a row asserting nothing
+        /// has nothing for the offline executor to run. Both have been looked at since, so
+        /// it claims them.</para>
         ///
-        /// <para>Declared here rather than in <c>testing/scenarios/suites.json</c> only
-        /// while it is unclaimed: a row that asserts nothing about markers has nothing for
-        /// the offline executor to run. It should move there once it makes a claim both
-        /// sides can check.</para>
+        /// <para>AND IT CLAIMS WHAT THE BRANCH-SHAPE ROWS DO NOT. They open this same
+        /// conversation and take markers as <see cref="MarkerPolicy.NoneAnywhere"/>,
+        /// because a row of that table is about the LINE and the option ids are not its
+        /// subject. This names them - 3, the red check, and 7, which declines - so the menu
+        /// having the shape the index describes is asserted somewhere rather than assumed
+        /// by everything.</para>
         /// </remarks>
-        public static LookAheadSuite RedCheck { get; } = new LookAheadSuite(
-            "red-check",
-            "a red check is drawn, and the mod draws on it",
-            EmptyState,
-            new[]
-            {
-                new LookAheadScenario(
-                    KlaasjeFlower.Save,
-                    KlaasjeFlower.Conversation,
-                    KlaasjeFlower.What,
-                    Array.Empty<OptionExpectation>(),
-                    markers: MarkerPolicy.Ignored,
-                    advances: KlaasjeFlower.Advances,
-                    branchPolicy: BranchPolicy.Ignored),
-            });
+        public static LookAheadSuite RedCheck => FromDefinition("red-check");
 
         /// <summary>
         /// The engine dies and the game carries on, with the feature off and nothing else.
