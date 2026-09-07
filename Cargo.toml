@@ -116,6 +116,10 @@ name = "per_start_setup"
 path = "measurements/per_start_setup.rs"
 
 [[example]]
+name = "group_census"
+path = "measurements/group_census.rs"
+
+[[example]]
 name = "reachable_states"
 path = "measurements/reachable_states.rs"
 
