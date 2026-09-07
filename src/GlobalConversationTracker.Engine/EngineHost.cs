@@ -418,7 +418,7 @@ namespace GlobalConversationTracker.Engine
                 int read;
                 try
                 {
-                    if (!reading.Wait(Deadline))
+                    if (!WaitForRead(reading, what))
                     {
                         Kill();
                         _died = new EngineDiedException(
@@ -491,6 +491,90 @@ namespace GlobalConversationTracker.Engine
         /// <see cref="EngineDeath.Crashed"/>, which is the honest answer rather than a
         /// guess between two messages only one of which a player can act on.</para>
         /// </remarks>
+        /// <summary>
+        /// How often to ask whether the child is gone, while waiting for a read.
+        /// </summary>
+        /// <remarks>
+        /// Short enough that a dead engine is noticed in a frame or two rather than at the
+        /// deadline, long enough that a healthy read is not asking about a process
+        /// hundreds of times a second. See <see cref="WaitForRead"/>.
+        /// </remarks>
+        private const int ExitCheckMs = 100;
+
+        /// <summary>
+        /// How long a read may still deliver after the child has exited.
+        /// </summary>
+        /// <remarks>
+        /// A child that wrote a complete answer and then exited leaves those bytes in the
+        /// pipe, and they are worth having: without this grace the answer would be thrown
+        /// away and reported as a death, which is the opposite mistake to the one
+        /// <see cref="WaitForRead"/> exists to fix.
+        /// </remarks>
+        private const int ExitDrainMs = 250;
+
+        /// <summary>
+        /// Waits for one read, giving up early when the child is already gone.
+        /// </summary>
+        /// <remarks>
+        /// <para>de-wncd.4. <see cref="Deadline"/> is thirty seconds because a child that
+        /// is still thinking and a child that will never answer look identical to a
+        /// blocking read - but A CHILD THAT HAS EXITED IS NOT THINKING, and asking the
+        /// operating system settles it immediately.</para>
+        ///
+        /// <para>WHY IT MATTERS: a killed child usually breaks the pipe and the read fails
+        /// at once, which is the fast path. But depending on where the kill lands, a write
+        /// can succeed into a pipe whose reader is gone and the read then blocks for the
+        /// whole deadline - and the thing waiting on it is a RESPONSE MENU BEING DRAWN.
+        /// Measured in game 2026-09-07: the same suite drew its menu instantly on one run
+        /// and reported `advance-to-menu after 68.5s` on the next, which is two of these
+        /// waits. A thirty-second freeze mid-conversation is much worse than the missing
+        /// asterisk this feature is allowed to cost.</para>
+        ///
+        /// <para>Returns true when the read finished, false when the deadline passed with
+        /// the child still running - which is the one case that means "unresponsive".</para>
+        /// </remarks>
+        private bool WaitForRead(Task<int> reading, string what)
+        {
+            int waited = 0;
+            while (waited < Deadline)
+            {
+                int slice = Math.Min(ExitCheckMs, Deadline - waited);
+                if (reading.Wait(slice))
+                {
+                    return true;
+                }
+
+                waited += slice;
+
+                bool gone;
+                try
+                {
+                    gone = _child.HasExited;
+                }
+                catch (InvalidOperationException)
+                {
+                    // Nothing can be learned about the child, so fall back to the deadline
+                    // rather than guessing that it is dead.
+                    continue;
+                }
+
+                if (gone)
+                {
+                    // It may have written a whole answer on its way out; those bytes are
+                    // already in the pipe and are worth the moment it takes to collect
+                    // them. Only after that is silence a death.
+                    if (reading.Wait(ExitDrainMs))
+                    {
+                        return true;
+                    }
+
+                    throw Died($"reading {what}", null);
+                }
+            }
+
+            return false;
+        }
+
         private EngineDiedException Died(string doing, Exception? cause)
         {
             _closed = true;

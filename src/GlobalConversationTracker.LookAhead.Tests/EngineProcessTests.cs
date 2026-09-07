@@ -157,6 +157,75 @@ namespace GlobalConversationTracker.LookAhead.Tests
             Assert.Equal(died.Message, again.Message);
         }
 
+        /// <summary>A killed engine is reported at once, not at the deadline.</summary>
+        /// <remarks>
+        /// <para>de-wncd.4. The deadline is thirty seconds because a child that is still
+        /// thinking and one that will never answer look the same to a blocking read - but a
+        /// child that has EXITED is not thinking, and the thing waiting on that read is a
+        /// response menu being drawn. Measured in game 2026-09-07: the same suite drew its
+        /// menu instantly on one run and reported `advance-to-menu after 68.5s` on the
+        /// next.</para>
+        ///
+        /// <para>WHAT THIS DOES AND DOES NOT PROVE, because the difference matters. The
+        /// common path is that killing the child breaks the pipe and the read fails
+        /// immediately, and this test takes that path most of the time - so a pass is not
+        /// by itself evidence that the exit check works. What it guards is the REGRESSION:
+        /// with the deadline set far above any patience a person has, a killed engine must
+        /// still be reported in moments. If the exit check were removed, the run that
+        /// happens to block would take a minute here and fail.</para>
+        ///
+        /// <para>Provoking the blocking path deterministically would need a child that
+        /// holds its pipe open and stops answering, which is a fake engine rather than this
+        /// one; that is why this is a bound rather than a demonstration.</para>
+        /// </remarks>
+        [Fact]
+        public void AKilledEngineIsReportedWithoutWaitingOutTheDeadline()
+        {
+            string? index = NativeLookAhead.Index;
+            if (NativeLookAhead.Engine == null || index == null)
+            {
+                _output.WriteLine("the engine or the index is missing; skipping.");
+                return;
+            }
+
+            int wasDeadline = LookAheadLibrary.DeadlineMs;
+            LookAheadLibrary.DeadlineMs = PatienceMs;
+            try
+            {
+                using LookAheadLibrary engine = LookAheadLibrary.Open(index);
+                using (Process child = Process.GetProcessById(engine.ProcessId))
+                {
+                    child.Kill();
+                    child.WaitForExit();
+                }
+
+                var clock = Stopwatch.StartNew();
+                Assert.Throws<EngineDiedException>(() => engine.EntryCount(631));
+                clock.Stop();
+
+                _output.WriteLine($"the death was reported after {clock.ElapsedMilliseconds} ms");
+                Assert.True(
+                    clock.ElapsedMilliseconds < ReportedWithinMs,
+                    $"a killed engine took {clock.ElapsedMilliseconds} ms to be reported, "
+                    + $"against a deadline of {PatienceMs} ms. A menu waits on this.");
+            }
+            finally
+            {
+                LookAheadLibrary.DeadlineMs = wasDeadline;
+            }
+        }
+
+        /// <summary>A deadline nobody would sit through, so the bound below means something.</summary>
+        private const int PatienceMs = 60_000;
+
+        /// <summary>What "at once" is allowed to mean, generously.</summary>
+        /// <remarks>
+        /// Far above the exit check's own interval and drain - a tenth of a second and a
+        /// quarter - and far below the deadline, so the test says which of the two happened
+        /// without turning on how busy the machine is.
+        /// </remarks>
+        private const int ReportedWithinMs = 5_000;
+
         /// <summary>
         /// The deadline is a knob with a value, and the default is the documented one.
         /// </summary>
