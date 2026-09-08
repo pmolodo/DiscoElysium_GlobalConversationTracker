@@ -368,10 +368,22 @@ namespace GlobalConversationTracker.Harness
         /// Meaningless with <paramref name="shouldAppear"/> false, which is already a
         /// count of zero.
         /// </param>
+        /// <param name="wholeRun">
+        /// Whether the claim is about the whole game process rather than about this
+        /// suite's part of the log. False - the default - reads only what was written
+        /// after the suite started, which is what nearly every expectation means: the
+        /// game is ONE PROCESS for the whole run and every suite appends to the same
+        /// file, so a whole-file read lets one suite answer another's question. True is
+        /// for the lines the mod writes once at load, before any suite exists.
+        /// </param>
         /// <exception cref="ArgumentNullException">An argument is null.</exception>
         /// <exception cref="ArgumentException">A count is given for an absence.</exception>
         public LogExpectation(
-            string substring, bool shouldAppear, string what, int? times = null)
+            string substring,
+            bool shouldAppear,
+            string what,
+            int? times = null,
+            bool wholeRun = false)
         {
             if (times != null && !shouldAppear)
             {
@@ -391,6 +403,7 @@ namespace GlobalConversationTracker.Harness
             ShouldAppear = shouldAppear;
             What = what ?? throw new ArgumentNullException(nameof(what));
             Times = times;
+            WholeRun = wholeRun;
         }
 
         /// <summary>What to look for.</summary>
@@ -412,6 +425,24 @@ namespace GlobalConversationTracker.Harness
         /// unhelpful - so "once" is the claim, and a presence check cannot make it.
         /// </remarks>
         public int? Times { get; }
+
+        /// <summary>
+        /// Whether the claim is about the whole game process rather than this suite's
+        /// part of the log.
+        /// </summary>
+        /// <remarks>
+        /// A SUITE CANNOT ANSWER FOR WHAT IT DID NOT WRITE, and by default is not asked
+        /// to: the check reads from where the log stood when the suite began. That is the
+        /// only reading under which an absence means anything - a suite asserting a line
+        /// is ABSENT would otherwise fail on an earlier suite that legitimately wrote it,
+        /// and a count would add up every suite's occurrences.
+        ///
+        /// The exception is the handful of lines the mod writes ONCE AT LOAD, saying
+        /// which hooks it installed. Those are true of the process, they are written
+        /// before the first suite is prepared, and no suite can make them appear again -
+        /// so a suite that asks for one is asking about the run.
+        /// </remarks>
+        public bool WholeRun { get; }
     }
 
     /// <summary>A file the run should leave in the profile's SaveGames folder.</summary>

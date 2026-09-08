@@ -462,8 +462,14 @@ namespace GlobalConversationTracker.Harness
                     // that flush so files from the prior suite cannot satisfy this one.
                     ClearArtefacts(suite, saveGames);
 
-                    // Where the log had got to, so this suite's bridge summary can be told
-                    // from the previous suite's - a suite that runs no crawls writes none.
+                    // Where the log had got to, so this suite's expectations are read
+                    // against what THIS suite wrote. The game is one process for the
+                    // whole run and every suite appends to the same file, so a whole-file
+                    // read lets one suite answer another's question - a suite asserting a
+                    // line is absent fails on the earlier suite that legitimately wrote
+                    // it, and a count adds up every suite's occurrences. Taken after the
+                    // prepare, since preparing flushes the preceding diagnostics writer.
+                    int logWrittenBefore = LogLength(logPath);
 
                     foreach (LookAheadScenario scenario in suite.Scenarios)
                     {
@@ -499,7 +505,7 @@ namespace GlobalConversationTracker.Harness
                     ProbeCommand.SendFinishLookAheadSuite(saveGames);
                     watcher.WaitForEvent("look-ahead-suite-finished", timeout, Log);
                     CheckArtefacts(suite, saveGames, report);
-                    CheckLog(suite, logPath, report);
+                    CheckLog(suite, logPath, logWrittenBefore, report);
                 }
 
                 // Closed here, not in the finally, and asked rather than killed: the
@@ -1528,31 +1534,55 @@ namespace GlobalConversationTracker.Harness
             }
         }
 
+        /// <summary>How much of the log has been written, in characters.</summary>
+        /// <remarks>
+        /// Characters rather than bytes, since that is what the check indexes with, and
+        /// the log is UTF-8 where the two do not agree.
+        /// </remarks>
+        private static int LogLength(string logPath) =>
+            File.Exists(logPath) ? FilePaths.ReadShared(logPath).Length : 0;
+
         /// <summary>Checks what a suite says the mod should have written to the log.</summary>
-        private static void CheckLog(LookAheadSuite suite, string logPath, Report report)
+        /// <remarks>
+        /// writtenBefore is how long the log was when this suite started, from
+        /// <see cref="LogLength"/>. Only what was written from there on is this suite's
+        /// to answer for.
+        /// </remarks>
+        private static void CheckLog(
+            LookAheadSuite suite, string logPath, int writtenBefore, Report report)
         {
             if (suite.LogExpectations.Count == 0)
             {
                 return;
             }
 
-            string log = File.Exists(logPath) ? FilePaths.ReadShared(logPath) : string.Empty;
+            string whole = File.Exists(logPath) ? FilePaths.ReadShared(logPath) : string.Empty;
+
+            // A log that SHRANK was rotated between the mark and here, and the mark means
+            // nothing against the new file - read all of it rather than a wrong slice.
+            string sinceSuiteBegan = whole.Length >= writtenBefore
+                ? whole.Substring(writtenBefore)
+                : whole;
             foreach (LogExpectation expected in suite.LogExpectations)
             {
+                string log = expected.WholeRun ? whole : sinceSuiteBegan;
                 int said = Occurrences(log, expected.Substring);
                 bool present = said > 0;
                 bool right = expected.Times == null
                     ? present == expected.ShouldAppear
                     : said == expected.Times;
 
+                // WHICH TEXT WAS READ, said out loud, because it is the first thing
+                // whoever reads a failure needs and the two answers differ.
+                string which = expected.WholeRun ? "the run's log" : "this suite's log";
                 report.Check(
                     right,
                     $"{suite.Name}: {expected.What}",
                     expected.Times == null
                         ? present
-                            ? $"the log says '{expected.Substring}'"
-                            : $"the log does not say '{expected.Substring}'"
-                        : $"the log says '{expected.Substring}' {said} time(s), and should "
+                            ? $"{which} says '{expected.Substring}'"
+                            : $"{which} does not say '{expected.Substring}'"
+                        : $"{which} says '{expected.Substring}' {said} time(s), and should "
                             + $"say it {expected.Times}");
             }
         }

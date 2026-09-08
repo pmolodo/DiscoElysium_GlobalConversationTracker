@@ -583,10 +583,13 @@ namespace GlobalConversationTracker.Harness
             },
             logExpectations: new[]
             {
+                // WRITTEN ONCE AT LOAD, before any suite was prepared, so this
+                // one asks about the run rather than about this suite.
                 new LogExpectation(
                     "dialogue statuses are being tracked",
                     true,
-                    "tracking is unaffected by the switch"),
+                    "tracking is unaffected by the switch",
+                    wholeRun: true),
             });
 
         /// <summary>
@@ -692,10 +695,13 @@ namespace GlobalConversationTracker.Harness
                     true,
                     "and told in a window, not the notification it falls back to",
                     times: 1),
+                // WRITTEN ONCE AT LOAD, before any suite was prepared, so this
+                // one asks about the run rather than about this suite.
                 new LogExpectation(
                     "dialogue statuses are being tracked",
                     true,
-                    "tracking survives an engine that died"),
+                    "tracking survives an engine that died",
+                    wholeRun: true),
                 // THE MOD MUST NOT HAVE QUIETLY REPLACED IT. With the shipped policy one
                 // kill produces a replacement and no notice at all, and this suite would
                 // then be waiting on a window that was never raised. Asserting the absence
@@ -815,10 +821,13 @@ namespace GlobalConversationTracker.Harness
                     "the player was told on screen",
                     false,
                     "and never gets the fatal notice, which is a different message"),
+                // WRITTEN ONCE AT LOAD, before any suite was prepared, so this
+                // one asks about the run rather than about this suite.
                 new LogExpectation(
                     "dialogue statuses are being tracked",
                     true,
-                    "tracking is unaffected throughout"),
+                    "tracking is unaffected throughout",
+                    wholeRun: true),
             });
 
         /// <summary>
