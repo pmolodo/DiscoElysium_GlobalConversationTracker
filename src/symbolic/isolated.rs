@@ -81,8 +81,51 @@ pub const STACK: usize = 512 * 1024 * 1024;
 /// building that itself - see the module note.
 ///
 /// Panics from inside are re-raised here rather than swallowed, so a search that fails looks
-/// exactly as it would have without the thread.
+/// exactly as it would have without the thread. A caller that would rather lose the ANSWER
+/// than the process wants [`on_its_own_thread_caught`]; the tests and the measurements want
+/// this one, because a panic there is the finding.
 pub fn on_its_own_thread<T, F>(search: F) -> T
+where
+    F: FnOnce() -> T + Send,
+    T: Send,
+{
+    on_its_own_thread_caught(search)
+        .unwrap_or_else(|panicked| std::panic::resume_unwind(panicked))
+}
+
+/// The same thread, but a panic inside comes back as an error instead of being re-raised.
+///
+/// ## What it is for
+///
+/// A search that panics should cost its answer, not the process. The engine runs as a child
+/// process the mod talks to over a pipe, so a panic here is not a stack trace somebody reads
+/// - it is the engine vanishing mid-menu, and the mod reporting that it "stopped answering
+/// while reading a frame length". Every question in flight is lost, and what replaces the
+/// answer is a dead engine rather than an unmarked option.
+///
+/// The caller gets to decide what an unfinished search looks like, which is why this returns
+/// the payload rather than some answer of its own: only the caller knows the shape of the
+/// thing it was asking for. [`crate::bridge`] turns it into the same "nothing established"
+/// every start gets when the machine cannot supply a manager.
+///
+/// ## WHAT IT DOES NOT CATCH, and this is the important half
+///
+/// A STACK OVERFLOW IS NOT A PANIC. It is STATUS_STACK_OVERFLOW and it takes the process
+/// down with no unwinding, so there is nothing here to catch - see the module note, which is
+/// the fault this whole module was written for. This makes an ORDINARY panic survivable and
+/// changes nothing about the one that made the thread necessary. Do not read the existence
+/// of this function as cover for that.
+///
+/// A panic while a large diagram is being DROPPED is the same story: unwinding out of a
+/// destructor aborts, and dropping is where the recursion the stack is sized for happens.
+///
+/// ## Why nothing poisoned escapes
+///
+/// The closure builds its manager inside the thread and owns it, which the module note
+/// requires for a different reason. So a panic unwinds that thread and drops the manager on
+/// the way out; there is no half-finished diagram left for anything else to pick up, because
+/// nothing outside ever had a handle to it.
+pub fn on_its_own_thread_caught<T, F>(search: F) -> Result<T, Box<dyn std::any::Any + Send>>
 where
     F: FnOnce() -> T + Send,
     T: Send,
@@ -93,6 +136,58 @@ where
             .spawn_scoped(scope, search)
             .expect("a thread for the search")
             .join()
-            .unwrap_or_else(|panicked| std::panic::resume_unwind(panicked))
     })
+}
+
+/// What a caught panic said, for a log line.
+///
+/// Rust hands a panic's payload back as `Any`, and the two shapes it takes in practice are
+/// the ones `panic!` produces: a `&'static str` for a literal and a `String` for a format.
+/// Anything else is a payload somebody chose deliberately and there is nothing useful to say
+/// about it.
+pub fn panic_message(panicked: &(dyn std::any::Any + Send)) -> String {
+    if let Some(text) = panicked.downcast_ref::<&'static str>() {
+        (*text).to_string()
+    } else if let Some(text) = panicked.downcast_ref::<String>() {
+        text.clone()
+    } else {
+        "a panic with no message".to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_search_that_finishes_hands_back_what_it_returned() {
+        assert_eq!(on_its_own_thread_caught(|| 6 * 7).ok(), Some(42));
+    }
+
+    /// THE POINT OF THE WHOLE FUNCTION, pinned with an explicit panic rather than by
+    /// starving a real search.
+    ///
+    /// A test that provoked the panic through a tiny memory budget would be testing
+    /// de-x8ms.9's bug as much as this containment, and would start failing the moment that
+    /// bug is fixed - which would be a fix breaking a test that exists to protect it.
+    #[test]
+    fn a_search_that_panics_comes_back_as_an_error_rather_than_unwinding() {
+        let caught = on_its_own_thread_caught(|| -> i32 { panic!("the diagram ran out") });
+
+        let Err(panicked) = caught else {
+            panic!("the panic was not caught");
+        };
+        assert_eq!(panic_message(panicked.as_ref()), "the diagram ran out");
+    }
+
+    #[test]
+    fn a_formatted_panic_keeps_its_message_too() {
+        let nodes = 37_081_132;
+        let caught = on_its_own_thread_caught(|| -> i32 { panic!("out of room at {nodes}") });
+
+        let Err(panicked) = caught else {
+            panic!("the panic was not caught");
+        };
+        assert_eq!(panic_message(panicked.as_ref()), "out of room at 37081132");
+    }
 }

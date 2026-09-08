@@ -1049,18 +1049,27 @@ pub fn answer(
     // eighty-four starts. A thread per start would have cost about twelve milliseconds an
     // option at the player's default budget, rebuilding the diagram side each time, to buy
     // nothing.
-    let answers = isolated::on_its_own_thread(|| {
+    // CAUGHT RATHER THAN RE-RAISED, since de-x8ms.10. A panic in here is not a stack trace
+    // somebody reads: the engine is a child process the mod talks to over a pipe, so it is
+    // the engine VANISHING mid-menu, and the mod reporting that it "stopped answering while
+    // reading a frame length". Every option in flight is lost and the feature is off until
+    // the mod starts a replacement. Losing the answers and keeping the process costs one
+    // unmarked menu instead.
+    //
+    // IT DOES NOT COVER THE FAULT THE THREAD IS FOR. A stack overflow is not a panic and
+    // cannot be caught - see `symbolic::isolated`.
+    let answers = isolated::on_its_own_thread_caught(|| {
         answer_within(&graph, &world, request, &novelty)
     });
 
     match answers {
-        Some(answers) => LookAheadResponse { answers, error: None },
+        Ok(Some(answers)) => LookAheadResponse { answers, error: None },
         // THE MACHINE, not the budget: the manager preallocates its node store and that
         // allocation aborts rather than failing, so it is asked for fallibly first - see
         // de-0a3a. Every option is answered "nothing established" rather than the request
         // failing, because a menu with no markers is what a mod without an engine draws
         // and the player has seen it before.
-        None => LookAheadResponse {
+        Ok(None) => LookAheadResponse {
             answers: request
                 .starts
                 .iter()
@@ -1068,6 +1077,35 @@ pub fn answer(
                 .collect(),
             error: None,
         },
+        // THE SAME SHAPE AS "no-ram", DELIBERATELY. Both mean the same thing to the caller -
+        // no start was established, draw the menu unmarked - and the mod already knows how
+        // to do that. A different shape here would be a second thing for it to learn in
+        // order to behave identically.
+        //
+        // `error` STAYS None for the same reason it does above: this is an answer about the
+        // question, not a failure of the request. Which start it was is in the answers and
+        // why is in `stopped_by`.
+        //
+        // SAID ON STDERR, because that is the only channel this process has that is not the
+        // wire, and a panic that produced no message anywhere would leave the mod reporting
+        // an engine that answered nothing for no visible reason. The default hook has
+        // already printed its own line by the time this runs; this one names what it cost.
+        Err(panicked) => {
+            eprintln!(
+                "look-ahead: a search panicked and was contained - {}. \
+                 {} start(s) are answered as nothing established; the engine is still up.",
+                isolated::panic_message(panicked.as_ref()),
+                request.starts.len(),
+            );
+            LookAheadResponse {
+                answers: request
+                    .starts
+                    .iter()
+                    .map(|start| unanswered(*start, "crashed"))
+                    .collect(),
+                error: None,
+            }
+        }
     }
 }
 
