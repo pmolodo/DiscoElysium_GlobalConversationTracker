@@ -60,8 +60,8 @@
 # top of measurements/performance_matrix.rs for what each is and how to read an older
 # run, whose columns may spell two of these differently.
 #
-# STOPPING IT MID-RUN NEEDS MORE THAN KILLING THE SHELL. Every row is a fresh cargo and
-# a fresh measurement binary, so killing the terminal or the job leaves the script
+# STOPPING IT MID-RUN NEEDS MORE THAN KILLING THE SHELL. Every row is a fresh measurement
+# process, so killing the terminal or the job leaves the script
 # looping and starting new ones - which then hold that binary open and fail the next
 # build with
 # LNK1104, from a run nobody thinks is still going. Kill by command line:
@@ -278,13 +278,32 @@ echo "building..."
 cargo build --release --example performance_matrix \
     --manifest-path "$ROOT/Cargo.toml" >/dev/null 2>&1
 
+# AND THEN CALLED DIRECTLY, not through `cargo run`.
+#
+# `cargo run` re-checks the build on every invocation, which is work the line above has
+# just done. Measured 2026-09-08 on an up-to-date tree, asking only for the header so the
+# measuring itself is nil: 0.552s through cargo against 0.042s for the binary. That is
+# ~510ms on every row, and a whole-game run is fourteen thousand of them - about two hours
+# spent re-answering one question.
+#
+# IT IS ALSO A LOCK, which matters for anything that wants to run rows side by side:
+# concurrent `cargo run`s serialise on the target directory.
+#
+# CHECKED ONCE, HERE. A missing binary called directly gives a shell error per row, and
+# every one of those would be recorded as a crashed row - a build failure written into the
+# folder as fourteen thousand findings.
+MEASUREMENT="${CARGO_TARGET_DIR:-$ROOT/target}/release/examples/performance_matrix"
+[ -x "$MEASUREMENT" ] || MEASUREMENT="$MEASUREMENT.exe"
+if [ ! -x "$MEASUREMENT" ]; then
+    echo "the measurement did not build - no runnable binary at $MEASUREMENT" >&2
+    exit 1
+fi
+
 # ASKED FOR RATHER THAN WRITTEN DOWN. The column names follow the engine selection, and a
 # copy kept here would be wrong for any narrowed run and silently wrong for a renamed
 # column - which is the mistake de-zovl exists to correct, in the one place it would still
 # be possible to make.
-HEADER="$(HEADER_ONLY=1 cargo run --release --quiet --example performance_matrix \
-    --manifest-path "$ROOT/Cargo.toml" 2>/dev/null \
-    | grep -m1 '^conv')"
+HEADER="$(HEADER_ONLY=1 "$MEASUREMENT" 2>/dev/null | grep -m1 '^conv')"
 if [ -z "$HEADER" ]; then
     echo "could not read the column names from the measurement - did the build fail?" >&2
     exit 1
@@ -316,8 +335,7 @@ if [ ${#CONVERSATIONS[@]} -eq 1 ] && [ "${CONVERSATIONS[0]}" = "all" ]; then
     CONVERSATIONS=()
     while IFS=$'\t' read -r start _conversations _entries; do
         [ -n "$start" ] && CONVERSATIONS+=("$start")
-    done < <(GROUPS_ONLY=1 cargo run --release --quiet --example performance_matrix \
-        --manifest-path "$ROOT/Cargo.toml" 2>/dev/null)
+    done < <(GROUPS_ONLY=1 "$MEASUREMENT" 2>/dev/null)
 
     if [ ${#CONVERSATIONS[@]} -eq 0 ]; then
         echo "the measurement listed no groups - did the index read?" >&2
@@ -428,8 +446,7 @@ for conversation in "${CONVERSATIONS[@]}"; do
         # because the alternative was proven guilty.
         printf '\n'
         CONVERSATION="$conversation" PROFILE="$profile" NO_HEADER=1 \
-            cargo run --release --quiet --example performance_matrix \
-            --manifest-path "$ROOT/Cargo.toml" 2>&1 \
+            "$MEASUREMENT" 2>&1 \
             | awk -v rowlog="$log" '
                 { print > rowlog; fflush(rowlog) }
                 /^  ~/ { print; fflush() }
