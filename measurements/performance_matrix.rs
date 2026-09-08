@@ -1650,6 +1650,26 @@ const CENSUS_COLUMNS: [&str; 7] = [
 /// re-deriving it later costs the same pass again. de-thlz.2.
 const CENSUS_WANTED: usize = 10;
 
+/// How many a census stops after, which `CENSUS_WANTED` sets and `CENSUS_ALL` removes.
+///
+/// TEN IS A PROFILE'S APPETITE, NOT A CENSUS'S. It was chosen because the deepest-unreach
+/// profiles need five and ten is twice that - and for naming the hard questions it is the
+/// right number. It is the wrong number for an ARTEFACT: de-x8ms.5 wants a status per entry,
+/// and a census that stops at ten leaves everything past the tenth unexamined. Measured on
+/// the whole game: 250 of 521 groups hit the cap, and only 10.9 per cent of link-reachable
+/// entries came out with a world-conditioned status.
+///
+/// `CENSUS_ALL=1` scans every candidate instead. That is a different and much longer run -
+/// classification is a bounded backward pass per candidate - so it is asked for rather than
+/// assumed.
+fn census_wanted() -> usize {
+    if std::env::var("CENSUS_ALL").is_ok() {
+        usize::MAX
+    } else {
+        CENSUS_WANTED
+    }
+}
+
 /// Which of a group's entries no path can reach, deepest first, and what that cost.
 ///
 /// ## Why this is a mode of the matrix and not a measurement of its own
@@ -1679,8 +1699,14 @@ fn census(index: &lookahead_engine::index::Index, world: &dyn ILookAheadWorld) {
     if std::env::var("NO_HEADER").is_err() {
         println!("{}", CENSUS_COLUMNS.join("\t"));
     }
+    let wanted = census_wanted();
     eprintln!(
-        "census: up to {CENSUS_WANTED} per group, {} seconds per candidate",
+        "census: {} per group, {} seconds per candidate",
+        if wanted == usize::MAX {
+            "every candidate".to_string()
+        } else {
+            format!("up to {wanted}")
+        },
         symbolic_answers::CLASSIFY_CAP.as_secs(),
     );
 
@@ -1700,12 +1726,12 @@ fn census(index: &lookahead_engine::index::Index, world: &dyn ILookAheadWorld) {
 
         let began = std::time::Instant::now();
         let (unreachable, undecided) =
-            symbolic_answers::classify(&graph, start, world, &reachable, CENSUS_WANTED);
+            symbolic_answers::classify(&graph, start, world, &reachable, wanted);
         let millis = began.elapsed().as_millis();
 
         // `all` means the scan ran out of candidates, so the count is the whole truth for
         // this group; `at-least` means it ran out of room.
-        let exact = if unreachable.len() == CENSUS_WANTED { "at-least" } else { "all" };
+        let exact = if unreachable.len() == wanted { "at-least" } else { "all" };
         let named: Vec<String> = unreachable
             .iter()
             .map(|id| format!("{}:{}", id.conversation_id, id.entry_id))
