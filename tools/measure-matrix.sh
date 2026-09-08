@@ -388,7 +388,47 @@ if [ "$already" -gt 0 ]; then
     echo "resuming in $LOGS: $already row(s) already measured, and they will be skipped"
 fi
 
-for conversation in "${CONVERSATIONS[@]}"; do
+# Set by the phase drivers at the bottom. `measure_group` is the same code either way and
+# only the accounting around it differs.
+IN_PARALLEL=0
+
+# ONE ROW IS DONE.
+#
+# In the serial phase that is the progress line and its weighted estimate, exactly as
+# before. In the parallel phase it is a tally kept by the worker, because THE ESTIMATOR'S
+# PREMISE IS ONE ROW AT A TIME, TIMED: with four rows in flight, "row 0:00:02" is no
+# longer a duration anybody waited and a remaining-time weighted by past row costs is no
+# longer being divided by the right pace. The parallel phase reports by GROUP instead and
+# says so, rather than printing a number it cannot stand behind.
+row_finished() {
+    if [ "$IN_PARALLEL" = 1 ]; then
+        GROUP_ROWS=$(( GROUP_ROWS + 1 ))
+    else
+        progress "$@"
+    fi
+}
+
+# ONE GROUP, START TO FINISH. Lifted out of the loop it used to be so that the parallel
+# phase below can run several at once; the body is otherwise what it always was, one
+# process per row.
+#
+# IT COUNTS ITS OWN OUTCOMES rather than adding to the run's totals, because in the
+# parallel phase it runs in a forked subshell and anything it added to a total would be
+# added to a copy that dies with the fork. The caller folds the GROUP_ counters in -
+# directly when it ran here, through a file when it ran in a worker.
+#
+# SKIPPED_ROWS IS THE ONE EXCEPTION and is incremented in both places: the serial progress
+# line needs it live, within the group, to know what this run actually measured, so the
+# fold cannot wait until the group ends. In the parallel phase that increment lands in the
+# fork and is discarded, and GROUP_SKIPPED is what the parent folds instead.
+measure_group() {
+    local conversation="$1"
+    local tsv log row status profile
+    GROUP_NOT_MEASURED=0
+    GROUP_NO_ROWS=0
+    GROUP_SKIPPED=0
+    GROUP_ROWS=0
+
     tsv="$LOGS/performance-matrix-$conversation.tsv"
 
     # ONLY WHEN THE FILE IS NEW. Truncating it here is what a resume must not do, and the
@@ -405,7 +445,8 @@ for conversation in "${CONVERSATIONS[@]}"; do
             printf '  %-12s  already measured\n' "$profile"
             ROW_STARTED=$(date +%s)
             SKIPPED_ROWS=$(( SKIPPED_ROWS + 1 ))
-            progress skipped
+            GROUP_SKIPPED=$(( GROUP_SKIPPED + 1 ))
+            row_finished skipped
             continue
         fi
 
@@ -480,7 +521,7 @@ for conversation in "${CONVERSATIONS[@]}"; do
             case "$row" in
                 *NOT-MEASURED*)
                     echo "NOT MEASURED - no memory for the budget; rerun this row"
-                    not_measured=$((not_measured + 1))
+                    GROUP_NOT_MEASURED=$((GROUP_NOT_MEASURED + 1))
                     ;;
                 *) echo "ok" ;;
             esac
@@ -494,7 +535,7 @@ for conversation in "${CONVERSATIONS[@]}"; do
             # mean "this group has no dialogue to search".
             verdict_row "$conversation" "$profile" NO-ROWS >> "$tsv"
             echo "no rows - $(grep -m1 '; no rows$' "$log")"
-            no_rows=$((no_rows + 1))
+            GROUP_NO_ROWS=$((GROUP_NO_ROWS + 1))
         else
             # A CRASH IS A RESULT. The row says so and names its log, rather than being
             # silently absent - an empty line in a measurement reads as "not run yet",
@@ -504,9 +545,150 @@ for conversation in "${CONVERSATIONS[@]}"; do
             verdict_row "$conversation" "$profile" CRASHED >> "$tsv"
             echo "CRASHED (see $log)"
         fi
-        progress
+        row_finished
     done
+}
+
+# THE HEAVY GROUPS ONE AT A TIME, THEN THE REST SEVERAL AT A TIME.
+#
+# Measured on the 4382-row run of 2026-09-07: row 252 - group 26 of 1422, start 625 - is
+# the LAST row in the whole run to take more than ten seconds. The first 250 rows average
+# 25.2s and peak at 1026s; the 4130 after it never exceed nine seconds and sit flat at
+# 2.1-2.6s. Ten rows to a group, so the expense is the first twenty-five groups and the
+# other 1,397 are a cheap tail.
+#
+# NOT CUT AT THE 50 MULTI-CONVERSATION GROUPS, which is the intuitive boundary and the
+# worse one: groups 27 and 28 are single-conversation with ~980 entries each, while the
+# cost has already collapsed by group 26. Entries track cost; the conversation count does
+# not. Groups arrive heaviest-first by entries, so the prefix is simply the first N.
+#
+# WORKERS=1 REPRODUCES THE OLD BEHAVIOUR EXACTLY, which is how a run that has to be
+# comparable with an existing folder asks for it.
+SERIAL_GROUPS="${SERIAL_GROUPS:-25}"
+WORKERS="${WORKERS:-$(nproc 2>/dev/null || printenv NUMBER_OF_PROCESSORS || echo 1)}"
+
+# GROUPS RUN IN PARALLEL, NEVER ROWS, so no two workers ever touch one file: a group owns
+# its performance-matrix-<start>.tsv. The append-as-it-finishes resume needs no locking and
+# no changes, and rows within a group stay in their own order.
+serial_groups=()
+parallel_groups=()
+for conversation in "${CONVERSATIONS[@]}"; do
+    if [ "${#serial_groups[@]}" -lt "$SERIAL_GROUPS" ] || [ "$WORKERS" -le 1 ]; then
+        serial_groups+=("$conversation")
+    else
+        parallel_groups+=("$conversation")
+    fi
 done
+
+if [ "${#parallel_groups[@]}" -gt 0 ]; then
+    echo "${#serial_groups[@]} group(s) one at a time, then ${#parallel_groups[@]} at ${WORKERS} at a time"
+fi
+
+for conversation in "${serial_groups[@]}"; do
+    measure_group "$conversation"
+    not_measured=$(( not_measured + GROUP_NOT_MEASURED ))
+    no_rows=$(( no_rows + GROUP_NO_ROWS ))
+done
+
+if [ "${#parallel_groups[@]}" -gt 0 ]; then
+    IN_PARALLEL=1
+    PARALLEL_STARTED=$(date +%s)
+    GROUPS_DONE=0
+
+    # EACH WORKER GETS ITS SHARE OF THE ALLOWANCE, and this is a correctness fix rather
+    # than tidiness. The manager PREALLOCATES about two thirds of the budget up front and
+    # cannot grow past it (src/symbolic/budget.rs:280-286), so a 43-entry tail group
+    # commits roughly four gigabytes exactly as a heavy one does - nothing about a small
+    # group makes it cheaper. Four workers at the 6 GB default would commit ~16 GB before
+    # measuring anything, and each one's can_be_supplied() probe fallibly reserves the FULL
+    # 6 GB first. Overlap those and the run manufactures NOT-MEASURED rows where a probe
+    # was refused and CRASHED rows where a probe passed and the allocation aborted - the
+    # race named at budget.rs:300 and performance_matrix.rs:1169.
+    #
+    # THE FOLDER IS TOLD WHICH ALLOWANCE THESE ROWS GOT. Two rows given different budgets
+    # are not comparable (performance_matrix.rs:328-330) and nothing in a TSV records the
+    # budget, so it is written down here instead. A `no-room` row measured under a divided
+    # budget is SUSPECT and wants re-running serially at the full allowance before it is
+    # believed: no-room is meant to say the search had every byte it was allowed, not that
+    # it was allowed a quarter of them.
+    #
+    # 6144 mirrors DiagramBudget::measurement() in src/symbolic/budget.rs, and is the one
+    # number here that has to be kept in step with the Rust by hand.
+    FULL_BUDGET_MB="${ROW_MEMORY_MB:-6144}"
+    export ROW_MEMORY_MB=$(( FULL_BUDGET_MB / WORKERS ))
+    echo "each worker is allowed ${ROW_MEMORY_MB} MB of the ${FULL_BUDGET_MB} MB budget"
+    printf '%s\n' \
+        "workers=$WORKERS budget_mb=$ROW_MEMORY_MB of=$FULL_BUDGET_MB groups=${#parallel_groups[@]} started=$(date '+%F %T')" \
+        >> "$LOGS/parallel-phase.txt"
+
+    # WHERE THE RUN IS, once rows stop arriving one at a time. The estimate is flat and
+    # needs no scaling by the worker count: wall time per finished group already has the
+    # concurrency inside it.
+    group_finished() {
+        GROUPS_DONE=$(( GROUPS_DONE + 1 ))
+        local now elapsed left
+        now=$(date +%s)
+        elapsed=$(( now - PARALLEL_STARTED ))
+        left=$(( ${#parallel_groups[@]} - GROUPS_DONE ))
+        printf '    group %d/%d  elapsed %s  est. left ~%s\n' \
+            "$GROUPS_DONE" "${#parallel_groups[@]}" \
+            "$(clock "$elapsed")" \
+            "$(clock $(( elapsed * left / GROUPS_DONE )))"
+    }
+
+    # A worker's output is held and printed whole when its group finishes, so that four
+    # groups at once do not interleave into something nobody can read.
+    WORK="$LOGS/.workers"
+    mkdir -p "$WORK"
+    declare -A WORKER_OF=()
+    running=0
+
+    reap() {
+        local pid group
+        wait -n -p pid || true
+        [ -n "${pid:-}" ] || return 0
+        group="${WORKER_OF[$pid]:-}"
+        [ -n "$group" ] || return 0
+        unset "WORKER_OF[$pid]"
+        [ -e "$WORK/$group.out" ] && cat "$WORK/$group.out"
+        rm -f "$WORK/$group.out"
+        # WRITTEN LAST BY THE WORKER, so its absence means the worker itself died rather
+        # than the row. The rows it did finish are already in the TSV - they are appended
+        # as they happen - so this loses only the tally, and saying so beats adding zero.
+        if [ -e "$WORK/$group.stat" ]; then
+            # shellcheck disable=SC1090
+            . "$WORK/$group.stat"
+            not_measured=$(( not_measured + GROUP_NOT_MEASURED ))
+            no_rows=$(( no_rows + GROUP_NO_ROWS ))
+            SKIPPED_ROWS=$(( SKIPPED_ROWS + GROUP_SKIPPED ))
+            rm -f "$WORK/$group.stat"
+        else
+            echo "WORKER LOST for group $group - its finished rows are in the TSV, its tally is not"
+        fi
+        group_finished
+    }
+
+    for conversation in "${parallel_groups[@]}"; do
+        while [ "$running" -ge "$WORKERS" ]; do
+            reap
+            running=$(( running - 1 ))
+        done
+        (
+            measure_group "$conversation" > "$WORK/$conversation.out" 2>&1
+            printf 'GROUP_NOT_MEASURED=%d\nGROUP_NO_ROWS=%d\nGROUP_SKIPPED=%d\n' \
+                "$GROUP_NOT_MEASURED" "$GROUP_NO_ROWS" "$GROUP_SKIPPED" \
+                > "$WORK/$conversation.stat"
+        ) &
+        WORKER_OF[$!]="$conversation"
+        running=$(( running + 1 ))
+    done
+
+    while [ "$running" -gt 0 ]; do
+        reap
+        running=$(( running - 1 ))
+    done
+    rmdir "$WORK" 2>/dev/null || true
+fi
 
 echo
 echo "wrote $(ls -1 "$LOGS"/performance-matrix-*.tsv | wc -l) file(s) in: $LOGS"
