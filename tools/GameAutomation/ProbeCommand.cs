@@ -209,7 +209,7 @@ namespace GlobalConversationTracker.Automation
         /// <param name="keepStatistics">Whether to retain crawl statistics.</param>
         /// <param name="recoveryLimit">
         /// How many engine deaths the mod answers with a fresh engine before giving up for
-        /// the session; negative leaves the shipped policy alone. A SUITE THAT KILLS THE
+        /// the session; negative asks for the shipped policy. A SUITE THAT KILLS THE
         /// ENGINE AND EXPECTS THE SHUTDOWN NOTICE MUST SEND ZERO: the shipped limit is
         /// five, so one kill otherwise produces a silent replacement and the notice the
         /// suite is waiting for never comes. See de-bnjy.1.3.

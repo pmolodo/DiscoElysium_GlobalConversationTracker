@@ -178,9 +178,12 @@ namespace GlobalConversationTracker
 
         /// <summary>Whether the engine has died for the LAST time, which is final.</summary>
         /// <remarks>
-        /// Set once by <see cref="EngineDied"/> and never cleared. It is what makes the
-        /// message appear once and the feature stay off - the hooks are removed as well,
-        /// but a hook that is mid-call when the engine goes still has to find its way out.
+        /// Set once by <see cref="EngineDied"/> and, in play, never cleared. It is what
+        /// makes the message appear once and the feature stay off - the hooks are removed as
+        /// well, but a hook that is mid-call when the engine goes still has to find its way
+        /// out. The two things that do clear it are both test-only:
+        /// <see cref="Install"/>, which starts a session over, and
+        /// <see cref="ReviveForSuite"/>, which hands the next in-game suite an engine.
         ///
         /// <para>NOT SET BY EVERY DEATH SINCE de-bnjy.1.3. Most deaths are answered with a
         /// fresh engine and no message at all; this is only the end of the road, when
@@ -191,9 +194,9 @@ namespace GlobalConversationTracker
 
         /// <summary>Whether to respawn, what to blame for a death, and when to stop.</summary>
         /// <remarks>
-        /// de-bnjy.1.3. Replaced rather than reset, and by <see cref="Install"/>, so that
-        /// an in-game suite which installs twice does not inherit the deaths it caused on
-        /// purpose the first time.
+        /// de-bnjy.1.3. Replaced rather than reset, and by <see cref="Configure"/> - so on
+        /// every suite prepare, not only on an install - so that an in-game suite does not
+        /// inherit the deaths its predecessor caused on purpose.
         /// </remarks>
         private static EngineRecovery _recovery = new EngineRecovery();
 
@@ -231,6 +234,16 @@ namespace GlobalConversationTracker
         /// records what the player has read. An engine that dies must not cost that.
         /// </remarks>
         private static Harmony? _harmony;
+
+        /// <summary>The id that instance is built from, or null before the first install.</summary>
+        /// <remarks>
+        /// KEPT BECAUSE THE INSTANCE IS NOT. <see cref="GiveUpOnLookAhead"/> unpatches and
+        /// drops <see cref="_harmony"/>, so <see cref="ReviveForSuite"/> has nothing left to
+        /// re-use; the id is the one piece that has to survive a give-up for the hooks to go
+        /// back on under the same name. Null means <see cref="Install"/> has never run,
+        /// which is the one case where there is nothing to revive.
+        /// </remarks>
+        private static string? _harmonyId;
 
         /// <summary>What the bridge said about the options of the menu being drawn.</summary>
         /// <remarks>
@@ -397,17 +410,29 @@ namespace GlobalConversationTracker
             // instance for cannot be taken off again. Load calls this once; a test may not.
             _harmony?.UnpatchSelf();
             _engineDied = false;
-            // A FRESH BUDGET AND AN EMPTY STASH. The in-game suites kill the engine on
-            // purpose and then install again; carrying the deaths across would have the
-            // second suite give up on the first one's evidence.
-            _recovery = new EngineRecovery();
             _respawning = false;
 
+            // ITS OWN ID, the plugin's with a suffix, and REMEMBERED rather than derived on
+            // the spot: the give-up path drops the instance, so bringing the look-ahead
+            // back for the next suite has to build another one from the same id.
+            _harmonyId = harmony.Id + LookAheadPatchSuffix;
+            PatchTheHooks();
+        }
+
+        /// <summary>Installs the look-ahead's two hooks, under an instance of its own.</summary>
+        /// <remarks>
+        /// SHARED BY <see cref="Install"/> AND <see cref="ReviveForSuite"/>, because
+        /// <see cref="GiveUpOnLookAhead"/> takes both hooks off and throws the instance
+        /// away. Whatever puts them back has to put back exactly what came off, and one
+        /// place to do it is what keeps the two paths from drifting.
+        /// </remarks>
+        private static void PatchTheHooks()
+        {
             // AN INSTANCE OF ITS OWN, whose id is the plugin's with a suffix. Unpatching is
             // by id, so hooks that share one cannot be removed separately - and these two
             // have to come off, when the engine dies, without taking the tracking hooks
             // with them.
-            _harmony = new Harmony(harmony.Id + LookAheadPatchSuffix);
+            _harmony = new Harmony(_harmonyId);
 
             // Two hooks, and they are not interchangeable. The menu one is where the whole
             // list of options exists, which is the only place a single bridge call can
@@ -427,8 +452,9 @@ namespace GlobalConversationTracker
         /// <param name="diagnostics">Where to record crawls, or null to record none.</param>
         /// <param name="recoveryLimit">
         /// How many engine deaths to answer with a fresh engine before giving up for the
-        /// session; negative leaves the current policy alone, which is what every caller
-        /// that does not care about it passes.
+        /// session; negative asks for the shipped limit, which is what every caller that
+        /// does not care about it passes. Either way the policy is replaced, so no caller
+        /// inherits what the last one spent.
         /// </param>
         /// <remarks>
         /// THE RECOVERY LIMIT IS HERE FOR ONE REASON: an in-game suite cannot otherwise
@@ -454,14 +480,19 @@ namespace GlobalConversationTracker
             _memoryBudgetMb = memoryBudgetMb;
             _diagnostics = diagnostics != null && diagnostics.Enabled ? diagnostics : null;
 
-            if (recoveryLimit >= 0)
-            {
-                // A NEW POLICY RATHER THAN A SETTING ON THE OLD ONE, so a suite that
-                // changes the limit also starts from an empty stash and an unspent budget.
-                // Changing the number underneath a policy that had already convicted
-                // something would carry the last suite's evidence into this one.
-                _recovery = new EngineRecovery(recoveryLimit);
-            }
+            // A NEW POLICY RATHER THAN A SETTING ON THE OLD ONE, so a suite that changes the
+            // limit also starts from an empty stash and an unspent budget. Changing the
+            // number underneath a policy that had already convicted something would carry
+            // the last suite's evidence into this one.
+            //
+            // EVERY TIME, EVEN WHEN THE LIMIT IS NOT NAMED, which is de-pszk's second half.
+            // The count leaks the same way the engine does: a suite that spends two of the
+            // five deaths leaves the next suite three, and the next suite is measuring a
+            // policy it never asked for. A caller that says nothing about the limit is
+            // asking for the shipped one, not for whatever the last suite left behind.
+            _recovery = recoveryLimit >= 0
+                ? new EngineRecovery(recoveryLimit)
+                : new EngineRecovery();
 
             // The budgets are not applied to an engine here any more; they travel in the
             // request, and the engine on the other side of the bridge applies them. See
@@ -747,6 +778,65 @@ namespace GlobalConversationTracker
                 $"{LogPrefix} the look-ahead engine (process {id}) was killed on purpose "
                 + "by a harness. What happens next is the thing being tested.");
             return id;
+        }
+
+        /// <summary>
+        /// Gives the next suite an engine, when the last one killed the only engine there
+        /// was and forbade a replacement.
+        /// </summary>
+        /// <remarks>
+        /// <para>de-pszk. TEST-ONLY, and reached from <c>PrepareLookAheadSuite</c>. The game
+        /// is ONE PROCESS for a whole run, so the engine-death suite - which sets the
+        /// recovery limit to zero precisely so that one kill reaches the give-up notice -
+        /// leaves every suite after it with no engine and no way to get one. Running
+        /// engine-death before engine-recovery failed on exactly that: the second suite's
+        /// first kill found nothing to kill.</para>
+        ///
+        /// <para>IT BELONGS AT SUITE PREPARE, beside the diagnostics flush and the
+        /// harness's clearing of artefacts, and for the same reason: a suite must not be
+        /// satisfied - or, here, defeated - by what its predecessor left behind.</para>
+        ///
+        /// <para>NOTHING TO DO IN THE ORDINARY CASE. A suite that ends with a live engine,
+        /// or with a replacement already on its way, is left exactly as it is. Only the
+        /// give-up, which is final for a session by design, has to be undone.</para>
+        ///
+        /// <para>THE ENGINE COMES UP BEHIND THIS, not inside it: starting it is
+        /// <see cref="BeginOpening"/>, the same as at load, and a process launch plus a
+        /// fourteen-megabyte index read is not something to hold a probe command open for.
+        /// A harness about to kill an engine therefore has to ASK for the process id until
+        /// it has one rather than assume it is already there.</para>
+        /// </remarks>
+        internal static void ReviveForSuite()
+        {
+            if (!_engineDied || _harmonyId == null)
+            {
+                return;
+            }
+
+            _log?.Warning(
+                $"{LogPrefix} the look-ahead had given up for this session and a new suite "
+                + "is starting, so the hooks go back on and a fresh engine is started. "
+                + "TEST-ONLY: nothing in play asks for this.");
+
+            _engineDied = false;
+
+            // NOT A RESPAWN. _respawning is what draws the uncertain marker on menus during
+            // the wait and what makes a failed open spend the recovery budget, and neither
+            // is right here: nothing died on this suite's watch, and it has asked nothing
+            // yet.
+            _respawning = false;
+
+            // BOTH, and in this order, because BeginOpening refuses to start a second
+            // engine while either says one is already there. GiveUpOnLookAhead left
+            // _bridgeOpened true over a null bridge, which is the state that means "there
+            // is no engine and there never will be".
+            _bridgeOpened = false;
+            _warming = null;
+            BeginOpening();
+
+            // The hooks came off with the give-up, and a look-ahead nothing calls into
+            // would draw every option unmarked however healthy its engine was.
+            PatchTheHooks();
         }
 
         /// <summary>

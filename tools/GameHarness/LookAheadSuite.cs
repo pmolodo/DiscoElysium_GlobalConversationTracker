@@ -565,7 +565,9 @@ namespace GlobalConversationTracker.Harness
         /// ends the look-ahead makes every claim about a marker or a Pass / Fail line fail
         /// for every suite after it in the same launch - measured 2026-09-05, when
         /// engine-death ran seventh and the eight branch-shape suites after it lost all
-        /// sixteen of their claims.</para>
+        /// sixteen of their claims. Since de-pszk the next suite's prepare starts a fresh
+        /// engine, so "for the rest of the launch" is now "until that engine is up" - but it
+        /// comes up behind the prepare, so the menus drawn first are still unanswered.</para>
         ///
         /// <para>A suite whose kill scenarios all expect a RECOVERY does not end it: it
         /// waits for the replacement and hands the next suite a working engine.</para>

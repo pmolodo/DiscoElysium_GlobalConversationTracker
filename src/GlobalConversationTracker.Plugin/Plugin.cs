@@ -100,7 +100,7 @@ namespace GlobalConversationTracker
         /// <param name="keepStatistics">Whether to retain crawl statistics.</param>
         /// <param name="recoveryLimit">
         /// How many engine deaths are answered with a fresh engine before the look-ahead
-        /// gives up for the session; negative leaves the shipped policy alone. A SUITE THAT
+        /// gives up for the session; negative asks for the shipped policy. A SUITE THAT
         /// WANTS TO SEE THE SHUTDOWN NOTICE PASSES ZERO - the shipped limit is five, so one
         /// kill otherwise produces a replacement and no notice at all. See
         /// <c>EngineRecovery</c> and de-bnjy.1.3.
@@ -139,6 +139,12 @@ namespace GlobalConversationTracker
                     logBudgetExceeded,
                     keepStatistics),
                 recoveryLimit);
+
+            // AFTER Configure, SO THE NEW POLICY IS THE ONE THE REVIVED ENGINE RUNS UNDER.
+            // A suite inherits nothing from the one before it: not the diagnostics writer,
+            // not the recovery budget, and since de-pszk not the absence of an engine that
+            // its predecessor killed while forbidding a replacement.
+            ResponseLookAheadPatch.ReviveForSuite();
         }
 
         /// <summary>Flushes look-ahead diagnostics before a test suite is checked.</summary>

@@ -64,6 +64,26 @@ namespace GlobalConversationTracker.TestProbe
         /// </remarks>
         internal const string ModGuid = "com.molodowitch.globalconversationtracker";
 
+        /// <summary>
+        /// The mod's LOOK-AHEAD Harmony instance, which is NOT <see cref="ModGuid"/>.
+        /// </summary>
+        /// <remarks>
+        /// <para>THE ONE THAT APPENDS THE MARKER. The mod installs its two look-ahead hooks
+        /// through an instance of its own - the plugin guid with a suffix - so that it can
+        /// take them off again when the engine dies without touching the tracking hooks. So
+        /// ordering this probe after the plugin guid orders it after NOTHING on
+        /// ChooseResponseText, which is the method the marker is appended in.</para>
+        ///
+        /// <para>It went unnoticed because the mod loads before the probe and therefore
+        /// patched first, which put the order right by accident. de-pszk made the mod
+        /// re-install those hooks mid-run, the accident stopped holding, and an entire suite
+        /// logged its options as plain while the game was drawing them marked.</para>
+        ///
+        /// <para>Copied rather than referenced, for the reason given on
+        /// <see cref="ModGuid"/>.</para>
+        /// </remarks>
+        internal const string LookAheadGuid = ModGuid + ".lookahead";
+
         /// <summary>The field that makes an entry a white check.</summary>
         internal const string WhiteCheckField = "DifficultyWhite";
 
@@ -285,11 +305,15 @@ namespace GlobalConversationTracker.TestProbe
         /// which is the exact failure the tests look for. <c>HarmonyAfter</c> puts this
         /// behind the mod's patch by id, and the priority puts it behind anything else
         /// that did not ask for an order.
+        ///
+        /// BOTH IDS, and <see cref="LookAheadGuid"/> is the one that matters here: the
+        /// marker is appended by the look-ahead's own Harmony instance, not by the
+        /// plugin's. See that constant for what naming only the plugin's cost.
         /// </remarks>
         [HarmonyPatch(
             typeof(Sunshine.ConversationLogger),
             nameof(Sunshine.ConversationLogger.ChooseResponseText))]
-        [HarmonyAfter(ModGuid)]
+        [HarmonyAfter(ModGuid, LookAheadGuid)]
         [HarmonyPriority(Priority.Last)]
         private static class ResponseTextProbe
         {

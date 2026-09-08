@@ -97,14 +97,17 @@ namespace GlobalConversationTracker.Automation.Tests
         }
 
         /// <summary>
-        /// A killed engine is not restarted, so anything after the suite that kills one is
-        /// measuring a mod without a look-ahead. Both declared lists have to end with it.
+        /// A killed engine is replaced only at the NEXT suite's prepare, and comes up behind
+        /// it, so the suite after the one that kills an engine draws its first menus without
+        /// a look-ahead. Both declared lists have to end with it.
         /// </summary>
         /// <remarks>
         /// Measured 2026-09-05, which is why this test exists: with engine-death seventh of
         /// fifteen, the eight branch-shape suites after it lost all sixteen of their Pass /
         /// Fail claims - claims the same white check had passed under 'pristine' a few
-        /// suites earlier, in the same launch.
+        /// suites earlier, in the same launch. That was before de-pszk, when the engine was
+        /// never replaced at all; the reason to keep this suite last is now the warm-up
+        /// rather than a permanent loss, and it is reason enough.
         /// </remarks>
         [Fact]
         public void ADeclaredRunEndsWithTheSuiteThatKillsTheEngine()

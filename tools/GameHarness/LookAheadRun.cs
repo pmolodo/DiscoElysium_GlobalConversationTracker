@@ -255,9 +255,9 @@ namespace GlobalConversationTracker.Harness
             bool keepOpen,
             Report report)
         {
-            // A suite that kills the look-ahead engine ends it for the whole launch, so it
-            // goes last whatever order it was asked for in. Said out loud, because the run
-            // is about to report its suites in an order nobody typed.
+            // A suite that kills the look-ahead engine leaves the launch without one for a
+            // while, so it goes last whatever order it was asked for in. Said out loud,
+            // because the run is about to report its suites in an order nobody typed.
             IReadOnlyList<LookAheadSuite> asked = suites;
             suites = LookAheadSuites.InRunOrder(suites);
             if (!suites.SequenceEqual(asked))
@@ -266,8 +266,9 @@ namespace GlobalConversationTracker.Harness
                     "order:     "
                     + string.Join(", ", suites.Where(suite => suite.KillsTheEngine)
                         .Select(suite => $"'{suite.Name}'"))
-                    + " moved last: it kills the look-ahead engine, which is not restarted, "
-                    + "so anything after it would be measuring a mod that has none");
+                    + " moved last: it kills the look-ahead engine, and though the next "
+                    + "suite's prepare starts a fresh one, that engine comes up behind the "
+                    + "first menus that suite draws");
             }
 
             string logPath = Path.Combine(
@@ -785,6 +786,24 @@ namespace GlobalConversationTracker.Harness
         private static int KillTheEngine(
             string saveGames, ProbeWatcher watcher, TimeSpan timeout)
         {
+            // ASKED FOR RATHER THAN ASSUMED, since de-pszk. A suite prepare now revives an
+            // engine its predecessor killed, and that engine comes up BEHIND the prepare -
+            // a process launch plus an index read - so a kill sent the moment the save is
+            // in can find nothing to kill for no better reason than having asked too early.
+            // Waiting turns that race into a wait and leaves the throw below for the case
+            // that is genuinely wrong. It also promotes a finished warm-up: the mod answers
+            // this question through the same call that adopts a new engine, which is what
+            // gives the kill something to find.
+            int waited = WaitForAnEngine(saveGames, watcher, timeout, excluded: 0);
+            if (waited == 0)
+            {
+                throw new InvalidOperationException(
+                    $"No look-ahead engine came up within {EngineWait.TotalSeconds:0} "
+                    + "seconds of this suite being prepared, so there is nothing to kill "
+                    + "and nothing after this would mean what it claims. Check the run's "
+                    + "log for a shutdown notice or a failed engine start.");
+            }
+
             Console.WriteLine("        killing the look-ahead engine on purpose");
             ProbeCommand.SendKillLookAheadEngine(saveGames);
             ProbeEvent killed = watcher.WaitForEvent(
@@ -804,17 +823,66 @@ namespace GlobalConversationTracker.Harness
             return process;
         }
 
-        /// <summary>How long to wait for a replacement engine before giving up on it.</summary>
+        /// <summary>How long to wait for an engine to come up before giving up on it.</summary>
         /// <remarks>
-        /// A replacement costs a process launch plus a 173-244 ms index read
+        /// An engine costs a process launch plus a 173-244 ms index read
         /// (measurements/repeat_question.rs), so this is roughly twenty times what it
         /// should need. It is a FAILURE bound, not a guess at the duration - the poll below
-        /// returns the moment the new id appears.
+        /// returns the moment an id appears.
         /// </remarks>
-        private static readonly TimeSpan ReplacementWait = TimeSpan.FromSeconds(20);
+        private static readonly TimeSpan EngineWait = TimeSpan.FromSeconds(20);
 
-        /// <summary>How often to ask whether the replacement has arrived.</summary>
-        private static readonly TimeSpan ReplacementPoll = TimeSpan.FromMilliseconds(250);
+        /// <summary>How often to ask whether an engine has arrived.</summary>
+        private static readonly TimeSpan EnginePoll = TimeSpan.FromMilliseconds(250);
+
+        /// <summary>
+        /// Asks the mod for its engine's process id until it names one that is not
+        /// <paramref name="excluded"/>, or until <see cref="EngineWait"/> is spent.
+        /// </summary>
+        /// <remarks>
+        /// <para>POLLED RATHER THAN SLEPT: an engine comes up fast enough that any fixed
+        /// wait is either flaky or wasteful, and the mod can say which process it is
+        /// holding, so the harness asks instead of guessing.</para>
+        ///
+        /// <para>THE EXCLUSION IS WHAT MAKES ONE POLL SERVE TWO CALLERS. Waiting for a
+        /// REPLACEMENT has to exclude the id that was just killed, because the mod reports
+        /// the engine it is using and a dead id would satisfy "non-zero" if anything were
+        /// still holding it. Waiting for ANY engine excludes nothing and passes 0, which the
+        /// non-zero test already covers.</para>
+        ///
+        /// <para>Returns 0 rather than throwing, because what to say about the wait having
+        /// been in vain is different for each caller and neither answer belongs here.</para>
+        /// </remarks>
+        /// <param name="saveGames">Where probe commands are dropped.</param>
+        /// <param name="watcher">The probe events to read the answer from.</param>
+        /// <param name="timeout">How long one answer may take to arrive.</param>
+        /// <param name="excluded">An id that does not count, or 0 to accept any.</param>
+        /// <returns>The engine's process id, or 0 if none arrived in time.</returns>
+        private static int WaitForAnEngine(
+            string saveGames, ProbeWatcher watcher, TimeSpan timeout, int excluded)
+        {
+            DateTime deadline = DateTime.UtcNow + EngineWait;
+
+            while (true)
+            {
+                ProbeCommand.SendLookAheadEngineProcess(saveGames);
+                ProbeEvent answer = watcher.WaitForEvent(
+                    "look-ahead-engine-process", timeout, Log);
+                int engine = answer.Number("process") ?? 0;
+
+                if (engine != 0 && engine != excluded)
+                {
+                    return engine;
+                }
+
+                if (DateTime.UtcNow >= deadline)
+                {
+                    return 0;
+                }
+
+                System.Threading.Thread.Sleep(EnginePoll);
+            }
+        }
 
         /// <summary>
         /// Waits until the mod is holding an engine that is NOT the one just killed.
@@ -842,33 +910,18 @@ namespace GlobalConversationTracker.Harness
 
             int killed = _killedEngine;
             Console.WriteLine("        waiting for the mod to start a replacement engine");
-            DateTime deadline = DateTime.UtcNow + ReplacementWait;
 
-            while (true)
+            int engine = WaitForAnEngine(saveGames, watcher, timeout, excluded: killed);
+            if (engine == 0)
             {
-                ProbeCommand.SendLookAheadEngineProcess(saveGames);
-                ProbeEvent answer = watcher.WaitForEvent(
-                    "look-ahead-engine-process", timeout, Log);
-                int engine = answer.Number("process") ?? 0;
-
-                if (engine != 0 && engine != killed)
-                {
-                    Console.WriteLine(
-                        $"        the replacement is process {engine}, and is up");
-                    return;
-                }
-
-                if (DateTime.UtcNow >= deadline)
-                {
-                    throw new InvalidOperationException(
-                        $"No replacement look-ahead engine arrived within {ReplacementWait
-                            .TotalSeconds:0} seconds of killing process {killed}. Either "
-                        + "the mod gave up instead of respawning - check the run's log for "
-                        + "the shutdown notice - or the replacement could not start.");
-                }
-
-                System.Threading.Thread.Sleep(ReplacementPoll);
+                throw new InvalidOperationException(
+                    $"No replacement look-ahead engine arrived within {EngineWait
+                        .TotalSeconds:0} seconds of killing process {killed}. Either "
+                    + "the mod gave up instead of respawning - check the run's log for "
+                    + "the shutdown notice - or the replacement could not start.");
             }
+
+            Console.WriteLine($"        the replacement is process {engine}, and is up");
         }
 
         private static ProbeEvent OpenConversation(

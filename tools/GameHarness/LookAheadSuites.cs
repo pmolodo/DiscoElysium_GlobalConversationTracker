@@ -410,7 +410,11 @@ namespace GlobalConversationTracker.Harness
         /// with no look-ahead and fails every claim it makes about a marker or a line.
         /// Measured 2026-09-05: with it seventh, the eight branch-shape suites that follow
         /// lost all sixteen of their Pass / Fail claims, having passed the same claims
-        /// twenty lines earlier under <see cref="Pristine"/>.</para>
+        /// twenty lines earlier under <see cref="Pristine"/>. de-pszk narrowed that from
+        /// "for the rest of the launch" to "until the next engine is up" - a suite prepare
+        /// now revives an engine its predecessor killed - but the engine comes up BEHIND the
+        /// prepare, so the menus drawn first still have none, and last is still where this
+        /// suite belongs.</para>
         ///
         /// <para><see cref="EngineRecovery"/> SITS JUST BEFORE IT AND IS SAFE THERE, which
         /// is the difference between the two: it kills an engine and then waits for the
@@ -433,9 +437,9 @@ namespace GlobalConversationTracker.Harness
         /// <remarks>
         /// <para>THE DECLARED LISTS ARE ALREADY IN THIS ORDER, so for a default run this
         /// changes nothing. It is for the order a person types - <c>--suite
-        /// engine-death,red-check</c> is a reasonable thing to ask for and a guaranteed
-        /// false failure without this, since the second suite would be measuring a mod
-        /// whose engine the first one killed.</para>
+        /// engine-death,red-check</c> is a reasonable thing to ask for and a false failure
+        /// without this, since the second suite would be drawing its first menus while the
+        /// engine the first one killed is still being replaced.</para>
         ///
         /// <para>Reordering rather than refusing, because the request is not ambiguous:
         /// every named suite still runs, and the only thing decided here is which of them
