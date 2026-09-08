@@ -316,6 +316,80 @@ pub fn best_novelty<'a, F>(
 where
     F: Fn(DialogueNodeId) -> Novelty,
 {
+    search(graph, start, branch, seed, compiler, world, counter_cap, novelty, budget, known, None)
+}
+
+/// The same search, asked WHICH candidates are reachable rather than WHETHER any is.
+///
+/// ## Why this is an option on the same loop rather than a loop of its own
+///
+/// A census wants a verdict per entry, and the obvious way to get one is to ask about each
+/// candidate separately - which is what `measurements/symbolic_answers.rs` did, and it cost
+/// a fresh diagram manager, a fresh guard compiler and a fresh seed PER CANDIDATE. Measured
+/// on groups small enough that the pass itself is trivial, that was 19 to 25 milliseconds of
+/// rebuilding each time; over the 73,958 candidates of a whole-game census, about
+/// twenty-five minutes of it.
+///
+/// Everything needed to avoid that already lives here. This loop builds `Where::of` once,
+/// orders the candidates once, and hands the SAME compiler and `Known` to every
+/// `Backward::reaching_knowing` - so a caller that wants every candidate classified should
+/// arrive here once with all of them, not once per candidate. de-x8ms.11.
+///
+/// ## What the option changes, which is three things and not one
+///
+/// `verdict` is called with each candidate and what its pass established:
+///
+/// - `Some(true)` - reachable. The ordinary search STOPS here, because the candidates are
+///   ordered best-class-first so the first yes is the answer. A census carries on.
+/// - `Some(false)` - a settled pass that proved it unreachable.
+/// - `None` - the pass did not settle, so nothing is established either way. The ordinary
+///   search stops here too, and honestly: it cannot report "nothing reachable" on the
+///   strength of a pass that ran out. A census records the one candidate as undecided and
+///   goes on to the next, because one unsettled pass says nothing about the others.
+///
+/// The returned `NoveltyAnswer` still describes the SEARCH - `best` and `witness` are the
+/// first and therefore best yes, as always - so a caller gets both readings from one run.
+pub fn classify_candidates<'a, F>(
+    graph: &LookAheadGraph,
+    start: DialogueNodeId,
+    branch: StartBranch,
+    seed: &BDDFunction,
+    compiler: &mut GuardCompiler<'a>,
+    world: &dyn ILookAheadWorld,
+    counter_cap: u32,
+    novelty: F,
+    budget: &Budget,
+    known: Option<&Known>,
+    verdict: &mut dyn FnMut(DialogueNodeId, Option<bool>),
+) -> NoveltyAnswer
+where
+    F: Fn(DialogueNodeId) -> Novelty,
+{
+    search(
+        graph, start, branch, seed, compiler, world, counter_cap, novelty, budget, known,
+        Some(verdict),
+    )
+}
+
+/// The loop both entry points share. `every` is the census option - see
+/// [`classify_candidates`].
+#[allow(clippy::too_many_arguments)]
+fn search<'a, F>(
+    graph: &LookAheadGraph,
+    start: DialogueNodeId,
+    branch: StartBranch,
+    seed: &BDDFunction,
+    compiler: &mut GuardCompiler<'a>,
+    world: &dyn ILookAheadWorld,
+    counter_cap: u32,
+    novelty: F,
+    budget: &Budget,
+    known: Option<&Known>,
+    mut every: Option<&mut dyn FnMut(DialogueNodeId, Option<bool>)>,
+) -> NoveltyAnswer
+where
+    F: Fn(DialogueNodeId) -> Novelty,
+{
     let began = std::time::Instant::now();
     let from = Where::of(graph, start, branch, seed, compiler, world, counter_cap);
     let ordered = candidates_from(graph, &from.nodes(), &novelty);
@@ -367,20 +441,41 @@ where
         // incomplete and `reachable_from` would be asking the wrong question of it.
         if backward.stats().met_at.is_some() || from.reaches(&backward) {
             // The best class is asked about first and exhausted before the next one is
-            // begun, so the first candidate that answers yes carries the answer.
-            answer.best = novelty(target);
-            answer.witness = Some(target);
-            answer.met_at = backward.stats().met_at;
-            break;
+            // begun, so the first candidate that answers yes carries the answer - which is
+            // why it is only recorded once even when the census keeps going.
+            if answer.witness.is_none() {
+                answer.best = novelty(target);
+                answer.witness = Some(target);
+                answer.met_at = backward.stats().met_at;
+            }
+            match &mut every {
+                Some(verdict) => {
+                    verdict(target, Some(true));
+                    continue;
+                }
+                None => break,
+            }
         }
 
         // A pass that did not settle proves nothing by saying no: it may simply not have
         // got far enough. Say so rather than counting it as a refusal.
         let stats = backward.stats();
         if !stats.reached_fixed_point {
+            // A CENSUS RECORDS THE ONE AND CARRIES ON. An unsettled pass says nothing about
+            // this candidate and nothing about the next, so stopping would throw away every
+            // remaining answer for the sake of one it could not give.
+            if let Some(verdict) = &mut every {
+                verdict(target, None);
+                continue;
+            }
             answer.stopped_by = StoppedBy::Incomplete;
             answer.out_of_nodes = stats.out_of_memory;
             break;
+        }
+
+        // Settled, and it did not reach: proved unreachable.
+        if let Some(verdict) = &mut every {
+            verdict(target, Some(false));
         }
     }
 

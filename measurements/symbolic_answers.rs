@@ -45,7 +45,9 @@ use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::known::Known;
-use lookahead_engine::symbolic::novelty_search::{best_novelty, Budget as SearchBudget, StoppedBy};
+use lookahead_engine::symbolic::novelty_search::{
+    best_novelty, classify_candidates, Budget as SearchBudget, StoppedBy,
+};
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::world::world::ILookAheadWorld;
@@ -212,21 +214,94 @@ pub fn classify(
     deepest: &[DialogueNodeId],
     wanted: usize,
 ) -> (Vec<DialogueNodeId>, usize) {
-    let mut unreachable = Vec::new();
-    let mut undecided = 0;
+    // ONE APPARATUS FOR THE WHOLE GROUP, not one per candidate. de-x8ms.11.
+    //
+    // This used to call `reachable` per target, and each of those was a separate `answer`
+    // on a thread of its own building a fresh diagram manager, a fresh guard compiler and a
+    // fresh seed. On groups small enough that the pass itself is trivial that was 19 to 25
+    // ms of rebuilding PER CANDIDATE; group 631 meant 2,845 managers to ask 2,845 questions
+    // about one graph in one world.
+    //
+    // IT GOES THROUGH THE SAME SEARCH THE GAME USES rather than growing a loop of its own.
+    // `novelty_search::classify_candidates` is `best_novelty` with one option: report every
+    // candidate and do not stop at the first yes. So the guard reuse, the candidate
+    // ordering and the `Known` narrowing are inherited rather than reimplemented, and a
+    // change to any of them reaches the census automatically.
+    let symbols = graph.symbols().clone();
+    let layout = DataLayout::for_group(graph, world, COUNTER_CAP);
 
-    for &target in deepest {
-        if unreachable.len() == wanted {
-            break;
-        }
-        match reachable(graph, start, world, target) {
-            Some(false) => unreachable.push(target),
-            Some(true) => {}
-            None => undecided += 1,
-        }
-    }
+    // ONE THREAD FOR THE WHOLE GROUP, holding ONE manager, which is the arrangement
+    // src/symbolic/isolated.rs measured cleanest of all - 0 deaths in 35 - and the one the
+    // per-candidate version could not use.
+    on_its_own_thread(|| {
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
+        let mut compiler = GuardCompiler::new(&vars)
+            .with_world(world)
+            .with_constant_clock(DataLayout::group_passes_time(graph));
+        let seed = seed_of(graph, world, &vars);
 
-    (unreachable, undecided)
+        // EVERY CANDIDATE IS THE QUARRY, because the question is which of them can be
+        // reached rather than whether any can.
+        let asking: HashSet<DialogueNodeId> = deepest.iter().copied().collect();
+        let novelty = |id: DialogueNodeId| {
+            if asking.contains(&id) { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
+        };
+
+        // SHARED, which the per-candidate version could not be: what a run over this group
+        // establishes is handed to every pass instead of being rebuilt for each.
+        let known = Known::of_from(graph, start).from(start, &seed);
+
+        let mut unreachable = Vec::new();
+        let mut undecided = 0;
+        {
+            let mut record = |target: DialogueNodeId, verdict: Option<bool>| match verdict {
+                Some(false) => unreachable.push(target),
+                Some(true) => {}
+                None => undecided += 1,
+            };
+
+            classify_candidates(
+                graph,
+                start,
+                StartBranch::Either,
+                &seed,
+                &mut compiler,
+                world,
+                COUNTER_CAP as u32,
+                &novelty,
+                &SearchBudget {
+                    // THE WHOLE GROUP'S ALLOWANCE NOW, where it used to be one candidate's.
+                    // Every candidate is asked about in this single call, so a per-candidate
+                    // cap here would end the census rather than one question.
+                    targets: usize::MAX,
+                    time: std::time::Duration::MAX,
+                    each: BackwardBudget {
+                        steps: usize::MAX,
+                        time: CLASSIFY_CAP,
+                        ..Default::default()
+                    },
+                },
+                Some(&known),
+                &mut record,
+            );
+        }
+
+        // BACK INTO DEEPEST-FIRST ORDER BEFORE THE CAP, and this is not cosmetic.
+        //
+        // The search orders its own candidates - `candidates_from`, best class first - and
+        // that is not the order this function promises. What a census records is "the
+        // deepest unreachable entries, in the order `candidates()` defines", and the
+        // profiles built from it take the first N. Truncating the search's order would
+        // hand a different set to every deepest-unreach row.
+        //
+        // Caught by comparing group 436 against the census taken before this change: same
+        // count, entirely different list.
+        let rank: std::collections::HashMap<DialogueNodeId, usize> =
+            deepest.iter().enumerate().map(|(at, id)| (*id, at)).collect();
+        unreachable.sort_by_key(|id| rank.get(id).copied().unwrap_or(usize::MAX));
+        unreachable.truncate(wanted);
+        (unreachable, undecided)
+    })
 }
 
 /// Whether one target is reachable, or `None` where the pass could not settle it.
