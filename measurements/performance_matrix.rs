@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-//! Three engines, six conversations, ten profiles: the whole grid.
+//! Three engines, six conversations, ten profiles: the whole grid. Plus two more that are
+//! deliberately outside it, and a census of the game that makes them possible.
 //!
 //! The measurements this repository already has each ask one question well. This asks the
 //! same question of every combination, because the thing that is actually wanted - a rule
@@ -77,6 +78,36 @@
 //! - the deepest 1, 5 and 10 entries unseen, which are the deliberately hard cases;
 //! - 95, 90, 75, 50, 25, 10 and 5 per cent seen, drawn at random, which are the shapes a
 //!   real save actually has.
+//!
+//! ## And two profiles that are NOT in that grid: `deepest-unreach-1` and `-5`
+//!
+//! The ten above measure the direction the search stops early in. A deep entry that IS
+//! reachable is proved the moment the backward pass meets the seed, and that is usually
+//! instant - so "deepest-N" is the adversarial SHAPE without the adversarial COST. The
+//! expensive question is an entry no path can reach, because a no has to be proved, which
+//! means driving the fixed point to completion rather than stumbling on a yes.
+//!
+//! Which entries those are is not something a row can work out for itself. It takes a
+//! bounded backward pass per candidate, so two runs could disagree about what the profile
+//! even is, and the cost would land inside the clock the row exists to report. So it is
+//! measured once, over every group, and written down - `CENSUS=1`, driven by
+//! `tools/measure-census.sh` - and the rows READ it:
+//!
+//! ```text
+//! CENSUS_OUT=measurements/logs/2026-09-08_census tools/measure-census.sh all
+//! CENSUS_FILE=measurements/logs/2026-09-08_census/census.tsv \
+//!   PROFILES=deepest-unreach-1,deepest-unreach-5 tools/measure-matrix.sh all
+//! ```
+//!
+//! They are held out of the default grid on purpose: they cannot run without a census, and
+//! adding a profile to the grid would make the whole-game run this repository already has
+//! not comparable with the next one. de-thlz.2.
+//!
+//! TWO ROWS ARE SKIPPED RATHER THAN RUN, and the TSV says which rule skipped them. A group
+//! with no unreachable entries poses no such question at all; a group with exactly one
+//! produces a five-entry profile that is one hard question and four instant ones wearing the
+//! name of a hard profile. Where the census found fewer than five but more than one, the set
+//! is topped up from the deepest remaining and the `real` column says how many were genuine.
 //!
 //! ## Why "deepest" for the small counts and "random" for the percentages
 //!
@@ -311,9 +342,26 @@ use lookahead_engine::symbolic::reachability::{seed_of, Budget, Reachability};
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::isolated;
+use lookahead_engine::world::world::ILookAheadWorld;
 
 #[path = "../tests/common/mod.rs"]
 mod common;
+
+// ONE DEFINITION OF "UNREACHABLE", pulled in rather than written again. The census below and
+// the `deepest-unreach-N` profiles both turn on which entries no path can reach under the
+// world's conditions, and that is a bounded backward pass per candidate that already exists
+// next door. Two copies would be two answers, and the whole point of writing the census down
+// is that a profile can be built from the same set a later reader sees.
+//
+// ALLOWED TO BE MOSTLY UNUSED, because it is a whole measurement rather than a library: its
+// own `main`, its own conversation list and its own profile builder come along with the one
+// function wanted here, and every one of them would otherwise be a dead-code warning in this
+// build. The alternative is a third file holding the classifier, which buys a clean warning
+// list and costs the thing that made this the right shape - that symbolic_answers.rs is
+// where somebody looking for "what does unreachable mean" already goes.
+#[path = "symbolic_answers.rs"]
+#[allow(dead_code)]
+mod symbolic_answers;
 
 /// The six heaviest groups, 362 included.
 const HEAVIEST: [i32; 6] = [362, 368, 631, 14, 28, 1030];
@@ -437,6 +485,20 @@ enum Profile {
 
     /// The n structurally deepest entries unseen: the adversarial case.
     DeepestUnseen(usize),
+    /// The n deepest entries NO PATH CAN REACH: the case that has to prove a no.
+    ///
+    /// THE HARD ONE, and the reason it exists as a profile of its own. A deep entry that IS
+    /// reachable is proved the moment the backward pass meets the seed, and that is usually
+    /// instant - so [`Profile::DeepestUnseen`] measures the direction that stops early. An
+    /// entry nothing can reach has to be refused, which means driving the fixed point to
+    /// completion rather than stumbling on a yes.
+    ///
+    /// THE SET IS READ, NOT DERIVED. Which entries those are comes out of a census taken
+    /// beforehand (`CENSUS=1`, see [`census`]) and named by `CENSUS_FILE`. Classifying per
+    /// row instead would be wrong twice over: the classification is a bounded pass, so two
+    /// runs could disagree about what the profile even IS, and its cost would land inside
+    /// the clock the row exists to report.
+    DeepestUnreachable(usize),
     /// This percentage of entries seen, the rest unseen, drawn at random: the typical case.
     PercentSeen(u32),
 }
@@ -446,6 +508,12 @@ impl Profile {
         match self {
 
             Profile::DeepestUnseen(n) => format!("deepest-{n}"),
+            // THE SAME NAME measurements/symbolic_answers.rs uses, so the two measurements
+            // do not spell one profile two ways. FIXED rather than carrying how many of the
+            // set were genuinely unreachable, which the label used to say there: a label
+            // that varies per group cannot be asked for by name, and both the resume and
+            // `PROFILE=` key on it. What was real is the `real` column instead.
+            Profile::DeepestUnreachable(n) => format!("deepest-unreach-{n}"),
             Profile::PercentSeen(p) => format!("{p}pc-seen"),
         }
     }
@@ -464,6 +532,28 @@ const PROFILES: [Profile; 10] = [
     Profile::PercentSeen(10),
     Profile::PercentSeen(5),
 ];
+
+/// The unreachable profiles: runnable by name, and NOT part of the default grid.
+///
+/// KEPT OUT OF [`PROFILES`] ON PURPOSE. Two reasons, and the second is the one that matters.
+/// They cannot run without a census to read, so a default run would fail on a machine that
+/// had not taken one; and adding a profile to the default grid changes what "a whole-game
+/// run" means, which would make the run this repository already has - ten profiles over
+/// 1,422 groups - not comparable with the next one. They are a sweep of their own:
+///
+///     CENSUS_FILE=measurements/logs/<census>/census.tsv \
+///       PROFILES=deepest-unreach-1,deepest-unreach-5 tools/measure-matrix.sh all
+///
+/// TEN IS DELIBERATELY ABSENT, where the seen profiles have deepest-10. de-thlz.2 asks for
+/// 1 and 5 and nothing else, and a profile nobody asked for is hours of run time answering
+/// a question nobody put.
+const UNREACHABLE: [Profile; 2] =
+    [Profile::DeepestUnreachable(1), Profile::DeepestUnreachable(5)];
+
+/// Every profile a run can name, which is the default grid plus the ones held back from it.
+fn known_profiles() -> impl Iterator<Item = Profile> {
+    PROFILES.into_iter().chain(UNREACHABLE)
+}
 
 /// The three searches a row can hold, named for what they actually do.
 ///
@@ -707,7 +797,7 @@ fn refuse(why: &str) -> ! {
     eprintln!("{why}");
     eprintln!(
         "profiles: {}",
-        PROFILES.iter().map(|p| p.label()).collect::<Vec<_>>().join(", "),
+        known_profiles().map(|p| p.label()).collect::<Vec<_>>().join(", "),
     );
     eprintln!("conversations: any group id the index carries, comma separated");
     std::process::exit(2);
@@ -730,8 +820,7 @@ fn profiles() -> Vec<Profile> {
             .map(str::trim)
             .filter(|label| !label.is_empty())
             .map(|label| {
-                PROFILES
-                    .into_iter()
+                known_profiles()
                     .find(|profile| profile.label() == label)
                     .unwrap_or_else(|| refuse(&format!("PROFILE={label:?} is not a profile")))
             })
@@ -816,6 +905,110 @@ impl Rng {
 }
 
 /// The entries a profile leaves unseen.
+/// A census read back: which entries a group's own census proved unreachable, deepest first.
+///
+/// EMPTY IS A FINDING, not a missing row - a group whose census found nothing unreachable is
+/// exactly the group whose unreachable profiles are skipped. A group ABSENT from the census
+/// is a different thing entirely and is refused rather than guessed at; see [`Census::of`].
+struct Census(HashMap<i32, Vec<DialogueNodeId>>);
+
+impl Census {
+    /// Reads the census named by `CENSUS_FILE`, or refuses if there is none to read.
+    ///
+    /// REFUSES RATHER THAN CLASSIFYING ON THE SPOT, which is the whole design of these
+    /// profiles: a row built from a classification of its own is a row whose profile nobody
+    /// can look up afterwards, and it would carry the classification's cost inside its own
+    /// clock. A run that names an unreachable profile without a census has asked for
+    /// something that cannot be produced honestly, and saying so on stderr and stopping is
+    /// the answer - the same shape [`refuse`] already takes for an unknown profile.
+    fn of(profiles: &[Profile]) -> Option<Self> {
+        if !profiles.iter().any(|p| matches!(p, Profile::DeepestUnreachable(_))) {
+            return None;
+        }
+
+        let Ok(path) = std::env::var("CENSUS_FILE") else {
+            refuse(
+                "an unreachable profile needs CENSUS_FILE, naming the census.tsv that says \
+                 which entries are unreachable. Take one with tools/measure-census.sh.",
+            )
+        };
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            refuse(&format!("CENSUS_FILE={path:?} could not be read"))
+        };
+
+        let mut rows = HashMap::new();
+        for line in text.lines().skip(1) {
+            let cells: Vec<&str> = line.split('\t').collect();
+            // A CRASHED census row has the group in column one and nothing usable after it,
+            // so it parses to no entries - and a group whose census crashed is a group whose
+            // unreachable set is unknown. It is deliberately NOT recorded as "none
+            // unreachable", which would silently turn an unmeasured group into a skipped one.
+            let Some(conversation) = cells.first().and_then(|c| c.parse::<i32>().ok()) else {
+                continue;
+            };
+            if cells.get(4).copied() == Some("all") || cells.get(4).copied() == Some("at-least") {
+                rows.insert(conversation, entries(cells.get(6).copied().unwrap_or("")));
+            }
+        }
+
+        eprintln!("census: {} group(s) read from {path}", rows.len());
+        Some(Self(rows))
+    }
+
+    /// The unreachable entries recorded for a group, deepest first.
+    fn of_group(&self, conversation: i32) -> &[DialogueNodeId] {
+        match self.0.get(&conversation) {
+            Some(found) => found,
+            // NOT AN EMPTY ANSWER. The census either covers this group or it does not, and
+            // "not in the file" cannot be read as "nothing unreachable here" - that would
+            // turn a census that crashed, or one taken over a different set of groups, into
+            // a run full of confidently skipped rows.
+            None => refuse(&format!(
+                "the census has no row for group {conversation}, so what is unreachable in \
+                 it is unknown. Census that group before asking for an unreachable profile."
+            )),
+        }
+    }
+}
+
+/// `conv:entry,conv:entry,...` as ids, which is how a census names its list.
+fn entries(list: &str) -> Vec<DialogueNodeId> {
+    list.split(',')
+        .filter(|cell| !cell.is_empty())
+        .filter_map(|cell| {
+            let (conversation, entry) = cell.split_once(':')?;
+            Some(DialogueNodeId::new(conversation.parse().ok()?, entry.parse().ok()?))
+        })
+        .collect()
+}
+
+/// Why a profile declined to produce a row for a group.
+///
+/// A SKIPPED ROW IS STILL A ROW. A silently absent one cannot be told from one that was never
+/// run, which is the mistake the whole-game run's NO-ROWS outcome exists to avoid, so each of
+/// these is written into the TSV with the rule that produced it.
+#[derive(Debug, Clone, Copy)]
+enum Skipped {
+    /// The group has no unreachable entries, so there is no such question to ask in it.
+    NoneUnreachable,
+    /// The group has exactly one, so a five-entry profile would be four easy questions.
+    ///
+    /// THE RULE WORTH UNDERSTANDING RATHER THAN OBEYING. The set is topped up from the
+    /// deepest remaining entries, so `deepest-unreach-5` over a group with one unreachable
+    /// entry is one hard question and four instant ones wearing the name of a hard profile.
+    /// The number it reported would be mostly the easy case.
+    OneUnreachable,
+}
+
+impl Skipped {
+    fn rule(self) -> &'static str {
+        match self {
+            Skipped::NoneUnreachable => "SKIPPED-none-unreachable",
+            Skipped::OneUnreachable => "SKIPPED-one-unreachable",
+        }
+    }
+}
+
 fn unseen_for(
     profile: Profile,
     candidates: &[DialogueNodeId],
@@ -823,6 +1016,9 @@ fn unseen_for(
     match profile {
 
         Profile::DeepestUnseen(n) => candidates.iter().take(n).copied().collect(),
+        // Built by `unreachable_for`, which needs the census this does not have. Reaching
+        // here would mean the row loop stopped asking it first.
+        Profile::DeepestUnreachable(_) => unreachable!("an unreachable profile reads the census"),
         Profile::PercentSeen(percent) => {
             // The seed IS the percentage, as de-raed asks: reproducible, and different for
             // every row so two rows are not accidentally the same draw.
@@ -840,6 +1036,42 @@ fn unseen_for(
             shuffled.into_iter().skip(seen).collect()
         }
     }
+}
+
+/// The set for an unreachable profile, and how many of it are genuinely unreachable.
+///
+/// TOPPED UP FROM THE DEEPEST REMAINING where the census found fewer than `n`, because a set
+/// of three when five were asked for is a different profile again and would quietly be
+/// compared against groups that got five. The count of real ones comes back with it and is
+/// written into the row's `real` column, so a reader can tell a profile that was five hard
+/// questions from one that was three hard and two instant.
+///
+/// The skip rules are applied here rather than by the caller because they are part of what
+/// the profile MEANS: zero unreachable entries is not a hard question made easy, it is no
+/// question at all.
+fn unreachable_for(
+    n: usize,
+    candidates: &[DialogueNodeId],
+    census: &Census,
+    conversation: i32,
+) -> Result<(HashSet<DialogueNodeId>, usize), Skipped> {
+    let unreachable = census.of_group(conversation);
+    match unreachable.len() {
+        0 => return Err(Skipped::NoneUnreachable),
+        1 if n > 1 => return Err(Skipped::OneUnreachable),
+        _ => {}
+    }
+
+    let real = unreachable.len().min(n);
+    let mut set: HashSet<DialogueNodeId> = unreachable.iter().copied().take(n).collect();
+    for &id in candidates {
+        if set.len() == n {
+            break;
+        }
+        set.insert(id);
+    }
+
+    Ok((set, real))
 }
 
 /// What one engine did with one profile: one cell per column it names, in that order.
@@ -1162,7 +1394,102 @@ fn symbolic_backward(
 }
 
 /// The columns every row starts with, whichever engines ran.
-const ROW_COLUMNS: [&str; 4] = ["conv", "entries", "profile", "unseen"];
+/// `real` IS THE COLUMN de-thlz.2 ADDED, and it is empty for every profile but one.
+///
+/// How many of the `unseen` entries are genuinely unreachable, for a `deepest-unreach-N` row.
+/// A group with three unreachable entries produces a five-entry profile that is part top-up,
+/// and without this the row would claim to be the same measurement as one over a group that
+/// had five - which is the number this whole profile exists to report. A dash everywhere
+/// else, because "how many were real" is not a question the other profiles pose.
+///
+/// APPENDED RATHER THAN INSERTED, so a reader that walks the header by name - which is what
+/// tools/matrix-group-cost.awk does - finds the engine columns exactly where it did.
+const ROW_COLUMNS: [&str; 5] = ["conv", "entries", "profile", "unseen", "real"];
+
+/// What the `real` column says for a profile that does not top anything up.
+const NOT_TOPPED_UP: &str = "-";
+
+/// The columns of a census row, written down here and nowhere else.
+const CENSUS_COLUMNS: [&str; 7] = [
+    "conv", "candidates", "unreachable", "undecided", "exact", "ms", "deepest_unreachable",
+];
+
+/// How many unreachable entries a census stops after.
+///
+/// TEN, where the profiles need five, because the LIST is the artefact worth having rather
+/// than the count: it is the answer to "where are the hard questions in this game", and
+/// re-deriving it later costs the same pass again. de-thlz.2.
+const CENSUS_WANTED: usize = 10;
+
+/// Which of a group's entries no path can reach, deepest first, and what that cost.
+///
+/// ## Why this is a mode of the matrix and not a measurement of its own
+///
+/// Because everything it needs is here. `candidates` defines the deepest-first order the
+/// profiles are built in, `measurable` decides what a group even has to offer, and the
+/// conversation list is the same one the rows use - so a census run and a row run cannot
+/// disagree about which groups exist or which entries are in play. What it borrows from
+/// elsewhere is the one thing that is genuinely elsewhere: the classification itself.
+///
+/// ## What the columns mean, because two of them are easy to misread
+///
+/// `unreachable` is capped at [`CENSUS_WANTED`], so it is a COUNT only when `exact` says
+/// `all`; `at-least` means the scan stopped with ten in hand and the group has that many or
+/// more. `exact` is what the skip rules read: nothing to skip on a group that has none, and
+/// a `deepest-unreach-5` on a group with one real entry would be one hard question wearing
+/// the name of a hard profile.
+///
+/// `undecided` is not a rounding error to be ignored. A candidate whose pass does not settle
+/// inside the cap has proved nothing either way, so a deeper entry may be missing from the
+/// list for no better reason than that it was expensive to ask about. A group with a large
+/// `undecided` is telling you its census is a lower bound.
+///
+/// THE CAP IS SAID OUT LOUD ON STDERR, because two censuses taken under different caps are
+/// not the same artefact and nothing in the TSV records it.
+fn census(index: &lookahead_engine::index::Index, world: &dyn ILookAheadWorld) {
+    if std::env::var("NO_HEADER").is_err() {
+        println!("{}", CENSUS_COLUMNS.join("\t"));
+    }
+    eprintln!(
+        "census: up to {CENSUS_WANTED} per group, {} seconds per candidate",
+        symbolic_answers::CLASSIFY_CAP.as_secs(),
+    );
+
+    for conversation in conversations(&HEAVIEST) {
+        // A GROUP WITH NOTHING TO OFFER STILL GETS A ROW. A silently absent row cannot be
+        // told from one that was never run, which is the mistake the whole-game run's
+        // NO-ROWS outcome exists to avoid; the reason goes to stderr, as it does for
+        // `GROUPS_ONLY`.
+        let (graph, start, reachable) = match measurable(index, conversation) {
+            Ok(measurable) => measurable,
+            Err(why) => {
+                eprintln!("{}", why.message(conversation));
+                println!("{conversation}\t0\t0\t0\tall\t0\t");
+                continue;
+            }
+        };
+
+        let began = std::time::Instant::now();
+        let (unreachable, undecided) =
+            symbolic_answers::classify(&graph, start, world, &reachable, CENSUS_WANTED);
+        let millis = began.elapsed().as_millis();
+
+        // `all` means the scan ran out of candidates, so the count is the whole truth for
+        // this group; `at-least` means it ran out of room.
+        let exact = if unreachable.len() == CENSUS_WANTED { "at-least" } else { "all" };
+        let named: Vec<String> = unreachable
+            .iter()
+            .map(|id| format!("{}:{}", id.conversation_id, id.entry_id))
+            .collect();
+
+        println!(
+            "{conversation}\t{}\t{}\t{undecided}\t{exact}\t{millis}\t{}",
+            reachable.len(),
+            unreachable.len(),
+            named.join(","),
+        );
+    }
+}
 
 fn main() {
     let Some(path) = common::conversation_index() else { return };
@@ -1214,6 +1541,22 @@ fn main() {
 
     let world = common::measurement_save();
 
+    // ASKED FOR ON ITS OWN, like the header and the group list, and it is the one mode that
+    // answers a question about the GAME rather than about a search: which of a group's
+    // entries no path can reach. de-thlz.2 wants that written down before any unreachable
+    // profile is run, so that the profiles are built from a recorded set rather than from a
+    // classification each row repeats - which would also put the classification's cost
+    // inside the row's clock.
+    if std::env::var("CENSUS").is_ok() {
+        census(&index, &world);
+        return;
+    }
+
+    // ONCE, BEFORE ANY ROW, and only when a row is going to want it. Reading it per row would
+    // be the same file parsed for every group of a whole-game sweep, and asking for it when
+    // no unreachable profile was named would make a census a precondition of every run.
+    let census = Census::of(&profiles());
+
     // SUPPRESSIBLE, because the driver script runs one row per process and wants one header
     // in the file rather than one per row.
     if std::env::var("NO_HEADER").is_err() {
@@ -1234,7 +1577,46 @@ fn main() {
         let symbols = graph.symbols().clone();
 
         for profile in profiles() {
-            let unseen = unseen_for(profile, &reachable);
+            // BUILT BEFORE ANYTHING IS SPENT, because for an unreachable profile this is
+            // also where the run learns there is no question to ask in this group.
+            let (unseen, real) = match profile {
+                Profile::DeepestUnreachable(n) => {
+                    let census = census.as_ref().expect("a census, or the profile refused");
+                    match unreachable_for(n, &reachable, census, conversation) {
+                        Ok((unseen, real)) => (unseen, real.to_string()),
+                        Err(skipped) => {
+                            eprintln!(
+                                "SKIPPED: {conversation} {} - {}",
+                                profile.label(),
+                                match skipped {
+                                    Skipped::NoneUnreachable =>
+                                        "no entry in this group is unreachable, so there is \
+                                         no such question to ask here",
+                                    Skipped::OneUnreachable =>
+                                        "exactly one entry is unreachable, so a five-entry \
+                                         profile would be one hard question and four \
+                                         instant ones",
+                                },
+                            );
+                            // THE RULE GOES IN THE VERDICT COLUMNS, so the TSV says not only
+                            // that the row was skipped but which rule skipped it - and so a
+                            // resume counts the row as done rather than retrying it forever.
+                            let absent: Vec<String> = engines
+                                .iter()
+                                .flat_map(|engine| Cells::absent(skipped.rule(), *engine).0)
+                                .collect();
+                            println!(
+                                "{conversation}\t{}\t{}\t0\t0\t{}",
+                                graph.count(),
+                                profile.label(),
+                                absent.join("\t"),
+                            );
+                            continue;
+                        }
+                    }
+                }
+                _ => (unseen_for(profile, &reachable), NOT_TOPPED_UP.to_string()),
+            };
 
             // ASKED PER ROW, AND BEFORE ANYTHING IS SPENT. A machine that cannot supply the
             // budget makes the RUN invalid rather than the row a result - there is nothing
@@ -1268,7 +1650,7 @@ fn main() {
                     .flat_map(|engine| Cells::absent(NOT_MEASURED, *engine).0)
                     .collect();
                 println!(
-                    "{conversation}\t{}\t{}\t{}\t{}",
+                    "{conversation}\t{}\t{}\t{}\t{real}\t{}",
                     graph.count(),
                     profile.label(),
                     unseen.len(),
@@ -1311,7 +1693,7 @@ fn main() {
                 .collect();
 
             println!(
-                "{conversation}\t{}\t{}\t{}\t{}",
+                "{conversation}\t{}\t{}\t{}\t{real}\t{}",
                 graph.count(),
                 profile.label(),
                 unseen.len(),

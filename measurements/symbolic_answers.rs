@@ -65,7 +65,7 @@ const ANSWER_CAP: std::time::Duration = std::time::Duration::from_secs(120);
 ///
 /// Short on purpose. Classification asks about many candidates and only needs the ones it
 /// can settle quickly; anything slower is recorded as unknown rather than waited out.
-const CLASSIFY_CAP: std::time::Duration = std::time::Duration::from_secs(5);
+pub const CLASSIFY_CAP: std::time::Duration = std::time::Duration::from_secs(5);
 
 
 fn main() {
@@ -201,7 +201,11 @@ fn profiles(
 /// inside [`CLASSIFY_CAP`] is counted undecided rather than assumed either way - a backward
 /// pass that ran out of budget has proved nothing, and treating that as unreachable would
 /// build the profile out of the very cases it is meant to exclude.
-fn classify(
+/// PUBLIC BECAUSE THE CENSUS SHARES IT. measurements/performance_matrix.rs pulls this file
+/// in with `#[path]` and asks the same question over every group in the game (de-thlz.2), so
+/// that the entries a census names unreachable and the entries a `deepest-unreach-N` profile
+/// is built from are decided by one piece of code rather than two that could drift.
+pub fn classify(
     graph: &LookAheadGraph,
     start: DialogueNodeId,
     world: &dyn ILookAheadWorld,
