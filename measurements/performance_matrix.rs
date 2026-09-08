@@ -631,7 +631,14 @@ impl Engine {
             Engine::Backward => &["verdict", "ms", "nodes", "asked", "cands"],
             // `by` is which half answered - the forward slice, the backward driver, or
             // neither completely - which is the whole question the switching method asks.
-            Engine::ForwardBackward => &["verdict", "ms", "by", "asked"],
+            //
+            // `nodes` IS THE SAME QUANTITY THE OTHER TWO REPORT, added in de-x8ms.6: what
+            // the manager holds at the end of the row. It was missing because the question
+            // this column answers is "which half answered", not "how big did it get" - and
+            // that mattered the moment fwdbwd became the default, because the parallel
+            // split clears a group against a worker's share of the budget and had nothing
+            // to clear it with. A fwdbwd-only run is exactly the run whose memory this is.
+            Engine::ForwardBackward => &["verdict", "ms", "nodes", "by", "asked"],
         }
     }
 
@@ -1218,9 +1225,23 @@ fn forward_backward(
         _ => "not-there",
     };
 
+    // THE SAME `node_count` THE OTHER TWO REPORT - what the manager holds, which is memory
+    // in use and therefore what the budget and the parallel split both watch.
+    //
+    // READ AT THE END OF THE ROW, not tracked as a high-water mark, which is what fwd and
+    // bwd do too. For a single search those are near enough the same thing; for a portfolio
+    // that runs a forward slice and then a backward driver over ONE manager they are also
+    // near enough, because nodes are not reclaimed eagerly between the halves. It would
+    // stop being true if the halves ever got managers of their own.
+    //
+    // EXPECT IT TO BE SMALLER THAN THE fwd COLUMN for the same group, and that is the point
+    // rather than a discrepancy: fwdbwd stops as soon as either half can answer, so it
+    // genuinely holds less. A split decided on this number is deciding against what the run
+    // in front of it actually costs.
     Cells(vec![
         verdict.to_string(),
         began.elapsed().as_millis().to_string(),
+        vars.node_count().to_string(),
         format!("{:?}", answer.by),
         answer.targets_asked.to_string(),
     ])
