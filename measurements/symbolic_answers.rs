@@ -266,8 +266,28 @@ fn answer(
     cap: std::time::Duration,
 ) -> Answer {
     let symbols = graph.symbols().clone();
-    let layout = DataLayout::for_graph(graph, COUNTER_CAP, None, false)
-        .keeping_only_read(&symbols, &DataLayout::read_by(graph));
+
+    // THE LAYOUT THE GAME USES, which this did not use until de-x8ms.4.
+    //
+    // It was `for_graph(graph, COUNTER_CAP, None, false).keeping_only_read(..)`, and the
+    // `None` is the whole story: that argument is the MONEY CEILING, and for_group takes it
+    // from the world (see the note at the top of src/workspace.rs). Without one, money is
+    // unbounded, so a guard asking whether the player can afford something is satisfiable,
+    // so entries behind it look REACHABLE when the world says they are not.
+    //
+    // MEASURED, on group 436 - money-gated content, which is why it showed there first.
+    // Same graph, same world, same start, changing only this line:
+    //
+    //     for_graph(.., None, false).keeping_only_read(..)   4 of 30 candidates unreachable
+    //     for_group(graph, world, ..)                        10+ of 30, including 436:14
+    //
+    // and 436:14 is the entry de-x8ms.4 was filed about, where this measurement said
+    // reachable and all three of the matrix's engines said not-there. They were right.
+    //
+    // SO THE CENSUS WAS OVER-ESTIMATING REACHABILITY, and therefore UNDER-counting what no
+    // path can reach. The entries it did name were sound - a for_graph unreachable is a
+    // stronger claim and stays unreachable here - but it found too few of them.
+    let layout = DataLayout::for_group(graph, world, COUNTER_CAP);
 
     // A THREAD PER SEARCH. See the note at the top: this is de-fpax's remedy, and without it
     // this measurement loses whole groups partway through.
