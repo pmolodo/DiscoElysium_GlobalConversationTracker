@@ -171,9 +171,11 @@ fn profiles(
         // NOTHING TO BUILD IT FROM, and saying so is the point: a profile that quietly
         // becomes `deepest-N` again would be two rows claiming to be different measurements.
         println!(
-            "{:>6} {:>24}  no entry classified unreachable ({unknown} undecided); \
+            "{:>6} {:>24}  no entry classified unreachable ({} undecided); \
              deepest-{wanted} stands alone",
-            start.conversation_id, format!("deepest-unreachable-{wanted}"),
+            start.conversation_id,
+            format!("deepest-unreachable-{wanted}"),
+            unknown.len(),
         );
         return out;
     }
@@ -197,12 +199,21 @@ fn profiles(
     out
 }
 
-/// Which of the deepest entries the search provably cannot reach.
+/// Which of the deepest entries the search provably cannot reach, and which it could not
+/// settle either way.
 ///
 /// Deepest first, stopping once `wanted` are in hand. A candidate whose pass does not settle
-/// inside [`CLASSIFY_CAP`] is counted undecided rather than assumed either way - a backward
+/// inside [`CLASSIFY_CAP`] is reported undecided rather than assumed either way - a backward
 /// pass that ran out of budget has proved nothing, and treating that as unreachable would
 /// build the profile out of the very cases it is meant to exclude.
+///
+/// BOTH LISTS ARE IDENTITIES, and the undecided one is why. A caller that knows only HOW
+/// MANY were undecided cannot recover which candidates are reachable: the reachable ones are
+/// everything asked about and not named unreachable, so an unnamed undecided candidate is
+/// indistinguishable from a proved one. A count says the subtraction is wrong without saying
+/// where, which makes the whole group's reachable set unusable rather than the few entries
+/// that are genuinely open. de-x8ms.5.
+///
 /// PUBLIC BECAUSE THE CENSUS SHARES IT. measurements/performance_matrix.rs pulls this file
 /// in with `#[path]` and asks the same question over every group in the game (de-thlz.2), so
 /// that the entries a census names unreachable and the entries a `deepest-unreach-N` profile
@@ -213,7 +224,7 @@ pub fn classify(
     world: &dyn ILookAheadWorld,
     deepest: &[DialogueNodeId],
     wanted: usize,
-) -> (Vec<DialogueNodeId>, usize) {
+) -> (Vec<DialogueNodeId>, Vec<DialogueNodeId>) {
     // ONE APPARATUS FOR THE WHOLE GROUP, not one per candidate. de-x8ms.11.
     //
     // This used to call `reachable` per target, and each of those was a separate `answer`
@@ -252,12 +263,21 @@ pub fn classify(
         let known = Known::of_from(graph, start).from(start, &seed);
 
         let mut unreachable = Vec::new();
-        let mut undecided = 0;
+        let mut undecided = Vec::new();
         {
-            let mut record = |target: DialogueNodeId, verdict: Option<bool>| match verdict {
-                Some(false) => unreachable.push(target),
-                Some(true) => {}
-                None => undecided += 1,
+            // ONLY WHAT WAS ASKED ABOUT. The search classifies every node its own walk
+            // reaches, which is the candidates plus the start itself; a verdict about the
+            // start is not an answer to any question here, and letting one through would
+            // put an entry in a list whose every other member came from `deepest`.
+            let mut record = |target: DialogueNodeId, verdict: Option<bool>| {
+                if !asking.contains(&target) {
+                    return;
+                }
+                match verdict {
+                    Some(false) => unreachable.push(target),
+                    Some(true) => {}
+                    None => undecided.push(target),
+                }
             };
 
             classify_candidates(
@@ -300,24 +320,15 @@ pub fn classify(
             deepest.iter().enumerate().map(|(at, id)| (*id, at)).collect();
         unreachable.sort_by_key(|id| rank.get(id).copied().unwrap_or(usize::MAX));
         unreachable.truncate(wanted);
+
+        // THE UNDECIDED LIST IS NOT TRUNCATED, and the asymmetry is deliberate. `wanted` is
+        // an appetite for unreachable entries, applied to the REPORT rather than to the work
+        // - every candidate is asked about either way - and the undecided ones are what
+        // stands between the rest of the group and a status. Cutting that list to the same
+        // length would hide open questions behind a number chosen for a different purpose.
+        undecided.sort_by_key(|id| rank.get(id).copied().unwrap_or(usize::MAX));
         (unreachable, undecided)
     })
-}
-
-/// Whether one target is reachable, or `None` where the pass could not settle it.
-fn reachable(
-    graph: &LookAheadGraph,
-    start: DialogueNodeId,
-    world: &dyn ILookAheadWorld,
-    target: DialogueNodeId,
-) -> Option<bool> {
-    let unseen = HashSet::from([target]);
-    let found = answer(graph, start, world, &unseen, false, CLASSIFY_CAP);
-    match found.verdict.as_str() {
-        "UnseenAnyGame" => Some(true),
-        "SeenThisGame" => Some(false),
-        _ => None,
-    }
 }
 
 /// What the driver answered, and how long it took.

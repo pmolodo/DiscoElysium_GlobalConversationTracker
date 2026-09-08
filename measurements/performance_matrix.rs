@@ -1093,6 +1093,16 @@ impl Census {
     }
 }
 
+/// Ids as `conv:entry,conv:entry,...`, which is how a census names its lists.
+///
+/// The inverse of [`entries`], and next to it so the two spellings cannot drift apart.
+fn listed(ids: &[DialogueNodeId]) -> String {
+    ids.iter()
+        .map(|id| format!("{}:{}", id.conversation_id, id.entry_id))
+        .collect::<Vec<String>>()
+        .join(",")
+}
+
 /// `conv:entry,conv:entry,...` as ids, which is how a census names its list.
 fn entries(list: &str) -> Vec<DialogueNodeId> {
     list.split(',')
@@ -1639,8 +1649,9 @@ fn symbolic_backward(
 const ROW_COLUMNS: [&str; 4] = ["conv", "entries", "profile", "unseen"];
 
 /// The columns of a census row, written down here and nowhere else.
-const CENSUS_COLUMNS: [&str; 7] = [
+const CENSUS_COLUMNS: [&str; 8] = [
     "conv", "candidates", "unreachable", "undecided", "exact", "ms", "deepest_unreachable",
+    "undecided_entries",
 ];
 
 /// How many unreachable entries a census stops after.
@@ -1693,6 +1704,12 @@ fn census_wanted() -> usize {
 /// list for no better reason than that it was expensive to ask about. A group with a large
 /// `undecided` is telling you its census is a lower bound.
 ///
+/// `undecided_entries` NAMES THEM, and that is what makes the rest of the row usable. A
+/// census names only what it proved unreachable, so which entries are REACHABLE is recovered
+/// by subtracting that list from the candidates - and an undecided candidate is one the
+/// subtraction would hand a status it never earned. Knowing only the count leaves nowhere to
+/// put the doubt but the whole group. de-x8ms.5.
+///
 /// THE CAP IS SAID OUT LOUD ON STDERR, because two censuses taken under different caps are
 /// not the same artefact and nothing in the TSV records it.
 fn census(index: &lookahead_engine::index::Index, world: &dyn ILookAheadWorld) {
@@ -1719,7 +1736,7 @@ fn census(index: &lookahead_engine::index::Index, world: &dyn ILookAheadWorld) {
             Ok(measurable) => measurable,
             Err(why) => {
                 eprintln!("{}", why.message(conversation));
-                println!("{conversation}\t0\t0\t0\tall\t0\t");
+                println!("{conversation}\t0\t0\t0\tall\t0\t\t");
                 continue;
             }
         };
@@ -1732,16 +1749,14 @@ fn census(index: &lookahead_engine::index::Index, world: &dyn ILookAheadWorld) {
         // `all` means the scan ran out of candidates, so the count is the whole truth for
         // this group; `at-least` means it ran out of room.
         let exact = if unreachable.len() == wanted { "at-least" } else { "all" };
-        let named: Vec<String> = unreachable
-            .iter()
-            .map(|id| format!("{}:{}", id.conversation_id, id.entry_id))
-            .collect();
 
         println!(
-            "{conversation}\t{}\t{}\t{undecided}\t{exact}\t{millis}\t{}",
+            "{conversation}\t{}\t{}\t{}\t{exact}\t{millis}\t{}\t{}",
             reachable.len(),
             unreachable.len(),
-            named.join(","),
+            undecided.len(),
+            listed(&unreachable),
+            listed(&undecided),
         );
     }
 }
