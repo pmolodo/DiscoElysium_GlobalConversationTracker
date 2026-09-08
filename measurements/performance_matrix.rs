@@ -510,6 +510,20 @@ const PROGRESS: &str = "  ~";
 /// run. A gap or a quiet `gave-up` here would read as a finding about the search.
 const NOT_MEASURED: &str = "NOT-MEASURED";
 
+/// The `fwdbwd` verdict for a row the GAME would not have searched at all.
+///
+/// de-qh27. `scored` computes a baseline and refuses when nothing link-reachable beats it,
+/// returning a complete answer having run nothing; this column exists to be that method, so
+/// it has to refuse in the same places.
+///
+/// ITS OWN WORD, because the obvious alternative - `not-there` with `asked=0` - cannot be
+/// told from a backward driver that ran and found no candidates, and the two mean opposite
+/// things: one is "nothing was worth looking for", the other is "we looked and there was
+/// nothing". A row that conflated them would be read as evidence about the search.
+///
+/// NOT A FAILURE. The answer is settled and complete; only the work is absent.
+const NOT_WORTH_HUNTING: &str = "not-worth-hunting";
+
 const COUNTER_CAP: i32 = 16;
 
 /// How much of a group a profile has read.
@@ -1221,11 +1235,38 @@ fn forward_backward(
         if unseen.contains(&id) { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
     };
 
-    // The caller's walk, as the bridge's is: one pass over the links names the class, and
-    // the search is not asked to work it out again.
-    let hunting = graph
-        .best_linked_class(start, &novelty)
-        .unwrap_or(Novelty::SeenThisGame);
+    // THE GATE THE GAME APPLIES, and this column exists to be the game. de-qh27.
+    //
+    // src/bridge.rs `scored` computes a baseline and refuses to search when nothing
+    // link-reachable beats it, returning a COMPLETE answer of "none" having run nothing.
+    // This used to skip that and call the portfolio unconditionally, which recorded backward
+    // work the game never pays for in the column that claims to be the game's method.
+    //
+    // THE SHARED PREDICATE, NOT A SECOND COPY - a second copy is how this drifted the first
+    // time. For StartBranch::Either, which is what this row uses, `scored` reduces its
+    // `from` to the one start and its baseline to that start's own novelty
+    // (src/bridge.rs:1231-1239), so the gate here is that call with those arguments.
+    let Some(hunting) =
+        lookahead_engine::bridge::class_worth_hunting(graph, &[start], novelty(start), &novelty)
+    else {
+        // ITS OWN VERDICT, because `not-there` with `asked=0` cannot be told from a backward
+        // driver that had no candidates - and the two mean opposite things. The run's other
+        // outcomes are kept apart for the same reason: NO-ROWS, no-room, CRASHED and
+        // NOT-MEASURED all say something different about why a row has no number in it.
+        //
+        // COMPLETE, NOT A GIVE-UP. The game's answer here is settled: nothing link-reachable
+        // outranks where the option already lands, so there is nothing to look for. A row
+        // that read as a failure would invite somebody to fix it.
+        return Cells(vec![
+            NOT_WORTH_HUNTING.to_string(),
+            began.elapsed().as_millis().to_string(),
+            // Nothing was built, nothing answered, nothing asked. `by` says which half
+            // answered and the honest value is neither.
+            "0".to_string(),
+            "Gated".to_string(),
+            "0".to_string(),
+        ]);
+    };
 
     let answer = portfolio::best_novelty(
         graph,

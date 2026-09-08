@@ -136,7 +136,7 @@ Every engine in a run gets the same allowance, which is the only way the verdict
 anything against each other: the shared measurement budget in `DiagramBudget::measurement()`,
 plus a time cap that is meant not to be what stops a row. See de-e23q and de-z5sp.
 
-### `no-room`, `CRASHED`, `NO-ROWS` and `NOT-MEASURED` are four different things
+### `no-room`, `CRASHED`, `NO-ROWS`, `not-worth-hunting` and `NOT-MEASURED` differ
 
 They look alike from outside - the row has no numbers in it - and they mean opposite
 things, so the run keeps them apart.
@@ -149,7 +149,15 @@ things, so the run keeps them apart.
   start, or it has no entry 0, or nothing is reachable from it, so there was never
   anything to measure. It matters at whole-game scale, where plenty of groups are like
   this and reading them as `CRASHED` would fill a run with alarming rows that only mean
-  "no dialogue here".
+  "no dialogue here". SINCE de-cziy IT IS NOT WRITTEN ANY MORE - such groups are skipped
+  and counted, and naming one on the command line stops the run - but folders recorded
+  before that hold these rows and are read as they always were.
+- `not-worth-hunting` appears in the `fwdbwd` column only, and is a result about the
+  QUESTION rather than the search: nothing link-reachable outranks where the option already
+  lands, so the game refuses to search and answers completely without doing any work. The
+  column exists to be what the game runs, so it has to refuse where the game refuses
+  (de-qh27). Do not read it as `not-there`: that one means a search ran and found nothing,
+  and telling the two apart is the whole reason it has its own word.
 - `NOT-MEASURED` is not a result at all. The machine could not supply the budget, so
   nothing ran and there is nothing to learn - the row wants running again when the memory
   is free. A run holding any of these is not yet a measurement, and the script says so at

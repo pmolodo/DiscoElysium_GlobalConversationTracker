@@ -1384,7 +1384,14 @@ fn stopped_name(stopped: novelty_search::StoppedBy) -> &'static str {
 /// A BRANCH'S DESTINATIONS ARE COMPUTED ANYWAY, for the baseline, so walking from them
 /// costs nothing extra and is strictly tighter than walking from the check: the other
 /// outcome's half of the graph is no longer counted for this one.
-fn class_worth_hunting<F>(
+///
+/// PUBLIC SO THE MEASUREMENT CAN ASK THE SAME QUESTION, since de-qh27.
+///
+/// The `fwdbwd` column of the performance matrix is the one that claims to be what the game
+/// runs, and it was calling `portfolio::best_novelty` unconditionally where the game refuses
+/// to search at all. A second copy of this predicate is exactly how that drifted, so it is
+/// exported rather than reimplemented.
+pub fn class_worth_hunting<F>(
     graph: &LookAheadGraph,
     starts: &[DialogueNodeId],
     baseline: Novelty,
