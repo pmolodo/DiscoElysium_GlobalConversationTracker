@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: MIT
-//! Three engines, six conversations, ten profiles: the whole grid. Plus two more that are
-//! deliberately outside it, and a census of the game that makes them possible.
+//! Three engines, six conversations, ten profiles: the whole grid. Plus two more profiles
+//! that are deliberately outside it, and a census of the game that makes them possible.
+//!
+//! A DEFAULT RUN MEASURES ONE OF THE THREE. `fwdbwd` is the engine the game runs and the one
+//! being tuned; the other two are evidence for that tuning and cost several times what it
+//! does, so they are asked for rather than assumed - `ENGINES=all` for the grid, or any of
+//! the names for one column. See [`engines`] for the measured argument. Everything below
+//! that describes "three columns" is describing the grid you get when you ask for it.
 //!
 //! The measurements this repository already has each ask one question well. This asks the
 //! same question of every combination, because the thing that is actually wanted - a rule
@@ -598,6 +604,12 @@ enum Engine {
 const ALL_ENGINES: [Engine; 3] =
     [Engine::Forward, Engine::Backward, Engine::ForwardBackward];
 
+/// What a run measures when it does not say. See [`engines`] for why it is this one.
+const DEFAULT_ENGINES: [Engine; 1] = [Engine::ForwardBackward];
+
+/// What to pass for the whole grid, since naming one engine no longer implies the rest.
+const ALL: &str = "all";
+
 impl Engine {
     /// The name `ENGINES` selects it by, and the prefix its columns carry.
     fn label(self) -> &'static str {
@@ -630,12 +642,30 @@ impl Engine {
 
 /// Which engines this run measures.
 ///
-/// EVERY ONE OF THEM BY DEFAULT, because the point of the grid is the comparison. The
-/// selection is here because a third column triples what a full run costs and because a
-/// question is often about one engine - "what does the backward search do with the one
-/// case both forward searches cannot answer" is a single row of a single column, and
-/// spending an hour on the other thirty-two to get it is how a measurement stops being
-/// run at all.
+/// FWDBWD ALONE BY DEFAULT, since de-8xcd. It is the engine the game actually runs, and it
+/// is the one being tuned; fwd and bwd are evidence for that tuning rather than products in
+/// their own right, and they are expensive out of all proportion to how often the evidence
+/// is wanted. `ENGINES=all` measures the three, and naming any of them works as it always
+/// did.
+///
+/// WHAT IT SAVES, measured over the two whole-game datasets rather than asserted. Engine time
+/// by column on the ten-profile grid (measurements/logs/whole-game, 5,210 measured rows) was
+/// fwd 2.06 h / 63.9%, bwd 0.73 h / 22.7%, fwdbwd 0.43 h / 13.4%. On the deepest-unreachable
+/// sweep it was starker still - fwd 99.6% - because that profile has no yes to stumble onto
+/// and the forward search has to exhaust. So a default run drops to about an eighth of its
+/// engine time on the grid and to a five-hundredth on the unreachable profiles.
+///
+/// WHAT IT COSTS, and it is worth saying rather than discovering: the fwd and bwd columns
+/// become a HISTORICAL BASELINE. measurements/logs/whole-game holds them for every group and
+/// profile in the game, which is what makes this reasonable now - but that ages the moment
+/// either engine changes, and whoever changes one and wants to know what they did to it has
+/// to ask for them deliberately, in hours rather than minutes.
+///
+/// The selection was here before this became the default, because a third column triples what
+/// a full run costs and because a question is often about one engine - "what does the backward
+/// search do with the one case both forward searches cannot answer" is a single row of a
+/// single column, and spending an hour on the other thirty-two to get it is how a measurement
+/// stops being run at all.
 ///
 /// A narrowed run is a NARROWER ROW, not a wide one with holes in it: the header follows
 /// the selection, so nothing has to be told apart from a result later.
@@ -643,11 +673,20 @@ fn engines() -> Vec<Engine> {
     let named = std::env::var("ENGINES").unwrap_or_default();
     let wanted: Vec<&str> = named.split(',').map(str::trim).filter(|n| !n.is_empty()).collect();
 
-    // SET BUT EMPTY MEANS ALL, the same as unset. A driver script that passes the
-    // selection through has nothing to pass when the selection is "everything", and this
-    // is what it looked like when that was an error instead: a row printed with no engine
-    // columns at all, past a header with none either, recorded as a measurement.
+    // SET BUT EMPTY MEANS THE DEFAULT, the same as unset. A driver script that passes the
+    // selection through has nothing to pass when there is no selection, and this is what it
+    // looked like when that was an error instead: a row printed with no engine columns at
+    // all, past a header with none either, recorded as a measurement. Empty must keep
+    // meaning something sensible; since de-8xcd the sensible thing is the default rather
+    // than everything.
     if wanted.is_empty() {
+        return DEFAULT_ENGINES.to_vec();
+    }
+
+    // A NAME FOR THE WHOLE GRID, so a caller that wants the comparison does not have to
+    // spell out three engine names - which is the kind of written-out list that went stale
+    // here before, and is now one place instead of every call site.
+    if wanted == [ALL] {
         return ALL_ENGINES.to_vec();
     }
 
@@ -658,10 +697,13 @@ fn engines() -> Vec<Engine> {
     // symbwd` - the MIDDLE era's spelling - which meant it refused `symfwd` in the very
     // sentence that named it, and sent the reader on to two more names that were also
     // gone. A refusal that misdirects costs more than no refusal at all.
+    // `all` IS OFFERED HERE TOO, because it is now a name a caller can pass and a refusal
+    // that lists only the engines would send a reader looking for the grid to spell out
+    // three of them - the same misdirection the note above is about, in a new place.
     for name in &wanted {
         assert!(
             ALL_ENGINES.iter().any(|engine| engine.label() == *name),
-            "no engine called {name:?}: the names are {}",
+            "no engine called {name:?}: the names are {}, or {ALL} for every one of them",
             ALL_ENGINES.map(Engine::label).join(", "),
         );
     }

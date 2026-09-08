@@ -142,15 +142,18 @@ else
     )
 fi
 
-# WHICH ENGINES EACH ROW MEASURES, passed through to it. Unset means all three - fwd,
-# bwd, fwdbwd - which is what the grid is for; naming one or two is how a question
-# about a single engine gets asked without paying for the others.
+# WHICH ENGINES EACH ROW MEASURES, passed through to it. Unset means fwdbwd alone since
+# de-8xcd - the engine the game runs and the one being tuned - because fwd and bwd cost
+# several times what it does and are evidence rather than products. `ENGINES=all` measures
+# the three, which is what the grid is for; naming one or two asks a question about a single
+# engine without paying for the others.
 #
 #   ENGINES=bwd tools/measure-matrix.sh 14
+#   ENGINES=all tools/measure-matrix.sh 14
 #
-# EXPORTED ONLY WHEN IT HAS A VALUE. It reads an empty ENGINES as "all", so this is belt
-# and braces - but an empty selection exported into a measurement is the kind of thing
-# that should not have two chances to mean nothing.
+# EXPORTED ONLY WHEN IT HAS A VALUE. The measurement reads an empty ENGINES as the default,
+# so this is belt and braces - but an empty selection exported into a measurement is the
+# kind of thing that should not have two chances to mean nothing.
 if [ -n "${ENGINES:-}" ]; then
     export ENGINES
 fi
