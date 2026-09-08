@@ -46,7 +46,7 @@ use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::known::Known;
 use lookahead_engine::symbolic::novelty_search::{
-    best_novelty, classify_candidates, Budget as SearchBudget, StoppedBy,
+    best_novelty, classify_candidates, Budget as SearchBudget, Classify, StoppedBy, Wants,
 };
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
@@ -68,6 +68,44 @@ const ANSWER_CAP: std::time::Duration = std::time::Duration::from_secs(120);
 /// Short on purpose. Classification asks about many candidates and only needs the ones it
 /// can settle quickly; anything slower is recorded as unknown rather than waited out.
 pub const CLASSIFY_CAP: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// The prefix every progress line carries.
+///
+/// It must NOT start with a conversation number: `tools/measure-matrix.sh` picks the row out
+/// of the log with `grep -E "^$conversation\b"` and `tools/measure-census.sh` does the same,
+/// so a progress line that matched would be recorded as the row and the real one thrown
+/// away.
+pub const PROGRESS: &str = "  ~";
+
+/// How often a long run says where it has got to when nothing asks for something else.
+///
+/// SHORT ENOUGH TO ANSWER "is it stuck", long enough that a run of quick pieces of work does
+/// not narrate itself: the ones that need it are spending a cap measured in minutes, and the
+/// ones that do not will finish before the first line is due.
+const DEFAULT_PROGRESS_SECONDS: u64 = 30;
+
+/// The gap between progress lines, or `None` where they are turned off.
+///
+/// `PROGRESS_SECONDS` overrides, and `PROGRESS_SECONDS=0` turns them off - which is what the
+/// "greater than zero" filter below has always meant and also expresses.
+///
+/// SHARED BY THE MATRIX AND THE CENSUS. measurements/performance_matrix.rs pulls this file
+/// in with `#[path]` and both narrate on this clock; a second copy would be a second thing
+/// to keep in step, and the whole question - how often should a long run speak - has one
+/// answer rather than one per measurement.
+pub fn progress_every() -> Option<std::time::Duration> {
+    let seconds = match std::env::var("PROGRESS_SECONDS") {
+        Ok(named) => named.trim().parse::<u64>().unwrap_or(DEFAULT_PROGRESS_SECONDS),
+        Err(_) => DEFAULT_PROGRESS_SECONDS,
+    };
+    (seconds > 0).then(|| std::time::Duration::from_secs(seconds))
+}
+
+/// A duration as m:ss, for a line a person reads while waiting.
+pub fn mmss(elapsed: std::time::Duration) -> String {
+    let seconds = elapsed.as_secs();
+    format!("{}m{:02}s", seconds / 60, seconds % 60)
+}
 
 
 fn main() {
@@ -199,6 +237,171 @@ fn profiles(
     out
 }
 
+/// A classification's verdicts on disk, written as they arrive, and read back to resume.
+///
+/// ## What it is for
+///
+/// A census runs one process per group and appends the group's row when that process
+/// finishes, so the resume boundary is the whole group. Under the ten-entry cap that cost
+/// seconds. Without it every candidate is asked about and an unsettled one costs the whole
+/// of [`CLASSIFY_CAP`], so a group with many of them is hours - and interrupting it, or
+/// having it crash, threw all of that away. de-e4mu.
+///
+/// ## Written as they arrive, rather than saved on the way out
+///
+/// The obvious shape is to catch the terminating signal and write down what has been
+/// gathered. It does not survive contact: `tools/stop-measurements.sh` kills the process
+/// outright, and a crash is not a signal at all - and a crash is a RESULT here, one this
+/// measurement expects often enough to have a word for. Neither gives a handler its turn.
+/// Appending each verdict as it is established needs no handler and survives both, because
+/// what is on disk was already on disk before the process died.
+///
+/// The cost is one short line and one flush per candidate, against a backward pass that
+/// takes milliseconds at best and five seconds at worst.
+///
+/// ## Skipping is what makes it a resume rather than a record
+///
+/// A journal that only recorded would still leave the next run paying for every candidate
+/// again. What it is read back for is `novelty_search::Classify::settled`, which is the one
+/// place a run can decline to spend a pass: the candidates are the nodes the search's own
+/// walk reaches, not a list this could shorten from outside.
+struct Journal {
+    /// Where verdicts are appended, if anywhere.
+    file: Option<std::io::BufWriter<std::fs::File>>,
+    /// What an earlier run established, read back from that file.
+    before: HashMap<DialogueNodeId, Option<bool>>,
+    /// How many candidates there are to settle in all, for the progress line.
+    total: usize,
+    /// Settled by this run and by the one it continues, which is what a reader wants.
+    settled: usize,
+    unreachable: usize,
+    undecided: usize,
+    began: std::time::Instant,
+    spoke: std::time::Instant,
+    every: Option<std::time::Duration>,
+}
+
+/// How a verdict is spelled in the journal, and read back.
+///
+/// WORDS RATHER THAN A BOOLEAN, because the third case is the one that matters most here and
+/// `true`/`false`/absent would spell "the pass ran out of room" as a missing line - which is
+/// exactly how a candidate nobody has reached yet is spelled.
+const VERDICTS: [(&str, Option<bool>); 3] = [
+    ("unreachable", Some(false)),
+    ("reachable", Some(true)),
+    ("undecided", None),
+];
+
+fn spelled(verdict: Option<bool>) -> &'static str {
+    VERDICTS.iter().find(|(_, v)| *v == verdict).expect("a known verdict").0
+}
+
+fn parsed(word: &str) -> Option<Option<bool>> {
+    VERDICTS.iter().find(|(name, _)| *name == word).map(|(_, verdict)| *verdict)
+}
+
+impl Journal {
+    /// Nothing kept and nothing said, for a caller that only wants the answer.
+    fn quiet() -> Self {
+        Self {
+            file: None,
+            before: HashMap::new(),
+            total: 0,
+            settled: 0,
+            unreachable: 0,
+            undecided: 0,
+            began: std::time::Instant::now(),
+            spoke: std::time::Instant::now(),
+            every: None,
+        }
+    }
+
+    /// Kept at the path `CENSUS_JOURNAL` names, continuing whatever is already there.
+    ///
+    /// NO PATH IS NOT AN ERROR. A census asked for by hand has nowhere obvious to put one,
+    /// and does not want the file; `tools/measure-census.sh` names one per group because it
+    /// is the thing that knows where a run's folder is.
+    fn of(total: usize) -> Self {
+        let mut journal = Self { total, every: progress_every(), ..Self::quiet() };
+        let Ok(path) = std::env::var("CENSUS_JOURNAL") else {
+            return journal;
+        };
+        let path = std::path::PathBuf::from(path);
+
+        if let Ok(text) = std::fs::read_to_string(&path) {
+            for line in text.lines() {
+                let Some((id, word)) = line.split_once('\t') else { continue };
+                let Some((conversation, entry)) = id.split_once(':') else { continue };
+                let (Ok(conversation), Ok(entry), Some(verdict)) =
+                    (conversation.parse(), entry.parse(), parsed(word))
+                else {
+                    // A TORN LAST LINE IS EXPECTED rather than a corruption to complain
+                    // about: the run that wrote it was killed, which is the case this file
+                    // exists for. Dropping it costs the one candidate, asked again.
+                    continue;
+                };
+                journal.before.insert(DialogueNodeId::new(conversation, entry), verdict);
+            }
+        }
+
+        // COUNTED IN, so the progress line is about the GROUP rather than about this
+        // process's share of it. A resumed run that reported only its own settled candidates
+        // would appear to be starting over.
+        journal.settled = journal.before.len();
+        journal.unreachable = journal.before.values().filter(|v| **v == Some(false)).count();
+        journal.undecided = journal.before.values().filter(|v| v.is_none()).count();
+
+        match std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+            Ok(file) => journal.file = Some(std::io::BufWriter::new(file)),
+            // LOUD, because a run that believes it is resumable and is not would find out
+            // hours later, by having lost everything.
+            Err(why) => panic!("the census journal {} could not be opened: {why}", path.display()),
+        }
+
+        if journal.settled > 0 {
+            eprintln!(
+                "{PROGRESS} resuming: {} of {total} candidate(s) already settled in {}",
+                journal.settled,
+                path.display(),
+            );
+        }
+        journal
+    }
+
+    /// Writes one verdict down, and says where the group has got to if it is time to.
+    fn record(&mut self, id: DialogueNodeId, verdict: Option<bool>) {
+        use std::io::Write;
+
+        self.settled += 1;
+        match verdict {
+            Some(false) => self.unreachable += 1,
+            None => self.undecided += 1,
+            Some(true) => {}
+        }
+
+        if let Some(file) = &mut self.file {
+            // FLUSHED PER LINE. What is still in this buffer is exactly what a kill would
+            // lose, and losing it is what the file is here to prevent.
+            let _ = writeln!(file, "{}:{}\t{}", id.conversation_id, id.entry_id, spelled(verdict));
+            let _ = file.flush();
+        }
+
+        let Some(every) = self.every else { return };
+        if self.spoke.elapsed() < every {
+            return;
+        }
+        self.spoke = std::time::Instant::now();
+        eprintln!(
+            "{PROGRESS} {}/{} settled  {} unreachable  {} undecided  {}",
+            self.settled,
+            self.total,
+            self.unreachable,
+            self.undecided,
+            mmss(self.began.elapsed()),
+        );
+    }
+}
+
 /// Which of the deepest entries the search provably cannot reach, and which it could not
 /// settle either way.
 ///
@@ -213,6 +416,11 @@ fn profiles(
 /// indistinguishable from a proved one. A count says the subtraction is wrong without saying
 /// where, which makes the whole group's reachable set unusable rather than the few entries
 /// that are genuinely open. de-x8ms.5.
+///
+/// RESUMABLE, AND IT NARRATES ITSELF, through [`Journal`] - which keeps every verdict as it
+/// arrives, so an interrupted group costs the candidate in flight rather than the hours
+/// spent on the ones before it. See there for why that is a file rather than a signal
+/// handler, and de-e4mu for what it was like without one.
 ///
 /// PUBLIC BECAUSE THE CENSUS SHARES IT. measurements/performance_matrix.rs pulls this file
 /// in with `#[path]` and asks the same question over every group in the game (de-thlz.2), so
@@ -262,8 +470,23 @@ pub fn classify(
         // establishes is handed to every pass instead of being rebuilt for each.
         let known = Known::of_from(graph, start).from(start, &seed);
 
-        let mut unreachable = Vec::new();
-        let mut undecided = Vec::new();
+        // WHAT AN EARLIER RUN OVER THIS GROUP ALREADY SETTLED, which this one neither asks
+        // about again nor forgets: the verdicts come back in the lists below alongside the
+        // ones taken here, so a resumed group's row is the row it would have had.
+        let mut journal = Journal::of(deepest.len());
+        // TAKEN OUT OF THE JOURNAL, so that the closure recording new verdicts and the one
+        // reading old ones do not both need it. The journal's counts were seeded from this
+        // when it was read, so it keeps reporting the whole group's progress without it.
+        let already = std::mem::take(&mut journal.before);
+        let settled_before = |verdict: Option<bool>| -> Vec<DialogueNodeId> {
+            already
+                .iter()
+                .filter(|(id, was)| **was == verdict && asking.contains(id))
+                .map(|(id, _)| *id)
+                .collect()
+        };
+        let mut unreachable = settled_before(Some(false));
+        let mut undecided = settled_before(None);
         {
             // ONLY WHAT WAS ASKED ABOUT. The search classifies every node its own walk
             // reaches, which is the candidates plus the start itself; a verdict about the
@@ -271,14 +494,29 @@ pub fn classify(
             // put an entry in a list whose every other member came from `deepest`.
             let mut record = |target: DialogueNodeId, verdict: Option<bool>| {
                 if !asking.contains(&target) {
-                    return;
+                    return Wants::More;
                 }
+                journal.record(target, verdict);
                 match verdict {
                     Some(false) => unreachable.push(target),
                     Some(true) => {}
                     None => undecided.push(target),
                 }
+
+                // ENOUGH IS COUNTED IN FINDINGS, NOT IN QUESTIONS, and that is the whole
+                // reason the cap is expressed here rather than as the search's own
+                // `targets` ration. A group where nothing is unreachable is a group this
+                // walks to the end, correctly, having found nothing; a ration on questions
+                // would have stopped it after ten and reported the same nothing as though
+                // it were an answer. de-nd9o.
+                //
+                // A RESUMED RUN COUNTS WHAT THE RUN BEFORE IT FOUND, since the journal's
+                // verdicts are already in this list - so a group continued twice still
+                // stops at `wanted` in total rather than at `wanted` per attempt.
+                if unreachable.len() >= wanted { Wants::Enough } else { Wants::More }
             };
+            let settled = |id: DialogueNodeId| already.contains_key(&id);
+            let mut census = Classify { verdict: &mut record, settled: &settled };
 
             classify_candidates(
                 graph,
@@ -302,20 +540,21 @@ pub fn classify(
                     },
                 },
                 Some(&known),
-                &mut record,
+                &mut census,
             );
         }
 
-        // BACK INTO DEEPEST-FIRST ORDER BEFORE THE CAP, and this is not cosmetic.
+        // BACK INTO DEEPEST-FIRST ORDER, which the search now shares but does not promise.
         //
-        // The search orders its own candidates - `candidates_from`, best class first - and
-        // that is not the order this function promises. What a census records is "the
-        // deepest unreachable entries, in the order `candidates()` defines", and the
-        // profiles built from it take the first N. Truncating the search's order would
-        // hand a different set to every deepest-unreach row.
+        // A census asks for `Nearest::Last`, so its candidates arrive deepest-first within a
+        // class and the cap above stops it holding the deepest `wanted` rather than the
+        // shallowest. This sort is what the ORDER of the recorded list rests on: the search
+        // groups by novelty class before distance, and a resumed run's journal verdicts are
+        // merged in from a HashMap, so neither arrives in the order `candidates()` defines.
         //
-        // Caught by comparing group 436 against the census taken before this change: same
-        // count, entirely different list.
+        // Worth keeping rather than trusting the walk. Comparing group 436 against an
+        // earlier census caught exactly this once already: same count, entirely different
+        // list.
         let rank: std::collections::HashMap<DialogueNodeId, usize> =
             deepest.iter().enumerate().map(|(at, id)| (*id, at)).collect();
         unreachable.sort_by_key(|id| rank.get(id).copied().unwrap_or(usize::MAX));

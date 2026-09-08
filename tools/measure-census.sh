@@ -33,6 +33,16 @@
 # The same command is the start and the resume; there is no separate mode to remember.
 # Without CENSUS_OUT each run gets its own folder and resumes nothing.
 #
+# AND IT RESUMES INSIDE A GROUP TOO. Each group writes `groups/<conv>.journal.tsv`, one line
+# per candidate as its verdict is established, and a re-run of that group skips what is
+# already there instead of asking again. Without it an interrupted group cost everything
+# spent on it, which for a group full of candidates the pass cannot settle - five seconds
+# each - is hours. See `Journal` in measurements/symbolic_answers.rs.
+#
+# THE JOURNALS ARE ALSO THE PER-ENTRY ANSWER, and worth keeping for that alone: a census row
+# names only what it PROVED unreachable, while the journal names every candidate and what was
+# established about it, reachable ones included.
+#
 # WHAT COUNTS AS DONE:
 #
 #   a row       measured, whatever it says. Done.
@@ -127,7 +137,8 @@ for conversation in $groups; do
     log="$out/groups/$conversation.log"
     printf '[%s/%s] %s ... ' "$index" "$total" "$conversation"
     began="$(date +%s)"
-    CENSUS=1 NO_HEADER=1 CONVERSATION="$conversation" "$binary" >"$log" 2>&1
+    CENSUS=1 NO_HEADER=1 CONVERSATION="$conversation" \
+        CENSUS_JOURNAL="$out/groups/$conversation.journal.tsv" "$binary" >"$log" 2>&1
     status=$?
     took=$(($(date +%s) - began))
 

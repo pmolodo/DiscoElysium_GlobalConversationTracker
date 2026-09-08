@@ -75,7 +75,14 @@ impl Default for Budget {
 pub enum StoppedBy {
     /// Every candidate was asked about, so the answer is final.
     Nothing,
-    /// The candidate budget ran out.
+    /// An allowance on candidates ran out, so the answer is a lower bound.
+    ///
+    /// TWO ALLOWANCES WEAR THIS, and they count different things. [`Budget::targets`] is a
+    /// ceiling on candidates ASKED ABOUT - how much work one answer may cost. A census's cap
+    /// is a ceiling on candidates PROVED UNREACHABLE - how many it came for; see
+    /// [`Classify::verdict`]. Both are the caller's appetite running out rather than the
+    /// search failing, and both leave the same caveat behind: what was refused was refused
+    /// completely, and an unasked candidate might have carried a better class.
     Targets,
     /// The time budget ran out.
     Time,
@@ -136,7 +143,27 @@ pub fn candidates<F>(
 where
     F: Fn(DialogueNodeId) -> Novelty,
 {
-    candidates_from(graph, &[start], novelty)
+    candidates_from(graph, &[start], novelty, Nearest::First)
+}
+
+/// Which end of a class a search takes first, among candidates that are equally novel.
+///
+/// THE TWO CALLERS WANT OPPOSITE ENDS, and neither is wrong.
+///
+/// A look-ahead wants [`Nearest::First`]: it is hunting for ANY reachable unseen entry, a
+/// near one is proved soonest, and the first yes ends the search. Starting at the far end
+/// would pay for the expensive candidates before the cheap ones on every question.
+///
+/// A census wants [`Nearest::Last`], because what it records is "the deepest N entries no
+/// path can reach" and it stops once it has N. Walked nearest-first it would stop holding
+/// the SHALLOWEST N instead - the same count, an entirely different list, and precisely the
+/// wrong end of the group for a profile whose whole purpose is the hard case.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Nearest {
+    /// Closest to the start first.
+    First,
+    /// Furthest from the start first.
+    Last,
 }
 
 /// The same, from several starts - what one outcome of a rolled check reaches.
@@ -144,6 +171,7 @@ pub fn candidates_from<F>(
     graph: &LookAheadGraph,
     starts: &[DialogueNodeId],
     novelty: &F,
+    nearest: Nearest,
 ) -> Vec<DialogueNodeId>
 where
     F: Fn(DialogueNodeId) -> Novelty,
@@ -169,8 +197,20 @@ where
     // Class first, distance second, and the identifiers last so the order is total: two
     // candidates at the same distance in the same class must still be asked about in the
     // same order on every run, or a measurement is not repeatable.
-    worth.sort_by_key(|(rank, distance, conversation, entry, _)| {
-        (*rank, *distance, *conversation, *entry)
+    //
+    // CLASS ALWAYS OUTRANKS DISTANCE, whichever end `nearest` takes. A more novel candidate
+    // is a better answer than a nearer or a deeper one, and reversing the distance must not
+    // quietly reverse that too.
+    worth.sort_by(|a, b| {
+        let (rank, distance, conversation, entry, _) = a;
+        let (other_rank, other_distance, other_conversation, other_entry, _) = b;
+        rank.cmp(other_rank)
+            .then(match nearest {
+                Nearest::First => distance.cmp(other_distance),
+                Nearest::Last => other_distance.cmp(distance),
+            })
+            .then(conversation.cmp(other_conversation))
+            .then(entry.cmp(other_entry))
     });
     worth.into_iter().map(|(_, _, _, _, id)| id).collect()
 }
@@ -349,7 +389,7 @@ where
 ///
 /// The returned `NoveltyAnswer` still describes the SEARCH - `best` and `witness` are the
 /// first and therefore best yes, as always - so a caller gets both readings from one run.
-pub fn classify_candidates<'a, F>(
+pub fn classify_candidates<'a, 'c, F>(
     graph: &LookAheadGraph,
     start: DialogueNodeId,
     branch: StartBranch,
@@ -360,21 +400,74 @@ pub fn classify_candidates<'a, F>(
     novelty: F,
     budget: &Budget,
     known: Option<&Known>,
-    verdict: &mut dyn FnMut(DialogueNodeId, Option<bool>),
+    census: &mut Classify<'c>,
 ) -> NoveltyAnswer
 where
     F: Fn(DialogueNodeId) -> Novelty,
 {
     search(
         graph, start, branch, seed, compiler, world, counter_cap, novelty, budget, known,
-        Some(verdict),
+        Some(census),
     )
+}
+
+/// What a census asks of the search that an ordinary look-ahead does not.
+///
+/// TWO THINGS, and the second is what makes a long classification survivable. `verdict`
+/// collects what each candidate's pass established; `settled` says which candidates a
+/// previous run already answered, so that this one does not pay for them again.
+///
+/// ## Why skipping has to happen HERE and not in the caller
+///
+/// The expensive part of a classification is one bounded backward pass per candidate, and
+/// the candidates are the nodes the search's own walk reaches - not a list the caller hands
+/// in. A caller that "asks about fewer" by narrowing its novelty function changes which
+/// answers it is told about and nothing else: every candidate still costs its pass. So the
+/// only place a resumed run can decline to spend that pass is inside the loop that spends
+/// it.
+///
+/// A SKIPPED CANDIDATE IS NOT AN ANSWERED ONE. Nothing is reported for it and it does not
+/// count towards `targets_asked`, because the run that settled it is the run that knows what
+/// it settled; this one is being told to keep its hands off. The caller holds those verdicts
+/// already, which is how it knew to skip.
+///
+/// SO THE RETURNED [`NoveltyAnswer`] DESCRIBES THIS RUN'S QUESTIONS, not the classification
+/// as a whole: `best` and `witness` are the best yes among the candidates actually asked
+/// about, and a resumed run may have skipped a better one. A caller that skips is a caller
+/// assembling the whole answer itself, and should read the verdicts rather than this.
+pub struct Classify<'a> {
+    /// Told about each candidate this run settles, and what it settled - and asked, in
+    /// return, whether to go on.
+    ///
+    /// THE CENSUS'S OWN CAP LIVES IN THAT ANSWER, and it has to, because it counts something
+    /// this loop does not. [`Budget::targets`] is a ceiling on candidates ASKED ABOUT; a
+    /// census wants ten candidates PROVED UNREACHABLE and does not care how many questions
+    /// that takes. Those come apart hardest exactly where it matters: in a group where
+    /// everything is reachable, a ceiling of ten questions stops after ten having found
+    /// nothing, and a ceiling of ten findings correctly walks the whole group.
+    ///
+    /// So the count belongs to the caller, which is the only thing that knows what it is
+    /// counting, and the loop asks rather than deciding. Answering [`Wants::Enough`] stops
+    /// the scan with [`StoppedBy::Targets`] - an allowance on candidates ran out, which is
+    /// what happened.
+    pub verdict: &'a mut dyn FnMut(DialogueNodeId, Option<bool>) -> Wants,
+    /// Whether an earlier run already answered for this candidate.
+    pub settled: &'a dyn Fn(DialogueNodeId) -> bool,
+}
+
+/// Whether a census wants to go on after the verdict it has just been given.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Wants {
+    /// Keep asking.
+    More,
+    /// The caller has what it came for, so the scan stops here.
+    Enough,
 }
 
 /// The loop both entry points share. `every` is the census option - see
 /// [`classify_candidates`].
 #[allow(clippy::too_many_arguments)]
-fn search<'a, F>(
+fn search<'a, 'c, F>(
     graph: &LookAheadGraph,
     start: DialogueNodeId,
     branch: StartBranch,
@@ -385,14 +478,19 @@ fn search<'a, F>(
     novelty: F,
     budget: &Budget,
     known: Option<&Known>,
-    mut every: Option<&mut dyn FnMut(DialogueNodeId, Option<bool>)>,
+    mut every: Option<&mut Classify<'c>>,
 ) -> NoveltyAnswer
 where
     F: Fn(DialogueNodeId) -> Novelty,
 {
     let began = std::time::Instant::now();
     let from = Where::of(graph, start, branch, seed, compiler, world, counter_cap);
-    let ordered = candidates_from(graph, &from.nodes(), &novelty);
+    // A CENSUS WALKS FROM THE FAR END. See [`Nearest`]: it stops once it has the findings it
+    // came for, and what it came for is the DEEPEST of them, so taking the near end first
+    // would leave it holding the shallowest instead. A look-ahead has no cap on findings and
+    // wants its cheapest proof first.
+    let nearest = if every.is_some() { Nearest::Last } else { Nearest::First };
+    let ordered = candidates_from(graph, &from.nodes(), &novelty, nearest);
     let mut answer = NoveltyAnswer {
         best: Novelty::SeenThisGame,
         witness: None,
@@ -405,6 +503,13 @@ where
     };
 
     for target in ordered {
+        // ALREADY ANSWERED BY THE RUN THIS ONE IS CONTINUING, so it is not asked again -
+        // before the budget checks, because a candidate that costs nothing should not be
+        // able to end the search by exhausting a ration it never spends.
+        if every.as_ref().is_some_and(|census| (census.settled)(target)) {
+            continue;
+        }
+
         if answer.targets_asked >= budget.targets {
             answer.stopped_by = StoppedBy::Targets;
             break;
@@ -439,7 +544,13 @@ where
         // stopped the pass early - a state an earlier search can hold at some entry is one
         // this pass has shown reaches the target - so the fixed point is deliberately
         // incomplete and `reachable_from` would be asking the wrong question of it.
-        if backward.stats().met_at.is_some() || from.reaches(&backward) {
+        // WHAT THIS CANDIDATE'S PASS ESTABLISHED, decided here and reported once below.
+        // `Some(true)` reachable, `Some(false)` proved unreachable, `None` not settled.
+        //
+        // The ordinary search has no use for the value - it stops on the first two and only
+        // carries on past a refusal - so each of its cases breaks out rather than falling
+        // through to a report nobody reads.
+        let established = if backward.stats().met_at.is_some() || from.reaches(&backward) {
             // The best class is asked about first and exhausted before the next one is
             // begun, so the first candidate that answers yes carries the answer - which is
             // why it is only recorded once even when the census keeps going.
@@ -448,34 +559,36 @@ where
                 answer.witness = Some(target);
                 answer.met_at = backward.stats().met_at;
             }
-            match &mut every {
-                Some(verdict) => {
-                    verdict(target, Some(true));
-                    continue;
-                }
-                None => break,
+            if every.is_none() {
+                break;
             }
-        }
-
-        // A pass that did not settle proves nothing by saying no: it may simply not have
-        // got far enough. Say so rather than counting it as a refusal.
-        let stats = backward.stats();
-        if !stats.reached_fixed_point {
+            Some(true)
+        } else if !backward.stats().reached_fixed_point {
+            // A pass that did not settle proves nothing by saying no: it may simply not
+            // have got far enough. Say so rather than counting it as a refusal.
+            //
             // A CENSUS RECORDS THE ONE AND CARRIES ON. An unsettled pass says nothing about
             // this candidate and nothing about the next, so stopping would throw away every
             // remaining answer for the sake of one it could not give.
-            if let Some(verdict) = &mut every {
-                verdict(target, None);
-                continue;
+            if every.is_none() {
+                answer.stopped_by = StoppedBy::Incomplete;
+                answer.out_of_nodes = backward.stats().out_of_memory;
+                break;
             }
-            answer.stopped_by = StoppedBy::Incomplete;
-            answer.out_of_nodes = stats.out_of_memory;
-            break;
-        }
+            None
+        } else {
+            // Settled, and it did not reach: proved unreachable.
+            Some(false)
+        };
 
-        // Settled, and it did not reach: proved unreachable.
-        if let Some(verdict) = &mut every {
-            verdict(target, Some(false));
+        if let Some(census) = &mut every {
+            // THE CALLER'S CAP, ASKED FOR RATHER THAN INFERRED. See [`Classify::verdict`]:
+            // what a census counts is findings, not questions, and this loop cannot count
+            // findings on its behalf without knowing which of them it came for.
+            if (census.verdict)(target, established) == Wants::Enough {
+                answer.stopped_by = StoppedBy::Targets;
+                break;
+            }
         }
     }
 
@@ -664,10 +777,10 @@ mod tests {
         let graph = rolled_check();
         let unseen = novel(&[2, 3], Novelty::UnseenAnyGame);
 
-        let passing = candidates_from(&graph, &[node(1)], &unseen);
+        let passing = candidates_from(&graph, &[node(1)], &unseen, Nearest::First);
         assert_eq!(passing, vec![node(2)], "3 is the failing half's business");
 
-        let failing = candidates_from(&graph, &[node(3)], &unseen);
+        let failing = candidates_from(&graph, &[node(3)], &unseen, Nearest::First);
         assert_eq!(failing, vec![node(3)], "and its own destination is a candidate");
     }
 

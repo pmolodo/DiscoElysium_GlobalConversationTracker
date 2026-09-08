@@ -459,22 +459,13 @@ fn row_time() -> std::time::Duration {
 /// answered by nothing, because the cap is 600 seconds PER ENGINE and a heavy row could be
 /// silent for half an hour.
 ///
-/// `PROGRESS_SECONDS` still overrides, and `PROGRESS_SECONDS=0` still turns it off - which
-/// is what the "greater than zero" filter below has always meant and now also expresses.
-fn progress_every() -> Option<std::time::Duration> {
-    let seconds = match std::env::var("PROGRESS_SECONDS") {
-        Ok(named) => named.trim().parse::<u64>().unwrap_or(DEFAULT_PROGRESS_SECONDS),
-        Err(_) => DEFAULT_PROGRESS_SECONDS,
-    };
-    (seconds > 0).then(|| std::time::Duration::from_secs(seconds))
-}
-
-/// How often a row says where it has got to when nothing asks for something else.
+/// `PROGRESS_SECONDS` still overrides, and `PROGRESS_SECONDS=0` still turns it off.
 ///
-/// SHORT ENOUGH TO ANSWER "is it stuck", long enough that a run of quick rows does not
-/// narrate itself: the rows that need it are the ones spending a 600-second cap, and the
-/// ones that do not will finish before the first line is due.
-const DEFAULT_PROGRESS_SECONDS: u64 = 30;
+/// LIVES IN `symbolic_answers.rs`, along with [`symbolic_answers::PROGRESS`] and
+/// [`symbolic_answers::mmss`], because the census narrates itself on the same clock and two
+/// copies of "how often does a long run say where it is" would be two things to keep in
+/// step. That file is pulled in here with `#[path]`, so it is the one both can see.
+use symbolic_answers::progress_every;
 
 /// How often the fixed point looks up from its work, against the five seconds it SPEAKS.
 ///
@@ -490,18 +481,7 @@ fn gb(bytes: usize) -> String {
     format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
 }
 
-/// A duration as m:ss, for the same reason.
-fn mmss(elapsed: std::time::Duration) -> String {
-    let seconds = elapsed.as_secs();
-    format!("{}m{:02}s", seconds / 60, seconds % 60)
-}
-
-/// The prefix every progress line carries.
-///
-/// It must NOT start with a conversation number: tools/measure-matrix.sh picks the row out
-/// of the log with `grep -E "^$conversation\b"`, and a progress line that matched would be
-/// recorded as the row and the real one thrown away.
-const PROGRESS: &str = "  ~";
+use symbolic_answers::{mmss, PROGRESS};
 
 /// The verdict for a row nothing was learned from, in every engine's columns.
 ///
