@@ -106,11 +106,16 @@ namespace GlobalConversationTracker.Automation.Tests
             // nothing about why.
             ProbeCommand.SendLoadSave(_saveGames, "afford-both");
 
-            InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            ProbePendingException error = Assert.Throws<ProbePendingException>(
                 () => ProbeCommand.SendLoadSave(_saveGames, "afford-neither"));
 
             Assert.Contains("still pending", error.Message);
             Assert.Contains("afford-both", Written);
+
+            // Named so the caller that launched the game can catch this one case and say
+            // how the game ended, which is the thing this message can only guess at. Still
+            // an InvalidOperationException, so nothing catching the base type is affected.
+            Assert.IsAssignableFrom<InvalidOperationException>(error);
         }
 
         [Fact]

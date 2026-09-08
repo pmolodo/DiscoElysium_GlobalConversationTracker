@@ -318,7 +318,7 @@ namespace GlobalConversationTracker.Automation
         /// <param name="command">The command name.</param>
         /// <param name="fields">Alternating name and value.</param>
         /// <exception cref="ArgumentNullException">An argument is null.</exception>
-        /// <exception cref="InvalidOperationException">A command is still pending.</exception>
+        /// <exception cref="ProbePendingException">A command is still pending.</exception>
         public static void Send(
             string saveGamesFolder, string command, params object?[] fields)
         {
@@ -334,7 +334,7 @@ namespace GlobalConversationTracker.Automation
                 // there means it has not been picked up - the game is not running, the
                 // probe is not loaded, or it is stalled. Overwriting would lose the
                 // earlier command and report nothing about why.
-                throw new InvalidOperationException(
+                throw new ProbePendingException(
                     $"A probe command is still pending at {path}. The game may not be "
                     + "running, or the probe may not be loaded.");
             }

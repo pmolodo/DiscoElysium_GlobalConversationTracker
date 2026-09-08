@@ -36,6 +36,35 @@ namespace GlobalConversationTracker.Automation
     }
 
     /// <summary>
+    /// A command nobody picked up was still sitting there when the next one was written.
+    /// </summary>
+    /// <remarks>
+    /// <para>An InvalidOperationException, which is what this was before it had a name,
+    /// so nothing that catches the base type notices the change. It is worth a type of
+    /// its own because the thing that can explain it is somewhere else: the probe has
+    /// gone quiet, and only the caller that LAUNCHED the game knows whether the game is
+    /// still there and how it ended. A named exception lets that caller catch this one
+    /// case and add what it knows, without wrapping every command it sends.</para>
+    /// </remarks>
+    public sealed class ProbePendingException : InvalidOperationException
+    {
+        /// <summary>Records a command that was never picked up.</summary>
+        /// <param name="message">Which command, and where.</param>
+        public ProbePendingException(string message)
+            : base(message)
+        {
+        }
+
+        /// <summary>Records the same thing with more known about it.</summary>
+        /// <param name="message">Which command, where, and how the game ended.</param>
+        /// <param name="cause">The refusal this adds to.</param>
+        public ProbePendingException(string message, Exception? cause)
+            : base(message, cause)
+        {
+        }
+    }
+
+    /// <summary>
     /// The game went away while the run was waiting on it.
     /// </summary>
     /// <remarks>

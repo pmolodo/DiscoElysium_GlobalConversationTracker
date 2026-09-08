@@ -361,10 +361,16 @@ namespace GlobalConversationTracker.Harness
                 // Every wait from here on gives up the moment the game is gone. Closed by
                 // hand, crashed, or killed, it will not report anything again, and the
                 // profile is staged until this returns.
+                //
+                // AND SAYS HOW IT ENDED, asked at the moment it is noticed. An ordinary
+                // close and a crash are opposite diagnoses - one means something asked
+                // the game to go, the other means the game's own code took it down and
+                // the Player.log is the place to look - and the exit code is the only
+                // thing that tells them apart (de-wncd.4.1).
                 Process? launched = process;
                 watcher.AbandonIf(
                     () => launched != null && launched.HasExited,
-                    "the game is no longer running");
+                    () => $"the game is no longer running, {GameExit.Describe(launched)}");
 
                 watcher.WaitForEvent("ready", timeout, Log);
                 report.Check(true, "the probe loaded", $"reading {logPath}");
@@ -507,6 +513,19 @@ namespace GlobalConversationTracker.Harness
                     Quit(saveGames, process);
                 }
 
+            }
+            catch (ProbePendingException pending)
+            {
+                // ONE CATCH RATHER THAN THIRTEEN. Every command the run sends can be
+                // refused this way, and the refusal is written by ProbeCommand, which
+                // knows nothing about a process: it can only say the game MAY not be
+                // running. This is the one place that launched it and can say whether it
+                // is, and how it ended - so the message is completed here instead of at
+                // each send (de-wncd.4.1).
+                throw new ProbePendingException(
+                    $"{pending.Message} As for the game this run launched, "
+                    + $"{GameExit.Describe(process)}.",
+                    pending);
             }
             finally
             {

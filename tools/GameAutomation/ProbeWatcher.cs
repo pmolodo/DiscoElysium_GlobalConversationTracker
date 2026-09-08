@@ -35,7 +35,7 @@ namespace GlobalConversationTracker.Automation
         private readonly TimeSpan _poll;
         private int _consumed;
         private Func<bool>? _gone;
-        private string _whyGone = "the game is gone";
+        private Func<string> _whyGone = () => "the game is gone";
 
         /// <summary>Watches a BepInEx log file.</summary>
         /// <param name="logPath">The log.</param>
@@ -151,7 +151,7 @@ namespace GlobalConversationTracker.Automation
                 {
                     throw new ProbeGoneException(
                         $"Gave up waiting for {what} after {clock.Elapsed.TotalSeconds:N0}s: "
-                        + $"{_whyGone}.");
+                        + $"{_whyGone()}.");
                 }
 
                 if (clock.Elapsed >= timeout)
@@ -193,9 +193,13 @@ namespace GlobalConversationTracker.Automation
         /// longer.
         /// </remarks>
         /// <param name="gone">Returns true once the game is no longer running.</param>
-        /// <param name="why">How to describe it, for the error message.</param>
+        /// <param name="why">
+        /// How to describe it, for the error message. ASKED WHEN IT HAPPENS, not when it
+        /// is set up: the most useful thing to say is how the game ended, and that is not
+        /// known until it has. A reason fixed in advance can only repeat the question.
+        /// </param>
         /// <exception cref="ArgumentNullException">An argument is null.</exception>
-        public void AbandonIf(Func<bool> gone, string why)
+        public void AbandonIf(Func<bool> gone, Func<string> why)
         {
             _gone = gone ?? throw new ArgumentNullException(nameof(gone));
             _whyGone = why ?? throw new ArgumentNullException(nameof(why));

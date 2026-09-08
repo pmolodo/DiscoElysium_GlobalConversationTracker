@@ -118,7 +118,7 @@ namespace GlobalConversationTracker.Automation.Tests
         {
             bool gone = false;
             var watcher = new ProbeWatcher(() => new ProbeEvent[0], Poll);
-            watcher.AbandonIf(() => gone, "the game is no longer running");
+            watcher.AbandonIf(() => gone, () => "the game is no longer running");
             gone = true;
 
             ProbeGoneException error = Assert.Throws<ProbeGoneException>(
@@ -128,13 +128,32 @@ namespace GlobalConversationTracker.Automation.Tests
         }
 
         [Fact]
+        public void TheReasonIsAskedForWhenTheGameGoes()
+        {
+            // The point of the reason being a function: the most useful thing to say is
+            // how the game ended, which is not known while it is still running. A reason
+            // fixed when the wait was set up can only repeat the question.
+            bool gone = false;
+            var watcher = new ProbeWatcher(() => new ProbeEvent[0], Poll);
+            watcher.AbandonIf(
+                () => gone,
+                () => gone ? "it exited with code 0" : "it is still running");
+            gone = true;
+
+            ProbeGoneException error = Assert.Throws<ProbeGoneException>(
+                () => watcher.WaitForEvent("world-ready", TimeSpan.FromHours(1)));
+
+            Assert.Contains("exited with code 0", error.Message);
+        }
+
+        [Fact]
         public void AWaitIsNotAbandonedWhileTheGameIsStillThere()
         {
             var log = new GrowingLog(
                 new ProbeEvent[0],
                 new[] { Named("world-ready") });
             var watcher = new ProbeWatcher(log.Next, Poll);
-            watcher.AbandonIf(() => false, "the game is no longer running");
+            watcher.AbandonIf(() => false, () => "the game is no longer running");
 
             Assert.Equal(
                 "world-ready",
