@@ -835,6 +835,32 @@ if [ "${#parallel_groups[@]}" -gt 0 ]; then
     PARALLEL_STARTED=$(date +%s)
     GROUPS_DONE=0
 
+    # HOW MANY OF THESE GROUPS WILL COST ANYTHING, counted once and up front.
+    #
+    # de-x8ms.2. The estimate used to be elapsed * groups_left / groups_done, over ALL
+    # groups - and on a resume most of them are rows the folder already holds, which
+    # advance groups_done in no time at all. The apparent pace goes through the roof and
+    # the estimate collapses, and it does so worst exactly when it is most looked at,
+    # because a resume is the normal way this script is run.
+    #
+    # THE SERIAL PATH ALREADY GETS THIS RIGHT - see `progress`, which excludes skipped rows
+    # from the pace for the same reason - and the parallel phase was written fresh without
+    # inheriting it.
+    #
+    # COUNTED HERE RATHER THAN AS GROUPS FINISH, because groups finish out of order when
+    # several run at once, so there is no prefix of the list to ask about. ROW_DONE is what
+    # the resume itself reads, so this asks exactly the question the run will act on.
+    GROUPS_WITH_WORK=0
+    for conversation in "${parallel_groups[@]}"; do
+        for profile in "${PROFILES[@]}"; do
+            if [ -z "${ROW_DONE[$conversation:$profile]:-}" ]; then
+                GROUPS_WITH_WORK=$(( GROUPS_WITH_WORK + 1 ))
+                break
+            fi
+        done
+    done
+    GROUPS_MEASURED=0
+
     # EACH WORKER GETS ITS SHARE OF THE ALLOWANCE, and this is a correctness fix rather
     # than tidiness. The manager PREALLOCATES about two thirds of the budget up front and
     # cannot grow past it (src/symbolic/budget.rs:280-286), so a 43-entry tail group
@@ -863,16 +889,41 @@ if [ "${#parallel_groups[@]}" -gt 0 ]; then
     # WHERE THE RUN IS, once rows stop arriving one at a time. The estimate is flat and
     # needs no scaling by the worker count: wall time per finished group already has the
     # concurrency inside it.
+    #
+    # PACED ON THE GROUPS THAT COST SOMETHING, on both sides of the ratio - elapsed over
+    # groups MEASURED, against the groups with work still to come. A group whose rows the
+    # folder already held is counted in the "group n/m" position, because it did advance
+    # the run, and left out of the pace, because it did not cost it anything.
+    #
+    # $1 is "skipped" for a group that measured nothing, mirroring `progress`.
     group_finished() {
         GROUPS_DONE=$(( GROUPS_DONE + 1 ))
-        local now elapsed left
+        [ "${1:-}" = "skipped" ] || GROUPS_MEASURED=$(( GROUPS_MEASURED + 1 ))
+
+        local now elapsed left estimate note
         now=$(date +%s)
         elapsed=$(( now - PARALLEL_STARTED ))
-        left=$(( ${#parallel_groups[@]} - GROUPS_DONE ))
-        printf '    group %d/%d  elapsed %s  est. left ~%s\n' \
+        left=$(( GROUPS_WITH_WORK - GROUPS_MEASURED ))
+
+        # NO PACE UNTIL SOMETHING HAS BEEN MEASURED, which is a real state rather than an
+        # edge case: a resume can skip hundreds of groups before it reaches one that needs
+        # running, and an estimate of zero would read as "nearly done".
+        if [ "$GROUPS_MEASURED" -gt 0 ] && [ "$left" -gt 0 ]; then
+            estimate="$(clock $(( elapsed * left / GROUPS_MEASURED )))"
+            note=""
+        elif [ "$left" -le 0 ]; then
+            estimate="$(clock 0)"
+            note=""
+        else
+            estimate="?"
+            note=" (nothing measured yet)"
+        fi
+
+        printf '    group %d/%d  measured %d/%d  elapsed %s  est. left ~%s%s\n' \
             "$GROUPS_DONE" "${#parallel_groups[@]}" \
+            "$GROUPS_MEASURED" "$GROUPS_WITH_WORK" \
             "$(clock "$elapsed")" \
-            "$(clock $(( elapsed * left / GROUPS_DONE )))"
+            "$estimate" "$note"
     }
 
     # A worker's output is held and printed whole when its group finishes, so that four
@@ -894,17 +945,28 @@ if [ "${#parallel_groups[@]}" -gt 0 ]; then
         # WRITTEN LAST BY THE WORKER, so its absence means the worker itself died rather
         # than the row. The rows it did finish are already in the TSV - they are appended
         # as they happen - so this loses only the tally, and saying so beats adding zero.
+        # CLEARED BEFORE SOURCING, because these are globals in the parent and a worker that
+        # died writes no stat file - leaving the previous group's numbers in place to be
+        # read as this one's.
+        local outcome=""
+        GROUP_NOT_MEASURED=0 GROUP_NO_ROWS=0 GROUP_SKIPPED=0 GROUP_ROWS=0
         if [ -e "$WORK/$group.stat" ]; then
             # shellcheck disable=SC1090
             . "$WORK/$group.stat"
             not_measured=$(( not_measured + GROUP_NOT_MEASURED ))
             no_rows=$(( no_rows + GROUP_NO_ROWS ))
             SKIPPED_ROWS=$(( SKIPPED_ROWS + GROUP_SKIPPED ))
+            # EVERY ROW ALREADY THERE means the group cost this run nothing, so it must not
+            # calibrate the pace. GROUP_ROWS counts every row the group had, skipped ones
+            # included, which is why the comparison is against it rather than a zero test.
+            [ "${GROUP_ROWS:-0}" -gt 0 ] \
+                && [ "${GROUP_SKIPPED:-0}" -ge "${GROUP_ROWS:-0}" ] \
+                && outcome="skipped"
             rm -f "$WORK/$group.stat"
         else
             echo "WORKER LOST for group $group - its finished rows are in the TSV, its tally is not"
         fi
-        group_finished
+        group_finished "$outcome"
     }
 
     for conversation in "${parallel_groups[@]}"; do
@@ -914,8 +976,11 @@ if [ "${#parallel_groups[@]}" -gt 0 ]; then
         done
         (
             measure_group "$conversation" > "$WORK/$conversation.out" 2>&1
-            printf 'GROUP_NOT_MEASURED=%d\nGROUP_NO_ROWS=%d\nGROUP_SKIPPED=%d\n' \
-                "$GROUP_NOT_MEASURED" "$GROUP_NO_ROWS" "$GROUP_SKIPPED" \
+            # GROUP_ROWS COMES BACK TOO, since de-x8ms.2: the parent cannot tell a group it
+            # measured from one the resume skipped entirely without knowing how many rows
+            # the group had at all, and that is what decides whether it enters the pace.
+            printf 'GROUP_NOT_MEASURED=%d\nGROUP_NO_ROWS=%d\nGROUP_SKIPPED=%d\nGROUP_ROWS=%d\n' \
+                "$GROUP_NOT_MEASURED" "$GROUP_NO_ROWS" "$GROUP_SKIPPED" "$GROUP_ROWS" \
                 > "$WORK/$conversation.stat"
         ) &
         WORKER_OF[$!]="$conversation"
