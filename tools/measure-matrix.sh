@@ -12,13 +12,46 @@
 # reason; this one is finer grained because the matrix has far more rows per conversation.
 #
 # Usage:
-#   tools/measure-matrix.sh [conversation ...]
+#   tools/measure-matrix.sh [conversation ...|all]
 #
 # Examples:
-#   tools/measure-matrix.sh                 # every conversation, every profile
+#   tools/measure-matrix.sh                 # the six heavy conversations, every profile
 #   tools/measure-matrix.sh 368 631         # just these two
 #   ENGINES=bwd tools/measure-matrix.sh 14    # one engine, one group
 #   PROFILES=deepest-1 ENGINES=bwd tools/measure-matrix.sh 14   # one row
+#   tools/measure-matrix.sh all             # EVERY group in the game, resumably
+#
+# `all` asks the measurement itself which groups exist - GROUPS_ONLY=1, one canonical start
+# per distinct closure, heaviest first - rather than reading a list kept here, which could
+# omit a group and never say so. It is 1,422 groups against the six a default run does.
+#
+# RESUMING. A run writes its rows as it finishes them, and pointing a later run at the same
+# folder makes it skip what is already there:
+#
+#   MATRIX_OUT=measurements/logs/2026-09-07_whole-game tools/measure-matrix.sh all
+#
+# Run that again after a kill, a crash, or a reboot and it picks up where it stopped. It is
+# the same command every time - there is no separate resume mode to remember, and no way to
+# resume into the wrong folder by forgetting a flag. Without MATRIX_OUT each run gets its
+# own folder, as before, and resumes nothing.
+#
+# WHAT COUNTS AS DONE, because the three outcomes are not alike:
+#
+#   ok            measured. Done.
+#   CRASHED       the row took its process down. That IS the answer for that row, recorded
+#                 as such, and a resume must not retry it for ever.
+#   NO-ROWS       the measurement said there is nothing to measure - no group builds from
+#                 this start, no entry 0, or nothing reachable. Also an answer, also done.
+#   NOT-MEASURED  the machine could not supply the memory budget. NOTHING WAS MEASURED, so
+#                 this is the one outcome a resume retries.
+#
+# THE ROW IN FLIGHT IS LOST, and that is accepted rather than overlooked. Recovering it
+# would mean writing a marker before the row and reasoning about markers with no row after
+# them; the cost of not doing it is one row out of fourteen thousand, re-measured.
+#
+# Rows are APPENDED as they finish, so a kill -9 keeps everything before it. A retried
+# NOT-MEASURED row therefore leaves both lines in the file, in the order they happened;
+# READ THE LAST ROW PER (conv, profile), which is what the resume itself does.
 #
 # ENGINES and PROFILES each take a comma or space separated list and narrow the grid the
 # same way the conversation arguments do. The engines are fwd (the symbolic forward
@@ -56,17 +89,32 @@ OUT="$ROOT/measurements"
 # is wrong silently, because nothing re-runs it. Keeping the summary beside the logs it was
 # drawn from is what makes a run readable later; comparing two runs means comparing two
 # folders, which is the honest shape of the comparison anyway.
-LOGS="$(RUN_LOG_DIR="$OUT/logs" "$ROOT/tools/run-logged.sh" --folder-only measure matrix)"
+#
+# UNLESS THE RUN NAMES ONE, which is what makes a resume possible: the same folder, the
+# same rows, the ones already in it skipped. A generated name cannot be resumed into
+# because the next run generates a different one.
+if [ -n "${MATRIX_OUT:-}" ]; then
+    case "$MATRIX_OUT" in
+        /*) LOGS="$MATRIX_OUT" ;;
+        *) LOGS="$ROOT/$MATRIX_OUT" ;;
+    esac
+else
+    LOGS="$(RUN_LOG_DIR="$OUT/logs" "$ROOT/tools/run-logged.sh" --folder-only measure matrix)"
+fi
 mkdir -p "$LOGS"
 
+# WHAT WAS ASKED FOR, kept as given and resolved further down: `all` has to ask the
+# measurement which groups exist, and the measurement is not built yet.
 CONVERSATIONS=("$@")
-if [ ${#CONVERSATIONS[@]} -eq 0 ]; then
-    CONVERSATIONS=(362 368 631 14 28 1030)
-fi
 
 # Counted so the run can say at the end that part of it is not a measurement. A line
 # scrolled past an hour ago is not a warning.
 not_measured=0
+
+# Groups the measurement found nothing to measure in. Counted rather than warned about:
+# over the whole game this is an ordinary and frequent outcome, and the number is worth
+# seeing beside the rows that did measure something.
+no_rows=0
 
 # Every profile the measurement knows, unless a run names the ones it wants. A single
 # row is a reasonable thing to ask for: the heavy groups spend the full cap per engine,
@@ -101,14 +149,18 @@ if [ -n "${ENGINES:-}" ]; then
     export ENGINES
 fi
 
-# A row that died, shaped by the header: the conversation and profile it was, CRASHED in
-# every verdict column, and nothing claimed for the rest.
-crashed_row() {
-    printf '%s' "$HEADER" | awk -F'\t' -v conv="$1" -v prof="$2" '{
+# A row with no measurement in it, shaped by the header: the conversation and profile it
+# was, the given verdict in every verdict column, and nothing claimed for the rest.
+#
+# TWO CALLERS, AND THEY MEAN OPPOSITE THINGS - CRASHED, the row took the process down, and
+# NO-ROWS, the measurement looked and said there was nothing here. Sharing the shaping and
+# not the verdict is what keeps them one line apart in the file.
+verdict_row() {
+    printf '%s' "$HEADER" | awk -F'\t' -v conv="$1" -v prof="$2" -v verdict="$3" '{
         for (i = 1; i <= NF; i++) {
             if ($i == "conv") cell = conv
             else if ($i == "profile") cell = prof
-            else if ($i ~ /_verdict$/) cell = "CRASHED"
+            else if ($i ~ /_verdict$/) cell = verdict
             else cell = "?"
             printf "%s%s", (i > 1 ? "\t" : ""), cell
         }
@@ -124,19 +176,14 @@ crashed_row() {
 ROW_SECONDS="${ROW_SECONDS:-600}"
 export ROW_SECONDS
 
-TOTAL_ROWS=$(( ${#CONVERSATIONS[@]} * ${#PROFILES[@]} ))
 DONE_ROWS=0
 STARTED=$(date +%s)
 
-# EVERY ROW THIS RUN WILL DO, in the order it will do them, so that at any point the run
-# can say which rows are still ahead of it - which is what the weighted estimate needs and
-# a count of rows cannot give. Must match the loop order below exactly.
-ROW_KEYS=()
-for conversation in "${CONVERSATIONS[@]}"; do
-    for profile in "${PROFILES[@]}"; do
-        ROW_KEYS+=("$conversation:$profile")
-    done
-done
+# Rows this run did not measure because the folder already held them, and the seconds it
+# spent on the ones it did. Both exist for the same reason: on a resume, elapsed time and
+# rows finished stop being the same question.
+SKIPPED_ROWS=0
+SPENT=0
 
 # The rows already finished, as key=seconds, accumulated as the run goes.
 DONE_SPEC=""
@@ -159,6 +206,20 @@ clock() {
 # THE FLAT MEAN IS STILL THE FALLBACK, and says so when it is used. It reads LONG early on,
 # because each conversation's heavy profiles run first, and that is the whole reason the
 # weights are worth having.
+#
+# A ROW THE RESUME SKIPPED passes "skipped": it advances the run but did not cost this run
+# anything, so it must not enter the pace calibration. Feeding it in as zero seconds against
+# its full weight drags the ratio down and the estimate with it - and on a resumed
+# whole-game run the skipped rows are most of them.
+#
+# HOW OFTEN THE WEIGHTED ESTIMATE IS RECOMPUTED. Once a minute at most, because it re-reads
+# every past TSV and is handed a spec naming every row still to come: at fourteen thousand
+# rows that is real time, spent to refine a number nobody reads more than once a minute
+# anyway. Between refreshes the last figure is reprinted.
+ESTIMATE_EVERY=60
+LAST_ESTIMATE=""
+LAST_ESTIMATE_AT=0
+
 progress() {
     DONE_ROWS=$(( DONE_ROWS + 1 ))
     local now
@@ -166,20 +227,40 @@ progress() {
     local elapsed=$(( now - STARTED ))
     local left=$(( TOTAL_ROWS - DONE_ROWS ))
 
-    DONE_SPEC="${DONE_SPEC}${DONE_SPEC:+;}${ROW_KEYS[$(( DONE_ROWS - 1 ))]}=$(( now - ROW_STARTED ))"
-
-    local left_spec="" i
-    for (( i = DONE_ROWS; i < TOTAL_ROWS; i++ )); do
-        left_spec="${left_spec}${left_spec:+;}${ROW_KEYS[$i]}"
-    done
+    if [ "${1:-}" != "skipped" ]; then
+        DONE_SPEC="${DONE_SPEC}${DONE_SPEC:+;}${ROW_KEYS[$(( DONE_ROWS - 1 ))]}=$(( now - ROW_STARTED ))"
+        SPENT=$(( SPENT + now - ROW_STARTED ))
+    fi
 
     local estimate="" note=""
-    if [ -n "$left_spec" ] && [ "${#PAST_TSVS[@]}" -gt 0 ]; then
-        estimate="$(awk -v engines="$ENGINE_NAMES" -v done="$DONE_SPEC" -v left="$left_spec" \
+    # The row just finished leaves the list of what is still to come. Stripped rather than
+    # rebuilt: rebuilding it walks every remaining row, which is fine for sixty and is not
+    # for fourteen thousand.
+    case "$LEFT_SPEC" in
+        *\;*) LEFT_SPEC="${LEFT_SPEC#*;}" ;;
+        *) LEFT_SPEC="" ;;
+    esac
+
+    if [ "$left" -gt 0 ] && [ "${#PAST_TSVS[@]}" -gt 0 ] \
+        && [ -n "$DONE_SPEC" ] && [ -n "$LEFT_SPEC" ] \
+        && { [ -z "$LAST_ESTIMATE" ] || [ $(( now - LAST_ESTIMATE_AT )) -ge "$ESTIMATE_EVERY" ]; }
+    then
+        LAST_ESTIMATE="$(awk -v engines="$ENGINE_NAMES" -v done="$DONE_SPEC" -v left="$LEFT_SPEC" \
             -f "$ROOT/tools/matrix-remaining.awk" "${PAST_TSVS[@]}" 2>/dev/null)"
+        LAST_ESTIMATE_AT=$now
     fi
+    estimate="$LAST_ESTIMATE"
+
+    # THE FLAT MEAN OVER WHAT THIS RUN ACTUALLY SPENT, not over its elapsed time: a resumed
+    # run's elapsed clock includes rows it skipped in no time at all, and dividing that by
+    # the rows it did would say a whole-game resume finishes this afternoon.
     if [ -z "$estimate" ]; then
-        estimate=$(( elapsed * left / DONE_ROWS ))
+        local measured=$(( DONE_ROWS - SKIPPED_ROWS ))
+        if [ "$measured" -gt 0 ]; then
+            estimate=$(( SPENT * left / measured ))
+        else
+            estimate=0
+        fi
         note=" (flat)"
     fi
 
@@ -222,15 +303,94 @@ while IFS= read -r tsv; do
     [ -n "$tsv" ] && PAST_TSVS+=("$tsv")
 done < <(find "$OUT/logs" -name 'performance-matrix-*.tsv' -not -path "$LOGS/*" 2>/dev/null)
 
+# WHICH CONVERSATIONS, resolved here rather than at the top because `all` has to ask the
+# measurement, and the measurement has only just been built.
+#
+# ASKED, NOT LISTED. The whole point of a whole-game run is that nothing decides which
+# groups are in it except the index, so the enumeration comes from GROUPS_ONLY - one
+# canonical start per distinct closure, heaviest first - and there is no list here to fall
+# out of date. The default when nothing is named stays the six heavy conversations the
+# matrix has always meant.
+if [ ${#CONVERSATIONS[@]} -eq 1 ] && [ "${CONVERSATIONS[0]}" = "all" ]; then
+    echo "asking the measurement which groups exist..."
+    CONVERSATIONS=()
+    while IFS=$'\t' read -r start _conversations _entries; do
+        [ -n "$start" ] && CONVERSATIONS+=("$start")
+    done < <(GROUPS_ONLY=1 cargo run --release --quiet --example performance_matrix \
+        --manifest-path "$ROOT/Cargo.toml" 2>/dev/null)
+
+    if [ ${#CONVERSATIONS[@]} -eq 0 ]; then
+        echo "the measurement listed no groups - did the index read?" >&2
+        exit 1
+    fi
+    echo "${#CONVERSATIONS[@]} groups"
+elif [ ${#CONVERSATIONS[@]} -eq 0 ]; then
+    CONVERSATIONS=(362 368 631 14 28 1030)
+fi
+
+TOTAL_ROWS=$(( ${#CONVERSATIONS[@]} * ${#PROFILES[@]} ))
+
+# EVERY ROW THIS RUN WILL DO, in the order it will do them, so that at any point the run
+# can say which rows are still ahead of it - which is what the weighted estimate needs and
+# a count of rows cannot give. Must match the loop order below exactly.
+ROW_KEYS=()
+for conversation in "${CONVERSATIONS[@]}"; do
+    for profile in "${PROFILES[@]}"; do
+        ROW_KEYS+=("$conversation:$profile")
+    done
+done
+
+# The same list as one string, which is what the estimator is handed. Built once here and
+# shortened by a row at a time in `progress`.
+LEFT_SPEC="$(IFS=';'; printf '%s' "${ROW_KEYS[*]}")"
+
+# WHAT THIS FOLDER ALREADY HOLDS, which is the whole of the resume.
+#
+# A row is done if the folder has a line for it that is not NOT-MEASURED - see the header
+# for why that one outcome is the exception. THE LAST LINE PER KEY WINS, because the files
+# are appended to and a retried row sits after the one it replaces.
+declare -A ROW_DONE=()
+already=0
+for tsv in "$LOGS"/performance-matrix-*.tsv; do
+    [ -e "$tsv" ] || continue
+    # conv, entries, profile, unseen, then the engine columns - ROW_COLUMNS in the
+    # measurement, and the reason this reads a fourth field it does not use.
+    while IFS=$'\t' read -r conv _entries profile rest; do
+        case "$conv" in conv|"") continue ;; esac
+        case "$rest" in
+            *NOT-MEASURED*) unset "ROW_DONE[$conv:$profile]" ;;
+            *) ROW_DONE["$conv:$profile"]=1 ;;
+        esac
+    done < "$tsv"
+done
+already=${#ROW_DONE[@]}
+
 echo "$TOTAL_ROWS rows, ${ROW_SECONDS}s per engine per row, started $(date '+%H:%M:%S')"
+if [ "$already" -gt 0 ]; then
+    echo "resuming in $LOGS: $already row(s) already measured, and they will be skipped"
+fi
 
 for conversation in "${CONVERSATIONS[@]}"; do
     tsv="$LOGS/performance-matrix-$conversation.tsv"
-    echo "$HEADER" > "$tsv"
+
+    # ONLY WHEN THE FILE IS NEW. Truncating it here is what a resume must not do, and the
+    # header is the one line that would otherwise be written twice.
+    [ -e "$tsv" ] || echo "$HEADER" > "$tsv"
     echo "=== $conversation -> $tsv"
 
     for profile in "${PROFILES[@]}"; do
         log="$LOGS/matrix-$conversation-$profile.log"
+
+        # ALREADY ANSWERED, so not asked again. Counted as done for the progress line, since
+        # what the run has left is what it has left however the rows got there.
+        if [ -n "${ROW_DONE[$conversation:$profile]:-}" ]; then
+            printf '  %-12s  already measured\n' "$profile"
+            ROW_STARTED=$(date +%s)
+            SKIPPED_ROWS=$(( SKIPPED_ROWS + 1 ))
+            progress skipped
+            continue
+        fi
+
         printf '  %-12s' "$profile"
         ROW_STARTED=$(date +%s)
 
@@ -307,12 +467,24 @@ for conversation in "${CONVERSATIONS[@]}"; do
                     ;;
                 *) echo "ok" ;;
             esac
+        elif grep -q '; no rows$' "$log"; then
+            # NOTHING TO MEASURE, AND THE MEASUREMENT SAID SO - no group builds from this
+            # start, the group has no entry 0, or nothing is reachable from it. That is an
+            # ANSWER about the group and not a death, and telling the two apart matters at
+            # whole-game scale in a way it never did over six hand-picked conversations:
+            # most of the 1,372 single-conversation groups are tiny and some of them are
+            # empty, so reading these as CRASHED would fill the run with alarming rows that
+            # mean "this group has no dialogue to search".
+            verdict_row "$conversation" "$profile" NO-ROWS >> "$tsv"
+            echo "no rows - $(grep -m1 '; no rows$' "$log")"
+            no_rows=$((no_rows + 1))
         else
             # A CRASH IS A RESULT. The row says so and names its log, rather than being
             # silently absent - an empty line in a measurement reads as "not run yet",
             # which is a different thing from "this is what happens". Distinct from
-            # NOT-MEASURED above: this row died, that one never ran.
-            crashed_row "$conversation" "$profile" >> "$tsv"
+            # NOT-MEASURED above: this row died, that one never ran. And distinct from
+            # NO-ROWS: that one looked and found nothing, this one never came back.
+            verdict_row "$conversation" "$profile" CRASHED >> "$tsv"
             echo "CRASHED (see $log)"
         fi
         progress
@@ -320,13 +492,26 @@ for conversation in "${CONVERSATIONS[@]}"; do
 done
 
 echo
-echo "wrote:"
-ls -1 "$LOGS"/performance-matrix-*.tsv
-echo "logs for this run: $LOGS"
+echo "wrote $(ls -1 "$LOGS"/performance-matrix-*.tsv | wc -l) file(s) in: $LOGS"
+
+# NAMED ONE BY ONE ONLY WHEN THERE ARE FEW. A whole-game run writes fourteen hundred of
+# them and the list is not a summary of anything.
+if [ "$(ls -1 "$LOGS"/performance-matrix-*.tsv | wc -l)" -le 20 ]; then
+    ls -1 "$LOGS"/performance-matrix-*.tsv
+fi
+
+if [ "$SKIPPED_ROWS" -gt 0 ]; then
+    echo "$SKIPPED_ROWS row(s) were already in that folder and were skipped."
+fi
+
+if [ "$no_rows" -gt 0 ]; then
+    echo "$no_rows row(s) had nothing to measure: no group, no entry 0, or nothing reachable."
+fi
 
 if [ "$not_measured" -gt 0 ]; then
     echo
     echo "*** $not_measured row(s) NOT MEASURED: this machine could not supply the budget."
     echo "*** Those rows are not results. Rerun them with the memory free before reading"
-    echo "*** this run as a measurement."
+    echo "*** this run as a measurement. Re-running with the same MATRIX_OUT retries exactly"
+    echo "*** those rows and leaves everything else alone."
 fi

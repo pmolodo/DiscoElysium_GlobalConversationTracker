@@ -247,17 +247,30 @@
 //! the header alone with `HEADER_ONLY=1`, which is how `tools/measure-matrix.sh` learns the
 //! column names rather than keeping its own copy of them.
 //!
+//! ## Every group in the game, with `GROUPS_ONLY=1`
+//!
+//! Prints one line per DISTINCT group - `start`, `conversations`, `entries` - and measures
+//! nothing. It is how a whole-game run enumerates its rows, for the same reason
+//! `HEADER_ONLY` exists: the alternative is a list written by hand somewhere else, which
+//! can silently omit what nobody thought of.
+//!
+//! WHY A CANONICAL START IS NOT SIMPLY THE SMALLEST MEMBER. `discover_group` is the FORWARD
+//! closure of a start, not an equivalence relation, so the smallest conversation in a group
+//! may reach only part of it - a group of {3, 5} where 5 leads to 3 and 3 leads nowhere has
+//! `closure(3) = {3}`. The start named here is the smallest one whose own closure IS the
+//! whole set, which is the only kind of start that reproduces the group it came from.
+//!
 //! The rows are printed as TAB-SEPARATED VALUES, so a run can be piped straight into a
 //! file and read by something else later - which is what de-raed asks for when it says the
 //! logs should be kept for analysis.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
 use lookahead_engine::core::state::StateSymbols;
 use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
 use lookahead_engine::symbolic::portfolio;
 use lookahead_engine::graph::graph::LookAheadGraph;
-use lookahead_engine::index::{build_group_graph, read_index};
+use lookahead_engine::index::{build_group_graph, discover_group, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::known::{GroupShape, Known};
@@ -509,6 +522,54 @@ fn engines() -> Vec<Engine> {
     }
 
     ALL_ENGINES.into_iter().filter(|engine| wanted.contains(&engine.label())).collect()
+}
+
+/// One canonical start per DISTINCT group, heaviest first: (start, conversations, entries).
+///
+/// ## Which start, and why it is not the smallest member
+///
+/// `discover_group` is a forward closure, so two starts in the same group can reach
+/// different sets and only some of them reach all of it. The start kept here is the
+/// SMALLEST ONE WHOSE OWN CLOSURE IS THE WHOLE SET, which is what makes the line
+/// reproducible: handing it back as `CONVERSATION=` rebuilds exactly the group it came
+/// from. Taking the smallest member instead would sometimes name a start that reaches a
+/// smaller group, and the row would quietly be about something else.
+///
+/// The set is the key rather than the start, because `build_group_graph` walks the group
+/// in ascending conversation order and so produces an identical graph from any start whose
+/// closure is that set - measured in `measurements/group_census.rs`, which counts 1,422
+/// distinct groups over 1,501 conversations.
+///
+/// ## Heaviest first, deliberately
+///
+/// A whole-game run is long and will be interrupted. Fifty spanning groups carry
+/// fifty-five per cent of the entries and every group the measurements have ever been
+/// about; the other 1,372 average forty-three entries and cost microseconds apiece. So
+/// ordering by entries puts all of the information and all of the risk at the front, and
+/// leaves a cheap tail that any resumed run can finish quickly.
+fn group_starts(index: &lookahead_engine::index::Index) -> Vec<(i32, usize, usize)> {
+    let mut conversations: Vec<i32> = index.keys().copied().collect();
+    conversations.sort_unstable();
+
+    let mut canonical: HashMap<BTreeSet<i32>, i32> = HashMap::new();
+    for &conversation in &conversations {
+        let group: BTreeSet<i32> = discover_group(index, conversation).into_iter().collect();
+        // Ascending, so the first start to produce a set is the smallest that reaches it.
+        canonical.entry(group).or_insert(conversation);
+    }
+
+    let mut groups: Vec<(i32, usize, usize)> = canonical
+        .into_iter()
+        .map(|(group, start)| {
+            let entries = group.iter().map(|id| index[id].entries.len()).sum();
+            (start, group.len(), entries)
+        })
+        .collect();
+
+    // Entries first, then the start, so the order is total and a run's row list is the
+    // same list every time it is asked for.
+    groups.sort_unstable_by(|a, b| b.2.cmp(&a.2).then(a.0.cmp(&b.0)));
+    groups
 }
 
 fn conversations(default: &[i32]) -> Vec<i32> {
@@ -1019,6 +1080,17 @@ fn main() {
     }
 
     let index = read_index(&path).expect("the index reads");
+
+    // ASKED FOR ON ITS OWN, like the header, and for the same reason: a whole-game run has
+    // to know what the rows ARE before it measures any, and a list kept anywhere else can
+    // omit a group and never say so.
+    if std::env::var("GROUPS_ONLY").is_ok() {
+        for (start, conversations, entries) in group_starts(&index) {
+            println!("{start}\t{conversations}\t{entries}");
+        }
+        return;
+    }
+
     let world = common::measurement_save();
 
     // SUPPRESSIBLE, because the driver script runs one row per process and wants one header

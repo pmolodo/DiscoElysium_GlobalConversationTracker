@@ -136,7 +136,7 @@ Every engine in a run gets the same allowance, which is the only way the verdict
 anything against each other: the shared measurement budget in `DiagramBudget::measurement()`,
 plus a time cap that is meant not to be what stops a row. See de-e23q and de-z5sp.
 
-### `no-room`, `CRASHED` and `NOT-MEASURED` are three different things
+### `no-room`, `CRASHED`, `NO-ROWS` and `NOT-MEASURED` are four different things
 
 They look alike from outside - the row has no numbers in it - and they mean opposite
 things, so the run keeps them apart.
@@ -145,6 +145,11 @@ things, so the run keeps them apart.
   every byte it was allowed and still had no answer.
 - `CRASHED` is a result too. The row took its process down; the log says how, and that is
   a fact about the search.
+- `NO-ROWS` is a result about the GROUP rather than the search: no group builds from this
+  start, or it has no entry 0, or nothing is reachable from it, so there was never
+  anything to measure. It matters at whole-game scale, where plenty of groups are like
+  this and reading them as `CRASHED` would fill a run with alarming rows that only mean
+  "no dialogue here".
 - `NOT-MEASURED` is not a result at all. The machine could not supply the budget, so
   nothing ran and there is nothing to learn - the row wants running again when the memory
   is free. A run holding any of these is not yet a measurement, and the script says so at
@@ -157,9 +162,25 @@ reserves the same bytes fallibly first.
 
 ## Regenerating
 
-    tools/measure-matrix.sh              # every conversation
+    tools/measure-matrix.sh              # the six heavy conversations
     tools/measure-matrix.sh 368 631      # just these
 
 One row per process, because a row can take the process down with it - see the script.
 Expect the better part of an hour for the whole set: the heavy groups spend the full time
 cap on several rows.
+
+### The whole game, resumably
+
+    MATRIX_OUT=measurements/logs/whole-game tools/measure-matrix.sh all
+
+`all` asks the measurement which groups exist - `GROUPS_ONLY=1`, one canonical start per
+distinct closure, heaviest first - so nothing decides what is in the run except the index.
+It is 1,422 groups against the six a default run does, and it is a run of days rather than
+of an hour.
+
+`MATRIX_OUT` names the folder instead of generating one, and THAT is the resume: run the
+same command again after a kill, a crash or a reboot and every row already in that folder
+is skipped. There is no separate resume mode to remember and no flag to forget. Rows are
+appended as they finish, so an interruption costs the row in flight and nothing else; a
+retried `NOT-MEASURED` row leaves both lines, and the LAST row for a (conv, profile) is the
+one to read.
