@@ -734,13 +734,20 @@ fn engines() -> Vec<Engine> {
 /// closure is that set - measured in `measurements/group_census.rs`, which counts 1,422
 /// distinct groups over 1,501 conversations.
 ///
-/// ## Heaviest first, deliberately
+/// ## Heaviest first, deliberately - but this is no longer the order a run uses
 ///
 /// A whole-game run is long and will be interrupted. Fifty spanning groups carry
 /// fifty-five per cent of the entries and every group the measurements have ever been
 /// about; the other 1,372 average forty-three entries and cost microseconds apiece. So
 /// ordering by entries puts all of the information and all of the risk at the front, and
 /// leaves a cheap tail that any resumed run can finish quickly.
+///
+/// SINCE de-xp9s THE CALLER RE-SORTS BY WHAT EACH GROUP CAN REACH, which is a better proxy
+/// for the same intent: `entries` counts a group's conversations whether the search can walk
+/// to them or not, and group 7 is the case that shows the difference - 4,035 entries, 32
+/// reachable. What this ordering still decides is the order the groups are WALKED in while
+/// the caller counts them, and therefore the order of the reasons in `groups.log`. Keep it
+/// total for that reason alone.
 fn group_starts(index: &lookahead_engine::index::Index) -> Vec<(i32, usize, usize)> {
     let mut conversations: Vec<i32> = index.keys().copied().collect();
     conversations.sort_unstable();
@@ -1598,23 +1605,54 @@ fn main() {
     // to know what the rows ARE before it measures any, and a list kept anywhere else can
     // omit a group and never say so.
     if std::env::var("GROUPS_ONLY").is_ok() {
-        for (start, conversations, entries) in group_starts(&index) {
-            // THE FOURTH COLUMN IS WHY THIS COSTS MORE THAN IT USED TO, and it is worth it.
-            // Building each group's graph and walking it from the start is what tells the
-            // caller whether there is anything here at all, and 901 of the game's 1,422
-            // groups answer no. Learning that here costs one walk; learning it the old way
-            // cost ten processes, each of which read the index and built the same graph to
-            // reach the same conclusion.
-            let reachable = match measurable(&index, start) {
-                Ok((_, _, reachable)) => reachable.len(),
-                Err(why) => {
-                    // ON STDERR, so the counts stay a clean TSV and the reason is still
-                    // recorded. `tools/measure-matrix.sh` keeps this stream as its
-                    // groups.log; the wording is the one the row logs have always used.
-                    eprintln!("{}", why.message(start));
-                    0
-                }
-            };
+        let counted: Vec<(i32, usize, usize, usize)> = group_starts(&index)
+            .into_iter()
+            .map(|(start, conversations, entries)| {
+                // THE FOURTH COLUMN IS WHY THIS COSTS MORE THAN IT USED TO, and it is worth
+                // it. Building each group's graph and walking it from the start is what
+                // tells the caller whether there is anything here at all, and 901 of the
+                // game's 1,422 groups answer no. Learning that here costs one walk;
+                // learning it the old way cost ten processes, each of which read the index
+                // and built the same graph to reach the same conclusion.
+                let reachable = match measurable(&index, start) {
+                    Ok((_, _, reachable)) => reachable.len(),
+                    Err(why) => {
+                        // ON STDERR, so the counts stay a clean TSV and the reason is still
+                        // recorded. `tools/measure-matrix.sh` keeps this stream as its
+                        // groups.log; the wording is the one the row logs have always used.
+                        eprintln!("{}", why.message(start));
+                        0
+                    }
+                };
+                (start, conversations, entries, reachable)
+            })
+            .collect();
+
+        // ORDERED BY WHAT A RUN CAN SEE, not by how big the group is. de-xp9s.
+        //
+        // `entries` counts everything in the group's conversations, reachable or not, and
+        // the two come apart badly. Group 7 holds 4,035 entries of which 32 are reachable -
+        // conversation 7 is a stage-directions test dialogue whose single "Jump to:" link
+        // drags in 3,957 entries of Klaasje that nothing in it can walk to - so it sorted
+        // FOURTH of 1,422 and is one of the cheapest groups in the game. Group 275 sorted
+        // ahead of 498 groups that have rows while having none at all.
+        //
+        // WHY IT MATTERS MORE THAN TIDINESS: tools/measure-matrix.sh runs groups one at a
+        // time until the cost bottoms out, then goes parallel, and it decides that from the
+        // cost of the groups as they finish. A trivial group sorted near the front is noise
+        // in that signal - and noise this ordering was introducing, rather than anything
+        // inherent in the game. Reading a curve that actually descends is worth the sort.
+        //
+        // TIES BY START, so the order stays TOTAL. That is not tidiness either: the resume
+        // depends on a run's list being the same list every time it is asked for.
+        //
+        // THE EMPTY GROUPS ALL LAND AT THE END, since their count is zero, which pairs with
+        // de-cziy - they are skipped rather than recorded, and now they are skipped from
+        // one end of the list rather than scattered through it.
+        let mut counted = counted;
+        counted.sort_by(|a, b| b.3.cmp(&a.3).then(a.0.cmp(&b.0)));
+
+        for (start, conversations, entries, reachable) in counted {
             println!("{start}\t{conversations}\t{entries}\t{reachable}");
         }
         return;
