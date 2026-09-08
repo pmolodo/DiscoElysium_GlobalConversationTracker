@@ -8,36 +8,54 @@
 //!
 //! ## The three engines, and what each one actually is
 //!
-//! Two axes, not one. A search is EXPLICIT or SYMBOLIC in how it carries data states, and
-//! it runs FORWARDS or BACKWARDS in direction, and the two are independent:
+//! DIRECTION IS WHAT TELLS THEM APART. All three carry data states the same way - one
+//! decision diagram per entry - so the name says which way each one runs and nothing else:
 //!
-//! | column | what runs | data | direction |
-//! |---|---|---|---|
-//! | `explicit` | [`LookAheadEngine::evaluate`] | one state at a time | forwards |
-//! | `symfwd` | `Reachability::explore_within` | a set per entry | forwards |
-//! | `symbwd` | `novelty_search::best_novelty` over `Backward` | a set per entry | backwards |
+//! | column | what runs | direction |
+//! |---|---|---|
+//! | `fwd` | `Reachability::explore_within` | forwards, from the start |
+//! | `bwd` | `novelty_search::best_novelty` over `Backward` | backwards, from a target |
+//! | `fwdbwd` | `portfolio::best_novelty` | a forward slice, then the backward driver |
 //!
-//! EXPLICIT is the search that is wired in today - the one the plugin calls, and the only
-//! one anything outside these measurements uses. Its queue holds (entry, state) pairs, so
-//! an entry reachable in a thousand data states is popped a thousand times.
+//! THESE ARE THE NAMES `ENGINES=` TAKES, and [`Engine::label`] is where they live. The
+//! recorded results further down were measured under older names and each says so; the
+//! table under "The names have moved twice" translates them.
 //!
-//! SYMBOLIC FORWARD walks `node.links` from the start exactly as the search does; what
+//! FORWARD walks `node.links` from the start exactly as the game's own search does; what
 //! differs is that one decision diagram per entry holds every data state reached there at
-//! once. Symbolic in the data, forwards in direction.
+//! once.
 //!
-//! SYMBOLIC BACKWARD is the only column that reverses the direction. It computes
+//! BACKWARD is the only column that reverses the direction. It computes
 //! pre-images from a target, and it is driven the way the portfolio would drive it: ONE
 //! CANDIDATE AT A TIME, best novelty class first, stopping at the first candidate proved
 //! reachable. Asking it about one hand-picked target instead would measure a question
 //! nobody asks - the short circuit and the per-candidate cost ARE the approach.
 //!
-//! ## The first two columns used to be called `fwd` and `bwd`, and neither was backward
+//! FORWARD-BACKWARD is WHAT THE GAME ACTUALLY RUNS, since the bridge was rewired - so it
+//! is the column that says what a player waits for, and the other two are what it is made
+//! of.
 //!
-//! Kept here because the mislabelling outlived several conclusions drawn from it. The
-//! table measured EXPLICIT against SYMBOLIC, both going forwards; the genuine backward
-//! engine had never been run by it at all. Any forward-versus-backward reading of a run
-//! from before this note - including the framing of de-a1wb itself - rests on a column
-//! name that did not describe what ran. de-zovl is the correction.
+//! ## The names have moved twice, and `fwd` does not mean today what it meant first
+//!
+//! Kept because the mislabelling outlived several conclusions drawn from it, and because a
+//! folder of old rows can only be read by knowing which era named its columns:
+//!
+//! ```text
+//!   oldest    fwd, bwd                   `fwd` was the state-at-a-time search and `bwd`
+//!                                        was the SYMBOLIC FORWARD one. Neither was backward.
+//!   middle    explicit, symfwd, symbwd   the same two named honestly, plus the first
+//!                                        genuine backward column.
+//!   current   fwd, bwd, fwdbwd           the state-at-a-time search is gone; what is left
+//!                                        differs only in direction, so it is named for that.
+//! ```
+//!
+//! So the oldest table measured EXPLICIT against SYMBOLIC, both going forwards, and the
+//! genuine backward engine had never been run by it at all. Any forward-versus-backward
+//! reading of a run from before that - including the framing of de-a1wb itself - rests on
+//! a column name that did not describe what ran. de-zovl is the correction.
+//!
+//! `tools/matrix-remaining.awk` and `measurements/README.md` carry this same table,
+//! because reading an old folder means translating it.
 //!
 //! ## What the backward column costs, and why that is the whole question
 //!
@@ -180,7 +198,10 @@
 //!
 //! Conversation 14, its one structurally deepest entry unseen, six gigabytes and a
 //! ten-minute cap EACH. The comparison de-rfva asked for, and the first one on this file
-//! that is like for like:
+//! that is like for like.
+//!
+//! MIDDLE-ERA NAMES BELOW: `symfwd` is today's `fwd` and `symbwd` today's `bwd`, and
+//! `explicit` is the state-at-a-time search, which no column measures any more.
 //!
 //! ```text
 //!   engine    verdict         ms       states / nodes
@@ -206,7 +227,7 @@
 //! ## The first row the backward column has been run on, 2026-09-05
 //!
 //! Conversation 14 with its one structurally deepest entry unseen - so ONE CANDIDATE - at
-//! the measurement budget, `ENGINES=symbwd` alone:
+//! the measurement budget, the backward column alone:
 //!
 //! ```text
 //!   conv  entries  profile    unseen  verdict         ms   nodes  asked  cands
@@ -239,7 +260,7 @@
 //! comma-separated list. A third engine triples what a full run costs, so being able to
 //! ask one question of one group is not a convenience:
 //!
-//!     CONVERSATION=14 PROFILE=deepest-1 ENGINES=symbwd cargo run --release \
+//!     CONVERSATION=14 PROFILE=deepest-1 ENGINES=bwd cargo run --release \
 //!         --example performance_matrix
 //!
 //! THE HEADER FOLLOWS THE SELECTION - a run that names one engine prints that engine's
@@ -514,10 +535,17 @@ fn engines() -> Vec<Engine> {
     }
 
     // A misspelling would otherwise measure nothing and say nothing about why.
+    //
+    // THE ALTERNATIVES ARE ASKED OF THE ENGINES rather than written out here, because a
+    // written copy went stale and the message spent an era offering `explicit, symfwd,
+    // symbwd` - the MIDDLE era's spelling - which meant it refused `symfwd` in the very
+    // sentence that named it, and sent the reader on to two more names that were also
+    // gone. A refusal that misdirects costs more than no refusal at all.
     for name in &wanted {
         assert!(
             ALL_ENGINES.iter().any(|engine| engine.label() == *name),
-            "no engine called {name:?}: the names are explicit, symfwd, symbwd",
+            "no engine called {name:?}: the names are {}",
+            ALL_ENGINES.map(Engine::label).join(", "),
         );
     }
 
@@ -887,9 +915,14 @@ fn symbolic_forward(
                       held: usize,
                       largest: usize,
                       bytes: usize| {
+                    // THE LABEL COMES FROM THE ENGINE, and is padded to the width of the
+                    // longest so the columns line up. A progress line names itself with
+                    // the same word `ENGINES=` takes, so a line watched during a long run
+                    // can be typed straight back to reproduce it.
                     println!(
-                        "{PROGRESS} symfwd {:>7}  {steps:>10} steps  {reached:>6} reached  \
+                        "{PROGRESS} {:<6} {:>7}  {steps:>10} steps  {reached:>6} reached  \
                          {held:>11} set nodes  largest {largest:>9}  {} / {}",
+                        Engine::Forward.label(),
                         mmss(began.elapsed()),
                         gb(bytes),
                         gb(allowance),
@@ -1019,8 +1052,9 @@ fn symbolic_backward(
                     let capacity = budget().nodes();
                     Box::new(move |steps: usize, known: usize, queued: usize, nodes: usize| {
                         println!(
-                            "{PROGRESS} symbwd {:>7}  {steps:>10} steps  {known:>6} reaching  \
+                            "{PROGRESS} {:<6} {:>7}  {steps:>10} steps  {known:>6} reaching  \
                              {queued:>6} queued  {nodes:>12} / {capacity} nodes",
+                            Engine::Backward.label(),
                             mmss(began.elapsed()),
                         );
                     }) as Box<dyn Fn(usize, usize, usize, usize)>
