@@ -56,6 +56,10 @@ fn a_narrowed_layout_answers_what_the_whole_group_answers() {
 
     let mut compared = 0;
     let mut narrowed_something = false;
+    // Pairs where one side or the other did not finish, so nothing could be compared. Kept
+    // as a number rather than ignored, because a run that skips most of its pairs proves
+    // much less than its passing status suggests - and there is no other sign of that.
+    let mut unfinished = 0;
 
     for conversation in GROUPS {
         let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
@@ -133,6 +137,26 @@ fn a_narrowed_layout_answers_what_the_whole_group_answers() {
         );
 
         for (wide, narrow) in with_whole.iter().zip(with_narrow.iter()) {
+            // AN INCOMPLETE PASS IS NOT AN ANSWER, so there is nothing here to compare.
+            //
+            // What this test is about is whether narrowing changes the ANSWER. A search
+            // that ran out of budget did not produce one - `best` is a lower bound and
+            // `stopped_by` says which ration ran out - so asserting equality would be
+            // comparing an answer with a non-answer, and it would fail with a message
+            // showing two different-looking results, which reads exactly like a genuine
+            // disagreement. de-x8ms.8: that is what it did, on conversation 14, when the
+            // suite ran while something else on the machine was holding memory.
+            //
+            // AND IT WOULD FORBID THE IMPROVEMENT THE NARROWING EXISTS FOR. The narrowed
+            // layout carries fewer variables, so it is CHEAPER, so it is expected to finish
+            // where the whole-group one cannot. "Whole incomplete, narrow complete" is the
+            // narrowing working, not a defect - and the old comparison called it a failure
+            // because `same` requires `complete` and `stopped_by` to match.
+            if !wide.complete || !narrow.complete {
+                unfinished += 1;
+                continue;
+            }
+
             assert!(
                 same(wide, narrow),
                 "conversation {conversation}: the whole-group layout answered {wide:?} \
@@ -140,6 +164,16 @@ fn a_narrowed_layout_answers_what_the_whole_group_answers() {
             );
             compared += 1;
         }
+    }
+
+    // SAID OUT LOUD WHEN IT HAPPENS. Skipped pairs are invisible in a passing run otherwise,
+    // and the number is how a reader tells "this proved a lot" from "this proved one thing
+    // and skipped the rest because the machine was busy".
+    if unfinished > 0 {
+        println!(
+            "{unfinished} pair(s) skipped: one side or the other ran out of budget, so there \
+             was no answer to compare. {compared} pair(s) were compared.",
+        );
     }
 
     assert!(compared > 0, "nothing was compared, so this test proves nothing");
