@@ -26,10 +26,15 @@
 # omit a group and never say so. It is 1,422 groups against the six a default run does.
 #
 # AND IT ASKS WHICH OF THEM HAVE ANYTHING IN THEM. 901 of the 1,422 reach nothing from
-# their start, mostly the two-entry ORB stubs the database is full of; they are recorded as
-# NO-ROWS from the enumeration, which costs a third of a second for the whole game, instead
-# of by nine thousand processes that each build a graph to find the same nothing. See the
-# pruning below for why that answer is asked for and not cached.
+# their start, mostly the two-entry ORB stubs the database is full of. They are SKIPPED
+# ENTIRELY - no file, no row - and the enumeration that identifies them costs a third of a
+# second for the whole game, against nine thousand processes that would each build a graph
+# to find the same nothing. Which groups those were, and why, is in groups.log; the whole
+# enumeration is in groups.tsv. See the pruning below for why that answer is asked for and
+# not cached, and de-cziy for why they stopped being written down.
+#
+# NAMING ONE ON THE COMMAND LINE IS AN ERROR, since the only way the row loop can meet a
+# group with no rows is that a person typed it - `all` prunes them first.
 #
 # RESUMING. A run writes its rows as it finishes them, and pointing a later run at the same
 # folder makes it skip what is already there:
@@ -46,8 +51,11 @@
 #   ok            measured. Done.
 #   CRASHED       the row took its process down. That IS the answer for that row, recorded
 #                 as such, and a resume must not retry it for ever.
-#   NO-ROWS       the measurement said there is nothing to measure - no group builds from
-#                 this start, no entry 0, or nothing reachable. Also an answer, also done.
+#   (no rows)     the measurement said there is nothing to measure - no group builds from
+#                 this start, no entry 0, or nothing reachable. NOT A ROW ANY MORE: an
+#                 enumerated group like this is skipped silently and counted, and a NAMED
+#                 one stops the run. Folders written before de-cziy still hold NO-ROWS rows
+#                 and are read as they always were.
 #   NOT-MEASURED  the machine could not supply the memory budget. NOTHING WAS MEASURED, so
 #                 this is the one outcome a resume retries.
 #
@@ -388,7 +396,10 @@ if [ ${#CONVERSATIONS[@]} -eq 1 ] && [ "${CONVERSATIONS[0]}" = "all" ]; then
         else
             EMPTY_GROUPS+=("$start")
         fi
-    done < <(GROUPS_ONLY=1 "$MEASUREMENT" 2>"$LOGS/groups.log")
+    # KEPT AS WELL AS READ, since de-cziy. The empty groups no longer get a row apiece, so
+    # this and groups.log beside it are the whole record of which groups the run considered
+    # and why it left some out. It costs a tee.
+    done < <(GROUPS_ONLY=1 "$MEASUREMENT" 2>"$LOGS/groups.log" | tee "$LOGS/groups.tsv")
 
     if [ $(( ${#CONVERSATIONS[@]} + ${#EMPTY_GROUPS[@]} )) -eq 0 ]; then
         echo "the measurement listed no groups - did the index read?" >&2
@@ -421,42 +432,35 @@ for tsv in "$LOGS"/performance-matrix-*.tsv; do
     done < "$tsv"
 done
 
-# THE EMPTY GROUPS, RECORDED WITHOUT RUNNING ANYTHING.
+# THE EMPTY GROUPS ARE SKIPPED ENTIRELY, AND NOT WRITTEN DOWN.
 #
-# Pruned is not the same as forgotten. The folder still gets a TSV per group with a
-# NO-ROWS row per profile, exactly as it did when a process wrote each one, so nothing
-# downstream can tell the difference and a group is never silently absent from a whole-game
-# folder. What is gone is the nine thousand processes.
+# THIS REVERSES A DELIBERATE DECISION, so it is worth saying that it was one rather than an
+# oversight. The folder used to get a TSV per empty group with a NO-ROWS row per profile,
+# on the argument that "pruned is not the same as forgotten" - a group should never be
+# silently absent from a whole-game folder. de-cziy: the user weighed that and decided it
+# does not earn its keep here. "From here on out, I don't care about no-row conv groups,
+# except to make sure they are skipped."
+#
+# THE SCALE IS WHY. 901 of the game's 1,422 groups reach nothing, so the run wrote 901 files
+# and, at two profiles, 1,802 rows - over ninety-nine per cent of both - to say nothing.
+# Anything reading the folder had to filter them out first.
+#
+# WHAT MAKES IT SAFE is that the information does not live only in those rows. groups.log
+# holds one line per pruned group, in the wording the row logs used - "conversation 1500:
+# nothing is reachable from its start; no rows" - and groups.tsv holds the whole enumeration
+# with its reachable count. So "why is group 1500 absent" is still answerable from the
+# folder, by two files, without 901 stubs. KEEPING BOTH IS PART OF THIS, not incidental to
+# it.
 #
 # WHY THIS IS NOT A CACHED LIST. It was worth asking - the answer is the same every time
 # the index is - but the enumeration costs a third of a second for the whole game and a
 # committed list of empty groups would be a second copy of the index's own shape, wrong
 # and silent the first time a group grew an entry. The measurement is asked, like the group
 # list and the column names before it.
-#
-# The reasons are in groups.log, one line per pruned group, in the wording the row logs
-# used: "conversation 1500: nothing is reachable from its start; no rows".
 if [ ${#EMPTY_GROUPS[@]} -gt 0 ]; then
-    pruned_rows=0
-    for conversation in "${EMPTY_GROUPS[@]}"; do
-        tsv="$LOGS/performance-matrix-$conversation.tsv"
-        [ -e "$tsv" ] || echo "$HEADER" > "$tsv"
-        block=""
-        for profile in "${PROFILES[@]}"; do
-            [ -n "${ROW_DONE[$conversation:$profile]:-}" ] && continue
-            verdict_row "$conversation" "$profile" NO-ROWS
-            block="$block$ROW_LINE"$'\n'
-            pruned_rows=$(( pruned_rows + 1 ))
-            no_rows=$(( no_rows + 1 ))
-        done
-        [ -n "$block" ] && printf '%s' "$block" >> "$tsv"
-    done
-    if [ "$pruned_rows" -gt 0 ]; then
-        echo "${#EMPTY_GROUPS[@]} group(s) reach nothing from their start: $pruned_rows row(s) recorded as NO-ROWS without running one"
-    else
-        echo "${#EMPTY_GROUPS[@]} group(s) reach nothing from their start, and the folder already records every one of them"
-    fi
-    echo "  the reason for each is in $LOGS/groups.log"
+    no_row_groups=${#EMPTY_GROUPS[@]}
+    echo "$no_row_groups group(s) reach nothing from their start and are skipped without running"
+    echo "  which, and why, is in $LOGS/groups.log; the whole enumeration is in groups.tsv"
 fi
 
 TOTAL_ROWS=$(( ${#CONVERSATIONS[@]} * ${#PROFILES[@]} ))
@@ -654,17 +658,42 @@ measure_group() {
                 *) echo "ok" ;;
             esac
         elif grep -q '; no rows$' "$log"; then
-            # NOTHING TO MEASURE, AND THE MEASUREMENT SAID SO - no group builds from this
-            # start, the group has no entry 0, or nothing is reachable from it. That is an
-            # ANSWER about the group and not a death, and telling the two apart matters at
-            # whole-game scale in a way it never did over six hand-picked conversations:
-            # most of the 1,372 single-conversation groups are tiny and some of them are
-            # empty, so reading these as CRASHED would fill the run with alarming rows that
-            # mean "this group has no dialogue to search".
-            verdict_row "$conversation" "$profile" NO-ROWS
-            echo "$ROW_LINE" >> "$tsv"
-            echo "no rows - $(grep -m1 '; no rows$' "$log")"
-            GROUP_NO_ROWS=$((GROUP_NO_ROWS + 1))
+            # ASKING FOR A GROUP WITH NO ROWS IS AN ERROR, and it stops the run. From the
+            # user, de-cziy: no-row groups are to be skipped, and naming one is a mistake
+            # worth hearing about rather than a row to file.
+            #
+            # THIS IS ONLY REACHABLE FROM A NAMED RUN. A whole-game run prunes the empty
+            # groups from the enumeration before any process starts, so the row loop never
+            # meets one - unless a person typed it. That is what makes refusing safe here
+            # and what makes the message worth writing for a person rather than a log.
+            #
+            # AND IT CATCHES A SECOND THING. The row loop and the enumeration ask the same
+            # function whether a group has rows (`measurable`), and the measurement's own
+            # note says why two copies would be a hazard: "two chances for the enumeration
+            # to promise rows the row loop then declines to produce, which is a
+            # disagreement nothing would report". If they ever drift, `all` will reach here
+            # too, and now it says so instead of quietly recording a row.
+            #
+            # NOT CHECKED UP FRONT, though the run would rather name every bad id at once.
+            # The enumeration lists CANONICAL starts only, and a named conversation that is
+            # not one can still be perfectly measurable - `measurable` builds the group from
+            # whatever start it is given. Refusing against that list would reject good ids.
+            # So the run asks the measurement, one group at a time, and stops at the first.
+            echo "REFUSED"
+            echo "  $(grep -m1 '; no rows$' "$log")"
+            echo
+
+            # THE HEADER-ONLY FILE GOES WITH IT. The tsv is created before the first row is
+            # attempted, so a refusal that left it behind would put an empty stub in the
+            # folder for a group that is meant not to appear at all - which is the thing
+            # this change is about. Only if it is still just the header: a group that
+            # measured something earlier and is being re-run keeps what it has.
+            [ "$(wc -l < "$tsv")" -le 1 ] && rm -f "$tsv"
+
+            echo "conversation $conversation has no rows to measure, so naming it asks for" >&2
+            echo "something that does not exist. Drop it from the list and run again; a" >&2
+            echo "whole-game run skips such groups by itself." >&2
+            exit 2
         else
             # A CRASH IS A RESULT. The row says so and names its log, rather than being
             # silently absent - an empty line in a measurement reads as "not run yet",
@@ -1007,8 +1036,21 @@ if [ "$SKIPPED_ROWS" -gt 0 ]; then
     echo "$SKIPPED_ROWS row(s) were already in that folder and were skipped."
 fi
 
+# GROUPS NOW, NOT ROWS, because rows are what stopped being written for them (de-cziy).
+if [ "${no_row_groups:-0}" -gt 0 ]; then
+    echo "$no_row_groups group(s) had nothing to measure and were skipped: no group builds"
+    echo "from the start, it has no entry 0, or nothing is reachable from it. See groups.log."
+fi
+
+# A TRIPWIRE RATHER THAN A TALLY. Since de-cziy the row loop REFUSES a group with no rows
+# instead of recording one, and a whole-game run prunes them before any process starts - so
+# this counter can no longer be incremented by any path. It is kept because if it ever does
+# fire, the two halves that ask `measurable` have disagreed, which is the failure the
+# measurement's own note says nothing would otherwise report.
 if [ "$no_rows" -gt 0 ]; then
-    echo "$no_rows row(s) had nothing to measure: no group, no entry 0, or nothing reachable."
+    echo
+    echo "*** $no_rows row(s) reported no rows without the run refusing, which should not be"
+    echo "*** possible: the enumeration and the row loop disagree about what has rows."
 fi
 
 if [ "$not_measured" -gt 0 ]; then
