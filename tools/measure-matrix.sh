@@ -86,12 +86,15 @@
 # process, so killing the terminal or the job leaves the script
 # looping and starting new ones - which then hold that binary open and fail the next
 # build with
-# LNK1104, from a run nobody thinks is still going. Kill by command line:
+# LNK1104, from a run nobody thinks is still going.
 #
-#   powershell -NoProfile -Command "Get-CimInstance Win32_Process |
-#     Where-Object { \$_.CommandLine -like '*measure-matrix*' -or
-#                    \$_.CommandLine -like '*performance_matrix*' } |
-#     ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }"
+#   tools/stop-measurements.sh --list     # what is running
+#   tools/stop-measurements.sh            # stop it
+#
+# That is the incantation this comment used to spell out, as a command instead. The block
+# had to be retyped correctly at the moment something was already going wrong, its escaping
+# is the first thing to get mistyped then, and its pattern did not match measure-census.sh -
+# so a census could be stopped by a copy of it and appear to work while still running.
 #
 # Writes one folder per run under measurements/logs, holding a log per row AND the TSV
 # each conversation's rows were collected into.

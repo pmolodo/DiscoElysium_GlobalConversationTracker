@@ -41,8 +41,31 @@
 #
 # READ THE LAST ROW PER conv, which is what the resume does: the file is appended to, so a
 # retried group sits after the one it replaces.
+#
+# STOPPING IT MID-RUN NEEDS MORE THAN KILLING THE SHELL, exactly as it does for
+# tools/measure-matrix.sh and for the same reason: one process per group means killing the
+# terminal or the job leaves this loop spawning new ones, which then hold
+# target/release/examples/performance_matrix.exe open and fail the next build with LNK1104,
+# from a run nobody thinks is still going.
+#
+#   tools/stop-measurements.sh --list     # what is running
+#   tools/stop-measurements.sh            # stop it
+#
+# Nothing is lost but the group in flight: rows are appended as they finish, so the same
+# command with the same CENSUS_OUT picks up where it stopped.
 
 set -u
+
+# ASKED FOR HELP, NOT FOR A GROUP CALLED `--help`. Without this the flag is read as a
+# conversation id, gets its own process, fails, and is recorded as a CRASHED row in a run
+# folder created for the occasion - which is a confusing answer to an innocent question, and
+# leaves a folder behind to be tidied up.
+case "${1:-}" in
+    -h|--help)
+        sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
+        exit 0
+        ;;
+esac
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root" || exit 1
