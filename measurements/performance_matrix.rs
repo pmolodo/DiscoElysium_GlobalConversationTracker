@@ -432,15 +432,33 @@ fn row_time() -> std::time::Duration {
 /// is left, only how much it has spent. So progress is what it HAS spent, which is the
 /// number that matters anyway, because spending the budget is how these rows end.
 ///
-/// Off by default: the lines go into the row's log, and a run that is not being watched
-/// does not want them.
+/// ## Thirty seconds by default, since de-fahb
+///
+/// It used to be off unless `PROGRESS_SECONDS` was set, on the reasoning that "the lines go
+/// into the row's log, and a run that is not being watched does not want them". Two things
+/// undid that. `tools/measure-matrix.sh` FILTERS - the row log gets everything and the run
+/// log gets only the lines carrying [`PROGRESS`] - so an unwatched run pays a few
+/// lines in a per-row file nobody opens. And the runs got longer: a whole-game sweep is
+/// hours and thousands of rows, where "is it still going" is asked constantly and was
+/// answered by nothing, because the cap is 600 seconds PER ENGINE and a heavy row could be
+/// silent for half an hour.
+///
+/// `PROGRESS_SECONDS` still overrides, and `PROGRESS_SECONDS=0` still turns it off - which
+/// is what the "greater than zero" filter below has always meant and now also expresses.
 fn progress_every() -> Option<std::time::Duration> {
-    std::env::var("PROGRESS_SECONDS")
-        .ok()
-        .and_then(|value| value.trim().parse::<u64>().ok())
-        .filter(|seconds| *seconds > 0)
-        .map(std::time::Duration::from_secs)
+    let seconds = match std::env::var("PROGRESS_SECONDS") {
+        Ok(named) => named.trim().parse::<u64>().unwrap_or(DEFAULT_PROGRESS_SECONDS),
+        Err(_) => DEFAULT_PROGRESS_SECONDS,
+    };
+    (seconds > 0).then(|| std::time::Duration::from_secs(seconds))
 }
+
+/// How often a row says where it has got to when nothing asks for something else.
+///
+/// SHORT ENOUGH TO ANSWER "is it stuck", long enough that a run of quick rows does not
+/// narrate itself: the rows that need it are the ones spending a 600-second cap, and the
+/// ones that do not will finish before the first line is due.
+const DEFAULT_PROGRESS_SECONDS: u64 = 30;
 
 /// How often the fixed point looks up from its work, against the five seconds it SPEAKS.
 ///

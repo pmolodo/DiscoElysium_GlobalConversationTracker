@@ -537,7 +537,10 @@ measure_group() {
         # ALREADY ANSWERED, so not asked again. Counted as done for the progress line, since
         # what the run has left is what it has left however the rows got there.
         if [ -n "${ROW_DONE[$conversation:$profile]:-}" ]; then
-            printf '  %-12s  already measured\n' "$profile"
+            # NO CLOCK, DELIBERATELY: nothing ran, so there is no start to report. The space
+            # where one would go is held open so this line stays in the same column as the
+            # rows that did run.
+            printf '  %8s  %-18s already measured\n' "" "$profile"
             ROW_STARTED=$(date +%s)
             SKIPPED_ROWS=$(( SKIPPED_ROWS + 1 ))
             GROUP_SKIPPED=$(( GROUP_SKIPPED + 1 ))
@@ -545,8 +548,22 @@ measure_group() {
             continue
         fi
 
-        printf '  %-12s' "$profile"
+        # BOTH CLOCKS BEFORE THE PRINT, so the time shown is when the row started rather
+        # than a moment after it. Two `date` calls rather than converting the epoch one:
+        # `date -d @...` is GNU-only and this script runs under Git Bash on Windows.
         ROW_STARTED=$(date +%s)
+        ROW_CLOCK=$(date +%H:%M:%S)
+
+        # THE WALL CLOCK IS ON THIS LINE, THE ONE THAT EXISTS WHILE THE ROW IS RUNNING.
+        # de-p58a. The progress line carries durations only - "row 0:11:31 elapsed 0:54:37" -
+        # all relative to a start nobody wrote down, so a reader could not say when a row
+        # began and, for the row in flight, could not say anything at all. Putting it on the
+        # verdict line instead would only be readable once the row had finished, by which
+        # time the duration is printed anyway and the question has answered itself.
+        #
+        # Colons are fine here. run-logged.sh writes HH,MM,SS in FILE NAMES because a Windows
+        # file name cannot hold a colon; that constraint does not apply to log content.
+        printf '  %s  %-18s ...' "$ROW_CLOCK" "$profile"
 
         # CREATED EMPTY FIRST, because a row can produce NO output at all and the awk below
         # only creates the file on its first write. Under `cargo test` that could not happen
@@ -588,7 +605,20 @@ measure_group() {
                 /^  ~/ { print; fflush() }
               ' || true
         status=${PIPESTATUS[0]}
-        printf '  %-12s' "$profile"
+
+        # THE SEPARATOR IS PRINTED, NOT IMPLIED. de-qm7a: this used to be '  %-12s' and let
+        # the field padding supply the gap before the verdict. Every profile that existed
+        # when it was written fits in twelve - "deepest-1" and "95pc-seen" are both nine - so
+        # there was always padding and the gap looked like part of the format. Then
+        # "deepest-unreach-1" arrived at seventeen, the field overflowed, no padding was
+        # emitted, and the log said "deepest-unreach-1ok". Widening alone would leave the
+        # same trap for the next longer name, so the width is for ALIGNMENT and the trailing
+        # space is for correctness.
+        #
+        # THE SAME START CLOCK AS THE LINE ABOVE, not the finish time: it is what pairs the
+        # two lines, which matters in the parallel phase where several workers interleave in
+        # one log. The duration is already on the progress line.
+        printf '  %s  %-18s ' "$ROW_CLOCK" "$profile"
 
         # EXIT 2 IS "YOU ASKED FOR SOMETHING THAT DOES NOT EXIST", and it stops the run.
         #
