@@ -69,7 +69,15 @@
 #
 # ENGINES and PROFILES each take a comma or space separated list and narrow the grid the
 # same way the conversation arguments do. The engines are fwd (the symbolic forward
-# search), bwd (the backward one) and fwdbwd (the switching method the game actually runs:
+# search), bwd (the backward one), ingame and nolimit (the switching method the game runs,
+# at the player's own settings and with the limits off - de-xegj split what was one fwdbwd
+# column, because one column cannot say both what a player waits for and where the method
+# actually stops. `all` measures every one of them.
+#
+# Older folders hold a single `fwdbwd` column instead; read the header, which is what
+# tools/matrix-remaining.awk and tools/matrix-group-cost.awk both do.
+#
+# The switching method is:
 # a forward slice, then the backward driver told what it found) - see the note at the
 # top of measurements/performance_matrix.rs for what each is and how to read an older
 # run, whose columns may spell two of these differently.
@@ -150,8 +158,9 @@ else
     )
 fi
 
-# WHICH ENGINES EACH ROW MEASURES, passed through to it. Unset means fwdbwd alone since
-# de-8xcd - the engine the game runs and the one being tuned - because fwd and bwd cost
+# WHICH ENGINES EACH ROW MEASURES, passed through to it. Unset means `ingame` alone since
+# de-8xcd and de-xegj - the method the game runs, at the settings a player actually has,
+# and the one being tuned - because fwd and bwd cost
 # several times what it does and are evidence rather than products. `ENGINES=all` measures
 # the three, which is what the grid is for; naming one or two asks a question about a single
 # engine without paying for the others.
@@ -348,7 +357,7 @@ ENGINE_COUNT=$(printf '%s' "$HEADER" | tr '\t' '\n' | grep -c '_verdict$')
 # WHETHER ANY ENGINE REPORTS WHAT IT HELD. The `_nodes` columns are the manager's own node
 # count, which is memory in use in the currency the budget is spent in - and they are the
 # only evidence the split below has that a group would fit a worker's divided share. A run
-# narrowed to `ENGINES=fwdbwd` has no such column, and the split says so rather than
+# narrowed to a portfolio column alone has no such column, and the split says so rather than
 # assuming the memory is fine because it cannot see any.
 REPORTS_NODES=$(printf '%s' "$HEADER" | tr '\t' '\n' | grep -c '_nodes$')
 

@@ -674,6 +674,10 @@ impl LookAheadRequest {
                 // would stop the loop before its first candidate and the search would give
                 // up for a different reason than the one this setting exists to provoke.
                 overall: default.backwards,
+                // The slice gets no time here at all, so these bound nothing; the manager's
+                // allowance is still the honest number to name.
+                slice_memory: self.diagram_budget().memory(),
+                slice_steps: default.slice_steps,
                 backwards: default.backwards,
                 each: std::time::Duration::ZERO,
                 targets: self.state_budget,
@@ -696,6 +700,13 @@ impl LookAheadRequest {
             // estimates of what each part should need, and are narrowed to what is left.
             overall: whole,
             forwards: default.forwards.min(whole),
+            // THE SLICE GETS THE MANAGER'S ALLOWANCE, said rather than coincided with. At
+            // the player's 256 MB this is the same number the slice was defaulting to, which
+            // is exactly why it needed saying: the two matching was an accident of the
+            // defaults, and a request that raises the memory budget was silently leaving the
+            // slice at 256 MB. de-xegj.
+            slice_memory: self.diagram_budget().memory(),
+            slice_steps: default.slice_steps,
             backwards: whole,
             each: default.each.min(whole),
             targets: default.targets,

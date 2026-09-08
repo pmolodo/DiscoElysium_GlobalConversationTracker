@@ -125,6 +125,19 @@ pub struct Budget {
     /// shape of the search is unchanged where it fits, and where it does not the answer
     /// arrives when it said it would.
     pub overall: Duration,
+    /// What the forward slice may hold, in bytes, and how many steps it may take.
+    ///
+    /// STATED RATHER THAN INHERITED, since de-xegj. The slice used to build its
+    /// `reachability::Budget` with `..Default::default()`, which supplies 2,000,000 steps and
+    /// `DiagramBudget::DEFAULT_MEMORY_BUDGET` - and at the player's 256 MB that COINCIDES
+    /// with the manager's allowance by accident. The coincidence hides the fact that the
+    /// slice has caps of its own, so a caller that raises the manager to six gigabytes gets a
+    /// slice still quietly stopped at 256 MB and cannot tell.
+    ///
+    /// A caller that wants the slice held to the same allowance as the manager says so.
+    pub slice_memory: usize,
+    /// See [`Self::slice_memory`]. `usize::MAX` for no step limit.
+    pub slice_steps: usize,
     /// The whole backward attempt, across every candidate.
     pub backwards: Duration,
     /// One candidate's fixed point.
@@ -165,6 +178,10 @@ impl Default for Budget {
             // meant to cost and what it now cannot exceed. Stated rather than derived so a
             // reader can see the number the answer is promised in.
             overall: Duration::from_millis(2050),
+            // WHAT THE SLICE WAS ALREADY GETTING, stated instead of inherited, so this
+            // default changes nothing while making the numbers visible.
+            slice_memory: crate::symbolic::budget::DiagramBudget::DEFAULT_MEMORY_BUDGET,
+            slice_steps: 2_000_000,
             backwards: Duration::from_secs(2),
             each: Duration::from_millis(250),
             targets: 64,
@@ -194,6 +211,8 @@ fn forwards_for<'a, F>(
     wanted: Novelty,
     novelty: &F,
     within: Duration,
+    slice_memory: usize,
+    slice_steps: usize,
     shape: &GroupShape,
 ) -> Reachability<'a>
 where
@@ -221,6 +240,11 @@ where
         counter_cap,
         &reachability::Budget {
             time: within,
+            // TOLD, NOT INHERITED - see `Budget::slice_memory`. What these were defaulting to
+            // matched the player's manager allowance by coincidence, so nothing revealed that
+            // raising the manager left the slice where it was.
+            memory: slice_memory,
+            steps: slice_steps,
             halt_on: Some(Box::new(move |id| quarry.contains(&id))),
             ..Default::default()
         },
@@ -301,7 +325,7 @@ where
     let forwards = (hunting > Novelty::SeenThisGame && !slice.is_zero()).then(|| {
         forwards_for(
             graph, start, branch, seed, compiler, world, counter_cap, hunting, &novelty,
-            slice, shape,
+            slice, budget.slice_memory, budget.slice_steps, shape,
         )
     });
 

@@ -103,8 +103,10 @@ shape of the comparison, and it makes the question "against what?" impossible to
 | `bwd_verdict` | as `fwd`, except that there is no `no-ram`: its manager is allocated up front, so a machine that cannot supply the budget gives `NOT-MEASURED` before anything runs |
 | `bwd_ms`, `bwd_nodes` | what it cost |
 | `bwd_asked`, `bwd_cands` | candidates asked about, out of candidates waiting - one fixed point was paid per candidate asked |
-| `fwdbwd_verdict` | the same, for the switching method the game actually runs |
-| `fwdbwd_ms`, `fwdbwd_by`, `fwdbwd_asked` | what it cost, and which half answered - `Forwards` where the slice halted, `Backwards` where the driver settled, `Partly` where it did not and the answer is a lower bound |
+| `ingame_verdict` | the same, for the switching method the game runs, at the settings a player actually has |
+| `nolimit_verdict` | the same method with its limits off, walled at two minutes |
+| `ingame_ms`, `ingame_by`, `ingame_asked` | what it cost, and which half answered - `Forwards` where the slice halted, `Backwards` where the driver settled, `Partly` where it did not and the answer is a lower bound, `Gated` where the game would not have searched at all |
+| `nolimit_*` | the same four, for the unlimited column |
 | any column `CRASHED` | that row took its process down; its log says how |
 | any column `NOT-MEASURED` | the row never ran; see below |
 
@@ -112,15 +114,28 @@ shape of the comparison, and it makes the question "against what?" impossible to
 
 `fwd` walks links from the start, a decision diagram per entry. `bwd` computes pre-images
 from a target, one candidate at a time, stopping at the first candidate proved reachable.
-`fwdbwd` is what the game actually runs: a forward slice hunting the best class anything
+`ingame` is what the game actually runs: a forward slice hunting the best class anything
 reachable carries, and where that does not answer, the backward driver told what the slice
-found. The first two are its halves measured alone, which is what makes the third readable.
+found. The first two are its halves measured alone, which is what makes it readable.
 
-**READING AN OLDER RUN, and the names have moved twice.**
+`nolimit` is the same method with the limits taken off. The two exist separately because one
+column cannot answer both of the questions asked of it - "what does a player wait for" and
+"where does this method actually stop" - and a single column answered neither, running at a
+two-second clock on a six-gigabyte manager where a player gets one second and 256 MB
+(de-xegj). `ingame` asks the product for its budgets rather than restating them; `nolimit`
+states its own, which is the one place that is right, because it is deliberately not the
+product's configuration.
+
+MEASURED ON THE HEAVY GROUPS, and the gap is the point: on 631 the in-game column proves
+`not-there` in 80 ms holding 176,276 nodes where the unlimited one takes 22.4 seconds and
+30.1 million. Both agree; they disagree wildly about what it costs to be sure.
+
+**READING AN OLDER RUN, and the names have moved three times.**
 
 | the columns say | what they were |
 |---|---|
-| `fwd`, `bwd`, `fwdbwd` | today's, all symbolic |
+| `fwd`, `bwd`, `ingame`, `nolimit` | today's, all symbolic |
+| `fwd`, `bwd`, `fwdbwd` | one portfolio column instead of two, at neither the player's settings nor a real no-limit. `fwdbwd` reads closest to today's `nolimit` in its clock and to neither in its memory - it ran two seconds on a six-gigabyte manager. Do not read it as `ingame` (de-xegj) |
 | `explicit`, `symfwd`, `symbwd` | older names. `symfwd` is today's `fwd` and `symbwd` today's `bwd`; `explicit` measured a state-at-a-time search, which nothing measures now |
 | `fwd`, `bwd` and nothing else | older still. `fwd` is the state-at-a-time search and `bwd` is today's `fwd`; no backward search was measured at all |
 
@@ -152,7 +167,7 @@ things, so the run keeps them apart.
   "no dialogue here". SINCE de-cziy IT IS NOT WRITTEN ANY MORE - such groups are skipped
   and counted, and naming one on the command line stops the run - but folders recorded
   before that hold these rows and are read as they always were.
-- `not-worth-hunting` appears in the `fwdbwd` column only, and is a result about the
+- `not-worth-hunting` appears in the portfolio columns only, and is a result about the
   QUESTION rather than the search: nothing link-reachable outranks where the option already
   lands, so the game refuses to search and answers completely without doing any work. The
   column exists to be what the game runs, so it has to refuse where the game refuses

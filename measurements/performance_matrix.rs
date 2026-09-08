@@ -619,17 +619,37 @@ enum Engine {
     /// `novelty_search::best_novelty` over `Backward`: a set per entry, backwards, one
     /// candidate at a time.
     Backward,
-    /// `portfolio::best_novelty`: a forward slice, then the backward driver told what it
-    /// found. WHAT THE GAME ACTUALLY RUNS, since the bridge was rewired - so this is the
-    /// column that says what a player waits for, and the other two are what it is made of.
-    ForwardBackward,
+    /// `portfolio::best_novelty` AT THE PLAYER'S OWN SETTINGS: what somebody waits for.
+    ///
+    /// de-xegj split this from the column below, because one column cannot answer both of
+    /// the questions asked of it - "what does a player wait for" and "where does this method
+    /// actually stop" - and the single column answered neither. It ran at
+    /// `portfolio::Budget::default()` on a six-gigabyte manager: a player gets 1000 ms and
+    /// 256 MB, and two seconds is neither the shipped default nor a meaningful no-limit.
+    ///
+    /// ITS BUDGETS ARE ASKED OF THE PRODUCT, not restated here - see [`in_game_request`].
+    /// The matrix keeping its own copy of the game's inputs is what produced that bug and
+    /// the two filed beside it.
+    InGame,
+    /// The same method with the limits taken off, walled at two minutes.
+    ///
+    /// WHERE DOES THIS METHOD ACTUALLY STOP, which the in-game column cannot say because it
+    /// stops where the player's settings stop it. The wall is the contract; the rations
+    /// under it are estimates aimed at landing inside it.
+    ///
+    /// BUILT DIRECTLY RATHER THAN THROUGH THE PRODUCT, and that is the one place restating
+    /// rations is right: `search_budget` deliberately caps a candidate at 250 ms and the
+    /// candidate count at 64 whatever the dial says, so a two-minute clock built through it
+    /// would have a real ceiling of about 64 x 250 ms. This is deliberately not the
+    /// product's configuration.
+    NoLimit,
 }
 
-const ALL_ENGINES: [Engine; 3] =
-    [Engine::Forward, Engine::Backward, Engine::ForwardBackward];
+const ALL_ENGINES: [Engine; 4] =
+    [Engine::Forward, Engine::Backward, Engine::InGame, Engine::NoLimit];
 
 /// What a run measures when it does not say. See [`engines`] for why it is this one.
-const DEFAULT_ENGINES: [Engine; 1] = [Engine::ForwardBackward];
+const DEFAULT_ENGINES: [Engine; 1] = [Engine::InGame];
 
 /// What to pass for the whole grid, since naming one engine no longer implies the rest.
 const ALL: &str = "all";
@@ -640,7 +660,8 @@ impl Engine {
         match self {
             Engine::Forward => "fwd",
             Engine::Backward => "bwd",
-            Engine::ForwardBackward => "fwdbwd",
+            Engine::InGame => "ingame",
+            Engine::NoLimit => "nolimit",
         }
     }
 
@@ -662,7 +683,10 @@ impl Engine {
             // that mattered the moment fwdbwd became the default, because the parallel
             // split clears a group against a worker's share of the budget and had nothing
             // to clear it with. A fwdbwd-only run is exactly the run whose memory this is.
-            Engine::ForwardBackward => &["verdict", "ms", "nodes", "by", "asked"],
+            // BOTH PORTFOLIO COLUMNS REPORT THE SAME THINGS, so the two can be read against
+            // each other directly: the same row, the same question, one held to the player's
+            // settings and one not.
+            Engine::InGame | Engine::NoLimit => &["verdict", "ms", "nodes", "by", "asked"],
         }
     }
 
@@ -1213,18 +1237,79 @@ impl Cells {
 /// The budget is the portfolio's own - the one the bridge hands it, scaled by nothing here
 /// - because what this column is for is what a player waits for. A row measured under a
 /// measurement-sized budget would answer a question nobody asks.
+/// A request carrying the PLUGIN'S OWN DEFAULTS, so the in-game column asks the product for
+/// its budgets instead of restating them.
+///
+/// The numbers are the plugin's: `LookAheadTimeBudgetMs = 1000` and
+/// `LookAheadMemoryBudgetMb = 256`, both from
+/// src/GlobalConversationTracker.Plugin/Plugin.cs, and `state_budget = 0` because no such
+/// setting is on the wire any more. THOSE TWO NUMBERS ARE THE ONLY THING RESTATED, and they
+/// have to be - they live in C# and nothing here can read them. Everything downstream of them
+/// - how a dial becomes rations, how megabytes become a node capacity - is asked of
+/// `search_budget` and `diagram_budget` rather than copied, because the matrix keeping its own
+/// copy of the game's configuration is what de-qh27, de-cluo and de-xegj all are.
+///
+/// IF THE PLUGIN'S DEFAULTS CHANGE, this goes stale silently. There is no shared constant to
+/// bind them to; a test that fails when they diverge would need to read the C#.
+fn in_game_request() -> lookahead_engine::bridge::LookAheadRequest {
+    lookahead_engine::bridge::LookAheadRequest {
+        time_budget_ms: 1000,
+        memory_budget_mb: 256,
+        state_budget: 0,
+        ..Default::default()
+    }
+}
+
+/// What each portfolio column is allowed.
+fn search_budget_for(engine: Engine) -> portfolio::Budget {
+    match engine {
+        Engine::InGame => in_game_request().search_budget(),
+        // NO LIMIT, WALLED. The wall is the contract and the rations under it are estimates
+        // aimed at landing inside it; an implementer may tune them, and 120 seconds is what
+        // the column promises.
+        //
+        // TARGETS AND STEPS ARE RELEASED TOO, which is the point: raising the clock alone
+        // would achieve nothing, since 64 candidates at 250 ms is a real ceiling of about
+        // sixteen seconds however long the outer clock is.
+        _ => portfolio::Budget {
+            overall: std::time::Duration::from_secs(120),
+            forwards: std::time::Duration::from_secs(20),
+            backwards: std::time::Duration::from_secs(100),
+            each: std::time::Duration::from_secs(10),
+            targets: usize::MAX,
+            // The slice is held to the same allowance the manager gets, rather than the
+            // 256 MB it would otherwise inherit by default - which would quietly cap this
+            // column at the very number it exists to exceed.
+            slice_memory: budget().memory(),
+            slice_steps: usize::MAX,
+            pruning: portfolio::Budget::default().pruning,
+        },
+    }
+}
+
 fn forward_backward(
     graph: &LookAheadGraph,
     start: DialogueNodeId,
     world: &dyn lookahead_engine::world::world::ILookAheadWorld,
     symbols: &StateSymbols,
     unseen: &HashSet<DialogueNodeId>,
+    engine: Engine,
 ) -> Cells {
     let began = std::time::Instant::now();
 
+    // THE MANAGER DIFFERS BETWEEN THE TWO, and by far more than the clocks do. A player gets
+    // 256 MB; the run's own allowance is 6144 serial or a worker's share in parallel - a
+    // twenty-four-fold gap, against a two-fold gap in time. It is the divergence most likely
+    // to hide `no-room` rows a player would actually hit, which is the in-game column's most
+    // useful output rather than a regression.
+    let manager = match engine {
+        Engine::InGame => in_game_request().diagram_budget(),
+        _ => budget(),
+    };
+
     let layout = DataLayout::for_group(graph, world, COUNTER_CAP);
-    let Some(vars) = DataVars::try_new(&layout, symbols, budget()) else {
-        return Cells::absent(NOT_MEASURED, Engine::ForwardBackward);
+    let Some(vars) = DataVars::try_new(&layout, symbols, manager) else {
+        return Cells::absent(NOT_MEASURED, engine);
     };
     let mut compiler = GuardCompiler::new(&vars)
         .with_world(world)
@@ -1278,7 +1363,7 @@ fn forward_backward(
         COUNTER_CAP as u32,
         &novelty,
         hunting,
-        &portfolio::Budget::default(),
+        &search_budget_for(engine),
         // ONE START PER ROW HERE, so this builds a shape per search - which is what every
         // row of this matrix has always paid, and holding that constant is what lets a row
         // measured today be read against one measured before de-bnjy.10.
@@ -1860,8 +1945,8 @@ fn main() {
                         Engine::Backward => {
                             symbolic_backward(&graph, start, &world, &symbols, &unseen).0
                         }
-                        Engine::ForwardBackward => {
-                            forward_backward(&graph, start, &world, &symbols, &unseen).0
+                        Engine::InGame | Engine::NoLimit => {
+                            forward_backward(&graph, start, &world, &symbols, &unseen, *engine).0
                         }
                     })
                 })
