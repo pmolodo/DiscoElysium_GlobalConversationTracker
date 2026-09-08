@@ -25,6 +25,12 @@
 # per distinct closure, heaviest first - rather than reading a list kept here, which could
 # omit a group and never say so. It is 1,422 groups against the six a default run does.
 #
+# AND IT ASKS WHICH OF THEM HAVE ANYTHING IN THEM. 901 of the 1,422 reach nothing from
+# their start, mostly the two-entry ORB stubs the database is full of; they are recorded as
+# NO-ROWS from the enumeration, which costs a third of a second for the whole game, instead
+# of by nine thousand processes that each build a graph to find the same nothing. See the
+# pruning below for why that answer is asked for and not cached.
+#
 # RESUMING. A run writes its rows as it finishes them, and pointing a later run at the same
 # folder makes it skip what is already there:
 #
@@ -149,23 +155,35 @@ if [ -n "${ENGINES:-}" ]; then
     export ENGINES
 fi
 
+TAB=$'\t'
+
 # A row with no measurement in it, shaped by the header: the conversation and profile it
 # was, the given verdict in every verdict column, and nothing claimed for the rest.
 #
-# TWO CALLERS, AND THEY MEAN OPPOSITE THINGS - CRASHED, the row took the process down, and
-# NO-ROWS, the measurement looked and said there was nothing here. Sharing the shaping and
-# not the verdict is what keeps them one line apart in the file.
+# THREE CALLERS, AND THEY MEAN DIFFERENT THINGS - CRASHED, the row took the process down;
+# NO-ROWS, a row process looked and said there was nothing here; and NO-ROWS again for a
+# group the enumeration pruned before any process ran. Sharing the shaping and not the
+# verdict is what keeps them one line apart in the file.
+#
+# IN THE SHELL RATHER THAN IN AWK, which it used to be, AND LEFT IN A VARIABLE RATHER THAN
+# PRINTED. The pruning below writes nine thousand of these in one go: an awk apiece is nine
+# thousand processes, and `$(...)` around a shell function is nine thousand forks, which on
+# Windows is minutes of nothing but process creation. `ROW_LINE` is read by the caller.
+#
+# The loop is over the header's fields, so it still follows a narrowed run's columns rather
+# than assuming a shape.
 verdict_row() {
-    printf '%s' "$HEADER" | awk -F'\t' -v conv="$1" -v prof="$2" -v verdict="$3" '{
-        for (i = 1; i <= NF; i++) {
-            if ($i == "conv") cell = conv
-            else if ($i == "profile") cell = prof
-            else if ($i ~ /_verdict$/) cell = verdict
-            else cell = "?"
-            printf "%s%s", (i > 1 ? "\t" : ""), cell
-        }
-        printf "\n"
-    }'
+    local conv="$1" prof="$2" verdict="$3" name cell
+    ROW_LINE=""
+    for name in "${HEADER_FIELDS[@]}"; do
+        case "$name" in
+            conv) cell="$conv" ;;
+            profile) cell="$prof" ;;
+            *_verdict) cell="$verdict" ;;
+            *) cell="?" ;;
+        esac
+        if [ -z "$ROW_LINE" ]; then ROW_LINE="$cell"; else ROW_LINE="$ROW_LINE$TAB$cell"; fi
+    done
 }
 
 # THE CAP EACH ENGINE GETS, which the run needs a copy of to say anything about how long
@@ -309,10 +327,19 @@ if [ -z "$HEADER" ]; then
     exit 1
 fi
 
+IFS="$TAB" read -r -a HEADER_FIELDS <<< "$HEADER"
+
 # WHICH engines a row measures, and how many, counted from the header rather than from a
 # second reading of ENGINES: one verdict column each, whatever the selection was.
 ENGINE_NAMES=$(printf '%s' "$HEADER" | tr '\t' '\n' | sed -n 's/_verdict$//p' | paste -sd, -)
 ENGINE_COUNT=$(printf '%s' "$HEADER" | tr '\t' '\n' | grep -c '_verdict$')
+
+# WHETHER ANY ENGINE REPORTS WHAT IT HELD. The `_nodes` columns are the manager's own node
+# count, which is memory in use in the currency the budget is spent in - and they are the
+# only evidence the split below has that a group would fit a worker's divided share. A run
+# narrowed to `ENGINES=fwdbwd` has no such column, and the split says so rather than
+# assuming the memory is fine because it cannot see any.
+REPORTS_NODES=$(printf '%s' "$HEADER" | tr '\t' '\n' | grep -c '_nodes$')
 
 # WHAT PAST RUNS COST, for the weighted estimate. This run's own folder is excluded: its
 # rows are the ones being calibrated, and letting them weigh themselves would drag every
@@ -330,50 +357,59 @@ done < <(find "$OUT/logs" -name 'performance-matrix-*.tsv' -not -path "$LOGS/*" 
 # canonical start per distinct closure, heaviest first - and there is no list here to fall
 # out of date. The default when nothing is named stays the six heavy conversations the
 # matrix has always meant.
+#
+# AND THE ENUMERATION SAYS WHICH GROUPS HAVE ANYTHING IN THEM, which is the fourth column
+# and the reason most of a whole-game run no longer happens. 901 of the 1,422 groups reach
+# nothing from their start - nearly all of them the two-entry ORB stubs the database is
+# full of - and measuring one meant ten processes that each read the index, built the same
+# graph, found the same nothing and said so. The enumeration answers that for every group
+# in the game in about a third of a second, because it has the index open already and the
+# question is one walk per group.
+EMPTY_GROUPS=()
 if [ ${#CONVERSATIONS[@]} -eq 1 ] && [ "${CONVERSATIONS[0]}" = "all" ]; then
     echo "asking the measurement which groups exist..."
     CONVERSATIONS=()
-    while IFS=$'\t' read -r start _conversations _entries; do
-        [ -n "$start" ] && CONVERSATIONS+=("$start")
-    done < <(GROUPS_ONLY=1 "$MEASUREMENT" 2>/dev/null)
+    while IFS="$TAB" read -r start _conversations _entries reachable; do
+        [ -n "$start" ] || continue
+        # A MISSING COLUMN IS A STALE BINARY, not an empty group, and the difference is the
+        # whole run: read as zero it would prune every group in the game and record the
+        # lot as NO-ROWS in seconds. The script and the measurement are built together, so
+        # this can only mean the build did not take.
+        if [ -z "$reachable" ]; then
+            echo "the measurement's group list has no 'reachable' column - it is older than" >&2
+            echo "this script. Rebuild it and run again." >&2
+            exit 1
+        fi
+        if [ "$reachable" -gt 0 ]; then
+            CONVERSATIONS+=("$start")
+        else
+            EMPTY_GROUPS+=("$start")
+        fi
+    done < <(GROUPS_ONLY=1 "$MEASUREMENT" 2>"$LOGS/groups.log")
 
-    if [ ${#CONVERSATIONS[@]} -eq 0 ]; then
+    if [ $(( ${#CONVERSATIONS[@]} + ${#EMPTY_GROUPS[@]} )) -eq 0 ]; then
         echo "the measurement listed no groups - did the index read?" >&2
         exit 1
     fi
-    echo "${#CONVERSATIONS[@]} groups"
+    echo "$(( ${#CONVERSATIONS[@]} + ${#EMPTY_GROUPS[@]} )) groups, ${#CONVERSATIONS[@]} of them with rows"
 elif [ ${#CONVERSATIONS[@]} -eq 0 ]; then
     CONVERSATIONS=(362 368 631 14 28 1030)
 fi
-
-TOTAL_ROWS=$(( ${#CONVERSATIONS[@]} * ${#PROFILES[@]} ))
-
-# EVERY ROW THIS RUN WILL DO, in the order it will do them, so that at any point the run
-# can say which rows are still ahead of it - which is what the weighted estimate needs and
-# a count of rows cannot give. Must match the loop order below exactly.
-ROW_KEYS=()
-for conversation in "${CONVERSATIONS[@]}"; do
-    for profile in "${PROFILES[@]}"; do
-        ROW_KEYS+=("$conversation:$profile")
-    done
-done
-
-# The same list as one string, which is what the estimator is handed. Built once here and
-# shortened by a row at a time in `progress`.
-LEFT_SPEC="$(IFS=';'; printf '%s' "${ROW_KEYS[*]}")"
 
 # WHAT THIS FOLDER ALREADY HOLDS, which is the whole of the resume.
 #
 # A row is done if the folder has a line for it that is not NOT-MEASURED - see the header
 # for why that one outcome is the exception. THE LAST LINE PER KEY WINS, because the files
 # are appended to and a retried row sits after the one it replaces.
+#
+# READ BEFORE ANYTHING IS WRITTEN, which the pruning below depends on: a group recorded as
+# NO-ROWS on the last run must not have ten more NO-ROWS rows appended to it on this one.
 declare -A ROW_DONE=()
-already=0
 for tsv in "$LOGS"/performance-matrix-*.tsv; do
     [ -e "$tsv" ] || continue
     # conv, entries, profile, unseen, then the engine columns - ROW_COLUMNS in the
     # measurement, and the reason this reads a fourth field it does not use.
-    while IFS=$'\t' read -r conv _entries profile rest; do
+    while IFS="$TAB" read -r conv _entries profile rest; do
         case "$conv" in conv|"") continue ;; esac
         case "$rest" in
             *NOT-MEASURED*) unset "ROW_DONE[$conv:$profile]" ;;
@@ -381,7 +417,66 @@ for tsv in "$LOGS"/performance-matrix-*.tsv; do
         esac
     done < "$tsv"
 done
-already=${#ROW_DONE[@]}
+
+# THE EMPTY GROUPS, RECORDED WITHOUT RUNNING ANYTHING.
+#
+# Pruned is not the same as forgotten. The folder still gets a TSV per group with a
+# NO-ROWS row per profile, exactly as it did when a process wrote each one, so nothing
+# downstream can tell the difference and a group is never silently absent from a whole-game
+# folder. What is gone is the nine thousand processes.
+#
+# WHY THIS IS NOT A CACHED LIST. It was worth asking - the answer is the same every time
+# the index is - but the enumeration costs a third of a second for the whole game and a
+# committed list of empty groups would be a second copy of the index's own shape, wrong
+# and silent the first time a group grew an entry. The measurement is asked, like the group
+# list and the column names before it.
+#
+# The reasons are in groups.log, one line per pruned group, in the wording the row logs
+# used: "conversation 1500: nothing is reachable from its start; no rows".
+if [ ${#EMPTY_GROUPS[@]} -gt 0 ]; then
+    pruned_rows=0
+    for conversation in "${EMPTY_GROUPS[@]}"; do
+        tsv="$LOGS/performance-matrix-$conversation.tsv"
+        [ -e "$tsv" ] || echo "$HEADER" > "$tsv"
+        block=""
+        for profile in "${PROFILES[@]}"; do
+            [ -n "${ROW_DONE[$conversation:$profile]:-}" ] && continue
+            verdict_row "$conversation" "$profile" NO-ROWS
+            block="$block$ROW_LINE"$'\n'
+            pruned_rows=$(( pruned_rows + 1 ))
+            no_rows=$(( no_rows + 1 ))
+        done
+        [ -n "$block" ] && printf '%s' "$block" >> "$tsv"
+    done
+    if [ "$pruned_rows" -gt 0 ]; then
+        echo "${#EMPTY_GROUPS[@]} group(s) reach nothing from their start: $pruned_rows row(s) recorded as NO-ROWS without running one"
+    else
+        echo "${#EMPTY_GROUPS[@]} group(s) reach nothing from their start, and the folder already records every one of them"
+    fi
+    echo "  the reason for each is in $LOGS/groups.log"
+fi
+
+TOTAL_ROWS=$(( ${#CONVERSATIONS[@]} * ${#PROFILES[@]} ))
+
+# EVERY ROW THIS RUN WILL DO, in the order it will do them, so that at any point the run
+# can say which rows are still ahead of it - which is what the weighted estimate needs and
+# a count of rows cannot give. Must match the loop order below exactly.
+#
+# `already` IS COUNTED HERE rather than from the size of ROW_DONE, which now also holds the
+# pruned groups' rows: what the resume message is about is the work this run was going to
+# do and will not.
+ROW_KEYS=()
+already=0
+for conversation in "${CONVERSATIONS[@]}"; do
+    for profile in "${PROFILES[@]}"; do
+        ROW_KEYS+=("$conversation:$profile")
+        [ -n "${ROW_DONE[$conversation:$profile]:-}" ] && already=$(( already + 1 ))
+    done
+done
+
+# The same list as one string, which is what the estimator is handed. Built once here and
+# shortened by a row at a time in `progress`.
+LEFT_SPEC="$(IFS=';'; printf '%s' "${ROW_KEYS[*]}")"
 
 echo "$TOTAL_ROWS rows, ${ROW_SECONDS}s per engine per row, started $(date '+%H:%M:%S')"
 if [ "$already" -gt 0 ]; then
@@ -533,7 +628,8 @@ measure_group() {
             # most of the 1,372 single-conversation groups are tiny and some of them are
             # empty, so reading these as CRASHED would fill the run with alarming rows that
             # mean "this group has no dialogue to search".
-            verdict_row "$conversation" "$profile" NO-ROWS >> "$tsv"
+            verdict_row "$conversation" "$profile" NO-ROWS
+            echo "$ROW_LINE" >> "$tsv"
             echo "no rows - $(grep -m1 '; no rows$' "$log")"
             GROUP_NO_ROWS=$((GROUP_NO_ROWS + 1))
         else
@@ -542,53 +638,164 @@ measure_group() {
             # which is a different thing from "this is what happens". Distinct from
             # NOT-MEASURED above: this row died, that one never ran. And distinct from
             # NO-ROWS: that one looked and found nothing, this one never came back.
-            verdict_row "$conversation" "$profile" CRASHED >> "$tsv"
+            verdict_row "$conversation" "$profile" CRASHED
+            echo "$ROW_LINE" >> "$tsv"
             echo "CRASHED (see $log)"
         fi
         row_finished
     done
 }
 
-# THE HEAVY GROUPS ONE AT A TIME, THEN THE REST SEVERAL AT A TIME.
+# THE HEAVY GROUPS ONE AT A TIME, THEN THE REST SEVERAL AT A TIME - AND THE RUN DECIDES
+# WHERE THAT IS FROM WHAT IT HAS JUST MEASURED.
 #
-# Measured on the 4382-row run of 2026-09-07: row 252 - group 26 of 1422, start 625 - is
-# the LAST row in the whole run to take more than ten seconds. The first 250 rows average
-# 25.2s and peak at 1026s; the 4130 after it never exceed nine seconds and sit flat at
-# 2.1-2.6s. Ten rows to a group, so the expense is the first twenty-five groups and the
-# other 1,397 are a cheap tail.
+# It used to be a number: the first twenty-five groups serially, the other 1,397 in
+# parallel, because on the run of 2026-09-07 the last row to take more than ten seconds was
+# in group 26. That number is a property of one measurement of one index on one machine.
+# Every one of those can move - a change to the search, a group that grows entries, a
+# machine with more cores and so a smaller share of the budget each - and when it does the
+# constant is silently in the wrong place, in the direction that matters: a heavy group
+# measured in parallel gets a DIVIDED budget and a contended clock, which is a row that
+# looks like a finding and is an artefact.
 #
-# NOT CUT AT THE 50 MULTI-CONVERSATION GROUPS, which is the intuitive boundary and the
-# worse one: groups 27 and 28 are single-conversation with ~980 entries each, while the
-# cost has already collapsed by group 26. Entries track cost; the conversation count does
-# not. Groups arrive heaviest-first by entries, so the prefix is simply the first N.
+# So the run watches two metrics per group and switches when both say the tail has arrived.
 #
-# WORKERS=1 REPRODUCES THE OLD BEHAVIOUR EXACTLY, which is how a run that has to be
-# comparable with an existing folder asks for it.
-SERIAL_GROUPS="${SERIAL_GROUPS:-25}"
+# 1. THE TIME HAS BOTTOMED OUT. Groups arrive heaviest-first, so the cost falls and then
+#    flattens; what "flat" means is measured against the run's own cheapest group so far,
+#    not against a number of seconds. A group counts as settled when its recorded search
+#    time is within SETTLE_FACTOR of that floor.
+#
+# 2. WHAT IT HELD FITS THE CAP A WORKER WILL GET, comfortably. Each parallel worker is
+#    allowed FULL_BUDGET_MB/WORKERS, so the question is not "did this fit six gigabytes"
+#    but "would it have fitted a quarter of them" - and with MEMORY_HEADROOM to spare,
+#    because the groups being cleared for are the ones AFTER this one, which nothing has
+#    measured yet.
+#
+# BOTH, FOR SETTLE_GROUPS GROUPS IN A ROW, and one that fails either resets the count. The
+# curve is not monotone: over the whole game the ten groups after the seven heavy ones look
+# like the tail, and then 825, 362, 1030 and 625 arrive - the last of them 47s and a
+# gigabyte, at group 26. A window of one would have handed all four to the workers; ten in
+# a row does not switch until group 35, after which the heaviest thing left in the game is
+# 15s and 33 MB, or two per cent of a worker's cap. That is the whole margin this buys, and
+# it costs ten cheap groups measured one at a time.
+#
+# WHY RECORDED SEARCH TIME AND NOT THE CLOCK: see tools/matrix-group-cost.awk. A resume
+# skips most of its rows, and a stopwatch cannot tell "cheap" from "already done".
+#
+# SETTLE_GROUPS=n, SETTLE_FACTOR=n and MEMORY_HEADROOM=n move the rule; SERIAL_GROUPS=n
+# replaces it with the old fixed count, which is how a run that has to be comparable with
+# an existing folder asks for one. WORKERS=1 never switches at all.
+SETTLE_GROUPS="${SETTLE_GROUPS:-10}"
+SETTLE_FACTOR="${SETTLE_FACTOR:-2}"
+MEMORY_HEADROOM="${MEMORY_HEADROOM:-2}"
+SERIAL_GROUPS="${SERIAL_GROUPS:-}"
 WORKERS="${WORKERS:-$(nproc 2>/dev/null || printenv NUMBER_OF_PROCESSORS || echo 1)}"
+
+# 6144 mirrors DiagramBudget::measurement() and 40 mirrors
+# DiagramBudget::BYTES_PER_NODE, both in src/symbolic/budget.rs. They are the two numbers
+# here that have to be kept in step with the Rust by hand: the first is what a row is
+# allowed, the second is what the `_nodes` columns have to be multiplied by to be in the
+# same currency as it.
+FULL_BUDGET_MB="${ROW_MEMORY_MB:-6144}"
+BYTES_PER_NODE=40
+WORKER_MB=$(( FULL_BUDGET_MB / WORKERS ))
+WORKER_NODES=$(( WORKER_MB * 1024 * 1024 / BYTES_PER_NODE ))
+FITS_NODES=$(( WORKER_NODES / MEMORY_HEADROOM ))
 
 # GROUPS RUN IN PARALLEL, NEVER ROWS, so no two workers ever touch one file: a group owns
 # its performance-matrix-<start>.tsv. The append-as-it-finishes resume needs no locking and
 # no changes, and rows within a group stay in their own order.
-serial_groups=()
-parallel_groups=()
-for conversation in "${CONVERSATIONS[@]}"; do
-    if [ "${#serial_groups[@]}" -lt "$SERIAL_GROUPS" ] || [ "$WORKERS" -le 1 ]; then
-        serial_groups+=("$conversation")
-    else
-        parallel_groups+=("$conversation")
-    fi
-done
-
-if [ "${#parallel_groups[@]}" -gt 0 ]; then
-    echo "${#serial_groups[@]} group(s) one at a time, then ${#parallel_groups[@]} at ${WORKERS} at a time"
+#
+# WHY THE SPLIT CANNOT BE DECIDED UP FRONT any more, and what is lost by that: the run can
+# no longer say at the start how many groups go each way. It says what it is watching for
+# instead, and says the moment it switches.
+if [ "$WORKERS" -le 1 ]; then
+    echo "one worker: every group one at a time"
+elif [ -n "$SERIAL_GROUPS" ]; then
+    echo "$SERIAL_GROUPS group(s) one at a time, then $WORKERS at a time (SERIAL_GROUPS was set)"
+elif [ "$REPORTS_NODES" -eq 0 ]; then
+    # No `_nodes` column, so nothing here can say what a group held, and clearing a group
+    # for a quarter of the budget on no evidence is exactly the mistake the headroom exists
+    # to avoid. Refusing to switch is slow; switching blind manufactures rows.
+    echo "no engine in this selection reports nodes held, so nothing can say whether a group"
+    echo "would fit a worker's share of the budget: every group one at a time. Name"
+    echo "SERIAL_GROUPS=n to split anyway."
+else
+    echo "one group at a time until the cost bottoms out: $SETTLE_GROUPS in a row within"\
+" ${SETTLE_FACTOR}x the cheapest group so far, each holding at most $FITS_NODES nodes"
+    echo "  (1/${MEMORY_HEADROOM} of the $WORKER_NODES a worker's ${WORKER_MB} MB share of the ${FULL_BUDGET_MB} MB budget buys)"
 fi
 
-for conversation in "${serial_groups[@]}"; do
+# How many groups have gone serially, which is where the parallel phase picks up.
+serial_done=0
+
+# The cheapest group this run has seen, and how many since have been settled. Empty until
+# the first group with a cost in it.
+floor_ms=""
+settled=0
+window_max_ms=0
+window_max_nodes=0
+
+for conversation in "${CONVERSATIONS[@]}"; do
     measure_group "$conversation"
     not_measured=$(( not_measured + GROUP_NOT_MEASURED ))
     no_rows=$(( no_rows + GROUP_NO_ROWS ))
+    serial_done=$(( serial_done + 1 ))
+
+    if [ "$WORKERS" -le 1 ]; then
+        continue
+    fi
+
+    if [ -n "$SERIAL_GROUPS" ]; then
+        [ "$serial_done" -ge "$SERIAL_GROUPS" ] && break
+        continue
+    fi
+
+    [ "$REPORTS_NODES" -eq 0 ] && continue
+
+    # WHAT THIS GROUP COST, off its own file, so a group the resume skipped still counts.
+    read -r group_ms group_nodes group_complete \
+        < <(awk -f "$ROOT/tools/matrix-group-cost.awk" \
+            "$LOGS/performance-matrix-$conversation.tsv" 2>/dev/null)
+    group_ms="${group_ms:-0}"
+    group_nodes="${group_nodes:-0}"
+    group_complete="${group_complete:-0}"
+
+    if [ "$group_complete" != "1" ]; then
+        # A group with a crashed, unmeasured or empty row in it is not evidence that the
+        # measuring has got cheap - it is evidence that something did not measure.
+        settled=0
+        window_max_ms=0
+        window_max_nodes=0
+        continue
+    fi
+
+    if [ -z "$floor_ms" ] || [ "$group_ms" -lt "$floor_ms" ]; then
+        floor_ms="$group_ms"
+    fi
+
+    if [ "$group_ms" -le $(( floor_ms * SETTLE_FACTOR )) ] \
+        && [ "$group_nodes" -le "$FITS_NODES" ]
+    then
+        settled=$(( settled + 1 ))
+        [ "$group_ms" -gt "$window_max_ms" ] && window_max_ms="$group_ms"
+        [ "$group_nodes" -gt "$window_max_nodes" ] && window_max_nodes="$group_nodes"
+    else
+        settled=0
+        window_max_ms=0
+        window_max_nodes=0
+    fi
+
+    if [ "$settled" -ge "$SETTLE_GROUPS" ]; then
+        echo "  cost has bottomed out after $serial_done group(s): the last $SETTLE_GROUPS"\
+" spent at most ${window_max_ms}ms of search against a floor of ${floor_ms}ms,"
+        echo "  and held at most $window_max_nodes nodes of the $WORKER_NODES a worker gets."\
+" The rest go $WORKERS at a time."
+        break
+    fi
 done
+
+parallel_groups=("${CONVERSATIONS[@]:$serial_done}")
 
 if [ "${#parallel_groups[@]}" -gt 0 ]; then
     IN_PARALLEL=1
@@ -612,10 +819,9 @@ if [ "${#parallel_groups[@]}" -gt 0 ]; then
     # believed: no-room is meant to say the search had every byte it was allowed, not that
     # it was allowed a quarter of them.
     #
-    # 6144 mirrors DiagramBudget::measurement() in src/symbolic/budget.rs, and is the one
-    # number here that has to be kept in step with the Rust by hand.
-    FULL_BUDGET_MB="${ROW_MEMORY_MB:-6144}"
-    export ROW_MEMORY_MB=$(( FULL_BUDGET_MB / WORKERS ))
+    # WORKER_MB IS WHAT THE SPLIT ABOVE CLEARED EACH GROUP AGAINST, so it is the same
+    # figure rather than a second division of the same budget.
+    export ROW_MEMORY_MB="$WORKER_MB"
     echo "each worker is allowed ${ROW_MEMORY_MB} MB of the ${FULL_BUDGET_MB} MB budget"
     printf '%s\n' \
         "workers=$WORKERS budget_mb=$ROW_MEMORY_MB of=$FULL_BUDGET_MB groups=${#parallel_groups[@]} started=$(date '+%F %T')" \

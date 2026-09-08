@@ -270,10 +270,19 @@
 //!
 //! ## Every group in the game, with `GROUPS_ONLY=1`
 //!
-//! Prints one line per DISTINCT group - `start`, `conversations`, `entries` - and measures
-//! nothing. It is how a whole-game run enumerates its rows, for the same reason
-//! `HEADER_ONLY` exists: the alternative is a list written by hand somewhere else, which
-//! can silently omit what nobody thought of.
+//! Prints one line per DISTINCT group - `start`, `conversations`, `entries`, `reachable` -
+//! and measures nothing. It is how a whole-game run enumerates its rows, for the same
+//! reason `HEADER_ONLY` exists: the alternative is a list written by hand somewhere else,
+//! which can silently omit what nobody thought of.
+//!
+//! `reachable` IS HOW A RUN SKIPS WHAT IT CANNOT MEASURE. It counts the entries a profile
+//! could be built from, and a zero means the group has no rows - see [`NoRows`] for the
+//! three ways that happens, one of which is said on stderr per group. 901 of the game's
+//! 1,422 groups are zero, nearly all of them the two-entry ORB stubs the database is full
+//! of, and a run that measured them anyway spent 9,010 processes to be told so one row at
+//! a time. The count is asked and not written down, exactly as the group list is: a
+//! committed file of empty groups would be a second list to go stale, and the one thing
+//! worse than paying for those processes is skipping a group that does have rows.
 //!
 //! WHY A CANONICAL START IS NOT SIMPLY THE SMALLEST MEMBER. `discover_group` is the FORWARD
 //! closure of a start, not an equivalence relation, so the smallest conversation in a group
@@ -598,6 +607,68 @@ fn group_starts(index: &lookahead_engine::index::Index) -> Vec<(i32, usize, usiz
     // same list every time it is asked for.
     groups.sort_unstable_by(|a, b| b.2.cmp(&a.2).then(a.0.cmp(&b.0)));
     groups
+}
+
+/// Why a group has nothing to measure. Three reasons, and they are not the same thing.
+///
+/// A group that yields no rows used to be discovered one row at a time, by a process that
+/// built the graph, found nothing, said so on stderr and exited. Over the whole game that
+/// is 901 groups of 1,422 and 9,010 processes that measure nothing - see
+/// [`NoRows::message`] for what the line says and `tools/measure-matrix.sh` for what now
+/// asks the question once per group instead of once per row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NoRows {
+    /// `build_group_graph` refused the start.
+    NoGroup,
+    /// The group built, but the start is not in it.
+    NoEntryZero,
+    /// The start is there and reaches no entry a profile could be built from.
+    NothingReachable,
+}
+
+impl NoRows {
+    /// The line the log has always carried, and which the script matches on `; no rows$`.
+    ///
+    /// SAID OUT LOUD, all three of them. A conversation that yields no rows used to
+    /// `continue` in silence, and silence is indistinguishable from a dead process to the
+    /// script, which decides a row crashed by the absence of a row line. The row is still
+    /// absent - there is genuinely nothing to measure - but the log says which of the three
+    /// reasons it was, rather than leaving CRASHED to be read as a finding.
+    fn message(self, conversation: i32) -> String {
+        let why = match self {
+            NoRows::NoGroup => "no group builds from it",
+            NoRows::NoEntryZero => "the group has no entry 0",
+            NoRows::NothingReachable => "nothing is reachable from its start",
+        };
+        format!("conversation {conversation}: {why}; no rows")
+    }
+}
+
+/// What a start offers to measure: the group's graph, the start itself, and the entries a
+/// profile can be built from - or why there is nothing.
+///
+/// ONE PLACE, ASKED TWICE, and that is the whole point of lifting it out of `main`. The row
+/// loop asks before it measures, and `GROUPS_ONLY` asks so that a whole-game run can skip
+/// the empty groups without starting a process to be told. Two copies of this would be two
+/// chances for the enumeration to promise rows the row loop then declines to produce, which
+/// is a disagreement nothing would report: the script would simply record NO-ROWS for a
+/// group it never ran, or run 901 groups it did not need to.
+fn measurable(
+    index: &lookahead_engine::index::Index,
+    conversation: i32,
+) -> Result<(LookAheadGraph, DialogueNodeId, Vec<DialogueNodeId>), NoRows> {
+    let Ok((graph, _)) = build_group_graph(index, conversation) else {
+        return Err(NoRows::NoGroup);
+    };
+    let start = DialogueNodeId::new(conversation, 0);
+    if graph.get(start).is_none() {
+        return Err(NoRows::NoEntryZero);
+    }
+    let reachable = candidates(&graph, start);
+    if reachable.is_empty() {
+        return Err(NoRows::NothingReachable);
+    }
+    Ok((graph, start, reachable))
 }
 
 fn conversations(default: &[i32]) -> Vec<i32> {
@@ -1120,7 +1191,23 @@ fn main() {
     // omit a group and never say so.
     if std::env::var("GROUPS_ONLY").is_ok() {
         for (start, conversations, entries) in group_starts(&index) {
-            println!("{start}\t{conversations}\t{entries}");
+            // THE FOURTH COLUMN IS WHY THIS COSTS MORE THAN IT USED TO, and it is worth it.
+            // Building each group's graph and walking it from the start is what tells the
+            // caller whether there is anything here at all, and 901 of the game's 1,422
+            // groups answer no. Learning that here costs one walk; learning it the old way
+            // cost ten processes, each of which read the index and built the same graph to
+            // reach the same conclusion.
+            let reachable = match measurable(&index, start) {
+                Ok((_, _, reachable)) => reachable.len(),
+                Err(why) => {
+                    // ON STDERR, so the counts stay a clean TSV and the reason is still
+                    // recorded. `tools/measure-matrix.sh` keeps this stream as its
+                    // groups.log; the wording is the one the row logs have always used.
+                    eprintln!("{}", why.message(start));
+                    0
+                }
+            };
+            println!("{start}\t{conversations}\t{entries}\t{reachable}");
         }
         return;
     }
@@ -1134,27 +1221,17 @@ fn main() {
     }
 
     for conversation in conversations(&HEAVIEST) {
-        // SAID OUT LOUD, all three of them. A conversation that yields no rows used to
-        // `continue` in silence, and silence is indistinguishable from a dead process to
-        // the script, which decides a row crashed by the absence of a row line. The row is
-        // still absent - there is genuinely nothing to measure - but the log now says which
-        // of the three reasons it was, rather than leaving CRASHED to be read as a finding.
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
-            eprintln!("conversation {conversation}: no group builds from it; no rows");
-            continue;
+        // ASKED HERE TOO, and by the same function `GROUPS_ONLY` asks. A whole-game run
+        // will have pruned this group already; a run that names its conversations has not,
+        // so the check stays where it always was.
+        let (graph, start, reachable) = match measurable(&index, conversation) {
+            Ok(measurable) => measurable,
+            Err(why) => {
+                eprintln!("{}", why.message(conversation));
+                continue;
+            }
         };
-        let start = DialogueNodeId::new(conversation, 0);
-        if graph.get(start).is_none() {
-            eprintln!("conversation {conversation}: the group has no entry 0; no rows");
-            continue;
-        }
-
         let symbols = graph.symbols().clone();
-        let reachable = candidates(&graph, start);
-        if reachable.is_empty() {
-            eprintln!("conversation {conversation}: nothing is reachable from its start; no rows");
-            continue;
-        }
 
         for profile in profiles() {
             let unseen = unseen_for(profile, &reachable);

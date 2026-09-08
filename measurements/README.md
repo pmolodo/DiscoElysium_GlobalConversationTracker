@@ -178,6 +178,41 @@ distinct closure, heaviest first - so nothing decides what is in the run except 
 It is 1,422 groups against the six a default run does, and it is a run of days rather than
 of an hour.
 
+The same enumeration says how many entries each group can reach from its start, and 901 of
+the 1,422 reach none - nearly all of them the two-entry `ORB` stubs the database is full
+of. Those are recorded as `NO-ROWS` straight from the enumeration, which answers for the
+whole game in about a third of a second, rather than by 9,010 processes that each read the
+index, build the same graph and find the same nothing. The folder still gets a TSV per
+group with a row per profile, so nothing downstream can tell the difference; the reason
+for each is in `groups.log` beside them. It is asked for and not cached, for the same
+reason the group list is: a committed list of empty groups is a second copy of the index's
+shape, and it would be wrong and silent the first time a group grew an entry.
+
+### Where the run stops measuring one group at a time
+
+The heavy groups are measured one at a time and the tail several at once, and the run
+decides where that is from what it has just measured rather than from a number written
+down. It switches when ten groups in a row have both settled within twice the cheapest
+group the run has seen and held at most half the nodes a parallel worker's share of the
+budget buys.
+
+Both halves matter. A group measured in parallel gets a DIVIDED budget - each worker is
+allowed `6144/WORKERS` MB, because the manager preallocates two thirds of its allowance up
+front and four of them at the full budget would commit four times it - so a group that
+would not have fitted that share produces a `no-room` that says the run rationed it rather
+than that the search ran out. And its clock is contended, which is the other way a row
+stops being comparable with one measured alone.
+
+Ten in a row rather than one, because the cost curve is not monotone: over the whole game
+the ten groups after the seven heavy ones look exactly like the tail, and then 825, 362,
+1030 and 625 arrive - the last of them 47s and a gigabyte, at group 26. A window of one
+hands all four to the workers. Ten does not switch until group 35, after which the
+heaviest group left in the game is 15s and 33 MB, or two per cent of a worker's cap.
+
+`SETTLE_GROUPS`, `SETTLE_FACTOR` and `MEMORY_HEADROOM` move the rule; `SERIAL_GROUPS=n`
+replaces it with a fixed count, which is how a run that has to be comparable with an
+existing folder asks for one; `WORKERS=1` never switches at all.
+
 `MATRIX_OUT` names the folder instead of generating one, and THAT is the resume: run the
 same command again after a kill, a crash or a reboot and every row already in that folder
 is skipped. There is no separate resume mode to remember and no flag to forget. Rows are
