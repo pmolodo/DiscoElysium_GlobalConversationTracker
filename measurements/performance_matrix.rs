@@ -1500,14 +1500,14 @@ fn symbolic_backward(
                     // the budget was turned into - so this is the same question in the
                     // units the answer will arrive in.
                     let capacity = budget().nodes();
-                    Box::new(move |steps: usize, known: usize, queued: usize, nodes: usize| {
+                    std::rc::Rc::new(move |steps: usize, known: usize, queued: usize, nodes: usize| {
                         println!(
                             "{PROGRESS} {:<6} {:>7}  {steps:>10} steps  {known:>6} reaching  \
                              {queued:>6} queued  {nodes:>12} / {capacity} nodes",
                             Engine::Backward.label(),
                             mmss(began.elapsed()),
                         );
-                    }) as Box<dyn Fn(usize, usize, usize, usize)>
+                    }) as std::rc::Rc<dyn Fn(usize, usize, usize, usize)>
                 }),
             },
         },

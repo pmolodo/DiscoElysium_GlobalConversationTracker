@@ -651,7 +651,11 @@ impl LookAheadRequest {
     /// the whole search would make the outer limit decorative. The forward slice keeps its
     /// own 50ms: it is sized to be worth the sets it leaves behind, not to finish, and it
     /// is spent before the clock the player set starts mattering.
-    fn search_budget(&self) -> portfolio::Budget {
+    /// PUBLIC SO THE WALL CAN BE ASSERTED, since de-cluo. What the dial produces is a claim
+    /// made to the player - "the longest one option's look-ahead may run for" - and
+    /// tests/time_budget_binds.rs pins its SHAPE rather than timing a real search, because a
+    /// timing test on a busy machine fails for reasons that are nobody's fault.
+    pub fn search_budget(&self) -> portfolio::Budget {
         let default = portfolio::Budget::default();
 
         // THE STATE BUDGET IS THE KNOB THAT STARVES A SEARCH, and that is all it ever was:
@@ -665,6 +669,11 @@ impl LookAheadRequest {
         if self.state_budget > 0 {
             return portfolio::Budget {
                 forwards: std::time::Duration::ZERO,
+                // THE SAME WALL THE ATTEMPT ALREADY HAD, so this knob keeps meaning what it
+                // meant: the candidates are what runs out, not the clock. Setting it to zero
+                // would stop the loop before its first candidate and the search would give
+                // up for a different reason than the one this setting exists to provoke.
+                overall: default.backwards,
                 backwards: default.backwards,
                 each: std::time::Duration::ZERO,
                 targets: self.state_budget,
@@ -680,6 +689,12 @@ impl LookAheadRequest {
 
         let whole = std::time::Duration::from_millis(self.time_budget_ms);
         portfolio::Budget {
+            // THE PLAYER'S NUMBER IS THE WALL, which is what they were told it was. de-cluo:
+            // it used to be the backward ration alone, with the forward slice spent before
+            // that clock started and a candidate allowed to overrun it by a whole `each` -
+            // so a dial set to 1000 could return at about 1300. The rations below stay
+            // estimates of what each part should need, and are narrowed to what is left.
+            overall: whole,
             forwards: default.forwards.min(whole),
             backwards: whole,
             each: default.each.min(whole),

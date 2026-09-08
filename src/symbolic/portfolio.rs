@@ -113,6 +113,18 @@ pub struct Budget {
     /// So the two searches work in from both ends and share what they find, rather than one
     /// running after the other has given up.
     pub forwards: Duration,
+    /// THE WALL. Everything below is an estimate; this is the one that binds.
+    ///
+    /// de-cluo. `LookAheadTimeBudgetMs` is documented to players as "the longest one
+    /// option's look-ahead may run for" and it was not: the forward slice was spent before
+    /// the backward clock started, and the candidate loop tested its clock and then allowed
+    /// a whole `each` past it. At the default of 1000 a search could return at roughly 1300.
+    ///
+    /// The rations below are kept as what they are - estimates of what each part should
+    /// need - and are narrowed to the time actually left as the answer is assembled. So the
+    /// shape of the search is unchanged where it fits, and where it does not the answer
+    /// arrives when it said it would.
+    pub overall: Duration,
     /// The whole backward attempt, across every candidate.
     pub backwards: Duration,
     /// One candidate's fixed point.
@@ -149,6 +161,10 @@ impl Default for Budget {
             // the backward half to meet, and to be small enough that spending all of it and
             // learning nothing costs a twentieth of the backward allowance.
             forwards: Duration::from_millis(50),
+            // THE SLICE PLUS THE BACKWARD ATTEMPT, which is what this arrangement was always
+            // meant to cost and what it now cannot exceed. Stated rather than derived so a
+            // reader can see the number the answer is promised in.
+            overall: Duration::from_millis(2050),
             backwards: Duration::from_secs(2),
             each: Duration::from_millis(250),
             targets: 64,
@@ -277,10 +293,15 @@ where
     // unseen carries it, so a pass sent after it halts on the first thing it touches and
     // calls the floor an answer. A caller with nothing to hunt has nothing to search for
     // and should not be here at all, and this is what makes arriving anyway harmless.
-    let forwards = (hunting > Novelty::SeenThisGame && !budget.forwards.is_zero()).then(|| {
+    // NARROWED TO THE WALL, here and at the backward driver below. de-cluo: the slice used
+    // to be spent before the backward clock started, so it was outside the player's number
+    // entirely rather than inside it.
+    let slice = budget.forwards.min(budget.overall);
+
+    let forwards = (hunting > Novelty::SeenThisGame && !slice.is_zero()).then(|| {
         forwards_for(
             graph, start, branch, seed, compiler, world, counter_cap, hunting, &novelty,
-            budget.forwards, shape,
+            slice, shape,
         )
     });
 
@@ -343,9 +364,13 @@ where
         world,
         counter_cap,
         &novelty,
+        // WHAT IS LEFT OF THE WALL, not the whole backward ration. The slice above has
+        // already been spent out of it, and the driver narrows each candidate to what
+        // remains of THIS in turn - so the three rations compose into one deadline rather
+        // than adding up.
         &novelty_search::Budget {
             targets: budget.targets,
-            time: budget.backwards,
+            time: budget.backwards.min(budget.overall.saturating_sub(began.elapsed())),
             each: crate::symbolic::backward::Budget {
                 steps: usize::MAX,
                 time: budget.each,

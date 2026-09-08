@@ -341,8 +341,24 @@ where
         }
 
         answer.targets_asked += 1;
+
+        // THE CANDIDATE MAY NOT OUTLIVE THE ATTEMPT. de-cluo.
+        //
+        // The check above tests the clock and then used to hand the candidate a full
+        // `each`, so a pass beginning a millisecond under `budget.time` returned `each`
+        // past it - a quarter of a second at the shipped ration, on top of a limit the
+        // player was told was the whole of it. Every ration here was an estimate and none
+        // of them was a wall.
+        //
+        // `backward::Budget.time` IS CHECKED INSIDE THE FIXED POINT rather than only
+        // between passes, so narrowing it to what is left is what turns the wall from
+        // advisory into binding. No new checking machinery is needed, only the arithmetic.
+        let left = budget.time.saturating_sub(began.elapsed());
+        let mut each = budget.each.clone();
+        each.time = each.time.min(left);
+
         let backward = Backward::reaching_knowing(
-            graph, target, compiler, world, counter_cap, &budget.each, known,
+            graph, target, compiler, world, counter_cap, &each, known,
         );
 
         // TWO WAYS TO PROVE IT, and the cheap one is asked first. A meet is a proof that

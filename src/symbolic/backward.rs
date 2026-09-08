@@ -139,8 +139,26 @@ pub struct Budget {
     ///
     /// No percentage, because the pass does not know one: it knows what it has spent, and
     /// spending the budget is how these passes end.
+    ///
+    /// AN `Rc` RATHER THAN A `Box`, since de-cluo, so that this whole budget can be CLONED.
+    /// The driver narrows a candidate's clock to what is left of the attempt, which means
+    /// building a budget that differs in one field - and copying one that owned its hook
+    /// would have had to drop it, which would silence exactly the progress lines a long row
+    /// is watched by. A search runs on a thread of its own, so a shared pointer is enough
+    /// and costs nothing.
     #[allow(clippy::type_complexity)]
-    pub on_progress: Option<Box<dyn Fn(usize, usize, usize, usize)>>,
+    pub on_progress: Option<std::rc::Rc<dyn Fn(usize, usize, usize, usize)>>,
+}
+
+impl Clone for Budget {
+    fn clone(&self) -> Self {
+        Self {
+            steps: self.steps,
+            time: self.time,
+            report_gap: self.report_gap,
+            on_progress: self.on_progress.clone(),
+        }
+    }
 }
 
 impl Default for Budget {
