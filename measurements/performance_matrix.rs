@@ -112,8 +112,18 @@
 //! TWO ROWS ARE SKIPPED RATHER THAN RUN, and the TSV says which rule skipped them. A group
 //! with no unreachable entries poses no such question at all; a group with exactly one
 //! produces a five-entry profile that is one hard question and four instant ones wearing the
-//! name of a hard profile. Where the census found fewer than five but more than one, the set
-//! is topped up from the deepest remaining and the `real` column says how many were genuine.
+//! name of a hard profile.
+//!
+//! WHERE THE CENSUS FOUND FEWER THAN N, THE SET IS SMALLER - it is not padded out with
+//! reachable entries. So every entry in a `deepest-unreach-N` set is one no path can reach,
+//! which is what the name says, and `unseen` is how many that turned out to be. Anything
+//! comparing these rows reads that column rather than the number in the name.
+//!
+//! THAT MAKES `found` IMPOSSIBLE ON THESE ROWS, which is worth more than the tidiness: with
+//! nothing reachable in the set there is nothing to find, so a `found` means the census and
+//! the search disagree. The run says so loudly instead of recording it, and names the likely
+//! cause - a `CENSUS_FILE` taken under a different world from the one being measured, which
+//! nothing checks.
 //!
 //! ## Why "deepest" for the small counts and "random" for the percentages
 //!
@@ -1112,23 +1122,22 @@ fn unseen_for(
     }
 }
 
-/// The set for an unreachable profile, and how many of it are genuinely unreachable.
+/// The entries an unreachable profile asks about: the deepest `n` the census proved
+/// unreachable, or all of them where it found fewer.
 ///
-/// TOPPED UP FROM THE DEEPEST REMAINING where the census found fewer than `n`, because a set
-/// of three when five were asked for is a different profile again and would quietly be
-/// compared against groups that got five. The count of real ones comes back with it and is
-/// written into the row's `real` column, so a reader can tell a profile that was five hard
-/// questions from one that was three hard and two instant.
+/// SO THE SET CAN BE SMALLER THAN THE NAME SAYS, and `deepest-unreach-5` over a group with
+/// three unreachable entries asks about three. The name is the question; `unseen` is what
+/// could be found to ask it with, and a reader comparing rows within a profile has to read
+/// that column rather than assume five.
 ///
 /// The skip rules are applied here rather than by the caller because they are part of what
 /// the profile MEANS: zero unreachable entries is not a hard question made easy, it is no
-/// question at all.
+/// question at all, and one is one hard question that would sit in a set named for five.
 fn unreachable_for(
     n: usize,
-    candidates: &[DialogueNodeId],
     census: &Census,
     conversation: i32,
-) -> Result<(HashSet<DialogueNodeId>, usize), Skipped> {
+) -> Result<HashSet<DialogueNodeId>, Skipped> {
     let unreachable = census.of_group(conversation);
     match unreachable.len() {
         0 => return Err(Skipped::NoneUnreachable),
@@ -1136,16 +1145,25 @@ fn unreachable_for(
         _ => {}
     }
 
-    let real = unreachable.len().min(n);
-    let mut set: HashSet<DialogueNodeId> = unreachable.iter().copied().take(n).collect();
-    for &id in candidates {
-        if set.len() == n {
-            break;
-        }
-        set.insert(id);
-    }
-
-    Ok((set, real))
+    // ONLY WHAT IS ACTUALLY UNREACHABLE, and fewer than N where that is all there is.
+    //
+    // de-x8ms.3, reversing what this did first. It used to top the set up to N from the
+    // deepest remaining CANDIDATES - which are reachable - on the argument that a set of
+    // three when five were asked for is a different measurement, and comparing a 3-entry
+    // row against a 5-entry one conflates set size with difficulty.
+    //
+    // The user weighed that and decided the other way, and the argument is better: the
+    // profile then MEANS what its name says, every entry in it one no path can reach.
+    // Before, that was only true of groups with five or more.
+    //
+    // AND IT BUYS AN INVARIANT. With nothing reachable in the set there is nothing to find,
+    // so a `found` verdict on one of these rows is impossible - and therefore a
+    // contradiction between the census and the search rather than a result. See where the
+    // row is written for what is done about that.
+    //
+    // The set size is now the honest count and travels in the `unseen` column, which every
+    // profile already has; the separate `real` column this used to need is gone.
+    Ok(unreachable.iter().copied().take(n).collect())
 }
 
 /// What one engine did with one profile: one cell per column it names, in that order.
@@ -1482,20 +1500,17 @@ fn symbolic_backward(
 }
 
 /// The columns every row starts with, whichever engines ran.
-/// `real` IS THE COLUMN de-thlz.2 ADDED, and it is empty for every profile but one.
 ///
-/// How many of the `unseen` entries are genuinely unreachable, for a `deepest-unreach-N` row.
-/// A group with three unreachable entries produces a five-entry profile that is part top-up,
-/// and without this the row would claim to be the same measurement as one over a group that
-/// had five - which is the number this whole profile exists to report. A dash everywhere
-/// else, because "how many were real" is not a question the other profiles pose.
+/// THERE WAS A `real` COLUMN HERE BRIEFLY, added by de-thlz.2 and removed by de-x8ms.3. It
+/// held how many of a topped-up unreachable set were genuinely unreachable - and once the
+/// top-up went, every entry in such a set is genuinely unreachable, so it always equalled
+/// `unseen`. A column that always equals its neighbour is worse than no column, because a
+/// reader assumes it means something.
 ///
-/// APPENDED RATHER THAN INSERTED, so a reader that walks the header by name - which is what
-/// tools/matrix-group-cost.awk does - finds the engine columns exactly where it did.
-const ROW_COLUMNS: [&str; 5] = ["conv", "entries", "profile", "unseen", "real"];
-
-/// What the `real` column says for a profile that does not top anything up.
-const NOT_TOPPED_UP: &str = "-";
+/// `unseen` NOW CARRIES IT. For a `deepest-unreach-N` row it is how many the census could
+/// find, which may be fewer than N; anything comparing such rows has to read it rather than
+/// assume the number in the name.
+const ROW_COLUMNS: [&str; 4] = ["conv", "entries", "profile", "unseen"];
 
 /// The columns of a census row, written down here and nowhere else.
 const CENSUS_COLUMNS: [&str; 7] = [
@@ -1698,11 +1713,11 @@ fn main() {
         for profile in profiles() {
             // BUILT BEFORE ANYTHING IS SPENT, because for an unreachable profile this is
             // also where the run learns there is no question to ask in this group.
-            let (unseen, real) = match profile {
+            let unseen = match profile {
                 Profile::DeepestUnreachable(n) => {
                     let census = census.as_ref().expect("a census, or the profile refused");
-                    match unreachable_for(n, &reachable, census, conversation) {
-                        Ok((unseen, real)) => (unseen, real.to_string()),
+                    match unreachable_for(n, census, conversation) {
+                        Ok(unseen) => unseen,
                         Err(skipped) => {
                             eprintln!(
                                 "SKIPPED: {conversation} {} - {}",
@@ -1725,7 +1740,7 @@ fn main() {
                                 .flat_map(|engine| Cells::absent(skipped.rule(), *engine).0)
                                 .collect();
                             println!(
-                                "{conversation}\t{}\t{}\t0\t0\t{}",
+                                "{conversation}\t{}\t{}\t0\t{}",
                                 graph.count(),
                                 profile.label(),
                                 absent.join("\t"),
@@ -1734,7 +1749,7 @@ fn main() {
                         }
                     }
                 }
-                _ => (unseen_for(profile, &reachable), NOT_TOPPED_UP.to_string()),
+                _ => unseen_for(profile, &reachable),
             };
 
             // ASKED PER ROW, AND BEFORE ANYTHING IS SPENT. A machine that cannot supply the
@@ -1769,7 +1784,7 @@ fn main() {
                     .flat_map(|engine| Cells::absent(NOT_MEASURED, *engine).0)
                     .collect();
                 println!(
-                    "{conversation}\t{}\t{}\t{}\t{real}\t{}",
+                    "{conversation}\t{}\t{}\t{}\t{}",
                     graph.count(),
                     profile.label(),
                     unseen.len(),
@@ -1811,8 +1826,31 @@ fn main() {
                 })
                 .collect();
 
+            // A `found` ON AN UNREACHABLE PROFILE IS IMPOSSIBLE, so it is reported rather
+            // than recorded. de-x8ms.3. Every entry in the set was proved unreachable by the
+            // census, so there is nothing in it to find: a search that found something means
+            // the census and the search disagree, and one of the two is wrong.
+            //
+            // THE LIKELY CAUSE IS NAMED because there is an obvious one and nothing checks
+            // it: CENSUS_FILE names a file, and no part of this verifies that the census was
+            // taken under the same world the row is being measured under. A census from one
+            // scenario read into a run of another would build every profile from the wrong
+            // entries, and this is the only place that would show.
+            if matches!(profile, Profile::DeepestUnreachable(_)) {
+                if measured.iter().any(|cell| cell == "found") {
+                    eprintln!(
+                        "CONTRADICTION: {conversation} {} came back 'found', which cannot \
+                         happen - every entry in this set was proved unreachable by the \
+                         census. Either the census is wrong or the search is. The likeliest \
+                         cause is a CENSUS_FILE taken under a different world from the one \
+                         this row was measured under; nothing checks that.",
+                        profile.label(),
+                    );
+                }
+            }
+
             println!(
-                "{conversation}\t{}\t{}\t{}\t{real}\t{}",
+                "{conversation}\t{}\t{}\t{}\t{}",
                 graph.count(),
                 profile.label(),
                 unseen.len(),
