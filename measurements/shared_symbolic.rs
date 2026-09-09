@@ -283,7 +283,7 @@ fn alone(
         let began = std::time::Instant::now();
         let answer = best_novelty(
             graph, start, StartBranch::Either, &seed, &mut compiler, world,
-            COUNTER_CAP as u32, &novelty, &search_budget(), Some(&known),
+            COUNTER_CAP as u32, &novelty, &search_budget(), Some(&known), None,
         );
 
         Run {
@@ -357,7 +357,7 @@ fn shared(
     let backward_began = std::time::Instant::now();
     let answer = best_novelty(
         graph, start, StartBranch::Either, &seed, &mut compiler, world, COUNTER_CAP as u32,
-        &novelty, &search_budget(), Some(&known),
+        &novelty, &search_budget(), Some(&known), None,
     );
 
     (

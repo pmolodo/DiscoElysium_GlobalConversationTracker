@@ -1165,7 +1165,11 @@ where
     // `measurements/per_start_setup.rs` priced at 246 ms a menu. See `GroupShape`.
     let shape = GroupShape::of(graph);
 
-    Some(answer_starts(graph, world, request, novelty, &mut compiler, &seed, &shape))
+    // NO MEMO. What `crate::symbolic::memo` keeps are formulas in the manager built four
+    // lines up, and that manager is dropped when this call returns - so there is nothing for
+    // a kept pass to outlive. A memo belongs to a caller that holds a manager between
+    // requests, which is `crate::workspace` and only that.
+    Some(answer_starts(graph, world, request, novelty, &mut compiler, &seed, &shape, None))
 }
 
 /// The answers for one request, against a manager and a compiler somebody else built.
@@ -1188,6 +1192,7 @@ pub fn answer_starts<'a, F>(
     compiler: &mut GuardCompiler<'a>,
     seed: &BDDFunction,
     shape: &GroupShape,
+    memo: Option<&crate::symbolic::memo::Memo>,
 ) -> Vec<LookAheadAnswer>
 where
     F: Fn(DialogueNodeId) -> Novelty,
@@ -1222,6 +1227,7 @@ where
         for branch in branches {
             answers.push(scored(
                 graph, id, *start, world, novelty, *branch, seed, compiler, &budget, shape,
+                memo,
             ));
         }
     }
@@ -1278,6 +1284,7 @@ fn scored<'a, F>(
     compiler: &mut GuardCompiler<'a>,
     budget: &portfolio::Budget,
     shape: &GroupShape,
+    memo: Option<&crate::symbolic::memo::Memo>,
 ) -> LookAheadAnswer
 where
     F: Fn(DialogueNodeId) -> Novelty,
@@ -1349,7 +1356,7 @@ where
 
     let found = portfolio::best_novelty(
         graph, id, branch, seed, compiler, world, COUNTER_CAP as u32, &novelty, hunting,
-        budget, shape,
+        budget, shape, memo,
     );
 
     answered(
@@ -1486,6 +1493,7 @@ mod branch_wire_tests {
             &mut compiler,
             &portfolio::Budget::default(),
             &GroupShape::of(graph),
+            None,
         )
     }
 

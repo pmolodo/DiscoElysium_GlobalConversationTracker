@@ -203,7 +203,7 @@ where
             }
             let answer = portfolio::best_novelty(
                 graph, start, StartBranch::Either, &seed, &mut compiler, &world,
-                COUNTER_CAP as u32, novelty, hunting, &search, &shape,
+                COUNTER_CAP as u32, novelty, hunting, &search, &shape, None,
             );
             // STARTS THAT REACHED THE BACKWARD DRIVER, which is not the same as starts with
             // a settled forward run and must not be labelled as though it were. A slice

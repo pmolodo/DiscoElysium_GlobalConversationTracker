@@ -233,7 +233,7 @@ fn answers_on_this_thread(
     };
 
     Some(answer_starts(
-        graph, &world, request, &novelty, &mut compiler, &seed, &shape,
+        graph, &world, request, &novelty, &mut compiler, &seed, &shape, None,
     ))
 }
 

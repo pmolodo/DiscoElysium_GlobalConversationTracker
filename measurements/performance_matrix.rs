@@ -1431,6 +1431,7 @@ fn forward_backward(
         // row of this matrix has always paid, and holding that constant is what lets a row
         // measured today be read against one measured before de-bnjy.10.
         &GroupShape::of(graph),
+        None,
     );
 
     let verdict = match answer.by {
@@ -1669,6 +1670,7 @@ fn symbolic_backward(
             ..Default::default()
         },
         Some(&known),
+        None,
     );
 
     let verdict = if answer.best != Novelty::SeenThisGame {

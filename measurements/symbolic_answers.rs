@@ -539,6 +539,7 @@ pub fn classify(
                     ..Default::default()
                 },
                 Some(&known),
+                None,
                 &mut census,
             );
         }
@@ -652,6 +653,7 @@ fn answer(
                         ..Default::default()
                     },
                     known.as_ref(),
+                    None,
                 );
 
                 Answer {

@@ -39,7 +39,7 @@ use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
 use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::oracle::{self, Walk};
-use lookahead_engine::symbolic::backward::{Backward, Budget as BackwardBudget};
+use lookahead_engine::symbolic::backward::{Backward, Budget as BackwardBudget, SettledPass};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
@@ -429,6 +429,7 @@ fn the_driver_and_the_portfolio_find_what_the_reference_walk_finds() {
                 &novelty,
                 &SearchBudget::default(),
                 None,
+                None,
             );
 
             // And the portfolio, which is what the bridge actually runs.
@@ -444,6 +445,7 @@ fn the_driver_and_the_portfolio_find_what_the_reference_walk_finds() {
                 graph.best_linked_class(start, &novelty).unwrap_or(Novelty::SeenThisGame),
                 &portfolio::Budget::default(),
                 &GroupShape::of(&graph),
+                None,
             );
 
             (driver.best, answer, began.elapsed().as_millis())

@@ -248,7 +248,7 @@ where
             }
             let answer = portfolio::best_novelty(
                 graph, start, StartBranch::Either, &seed, &mut compiler, &world,
-                COUNTER_CAP as u32, novelty, hunting, &search, &shape,
+                COUNTER_CAP as u32, novelty, hunting, &search, &shape, None,
             );
             if answer.best > Novelty::SeenThisGame {
                 found += 1;

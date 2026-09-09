@@ -172,6 +172,18 @@ impl Default for Budget {
     }
 }
 
+/// A finished backward fixed point, asked the one question a search asks of one.
+///
+/// TWO THINGS ANSWER IT: a pass that has just run, and one [`crate::symbolic::memo`] kept
+/// from an earlier request. They hold the same sets and are read the same way, and the
+/// search should not have to know which it has - so the question is a trait rather than an
+/// inherent method on the first of them.
+pub trait SettledPass {
+    /// Whether a search that starts by entering `node` in any state in `states` reaches
+    /// the target.
+    fn reachable_from(&self, node: DialogueNodeId, states: &BDDFunction) -> bool;
+}
+
 /// For each entry, the data states from which the target is reachable.
 pub struct Backward<'a> {
     vars: &'a DataVars<'a>,
@@ -831,21 +843,6 @@ impl<'a> Backward<'a> {
         self.sets.get(&node)
     }
 
-    /// Whether a search that starts by entering `node` in any state in `states` reaches
-    /// the target.
-    ///
-    /// `states` is the SEED - what the search holds on arrival at `node`, before that
-    /// node's own guard, cost or actions have been considered. `seed_of` produces one.
-    pub fn reachable_from(&self, node: DialogueNodeId, states: &BDDFunction) -> bool {
-        match self.sets.get(&node) {
-            // An `Err` here is the manager out of room, and answering "not reachable" on
-            // it would be the one wrong direction. Say reachable and let the caller read
-            // `out_of_memory`.
-            Some(set) => set.and(states).map(|both| both.satisfiable()).unwrap_or(true),
-            None => false,
-        }
-    }
-
     /// The entries from which the target can be reached at all.
     pub fn entries(&self) -> impl Iterator<Item = DialogueNodeId> + '_ {
         self.sets.keys().copied()
@@ -853,6 +850,20 @@ impl<'a> Backward<'a> {
 
     pub fn stats(&self) -> &BackwardStats {
         &self.stats
+    }
+}
+
+impl SettledPass for Backward<'_> {
+    /// `states` is the SEED - what the search holds on arrival at `node`, before that
+    /// node's own guard, cost or actions have been considered. `seed_of` produces one.
+    fn reachable_from(&self, node: DialogueNodeId, states: &BDDFunction) -> bool {
+        match self.sets.get(&node) {
+            // An `Err` here is the manager out of room, and answering "not reachable" on
+            // it would be the one wrong direction. Say reachable and let the caller read
+            // `out_of_memory`.
+            Some(set) => set.and(states).map(|both| both.satisfiable()).unwrap_or(true),
+            None => false,
+        }
     }
 }
 

@@ -314,6 +314,7 @@ pub fn best_novelty<'a, F>(
     hunting: Novelty,
     budget: &Budget,
     shape: &GroupShape,
+    memo: Option<&crate::symbolic::memo::Memo>,
 ) -> PortfolioAnswer
 where
     F: Fn(DialogueNodeId) -> Novelty,
@@ -447,6 +448,11 @@ where
             },
         },
         known.as_ref(),
+        // WHAT AN EARLIER REQUEST SETTLED, where a caller holds a manager long enough for
+        // there to be one. The driver decides per candidate whether a kept pass answers it
+        // and whether a fresh one is worth keeping; nothing here does, because the two
+        // decisions are about a target and this call is about a start.
+        memo,
     );
 
     // SETTLED OR NOT, THIS IS THE ANSWER. A backward driver that ran out of candidates or
@@ -504,7 +510,7 @@ mod tests {
 
         best_novelty(
             graph, node(0), StartBranch::Either, &seed, &mut compiler, world, CAP as u32,
-            novelty, hunting, budget, &GroupShape::of(graph),
+            novelty, hunting, budget, &GroupShape::of(graph), None,
         )
     }
 
@@ -537,7 +543,7 @@ mod tests {
 
         best_novelty(
             graph, node(0), branch, &seed, &mut compiler, world, CAP as u32, novelty,
-            hunting, &Budget::default(), &GroupShape::of(graph),
+            hunting, &Budget::default(), &GroupShape::of(graph), None,
         )
     }
 
