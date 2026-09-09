@@ -126,6 +126,10 @@ import traceback
 
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import measurement_common as common  # noqa: E402
+
 ###############################################################################
 # Where things are
 ###############################################################################
@@ -1742,7 +1746,13 @@ def measure(named):
     if already:
         print(f"resuming in {run.logs}: {already} row(s) already measured, and they will be skipped")
 
-    workers = env_int("WORKERS", os.cpu_count() or 1)
+    # NO MEMORY ARM HERE, and the asymmetry with the census driver is the point rather than an
+    # omission. A matrix run DIVIDES one budget among its workers, so what it commits is
+    # `full_budget_mb` whatever the worker count - four workers at 1,536 MB is the same six
+    # gigabytes as one worker at 6,144. There is no number of workers that asks the machine
+    # for more, so bounding the count by free memory would bound nothing. The census divides
+    # nothing, which is why it passes a per-worker figure and this does not.
+    workers = common.default_workers()
     serial_groups = env_int("SERIAL_GROUPS", 0)
     headroom = env_int("MEMORY_HEADROOM", 2)
     worker_mb = run.full_budget_mb // max(1, workers)
