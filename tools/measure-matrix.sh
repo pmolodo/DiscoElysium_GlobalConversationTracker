@@ -675,6 +675,10 @@ done
 LEFT_SPEC="$(IFS=';'; printf '%s' "${ROW_KEYS[*]}")"
 
 echo "$TOTAL_ROWS rows, ${ROW_SECONDS}s per engine per row, started $(date '+%H:%M:%S')"
+# WHICH INDEX, beside the cap, because a run reported as a measurement has to say what it
+# was measured against and nothing in a TSV records it. The trimmed index is the mod's own,
+# and tests/shipped_index.rs is why rows measured against it are the same rows.
+echo "index: conversation_index.trimmed.jsonl (the shipped index), memory ${ROW_MEMORY_MB:-6144} MB"
 if [ "$already" -gt 0 ]; then
     echo "resuming in $LOGS: $already row(s) already measured, and they will be skipped"
 fi

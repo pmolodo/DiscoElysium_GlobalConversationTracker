@@ -21,7 +21,9 @@
 
 use std::collections::HashMap;
 
-use lookahead_engine::index::{build_group_graph, read_index, ENTRY_FIELDS_READ};
+use lookahead_engine::index::{
+    build_group_graph, discover_group, read_index, ENTRY_FIELDS_READ,
+};
 
 mod common;
 
@@ -167,6 +169,77 @@ fn a_group_built_from_the_trimmed_index_is_the_same_group() {
             compared += 1;
         }
 
-        println!("conversation {conversation}: {compared} entries identical");
+        // THE SYMBOL TABLE TOO, in order and not only in size. It is what `DataLayout`
+        // lays out and what a slot's index means, so two graphs that agreed on every entry
+        // and disagreed here would build different diagrams out of the same group - and
+        // every measurement that prices a layout would be pricing a different one.
+        let symbols = one.symbols();
+        let others = other.symbols();
+        assert_eq!(
+            symbols.count(),
+            others.count(),
+            "conversation {conversation}: the symbol count changed",
+        );
+        for index in 0..symbols.count() {
+            assert_eq!(
+                symbols.name_of(index),
+                others.name_of(index),
+                "conversation {conversation}: symbol {index} changed",
+            );
+        }
+
+        println!(
+            "conversation {conversation}: {compared} entries and {} symbols identical",
+            symbols.count(),
+        );
     }
+}
+
+/// And the WHOLE GAME's group list is the same list, group for group.
+///
+/// ## Why the two tests above are not enough for a caller that measures every group
+///
+/// They compare five groups, and `measurements/performance_matrix.rs` enumerates all 1,422
+/// of them before it measures any - `group_starts`, which is `discover_group` over every
+/// conversation in the index, canonicalised by the set of conversations it reaches. That
+/// list decides which rows a whole-game run HAS. A trim that dropped a cross-conversation
+/// link in a group nobody has measured would leave both tests above green and silently
+/// split one group into two, which is a different run rather than a slower one.
+///
+/// It is also the last thing between the matrix and the trimmed index. A row is a function
+/// of the graph, the world, the budget, the cap and the profile, and only the first comes
+/// out of the index - so identical graphs and an identical group list is the whole argument.
+#[test]
+fn the_whole_games_group_list_survives_the_trim() {
+    let (Some(full), Some(trimmed)) = (common::conversation_index(), common::shipped_index())
+    else {
+        return;
+    };
+
+    let full = read_index(&full).expect("the full index reads");
+    let trimmed = read_index(&trimmed).expect("the trimmed index reads");
+
+    let ours = groups_of(&full);
+    let theirs = groups_of(&trimmed);
+
+    assert_eq!(ours.len(), theirs.len(), "the trim changed how many groups there are");
+    assert_eq!(ours, theirs, "the trim changed which conversations reach which");
+
+    println!("{} groups identical across the whole index", ours.len());
+}
+
+/// Every conversation, and the set of conversations its group reaches.
+///
+/// The same walk `performance_matrix::group_starts` makes, kept as a plain map rather than
+/// canonicalised into starts: a map says WHICH conversation's group changed where a list of
+/// starts would only say that one did.
+fn groups_of(
+    index: &lookahead_engine::index::Index,
+) -> std::collections::BTreeMap<i32, std::collections::BTreeSet<i32>> {
+    index
+        .keys()
+        .map(|conversation| {
+            (*conversation, discover_group(index, *conversation).into_iter().collect())
+        })
+        .collect()
 }

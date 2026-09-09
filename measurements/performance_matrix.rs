@@ -1827,7 +1827,19 @@ fn census(index: &lookahead_engine::index::Index, world: &dyn ILookAheadWorld) {
 }
 
 fn main() {
-    let Some(path) = common::conversation_index() else { return };
+    // THE TRIMMED INDEX, WHICH IS THE MOD'S - 15 MB against the full index's 50, and it
+    // reads in about 135 ms against 429 to 678. de-12wr.2: the driver runs one process per
+    // row, so the read is paid once per row, and it was 40 to 70 per cent of a floor row's
+    // whole cost. `measurements/row_overhead.rs` is where those figures come from.
+    //
+    // THE ROWS ARE THE SAME ROWS, and that is proved rather than argued: `tests/
+    // shipped_index.rs` requires every field the engine reads to survive the trim, requires
+    // the group graph built from each index to be identical entry for entry and symbol for
+    // symbol, and requires the WHOLE GAME's group list - `discover_group` over all 1,422
+    // conversations, which is what decides the rows a run has - to be the same list. A row
+    // is a function of the graph, the world, the budget, the cap and the profile, and only
+    // the graph comes out of the index.
+    let Some(path) = common::shipped_index() else { return };
     let engines = engines();
 
     // Tab separated, so a run pipes straight into a file that something else can read -
