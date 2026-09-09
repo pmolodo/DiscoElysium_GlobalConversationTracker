@@ -107,16 +107,50 @@
 //! what two options SHARE. The arm is kept because the contrast is the point - a fixture can
 //! flatter a number as easily as it can flatten one, and this is the direction nobody checks.
 //!
+//! ## BETWEEN MENUS IS A DIFFERENT AND MUCH LARGER NUMBER, 2026-09-08
+//!
+//! Everything above is one node's options, which is what a memo living inside one request
+//! could collect. A request is one menu; a session is hours of them in a handful of groups,
+//! and the `walk` arm counts that population - the group walked in link order, marking what
+//! it passes as seen, forty menus each over the same nine groups:
+//!
+//! ```text
+//!      profile   menus     asked  distinct   already      share   asks each
+//!     5pc-seen     347      1861      1592       269      14.5%        1.17
+//!    50pc-seen     347      6119      1766      4353      71.1%        3.46
+//!    95pc-seen     346     11213       528     10685      95.3%       21.24
+//! ```
+//!
+//! IT MOVES WITH THE PROFILE, which is the opposite of what `links` found and is the whole
+//! finding. Overlap between the options of one node is a fact about the graph and sits at 83
+//! per cent whatever the player has read. Overlap between successive menus is a fact about
+//! how much is LEFT: at five per cent seen a walk barely repeats itself, because there are
+//! unseen entries everywhere and each menu has its own; at ninety-five there are a handful
+//! left in the group and every menu asks about the same handful.
+//!
+//! At the top end that is 32 asks a menu of which 31 are repeats. The regime where a memo
+//! would pay is therefore the late one - a player deep in a conversation they have mostly
+//! read - and it is not a small effect there.
+//!
+//! WHAT THE NUMBER DOES NOT SAY is whether any of it is collectable. Nothing in the arm
+//! invalidates anything, and the walk moves the seen set at every step, so a memo keyed on
+//! the world snapshot would discard all of it. See de-znov: the ceiling decides that an
+//! invalidation rule is worth designing, and says nothing about which of the three shapes
+//! there could work.
+//!
 //! ## How to run it
 //!
 //! ```text
 //! RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo candidate-recurrence -- \
 //!   cargo run --release --example candidate_recurrence
+//! RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo recurrence-walk -- \
+//!   cargo run --release --example candidate_recurrence walk
 //! ```
 //!
-//! `links` is the default and is the faithful one; `deepest` is the adversarial contrast.
-//! `CONVERSATION` picks the groups, `PROFILES` the percentages, `MENUS` how many menus to
-//! take from a group, `UNSEEN` and `WIDTHS` the deepest arm's profile and widths.
+//! `links` is the default and is the faithful one; `deepest` is the adversarial contrast;
+//! `walk` is successive menus rather than one menu's options. `CONVERSATION` picks the
+//! groups, `PROFILES` the percentages, `MENUS` how many menus to take from a group, `UNSEEN`
+//! and `WIDTHS` the deepest arm's profile and widths.
 
 use std::collections::{HashMap, HashSet};
 
@@ -170,8 +204,218 @@ fn main() {
 
     match std::env::args().nth(1).as_deref() {
         Some("deepest") => deepest(&index),
+        Some("walk") => walk(&index),
         _ => links(&index),
     }
+}
+
+/// How many menus one walk through a group counts before it stops.
+///
+/// Forty, the same sample `links` takes, so the two arms are the same size of thing said
+/// about the same groups. A walk that runs out of unvisited menus first stops there.
+const WALK_MENUS: usize = 40;
+
+/// Successive menus along a walk through one group, which is the population de-znov is about.
+///
+/// ## The question, and why `links` cannot answer it
+///
+/// `links` counts what the options of ONE node share, which is what a memo living inside one
+/// request could collect. de-a88z was closed on that number: after de-rn59.4 refuses a
+/// dominated candidate for free, a three-option menu asks about 3.4 targets of which 1.8 are
+/// distinct, and 1.6 saved fixed points does not pay for the plumbing.
+///
+/// A request is one menu. de-znov is about what survives BETWEEN them, and a session is
+/// hours of menus in a handful of groups - a different and larger population, which nothing
+/// had counted.
+///
+/// ## What a walk is here
+///
+/// The group in link order, without revisiting: every node with at least [`MIN_OPTIONS`]
+/// non-group options is a menu, and passing a node marks it SEEN, so the unseen set shrinks
+/// as the walk goes and later candidate lists are drawn against what the player has by then
+/// read. That last part is the reason this cannot be done by counting menus in isolation.
+///
+/// NOT A PLAYER'S PATH, and worth saying rather than implying. A player takes one route and
+/// this takes the whole group, so the menus are ordered by the graph rather than by choice.
+/// What that biases is the ORDER two menus are met in, not whether they ask about the same
+/// targets, which is what is being counted.
+///
+/// ## It is a ceiling, and deliberately
+///
+/// Nothing here invalidates anything. A verdict is counted as reusable whenever a later menu
+/// asks about a target an earlier one already asked about, whatever the world did in between
+/// - and the world does move, since the seed carries what has been seen and this walk is
+/// changing exactly that. A memo keyed on the world snapshot would throw all of it away.
+///
+/// So the number decides whether an invalidation rule is worth designing, not whether one
+/// would work. Near one says close de-znov unbuilt.
+fn walk(index: &lookahead_engine::index::Index) {
+    let groups = env_list("CONVERSATION", &GROUPS);
+    let percents: Vec<u32> = match std::env::var("PROFILES") {
+        Ok(value) => value.split(',').filter_map(|p| p.trim().parse().ok()).collect(),
+        Err(_) => PERCENTS.to_vec(),
+    };
+    let menus_wanted = from_env("MENUS", WALK_MENUS);
+
+    println!(
+        "SUCCESSIVE MENUS IN ONE GROUP: the group walked in link order, marking what it \
+         passes\nas seen. `asked` is what the menus ask about once dominance has refused what \
+         it can,\nsummed; `already` is how much of that an EARLIER menu of the same walk had \
+         asked about.\n"
+    );
+    println!(
+        "A CEILING. Nothing here invalidates anything, and the walk moves the seen set at \
+         every\nstep - so this says whether an invalidation rule is worth designing, not \
+         whether one\nwould work.\n"
+    );
+    println!(
+        "{:>6}  {:>12}  {:>6}  {:>8}  {:>8}  {:>8}  {:>9}",
+        "conv", "profile", "menus", "asked", "distinct", "already", "share",
+    );
+
+    let mut overall: HashMap<u32, Totals> = HashMap::new();
+
+    for conversation in groups {
+        let Ok((graph, _)) = build_group_graph(index, conversation) else { continue };
+        let root = DialogueNodeId::new(conversation, 0);
+        if graph.get(root).is_none() {
+            continue;
+        }
+        let pool = seen_profile::candidates(&graph, root);
+
+        for &percent in &percents {
+            let counted = one_walk(&graph, root, &pool, percent, menus_wanted);
+            if counted.rows == 0 {
+                continue;
+            }
+            println!(
+                "{:>6}  {:>12}  {:>6}  {:>8}  {:>8}  {:>8}  {:>9}",
+                conversation,
+                format!("{percent}pc-seen"),
+                counted.rows,
+                counted.asks,
+                counted.targets,
+                counted.repeat,
+                share(counted.repeat, counted.asks),
+            );
+            let entry = overall.entry(percent).or_default();
+            entry.rows += counted.rows;
+            entry.asks += counted.asks;
+            entry.targets += counted.targets;
+            entry.repeat += counted.repeat;
+        }
+        println!();
+    }
+
+    let mut seen: Vec<u32> = overall.keys().copied().collect();
+    seen.sort_unstable();
+    println!("OVER EVERY GROUP, per profile:\n");
+    println!(
+        "{:>12}  {:>6}  {:>8}  {:>8}  {:>8}  {:>9}  {:>10}",
+        "profile", "menus", "asked", "distinct", "already", "share", "asks each",
+    );
+    for percent in seen {
+        let totals = &overall[&percent];
+        println!(
+            "{:>12}  {:>6}  {:>8}  {:>8}  {:>8}  {:>9}  {:>10.2}",
+            format!("{percent}pc-seen"),
+            totals.rows,
+            totals.asks,
+            totals.targets,
+            totals.repeat,
+            share(totals.repeat, totals.asks),
+            totals.asks_each(),
+        );
+    }
+    println!(
+        "\n`asks each` is how many menus of one walk ask about the average target. At one, \
+         no\nmenu ever asks about a target another already settled and there is nothing for a \
+         memo\nto carry between requests, whatever key it were given.\n"
+    );
+}
+
+/// One walk through one group under one profile.
+///
+/// `targets` counts the DISTINCT entries the walk asked about at all, and `repeat` the asks
+/// an earlier menu had already made - so `asks` is `targets` plus `repeat` and the two ways
+/// of reading the row agree.
+fn one_walk(
+    graph: &lookahead_engine::graph::graph::LookAheadGraph,
+    root: DialogueNodeId,
+    pool: &[DialogueNodeId],
+    percent: u32,
+    menus_wanted: usize,
+) -> Totals {
+    let mut unseen = seen_profile::percent_unseen(pool, percent);
+
+    // What the walk has already asked about, which is what a memo would be holding.
+    let mut settled: HashSet<DialogueNodeId> = HashSet::new();
+    let mut totals = Totals::default();
+
+    let mut visited: HashSet<DialogueNodeId> = HashSet::new();
+    let mut queue: Vec<DialogueNodeId> = vec![root];
+    visited.insert(root);
+
+    while let Some(id) = queue.pop() {
+        if totals.rows >= menus_wanted {
+            break;
+        }
+        let Some(node) = graph.get(id) else { continue };
+
+        // PASSING AN ENTRY READS IT. The seed carries what has been seen, so a walk that did
+        // not do this would draw every menu's candidates against the same unseen set and
+        // measure a session nobody has.
+        unseen.remove(&id);
+
+        let options: Vec<DialogueNodeId> = node
+            .links
+            .iter()
+            .copied()
+            .filter(|child| graph.get(*child).is_some_and(|node| !node.is_group))
+            .collect();
+
+        for &child in node.links.iter().rev() {
+            if visited.insert(child) {
+                queue.push(child);
+            }
+        }
+
+        if options.len() < MIN_OPTIONS {
+            continue;
+        }
+
+        let novelty = |id: DialogueNodeId| {
+            if unseen.contains(&id) {
+                Novelty::UnseenAnyGame
+            } else {
+                Novelty::SeenThisGame
+            }
+        };
+
+        // WHAT THIS MENU ASKS, deduplicated across its own options: a memo inside the
+        // request already collects that sharing, and de-a88z priced it. What is left for a
+        // memo BETWEEN requests is this menu's distinct asks against the walk's own history.
+        let mut asked: HashSet<DialogueNodeId> = HashSet::new();
+        for start in &options {
+            let list = candidates_from(graph, &[*start], &novelty, Nearest::First);
+            asked.extend(minimal(graph, *start, &list));
+        }
+        if asked.is_empty() {
+            continue;
+        }
+
+        totals.rows += 1;
+        totals.asks += asked.len();
+        for target in asked {
+            if !settled.insert(target) {
+                totals.repeat += 1;
+            } else {
+                totals.targets += 1;
+            }
+        }
+    }
+
+    totals
 }
 
 /// The faithful arm: a menu's options are ONE NODE'S OWN CHILDREN.
