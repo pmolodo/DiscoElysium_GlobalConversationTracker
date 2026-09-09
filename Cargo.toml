@@ -181,6 +181,10 @@ name = "row_overhead"
 path = "measurements/row_overhead.rs"
 
 [[example]]
+name = "counter_widths"
+path = "measurements/counter_widths.rs"
+
+[[example]]
 name = "nodes_repeat"
 path = "measurements/nodes_repeat.rs"
 
