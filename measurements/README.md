@@ -49,8 +49,10 @@ takes `groups` (the default), which counts the slot classes per group, or `slots
 lists one group's slots so the classifier behind the counts can be read rather than trusted.
 `dominance_share` takes `rows` (the default), `menu`, `all` for the whole game, or `verify`,
 which re-derives its dominator relation by deleting entries and comparing. `candidate_recurrence`
-takes `links` (the default), where a menu's options are one node's own links, or `deepest`,
-where they come from the adversarial profile - and the two disagree on purpose.
+takes `links` (the default), where a menu's options are one node's own links, `deepest`,
+where they come from the adversarial profile - the two disagree on purpose - or `walk`,
+successive menus along one group rather than the options of one node. `cacheable_asks` runs
+the very asks that last arm counts, over the same walk, so the two numbers multiply.
 `dead_quantify` takes `sets` (the default), the forward fixed point over a whole group, or
 `menu`, the shipped call over an adversarial menu - and those two can move opposite ways,
 which is the reason both are there.

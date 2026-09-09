@@ -154,6 +154,12 @@ path = "measurements/dominance_share.rs"
 name = "candidate_recurrence"
 path = "measurements/candidate_recurrence.rs"
 
+# The same walk with the searches actually run: how many of the recurring asks end in a
+# verdict a memo could hold, and what holding one costs. The gate on de-znov.3.
+[[example]]
+name = "cacheable_asks"
+path = "measurements/cacheable_asks.rs"
+
 [[example]]
 name = "cache_split_menu"
 path = "measurements/cache_split_menu.rs"
