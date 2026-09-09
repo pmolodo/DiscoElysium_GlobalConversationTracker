@@ -44,7 +44,7 @@ use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::known::GroupShape;
-use lookahead_engine::symbolic::portfolio::{Budget, best_novelty};
+use lookahead_engine::symbolic::portfolio::best_novelty;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 
@@ -115,34 +115,24 @@ fn main() {
         }
     };
 
-    // BOTH IN-GAME ARMS, because the control run moved them differently: on 1030 at
-    // deepest-1 the `ingame` column held at 3,770 across every run and `bwd-ingame` moved.
-    // The two differ in one field, exactly as `performance_matrix::search_budget_for`
-    // builds them, so a difference here is the forward slice and cannot be anything else.
+    // WHAT THE PLUGIN ASKS FOR, since the question is about a row of a matrix run and a
+    // matrix row is answered at the player's own settings.
     let request = lookahead_engine::bridge::LookAheadRequest {
         time_budget_ms: 1000,
         memory_budget_mb: 256,
         ..Default::default()
     };
-    let in_game = request.search_budget();
-    let backward_only = Budget {
-        forwards: std::time::Duration::ZERO,
-        ..request.search_budget()
-    };
+    let budget = request.search_budget();
 
     println!(
-        "{:>6}  {:>12}  {:>10}  {:>12}  {:>7}  {:>6}",
-        "round", "arm", "verdict", "nodes", "asked", "ms"
+        "{:>6}  {:>10}  {:>12}  {:>7}  {:>6}",
+        "round", "verdict", "nodes", "asked", "ms"
     );
 
     let shape = GroupShape::of(&graph);
     let mut counts: Vec<usize> = Vec::new();
-    let mut backward_counts: Vec<usize> = Vec::new();
     for round in 1..=rounds {
-        for (arm, budget, into) in [
-            ("ingame", &in_game, &mut counts),
-            ("bwd-ingame", &backward_only, &mut backward_counts),
-        ] {
+        {
             // ON ITS OWN THREAD, exactly as a matrix column runs. Releasing a large diagram
             // walks it recursively, and the main thread's stack is not sized for it -
             // de-fpax. This measurement met that directly: the first cut ran on the main
@@ -172,7 +162,7 @@ fn main() {
                         COUNTER_CAP as u32,
                         &novelty,
                         Novelty::UnseenAnyGame,
-                        budget,
+                        &budget,
                         &shape,
                         None,
                     );
@@ -185,27 +175,25 @@ fn main() {
                     )
                 });
 
-            into.push(nodes);
+            counts.push(nodes);
             println!(
-                "{round:>6}  {arm:>12}  {verdict:>10}  {nodes:>12}  {asked:>7}  {:>6.0}",
+                "{round:>6}  {verdict:>10}  {nodes:>12}  {asked:>7}  {:>6.0}",
                 took.as_secs_f64() * 1000.0,
             );
         }
     }
 
     println!();
-    for (arm, counts) in [("ingame", &counts), ("bwd-ingame", &backward_counts)] {
-        let low = counts.iter().copied().min().unwrap_or(0);
-        let high = counts.iter().copied().max().unwrap_or(0);
-        println!(
-            "{arm:>12}: {low} to {high} nodes within this process, a spread of {:.1}%",
-            if low == 0 {
-                0.0
-            } else {
-                100.0 * (high - low) as f64 / low as f64
-            },
-        );
-    }
+    let low = counts.iter().copied().min().unwrap_or(0);
+    let high = counts.iter().copied().max().unwrap_or(0);
+    println!(
+        "{low} to {high} nodes within this process, a spread of {:.1}%",
+        if low == 0 {
+            0.0
+        } else {
+            100.0 * (high - low) as f64 / low as f64
+        },
+    );
     println!(
         "\nRun this file twice. A spread of zero here beside two different totals between \
          the runs\nputs the move on the per-process hash seed rather than on the manager's \

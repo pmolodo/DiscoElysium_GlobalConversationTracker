@@ -59,11 +59,12 @@
 
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::index::{build_group_graph, read_index};
+use lookahead_engine::symbolic::backward::{Backward, SettledPass};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
-use lookahead_engine::symbolic::reachability::{Reachability, seed_of};
+use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 
 #[path = "../tests/common/mod.rs"]
@@ -131,6 +132,10 @@ fn main() {
         eprintln!("no entry 0 in conversation {CONVERSATION}; skipping.");
         return;
     }
+    // THE ENTRY FURTHEST FROM THE START, so a search is as big as the group allows: what is
+    // being measured is what a large search leaves behind, and a small one leaves little
+    // whatever the arrangement.
+    let target = common::furthest_from(&graph, start);
 
     // Everything the searches share, allocated before the baseline so it is not counted as
     // residue: what is being measured is what a SEARCH leaves, not what the graph costs.
@@ -176,17 +181,12 @@ fn main() {
                 .with_constant_clock(DataLayout::group_passes_time(&graph));
 
             let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
-            let found = Reachability::explore(
-                &graph,
-                start,
-                &seed,
-                &mut compiler,
-                &world,
-                COUNTER_CAP as u32,
-            );
+            let found =
+                Backward::reaching(&graph, target, &mut compiler, &world, COUNTER_CAP as u32);
 
             // Read something off it so nothing can be optimised away.
             let reached = found.entries().count();
+            std::hint::black_box(found.reachable_from(start, &seed));
             peak = live();
             assert!(reached > 0, "search {run} reached nothing at all");
         }
@@ -231,15 +231,10 @@ fn main() {
             let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
 
             for run in 1..=searches {
-                let found = Reachability::explore(
-                    &graph,
-                    start,
-                    &seed,
-                    &mut compiler,
-                    &world,
-                    COUNTER_CAP as u32,
-                );
+                let found =
+                    Backward::reaching(&graph, target, &mut compiler, &world, COUNTER_CAP as u32);
                 let reached = found.entries().count();
+                std::hint::black_box(found.reachable_from(start, &seed));
                 assert!(reached > 0, "search {run} reached nothing at all");
 
                 println!(

@@ -695,14 +695,13 @@ impl LookAheadRequest {
         DiagramBudget::new(bytes)
     }
 
-    /// How long each half of the search may take.
+    /// How long the search may take, and how that is divided.
     ///
     /// THE PLAYER SETS ONE NUMBER and it means the whole answer, so the backward driver
     /// gets it and so does a candidate - a candidate allowed longer than the whole search
     /// would make the outer limit decorative, and one allowed less only makes the search
-    /// give up sooner, which is what [`portfolio::Budget::each`] is about. The forward
-    /// slice takes none of it, because it is off by default and the `min` below leaves it
-    /// off; see [`portfolio::Budget::default`] for what it was measured to cost.
+    /// give up sooner, which is what [`portfolio::Budget::each`] is about.
+    ///
     /// PUBLIC SO THE WALL CAN BE ASSERTED, since de-cluo. What the dial produces is a claim
     /// made to the player - "the longest one option's look-ahead may run for" - and
     /// tests/time_budget_binds.rs pins its SHAPE rather than timing a real search, because a
@@ -720,22 +719,12 @@ impl LookAheadRequest {
         // here. Any value above zero means the same thing, and means nothing else.
         if self.state_budget > 0 {
             return portfolio::Budget {
-                forwards: std::time::Duration::ZERO,
                 // THE ATTEMPT KEEPS A CLOCK. A wall of zero would stop the loop before its
                 // first candidate, so the search would give up without ever running a pass -
                 // a different failure from the one this setting exists to provoke.
                 overall: default.backwards,
-                // The slice gets no time here at all, so these bound nothing; the manager's
-                // allowance is still the honest number to name.
-                slice_memory: self.diagram_budget().memory(),
-                slice_steps: default.slice_steps,
                 backwards: default.backwards,
                 each: std::time::Duration::ZERO,
-                // Nothing to prune with: the forward slice gets no time at all here, so
-                // there is no settled run and `Known` would refuse to narrow anyway.
-                pruning: default.pruning,
-                // Nothing on the wire selects the abstraction, so the default decides it.
-                forget_dead: default.forget_dead.clone(),
             };
         }
 
@@ -746,26 +735,16 @@ impl LookAheadRequest {
         let whole = std::time::Duration::from_millis(self.time_budget_ms);
         portfolio::Budget {
             // THE PLAYER'S NUMBER IS THE WALL, which is what they were told it was. de-cluo:
-            // it used to be the backward ration alone, with the forward slice spent before
-            // that clock started and a candidate allowed to overrun it by a whole `each` -
-            // so a dial set to 1000 could return at about 1300. The rations below stay
-            // estimates of what each part should need, and are narrowed to what is left.
+            // it used to be the backward ration alone, with a candidate allowed to overrun it
+            // by a whole `each` - so a dial set to 1000 could return at about 1300. The
+            // rations below stay estimates of what each part should need, and are narrowed to
+            // what is left.
             overall: whole,
-            forwards: default.forwards.min(whole),
-            // THE SLICE GETS THE MANAGER'S ALLOWANCE, said rather than coincided with. At
-            // the player's 256 MB this is the same number the slice was defaulting to, which
-            // is exactly why it needed saying: the two matching was an accident of the
-            // defaults, and a request that raises the memory budget was silently leaving the
-            // slice at 256 MB. de-xegj.
-            slice_memory: self.diagram_budget().memory(),
-            slice_steps: default.slice_steps,
             backwards: whole,
             // THE DIAL, NOT A SLIVER OF IT. A candidate is held to the wall and to nothing
             // narrower, so a player who raises the number gives it to the pass that needs
             // it. The driver still narrows this to the time left when the pass begins.
             each: whole,
-            pruning: default.pruning,
-            forget_dead: default.forget_dead.clone(),
         }
     }
 
@@ -2469,10 +2448,6 @@ mod tests {
         assert!(
             budget.each <= budget.backwards,
             "a candidate may not outlast the search"
-        );
-        assert!(
-            budget.forwards <= budget.backwards,
-            "nor may the slice before it"
         );
     }
 

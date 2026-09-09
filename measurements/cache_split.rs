@@ -46,6 +46,11 @@
 //!
 //! ## What it said, 2026-09-07, at 512 MB and a 60-second cap
 //!
+//! THESE ROWS WERE TAKEN OVER A DIFFERENT WORKLOAD - a fixed point over the whole group from
+//! its start, rather than the per-target pass this now runs - so they are evidence for the
+//! shape of the curve rather than a baseline to compare a fresh run against. The sweep wants
+//! re-taking; see de-0jsf.3.
+//!
 //! ```text
 //!   conv  entries  split         nodes       cache  built  search   verdict   held nodes
 //!     28     2186   1/64      15,339,168     239,674    2ms    54ms   settled      227,036
@@ -122,11 +127,12 @@ use std::time::{Duration, Instant};
 
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::index::{build_group_graph, read_index};
+use lookahead_engine::symbolic::backward::{Backward, Budget, SettledPass};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
-use lookahead_engine::symbolic::reachability::{Budget, Reachability, seed_of};
+use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 
 #[path = "../tests/common/mod.rs"]
@@ -234,6 +240,12 @@ fn main() {
             continue;
         }
 
+        // THE ENTRY FURTHEST FROM THE START, because a backward pass's fixed point spans
+        // everything that can reach its target - so the deepest entry is the one that makes
+        // the search big enough for a cache to matter. Guards ignored, which can only
+        // over-state the distance and never pick an entry nothing reaches.
+        let target = common::furthest_from(&graph, start);
+
         let symbols = graph.symbols().clone();
         let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false)
             .keeping_only_read(&symbols, &DataLayout::read_by(&graph));
@@ -255,10 +267,9 @@ fn main() {
                     let built = began.elapsed();
 
                     let searching = Instant::now();
-                    let found = Reachability::explore_within(
+                    let found = Backward::reaching_within(
                         &graph,
-                        start,
-                        &seed,
+                        target,
                         &mut compiler,
                         &world,
                         COUNTER_CAP as u32,
@@ -267,6 +278,10 @@ fn main() {
                             ..Default::default()
                         },
                     );
+                    // READ SO THE SEED IS NOT DEAD WEIGHT. Building it is half of what the
+                    // "built ms" column measures, and a seed nothing asks about is a seed an
+                    // optimiser may decline to build.
+                    std::hint::black_box(found.reachable_from(start, &seed));
 
                     // READ BEFORE THE MANAGER GOES, and read at all so nothing can be
                     // optimised away. `out_of_memory` is what tells a search that ran out
@@ -317,7 +332,7 @@ fn main() {
 /// THE ORDER MATTERS. A search that ran out of nodes also failed to reach a fixed point, so
 /// asking about the fixed point first would report every no-room as a gave-up - and those
 /// are the two ends of this curve, told apart.
-fn verdict(stats: &lookahead_engine::symbolic::reachability::ReachabilityStats) -> &'static str {
+fn verdict(stats: &lookahead_engine::symbolic::backward::BackwardStats) -> &'static str {
     if stats.out_of_memory {
         "no-room"
     } else if stats.reached_fixed_point {

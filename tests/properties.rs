@@ -33,11 +33,12 @@ use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::graph::node::LookAheadNode;
 use lookahead_engine::oracle;
 use lookahead_engine::parser::guard_parser::parse_guard;
+use lookahead_engine::symbolic::backward::{Backward, SettledPass};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated::on_its_own_thread;
-use lookahead_engine::symbolic::reachability::{Reachability, seed_of};
+use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::test_graph::{Entry, GraphBuilder, node};
 use lookahead_engine::world::test_world::TestWorld;
@@ -460,14 +461,25 @@ proptest! {
         let symbols = graph.symbols().clone();
 
         // A thread of its own, with the manager built inside it - de-fpax.
+        //
+        // ONE PASS PER ENTRY, which is how the search answers: it asks about a target at a
+        // time rather than building a whole reachable set. On a shape of three to eight
+        // entries that is a handful of fixed points, and it is the engine the game runs.
         let symbolic: HashSet<DialogueNodeId> = on_its_own_thread(|| {
             let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
             let mut compiler = GuardCompiler::new(&vars).with_world(&world);
             let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
-            let found = Reachability::explore(
-                &graph, node(0), &seed, &mut compiler, &world, COUNTER_CAP as u32,
-            );
-            found.entries().collect()
+            let start = node(0);
+            let mut reached = HashSet::new();
+            reached.insert(start);
+            for id in graph.nodes().map(|entry| entry.id) {
+                let backward =
+                    Backward::reaching(&graph, id, &mut compiler, &world, COUNTER_CAP as u32);
+                if backward.reachable_from(start, &seed) {
+                    reached.insert(id);
+                }
+            }
+            reached
         });
 
         let missed: Vec<&DialogueNodeId> = walk.entries().difference(&symbolic).collect();

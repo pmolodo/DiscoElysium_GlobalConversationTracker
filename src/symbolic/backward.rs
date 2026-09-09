@@ -298,19 +298,11 @@ impl<'a> Backward<'a> {
         let mut frontier: HashMap<DialogueNodeId, BDDFunction> = HashMap::new();
         if let Some(node) = graph.get(target) {
             let arriving = this.pre_enter(node, &vars.top(), compiler, world, &mut image);
-            // NARROWED HERE FIRST, AND THIS IS WHERE IT PAYS MOST. If a settled forward run
-            // says nothing can arrive at the target, this set is empty, nothing is queued,
-            // and the pass ends at once having refused it - which is the whole cost of a
-            // refusal, and the thing a meet can never do.
-            let arriving = match known {
-                Some(known) => known.restricted(target, arriving),
-                None => arriving,
-            };
             if let Some(fresh) = this.widen(target, &arriving) {
-                // The target itself can be the meeting point, and on a group a forward run
-                // has already covered it usually is: whether anything can arrive AT the
-                // target holding a state the target's own guard admits is the whole
-                // question, and both halves of that are already in hand.
+                // The target itself can be the meeting point, and where the search begins
+                // at the target it is: whether what the search holds arriving there is a
+                // state the target's own guard admits is the whole question, and both
+                // halves of that are already in hand.
                 if let Some(known) = meeting {
                     if this.meets_known(known, target) {
                         this.stats.met_at = Some(target);
@@ -375,19 +367,6 @@ impl<'a> Backward<'a> {
                 // Entering the parent has to leave the search somewhere that can go on to
                 // reach the target through this child.
                 let before = this.pre_enter(node, &delta, compiler, world, &mut image);
-                // NARROWED TO WHAT CAN ACTUALLY ARRIVE HERE, where a SETTLED forward run
-                // says. A state no search can hold at this entry cannot carry a path from
-                // the seed to the target through it, so dropping it changes no answer and
-                // makes every set from here up smaller. `restricted` is the identity unless
-                // the forward run settled - a partial one may prove, never refuse.
-                //
-                // This is the half that can shorten a REFUSAL, which the meet cannot: a
-                // set narrowed to nothing ends a branch, where a meet only ever ends the
-                // search with a yes.
-                let before = match known {
-                    Some(known) => known.restricted(parent, before),
-                    None => before,
-                };
                 if image.out_of_memory() {
                     this.stats.out_of_memory = true;
                     break 'search;
@@ -897,19 +876,20 @@ mod tests {
 
     use crate::core::guard_value::GuardValue;
     use crate::symbolic::data_layout::DataLayout;
-    use crate::symbolic::reachability::{Reachability, seed_of};
+    use crate::symbolic::reachability::seed_of;
     use crate::test_graph::{Entry, GraphBuilder, node};
     use crate::world::test_world::TestWorld;
 
     const CAP: i32 = 16;
 
-    /// Both searches over one graph: does the forward one reach `target`, and does the
-    /// backward one say it can be reached from the seed?
+    /// Does a settled pass say `target` can be reached from the seed?
     ///
-    /// Asked together on purpose. The backward answer alone proves nothing - a pre-image
-    /// that dropped every state would answer "no" to everything and look tidy doing it -
-    /// so every case here checks it against the search that is already trusted.
-    fn both(entries: Vec<Entry>, world: &TestWorld, target: i32) -> (bool, bool) {
+    /// EVERY CASE BELOW SAYS WHAT IT EXPECTS, which is what makes these worth having. A
+    /// pre-image that dropped every state would answer "no" to everything and look tidy
+    /// doing it, so the expectation is written out by hand per shape rather than taken from
+    /// another search that could be wrong in the same direction. The shapes are small
+    /// enough to read the right answer off by eye.
+    fn reaches(entries: Vec<Entry>, world: &TestWorld, target: i32) -> bool {
         let mut builder = GraphBuilder::new();
         for entry in entries {
             builder = builder.add(entry);
@@ -935,33 +915,26 @@ mod tests {
         let start = node(0);
         let target = node(target);
 
-        let forward = Reachability::explore(&graph, start, &seed, &mut compiler, world, CAP as u32);
-        let reached = forward
-            .states_at(target)
-            .is_some_and(|states| states.satisfiable());
-
         let backward = Backward::reaching(&graph, target, &mut compiler, world, CAP as u32);
         assert!(
             backward.stats().reached_fixed_point,
             "the backward pass did not settle",
         );
 
-        (reached, backward.reachable_from(start, &seed))
+        backward.reachable_from(start, &seed)
     }
 
-    /// The forward and backward answers must agree, and the assertion says which way any
-    /// disagreement ran - because the two directions are not equally bad. A backward NO
-    /// against a forward YES means the pre-image lost states, which would make the engine
-    /// miss a marker.
+    /// The search must say what the shape plainly says.
+    ///
+    /// A NO where the answer is yes is the direction that costs a marker: it means the
+    /// pre-image lost states. A yes where the answer is no is the over-approximation
+    /// working as designed everywhere else, but not on shapes this small, where every guard
+    /// is decidable and the answer is exact.
     fn agree(entries: Vec<Entry>, world: &TestWorld, target: i32, expected: bool) {
-        let (forward, backward) = both(entries, world, target);
+        let answer = reaches(entries, world, target);
         assert_eq!(
-            forward, expected,
-            "the forward search disagrees with the test's own expectation",
-        );
-        assert_eq!(
-            backward, forward,
-            "backward said {backward} where forward said {forward} about entry {target}",
+            answer, expected,
+            "the backward search said {answer} about entry {target}",
         );
     }
 

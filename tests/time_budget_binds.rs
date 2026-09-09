@@ -50,11 +50,11 @@ fn the_dial_becomes_an_overall_deadline() {
         "the player's number should be the wall itself",
     );
 
-    // THE PARTS MUST NOT EXCEED THE WHOLE. This is the property that was broken: the slice
-    // and one candidate could each be spent outside the number rather than inside it.
+    // THE PARTS MUST NOT EXCEED THE WHOLE. This is the property that was broken: a ration
+    // could be spent outside the number rather than inside it.
     assert!(
-        budget.forwards <= budget.overall,
-        "the forward slice is spent out of the wall, not before it",
+        budget.backwards <= budget.overall,
+        "the driver is spent out of the wall, not before it",
     );
     assert!(
         budget.each <= budget.overall,
@@ -64,8 +64,9 @@ fn the_dial_becomes_an_overall_deadline() {
 
 /// A dial smaller than the shipped rations squeezes them rather than being ignored.
 ///
-/// The interesting direction: at 10 ms the 50 ms slice is larger than the whole answer is
-/// allowed to be, and a candidate is handed the dial rather than a ration of its own.
+/// The interesting direction: at 10 ms a ration sized for a whole second is larger than the
+/// answer is allowed to be, and a candidate is handed the dial rather than a ration of its
+/// own.
 #[test]
 fn a_small_dial_squeezes_the_rations_it_is_smaller_than() {
     let request = LookAheadRequest {
@@ -77,8 +78,8 @@ fn a_small_dial_squeezes_the_rations_it_is_smaller_than() {
     let ten = std::time::Duration::from_millis(10);
     assert_eq!(budget.overall, ten);
     assert!(
-        budget.forwards <= ten,
-        "a 50ms slice cannot fit in a 10ms answer"
+        budget.backwards <= ten,
+        "a ration sized for a second cannot fit in a 10ms answer"
     );
     assert!(
         budget.each <= ten,
@@ -92,7 +93,7 @@ fn the_default_budget_has_a_wall_covering_its_own_rations() {
     let default = portfolio::Budget::default();
 
     assert!(
-        default.overall >= default.forwards + default.backwards,
+        default.overall >= default.backwards,
         "the default wall should cover the work the default rations describe, or the shape \
          of a default search changes the moment the wall is enforced",
     );
@@ -186,12 +187,8 @@ fn narrowing_a_budget_moves_the_wall_and_leaves_the_estimates_alone() {
     let narrowed = budget.within(std::time::Duration::from_millis(20));
 
     assert_eq!(
-        narrowed.forwards, budget.forwards,
-        "the slice keeps its estimate"
-    );
-    assert_eq!(
         narrowed.backwards, budget.backwards,
-        "and so does the backward driver"
+        "the driver keeps its estimate"
     );
     assert_eq!(narrowed.each, budget.each, "and so does a candidate");
     assert!(

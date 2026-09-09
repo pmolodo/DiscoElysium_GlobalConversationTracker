@@ -7,9 +7,9 @@
 //! them, and reads a verdict off them against whatever seed the next request brings. Two
 //! ways that could be wrong, and they fail differently:
 //!
-//! - THE PASS WAS NOT A WHOLE ANSWER. A pass that ran out of budget, or met an earlier
-//!   search's forward sets, or was narrowed by them, holds a SUBSET of the states the target
-//!   is reachable from - so reading it back later would refuse something genuinely
+//! - THE PASS WAS NOT A WHOLE ANSWER. A pass that ran out of budget, that ran out of room,
+//!   or that met what the search holds where it began, holds a SUBSET of the states the
+//!   target is reachable from - so reading it back later would refuse something genuinely
 //!   reachable, and a marker the player should have seen would go missing.
 //!   `symbolic::memo` refuses to keep all three, and this is what checks that the refusal is
 //!   complete rather than plausible.
@@ -104,7 +104,6 @@ fn a_remembered_pass_answers_what_a_fresh_one_answers() {
         memos.kept += stats.kept;
         memos.unsettled += stats.unsettled;
         memos.met += stats.met;
-        memos.narrowed += stats.narrowed;
         memos.out_of_room += stats.out_of_room;
         memos.evicted += stats.evicted;
     }
@@ -262,21 +261,13 @@ fn one_group(
 /// finishes inside a player's second, so the wall is set where the machine cannot reach it.
 /// `tests/time_budget_binds.rs` is where the clock itself is pinned, and it pins the SHAPE
 /// rather than timing a real search for the same reason.
-fn budgets() -> [portfolio::Budget; 2] {
+fn budgets() -> [portfolio::Budget; 1] {
     let unhurried = std::time::Duration::from_secs(60);
-    let generous = || portfolio::Budget {
+    [portfolio::Budget {
         overall: unhurried,
         backwards: unhurried,
         each: unhurried,
-        ..Default::default()
-    };
-    [
-        generous(),
-        portfolio::Budget {
-            forwards: std::time::Duration::ZERO,
-            ..generous()
-        },
-    ]
+    }]
 }
 
 /// A world in which everything has been read except a handful at the end, one fewer of them

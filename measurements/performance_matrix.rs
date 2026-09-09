@@ -376,10 +376,10 @@ use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
-use lookahead_engine::symbolic::known::{GroupShape, Known};
-use lookahead_engine::symbolic::novelty_search::{Budget as SearchBudget, StoppedBy, best_novelty};
+use lookahead_engine::symbolic::known::GroupShape;
+
 use lookahead_engine::symbolic::portfolio;
-use lookahead_engine::symbolic::reachability::{Budget, Reachability, seed_of};
+use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::world::world::ILookAheadWorld;
 
@@ -495,23 +495,6 @@ fn row_time() -> std::time::Duration {
 /// [`symbolic_answers::mmss`], because the census narrates itself on the same clock and two
 /// copies of "how often does a long run say where it is" would be two things to keep in
 /// step. That file is pulled in here with `#[path]`, so it is the one both can see.
-use symbolic_answers::progress_every;
-
-/// How often the fixed point looks up from its work, against the five seconds it SPEAKS.
-///
-/// Two rates because they cost differently: looking up is a clock read and a memory
-/// question, and is wanted often enough that the budget cannot be overspent by much;
-/// gathering the line walks every entry's set for a node count, and is wanted only as often
-/// as somebody can read it. The forward search needs no equivalent - it is already on a
-/// clock of its own.
-const CHECK_GAP: std::time::Duration = std::time::Duration::from_secs(1);
-
-/// Bytes as gigabytes, for a line a person reads while waiting.
-fn gb(bytes: usize) -> String {
-    format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
-}
-
-use symbolic_answers::{PROGRESS, mmss};
 
 /// The verdict for a row nothing was learned from, in every engine's columns.
 ///
@@ -653,22 +636,18 @@ fn known_profiles() -> impl Iterator<Item = Profile> {
     PROFILES.into_iter().chain(TOO_EASY)
 }
 
-/// The three searches a row can hold, named for what they actually do.
+/// The two searches a row can hold, named for what tells them apart.
 ///
-/// DIRECTION IS WHAT TELLS THEM APART, which is why the names are what they are: every
-/// engine here carries its data the same way - a decision diagram per entry - so a prefix
-/// saying so would distinguish nothing.
+/// ONE METHOD, TWO ALLOWANCES, which is the whole of the distinction now: both columns run
+/// the same search over the same graph, and they differ in what they are allowed to spend.
+/// So the names say the allowance rather than the algorithm.
 ///
-/// READING AN OLD RUN: a folder whose columns say `symfwd`/`symbwd` is this pair under
-/// older names, and one whose columns say `fwd`/`bwd` and nothing else is older still,
-/// where `bwd` is what this file calls `fwd`. See measurements/README.md.
+/// READING AN OLD RUN: a folder may carry columns this no longer produces - `fwd`, `bwd`,
+/// `bwd-ingame`, `bwd-nolimit`, or the older `symfwd`/`symbwd` - from when a row held
+/// several methods rather than one. The two below kept their names, so a comparison across
+/// such a folder still pairs on them. See measurements/README.md.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Engine {
-    /// `Reachability::explore_within`: a set per entry, forwards.
-    Forward,
-    /// `novelty_search::best_novelty` over `Backward`: a set per entry, backwards, one
-    /// candidate at a time.
-    Backward,
     /// `portfolio::best_novelty` AT THE PLAYER'S OWN SETTINGS: what somebody waits for.
     ///
     /// de-xegj split this from the column below, because one column cannot answer both of
@@ -688,51 +667,23 @@ enum Engine {
     /// under it are estimates aimed at landing inside it.
     ///
     /// BUILT DIRECTLY RATHER THAN THROUGH THE PRODUCT, and that is the one place restating
-    /// rations is right: `search_budget` holds the slice to 50 ms whatever the dial says,
-    /// and hands a candidate the whole wall, so a two-minute clock built through it would
-    /// be two minutes on one candidate behind a slice sized for a player's second. This
-    /// column wants its own three numbers, and is deliberately not the product's
-    /// configuration.
+    /// rations is right: `search_budget` hands a candidate the whole wall, so a two-minute
+    /// clock built through it would be two minutes on one candidate. This column wants its
+    /// own numbers, and is deliberately not the product's configuration.
     NoLimit,
-    /// [`Engine::InGame`] WITH THE FORWARD SLICE TURNED OFF: the same method, backwards only.
-    ///
-    /// THE CONTROLLED ARM, and the reason it is not [`Engine::Backward`]. That column runs
-    /// `novelty_search::best_novelty` directly at the measurement's own allowance - a
-    /// ten-minute wall, unlimited candidates, six gigabytes - so reading it against a
-    /// portfolio column held to a player's second prices the RATION and not the slice. These
-    /// two run the same driver over the same manager with the same candidate ordering, the
-    /// same compiled guards and the same gate, and differ in one field.
-    ///
-    /// A ZERO FORWARD BUDGET IS A REAL BACKWARD RUN, not a starved forward one:
-    /// `portfolio::Budget::forwards` is documented as skippable at zero, and `Known` narrows
-    /// nothing without a settled forward run, so the pruning the other arm gets is absent
-    /// here rather than merely small.
-    BackwardInGame,
-    /// [`Engine::NoLimit`] with the forward slice turned off. See [`Engine::BackwardInGame`].
-    BackwardNoLimit,
 }
 
-const ALL_ENGINES: [Engine; 6] = [
-    Engine::Forward,
-    Engine::Backward,
-    Engine::InGame,
-    Engine::NoLimit,
-    Engine::BackwardInGame,
-    Engine::BackwardNoLimit,
-];
+const ALL_ENGINES: [Engine; 2] = [Engine::InGame, Engine::NoLimit];
 
-/// What a run measures when it does not say: the shipped method and its controlled arm.
+/// What a run measures when it does not say: the shipped method at the shipped settings.
 ///
-/// [`Engine::InGame`] is the forward slice followed by the backward driver, at the settings
-/// a player actually has - the method being tuned, and the one whose number is what a player
-/// waits for. [`Engine::BackwardInGame`] is THE SAME THING WITH THE SLICE OFF, differing in
-/// one field, so the pair says what the slice is worth on a row rather than in aggregate. A
-/// default run that measured only the first could say what the method costs and never what
-/// any part of it buys.
+/// [`Engine::InGame`] is the search a player actually waits for, and it is the column every
+/// tuning decision is read off. [`Engine::NoLimit`] answers a different question - where
+/// this method stops when nothing stops it - and costs up to two minutes a row against the
+/// in-game column's one second, so a whole-game run asks for it rather than assuming it.
 ///
-/// The other four are evidence rather than products and cost several times what these two
-/// do; `DEGCT_ENGINES=all` measures the lot. See [`engines`].
-const DEFAULT_ENGINES: [Engine; 2] = [Engine::InGame, Engine::BackwardInGame];
+/// `DEGCT_ENGINES=all` measures both. See [`engines`].
+const DEFAULT_ENGINES: [Engine; 1] = [Engine::InGame];
 
 /// What to pass for the whole grid, since naming one engine no longer implies the rest.
 const ALL: &str = "all";
@@ -741,69 +692,32 @@ impl Engine {
     /// The name `ENGINES` selects it by, and the prefix its columns carry.
     fn label(self) -> &'static str {
         match self {
-            Engine::Forward => "fwd",
-            Engine::Backward => "bwd",
             Engine::InGame => "ingame",
             Engine::NoLimit => "nolimit",
-            Engine::BackwardInGame => "bwd-ingame",
-            Engine::BackwardNoLimit => "bwd-nolimit",
         }
     }
 
     /// The columns it fills, in order. THE ONE PLACE THE COLUMN NAMES LIVE: the header is
     /// built from these and `tools/measure-matrix.sh` asks the test for it.
     fn columns(self) -> &'static [&'static str] {
-        match self {
-            // `setup` is how much of `ms` was building the layout, the manager, the compiled
-            // guards and the seed rather than searching - see [`Cells::of`], and note that
-            // `ms` still carries the whole of it.
-            //
-            // Two sizes because neither bounds the other; see `symbolic_forward`.
-            Engine::Forward => &["verdict", "ms", "setup", "nodes", "setsum"],
-            // `asked` against `cands` is the whole trade this column exists to price: one
-            // fixed point per candidate asked about, against one pass over all of them.
-            Engine::Backward => &["verdict", "ms", "setup", "nodes", "asked", "cands"],
-            // `by` is which half answered - the forward slice, the backward driver, or
-            // neither completely - which is the whole question the switching method asks.
-            //
-            // `nodes` IS THE SAME QUANTITY THE OTHER TWO REPORT, added in de-x8ms.6: what
-            // the manager holds at the end of the row. It was missing because the question
-            // this column answers is "which half answered", not "how big did it get" - and
-            // that mattered the moment fwdbwd became the default, because the parallel
-            // split clears a group against a worker's share of the budget and had nothing
-            // to clear it with. A fwdbwd-only run is exactly the run whose memory this is.
-            // BOTH PORTFOLIO COLUMNS REPORT THE SAME THINGS, so the two can be read against
-            // each other directly: the same row, the same question, one held to the player's
-            // settings and one not.
-            // THE BACKWARD-ONLY ARMS REPORT THE SAME FIVE, which is what lets the pair be
-            // read as one comparison rather than two tables. `by` can only say `Backwards`,
-            // `Partly` or `Gated` there - never `Forwards`, since no slice ran - and that is
-            // a fact worth having in the column rather than one to be remembered.
-            //
-            // AN ARM THAT RUNS A FORWARD SLICE COMPARES ON ITS VERDICT AND NOTHING ELSE,
-            // and that is de-12wr.3 and de-12wr.1 rather than a caveat added for safety.
-            // Measured 2026-09-09, the same binary over the same rows several times: the
-            // backward-only arm returns the same count to the node - 123,961 and 134,656 and
-            // 31,035 - and every one of the `ingame` arm's cost columns moves. `nodes`,
-            // 154,909 against 160,876 on one row; `by` and `asked`, which on conversation 28
-            // at deepest-5 read `Forwards asked=0` on three runs of four and `Backwards
-            // asked=1` on the fourth.
-            //
-            // THE SLICE'S FIFTY MILLISECONDS IS WHY. It does as much as fifty milliseconds of
-            // that machine buys, so on a row where it is close to answering, whether it gets
-            // there is a property of the machine. The VERDICT is unchanged either way - a row
-            // that flips to `Backwards` has the driver finish what the slice did not - which
-            // is what makes the verdict the column a refactor is checked on.
-            //
-            // IT USED TO MOVE ON EVERY ARM, for a reason that was not inherent and is gone:
-            // `LookAheadGraph` yielded its entries in hash-map order, which is seeded per
-            // process, so the backward work followed a different order in every run - three
-            // processes gave 126,106, 126,588 and 126,148 on one row, and one of them
-            // overflowed a stack the others did not. `graph.nodes()` is ordered now.
-            Engine::InGame | Engine::NoLimit | Engine::BackwardInGame | Engine::BackwardNoLimit => {
-                &["verdict", "ms", "setup", "nodes", "by", "asked"]
-            }
-        }
+        // `setup` is how much of `ms` was building the layout, the manager, the compiled
+        // guards and the seed rather than searching - see [`Cells::of`], and note that `ms`
+        // still carries the whole of it.
+        //
+        // `nodes` is what the manager holds at the end of the row, which is what the
+        // parallel split clears a group against.
+        //
+        // `by` is whether the search settled, stopped part way, or answered at the start
+        // without searching at all - see `portfolio::Answered`.
+        //
+        // BOTH COLUMNS REPORT THE SAME SIX, so the two can be read against each other
+        // directly: the same row, the same question, one held to the player's settings and
+        // one not.
+        //
+        // THE COST COLUMNS ARE MACHINE-DEPENDENT AND THE VERDICT IS NOT, which is de-12wr.3
+        // rather than a caveat added for safety. A refactor is checked on `verdict`; `ms`
+        // and `nodes` are read for their shape across many rows and not row by row.
+        &["verdict", "ms", "setup", "nodes", "by", "asked"]
     }
 
     fn headers(self) -> Vec<String> {
@@ -1267,31 +1181,20 @@ fn unreachable_for(
 
 /// What one engine did with one profile: one cell per column it names, in that order.
 ///
-/// STRINGS RATHER THAN NUMBERS, because the three engines do not report the same
-/// quantities and a struct wide enough for all of them would have to say what a column
-/// means by leaving it zero - which is a value the reader cannot tell from a measurement.
+/// STRINGS RATHER THAN NUMBERS, so that a column a row could not fill says `?` rather than
+/// a zero the reader cannot tell from a measurement.
+///
+/// `ms` IS THE WHOLE OF WHAT THE ENGINE TOOK and `setup` is how much of it was not
+/// searching, so the search is the difference. Narrowing `ms` to the search alone would be
+/// the tidier definition and would silently change what every recorded folder's `ms` column
+/// means against every new one, so the split adds a column and redefines none. It answers
+/// two live confusions at once (de-x8ms.1): a floor row reads about three hundred
+/// milliseconds per engine while doing no searching at all, and 16/deepest-1 recorded
+/// 647,709 ms against a 600,000 ms cap, which looked like an overrun and was a cap plus its
+/// setup.
 struct Cells(Vec<String>);
 
 impl Cells {
-    /// `millis` is the WHOLE of what the engine took and `setup` is how much of it was not
-    /// searching, so the search is the difference.
-    ///
-    /// KEPT THAT WAY ROUND ON PURPOSE. Narrowing `ms` to the search alone would have been
-    /// the tidier definition and would silently change what every recorded folder's `ms`
-    /// column means against every new one - the columns have moved three times already and
-    /// each move cost a paragraph in measurements/README.md explaining how to read an older
-    /// run. This adds a column and redefines none.
-    ///
-    /// It answers two live confusions at once (de-x8ms.1). A floor row reads about three
-    /// hundred milliseconds per engine while doing no searching at all, which looked like
-    /// the cost of a search that never happened; and 16/deepest-1 recorded 647,709 ms
-    /// against a 600,000 ms cap, which looked like an overrun and was a cap plus its setup.
-    fn of(verdict: &str, millis: u128, setup: u128, sizes: &[usize]) -> Self {
-        let mut cells = vec![verdict.to_string(), millis.to_string(), setup.to_string()];
-        cells.extend(sizes.iter().map(|size| size.to_string()));
-        Self(cells)
-    }
-
     /// The cells of an engine that did not run, one `?` per column it would have filled.
     fn absent(verdict: &str, engine: Engine) -> Self {
         let mut cells = vec![verdict.to_string()];
@@ -1300,13 +1203,12 @@ impl Cells {
     }
 }
 
-/// The switching method, which is what the game runs.
+/// The search the game runs.
 ///
-/// THE PORTFOLIO, NOT A THIRD ALGORITHM: a forward slice hunting the best class anything
-/// reachable carries, and then the backward driver told what the slice found. Where the
-/// slice halts, nothing else runs; where it does not, what it reached is handed on and a
-/// backward pass that MEETS it stops there. The other two columns are its halves measured
-/// alone, which is what makes this row readable against them.
+/// ONE CANDIDATE AT A TIME, best novelty class first, stopping at the first candidate proved
+/// reachable - which is `novelty_search` driven by `portfolio::best_novelty`, and is what
+/// `bridge::answer_within` calls. The two columns differ in what they are allowed to spend
+/// and in nothing else.
 ///
 /// The budget is the portfolio's own - the one the bridge hands it, scaled by nothing here
 /// - because what this column is for is what a player waits for. A row measured under a
@@ -1343,49 +1245,14 @@ fn in_game_request() -> lookahead_engine::bridge::LookAheadRequest {
 /// nothing at all.
 fn search_budget_for(engine: Engine) -> portfolio::Budget {
     match engine {
-        Engine::BackwardInGame => portfolio::Budget {
-            forwards: std::time::Duration::ZERO,
-            ..search_budget_for(Engine::InGame)
-        },
-        Engine::BackwardNoLimit => portfolio::Budget {
-            forwards: std::time::Duration::ZERO,
-            ..search_budget_for(Engine::NoLimit)
-        },
         Engine::InGame => in_game_request().search_budget(),
         // NO LIMIT, WALLED. The wall is the contract and the rations under it are estimates
         // aimed at landing inside it; an implementer may tune them, and 120 seconds is what
         // the column promises.
-        //
-        // STEPS ARE RELEASED TOO, which is the point: raising the clock alone would leave
-        // the slice stopped by its step allowance rather than by the time it was given.
-        //
-        // EXCEPT THE SLICE'S CLOCK, which is doubled rather than released, and that is the
-        // one ration here where more time is known to buy nothing. A slice earns its place
-        // by ANSWERING outright, which it does in under a millisecond or not at all, or by
-        // SETTLING, so that its sets may narrow the backward passes - and
-        // `measurements/settles_within.rs` swept exactly that: twenty times the shipped
-        // fifty milliseconds settles four more groups out of a hundred and seventy, and the
-        // groups it does not settle at fifty do not settle in a second either. Twenty
-        // seconds is spent, not used.
-        //
-        // AND SPENDING IT IS NOT FREE, which is what a whole-game run of this column
-        // measured: against the same method with the slice off, twenty seconds bought no
-        // extra settled row at all - 2,238 against 2,238 - for 2.8x the time and 33x the
-        // peak nodes, the manager still holding what a slice built and abandoned.
-        _ => portfolio::Budget {
+        Engine::NoLimit => portfolio::Budget {
             overall: std::time::Duration::from_secs(120),
-            forwards: std::time::Duration::from_millis(100),
             backwards: std::time::Duration::from_secs(100),
             each: std::time::Duration::from_secs(10),
-            // The slice is held to the same allowance the manager gets, rather than the
-            // 256 MB it would otherwise inherit by default - which would quietly cap this
-            // column at the very number it exists to exceed.
-            slice_memory: budget().memory(),
-            slice_steps: usize::MAX,
-            pruning: portfolio::Budget::default().pruning,
-            // The matrix measures the shipped method, so it takes the shipped answer to
-            // whether the slice forgets dead slots rather than deciding for itself.
-            forget_dead: portfolio::Budget::default().forget_dead.clone(),
         },
     }
 }
@@ -1419,7 +1286,7 @@ fn search_budget_for(engine: Engine) -> portfolio::Budget {
 /// else: the first profile of a group reports the setup it paid, and every profile after it
 /// reports ZERO, because that is what each of them actually spent. Summing the column over a
 /// folder gives the true total either way.
-fn forward_backward_all(
+fn search_all(
     graph: &LookAheadGraph,
     start: DialogueNodeId,
     world: &dyn lookahead_engine::world::world::ILookAheadWorld,
@@ -1435,10 +1302,8 @@ fn forward_backward_all(
     // to hide `no-room` rows a player would actually hit, which is the in-game column's most
     // useful output rather than a regression.
     let manager = match engine {
-        // The backward-only arm of each pair takes its pair's manager, for the reason
-        // `search_budget_for` takes its pair's rations: the slice is the only variable.
-        Engine::InGame | Engine::BackwardInGame => in_game_request().diagram_budget(),
-        _ => budget(),
+        Engine::InGame => in_game_request().diagram_budget(),
+        Engine::NoLimit => budget(),
     };
 
     let layout = DataLayout::for_group(graph, world, COUNTER_CAP);
@@ -1459,7 +1324,7 @@ fn forward_backward_all(
     work.iter()
         .enumerate()
         .map(|(index, unseen)| {
-            forward_backward_one(
+            search_one(
                 graph,
                 start,
                 world,
@@ -1478,7 +1343,7 @@ fn forward_backward_all(
 
 /// One profile of one group, against a manager and a compiler the caller built.
 #[allow(clippy::too_many_arguments)]
-fn forward_backward_one(
+fn search_one(
     graph: &LookAheadGraph,
     start: DialogueNodeId,
     world: &dyn lookahead_engine::world::world::ILookAheadWorld,
@@ -1583,333 +1448,6 @@ fn forward_backward_one(
         format!("{:?}", answer.by),
         answer.targets_asked.to_string(),
     ])
-}
-
-/// The symbolic forward search, over EVERY profile of one group, on one manager.
-///
-/// The loop is inside for the reason `forward_backward_all` gives at length: nothing above it
-/// depends on the profile, building it is most of what a row costs, and it cannot be hoisted
-/// across the thread boundary that keeps one manager per thread. de-x8ms.1.
-fn symbolic_forward_all(
-    graph: &LookAheadGraph,
-    start: DialogueNodeId,
-    world: &dyn lookahead_engine::world::world::ILookAheadWorld,
-    symbols: &StateSymbols,
-    work: &[HashSet<DialogueNodeId>],
-) -> Vec<Cells> {
-    let began = std::time::Instant::now();
-
-    let layout = DataLayout::for_group(graph, world, COUNTER_CAP);
-    // From the same allowance, so the diagram and the search are held to one number rather than two
-    // that happen to agree.
-    //
-    // FALLIBLY, because the alternative is not a wrong number but a dead process: the
-    // manager preallocates its node store and that allocation aborts. A None here means the
-    // machine could not supply the budget, which is not a finding about the search - the
-    // row is NOT MEASURED and wants running again with the memory free.
-    let Some(vars) = DataVars::try_new(&layout, symbols, budget()) else {
-        return work
-            .iter()
-            .map(|_| Cells::absent(NOT_MEASURED, Engine::Forward))
-            .collect();
-    };
-    let mut compiler = GuardCompiler::new(&vars)
-        .with_world(world)
-        .with_constant_clock(DataLayout::group_passes_time(graph));
-
-    let seed = seed_of(graph, world, &vars).expect("room for a seed");
-    // EVERYTHING ABOVE IS SETUP, and none of it depends on the profile - which is what
-    // de-x8ms.1 built this shape for. Read off here so a before and after can be compared on
-    // the search rather than on a total that moved for two reasons at once.
-    let shared_setup = began.elapsed().as_millis();
-
-    work.iter()
-        .enumerate()
-        .map(|(index, unseen)| {
-            symbolic_forward_one(
-                graph,
-                start,
-                world,
-                &vars,
-                &mut compiler,
-                &seed,
-                unseen,
-                if index == 0 { shared_setup } else { 0 },
-            )
-        })
-        .collect()
-}
-
-/// One profile of the symbolic forward search, against a manager the caller built.
-#[allow(clippy::too_many_arguments)]
-fn symbolic_forward_one(
-    graph: &LookAheadGraph,
-    start: DialogueNodeId,
-    world: &dyn lookahead_engine::world::world::ILookAheadWorld,
-    vars: &DataVars,
-    compiler: &mut GuardCompiler,
-    seed: &oxidd::bdd::BDDFunction,
-    unseen: &HashSet<DialogueNodeId>,
-    setup: u128,
-) -> Cells {
-    let began = std::time::Instant::now();
-    let quarry: HashSet<DialogueNodeId> = unseen.clone();
-    let allowance = memory();
-    let every = progress_every();
-    let sym_budget = Budget {
-        steps: usize::MAX,
-        time: row_time(),
-        memory: allowance,
-        // A STARTING GUESS ONLY when progress is on: `check_gap` retunes it from here to
-        // whatever holds a second, because no fixed step count can - twenty thousand steps
-        // is a moment early on and minutes once the sets are large, and the minutes end is
-        // exactly where somebody is watching. Checking every second also bounds the memory
-        // overshoot in time rather than in steps, which can only make the no-room verdict
-        // land closer to the budget it names.
-        report_every: if every.is_some() { 500 } else { 20_000 },
-        check_gap: if every.is_some() {
-            CHECK_GAP
-        } else {
-            std::time::Duration::ZERO
-        },
-        // The measurement allowance is far larger than the plugin's, so the machine is the
-        // real ceiling here and the guard matters more, not less.
-        on_step: None,
-        system_reserve: lookahead_engine::core::system_memory::DEFAULT_RESERVE,
-        report_gap: every.unwrap_or_default(),
-        on_progress: every.map(|_| {
-            Box::new(
-                move |steps: usize, reached: usize, held: usize, largest: usize, bytes: usize| {
-                    // THE LABEL COMES FROM THE ENGINE, and is padded to the width of the
-                    // longest so the columns line up. A progress line names itself with
-                    // the same word `DEGCT_ENGINES=` takes, so a line watched during a long run
-                    // can be typed straight back to reproduce it.
-                    println!(
-                        "{PROGRESS} {:<6} {:>7}  {steps:>10} steps  {reached:>6} reached  \
-                         {held:>11} set nodes  largest {largest:>9}  {} / {}",
-                        Engine::Forward.label(),
-                        mmss(began.elapsed()),
-                        gb(bytes),
-                        gb(allowance),
-                    );
-                },
-            ) as Box<dyn Fn(usize, usize, usize, usize, usize)>
-        }),
-        // The same early exit the forward search has: the question is whether ANY unseen
-        // entry is reachable, not what the whole reachable set is.
-        halt_on: Some(Box::new(move |id| quarry.contains(&id))),
-        // THE EXACT SETS. This column exists to say what the forward search costs, and an
-        // abstracted run is a different search - see `measurements/dead_quantify.rs`, which
-        // is where the two are compared.
-        forget_dead: None,
-    };
-
-    let found = Reachability::explore_within(
-        graph,
-        start,
-        seed,
-        compiler,
-        world,
-        COUNTER_CAP as u32,
-        &sym_budget,
-    );
-    let stats = found.stats();
-
-    let verdict = if stats.halted_at.is_some() {
-        "found"
-    } else if stats.out_of_system_memory {
-        // THE MACHINE, not the budget. de-e33h asked for these to be told apart, and this
-        // is the diagram's half of it: the row is not a result and wants running again
-        // with the memory free.
-        "no-ram"
-    } else if stats.out_of_memory {
-        "no-room"
-    } else if stats.reached_fixed_point {
-        "not-there"
-    } else {
-        "gave-up"
-    };
-
-    // TWO DIFFERENT QUANTITIES, and they are both here because neither bounds the other
-    // and one of them alone would mislead.
-    //
-    // `nodes` is what the MANAGER holds: every node allocated for anything - the reachable
-    // sets, the compiled guards, the transition relations, the intermediate results of
-    // every operation, and whatever has not been reclaimed yet. That is memory in use, so
-    // it is what the budget watches.
-    //
-    // `setsum` is the size of the ANSWER: each entry's set counted separately, so a node
-    // shared between two entries is counted twice.
-    //
-    // On conversation 368 the sum is much the larger (19.3 million against a budget of 8),
-    // because a great many entries hold big overlapping sets. On 28 the manager is the
-    // larger (562,880 against 255,443), because the answer is small and most of the
-    // allocation went on machinery. A column showing only one of them would suggest the
-    // budget had failed to fire in the first case and that the search was cheap in the
-    // second.
-    Cells::of(
-        verdict,
-        setup + began.elapsed().as_millis(),
-        setup,
-        &[vars.node_count(), stats.diagram_nodes],
-    )
-}
-
-/// The genuine backward search, driven the way the portfolio would drive it.
-///
-/// ONE CANDIDATE AT A TIME, best novelty class first, stopping at the first candidate
-/// proved reachable - which is `novelty_search` and not `Backward` alone. Asking `Backward`
-/// about one hand-picked target would measure a question nobody asks: the ordering is what
-/// makes the short circuit sound, and the per-candidate cost when the answer is no is the
-/// crossover this column exists to price.
-///
-/// ITS OWN MANAGER, from the same allowance and the same trimmed layout as the symbolic
-/// forward column, so the two symbolic columns differ in direction and in nothing else.
-/// The backward search over EVERY profile of one group, on one manager. See
-/// `forward_backward_all` for why the loop is inside. de-x8ms.1.
-fn symbolic_backward_all(
-    graph: &LookAheadGraph,
-    start: DialogueNodeId,
-    world: &dyn lookahead_engine::world::world::ILookAheadWorld,
-    symbols: &StateSymbols,
-    work: &[HashSet<DialogueNodeId>],
-) -> Vec<Cells> {
-    let began = std::time::Instant::now();
-
-    let layout = DataLayout::for_group(graph, world, COUNTER_CAP);
-    let Some(vars) = DataVars::try_new(&layout, symbols, budget()) else {
-        return work
-            .iter()
-            .map(|_| Cells::absent(NOT_MEASURED, Engine::Backward))
-            .collect();
-    };
-    let mut compiler = GuardCompiler::new(&vars)
-        .with_world(world)
-        .with_constant_clock(DataLayout::group_passes_time(graph));
-
-    let seed = seed_of(graph, world, &vars).expect("room for a seed");
-    // See the same reading in `symbolic_forward_all`: everything above is profile-independent.
-    let shared_setup = began.elapsed().as_millis();
-
-    work.iter()
-        .enumerate()
-        .map(|(index, unseen)| {
-            symbolic_backward_one(
-                graph,
-                start,
-                world,
-                &vars,
-                &mut compiler,
-                &seed,
-                unseen,
-                if index == 0 { shared_setup } else { 0 },
-            )
-        })
-        .collect()
-}
-
-/// One profile of the backward search, against a manager the caller built.
-#[allow(clippy::too_many_arguments)]
-fn symbolic_backward_one(
-    graph: &LookAheadGraph,
-    start: DialogueNodeId,
-    world: &dyn lookahead_engine::world::world::ILookAheadWorld,
-    vars: &DataVars,
-    compiler: &mut GuardCompiler,
-    seed: &oxidd::bdd::BDDFunction,
-    unseen: &HashSet<DialogueNodeId>,
-    setup: u128,
-) -> Cells {
-    let began = std::time::Instant::now();
-    let novelty = |id: DialogueNodeId| {
-        if unseen.contains(&id) {
-            Novelty::UnseenAnyGame
-        } else {
-            Novelty::SeenThisGame
-        }
-    };
-
-    // THE GRAPH'S SHAPE ONLY, and deliberately nothing else. Every candidate's pass used
-    // to rebuild the parent map from scratch, which on a four-thousand-entry group is a
-    // full walk per candidate; sharing it changes no answer at all.
-    //
-    // WHAT IS NOT SHARED HERE is any forward result. `Known` can carry one, and a pass that
-    // meets it stops early having proved the target reachable - but this column exists to
-    // say what a backward search costs on its own, and a column quietly answered by another
-    // engine's work would be the same mislabelling this file was corrected for. de-cnjw is
-    // where that is measured, against a run that pays for the forward half.
-    let known = Known::of(graph);
-    let every = progress_every();
-    let answer = best_novelty(
-        graph,
-        start,
-        StartBranch::Either,
-        seed,
-        compiler,
-        world,
-        COUNTER_CAP as u32,
-        &novelty,
-        &SearchBudget {
-            time: row_time(),
-            each: lookahead_engine::symbolic::backward::Budget {
-                steps: usize::MAX,
-                // The row's whole allowance, because one candidate is allowed to spend it:
-                // on the profiles this file is about there is often only one.
-                time: row_time(),
-                report_gap: every.unwrap_or_default(),
-                on_progress: every.map(|_| {
-                    // NODES AGAINST THE CAPACITY, where the other two columns show bytes.
-                    // The manager is what fills up here, and its capacity is the number
-                    // the budget was turned into - so this is the same question in the
-                    // units the answer will arrive in.
-                    let capacity = budget().nodes();
-                    std::rc::Rc::new(
-                        move |steps: usize, known: usize, queued: usize, nodes: usize| {
-                            println!(
-                                "{PROGRESS} {:<6} {:>7}  {steps:>10} steps  {known:>6} reaching  \
-                             {queued:>6} queued  {nodes:>12} / {capacity} nodes",
-                                Engine::Backward.label(),
-                                mmss(began.elapsed()),
-                            );
-                        },
-                    ) as std::rc::Rc<dyn Fn(usize, usize, usize, usize)>
-                }),
-            },
-            ..Default::default()
-        },
-        Some(&known),
-        None,
-    );
-
-    let verdict = if answer.best != Novelty::SeenThisGame {
-        "found"
-    } else {
-        match answer.stopped_by {
-            // Every candidate asked about and every one refused, so the answer is final.
-            StoppedBy::Nothing => "not-there",
-            StoppedBy::Targets | StoppedBy::Time => "gave-up",
-            // A pass that did not settle proves nothing by saying no, and WHY it did not
-            // settle is the same distinction the other two columns keep.
-            StoppedBy::Incomplete => {
-                if answer.out_of_nodes {
-                    "no-room"
-                } else {
-                    "gave-up"
-                }
-            }
-        }
-    };
-
-    // `asked` AGAINST `cands` IS THE POINT. One fixed point was paid per candidate asked
-    // about, where the search beside it pays one walk for every candidate there is - so a
-    // row where the two numbers are equal and the verdict is not-there is the worst case
-    // for this engine, and a row that asked about one of hundreds is its best.
-    Cells::of(
-        verdict,
-        setup + began.elapsed().as_millis(),
-        setup,
-        &[vars.node_count(), answer.targets_asked, answer.candidates],
-    )
 }
 
 /// The columns every row starts with, whichever engines ran.
@@ -2324,19 +1862,8 @@ fn main() {
         let per_engine: Vec<Vec<Cells>> = engines
             .iter()
             .map(|engine| {
-                isolated::on_its_own_thread(|| match engine {
-                    Engine::Forward => {
-                        symbolic_forward_all(&graph, start, &world, &symbols, &quarries)
-                    }
-                    Engine::Backward => {
-                        symbolic_backward_all(&graph, start, &world, &symbols, &quarries)
-                    }
-                    Engine::InGame
-                    | Engine::NoLimit
-                    | Engine::BackwardInGame
-                    | Engine::BackwardNoLimit => {
-                        forward_backward_all(&graph, start, &world, &symbols, &quarries, *engine)
-                    }
+                isolated::on_its_own_thread(|| {
+                    search_all(&graph, start, &world, &symbols, &quarries, *engine)
                 })
             })
             .collect();

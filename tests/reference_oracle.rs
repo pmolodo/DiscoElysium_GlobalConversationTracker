@@ -47,7 +47,7 @@ use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::known::{GroupShape, Known};
 use lookahead_engine::symbolic::novelty_search::{Budget as SearchBudget, best_novelty};
 use lookahead_engine::symbolic::portfolio;
-use lookahead_engine::symbolic::reachability::{Reachability, seed_of};
+use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::world::world::ILookAheadWorld;
 
@@ -145,97 +145,6 @@ fn group(
 }
 
 #[test]
-fn the_forward_search_reaches_what_the_reference_walk_reaches() {
-    let Some(path) = common::conversation_index() else {
-        return;
-    };
-    let index = read_index(&path).expect("the index reads");
-    let world = common::measurement_save();
-
-    println!(
-        "{:>6} {:>8} {:>9} {:>9} {:>8} {:>9} {:>7}",
-        "conv", "entries", "walked", "symbolic", "surplus", "bddnodes", "steps"
-    );
-
-    let mut compared = 0;
-
-    for conversation in conversations(&CHECKABLE) {
-        let Some((graph, start, walk)) = group(&index, conversation, &world) else {
-            continue;
-        };
-
-        // THE PRODUCT'S OWN LAYOUT, money included where the group reads it. A comparison
-        // against a layout nothing ships would check an engine nobody runs.
-        let layout = DataLayout::for_group(&graph, &world, COUNTER_CAP);
-        let symbols = graph.symbols().clone();
-
-        // A THREAD OF ITS OWN, with the manager built inside it - de-fpax. The entry set and
-        // the counts are plain data and come back; the sets they were read off belong to the
-        // manager and end with the thread.
-        let (symbolic, stats, fallbacks) = on_its_own_thread(|| {
-            let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
-            let mut compiler = GuardCompiler::new(&vars)
-                .with_world(&world)
-                .with_constant_clock(DataLayout::group_passes_time(&graph));
-
-            // The same state the walk starts in, encoded - not every data state. Starting
-            // from all of them would walk paths needing an item the player has not got, and
-            // report entries no real search can reach: a surplus that says nothing about the
-            // encoding.
-            let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
-            let found = Reachability::explore(
-                &graph,
-                start,
-                &seed,
-                &mut compiler,
-                &world,
-                COUNTER_CAP as u32,
-            );
-            let entries: HashSet<DialogueNodeId> = found.entries().collect();
-            (entries, found.stats().clone(), compiler.fallbacks())
-        });
-
-        let missed: Vec<&DialogueNodeId> = walk.entries().difference(&symbolic).collect();
-        let surplus = symbolic.difference(walk.entries()).count();
-
-        println!(
-            "{conversation:>6} {:>8} {:>9} {:>9} {:>8} {:>9} {:>7}",
-            graph.count(),
-            walk.entries().len(),
-            symbolic.len(),
-            surplus,
-            stats.diagram_nodes,
-            stats.steps,
-        );
-
-        // A surplus is allowed, but it should be explainable rather than mysterious - so the
-        // two things that produce one are printed beside it: guards the compiler could not
-        // read, and prices it could not decide. THE SECOND SHOULD NOW BE ZERO on any group
-        // that carries money, and a run where it is not is a group whose layout was built
-        // without a balance rather than a fact about the content (de-95t6).
-        if surplus > 0 {
-            println!(
-                "         {surplus} extra: {fallbacks} guard fallbacks, {} cost checks \
-                 undecidable",
-                stats.unaffordable_unknown,
-            );
-        }
-
-        assert!(
-            missed.is_empty(),
-            "conversation {conversation}: the symbolic search MISSED {} entries the walk \
-             reached, which is the direction it is never allowed to be wrong in: {:?}",
-            missed.len(),
-            missed.iter().take(10).collect::<Vec<_>>(),
-        );
-
-        compared += 1;
-    }
-
-    assert!(compared > 0, "no conversation could be compared both ways");
-}
-
-#[test]
 fn the_backward_search_finds_what_the_reference_walk_reaches() {
     let Some(path) = common::conversation_index() else {
         return;
@@ -263,9 +172,9 @@ fn the_backward_search_finds_what_the_reference_walk_reaches() {
         let asked = targets(&depths);
 
         // A THREAD FOR THE ORACLE'S COUNTERPART, with the manager built inside it - de-fpax.
-        // This runs a forward fixed point and then two backward passes per target over one
-        // manager, which is the arrangement that accumulates; the assertions inside are
-        // re-raised here, so a disagreement still fails the test exactly as it would have.
+        // This runs two backward passes per target over one manager, which is the
+        // arrangement that accumulates; the assertions inside are re-raised here, so a
+        // disagreement still fails the test exactly as it would have.
         let (agreed, surplus, missed, diagram_nodes, took) = on_its_own_thread(|| {
             let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
             let mut compiler = GuardCompiler::new(&vars)
@@ -273,31 +182,13 @@ fn the_backward_search_finds_what_the_reference_walk_reaches() {
                 .with_constant_clock(DataLayout::group_passes_time(&graph));
             let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
 
-            // A SETTLED forward run, which is what licenses pruning a backward pass: it
-            // bounds what can arrive at each entry, and says outright that some entries can
-            // never be arrived at. Every target below is then asked TWICE - plain, and
-            // pruned - because an unsound bound would show up here and nowhere else: this is
-            // the only test that checks a backward answer against a walk rather than against
-            // another symbolic search.
-            let forward = Reachability::explore(
-                &graph,
-                start,
-                &seed,
-                &mut compiler,
-                &world,
-                COUNTER_CAP as u32,
-            );
-            let settled = forward.stats().reached_fixed_point;
-            // PRUNING ON, because checking it is the point of asking twice. It is off by
-            // default everywhere else - see Known::restricted - and this is what keeps it
-            // honest while it waits for de-fawk.
-            let known = Known::of(&graph)
-                .from(start, &seed)
-                .with_forward(&forward)
-                .pruning(true);
-            if !settled {
-                println!("{conversation:>6}  the forward run did not settle; pruning not checked");
-            }
+            // WHERE THE SEARCH BEGINS, which is what lets a backward pass stop early: a
+            // pass whose set at the start admits what the search holds there has proved the
+            // target reachable without settling. Every target below is asked TWICE - plain,
+            // and told this - because an unsound early exit would show up here and nowhere
+            // else: this is the only test that checks a backward answer against a walk
+            // rather than against another symbolic search.
+            let known = Known::of(&graph).from(start, &seed);
 
             let began = std::time::Instant::now();
             let mut missed: Vec<DialogueNodeId> = Vec::new();
@@ -317,27 +208,25 @@ fn the_backward_search_finds_what_the_reference_walk_reaches() {
 
                 let says_reachable = backward.reachable_from(start, &seed);
 
-                // THE SAME QUESTION, PRUNED. A pass that meets the forward run stops early
-                // having proved yes, so met_at is asked before the set is - reading a no out
-                // of a pass that stopped on a yes is the mistake this arrangement invites.
-                if settled {
-                    let pruned = Backward::reaching_knowing(
-                        &graph,
-                        *target,
-                        &mut compiler,
-                        &world,
-                        COUNTER_CAP as u32,
-                        &BackwardBudget::default(),
-                        Some(&known),
-                    );
-                    let pruned_says =
-                        pruned.stats().met_at.is_some() || pruned.reachable_from(start, &seed);
-                    assert_eq!(
-                        pruned_says, says_reachable,
-                        "conversation {conversation}: pruning changed the answer about \
-                         {target}, which it may never do",
-                    );
-                }
+                // THE SAME QUESTION, TOLD WHERE THE SEARCH BEGINS. A pass that meets stops
+                // early having proved yes, so met_at is asked before the set is - reading a
+                // no out of a pass that stopped on a yes is the mistake this arrangement
+                // invites.
+                let met = Backward::reaching_knowing(
+                    &graph,
+                    *target,
+                    &mut compiler,
+                    &world,
+                    COUNTER_CAP as u32,
+                    &BackwardBudget::default(),
+                    Some(&known),
+                );
+                let met_says = met.stats().met_at.is_some() || met.reachable_from(start, &seed);
+                assert_eq!(
+                    met_says, says_reachable,
+                    "conversation {conversation}: the early exit changed the answer about \
+                     {target}, which it may never do",
+                );
 
                 match (walk.reached(*target), says_reachable) {
                     (true, true) => agreed += 1,

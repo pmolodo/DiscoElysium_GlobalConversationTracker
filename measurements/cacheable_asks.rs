@@ -15,14 +15,12 @@
 //! 1. THE PASS SETTLED. `BackwardStats::reached_fixed_point`. An unsettled pass proves
 //!    nothing and holds a subset of what it would have held; the driver already refuses to
 //!    remember one within a request, for the same reason.
-//! 2. IT DID NOT MEET. `BackwardStats::met_at` set means the pass stopped early against
-//!    forward sets DERIVED FROM ONE SEED, so what it holds is a proof for that seed and a
+//! 2. IT DID NOT MEET. `BackwardStats::met_at` set means the pass stopped early against what
+//!    the search holds where it BEGINS, so what it holds is a proof for that seed and a
 //!    partial fixed point for any other. A memo is asked about seeds it has never seen.
-//! 3. IT IS NO DEARER UNPRUNED. `Known::restricted` narrows every pre-image with forward
-//!    sets that were seeded, so a pass that is to outlive its seed has to be built with
-//!    pruning OFF. What that costs is the whole question - it may be free on the groups
-//!    whose forward slice does not settle, since `Known` narrows nothing without a settled
-//!    run, and it may be the entire saving on the ones where it does.
+//!
+//! Both are properties of the pass rather than of how it was asked for, which is why this
+//! can run the search exactly as it ships and read the answer off afterwards.
 //!
 //! ## What this runs
 //!
@@ -31,92 +29,48 @@
 //! menu, the passes the driver would actually run. Per ask: whether it settled, whether it
 //! met, how long it took and how many diagram nodes its sets hold.
 //!
-//! TWICE OVER THE SAME WALK, once pruned and once not, which answers item 3 in one run
-//! against one world rather than in two runs against different draws. The walk is a function
-//! of the graph and the profile alone, so both arms ask exactly the same questions in
-//! exactly the same order.
-//!
-//! ONE MANAGER PER ARM, built inside a thread of its own - de-fpax - so neither arm inherits
-//! the other's node store and the second is not flattered by the first's cache.
+//! ONE MANAGER FOR THE WALK, built inside a thread of its own - de-fpax - because that is
+//! what a session gives it: a menu after menu in one group against one store.
 //!
 //! ## What is faithful here and what is not
 //!
 //! FAITHFUL: the shipped budget (`portfolio::Budget::default`), the player's 256 MB, the
-//! shipped layout, the forward slice at its fifty milliseconds with the halt condition the
-//! driver gives it, and the dominance rule that refuses most of a candidate list for free.
+//! shipped layout, and the dominance rule that refuses most of a candidate list for free.
 //!
 //! NOT: the driver stops at its first proof, and this asks about every candidate of every
 //! option, because what a memo holds is verdicts and not searches. So this is the
 //! all-refusals population, in the same direction and for the same reason `menu_walk::minimal`
 //! is.
 //!
-//! AN OPTION THE SLICE ANSWERS FOR IS NOT ASKED ABOUT. Where the forward slice halts, the
-//! driver reports and no backward pass runs at all; where nothing better than the floor is
-//! link-reachable, no search is begun. Both are counted and reported rather than quietly
-//! dropped, because an ask that never reaches the backward driver is not an ask a memo could
-//! serve either, and it is part of the same subtraction the dominance rule started.
+//! AN OPTION THAT NEVER SEARCHES IS NOT ASKED ABOUT. Where nothing better than the floor is
+//! link-reachable the bridge begins no search, and where the START ALREADY CARRIES the class
+//! being hunted the driver answers before touching a diagram. Both are counted and reported
+//! rather than quietly dropped, because an ask that never reaches the backward driver is not
+//! an ask a memo could serve either, and it is part of the same subtraction the dominance
+//! rule started.
 //!
-//! ## What it said, 2026-09-09: EVERY PASS THAT RUNS IS CACHEABLE, and two thirds recur
+//! ## What it said, and what wants asking again
 //!
-//! Nine groups, twenty menus each, at ninety-five and fifty per cent seen:
+//! EVERY PASS THAT RAN WAS CACHEABLE, over nine groups and twenty menus each at
+//! ninety-five and fifty per cent seen: not one pass of 3,361 met, and not one failed to
+//! settle. de-znov.2 named the plausible failure - that the asks which recur are the ones
+//! that meet early, the cheap ones, while the ones that cost never settle - and it did not
+//! happen. 2,305 of those passes were repeats an earlier menu had already paid for, at
+//! 22.4 ms each, which is 51.5 seconds of the 75.2 the walks spent.
 //!
-//! ```text
-//!   asks in the ceiling                    9882
-//!   of those, repeats                      8276  83.7%
-//!   asks that reached the driver           3361  34.0%
-//!   passes that settled                    3361  100.0%
-//!   passes that met                           0  0.0%
-//!   cacheable - settled, did not meet      3361  100.0%
-//!   passes a memo would replace            2305  68.6%
-//! ```
-//!
-//! THE FEARED ANSWER DID NOT HAPPEN. de-znov.2 named the plausible failure - that the asks
-//! which recur are the ones that meet early, the cheap ones, while the ones that cost never
-//! settle - and not one of 3361 passes met, nor one failed to settle. The reason is
-//! structural rather than lucky: the forward slice halts on any option from which something
-//! of the hunted class is reachable, so what reaches the backward driver at all is exactly
-//! the population where every ask is a refusal. That is the assumption `menu_walk::minimal`
-//! states, and the slice enforces it.
-//!
-//! AND THE CEILING IS A THIRD OF WHAT IT LOOKED. Only 3361 of 9882 asks reach the driver,
-//! because the slice answers the other two thirds outright. So de-znov.1's 83.7 per cent
-//! repeats is worth 27.9 per cent of the ceiling - but 68.6 per cent of the passes actually
-//! spent, which is the number a design is decided on. Read `of ran`, not `of repeat`.
-//!
-//! ## PRUNING COSTS NOTHING HERE, and for a reason worth knowing
-//!
-//! ```text
-//!   every pass unpruned, ms             75151.5
-//!   every pass pruned, ms               74115.4
-//!   unpruned settled                       3361  100.0%
-//!   pruned settled                         3361  100.0%
-//! ```
-//!
-//! Within noise, and identical settle rates - so item 3 above is answered yes: a pass built
-//! to outlive its seed is no dearer than the one that ships. Not because pruning is cheap
-//! but because it never applies: the forward slice settled in 2 of 720 options, and `Known`
-//! narrows nothing without a settled run, so on this population the two arms are one arm.
-//!
-//! THAT IS ABOUT THESE NINE GROUPS AND NOT ABOUT THE GAME. They are the heavy ones, chosen
-//! for being heavy; `measurements/settles_within.rs` puts 119 of 120 ORDINARY groups inside
-//! the same fifty milliseconds. So this says the memo is free where the passes are dear, and
-//! says nothing yet about what it would cost where pruning does bite.
+//! THOSE NUMBERS WERE TAKEN OVER A LARGER POPULATION THAN THIS NOW ASKS ABOUT, when an
+//! option could be answered by a second search running ahead of the driver. Two thirds of
+//! the ceiling never reached the driver for that reason, and now they do. So the SHAPE of
+//! the finding stands - a pass that runs is one a memo could hold - and every figure in it
+//! wants re-taking. See de-0jsf.3.
 //!
 //! ## WHAT IT COSTS IS MEMORY, WHICH IS THE HALF TO WORRY ABOUT
 //!
-//! ```text
-//!   one cacheable pass, ms                 22.4
-//!   one cacheable pass, nodes             29956
-//!   the worst manager at walk's end     4900581
-//! ```
-//!
-//! 2305 passes at 22.4 ms is 51.5 of the 75.2 seconds these walks spend, so the saving is
-//! real and large. The other column is the constraint: conversation 14's walk left 4.9
-//! million diagram nodes in the manager, and at `DiagramBudget::BYTES_PER_NODE` that is most
-//! of the player's 256 MB, for a store holding one walk's guards, slices and passes. A memo
-//! keeps a subset of that ALIVE across requests where today it is dropped with the query, so
-//! de-znov.3's design question is not whether the verdicts are worth keeping - they are - but
-//! how many may be kept at once.
+//! Conversation 14's walk left 4.9 million diagram nodes in the manager, and at
+//! `DiagramBudget::BYTES_PER_NODE` that is most of the player's 256 MB, for a store holding
+//! one walk's guards and passes. A memo keeps a subset of that ALIVE across requests where
+//! today it is dropped with the query, so de-znov.3's design question is not whether the
+//! verdicts are worth keeping - they are - but how many may be kept at once.
 //!
 //! ## How to run it
 //!
@@ -129,11 +83,11 @@
 //! take from each group, `EACH_MS` what one pass may spend and `BUDGET_MB` the manager's
 //! allowance.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use lookahead_engine::bridge::{SnapshotWorld, WorldSnapshot};
-use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
+use lookahead_engine::core::types::{DialogueNodeId, Novelty};
 use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::backward::{Backward, Budget as BackwardBudget};
@@ -143,9 +97,8 @@ use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
 use lookahead_engine::symbolic::known::GroupShape;
 use lookahead_engine::symbolic::portfolio;
-use lookahead_engine::symbolic::reachability::{Budget as ForwardBudget, Reachability, seed_of};
+use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
-use lookahead_engine::world::world::ILookAheadWorld;
 
 #[path = "../tests/common/mod.rs"]
 mod common;
@@ -201,9 +154,7 @@ fn main() {
 
     println!(
         "WHAT A MEMO BETWEEN REQUESTS COULD HOLD. The walk `candidate_recurrence` counts, \
-         with the\npasses the driver would actually run at each menu - once with pruning on, \
-         which is what\nships, and once off, which is what a pass has to be built with to \
-         outlive its seed.\n"
+         with the\npasses the driver would actually run at each menu.\n"
     );
     println!(
         "A CACHEABLE PASS IS ONE THAT SETTLED AND DID NOT MEET. An unsettled pass holds a \
@@ -211,10 +162,9 @@ fn main() {
          against.\n"
     );
     println!(
-        "{} MB, {menus_wanted} menus a walk, {} ms a pass, forward slice {} ms\n",
+        "{} MB, {menus_wanted} menus a walk, {} ms a pass\n",
         budget.memory() / (1024 * 1024),
         each.as_millis(),
-        portfolio::Budget::default().forwards.as_millis(),
     );
 
     let mut every: Vec<Walked> = Vec::new();
@@ -246,14 +196,8 @@ fn main() {
             }
 
             let ceiling = Recurrence::of(&menus);
-            // PRUNING OFF FIRST, so the arm whose cost decides de-znov.3 is the one that
-            // cannot have been warmed by the other. The managers are separate either way;
-            // the machine's own caches are not.
-            let Some(off) = arm(&graph, &menus, budget, each, false) else {
+            let Some(ran) = arm(&graph, &menus, budget, each) else {
                 eprintln!("conversation {conversation}: no room for the manager; skipping.");
-                continue;
-            };
-            let Some(on) = arm(&graph, &menus, budget, each, true) else {
                 continue;
             };
 
@@ -262,21 +206,14 @@ fn main() {
             // what it found, which is enough to follow a run rather than wait one out.
             println!(
                 "  ... {conversation} at {percent}pc-seen: {} menus, {} asks ran of {}, \
-                 {} cacheable, {} saved, {:.0} ms off / {:.0} ms on",
-                ceiling.menus,
-                off.asks,
-                ceiling.asked,
-                off.cacheable,
-                off.saved,
-                off.millis,
-                on.millis,
+                 {} cacheable, {} saved, {:.0} ms",
+                ceiling.menus, ran.asks, ceiling.asked, ran.cacheable, ran.saved, ran.millis,
             );
             every.push(Walked {
                 conversation,
                 percent,
                 ceiling,
-                off,
-                on,
+                ran,
             });
         }
     }
@@ -289,35 +226,29 @@ fn main() {
     per_walk(&every);
     reached(&every);
     what_a_pass_costs(&every);
-    pruned_against_not(&every);
     the_answer(&every);
 }
 
-/// One group under one profile: the ceiling, and what the two arms spent reaching it.
+/// One group under one profile: the ceiling, and what the walk spent reaching it.
 struct Walked {
     conversation: i32,
     percent: u32,
     ceiling: Recurrence,
-    /// Pruning off - the arm a cacheable pass would have to be built in.
-    off: Arm,
-    /// Pruning on - what ships.
-    on: Arm,
+    ran: Arm,
 }
 
-/// What one arm of one walk found.
+/// What one walk found.
 #[derive(Default)]
 struct Arm {
     /// Asks that never reached the backward driver, and why.
     ///
     /// `no_hunt` is an option with nothing better than the floor link-reachable, which the
-    /// bridge refuses before a diagram is touched; `halted` is one the forward slice
-    /// answered outright. Neither is an ask a memo could serve, and both are part of the
-    /// same subtraction the dominance rule started - so they are reported rather than
-    /// dropped.
+    /// bridge refuses before a diagram is touched; `at_the_start` is one whose start already
+    /// carries the class being hunted, which the driver answers without searching. Neither
+    /// is an ask a memo could serve, and both are part of the same subtraction the dominance
+    /// rule started - so they are reported rather than dropped.
     no_hunt: usize,
-    halted: usize,
-    /// Options whose forward slice SETTLED, which is the only thing that licenses pruning.
-    settled_slice: usize,
+    at_the_start: usize,
     options: usize,
     /// Passes actually run.
     asks: usize,
@@ -344,17 +275,16 @@ struct Arm {
     largest_nodes: usize,
     /// What the manager holds when the walk ends, which is the honest ceiling on all of it.
     ///
-    /// EVERYTHING, not just what a memo would keep: the compiled guards, the forward slices
-    /// and every pass's sets share this one store. A memo would hold a subset, and this says
-    /// what the subset is inside.
+    /// EVERYTHING, not just what a memo would keep: the compiled guards and every pass's
+    /// sets share this one store. A memo would hold a subset, and this says what the subset
+    /// is inside.
     manager_nodes: usize,
 }
 
 impl Arm {
     fn add(&mut self, other: &Arm) {
         self.no_hunt += other.no_hunt;
-        self.halted += other.halted;
-        self.settled_slice += other.settled_slice;
+        self.at_the_start += other.at_the_start;
         self.options += other.options;
         self.asks += other.asks;
         self.settled += other.settled;
@@ -382,7 +312,7 @@ impl Arm {
     }
 }
 
-/// One walk's passes, under one setting of pruning.
+/// One walk's passes.
 ///
 /// A THREAD OF ITS OWN WITH THE MANAGER INSIDE IT - de-fpax, and `symbolic::isolated` for
 /// why the manager cannot be handed in.
@@ -391,7 +321,6 @@ fn arm(
     menus: &[Menu],
     budget: DiagramBudget,
     each: Duration,
-    pruning: bool,
 ) -> Option<Arm> {
     isolated::on_its_own_thread(|| {
         let symbols = graph.symbols().clone();
@@ -410,7 +339,6 @@ fn arm(
             .with_constant_clock(DataLayout::group_passes_time(graph));
         let seed = seed_of(graph, &world, &vars).expect("room for a seed");
         let shape = GroupShape::of(graph);
-        let shipped = portfolio::Budget::default();
 
         // WHICH MENU FIRST ASKED ABOUT EACH TARGET, and whether that first pass was one a
         // memo could have kept. A repeat ask is only SAVED where the ask that paid for it
@@ -446,26 +374,12 @@ fn arm(
                     continue;
                 };
 
-                let forward = slice(
-                    graph,
-                    start,
-                    &seed,
-                    &mut compiler,
-                    &world,
-                    hunting,
-                    &novelty,
-                    &shipped,
-                    &shape,
-                );
-                if forward.stats().halted_at.is_some() {
-                    // THE SLICE ANSWERED, so no backward pass runs and there is no verdict
-                    // to remember. This is the shipped path's own short circuit, not a
-                    // shortcut taken here.
-                    counted.halted += targets.len();
+                // THE START ANSWERS FOR ITSELF where it already carries the class being
+                // hunted, which the driver checks before it touches a diagram. It asks
+                // about nothing, so counting its targets as asks would inflate the ceiling.
+                if novelty(start) == hunting {
+                    counted.at_the_start += targets.len();
                     continue;
-                }
-                if forward.stats().reached_fixed_point {
-                    counted.settled_slice += 1;
                 }
 
                 let known = shape
@@ -473,9 +387,7 @@ fn arm(
                     // WHAT THE SEARCH HOLDS ARRIVING AT ITS START. `Where::of` is what the
                     // driver calls, and for a start entered either way - which every option
                     // of a walked menu is - it yields exactly this pair.
-                    .from(start, &seed)
-                    .with_forward(&forward)
-                    .pruning(pruning);
+                    .from(start, &seed);
 
                 let pass = BackwardBudget {
                     steps: usize::MAX,
@@ -546,52 +458,6 @@ fn options(menu: &Menu) -> Vec<DialogueNodeId> {
     found
 }
 
-/// The forward slice the driver runs before the backward half, at the shipped settings.
-///
-/// The halt condition is the driver's own: the class the caller established is the best one
-/// link-reachable, so a pass that stops on one has answered and nothing else needs to run.
-#[allow(clippy::too_many_arguments)]
-fn slice<'a, F>(
-    graph: &LookAheadGraph,
-    start: DialogueNodeId,
-    seed: &oxidd::bdd::BDDFunction,
-    compiler: &mut GuardCompiler<'a>,
-    world: &dyn ILookAheadWorld,
-    hunting: Novelty,
-    novelty: &F,
-    shipped: &portfolio::Budget,
-    shape: &GroupShape,
-) -> Reachability<'a>
-where
-    F: Fn(DialogueNodeId) -> Novelty,
-{
-    // THE SET RATHER THAN THE CLOSURE, because `halt_on` outlives this call and cannot
-    // borrow the novelty function.
-    let quarry: HashSet<DialogueNodeId> = graph
-        .nodes()
-        .map(|node| node.id)
-        .filter(|id| novelty(*id) == hunting)
-        .collect();
-
-    Reachability::explore_branch_knowing(
-        graph,
-        start,
-        StartBranch::Either,
-        seed,
-        compiler,
-        world,
-        COUNTER_CAP as u32,
-        &ForwardBudget {
-            time: shipped.forwards,
-            memory: shipped.slice_memory,
-            steps: shipped.slice_steps,
-            halt_on: Some(Box::new(move |id| quarry.contains(&id))),
-            ..Default::default()
-        },
-        shape.order(),
-    )
-}
-
 /// Every walk, one row each: the ceiling, and how much of it survives.
 fn per_walk(every: &[Walked]) {
     println!("PER WALK. `asked` and `repeat` are the ceiling; `saved` is the repeats a memo");
@@ -617,11 +483,11 @@ fn per_walk(every: &[Walked]) {
             walked.ceiling.menus,
             walked.ceiling.asked,
             walked.ceiling.repeat,
-            walked.off.asks,
-            walked.off.cacheable,
-            walked.off.saved,
-            share(walked.off.saved, walked.ceiling.repeat),
-            share(walked.off.saved, walked.off.asks),
+            walked.ran.asks,
+            walked.ran.cacheable,
+            walked.ran.saved,
+            share(walked.ran.saved, walked.ceiling.repeat),
+            share(walked.ran.saved, walked.ran.asks),
         );
     }
     println!(
@@ -635,24 +501,22 @@ fn per_walk(every: &[Walked]) {
 /// How much of the ceiling never reaches the backward driver at all.
 fn reached(every: &[Walked]) {
     println!("\nWHAT NEVER REACHES THE BACKWARD DRIVER, which is not a memo's to serve:");
-    println!("`no hunt` is an option refused before a diagram is touched; `halted` is one the");
-    println!("forward slice answered outright; `slice` is options whose slice SETTLED, which is");
-    println!("the only thing that licenses pruning.\n");
+    println!("`no hunt` is an option refused before a diagram is touched, and `at start` one");
+    println!("whose start already carries the class being hunted.\n");
     println!(
-        "{:>6}  {:>10}  {:>8}  {:>8}  {:>8}  {:>7}  {:>13}",
-        "conv", "profile", "asked", "no hunt", "halted", "ran", "slice settled",
+        "{:>6}  {:>10}  {:>8}  {:>8}  {:>9}  {:>7}  {:>8}",
+        "conv", "profile", "asked", "no hunt", "at start", "ran", "options",
     );
     for walked in every {
-        let arm = &walked.off;
+        let arm = &walked.ran;
         println!(
-            "{:>6}  {:>10}  {:>8}  {:>8}  {:>8}  {:>7}  {:>5} of {:>5}",
+            "{:>6}  {:>10}  {:>8}  {:>8}  {:>9}  {:>7}  {:>8}",
             walked.conversation,
             format!("{}pc-seen", walked.percent),
             walked.ceiling.asked,
             arm.no_hunt,
-            arm.halted,
+            arm.at_the_start,
             arm.asks,
-            arm.settled_slice,
             arm.options,
         );
     }
@@ -660,7 +524,7 @@ fn reached(every: &[Walked]) {
 
 /// What one cacheable pass costs, in the two currencies a memo spends.
 fn what_a_pass_costs(every: &[Walked]) {
-    println!("\nWHAT ONE CACHEABLE PASS COSTS, unpruned - the arm a memo would be filled from.");
+    println!("\nWHAT ONE CACHEABLE PASS COSTS, which is what a memo would be filled from.");
     println!("The nodes matter as much as the milliseconds: a memo holds BDD sets in the");
     println!("player's 256 MB, so a saving that costs the manager is not a saving.\n");
     println!(
@@ -668,7 +532,7 @@ fn what_a_pass_costs(every: &[Walked]) {
         "conv", "profile", "cacheab", "ms each", "nodes each", "worst pass", "manager end",
     );
     for walked in every {
-        let arm = &walked.off;
+        let arm = &walked.ran;
         println!(
             "{:>6}  {:>10}  {:>8}  {:>9.1}  {:>11.0}  {:>11}  {:>13}",
             walked.conversation,
@@ -683,79 +547,49 @@ fn what_a_pass_costs(every: &[Walked]) {
     println!(
         "\n`nodes each` COUNTS SHARING INSIDE ONE PASS AND NOT BETWEEN THEM, so summing it \
          over a\nwalk counts a shared subgraph once per pass that touches it. `manager end` is \
-         what the\nwhole walk actually left in the store - every guard, every slice and every \
-         pass - and a\nmemo holds a subset of that rather than the sum."
+         what the\nwhole walk actually left in the store - every guard and every pass - and a\n\
+         memo holds a subset of that rather than the sum."
     );
-}
-
-/// The same asks with pruning on and off, which is the third thing a memo needs to be true.
-fn pruned_against_not(every: &[Walked]) {
-    println!("\nPRUNED AGAINST UNPRUNED, on the same asks in the same order. A memo has to be");
-    println!("filled unpruned, so this is what a cacheable pass costs OVER what ships. Where the");
-    println!("slice does not settle, `Known` narrows nothing and the two arms are one arm.\n");
-    println!(
-        "{:>6}  {:>10}  {:>7}  {:>10}  {:>10}  {:>8}  {:>12}  {:>12}",
-        "conv", "profile", "asks", "off ms", "on ms", "dearer", "off settled", "on settled",
-    );
-    for walked in every {
-        let (off, on) = (&walked.off, &walked.on);
-        println!(
-            "{:>6}  {:>10}  {:>7}  {:>10.1}  {:>10.1}  {:>7.2}x  {:>12}  {:>12}",
-            walked.conversation,
-            format!("{}pc-seen", walked.percent),
-            off.asks,
-            off.millis,
-            on.millis,
-            off.millis / on.millis.max(f64::MIN_POSITIVE),
-            share(off.settled, off.asks),
-            share(on.settled, on.asks),
-        );
-    }
 }
 
 /// The three numbers de-znov.3 lives or dies on.
 fn the_answer(every: &[Walked]) {
     let mut ceiling = Recurrence::default();
-    let mut off = Arm::default();
-    let mut on = Arm::default();
+    let mut ran = Arm::default();
     for walked in every {
         ceiling.add(&walked.ceiling);
-        off.add(&walked.off);
-        on.add(&walked.on);
+        ran.add(&walked.ran);
     }
 
     println!("\nOVER EVERY WALK:\n");
     counted("menus walked", ceiling.menus);
     counted("asks in the ceiling", ceiling.asked);
     part("of those, repeats", ceiling.repeat, ceiling.asked);
-    part("asks that reached the driver", off.asks, ceiling.asked);
-    part("passes that settled", off.settled, off.asks);
-    part("passes that met", off.met, off.asks);
-    part("cacheable - settled, did not meet", off.cacheable, off.asks);
-    part("repeats a memo would answer", off.saved, ceiling.repeat);
-    part("passes a memo would replace", off.saved, off.asks);
+    part("asks that reached the driver", ran.asks, ceiling.asked);
+    part("passes that settled", ran.settled, ran.asks);
+    part("passes that met", ran.met, ran.asks);
+    part("cacheable - settled, did not meet", ran.cacheable, ran.asks);
+    part("repeats a memo would answer", ran.saved, ceiling.repeat);
+    part("passes a memo would replace", ran.saved, ran.asks);
     println!();
-    millis("one cacheable pass, ms", off.each_cacheable_ms());
+    millis("one cacheable pass, ms", ran.each_cacheable_ms());
     counted(
         "one cacheable pass, nodes",
-        off.each_cacheable_nodes().round() as usize,
+        ran.each_cacheable_nodes().round() as usize,
     );
-    counted("every cacheable pass summed", off.cacheable_nodes);
-    counted("the worst manager at walk's end", off.manager_nodes);
+    counted("every cacheable pass summed", ran.cacheable_nodes);
+    counted("the worst manager at walk's end", ran.manager_nodes);
     println!();
-    millis("every pass unpruned, ms", off.millis);
-    millis("every pass pruned, ms", on.millis);
-    part("unpruned settled", off.settled, off.asks);
-    part("pruned settled", on.settled, on.asks);
+    millis("every pass, ms", ran.millis);
 
     println!(
         "\nTHE MEMO IS WORTH {:.0} MS OF THE {:.0} MS these walks spend on passes - the {} \
          repeat\nasks it would have answered, at what one of them cost. That is the ceiling \
          multiplied by\nthe share of asks that end in a verdict worth keeping, which is what \
          de-znov.2 came for.",
-        off.saved as f64 * off.each_cacheable_ms(),
-        off.millis,
-        off.saved,
+        ran.saved as f64 * ran.each_cacheable_ms(),
+        ran.millis,
+        ran.saved,
     );
     println!(
         "\nA CACHEABLE SHARE NEAR ZERO CLOSES de-znov.3, and the plausible way to get one is \

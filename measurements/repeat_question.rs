@@ -114,11 +114,12 @@ use std::time::{Duration, Instant};
 use lookahead_engine::bridge::{SnapshotWorld, WorldSnapshot};
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::index::{build_group_graph, read_index};
+use lookahead_engine::symbolic::backward::{Backward, Budget, SettledPass};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
-use lookahead_engine::symbolic::reachability::{Budget, Reachability, seed_of};
+use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 
 #[path = "../tests/common/mod.rs"]
@@ -183,6 +184,7 @@ fn main() {
                 eprintln!("no entry 0 in conversation {conversation}; skipping.");
                 break;
             }
+            let target = common::furthest_from(&graph, start);
 
             // ONE THREAD, ONE MANAGER, as everything that builds one must - de-fpax.
             let (diagram_took, manager_took, search_took) = isolated::on_its_own_thread(|| {
@@ -218,10 +220,9 @@ fn main() {
                 let built = building.elapsed();
 
                 let searching = Instant::now();
-                let found = Reachability::explore_within(
+                let found = Backward::reaching_within(
                     &graph,
-                    start,
-                    &seed,
+                    target,
                     &mut compiler,
                     &world,
                     COUNTER_CAP as u32,
@@ -230,7 +231,9 @@ fn main() {
                         ..Default::default()
                     },
                 );
-                std::hint::black_box(found.stats().entries_reached);
+                // READ SO NOTHING IS OPTIMISED AWAY, and read through the seed so that
+                // building one is work this row actually needed.
+                std::hint::black_box(found.reachable_from(start, &seed));
 
                 (built, manager, searching.elapsed())
             });

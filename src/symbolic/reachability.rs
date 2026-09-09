@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MIT
-//! Reachability over state SETS, without enumerating the states.
+//! Entering one node, over state SETS rather than one state at a time.
 //!
-//! The measurement the epic exists for. A search that enumerates states holds every
-//! `(entry, state)` pair it has visited, and on the shapes that matter there are hundreds
-//! of thousands of them; this holds one decision diagram per entry and grows them until
-//! nothing changes.
+//! The step every search over a group is built out of, and the seed it starts from. A
+//! search that enumerates states holds every `(entry, state)` pair it has visited, and on
+//! the shapes that matter there are hundreds of thousands of them; here the states carried
+//! into and out of an entry are one decision diagram, and the entry itself stays an
+//! ordinary value.
 //!
 //! ## Explicit control, symbolic data
 //!
-//! The entry the search sits on stays an ordinary value - there are a few thousand of them
-//! and they are enumerated anyway - while everything carried WITH it is symbolic. So the
-//! state of the search is a map from entry to a set of data states, and a step is a
-//! formula about data alone.
+//! The entry a search sits on stays an ordinary value - there are a few thousand of them
+//! and they are enumerated anyway - while everything carried WITH it is symbolic. So a step
+//! is a formula about data alone, which is what this module computes.
 //!
 //! That is not the textbook encoding, which would build a transition relation over primed
 //! and unprimed copies of every variable and take the relational product. It is not
@@ -19,13 +19,6 @@
 //! of the state rather than relations, so [`ActionImage`] computes the image directly.
 //! The variable count does not double and the question of how to interleave primed with
 //! unprimed variables never arises.
-//!
-//! ## Why it terminates
-//!
-//! Every set only ever grows, and the lattice they live in is finite because the layout
-//! is: each slot is a bounded run of bits, bounded because a counter saturates at its
-//! cap. An entry is re-queued only when its set actually grew, so the loop runs at most
-//! once per entry per new state and stops.
 //!
 //! ## What it is allowed to get wrong
 //!
@@ -35,21 +28,22 @@
 //! never miss one. Anything else would make the answer useless, because a missed state is
 //! a missed marker.
 //!
-//! Money is the exception worth naming, and it is not in the layout at all - see
-//! [`Reachability::unaffordable_unknown`].
+//! Money is the exception worth naming: a layout built without a balance cannot refuse a
+//! price at all, and lets every one of them through - see [`Reachability::affordable`].
+//!
+//! ## Where the walking happens
+//!
+//! Not here. Reaching a target is asked backwards, from the target towards the start, in
+//! [`crate::symbolic::backward`] - which mirrors every case below and must go on doing so.
 
-use std::collections::HashMap;
-
+use oxidd::BooleanFunction;
 use oxidd::bdd::BDDFunction;
-use oxidd::{BooleanFunction, BooleanFunctionQuant, Function};
 
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, StartBranch, Ternary};
 use crate::graph::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
 use crate::symbolic::action_image::ActionImage;
 use crate::symbolic::guard_formula::GuardCompiler;
-use crate::symbolic::live_slots::LiveSlots;
-use crate::symbolic::order::{Direction, IterationOrder, Worklist};
 use crate::symbolic::vars::DataVars;
 use crate::world::world::ILookAheadWorld;
 
@@ -117,370 +111,22 @@ pub fn seed_of(
     Some(set)
 }
 
-/// How far a search is allowed to go, and what it should say while it goes.
+/// Entering one node: its guard tested, its roll taken, its price paid, its actions applied.
 ///
-/// A budget, because without one a search that is too slow is indistinguishable from one
-/// that has hung, and neither reports anything. A
-/// partial answer with `reached_fixed_point` false is worth having - it still says the
-/// entries found SO FAR are genuinely reachable, because every set only grows.
-pub struct Budget {
-    /// The most entries to take off the queue before giving up.
-    pub steps: usize,
-    /// How long to keep going.
-    pub time: std::time::Duration,
-
-    /// The most memory the diagram may hold, in bytes, or 0 for no such limit.
-    ///
-    /// IN BYTES, AND THAT IS THE POINT: a search that gives up after 500,000 steps and one
-    /// that gives up after 200,000 states cannot be compared, because neither number says
-    /// what either search SPENT. Two searches held to the same number of bytes can be. See
-    /// de-e23q.
-    ///
-    /// CHECKED ON THE PROGRESS CADENCE rather than every step, because asking the manager
-    /// its node count is not free and a budget that costs more than it saves is not a
-    /// saving. So the diagram can overshoot by up to `report_every` steps' worth of growth -
-    /// the same bargain any budget makes with the cost of checking it.
-    pub memory: usize,
-    /// Called every `report_every` steps with the step count, entries reached, the
-    /// diagram nodes held in total, the LARGEST single set, and the BYTES the manager is
-    /// using.
-    ///
-    /// The bytes are the last argument and the only one that can be read against
-    /// [`Self::memory`], because they are the same quantity the check above uses. The node
-    /// sums are not: they count what the entry sets REFERENCE, and the manager holds more
-    /// than that - nodes not yet collected, and the apply cache. On conversation 362 the
-    /// sets summed to ten million nodes while the manager held thirty-eight million, so a
-    /// progress line built from the sums reads a quarter of the true figure and a row looks
-    /// far from a budget it is about to spend.
-    ///
-    /// Of the two sums, the LARGEST SINGLE SET is the one to watch. The total sums each
-    /// entry's set separately, so it climbs both when sets get harder and merely when more
-    /// entries have one, and those are different problems - the first says the
-    /// representation is failing, the second only says the search is making progress.
-    #[allow(clippy::type_complexity)]
-    pub on_progress: Option<Box<dyn Fn(usize, usize, usize, usize, usize)>>,
-    pub report_every: usize,
-
-    /// The least wall time between two calls to [`Self::on_progress`]; zero for none.
-    ///
-    /// ## Why a second cadence, when `report_every` is already one
-    ///
-    /// Because the two are paid for differently and wanted at different rates. Asking
-    /// whether the memory budget is spent is cheap and wants asking OFTEN, since everything
-    /// between two asks is overshoot. Gathering the report is not: it walks every entry's
-    /// set for a node count, which is O(entries) and grows with them.
-    ///
-    /// With one cadence those trade against each other, and a step count cannot settle it
-    /// anyway - twenty thousand steps is a moment early on and minutes once the sets are
-    /// large, so a run either says nothing for half an hour or floods the log at the start.
-    /// A CLOCK is the thing a person watching actually wants, so the step count decides how
-    /// often the question is asked and this decides how often it is answered.
-    ///
-    /// Zero keeps the old behaviour exactly: report on every cadence hit.
-    pub report_gap: std::time::Duration,
-
-    /// The wall time [`Self::report_every`] should aim at, retuning itself to hold it;
-    /// zero to leave the step count fixed.
-    ///
-    /// ## Why a step count cannot be set by hand
-    ///
-    /// Because what a step costs moves by orders of magnitude WITHIN one search. Early on
-    /// the sets are small and twenty thousand steps go by in a moment; once they are large
-    /// the same twenty thousand take minutes. So any fixed number is both far too often at
-    /// the start and far too rare at the end, and the end is when somebody is watching.
-    ///
-    /// This makes the count follow the clock instead: after each check the interval is
-    /// scaled toward this target, damped to at most a halving or a doubling each time so
-    /// one unusually slow step cannot collapse it.
-    ///
-    /// IT ALSO BOUNDS THE MEMORY OVERSHOOT IN TIME RATHER THAN IN STEPS, which is the more
-    /// useful guarantee: the budget can be overspent by about this long's worth of growth,
-    /// whatever the sets happen to cost at that moment.
-    pub check_gap: std::time::Duration,
-
-    /// Called with each entry as it is taken off the queue, for a measurement that wants
-    /// the shape of the work rather than its total.
-    ///
-    /// EXISTS TO TELL TWO FAILURES APART, which the totals cannot. A search doing 14,000
-    /// steps over 960 entries might be re-propagating the same handful of entries
-    /// thousands of times - which SCC-ordered iteration fixes - or stepping each entry a
-    /// dozen times where every step is expensive, which it does not. Only the per-entry
-    /// distribution separates them, and de-3x76.3 should not be built before it is known
-    /// which one is happening.
-    ///
-    /// None in every production path, where it costs an `is_some` per step.
-    #[allow(clippy::type_complexity)]
-    pub on_step: Option<Box<dyn Fn(DialogueNodeId)>>,
-
-    /// The fraction of the MACHINE's memory to leave free, or zero for no such guard.
-    ///
-    /// ## Why this is needed when the store is preallocated
-    ///
-    /// It looks unnecessary, because the node store is one allocation made before the
-    /// search starts (de-0a3a) and cannot grow - so there appears to be nothing left to
-    /// watch. There is. de-mnrb measured what a node really costs and found the unique
-    /// table is 15.7 bytes of it, growing as nodes are inserted: about forty per cent of a
-    /// full manager is allocated DURING the search, not before it.
-    ///
-    /// That growth is unbounded by anything except [`Self::memory`], which is a budget
-    /// rather than a fact about the machine. Another process can take the memory this one
-    /// was counting on, and the failure is not a graceful one - it is an allocation that
-    /// aborts, which the plugin cannot catch and which takes the game with it.
-    ///
-    /// The forward search has had this guard since d43670d and it measured at about no cost
-    /// (-0.1 per cent), so the same reserve is used here rather than a second number.
-    pub system_reserve: f64,
-    /// Stop as soon as this says yes about an entry the search has just reached.
-    ///
-    /// THE MOST IMPORTANT KNOB HERE, and the one the first measurement lacked. The
-    /// look-ahead never wants the reachable data states; it wants to know whether an
-    /// unseen entry can be reached, and an answer already returns the
-    /// instant it sees one worth the maximum score. Computing a fixed point over the data
-    /// answers a far harder question that nobody asked - on conversation 368 the reachable
-    /// ENTRIES stopped changing at fifteen thousand steps while the diagrams went on
-    /// doubling, so everything after that was wasted.
-    ///
-    /// Called once per entry, when it is first reached.
-    #[allow(clippy::type_complexity)]
-    pub halt_on: Option<Box<dyn Fn(DialogueNodeId) -> bool>>,
-
-    /// Quantify each entry's dead slots out of the set held there, or `None` to hold the
-    /// set exactly.
-    ///
-    /// ## What it does
-    ///
-    /// A slot no path onward from an entry reads before overwriting it cannot change any
-    /// answer from that entry on, so the set held there need not distinguish its values.
-    /// Existentially abstracting those variables collapses every pair of states differing
-    /// only in them into one. [`LiveSlots`] is the analysis that says which they are.
-    ///
-    /// ## Why it does not lose an answer
-    ///
-    /// The sets stay an OVER-approximation, which is the direction this search is allowed
-    /// to be wrong in and the one every other approximation here takes: abstraction only
-    /// ever adds states, so no reachable entry can go missing and `halt_on` fires on
-    /// exactly the entries it fires on without this.
-    ///
-    /// It is also exact on the abstracted sets rather than merely safe. For a slot dead at
-    /// an entry, every successor either assigns it - in which case the image forgets it and
-    /// asserts a constant, so the free values collapse there - or is itself an entry the
-    /// slot is dead at, in which case the successor's own abstraction removes it again.
-    ///
-    /// ## What it costs
-    ///
-    /// A quantifier per widening, over a cube built once per entry and kept. That is a
-    /// diagram operation on the set itself, so a cheap win on paper can be a wash in a fixed
-    /// point that steps an entry a dozen times - which is why this is a field and not a
-    /// decision. See `measurements/dead_quantify.rs`, which runs both arms.
-    ///
-    /// ## Not the backward pass
-    ///
-    /// Backward sets say "arriving here, the target is reachable", and their approximation
-    /// runs the other way. Nothing here applies to them.
-    pub forget_dead: Option<std::sync::Arc<LiveSlots>>,
-}
-
-impl Default for Budget {
-    fn default() -> Self {
-        Self {
-            steps: 2_000_000,
-            time: std::time::Duration::from_secs(120),
-            // THE NUMBER THE FORWARD SEARCH GOT, which is the point of stating an allowance
-            // in bytes: two searches held to the same one can be compared, and a step count
-            // against a state count cannot. See de-e23q, and
-            // `DiagramBudget::DEFAULT_MEMORY_BUDGET` for where the number now lives and
-            // what it buys instead.
-            memory: crate::symbolic::budget::DiagramBudget::DEFAULT_MEMORY_BUDGET,
-            on_progress: None,
-            report_every: 20_000,
-            report_gap: std::time::Duration::ZERO,
-            check_gap: std::time::Duration::ZERO,
-            on_step: None,
-            system_reserve: crate::core::system_memory::DEFAULT_RESERVE,
-            halt_on: None,
-            forget_dead: None,
-        }
-    }
-}
-
-/// What a fixed point cost to reach.
-#[derive(Debug, Clone, Default)]
-pub struct ReachabilityStats {
-    /// Whether the search finished, or stopped because it ran out of budget.
-    ///
-    /// The most important field here. Everything else describes a set; this says whether
-    /// the set is the whole answer or a lower bound on it. A search that HALTED is
-    /// complete for the question it was asked even though this is false - see
-    /// [`Self::halted_at`].
-    pub reached_fixed_point: bool,
-    /// The entry whose arrival stopped the search, if the halt condition fired.
-    ///
-    /// Its presence is a positive answer, and the strongest kind: the entry is reachable
-    /// and here is the one that proves it. A search that halts has done no less work than
-    /// the question needed, however far short of a fixed point it stopped.
-    pub halted_at: Option<DialogueNodeId>,
-    /// How long it ran.
-    pub elapsed: std::time::Duration,
-    /// How many times an entry was taken off the queue.
-    pub steps: usize,
-    /// How many times a child's set actually grew.
-    pub widenings: usize,
-    /// Entries whose set is not empty.
-    pub entries_reached: usize,
-    /// Diagram nodes across every entry's set, counted with sharing inside each set but
-    /// not between them - so an upper bound on what the whole frontier costs.
-    pub diagram_nodes: usize,
-    /// The largest single entry's set.
-    pub largest_set: usize,
-    /// Whether the diagram manager ran out of nodes.
-    ///
-    /// A real outcome and not a crash, which is why it is reported rather than left to
-    /// `expect`. It says the representation did not fit, which is the most decisive thing
-    /// a measurement of a representation can say - and a run that dies on an unwrap says
-    /// the same thing while destroying the numbers that would have shown how it got there.
-    pub out_of_memory: bool,
-    /// Whether the MACHINE ran out, which is the opposite kind of answer.
-    ///
-    /// [`Self::out_of_memory`] says the search spent the allowance it was given: a result,
-    /// and about the representation. This says the machine could not supply what the search
-    /// was still entitled to ask for, which says nothing about the representation at all -
-    /// the row is not a measurement and wants running again with the memory free.
-    ///
-    /// Flattening the two into one word is how a gap in a table gets read as a finding
-    /// (de-e33h), so they are separate fields and separate verdicts.
-    pub out_of_system_memory: bool,
-    /// Cost checks that could not be decided because THIS layout carries no balance.
-    ///
-    /// It carries one wherever the group reads money - see `DataLayout::money_ceiling` - so
-    /// a run over a real group with a priced option should report zero here. A number above
-    /// zero means the layout was built without money and every price was let through, which
-    /// is the over-approximation de-95t6 removed and not a property of the content.
-    pub unaffordable_unknown: usize,
-    /// Actions skipped because the layout does not carry what they touch.
-    pub actions_ignored: usize,
-}
-
-/// The reachable data states, one set per entry.
+/// A HOLDER RATHER THAN A SEARCH. Every step of a walk over a group is this one operation,
+/// and the walking itself is the backward pass's business - see [`crate::symbolic::backward`].
+/// What lives here is the step, and the one thing a caller has to be told about it, which is
+/// whether the manager filled part way through.
 pub struct Reachability<'a> {
     vars: &'a DataVars<'a>,
-    sets: HashMap<DialogueNodeId, BDDFunction>,
-    stats: ReachabilityStats,
-}
-
-/// The cube of dead variables to quantify away at each entry, built once and kept.
-///
-/// ONCE PER ENTRY, WHICH IS THE WHOLE REASON THIS IS A STRUCT. An entry is widened many
-/// times over a search and its dead set never moves, so building the cube at each widening
-/// would spend more diagram operations on the abstraction than the abstraction saves.
-///
-/// A [`None`] analysis is the off switch and every method is then a clone, which is what
-/// keeps [`Budget::forget_dead`] cost-free for the callers that do not use it.
-struct Forgetter<'a> {
-    live: Option<std::sync::Arc<LiveSlots>>,
-    vars: &'a DataVars<'a>,
-    /// `None` against an entry means "nothing to forget here", which is a real answer and
-    /// is cached like any other.
-    cubes: HashMap<DialogueNodeId, Option<BDDFunction>>,
-}
-
-impl<'a> Forgetter<'a> {
-    fn new(live: Option<std::sync::Arc<LiveSlots>>, vars: &'a DataVars<'a>) -> Self {
-        Self {
-            live,
-            vars,
-            cubes: HashMap::new(),
-        }
-    }
-
-    /// `states` with everything dead at `id` quantified away.
-    fn apply(&mut self, id: DialogueNodeId, states: &BDDFunction) -> BDDFunction {
-        let Some(live) = self.live.clone() else {
-            return states.clone();
-        };
-
-        if !self.cubes.contains_key(&id) {
-            let cube = self.cube_for(&live, id);
-            self.cubes.insert(id, cube);
-        }
-
-        match &self.cubes[&id] {
-            // OUT OF NODES IS THE UNABSTRACTED SET, not a failure. Abstraction is an
-            // optimisation and the set without it is the correct one, so a manager too full
-            // to take the quantifier gives up the saving and keeps the answer. Whatever the
-            // search does next will meet the same wall and report it.
-            Some(cube) => states.exists(cube).unwrap_or_else(|_| states.clone()),
-            None => states.clone(),
-        }
-    }
-
-    fn cube_for(&self, live: &LiveSlots, id: DialogueNodeId) -> Option<BDDFunction> {
-        let dead = live.dead_out(id, self.vars.layout());
-        if dead.is_empty() {
-            return None;
-        }
-
-        // A slot with no cube - no room to build one, or no such slot - gives up the whole
-        // abstraction rather than a quieter version of it, the same answer `apply` gives a
-        // quantifier that will not run. Forgetting some of what is dead would be sound, but
-        // it would be a saving nobody asked for at a moment the manager is already full.
-        let mut cube = self.vars.top();
-        for slot in dead {
-            cube = cube.and(&self.vars.slot_cube(slot)?).ok()?;
-        }
-
-        Some(cube)
-    }
+    /// Whether the manager ran out of nodes part way through entering.
+    ///
+    /// The set that comes back when this is set is a fragment rather than an answer, which
+    /// is why [`Self::entry_states`] returns nothing at all rather than handing it over.
+    out_of_memory: bool,
 }
 
 impl<'a> Reachability<'a> {
-    /// Runs the fixed point from `start`, seeded with `seed` as its set of data states.
-    ///
-    /// `seed` is the set the search begins in - normally the single state the world seeds,
-    /// but any set will do, which is what makes this usable for "everything reachable from
-    /// anywhere in this group".
-    pub fn explore(
-        graph: &LookAheadGraph,
-        start: DialogueNodeId,
-        seed: &BDDFunction,
-        compiler: &mut GuardCompiler<'a>,
-        world: &dyn ILookAheadWorld,
-        counter_cap: u32,
-    ) -> Self {
-        Self::explore_within(
-            graph,
-            start,
-            seed,
-            compiler,
-            world,
-            counter_cap,
-            &Budget::default(),
-        )
-    }
-
-    /// The same, under a budget that says when to stop trying.
-    #[allow(clippy::too_many_arguments)]
-    pub fn explore_within(
-        graph: &LookAheadGraph,
-        start: DialogueNodeId,
-        seed: &BDDFunction,
-        compiler: &mut GuardCompiler<'a>,
-        world: &dyn ILookAheadWorld,
-        counter_cap: u32,
-        budget: &Budget,
-    ) -> Self {
-        let order = IterationOrder::of(graph);
-        Self::explore_knowing(
-            graph,
-            start,
-            seed,
-            compiler,
-            world,
-            counter_cap,
-            budget,
-            &order,
-        )
-    }
-
     /// What entering `start` by one outcome leaves, without exploring anything.
     ///
     /// THE STATE THE OUTCOME HANDS ON, which is what a search about that outcome is really
@@ -512,8 +158,7 @@ impl<'a> Reachability<'a> {
         let mut image = ActionImage::new(vars, counter_cap);
         let mut this = Self {
             vars,
-            sets: HashMap::new(),
-            stats: ReachabilityStats::default(),
+            out_of_memory: false,
         };
 
         let entered = match graph.get(start) {
@@ -521,378 +166,20 @@ impl<'a> Reachability<'a> {
             None => vars.bottom(),
         };
 
-        match this.stats.out_of_memory || image.out_of_memory() {
+        match this.out_of_memory || image.out_of_memory() {
             true => None,
             false => Some(entered),
         }
     }
 
-    /// The same, exploring ONE OUTCOME of a start that rolls.
-    ///
-    /// A white or red check is entered in two ways, and the mod draws its halves apart -
-    /// see [`StartBranch`] and de-8hh2.6. Everything after the start's own entry is
-    /// identical: the branch selects which of the two cases entering the check leaves, and
-    /// the search carries on from there knowing nothing about how it began.
-    ///
-    /// [`StartBranch::Either`] is the ordinary search and takes both, so
-    /// [`Self::explore_within`] is this with `Either` and no caller has to say so.
-    #[allow(clippy::too_many_arguments)]
-    pub fn explore_branch_within(
-        graph: &LookAheadGraph,
-        start: DialogueNodeId,
-        branch: StartBranch,
-        seed: &BDDFunction,
-        compiler: &mut GuardCompiler<'a>,
-        world: &dyn ILookAheadWorld,
-        counter_cap: u32,
-        budget: &Budget,
-    ) -> Self {
-        let order = IterationOrder::of(graph);
-        Self::explore_branch_knowing(
-            graph,
-            start,
-            branch,
-            seed,
-            compiler,
-            world,
-            counter_cap,
-            budget,
-            &order,
-        )
-    }
-
-    /// The same, given an order worked out for this group already.
-    ///
-    /// For a caller that runs several searches over one graph: the order depends on nothing
-    /// but the links, so building it per search is waste rather than a difference. See
-    /// [`IterationOrder`] for what it is and why one of them serves this search and the
-    /// backward one both. There is no unordered form of this - an order changes no settled
-    /// answer, so there would be nothing for a caller to choose.
-    #[allow(clippy::too_many_arguments)]
-    pub fn explore_knowing(
-        graph: &LookAheadGraph,
-        start: DialogueNodeId,
-        seed: &BDDFunction,
-        compiler: &mut GuardCompiler<'a>,
-        world: &dyn ILookAheadWorld,
-        counter_cap: u32,
-        budget: &Budget,
-        order: &IterationOrder,
-    ) -> Self {
-        Self::explore_branch_knowing(
-            graph,
-            start,
-            StartBranch::Either,
-            seed,
-            compiler,
-            world,
-            counter_cap,
-            budget,
-            order,
-        )
-    }
-
-    /// One outcome of a rolled start, given an order worked out for this group already.
-    #[allow(clippy::too_many_arguments)]
-    pub fn explore_branch_knowing(
-        graph: &LookAheadGraph,
-        start: DialogueNodeId,
-        branch: StartBranch,
-        seed: &BDDFunction,
-        compiler: &mut GuardCompiler<'a>,
-        world: &dyn ILookAheadWorld,
-        counter_cap: u32,
-        budget: &Budget,
-        order: &IterationOrder,
-    ) -> Self {
-        let vars = compiler.vars();
-        let mut image = ActionImage::new(vars, counter_cap);
-        let mut this = Self {
-            vars,
-            sets: HashMap::new(),
-            stats: ReachabilityStats::default(),
-        };
-
-        // Entering the start node is a step like any other, so the seed is what arrives
-        // AT it rather than what leaves it - and where the start ROLLS, which of the two
-        // ways in this search is about.
-        let Some(start_node) = graph.get(start) else {
-            return this;
-        };
-        let entered = this.enter_branch(start_node, branch, seed, compiler, world, &mut image);
-        // The start's own entry filled the manager, so what came back is the image of
-        // nothing in particular and there is nothing to explore from. That is the search's
-        // outcome, and `reached_fixed_point` stays false to say the answer is partial.
-        if this.stats.out_of_memory || image.out_of_memory() {
-            this.stats.out_of_memory = true;
-            this.stats.actions_ignored = image.ignored();
-            this.finish();
-            return this;
-        }
-        if !entered.satisfiable() {
-            return this;
-        }
-
-        // What has been reached, and what has not yet been pushed onward. Propagating
-        // only the DELTA is what makes this finish: entering a node DISTRIBUTES OVER
-        // UNION - the guard is a conjunction, the image quantifies and asserts, and every
-        // branch of `enter` unions its cases - so the image of the whole set is the image
-        // of what was already sent plus the image of what is new. Sending the whole set
-        // every time recomputes the first half at every visit, and on a group of four
-        // thousand entries that is the difference between minutes and not finishing.
-        let mut forget = Forgetter::new(budget.forget_dead.clone(), vars);
-
-        let mut frontier: HashMap<DialogueNodeId, BDDFunction> = HashMap::new();
-        // THE STORED SET IS ABSTRACTED AND THE PENDING ONE IS NOT, here and at every
-        // widening below. What is pending is only ever a set to take the image of, and the
-        // image of an abstracted state is the abstracted image of the concrete one - see
-        // [`Budget::forget_dead`] - so abstracting the delta as well would cost a
-        // quantifier to arrive at the same place.
-        this.sets.insert(start, forget.apply(start, &entered));
-        frontier.insert(start, entered);
-
-        // The start node counts as reached, so a halt condition it satisfies must fire
-        // here rather than being missed for having arrived before the loop.
-        if let Some(halt) = &budget.halt_on {
-            if halt(start) {
-                this.stats.halted_at = Some(start);
-                this.stats.actions_ignored = image.ignored();
-                this.finish();
-                return this;
-            }
-        }
-
-        // FROM THE NEAR END OF THE ORDER. The rank puts a component below everything it can
-        // reach, and this pass travels the links forwards - so taking the lowest rank first
-        // means an entry is popped once with every arm of a join already folded into what is
-        // pending, rather than once per arm as they arrive.
-        let mut queue = Worklist::new(order, Direction::Forward);
-        queue.push(start);
-
-        let began = std::time::Instant::now();
-        let mut last_report = began;
-        let mut ran_out = false;
-
-        // THE CADENCE RETUNES ITSELF. See `Budget::check_gap`: a step is microseconds early
-        // on and seconds once the sets are large, so a fixed count cannot hold a time
-        // target. `cadence` is steps between checks and moves toward whatever holds
-        // `check_gap`; a countdown rather than a modulo, because the divisor changes.
-        let mut cadence = budget.report_every.max(1);
-        let mut until_check = cadence;
-        let mut last_check = began;
-
-        // THE MACHINE'S OWN LIMIT, watched on the same cadence as the budget's. See
-        // `Budget::system_reserve`: the unique table grows during the search, so there is
-        // real allocation to guard even though the node store is not.
-        //
-        // Built with an interval of one because the cadence above is already the throttle -
-        // it retunes toward `check_gap`, about a second - so a reading here is a syscall a
-        // second rather than the search's every four thousand states. None means the
-        // platform cannot be asked, which turns the guard off rather than faking it.
-        let mut runway = if budget.system_reserve > 0.0 {
-            crate::core::system_memory::Runway::every(budget.system_reserve, 1)
-        } else {
-            None
-        };
-        let mut charged = this.vars.memory_used();
-
-        'search: while let Some(id) = queue.pop() {
-            // Take the pending states and leave nothing behind. An entry can be queued
-            // more than once before it is reached, and the second visit has nothing to do.
-            let delta = match frontier.insert(id, vars.bottom()) {
-                Some(pending) if pending.satisfiable() => pending,
-                _ => continue,
-            };
-
-            this.stats.steps += 1;
-            if let Some(watch) = &budget.on_step {
-                watch(id);
-            }
-
-            until_check -= 1;
-            if until_check == 0 {
-                until_check = cadence;
-
-                if !budget.check_gap.is_zero() {
-                    // Aim the next run of steps at `check_gap`, damped so one slow step
-                    // cannot collapse the cadence to nothing and one fast stretch cannot
-                    // send it somewhere it will never come back from. Halve or double at
-                    // most, and never leave the range where the check is worth making.
-                    let took = last_check.elapsed();
-                    last_check = std::time::Instant::now();
-                    let wanted = if took.is_zero() {
-                        cadence * 2
-                    } else {
-                        let scale = budget.check_gap.as_secs_f64() / took.as_secs_f64();
-                        (cadence as f64 * scale.clamp(0.5, 2.0)) as usize
-                    };
-                    cadence = wanted.clamp(1, 1_000_000);
-                    until_check = cadence;
-                }
-
-                let used = this.vars.memory_used();
-
-                if budget.memory > 0 && used >= budget.memory {
-                    this.stats.out_of_memory = true;
-                    ran_out = true;
-                    break;
-                }
-
-                // CHECKED SECOND, so that a search which has spent its own allowance is
-                // reported as having spent it. The two mean opposite things and only one
-                // of them is a result.
-                if let Some(runway) = runway.as_mut() {
-                    let since = used.saturating_sub(charged) as u64;
-                    charged = used;
-                    if runway.is_low(since) {
-                        this.stats.out_of_system_memory = true;
-                        ran_out = true;
-                        break;
-                    }
-                }
-
-                if let Some(report) = &budget.on_progress {
-                    // The gathering below is the expensive half, so the clock is consulted
-                    // before it rather than inside the callback. See `Budget::report_gap`.
-                    if last_report.elapsed() >= budget.report_gap {
-                        last_report = std::time::Instant::now();
-                        let sizes: Vec<usize> =
-                            this.sets.values().map(|s| s.node_count()).collect();
-                        report(
-                            this.stats.steps,
-                            this.sets.len(),
-                            sizes.iter().sum(),
-                            sizes.iter().copied().max().unwrap_or(0),
-                            this.vars.memory_used(),
-                        );
-                    }
-                }
-            }
-
-            if this.stats.steps >= budget.steps || began.elapsed() >= budget.time {
-                ran_out = true;
-                break;
-            }
-
-            let Some(node) = graph.get(id) else { continue };
-
-            for &child_id in &node.links {
-                let Some(child) = graph.get(child_id) else {
-                    continue;
-                };
-                let arriving = this.enter(child, &delta, compiler, world, &mut image);
-                // Entering gave up for want of nodes, so what it just returned is the
-                // image of nothing in particular and everything after it would be built
-                // on that. Stop here and say so. Either half can be the one that ran out -
-                // the actions, through the image, or the guard and cost arithmetic in
-                // `enter` itself - and both report rather than unwrapping.
-                if image.out_of_memory() || this.stats.out_of_memory {
-                    this.stats.out_of_memory = true;
-                    break 'search;
-                }
-                if !arriving.satisfiable() {
-                    continue;
-                }
-
-                let known = this
-                    .sets
-                    .get(&child_id)
-                    .cloned()
-                    .unwrap_or_else(|| vars.bottom());
-                // Only what is genuinely new. Diagrams are canonical for a fixed variable
-                // order, so this difference being empty is exactly "nothing changed" -
-                // there is no membership test to do and no approximation in the check.
-                //
-                // Every step from here can run the manager out of nodes, and on the big
-                // groups it does. That is an ANSWER - the representation did not fit -
-                // so it is reported rather than unwrapped, and the numbers showing how it
-                // got there survive.
-                let Ok(complement) = known.not() else {
-                    this.stats.out_of_memory = true;
-                    break 'search;
-                };
-                let Ok(fresh) = arriving.and(&complement) else {
-                    this.stats.out_of_memory = true;
-                    break 'search;
-                };
-                if !fresh.satisfiable() {
-                    continue;
-                }
-
-                this.stats.widenings += 1;
-                // Newly reached, as opposed to newly widened: the halt condition is about
-                // whether an entry can be reached at all, so it is asked once, the first
-                // time the entry has any states.
-                let first_sighting = !known.satisfiable();
-                let Ok(widened) = known.or(&fresh) else {
-                    this.stats.out_of_memory = true;
-                    break 'search;
-                };
-                this.sets.insert(child_id, forget.apply(child_id, &widened));
-
-                let pending = frontier
-                    .get(&child_id)
-                    .cloned()
-                    .unwrap_or_else(|| vars.bottom());
-                let Ok(waiting) = pending.or(&fresh) else {
-                    this.stats.out_of_memory = true;
-                    break 'search;
-                };
-                frontier.insert(child_id, waiting);
-                queue.push(child_id);
-
-                if first_sighting {
-                    if let Some(halt) = &budget.halt_on {
-                        if halt(child_id) {
-                            this.stats.halted_at = Some(child_id);
-                            break 'search;
-                        }
-                    }
-                }
-            }
-        }
-
-        this.stats.actions_ignored = image.ignored();
-        // EVERY WAY OF STOPPING EARLY, not just the budget. This read `!ran_out`, and
-        // `ran_out` is set only by the step and time budgets - so a run that exhausted the
-        // diagram manager, or one stopped by `halt_on`, broke out of the loop above and then
-        // reported that it had SETTLED.
-        //
-        // SOUNDNESS RESTS ON THIS LINE, not reporting. `Known::with_forward` copies it into
-        // `forward_settled`, and a settled forward run is the one thing allowed to REFUSE a
-        // state: `Known::restricted` intersects a backward pass against it. Claiming a fixed
-        // point for a set that merely stopped growing early would remove states the search
-        // can genuinely reach, which is how a marker gets lost - and the shipped portfolio
-        // prunes, so there is no second net under it. `Backward` has always got this right.
-        //
-        // Caught on conversation 14, which reported a fixed point over 893 entries where a
-        // run that admitted to being incomplete had reached 905 - and then panicked on the
-        // next diagram operation, out of nodes. A settled run is a superset of every partial
-        // one over the same graph and seed, so that pair cannot both be true.
-        this.stats.reached_fixed_point =
-            !ran_out && !this.stats.out_of_memory && this.stats.halted_at.is_none();
-        this.stats.elapsed = began.elapsed();
-        this.finish();
-        this
-    }
-
-    /// Takes the result of a diagram operation, or records that there was no room.
-    ///
-    /// RUNNING OUT OF NODES IS AN ANSWER - the representation did not fit - so every step
-    /// of entering a node reports it, exactly as the widening in the search loop and
-    /// [`ActionImage`] already do. Entering is reached once per link per step, so it is a
-    /// likely place to be standing when the manager fills, and an unwrapped operation here
-    /// ABORTS THE PROCESS: not a panic a host can turn into a partial answer, and not a
-    /// row a measurement can keep.
-    ///
     /// The empty set is returned only so the types stay simple. It is not a meaningful
-    /// answer, and a caller that sees [`ReachabilityStats::out_of_memory`] must stop
+    /// answer, and a caller that sees [`Self::out_of_memory`] must stop
     /// rather than read what came back.
     fn or_no_room<E>(&mut self, attempt: Result<BDDFunction, E>) -> BDDFunction {
         match attempt {
             Ok(function) => function,
             Err(_) => {
-                self.stats.out_of_memory = true;
+                self.out_of_memory = true;
                 self.vars.bottom()
             }
         }
@@ -1214,7 +501,6 @@ impl<'a> Reachability<'a> {
         }
 
         let Some(money) = self.vars.money_ops() else {
-            self.stats.unaffordable_unknown += 1;
             return states.clone();
         };
 
@@ -1222,7 +508,7 @@ impl<'a> Reachability<'a> {
         // manager, which is a different thing from a layout that carries no money: that
         // one is undecided and permissive, this one is no answer at all.
         let Some(price) = money.at_least(node.cost.max(0) as u32) else {
-            self.stats.out_of_memory = true;
+            self.out_of_memory = true;
             return self.vars.bottom();
         };
         let enough = self.or_no_room(states.and(&price));
@@ -1262,7 +548,7 @@ impl<'a> Reachability<'a> {
         self.vars.slot_ceiling(slot)?;
         let formula = self.vars.slot_is_set(slot);
         if formula.is_none() {
-            self.stats.out_of_memory = true;
+            self.out_of_memory = true;
         }
 
         formula
@@ -1282,38 +568,13 @@ impl<'a> Reachability<'a> {
         let compiled = compiler.compile_for(node.id, &node.guard);
         (compiled.may_be_true, compiled.may_be_false)
     }
-
-    /// Totals that can only be taken once the sets have stopped moving.
-    fn finish(&mut self) {
-        self.stats.entries_reached = self.sets.len();
-        self.stats.diagram_nodes = self.sets.values().map(|s| s.node_count()).sum();
-        self.stats.largest_set = self
-            .sets
-            .values()
-            .map(|s| s.node_count())
-            .max()
-            .unwrap_or(0);
-    }
-
-    /// The entries the search can reach.
-    pub fn entries(&self) -> impl Iterator<Item = DialogueNodeId> + '_ {
-        self.sets.keys().copied()
-    }
-
-    /// The data states reachable at one entry.
-    pub fn states_at(&self, node: DialogueNodeId) -> Option<&BDDFunction> {
-        self.sets.get(&node)
-    }
-
-    pub fn stats(&self) -> &ReachabilityStats {
-        &self.stats
-    }
 }
 
 #[cfg(test)]
 mod branch_tests {
     use super::*;
     use crate::core::guard_value::GuardValue;
+    use crate::symbolic::backward::{Backward, SettledPass};
     use crate::symbolic::budget::DiagramBudget;
     use crate::symbolic::data_layout::DataLayout;
     use crate::symbolic::vars::DataVars;
@@ -1341,7 +602,13 @@ mod branch_tests {
             .build()
     }
 
-    /// Which entries the search reached, from the given outcome of the start.
+    /// Which entries a search reaches, entering the start by the given outcome.
+    ///
+    /// THROUGH THE ENTRY STEP AND THEN A BACKWARD PASS, which is how the driver asks. What
+    /// is under test is [`Reachability::entry_states`]: the outcome selects which of the
+    /// two cases entering the check leaves, and everything past the start is a question
+    /// about what that state can go on to reach. One pass per entry is nothing on a graph
+    /// of four.
     fn reached(graph: &LookAheadGraph, branch: StartBranch) -> Vec<i32> {
         let world = TestWorld::new().set_variable("roll", GuardValue::from_boolean(false));
         let symbols = graph.symbols().clone();
@@ -1350,27 +617,42 @@ mod branch_tests {
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
         let seed = seed_of(graph, &world, &vars).expect("room for a seed");
 
-        let found = Reachability::explore_branch_within(
+        let start = node(0);
+        let entered = Reachability::entry_states(
             graph,
-            node(0),
+            start,
             branch,
             &seed,
             &mut compiler,
             &world,
             CAP as u32,
-            &Budget::default(),
-        );
+        )
+        .expect("room to enter the start");
 
-        let mut entries: Vec<i32> = found
-            .entries()
-            .filter(|id| {
-                found
-                    .states_at(*id)
-                    .map(|states| states.satisfiable())
-                    .unwrap_or(false)
-            })
-            .map(|id| id.entry_id)
-            .collect();
+        // An outcome the start has not got leaves nothing, and nothing goes on from
+        // nothing - the start included, which is why this returns before counting it.
+        if !entered.satisfiable() {
+            return Vec::new();
+        }
+
+        let children: Vec<DialogueNodeId> = graph
+            .get(start)
+            .map(|node| node.links.clone())
+            .unwrap_or_default();
+
+        let mut entries: Vec<i32> = vec![start.entry_id];
+        for id in graph.nodes().map(|node| node.id) {
+            if id == start {
+                continue;
+            }
+            let backward = Backward::reaching(graph, id, &mut compiler, &world, CAP as u32);
+            if children
+                .iter()
+                .any(|child| backward.reachable_from(*child, &entered))
+            {
+                entries.push(id.entry_id);
+            }
+        }
         entries.sort();
         entries
     }
@@ -1434,10 +716,9 @@ mod branch_tests {
     #[test]
     fn a_manager_that_fills_while_entering_is_reported_rather_than_fatal() {
         let graph = GraphBuilder::new()
-            .add(Entry::new(0).links(&[1]))
-            .add(Entry::new(1).cost(7).cost_once().links(&[2]))
-            .add(Entry::new(2).cost(11).links(&[3]))
-            .add(Entry::new(3))
+            .add(Entry::new(0).cost(7).cost_once().links(&[1]))
+            .add(Entry::new(1).cost(11).links(&[2]))
+            .add(Entry::new(2))
             .build();
 
         let world = TestWorld::new().with_money(DEEP_PURSE as i32 / 2);
@@ -1447,24 +728,22 @@ mod branch_tests {
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
         let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
 
-        let found = Reachability::explore_branch_within(
-            &graph,
-            node(0),
-            StartBranch::Either,
-            &seed,
-            &mut compiler,
-            &world,
-            CAP as u32,
-            &Budget::default(),
-        );
-
+        // THE PRICE IS ON THE START, so that the manager fills inside the one step this
+        // module still takes. Pricing an entry further on would fill it inside the pass
+        // that walks there instead, which is a different module's report to make.
         assert!(
-            found.stats().out_of_memory,
-            "the search should say the nodes ran out"
-        );
-        assert!(
-            !found.stats().reached_fixed_point,
-            "and an answer built on a manager that filled is not a settled one",
+            Reachability::entry_states(
+                &graph,
+                node(0),
+                StartBranch::Either,
+                &seed,
+                &mut compiler,
+                &world,
+                CAP as u32,
+            )
+            .is_none(),
+            "a step taken on a manager that filled is a fragment, and must not be handed \
+             back as the states the start leaves",
         );
     }
 

@@ -686,10 +686,10 @@ where
                     known,
                 );
                 // OFFERED RATHER THAN STORED. The memo takes it only if it settled, did not
-                // meet, was not narrowed and did not run out of room - see its module note,
-                // where each of those is a way the sets could be a subset of the answer.
+                // meet and did not run out of room - see its module note, where each of
+                // those is a way the sets could be a subset of the answer.
                 if let Some(memo) = memo {
-                    memo.remember(target, &backward, known);
+                    memo.remember(target, &backward);
                 }
                 Some(backward)
             }

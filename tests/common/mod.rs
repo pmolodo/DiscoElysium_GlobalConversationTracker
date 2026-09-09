@@ -484,3 +484,42 @@ pub fn measurement_save() -> SaveWorld {
         .with_counter("jam.jammystery_lorrymans_questioned")
         .with_counter("pier.joyce_lorry_reporting_counter")
 }
+
+/// The entry furthest from `start` by links alone, ties broken by id.
+///
+/// WHAT A MEASUREMENT ASKS ABOUT WHEN IT WANTS THE BIGGEST SEARCH THERE IS. A backward
+/// pass's fixed point spans everything that can reach its target, so the deepest entry is
+/// the one whose pass touches most of the group.
+///
+/// Guards ignored, which can only over-state a distance and never name an entry the links
+/// do not reach. Ties are broken by id so that a row is the same search every time: a
+/// measurement that picked a different target per run would report a different number per
+/// run, and a real change would look like noise.
+pub fn furthest_from(
+    graph: &lookahead_engine::graph::graph::LookAheadGraph,
+    start: DialogueNodeId,
+) -> DialogueNodeId {
+    use std::collections::{HashMap, VecDeque};
+
+    let mut depth: HashMap<DialogueNodeId, usize> = HashMap::new();
+    let mut queue: VecDeque<DialogueNodeId> = VecDeque::new();
+    depth.insert(start, 0);
+    queue.push_back(start);
+
+    while let Some(id) = queue.pop_front() {
+        let here = depth[&id];
+        let Some(node) = graph.get(id) else { continue };
+        for &child in &node.links {
+            if graph.get(child).is_some() && !depth.contains_key(&child) {
+                depth.insert(child, here + 1);
+                queue.push_back(child);
+            }
+        }
+    }
+
+    depth
+        .into_iter()
+        .max_by_key(|(id, at)| (*at, id.conversation_id, id.entry_id))
+        .map(|(id, _)| id)
+        .unwrap_or(start)
+}

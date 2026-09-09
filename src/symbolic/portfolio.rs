@@ -1,47 +1,30 @@
 // SPDX-License-Identifier: MIT
-//! Work in from the start, then in from the target, and let the halves share what they find.
+//! Work in from the target, under a budget, and say plainly when the budget ran out.
 //!
-//! ## The backward driver is the last word
+//! ## The backward driver is the whole search, and the last word
 //!
-//! There is no third stage. An unsettled backward driver is the END of the search, and what
-//! it found is reported as what it is - a LOWER BOUND, with [`Answered::Partly`] saying so.
-//! Every class it refused, it refused completely; an unasked candidate might have carried a
-//! better one.
+//! There is no second stage. An unsettled backward driver is the END, and what it found is
+//! reported as what it is - a LOWER BOUND, with [`Answered::Partly`] saying so. Every class
+//! it refused, it refused completely; an unasked candidate might have carried a better one.
 //!
-//! A state-at-a-time search could be run here instead, and would answer some groups this
-//! one gives up on. Nothing measured says which: the two lower bounds would differ only in
-//! the direction the backward half is already better at, and paying for a second whole
-//! search to find that out is what the budgets below exist to avoid.
+//! A state-at-a-time search could be run here instead, and would answer some groups this one
+//! gives up on. Nothing measured says which: the two lower bounds would differ only in the
+//! direction the backward driver is already better at, and paying for a second whole search
+//! to find that out is what the budgets below exist to avoid.
 //!
-//! ## Why a portfolio rather than a choice
+//! ## Why one search and not a choice between two
 //!
-//! The two searches are each better on different conversations, and the measurement in
-//! de-sze.14.4 says nothing cheap tells them apart in advance. Asked for one unseen entry
-//! deep in each group:
+//! Searching in from the start instead is a reasonable thing to want, and it was measured at
+//! length. Over the whole game, 395 response menus of eight options each - which is the unit
+//! a player waits for - it answered 80% of a menu's options and made the menus 2.4 times
+//! slower, 22.9 seconds against 9.5. The options it answers are the EASY ones, the ones where
+//! something novel is close, which is exactly why it answers them; and an option easy to
+//! reach from the start is cheap to reach from the target too. So what it absorbed was never
+//! work this driver would have struggled with.
 //!
-//! ```text
-//!   conv  entries wholems   medms   maxms  mednodes  maxnodes   afford
-//!    368     4724     491     247   78798     60693    362652        1
-//!    631     4514     702       7     392      3942     29372      100
-//!     14     3594     680     100   11167     13462    110128        6
-//!     28     2186     503       1       9        33      9105      503
-//!   1030     1476       1     121    6592      4911    336934        0
-//! ```
-//!
-//! `wholems` is one pass over the WHOLE group, which is what a per-candidate search is
-//! priced against: it answers about every entry at once, so a driver that asks about enough
-//! candidates one at a time eventually costs more than it. `afford` is how many candidates
-//! that buys. Conversation 631 affords a hundred; 368 affords one. The
-//! largest strongly connected component does not separate them - 368 is 27% and 1030 is
-//! 93% and both lose, while 631 at 84% wins - and neither does entry count, since 368 and
-//! 631 are within five per cent of each other in size and differ by thirty-five times in
-//! cost. What tracks it is how big the diagrams get, which is a fact about the answer and
-//! so no use for choosing before running.
-//!
-//! So this does not choose. It spends a slice going forwards, hands what that reached to
-//! the backward driver, and takes what the backward driver returns - settled, or as the
-//! lower bound it is. The group that would have been slow pays its budget and says so,
-//! rather than paying it and then paying for a whole search as well.
+//! It was slower in every bucket, including the 215 menus where it answered every option, and
+//! the per-option reading agreed on all 2,605 rows of a whole-game matrix. There is no group
+//! where it is worth carrying, and no reading under which it wins.
 //!
 //! ## What the budget is protecting against
 //!
@@ -50,8 +33,6 @@
 //! win and far too loose for the ones that lose; what makes this work is that a group
 //! which is going to be slow is usually slow immediately.
 
-use std::collections::HashSet;
-use std::sync::Arc;
 use std::time::Duration;
 
 use oxidd::bdd::BDDFunction;
@@ -60,16 +41,19 @@ use crate::core::types::{DialogueNodeId, Novelty, StartBranch};
 use crate::graph::graph::LookAheadGraph;
 use crate::symbolic::guard_formula::GuardCompiler;
 use crate::symbolic::known::GroupShape;
-use crate::symbolic::live_slots::LiveSlots;
 use crate::symbolic::novelty_search::{self, StoppedBy};
-use crate::symbolic::reachability::{self, Reachability};
 use crate::world::world::ILookAheadWorld;
 
-/// Which search produced an answer, and whether it is one.
+/// What produced an answer, and whether it is one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Answered {
-    /// The forward pass reached an entry worth reporting and stopped there.
-    Forwards,
+    /// The start already carried the class being hunted, so nothing was searched.
+    ///
+    /// Exact, and free: no diagram was touched and no candidate asked about. Kept apart from
+    /// [`Self::Backwards`] rather than folded into it because the two cost nothing alike, and
+    /// a measurement that could not tell them apart would read a group full of these as a
+    /// very fast search.
+    AtTheStart,
     /// The backward driver settled within its budget, so the answer is exact.
     Backwards,
     /// The backward driver did not settle, so [`PortfolioAnswer::best`] is a LOWER BOUND.
@@ -88,7 +72,7 @@ pub struct PortfolioAnswer {
     pub witness: Option<DialogueNodeId>,
     /// How many candidates the backward driver asked about before stopping.
     pub targets_asked: usize,
-    /// Why the backward driver stopped, or `Nothing` when the slice answered first.
+    /// Why the backward driver stopped, or `Nothing` when it never had to run.
     ///
     /// Carried out rather than reduced to [`Answered::Partly`], because a caller reporting
     /// an incomplete answer has to say WHICH ration ran out - the candidates, the clock, or
@@ -97,49 +81,20 @@ pub struct PortfolioAnswer {
     pub elapsed: Duration,
 }
 
-/// How long each half of the search gets.
+/// How long the search gets, and how that is divided.
 pub struct Budget {
-    /// The forward slice run BEFORE the backward driver, or zero to skip it.
-    ///
-    /// SMALL, AND IT EARNS ITS PLACE TWO WAYS. A forward pass halts the moment it reaches
-    /// an entry worth reporting - `Reachability::Budget::halt_on` - so on the common shapes
-    /// it answers outright in under a millisecond and nothing else runs. Where it does not,
-    /// what it reached is not thrown away: it is handed to the backward driver, and a
-    /// backward pass that MEETS it stops there having proved the target reachable.
-    ///
-    /// The meet is sound from a slice that was cut off, which is what makes a small budget
-    /// worth spending: forward sets only ever grow, so every state in a partial run is
-    /// genuinely reachable and meeting one proves reachable. It is only the CONVERSE that
-    /// needs a settled run, and nothing here reads a no out of the slice.
-    ///
-    /// So the two searches work in from both ends and share what they find, rather than one
-    /// running after the other has given up.
-    pub forwards: Duration,
     /// THE WALL. Everything below is an estimate; this is the one that binds.
     ///
     /// de-cluo. `LookAheadTimeBudgetMs` is documented to players as "the longest one
-    /// option's look-ahead may run for" and it was not: the forward slice was spent before
-    /// the backward clock started, and the candidate loop tested its clock and then allowed
-    /// a whole `each` past it. At the default of 1000 a search could return at roughly 1300.
+    /// option's look-ahead may run for" and it was not: the candidate loop tested its clock
+    /// and then allowed a whole `each` past it, so a dial set to 1000 could return at
+    /// roughly 1300.
     ///
     /// The rations below are kept as what they are - estimates of what each part should
     /// need - and are narrowed to the time actually left as the answer is assembled. So the
     /// shape of the search is unchanged where it fits, and where it does not the answer
     /// arrives when it said it would.
     pub overall: Duration,
-    /// What the forward slice may hold, in bytes, and how many steps it may take.
-    ///
-    /// STATED RATHER THAN INHERITED, since de-xegj. The slice used to build its
-    /// `reachability::Budget` with `..Default::default()`, which supplies 2,000,000 steps and
-    /// `DiagramBudget::DEFAULT_MEMORY_BUDGET` - and at the player's 256 MB that COINCIDES
-    /// with the manager's allowance by accident. The coincidence hides the fact that the
-    /// slice has caps of its own, so a caller that raises the manager to six gigabytes gets a
-    /// slice still quietly stopped at 256 MB and cannot tell.
-    ///
-    /// A caller that wants the slice held to the same allowance as the manager says so.
-    pub slice_memory: usize,
-    /// See [`Self::slice_memory`]. `usize::MAX` for no step limit.
-    pub slice_steps: usize,
     /// The whole backward attempt, across every candidate.
     pub backwards: Duration,
     /// One candidate's fixed point.
@@ -162,57 +117,24 @@ pub struct Budget {
     /// the measurement columns state their own, since a column is only readable against a
     /// ration it names.
     pub each: Duration,
-    /// Whether a SETTLED forward run may narrow the backward passes told about it.
-    ///
-    /// ON, and self-guarding: [`Known`] narrows nothing without `forward_settled`, so a
-    /// group whose slice spends [`Self::forwards`] without settling behaves exactly as it
-    /// would with this off. See the note at the call site for why it was off until
-    /// de-bnjy.9 and what changed.
-    ///
-    /// A FIELD RATHER THAN A LITERAL because it is the only way to measure what it is
-    /// worth: one run cannot show a difference, and both arms have to be the shipped path
-    /// rather than a hand-built search beside it.
-    pub pruning: bool,
-
-    /// The group's liveness analysis, for a forward slice that should forget what nothing
-    /// onward reads; `None` to hold every set exactly.
-    ///
-    /// THE SLICE ONLY. The backward driver's sets say "arriving here, the target is
-    /// reachable" and their approximation runs the other way, so nothing here reaches them.
-    /// See [`reachability::Budget::forget_dead`] for what the abstraction is and why it
-    /// cannot lose an answer.
-    ///
-    /// A FIELD RATHER THAN A LITERAL, for the same reason [`Self::pruning`] is one: what it
-    /// is worth can only be read off two runs of the shipped path, and the two effects it
-    /// has pull against each other. Smaller sets can let a slice SETTLE where it did not,
-    /// which is what lets the backward passes be narrowed at all; larger sets - and an
-    /// abstracted set is larger - narrow them less once it has. See
-    /// `measurements/dead_quantify.rs`.
-    pub forget_dead: Option<Arc<LiveSlots>>,
 }
 
 impl Budget {
     /// The same rations, held to `left` as well as to whatever they already said.
     ///
     /// ONLY [`Self::overall`] MOVES, and that is enough rather than an oversight: every
-    /// other clock here is already narrowed against it where it is spent. The slice takes
-    /// `forwards.min(overall)`, and the backward driver takes
-    /// `backwards.min(overall - elapsed)` and narrows each candidate again to what is left
-    /// of that. So one number binds them all, and narrowing the rest as well would restate
-    /// the same limit in three places for a reader to keep in step.
+    /// other clock here is already narrowed against it where it is spent. The backward
+    /// driver takes `backwards.min(overall - elapsed)` and narrows each candidate again to
+    /// what is left of that. So one number binds them all, and narrowing the rest as well
+    /// would restate the same limit in two places for a reader to keep in step.
     ///
     /// `Duration::MAX` is the identity, which is what a caller with no wall of its own
     /// passes.
     pub fn within(&self, left: Duration) -> Self {
         Self {
-            forwards: self.forwards,
             overall: self.overall.min(left),
-            slice_memory: self.slice_memory,
-            slice_steps: self.slice_steps,
             backwards: self.backwards,
             each: self.each,
-            pruning: self.pruning,
-            forget_dead: self.forget_dead.clone(),
         }
     }
 }
@@ -226,124 +148,22 @@ impl Default for Budget {
         // candidates behind it.
         let backwards = Duration::from_secs(2);
         Self {
-            // OFF, and measured rather than argued. de-dt75.1.
-            //
-            // The case FOR a slice is that it halts on the first entry worth reporting, so
-            // it answers outright in under a millisecond on the common shapes, and where it
-            // does not the sets it leaves behind are handed to the backward half to meet.
-            // Both halves of that are true. Neither is worth what the slice costs.
-            //
-            // Over the whole game, 395 response menus of eight options each - which is the
-            // unit a player waits for, not the single option a matrix row measures - the
-            // slice answers 80% of the options and still makes the menus 2.4 times slower:
-            // 22.9 seconds against 9.5. The options it answers are the EASY ones, the ones
-            // where something novel is close, which is exactly why it answers them; and an
-            // option that is easy for a forward pass is cheap for a backward one too. So
-            // what the slice absorbs is not work the backward driver would have struggled
-            // with, and its fifty milliseconds an option is spent on top rather than
-            // instead. It is slower even on the menus where it answers every option.
-            //
-            // The per-option reading agrees, which is what settles it: over 2,605 matrix
-            // rows the two arms return the same verdict on every one, and cost 20.6 seconds
-            // against 13.5.
-            //
-            // measurements/slice_on_menus.rs is the per-menu measurement and
-            // tools/matrix-slice-worth.py the per-option one. Raising this above zero is a
-            // one-field change, so either can be re-run against the other arm at any time.
-            forwards: Duration::ZERO,
-            // THE BACKWARD ATTEMPT, which is now the whole of the search. Stated rather than
+            // THE BACKWARD ATTEMPT, which is the whole of the search. Stated rather than
             // derived so a reader can see the number the answer is promised in.
             overall: backwards,
-            // WHAT A SLICE WOULD GET, which at `forwards` of zero bounds nothing. Kept as
-            // real numbers rather than zeroed: raising `forwards` is meant to be a one-field
-            // change, and a caller that did it against zeroed bounds would get a slice that
-            // could not take a step.
-            slice_memory: crate::symbolic::budget::DiagramBudget::DEFAULT_MEMORY_BUDGET,
-            slice_steps: 2_000_000,
             backwards,
             each: backwards,
-            // ON, and inert at a `forwards` of zero: narrowing needs a SETTLED forward run
-            // and there is no forward run at all, so `Known` refuses to narrow and this
-            // costs nothing. It stays true because it belongs to the slice rather than to
-            // the driver - a caller that gives `forwards` time back gets the narrowing that
-            // was measured to be worth having. `measurements/settles_within.rs` is that
-            // measurement: at fifty milliseconds 119 of 120 ordinary groups settle, and 25
-            // of the 50 that span conversations do.
-            pruning: true,
-            // OFF, because nothing has yet said it is worth its quantifier. See
-            // `measurements/dead_quantify.rs`, which is what would change this.
-            forget_dead: None,
         }
     }
 }
 
-/// One forward pass, halting on any entry of the class it was asked for.
+/// The best novelty reachable beyond `start`.
 ///
-/// `wanted` is the class and not a floor: an entry of a LOWER class is not what this pass
-/// was sent to find, and stopping at one would answer a different question - see
-/// [`best_novelty`] for where the class comes from and why halting on it is an answer.
-#[allow(clippy::too_many_arguments)]
-fn forwards_for<'a, F>(
-    graph: &LookAheadGraph,
-    start: DialogueNodeId,
-    branch: StartBranch,
-    seed: &BDDFunction,
-    compiler: &mut GuardCompiler<'a>,
-    world: &dyn ILookAheadWorld,
-    counter_cap: u32,
-    wanted: Novelty,
-    novelty: &F,
-    within: Duration,
-    slice_memory: usize,
-    slice_steps: usize,
-    forget_dead: Option<Arc<LiveSlots>>,
-    shape: &GroupShape,
-) -> Reachability<'a>
-where
-    F: Fn(DialogueNodeId) -> Novelty,
-{
-    // THE SET RATHER THAN THE CLOSURE, because `halt_on` outlives this call and cannot
-    // borrow `novelty`. One pass over the entries to build it, against a search that is
-    // thousands of diagram operations.
-    let quarry: HashSet<DialogueNodeId> = graph
-        .nodes()
-        .map(|node| node.id)
-        .filter(|id| novelty(*id) == wanted)
-        .collect();
-
-    // KNOWING THE ORDER RATHER THAN BUILDING ONE. The convenience form runs Tarjan over the
-    // whole group itself, and a menu is a dozen starts asking for the same answer - see
-    // [`GroupShape`].
-    Reachability::explore_branch_knowing(
-        graph,
-        start,
-        branch,
-        seed,
-        compiler,
-        world,
-        counter_cap,
-        &reachability::Budget {
-            time: within,
-            // TOLD, NOT INHERITED - see `Budget::slice_memory`. What these were defaulting to
-            // matched the player's manager allowance by coincidence, so nothing revealed that
-            // raising the manager left the slice where it was.
-            memory: slice_memory,
-            steps: slice_steps,
-            halt_on: Some(Box::new(move |id| quarry.contains(&id))),
-            forget_dead,
-            ..Default::default()
-        },
-        shape.order(),
-    )
-}
-
-/// The best novelty reachable beyond `start`, from whichever search answers first.
-///
-/// `hunting` is the class the forward slice looks for, and the caller must have established
-/// that it is the best class link-reachable from `start` -
-/// [`LookAheadGraph::best_linked_class`] is what establishes it. A caller that passes a
-/// class which is NOT the best reachable gets a lower bound where it thinks it has an
-/// answer, because the slice would then be able to halt with something better still unseen.
+/// `hunting` is the class being looked for, and the caller must have established that it is
+/// the best class link-reachable from `start` - [`LookAheadGraph::best_linked_class`] is what
+/// establishes it. It is what lets a start that already carries that class answer for itself
+/// without a search, and a caller that passes a class which is NOT the best reachable would
+/// get that shortcut taken with something better still unfound.
 ///
 /// `shape` is the group's parent map and SCC decomposition, worked out once by the caller.
 /// It changes no answer - it is a fact about the links - and it exists because a response
@@ -380,7 +200,7 @@ where
     if hunting > Novelty::SeenThisGame && novelty(start) == hunting {
         return PortfolioAnswer {
             best: hunting,
-            by: Answered::Forwards,
+            by: Answered::AtTheStart,
             witness: Some(start),
             targets_asked: 0,
             stopped_by: StoppedBy::Nothing,
@@ -399,88 +219,21 @@ where
     // the slice hunt" is the same walk over the same graph. Doing it here would be doing it
     // twice per start, once per outcome of every rolled check.
     //
-    // THE FLOOR IS NEVER HUNTED. `SeenThisGame` is not a quarry - every entry that is not
-    // unseen carries it, so a pass sent after it halts on the first thing it touches and
-    // calls the floor an answer. A caller with nothing to hunt has nothing to search for
-    // and should not be here at all, and this is what makes arriving anyway harmless.
-    // NARROWED TO THE WALL, here and at the backward driver below. de-cluo: the slice used
-    // to be spent before the backward clock started, so it was outside the player's number
-    // entirely rather than inside it.
-    let slice = budget.forwards.min(budget.overall);
-
-    let forwards = (hunting > Novelty::SeenThisGame && !slice.is_zero()).then(|| {
-        forwards_for(
-            graph,
-            start,
-            branch,
-            seed,
-            compiler,
-            world,
-            counter_cap,
-            hunting,
-            &novelty,
-            slice,
-            budget.slice_memory,
-            budget.slice_steps,
-            budget.forget_dead.clone(),
-            shape,
-        )
-    });
-
-    if let Some(found) = &forwards {
-        if let Some(halted_at) = found.stats().halted_at {
-            return PortfolioAnswer {
-                best: novelty(halted_at),
-                by: Answered::Forwards,
-                witness: Some(halted_at),
-                targets_asked: 0,
-                stopped_by: StoppedBy::Nothing,
-                elapsed: began.elapsed(),
-            };
-        }
-    }
-
-    // AND IN FROM THE TARGET, TOLD WHAT THE FIRST HALF REACHED. A backward pass that meets
-    // those sets has proved its target reachable and stops there - the two searches meet in
-    // the middle rather than one starting over where the other gave up. See `Known`.
-    //
-    // WHERE THE SEARCH BEGINS IS WHAT IS HANDED OVER, and for one outcome of a rolled start
-    // that is its destinations holding what entering by that outcome left - never the check
-    // itself, whose pre-entry states are reachable by either roll and would let a meet
-    // there prove the wrong thing.
+    // WHERE THE SEARCH BEGINS, and for one outcome of a rolled start that is its
+    // destinations holding what entering by that outcome left - never the check itself,
+    // whose pre-entry states are reachable by either roll and would let a meet there prove
+    // the wrong thing.
     let from = novelty_search::Where::of(graph, start, branch, seed, compiler, world, counter_cap);
-    // AND NARROWED BY IT WHERE THE RUN SETTLED. A settled forward run says exactly what can
-    // arrive at an entry, so a backward pass may intersect every pre-image against it, and
-    // an entry the run never reached at all is refused without a fixed point. On
-    // conversation 28 that takes the backward half from 19 ms to 2 - see de-fawk, which
-    // built it, proved it against the explicit crawl in tests/backward_oracle.rs, and then
-    // left it off.
-    //
-    // IT WAS LEFT OFF ON A READING OF FIVE GROUPS, and the reading does not survive the
-    // rest of the game. The argument was that the fifty-millisecond slice above almost
-    // never settles, which is true of the five heaviest groups and false everywhere else:
-    // `measurements/settles_within.rs` puts it at 119 of 120 ordinary groups and 25 of the
-    // 50 that span conversations. Pruning was off for all of them.
-    //
-    // SELF-GUARDING, which is what makes this free rather than a trade. `Known` narrows
-    // nothing unless `forward_settled`, so a group that spends its budget without settling
-    // behaves exactly as it did - no bound, no intersection, no cost. Nothing here raises
-    // the budget; that is de-bnjy.9's other half, and it is spent per start whether or not
-    // it is claimed.
-    // BUILT WHETHER OR NOT A SLICE RAN, and only the last line depends on one. The graph's
-    // shape is what the driver would otherwise rebuild PER CANDIDATE - the parent map and
-    // the Tarjan order, once for each of forty questions about one graph - and it has
-    // nothing to do with the forward run. Handing that over only when a slice happened
-    // charged the sharing to the slice, so a run with `forwards` at zero paid forty walks
-    // for the privilege of not searching forwards.
-    let mut known = shape.known_from(graph, start).pruning(budget.pruning);
+
+    // THE GRAPH'S SHAPE, WORKED OUT ONCE. This is what the driver would otherwise rebuild
+    // PER CANDIDATE - the parent map and the Tarjan order, once for each of forty questions
+    // about one graph - and it is a fact about the links rather than about any search, so
+    // one is good for every option of a menu. See `GroupShape::of`.
+    let mut known = shape.known_from(graph, start);
     for (id, states) in from.known_pairs() {
         known = known.from(id, states);
     }
-    let known = Some(match &forwards {
-        Some(found) => known.with_forward(found),
-        None => known,
-    });
+    let known = Some(known);
 
     let backwards = novelty_search::best_novelty(
         graph,
@@ -685,19 +438,7 @@ mod tests {
         }
     }
 
-    /// The default budget with the forward slice turned back on.
-    ///
-    /// The slice is off by default - see [`Budget::default`] for what measuring it cost -
-    /// but it is still a supported arm of the portfolio and the tests below are about what
-    /// it does when it runs. Fifty milliseconds is what it was given when it was on, so a
-    /// test here exercises the arrangement the measurements were taken against.
-    fn with_slice() -> Budget {
-        Budget {
-            forwards: Duration::from_millis(50),
-            ..Budget::default()
-        }
-    }
-
+    /// A novelty function where the named entries are unseen anywhere and nothing else is.
     fn unseen(ids: &[i32]) -> impl Fn(DialogueNodeId) -> Novelty + '_ {
         let set: HashSet<i32> = ids.iter().copied().collect();
         move |id| {
@@ -709,31 +450,6 @@ mod tests {
         }
     }
 
-    /// The forward slice answers a reachable entry outright, without the backward driver.
-    #[test]
-    fn the_forward_slice_answers_before_anything_else_runs() {
-        let graph = GraphBuilder::new()
-            .add(Entry::new(0).links(&[1]))
-            .add(Entry::new(1).links(&[2]))
-            .add(Entry::new(2))
-            .build();
-
-        let answer = run(&graph, &TestWorld::new(), unseen(&[2]), &with_slice());
-        assert_eq!(answer.best, Novelty::UnseenAnyGame);
-        assert_eq!(
-            answer.by,
-            Answered::Forwards,
-            "it halts on the unseen entry"
-        );
-        assert_eq!(answer.witness, Some(node(2)));
-        assert_eq!(answer.targets_asked, 0, "and no candidate was asked about");
-    }
-
-    /// THE START ANSWERS FOR ITSELF, without a diagram operation.
-    ///
-    /// The start carries the class being hunted, so there is nothing to search for: it is
-    /// already the best anything reachable carries. Reported forwards, witnessed by the
-    /// start, with no candidate asked about.
     #[test]
     fn a_start_carrying_the_hunted_class_answers_before_any_search() {
         let graph = GraphBuilder::new()
@@ -751,7 +467,7 @@ mod tests {
         );
 
         assert_eq!(answer.best, Novelty::UnseenAnyGame);
-        assert_eq!(answer.by, Answered::Forwards);
+        assert_eq!(answer.by, Answered::AtTheStart);
         assert_eq!(answer.witness, Some(node(0)), "the start is what proved it");
         assert_eq!(answer.targets_asked, 0);
     }
@@ -765,7 +481,6 @@ mod tests {
             .build();
 
         let starved = Budget {
-            forwards: Duration::ZERO,
             backwards: Duration::ZERO,
             each: Duration::ZERO,
             ..Budget::default()
@@ -781,62 +496,6 @@ mod tests {
     /// 1 is unseen HERE and sits between the start and 2, which is unseen ANYWHERE. A pass
     /// halting on anything above the floor stops at 1 and reports unseen-here as the best
     /// there is, which is a red marker where orange is right. It has to walk past 1.
-    #[test]
-    fn the_slice_walks_past_a_lower_class_to_reach_the_top_rung() {
-        let graph = GraphBuilder::new()
-            .add(Entry::new(0).links(&[1]))
-            .add(Entry::new(1).links(&[2]))
-            .add(Entry::new(2))
-            .build();
-
-        let answer = run(
-            &graph,
-            &TestWorld::new(),
-            classes(&[2], &[1]),
-            &with_slice(),
-        );
-
-        assert_eq!(answer.best, Novelty::UnseenAnyGame);
-        assert_eq!(answer.by, Answered::Forwards);
-        assert_eq!(
-            answer.witness,
-            Some(node(2)),
-            "and 2 is what it stopped at, not 1"
-        );
-    }
-
-    /// And hunts the rung below when the top one is nowhere reachable.
-    #[test]
-    fn the_slice_hunts_the_lower_class_when_there_is_no_top_rung() {
-        let graph = GraphBuilder::new()
-            .add(Entry::new(0).links(&[1]))
-            .add(Entry::new(1).links(&[2]))
-            .add(Entry::new(2))
-            .build();
-
-        let answer = run(
-            &graph,
-            &TestWorld::new(),
-            classes(&[], &[1, 2]),
-            &with_slice(),
-        );
-
-        assert_eq!(answer.best, Novelty::UnseenThisGame);
-        assert_eq!(answer.by, Answered::Forwards);
-        assert_eq!(
-            answer.witness,
-            Some(node(1)),
-            "the nearest of the class it hunts"
-        );
-    }
-
-    /// Nothing unseen anywhere in reach: no slice runs at all, and the answer is settled.
-    ///
-    /// THE FLOOR IS NOT A QUARRY, which is what this fixture is really about. Every entry
-    /// that is not unseen carries `SeenThisGame`, so a slice sent after it would halt on
-    /// the first entry it touched and report the floor as an answer found forwards. The
-    /// caller refuses a search it cannot improve on before reaching here - see
-    /// `bridge::class_worth_hunting` - and this is what makes arriving anyway harmless.
     #[test]
     fn a_group_with_nothing_unseen_is_answered_without_hunting() {
         let graph = GraphBuilder::new()
@@ -872,7 +531,6 @@ mod tests {
             .build();
 
         let no_forward = Budget {
-            forwards: Duration::ZERO,
             ..Default::default()
         };
         let answer = run(&graph, &TestWorld::new(), unseen(&[2]), &no_forward);
@@ -897,7 +555,6 @@ mod tests {
         // THE FORWARD SLICE IS STARVED TOO, or it would answer this fixture outright and
         // the unsettled path - which is what this test is about - would never be reached.
         let starved = Budget {
-            forwards: Duration::ZERO,
             backwards: Duration::ZERO,
             each: Duration::ZERO,
             ..Budget::default()

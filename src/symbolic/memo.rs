@@ -30,29 +30,13 @@
 //! - THE PASS SETTLED. An unsettled pass ran out of budget holding what it had got to. It
 //!   proves what it found and nothing about what it did not, which is the same rule
 //!   `novelty_search` already applies to its within-request refused set.
-//! - IT DID NOT MEET. `BackwardStats::met_at` means the pass stopped early against forward
-//!   sets derived from ONE seed - a proof for that seed, and a partial fixed point for any
+//! - IT DID NOT MEET. `BackwardStats::met_at` means the pass stopped early against what one
+//!   search holds where it begins - a proof for that seed, and a partial fixed point for any
 //!   other. A memo is asked about seeds it has never seen.
-//! - NOTHING NARROWED IT. [`Known::restricted`] intersects every pre-image against what a
-//!   settled forward run says can arrive, and that run was seeded. See below.
 //! - THE MANAGER DID NOT RUN OUT. `out_of_memory` is the third way to hold a subset.
 //!
-//! ### The pruning condition is a TEST, not a setting, and that is the design
-//!
-//! de-znov.3 proposed turning `portfolio::Budget::pruning` off for any pass that is to be
-//! kept. That would work and it is not needed, because pruning is SELF-GUARDING: `Known`
-//! narrows nothing unless the forward run settled, so a pass run with pruning on against an
-//! unsettled slice is bit-for-bit the pass it would have been with pruning off. Asking
-//! [`Known::forward_settled`] afterwards separates the two at no cost.
-//!
-//! What that buys is that nothing about the shipped search changes. Turning pruning off
-//! would trade a saving on the groups where the slice settles for one on the groups where
-//! it does not, and the trade would be paid whether or not the memo ever hit.
-//!
-//! And it costs almost nothing: `cacheable_asks` found the forward slice settling in 2 of
-//! 720 options on those nine groups, because the percentage-seen profiles that model a real
-//! save leave something unread close enough for the slice to halt long before it settles.
-//! So the passes this declines to keep are a fraction of a per cent of them.
+//! Each of these is a property of the pass rather than of how it was asked for, which is
+//! what lets a caller offer every pass it runs and leave the choosing here.
 //!
 //! ## What it is keyed on, and what the caller owns
 //!
@@ -80,7 +64,6 @@ use oxidd::bdd::BDDFunction;
 
 use crate::core::types::DialogueNodeId;
 use crate::symbolic::backward::{Backward, SettledPass};
-use crate::symbolic::known::Known;
 
 /// What a set of remembered passes is valid FOR.
 ///
@@ -258,13 +241,11 @@ pub struct MemoStats {
     ///
     /// SEPARATELY, because they say different things about a run and a single count says
     /// none of them. A memo that keeps nothing because every pass MET is looking at a world
-    /// with plenty left unread, and is working; one that keeps nothing because every pass
-    /// was NARROWED is being handed settled forward runs and could be given unpruned ones;
-    /// one that keeps nothing because nothing SETTLED is being asked questions too hard for
-    /// its budget. Only the middle of those is a reason to change anything here.
+    /// with plenty left unread, and is working; one that keeps nothing because nothing
+    /// SETTLED is being asked questions too hard for its budget, which is the one of these
+    /// that is a reason to change something here.
     pub unsettled: usize,
     pub met: usize,
-    pub narrowed: usize,
     pub out_of_room: usize,
     /// Entries dropped to stay under the cap.
     pub evicted: usize,
@@ -275,7 +256,7 @@ pub struct MemoStats {
 /// INTERIOR MUTABILITY, so that a memo can be handed down a call chain that is already
 /// carrying a `&mut GuardCompiler`. The alternative is a second mutable borrow threaded
 /// through five signatures beside the first, which is the plumbing de-a88z declined to
-/// write and no more palatable now. `Known` holds its own derived cache the same way.
+/// write and no more palatable now.
 pub struct Memo {
     key: MemoKey,
     passes: RefCell<HashMap<DialogueNodeId, Kept>>,
@@ -332,20 +313,9 @@ impl Memo {
     /// Offers a finished pass, which is kept only if every condition in the module note
     /// holds.
     ///
-    /// `known` is what the pass was told, and is what says whether anything narrowed it.
-    /// `None` means nothing was, which is the case a caller running a bare pass is in.
-    pub fn remember(
-        &self,
-        target: DialogueNodeId,
-        backward: &Backward<'_>,
-        known: Option<&Known>,
-    ) -> bool {
+    pub fn remember(&self, target: DialogueNodeId, backward: &Backward<'_>) -> bool {
         let stats = backward.stats();
-        // NARROWED SETS ARE A PROOF FOR ONE SEED. `Known` narrows nothing without a settled
-        // forward run, so this asks whether one was available rather than whether pruning
-        // was requested - see the module note on why that is a test and not a setting.
-        let narrowed = known.is_some_and(|known| known.forward_settled());
-        if !stats.reached_fixed_point || stats.met_at.is_some() || stats.out_of_memory || narrowed {
+        if !stats.reached_fixed_point || stats.met_at.is_some() || stats.out_of_memory {
             let mut counted = self.stats.borrow_mut();
             // ONE REASON EACH, and `reached_fixed_point` is asked LAST rather than first.
             // It is false for a pass that met and for one that ran out of nodes as well as
@@ -356,10 +326,8 @@ impl Memo {
                 counted.met += 1;
             } else if stats.out_of_memory {
                 counted.out_of_room += 1;
-            } else if !stats.reached_fixed_point {
-                counted.unsettled += 1;
             } else {
-                counted.narrowed += 1;
+                counted.unsettled += 1;
             }
             return false;
         }
