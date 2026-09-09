@@ -129,6 +129,7 @@ use std::collections::{HashMap, HashSet};
 use lookahead_engine::core::types::{DialogueNodeId, Novelty};
 use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, discover_group, read_index};
+use lookahead_engine::symbolic::dominators::Dominators;
 use lookahead_engine::symbolic::novelty_search::{candidates_from, Nearest};
 use lookahead_engine::symbolic::order::IterationOrder;
 
@@ -384,7 +385,11 @@ fn count(
     // it actually asks. `Nearest::First` is what a look-ahead uses; a census takes the other
     // end and is not what this is about.
     let ordered = candidates_from(graph, starts, &novelty, Nearest::First);
-    let idom = dominators(graph, starts);
+    // THE SHIPPED RELATION, not a copy of it. `Dominators` is what the driver skips
+    // candidates with, so this measures the thing that runs and `verify` checks the thing
+    // that runs. A second implementation here would be free to be right while the engine's
+    // was wrong, which is the one arrangement worth avoiding.
+    let doms = Dominators::of(graph, starts);
 
     let in_list: HashSet<DialogueNodeId> = ordered.iter().copied().collect();
     let mut asked: HashSet<DialogueNodeId> = HashSet::new();
@@ -393,14 +398,7 @@ fn count(
     for &target in &ordered {
         let mut has_dominator = false;
         let mut earlier = false;
-        // STRICT dominators only: walk up from the immediate dominator, not from the node.
-        // A ROOT IS ITS OWN IMMEDIATE DOMINATOR, so a start that is itself a candidate must
-        // not be handed its own identifier here and counted as dominating itself.
-        let mut walk = match idom.get(&target).copied() {
-            Some(parent) if parent != target => Some(parent),
-            _ => None,
-        };
-        while let Some(node) = walk {
+        for node in doms.above(target) {
             if in_list.contains(&node) {
                 has_dominator = true;
                 if asked.contains(&node) {
@@ -408,12 +406,6 @@ fn count(
                     break;
                 }
             }
-            // The root is its own dominator, which is where the chain ends.
-            let next = idom.get(&node).copied();
-            walk = match next {
-                Some(parent) if parent != node => Some(parent),
-                _ => None,
-            };
         }
 
         counted.has_dominator += usize::from(has_dominator);
@@ -422,129 +414,6 @@ fn count(
     }
 
     counted
-}
-
-/// The immediate dominator of every entry reachable from `starts`, over the link graph.
-///
-/// The iterative Cooper-Harvey-Kennedy algorithm rather than Lengauer-Tarjan: 1,372 of the
-/// game's 1,422 groups hold about forty-three entries (`group_census`) and the largest is
-/// under five thousand, so the simple one is free and the fast one is a page of machinery
-/// nobody would want to debug.
-///
-/// SEVERAL STARTS GET A VIRTUAL ROOT, because a rolled check's outcome begins at all of the
-/// check's children at once and a forest has no single dominator to walk up to. The root is
-/// not an entry, so it never appears in a candidate list and can never be counted as a
-/// dominator that was asked about.
-fn dominators(
-    graph: &LookAheadGraph,
-    starts: &[DialogueNodeId],
-) -> HashMap<DialogueNodeId, DialogueNodeId> {
-    // Reachable set and a reverse postorder, both from the same walk.
-    let mut order: Vec<DialogueNodeId> = Vec::new();
-    let mut seen: HashSet<DialogueNodeId> = HashSet::new();
-    let mut stack: Vec<(DialogueNodeId, usize)> = Vec::new();
-
-    for &start in starts {
-        if graph.get(start).is_none() || !seen.insert(start) {
-            continue;
-        }
-        stack.push((start, 0));
-        // Iterative depth-first search: the graph has cycles and a group can be five
-        // thousand entries deep, which is more than the stack wants to hold.
-        while let Some((id, next)) = stack.pop() {
-            let links = graph.get(id).map(|node| node.links.clone()).unwrap_or_default();
-            if next < links.len() {
-                stack.push((id, next + 1));
-                let child = links[next];
-                if graph.get(child).is_some() && seen.insert(child) {
-                    stack.push((child, 0));
-                }
-            } else {
-                // Postorder: finished, so everything below it is already recorded.
-                order.push(id);
-            }
-        }
-    }
-
-    let postorder: HashMap<DialogueNodeId, usize> =
-        order.iter().enumerate().map(|(at, id)| (*id, at)).collect();
-
-    let mut parents: HashMap<DialogueNodeId, Vec<DialogueNodeId>> = HashMap::new();
-    for &id in &order {
-        let Some(node) = graph.get(id) else { continue };
-        for &child in &node.links {
-            if postorder.contains_key(&child) {
-                parents.entry(child).or_default().push(id);
-            }
-        }
-    }
-
-    // The starts dominate themselves. With several, each is its own root: nothing above them
-    // is in the walk, so no chain from one can reach another, which is the virtual root's
-    // effect without a node to represent it.
-    let mut idom: HashMap<DialogueNodeId, DialogueNodeId> = HashMap::new();
-    let roots: HashSet<DialogueNodeId> =
-        starts.iter().copied().filter(|id| postorder.contains_key(id)).collect();
-    for &root in &roots {
-        idom.insert(root, root);
-    }
-
-    let reverse: Vec<DialogueNodeId> =
-        order.iter().rev().copied().filter(|id| !roots.contains(id)).collect();
-
-    let mut changed = true;
-    while changed {
-        changed = false;
-        for &id in &reverse {
-            let mut new: Option<DialogueNodeId> = None;
-            for &parent in parents.get(&id).map(|v| v.as_slice()).unwrap_or(&[]) {
-                if !idom.contains_key(&parent) {
-                    continue;
-                }
-                new = Some(match new {
-                    None => parent,
-                    Some(current) => intersect(parent, current, &idom, &postorder),
-                });
-            }
-            if let Some(new) = new {
-                if idom.get(&id) != Some(&new) {
-                    idom.insert(id, new);
-                    changed = true;
-                }
-            }
-        }
-    }
-
-    idom
-}
-
-/// The nearest common dominator of two entries, by walking both up until they meet.
-///
-/// Postorder numbers increase towards the root, so the LOWER of the two is the deeper one
-/// and is the one to lift.
-fn intersect(
-    mut a: DialogueNodeId,
-    mut b: DialogueNodeId,
-    idom: &HashMap<DialogueNodeId, DialogueNodeId>,
-    postorder: &HashMap<DialogueNodeId, usize>,
-) -> DialogueNodeId {
-    while a != b {
-        while postorder[&a] < postorder[&b] {
-            match idom.get(&a) {
-                Some(parent) if *parent != a => a = *parent,
-                // A root, or an entry the fixed point has not reached yet: nothing left to
-                // lift, so the other side is as close as this gets.
-                _ => return b,
-            }
-        }
-        while postorder[&b] < postorder[&a] {
-            match idom.get(&b) {
-                Some(parent) if *parent != b => b = *parent,
-                _ => return a,
-            }
-        }
-    }
-    a
 }
 
 /// Running totals over many rows.
@@ -656,11 +525,16 @@ fn env_list(name: &str, fallback: &[i32]) -> Vec<i32> {
 ///
 /// ## Why this arm exists rather than a unit test
 ///
-/// The share this measurement reports is large, and a large number from a graph algorithm
-/// written for one measurement is exactly the kind of finding that should not be believed on
-/// the strength of the algorithm looking right. The definition is directly checkable: `t`
-/// dominates `u` from `s` exactly when deleting `t` makes `u` unreachable from `s`. So this
-/// re-derives the whole relation the slow, obvious way and compares.
+/// The share this measurement reports is large, and a large number out of a graph algorithm
+/// is exactly the kind of finding that should not be believed on the strength of the
+/// algorithm looking right. The definition is directly checkable: `t` dominates `u` from `s`
+/// exactly when deleting `t` makes `u` unreachable from `s`. So this re-derives the whole
+/// relation the slow, obvious way and compares.
+///
+/// IT CHECKS THE SHIPPED RELATION. `symbolic::dominators::Dominators` is what the backward
+/// driver skips candidates with, and it is what this asks - so this is a soundness check on
+/// the engine rather than on a measurement's private copy. The unit tests beside that module
+/// cover the shapes; this covers the real database, where the shapes are all mixed together.
 ///
 /// It is quadratic and deliberately so - one reachability walk per entry - which is why it
 /// runs over the small groups and a sample of the large ones rather than the game.
@@ -681,7 +555,7 @@ fn verify(index: &lookahead_engine::index::Index) {
             continue;
         }
 
-        let idom = dominators(&graph, &[start]);
+        let doms = Dominators::of(&graph, &[start]);
         let reachable: Vec<DialogueNodeId> =
             structurally_reachable(&graph, start).into_keys().collect();
 
@@ -701,7 +575,7 @@ fn verify(index: &lookahead_engine::index::Index) {
                     continue;
                 }
                 let by_deletion = !without.contains(&id);
-                let by_tree = dominates(&idom, *cut, id);
+                let by_tree = doms.dominates(*cut, id);
                 checked += 1;
                 if by_deletion != by_tree {
                     wrong += 1;
@@ -721,7 +595,7 @@ fn verify(index: &lookahead_engine::index::Index) {
             println!(
                 "        DISAGREES: does {cut:?} dominate {id:?}? deletion says \
                  {by_deletion}, the tree says {}",
-                dominates(&idom, cut, id),
+                doms.dominates(cut, id),
             );
         }
     }
@@ -758,26 +632,4 @@ fn reachable_without(
         }
     }
     seen
-}
-
-/// Whether `cut` is on every path to `id`, according to the tree.
-fn dominates(
-    idom: &HashMap<DialogueNodeId, DialogueNodeId>,
-    cut: DialogueNodeId,
-    id: DialogueNodeId,
-) -> bool {
-    let mut walk = match idom.get(&id).copied() {
-        Some(parent) if parent != id => Some(parent),
-        _ => None,
-    };
-    while let Some(node) = walk {
-        if node == cut {
-            return true;
-        }
-        walk = match idom.get(&node).copied() {
-            Some(parent) if parent != node => Some(parent),
-            _ => None,
-        };
-    }
-    false
 }

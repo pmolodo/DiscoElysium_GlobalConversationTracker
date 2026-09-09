@@ -26,6 +26,11 @@
 //! Depth is by EDGE ANALYSIS ALONE - links followed, guards ignored - so it over-approximates
 //! reachability, which makes the quarry at least structurally fair.
 
+// The consumers use different halves - some want the novelty function, some build their own
+// from `unseen` - and a warning on every build of every one of them would hide the ones
+// worth reading. The same reason `seen_profile.rs` carries this.
+#![allow(dead_code)]
+
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use lookahead_engine::core::types::DialogueNodeId;

@@ -31,7 +31,7 @@
 //! list, every one of them unreachable, is where a forward pass should win, and
 //! de-sze.14.4 is where that crossover gets measured rather than assumed.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use oxidd::bdd::BDDFunction;
 use oxidd::BooleanFunction;
@@ -39,6 +39,7 @@ use oxidd::BooleanFunction;
 use crate::core::types::{DialogueNodeId, Novelty, StartBranch};
 use crate::graph::graph::LookAheadGraph;
 use crate::symbolic::backward::Backward;
+use crate::symbolic::dominators::Dominators;
 use crate::symbolic::guard_formula::GuardCompiler;
 use crate::symbolic::known::Known;
 use crate::symbolic::reachability::Reachability;
@@ -485,7 +486,22 @@ where
     // would leave it holding the shallowest instead. A look-ahead has no cap on findings and
     // wants its cheapest proof first.
     let nearest = if every.is_some() { Nearest::Last } else { Nearest::First };
-    let ordered = candidates_from(graph, &from.nodes(), &novelty, nearest);
+    let starts = from.nodes();
+    let ordered = candidates_from(graph, &starts, &novelty, nearest);
+
+    // WHAT A SETTLED REFUSAL ALREADY ANSWERED, and the tree that turns one refusal into
+    // many. See [`crate::symbolic::dominators`] for why the implication holds and why the
+    // link graph is the safe one to take it over.
+    //
+    // BUILT ON THE FIRST REFUSAL RATHER THAN UP FRONT, which is what keeps it free where it
+    // cannot pay. Two thirds of the rows of a whole-game run ask about exactly ONE candidate
+    // (de-kqgq), and a search whose first candidate is proved REACHABLE stops there - in
+    // both cases a tree built at the top would be built and dropped unused. Deferring it to
+    // the first settled refusal means it exists exactly when there is something to apply it
+    // to, and the `dominance.is_some()` test below is the same condition spelled once.
+    let mut refused: HashSet<DialogueNodeId> = HashSet::new();
+    let mut dominance: Option<Dominators> = None;
+
     let mut answer = NoveltyAnswer {
         best: Novelty::SeenThisGame,
         witness: None,
@@ -503,6 +519,29 @@ where
         // able to end the search by exhausting a ration it never spends.
         if every.as_ref().is_some_and(|census| (census.settled)(target)) {
             continue;
+        }
+
+        // ALREADY REFUSED BY SOMETHING ABOVE IT, so there is nothing to run. Every path
+        // from the start to this target passes through an entry a completed fixed point
+        // proved unreachable, so this one is unreachable too - de-kqgq, which measured 87.7
+        // per cent of a whole-game run's candidates to be in this position.
+        //
+        // BEFORE THE CLOCK, for the reason the check above is: a candidate that costs
+        // nothing must not be able to end the search by exhausting a ration it never spends.
+        //
+        // IT IS A FINDING, NOT A SKIP, which is why a census is told. `settled` above means
+        // an earlier RUN already answered and the caller has the answer; this means THIS run
+        // has just answered it, and dropping it would lose a verdict the census came for.
+        if let Some(doms) = &dominance {
+            if doms.above(target).any(|above| refused.contains(&above)) {
+                if let Some(census) = &mut every {
+                    if (census.verdict)(target, Some(false)) == Wants::Enough {
+                        answer.stopped_by = StoppedBy::Targets;
+                        break;
+                    }
+                }
+                continue;
+            }
         }
 
         if began.elapsed() >= budget.time {
@@ -569,6 +608,16 @@ where
             None
         } else {
             // Settled, and it did not reach: proved unreachable.
+            //
+            // ONLY THIS BRANCH MAY BE REMEMBERED. A pass that met an earlier search, or ran
+            // out of budget, or out of diagram nodes, holds a SUBSET of what it would have
+            // held - it proves what it found and nothing about what it did not - so
+            // recording one here would turn a budget into an answer, and the entries it
+            // then refused for free would be refused on no evidence at all.
+            refused.insert(target);
+            if dominance.is_none() && answer.candidates > 1 {
+                dominance = Some(Dominators::of(graph, &starts));
+            }
             Some(false)
         };
 
@@ -875,6 +924,100 @@ mod tests {
         assert_eq!(answer.witness, Some(node(4)), "the near worse candidate won");
         // And it never had to ask about the near one: the better class is exhausted first.
         assert_eq!(answer.targets_asked, 1);
+    }
+
+    /// A refused entry answers for everything behind it, without a second fixed point.
+    ///
+    /// A chain: 0 -> 1 -> 2 -> 3, with 1 shut by a guard. Entries 2 and 3 are unseen and
+    /// only reachable through 1, so 1 dominates both. Refusing 1 refuses them, and the
+    /// driver should ask ONE question about a list of three.
+    #[test]
+    fn a_settled_refusal_answers_for_everything_it_dominates() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(Entry::new(1).guard(r#"Variable["shut"]"#).links(&[2]))
+            .add(Entry::new(2).links(&[3]))
+            .add(Entry::new(3))
+            .build();
+        let world = TestWorld::new().set_variable("shut", GuardValue::from_boolean(false));
+
+        let answer = search(&graph, &world, novel(&[1, 2, 3], Novelty::UnseenAnyGame));
+
+        assert_eq!(answer.best, Novelty::SeenThisGame, "nothing is reachable");
+        assert_eq!(answer.candidates, 3, "all three were candidates");
+        assert_eq!(
+            answer.targets_asked, 1,
+            "1 dominates 2 and 3, so refusing it should have answered for both",
+        );
+        assert_eq!(answer.stopped_by, StoppedBy::Nothing, "it ran out of candidates, not budget");
+    }
+
+    /// And it must NOT fire where the entry is reachable another way.
+    ///
+    /// The diamond: 0 -> 1 -> 3 and 0 -> 2 -> 3, with only 1 shut. Nothing dominates 3, so
+    /// refusing 1 says nothing about it - and 3 IS reachable, through 2. A rule keyed on
+    /// reachability rather than dominance would get this wrong and lose the answer.
+    #[test]
+    fn a_refusal_says_nothing_about_an_entry_reachable_another_way() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1, 2]))
+            .add(Entry::new(1).guard(r#"Variable["shut"]"#).links(&[3]))
+            .add(Entry::new(2).links(&[3]))
+            .add(Entry::new(3))
+            .build();
+        let world = TestWorld::new().set_variable("shut", GuardValue::from_boolean(false));
+
+        let answer = search(&graph, &world, novel(&[1, 3], Novelty::UnseenAnyGame));
+
+        assert_eq!(answer.best, Novelty::UnseenAnyGame);
+        assert_eq!(answer.witness, Some(node(3)), "3 is reachable through 2");
+    }
+
+    /// An UNSETTLED refusal proves nothing and must not be remembered.
+    ///
+    /// The ration is cut to nothing, so the pass about the first candidate cannot complete.
+    /// The driver stops on an incomplete answer rather than treating it as a refusal and
+    /// carrying that into everything the candidate dominates.
+    #[test]
+    fn an_unsettled_pass_refuses_nothing_on_behalf_of_anything_else() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(Entry::new(1).links(&[2]))
+            .add(Entry::new(2).links(&[3]))
+            .add(Entry::new(3))
+            .build();
+
+        let symbols = graph.symbols().clone();
+        let layout = DataLayout::for_graph(&graph, CAP, None, false);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
+        let world = TestWorld::new();
+        let mut compiler = GuardCompiler::new(&vars).with_world(&world);
+        let seed = seed_of(&graph, &world, &vars);
+
+        let answer = best_novelty(
+            &graph,
+            node(0),
+            StartBranch::Either,
+            &seed,
+            &mut compiler,
+            &world,
+            CAP as u32,
+            novel(&[1, 2, 3], Novelty::UnseenAnyGame),
+            &Budget {
+                time: std::time::Duration::from_secs(5),
+                // NO STEPS AT ALL, so no pass can reach a fixed point. That is the state a
+                // refusal must not be inferred from.
+                each: crate::symbolic::backward::Budget { steps: 0, ..Default::default() },
+            },
+            None,
+        );
+
+        assert_eq!(
+            answer.stopped_by,
+            StoppedBy::Incomplete,
+            "an unsettled pass is not a refusal and must stop the search",
+        );
+        assert_eq!(answer.best, Novelty::SeenThisGame, "and it establishes nothing");
     }
 
     /// The worse class is only reached once the better one is refused entirely.

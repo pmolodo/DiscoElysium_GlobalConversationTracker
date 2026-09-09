@@ -24,6 +24,7 @@ pub mod action_image;
 pub mod backward;
 pub mod budget;
 pub mod data_layout;
+pub mod dominators;
 pub mod guard_formula;
 pub mod isolated;
 pub mod known;
