@@ -371,12 +371,19 @@ where
     // behaves exactly as it did - no bound, no intersection, no cost. Nothing here raises
     // the budget; that is de-bnjy.9's other half, and it is spent per start whether or not
     // it is claimed.
-    let known = forwards.as_ref().map(|found| {
-        let mut known = shape.known_from(graph, start).pruning(budget.pruning);
-        for (id, states) in from.known_pairs() {
-            known = known.from(id, states);
-        }
-        known.with_forward(found)
+    // BUILT WHETHER OR NOT A SLICE RAN, and only the last line depends on one. The graph's
+    // shape is what the driver would otherwise rebuild PER CANDIDATE - the parent map and
+    // the Tarjan order, once for each of forty questions about one graph - and it has
+    // nothing to do with the forward run. Handing that over only when a slice happened
+    // charged the sharing to the slice, so a run with `forwards` at zero paid forty walks
+    // for the privilege of not searching forwards.
+    let mut known = shape.known_from(graph, start).pruning(budget.pruning);
+    for (id, states) in from.known_pairs() {
+        known = known.from(id, states);
+    }
+    let known = Some(match &forwards {
+        Some(found) => known.with_forward(found),
+        None => known,
     });
 
     let backwards = novelty_search::best_novelty(
