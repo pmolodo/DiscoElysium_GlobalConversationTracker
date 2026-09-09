@@ -16,8 +16,8 @@
   "suites": [
     {
       "suite": "money",
-      "what": "the forward scan spends as it walks",
-      "why": "Conversation 451 gates a 0.50 real purchase behind a 50.00 one, and the staged global state leaves entry 80 - the only one a speaker buyer reaches - unseen. An option is therefore orange exactly when the crawl could afford both, which is what the three balances separate. The middle one is the point: a scan that checked an option's price without subtracting what the path already spent would mark it.",
+      "what": "a path spends as it walks, and the look-ahead has to spend with it",
+      "why": "Conversation 451 gates a 0.50 real purchase behind a 50.00 one, and the staged global state leaves entry 80 - the only one a speaker buyer reaches - unseen. An option is therefore orange exactly when the crawl could afford both, which is what the three balances separate. The middle one is the point: a look-ahead that checked an option's price without subtracting what the path already spent would mark it.",
       "state": "global-conversation-state.json",
       "settings": { "KeepLookAheadStates": "true" },
       "inGame": {
