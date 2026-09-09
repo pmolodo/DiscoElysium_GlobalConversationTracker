@@ -276,7 +276,7 @@ fn alone(
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(world)
             .with_constant_clock(DataLayout::group_passes_time(graph));
-        let seed = seed_of(graph, world, &vars);
+        let seed = seed_of(graph, world, &vars).expect("room for a seed");
         let novelty = novelty_of(unseen);
 
         let known = Known::of(graph);
@@ -323,7 +323,7 @@ fn shared(
     let mut compiler = GuardCompiler::new(&vars)
         .with_world(world)
         .with_constant_clock(DataLayout::group_passes_time(graph));
-    let seed = seed_of(graph, world, &vars);
+    let seed = seed_of(graph, world, &vars).expect("room for a seed");
     let novelty = novelty_of(unseen);
 
     // BOTH HALVES ARE TIMED. The forward run is work this arrangement pays for, and a

@@ -175,7 +175,7 @@ fn the_forward_search_reaches_what_the_reference_walk_reaches() {
             // from all of them would walk paths needing an item the player has not got, and
             // report entries no real search can reach: a surplus that says nothing about the
             // encoding.
-            let seed = seed_of(&graph, &world, &vars);
+            let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
             let found = Reachability::explore(
                 &graph, start, &seed, &mut compiler, &world, COUNTER_CAP as u32,
             );
@@ -255,7 +255,7 @@ fn the_backward_search_finds_what_the_reference_walk_reaches() {
             let mut compiler = GuardCompiler::new(&vars)
                 .with_world(&world)
                 .with_constant_clock(DataLayout::group_passes_time(&graph));
-            let seed = seed_of(&graph, &world, &vars);
+            let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
 
             // A SETTLED forward run, which is what licenses pruning a backward pass: it
             // bounds what can arrive at each entry, and says outright that some entries can
@@ -415,7 +415,7 @@ fn the_driver_and_the_portfolio_find_what_the_reference_walk_finds() {
             let mut compiler = GuardCompiler::new(&vars)
                 .with_world(&world)
                 .with_constant_clock(DataLayout::group_passes_time(&graph));
-            let seed = seed_of(&graph, &world, &vars);
+            let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
             let began = std::time::Instant::now();
 
             let driver = best_novelty(

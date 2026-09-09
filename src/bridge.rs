@@ -1099,14 +1099,9 @@ pub fn answer(
         // de-0a3a. Every option is answered "nothing established" rather than the request
         // failing, because a menu with no markers is what a mod without an engine draws
         // and the player has seen it before.
-        Ok(None) => LookAheadResponse {
-            answers: request
-                .starts
-                .iter()
-                .map(|start| unanswered(*start, "no-ram"))
-                .collect(),
-            error: None,
-        },
+        Ok(None) => {
+            LookAheadResponse { answers: all_unanswered(request, "no-ram"), error: None }
+        }
         // THE SAME SHAPE AS "no-ram", DELIBERATELY. Both mean the same thing to the caller -
         // no start was established, draw the menu unmarked - and the mod already knows how
         // to do that. A different shape here would be a second thing for it to learn in
@@ -1127,14 +1122,7 @@ pub fn answer(
                 isolated::panic_message(panicked.as_ref()),
                 request.starts.len(),
             );
-            LookAheadResponse {
-                answers: request
-                    .starts
-                    .iter()
-                    .map(|start| unanswered(*start, "crashed"))
-                    .collect(),
-                error: None,
-            }
+            LookAheadResponse { answers: all_unanswered(request, "crashed"), error: None }
         }
     }
 }
@@ -1149,8 +1137,11 @@ pub const COUNTER_CAP: i32 = 16;
 
 /// The answers for one request, from inside the thread that owns the diagram.
 ///
-/// `None` where the machine could not supply the diagram's memory, which is a fact about
-/// the machine rather than about any option, so it is reported once for all of them.
+/// `None` where the diagram's memory did not stretch to a starting point: the machine
+/// could not supply the node store, or it could and the seed still would not fit in it.
+/// Either is a fact about the memory rather than about any option, so it is reported once
+/// for all of them - and the caller draws the menu unmarked, which is what it does for a
+/// missing engine too.
 fn answer_within<F>(
     graph: &LookAheadGraph,
     world: &dyn ILookAheadWorld,
@@ -1174,7 +1165,7 @@ where
     let mut compiler = GuardCompiler::new(&vars)
         .with_world(world)
         .with_constant_clock(DataLayout::group_passes_time(graph));
-    let seed = seed_of(graph, world, &vars);
+    let seed = seed_of(graph, world, &vars)?;
 
     // ONCE FOR THE MENU, like the manager and the compiler above. The parent map and the
     // SCC decomposition are facts about the LINKS - no start, no world, no budget - and
@@ -1245,6 +1236,19 @@ where
     }
 
     answers
+}
+
+/// Every start of a request answered as nothing established, for one reason.
+///
+/// What a caller draws is a menu with no markers, which is also what it draws without an
+/// engine at all - so the shape is the same whatever stopped it, and only `stopped_by`
+/// differs. Shared with [`crate::workspace`], which reaches the same wall a request later
+/// rather than a request earlier.
+pub(crate) fn all_unanswered(
+    request: &LookAheadRequest,
+    stopped_by: &str,
+) -> Vec<LookAheadAnswer> {
+    request.starts.iter().map(|start| unanswered(*start, stopped_by)).collect()
 }
 
 /// An option with nothing established about it, and why.
@@ -1478,7 +1482,7 @@ mod branch_wire_tests {
         let layout = DataLayout::for_graph(graph, COUNTER_CAP, None, false);
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(world);
-        let seed = seed_of(graph, world, &vars);
+        let seed = seed_of(graph, world, &vars).expect("room for a seed");
 
         scored(
             graph,

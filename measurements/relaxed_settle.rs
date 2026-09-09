@@ -172,7 +172,7 @@ fn run(
         .with_world(&world)
         .with_constant_clock(DataLayout::group_passes_time(graph));
 
-    let seed = seed_of(graph, &world, &vars);
+    let seed = seed_of(graph, &world, &vars).expect("room for a seed");
 
     // THE SEEN AND ONCE SLOTS, which are exactly what `is_seen` decides the starting value
     // of. Quantifying their variables away leaves a seed that says nothing about what has

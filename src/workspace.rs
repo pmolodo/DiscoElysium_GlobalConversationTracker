@@ -307,9 +307,16 @@ fn own(
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(&world)
             .with_constant_clock(DataLayout::group_passes_time(&graph));
-        let seed = seed_of(&graph, &world, &vars);
-
+        // A SEED THE MANAGER HAS NO ROOM FOR is a search that cannot start, and it is
+        // answerable rather than fatal: every start is nothing established, exactly as
+        // `bridge::answer` answers a manager the machine would not give it. The workspace
+        // stays up, because the next request may carry a world that seeds more cheaply.
         let request = &job.request;
+        let Some(seed) = seed_of(&graph, &world, &vars) else {
+            let _ = job.answers.send(Ok(crate::bridge::all_unanswered(request, "no-ram")));
+            continue;
+        };
+
         let novelty = |id: DialogueNodeId| {
             let node = crate::bridge::NodeRef::from(id);
             if request.unseen_any_game.contains(&node) {

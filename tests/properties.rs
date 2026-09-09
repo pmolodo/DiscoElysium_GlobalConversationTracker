@@ -444,7 +444,7 @@ proptest! {
         let symbolic: HashSet<DialogueNodeId> = on_its_own_thread(|| {
             let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
             let mut compiler = GuardCompiler::new(&vars).with_world(&world);
-            let seed = seed_of(&graph, &world, &vars);
+            let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
             let found = Reachability::explore(
                 &graph, node(0), &seed, &mut compiler, &world, COUNTER_CAP as u32,
             );

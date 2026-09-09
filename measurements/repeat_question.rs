@@ -210,7 +210,7 @@ fn main() {
                 let mut compiler = GuardCompiler::new(&vars)
                     .with_world(&world)
                     .with_constant_clock(DataLayout::group_passes_time(&graph));
-                let seed = seed_of(&graph, &world, &vars);
+                let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
                 let built = building.elapsed();
 
                 let searching = Instant::now();

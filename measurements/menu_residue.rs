@@ -240,7 +240,7 @@ fn main() {
                 let compiler = GuardCompiler::new(&vars)
                     .with_world(&world)
                     .with_constant_clock(DataLayout::group_passes_time(&graph));
-                let seed = seed_of(&graph, &world, &vars);
+                let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
                 std::hint::black_box((&compiler, &seed));
             }
             println!("  {n:>3}: {:>8.1} ms", each.elapsed().as_secs_f64() * 1000.0);

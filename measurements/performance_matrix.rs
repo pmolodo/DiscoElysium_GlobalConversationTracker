@@ -1372,7 +1372,7 @@ fn forward_backward(
     let mut compiler = GuardCompiler::new(&vars)
         .with_world(world)
         .with_constant_clock(DataLayout::group_passes_time(graph));
-    let seed = seed_of(graph, world, &vars);
+    let seed = seed_of(graph, world, &vars).expect("room for a seed");
     // See the same reading in `symbolic_forward`: everything above is profile-independent.
     let setup = began.elapsed().as_millis();
 
@@ -1486,7 +1486,7 @@ fn symbolic_forward(
         .with_world(world)
         .with_constant_clock(DataLayout::group_passes_time(graph));
 
-    let seed = seed_of(graph, world, &vars);
+    let seed = seed_of(graph, world, &vars).expect("room for a seed");
     // EVERYTHING ABOVE IS SETUP, and none of it depends on the profile - see de-x8ms.1,
     // which would build it once per group instead of once per row. Read off here so a
     // before and after of that change can be compared on the search rather than on a total
@@ -1615,7 +1615,7 @@ fn symbolic_backward(
         .with_world(world)
         .with_constant_clock(DataLayout::group_passes_time(graph));
 
-    let seed = seed_of(graph, world, &vars);
+    let seed = seed_of(graph, world, &vars).expect("room for a seed");
     // See the same reading in `symbolic_forward`: everything above is profile-independent.
     let setup = began.elapsed().as_millis();
     let novelty = |id: DialogueNodeId| {

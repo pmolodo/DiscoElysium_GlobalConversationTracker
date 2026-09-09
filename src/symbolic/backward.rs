@@ -495,7 +495,7 @@ impl<'a> Backward<'a> {
                 // passes `onward` through untouched - the one branch that does not go
                 // through `charge`, forward or back.
                 if passes != Ternary::True {
-                    result = result.or(onward).expect("or");
+                    result = self.or_no_room(result.or(onward));
                 }
                 result
             }
@@ -517,7 +517,7 @@ impl<'a> Backward<'a> {
 
         // And the guard is tested first of all, so it is the last thing undone.
         let (may_be_true, _) = self.guard_of(node, compiler);
-        afforded.and(&may_be_true).expect("and")
+        self.or_no_room(afforded.and(&may_be_true))
     }
 
     /// A rolled check, backwards: the states that reach `onward` down either branch.
@@ -546,17 +546,19 @@ impl<'a> Backward<'a> {
         } else {
             self.vars.bottom()
         };
-        landed = landed.or(&failing).expect("or");
+        landed = self.or_no_room(landed.or(&failing));
 
         let entered = self.pre_charge(node, &landed, image);
 
         // A check already passed is closed, and one already failed is closed too.
         let mut open = entered;
         if let Some(passed) = self.flag(node.flag_slot) {
-            open = open.and(&passed.not().expect("not")).expect("and");
+            let unpassed = self.or_no_room(passed.not());
+            open = self.or_no_room(open.and(&unpassed));
         }
         if let Some(failed) = self.flag(node.failed_flag_slot) {
-            open = open.and(&failed.not().expect("not")).expect("and");
+            let unfailed = self.or_no_room(failed.not());
+            open = self.or_no_room(open.and(&unfailed));
         }
 
         open
@@ -592,12 +594,13 @@ impl<'a> Backward<'a> {
         let mut current = if fires_once && node.once_slot >= 0 {
             let raised = image.pre_assign(onward, node.once_slot as usize, 1);
             let fresh = image.pre_apply(&raised, &node.actions, &self.vars.bottom());
-            let fresh = fresh.and(&already.not().expect("not")).expect("and");
+            let unfired = self.or_no_room(already.not());
+            let fresh = self.or_no_room(fresh.and(&unfired));
 
             let spent = image.pre_apply(onward, &node.actions, &self.vars.top());
-            let spent = spent.and(&already).expect("and");
+            let spent = self.or_no_room(spent.and(&already));
 
-            fresh.or(&spent).expect("or")
+            self.or_no_room(fresh.or(&spent))
         } else {
             image.pre_apply(onward, &node.actions, &already)
         };
@@ -621,7 +624,7 @@ impl<'a> Backward<'a> {
     /// assignment is undone before "it was clear" is conjoined: `pre_assign` frees the
     /// variable, so a conjunction the other way round would constrain the wrong state.
     fn pre_pay(
-        &self,
+        &mut self,
         node: &LookAheadNode,
         onward: &BDDFunction,
         image: &mut ActionImage<'a>,
@@ -634,11 +637,12 @@ impl<'a> Backward<'a> {
 
         let fresh = image.pre_assign(onward, node.once_slot as usize, 1);
         let fresh = self.pre_spend(&fresh, price);
-        let fresh = fresh.and(&paid.not().expect("not")).expect("and");
+        let unpaid = self.or_no_room(paid.not());
+        let fresh = self.or_no_room(fresh.and(&unpaid));
 
-        let spent = onward.and(&paid).expect("and");
+        let spent = self.or_no_room(onward.and(&paid));
 
-        fresh.or(&spent).expect("or")
+        self.or_no_room(fresh.or(&spent))
     }
 
     /// The states from which `money := money - amount` lands in `states`.
@@ -647,11 +651,16 @@ impl<'a> Backward<'a> {
     /// zero - which forward could never have entered. They are removed by
     /// [`Self::affordable`], which runs after this and is where the price is a constraint
     /// rather than an arithmetic step.
-    fn pre_spend(&self, states: &BDDFunction, amount: u32) -> BDDFunction {
+    fn pre_spend(&mut self, states: &BDDFunction, amount: u32) -> BDDFunction {
         match self.vars.money_ops() {
-            Some(money) => money
-                .pre_saturating_sub(states, amount)
-                .expect("unspending money"),
+            // No room says `None` where the diagram operations say `Err`, and the two mean
+            // the same thing: the manager filled part way through, so what came back is not
+            // the purse before paying. A layout with no money is the other case entirely -
+            // there is nothing to unspend, and the set is right as it stands.
+            Some(money) => {
+                let unspent = money.pre_saturating_sub(states, amount);
+                self.or_no_room(unspent.ok_or(()))
+            }
             None => states.clone(),
         }
     }
@@ -661,7 +670,7 @@ impl<'a> Backward<'a> {
     /// A backward pass that read a price differently from the forward one would answer a
     /// different question, and the two are checked against each other and against the
     /// reference walk - so this is deliberately the same three lines.
-    fn affordable(&self, node: &LookAheadNode, states: &BDDFunction) -> BDDFunction {
+    fn affordable(&mut self, node: &LookAheadNode, states: &BDDFunction) -> BDDFunction {
         if !node.is_cost_option() {
             return states.clone();
         }
@@ -670,19 +679,26 @@ impl<'a> Backward<'a> {
             return states.clone();
         };
 
-        let enough = states.and(&money.at_least(node.cost.max(0) as u32)).expect("and");
+        // A layout that carries no money cannot refuse anything, which is the branch
+        // above. A manager with no room to build the price is not that: there is no
+        // constraint to apply and no honest set to apply it to.
+        let Some(price) = money.at_least(node.cost.max(0) as u32) else {
+            self.stats.out_of_memory = true;
+            return self.vars.bottom();
+        };
+        let enough = self.or_no_room(states.and(&price));
 
         match self.already_paid(node) {
             Some(paid) => {
-                let free = states.and(&paid).expect("and");
-                enough.or(&free).expect("or")
+                let free = self.or_no_room(states.and(&paid));
+                self.or_no_room(enough.or(&free))
             }
             None => enough,
         }
     }
 
     /// "This entry's price has already been paid", where it is one that is paid once.
-    fn already_paid(&self, node: &LookAheadNode) -> Option<BDDFunction> {
+    fn already_paid(&mut self, node: &LookAheadNode) -> Option<BDDFunction> {
         if !node.is_cost_option() || !node.cost_once {
             return None;
         }
@@ -690,17 +706,48 @@ impl<'a> Backward<'a> {
     }
 
     /// The states in which this node has not been seen.
-    fn unseen(&self, node: &LookAheadNode, states: &BDDFunction) -> BDDFunction {
+    fn unseen(&mut self, node: &LookAheadNode, states: &BDDFunction) -> BDDFunction {
         match self.flag(node.seen_slot) {
-            Some(seen) => states.and(&seen.not().expect("not")).expect("and"),
+            Some(seen) => {
+                let clear = self.or_no_room(seen.not());
+                self.or_no_room(states.and(&clear))
+            }
             None => states.clone(),
         }
     }
 
     /// A slot's "is set" formula, for a slot number that may be -1 for "no slot".
-    fn flag(&self, slot: i32) -> Option<BDDFunction> {
+    ///
+    /// `None` FOR TWO REASONS THAT WANT OPPOSITE THINGS, exactly as on the forward side.
+    /// A slot the layout does not carry constrains nothing and the callers here are right
+    /// to carry on without it; a manager with no room to build the formula constrains
+    /// nothing either, and carrying on then is how a pass comes to report a target
+    /// unreachable that a walk reaches. The layout answers the first question without
+    /// touching a diagram, so asking it first leaves the second as the only reading left.
+    fn flag(&mut self, slot: i32) -> Option<BDDFunction> {
         let slot = usize::try_from(slot).ok()?;
-        self.vars.slot_is_set(slot)
+        self.vars.slot_ceiling(slot)?;
+        let formula = self.vars.slot_is_set(slot);
+        if formula.is_none() {
+            self.stats.out_of_memory = true;
+        }
+
+        formula
+    }
+
+    /// Takes the result of a diagram operation, or records that there was no room.
+    ///
+    /// The empty set is returned only so the types stay simple. It is not a meaningful
+    /// answer, and a caller that sees [`BackwardStats::out_of_memory`] must stop rather
+    /// than read what came back - the loop in `to` does exactly that.
+    fn or_no_room<E>(&mut self, attempt: Result<BDDFunction, E>) -> BDDFunction {
+        match attempt {
+            Ok(function) => function,
+            Err(_) => {
+                self.stats.out_of_memory = true;
+                self.vars.bottom()
+            }
+        }
     }
 
     /// This node's compiled guard.
@@ -854,7 +901,7 @@ mod tests {
         );
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(world);
-        let seed = seed_of(&graph, world, &vars);
+        let seed = seed_of(&graph, world, &vars).expect("room for a seed");
         let start = node(0);
         let target = node(target);
 
@@ -1249,7 +1296,7 @@ mod tests {
         let layout = DataLayout::for_graph(&graph, CAP, None, false);
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
-        let seed = seed_of(&graph, &world, &vars);
+        let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
 
         for id in graph.nodes().map(|n| n.id).collect::<Vec<_>>() {
             if !walk.reached(id) {

@@ -247,7 +247,7 @@ fn fixed_point(
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(&world)
             .with_constant_clock(DataLayout::group_passes_time(graph));
-        let seed = seed_of(graph, &world, &vars);
+        let seed = seed_of(graph, &world, &vars).expect("room for a seed");
 
         // THE CLOCK STARTS AFTER THE SETUP, unlike the performance matrix's, because the
         // two arms build the identical apparatus and folding it into both would only dilute
@@ -301,7 +301,7 @@ where
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(&world)
             .with_constant_clock(DataLayout::group_passes_time(graph));
-        let seed = seed_of(graph, &world, &vars);
+        let seed = seed_of(graph, &world, &vars).expect("room for a seed");
         let shape = GroupShape::of(graph);
         let search = portfolio::Budget { forget_dead, ..Default::default() };
 

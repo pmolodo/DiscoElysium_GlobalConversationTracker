@@ -187,7 +187,7 @@ where
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(&world)
             .with_constant_clock(DataLayout::group_passes_time(graph));
-        let seed = seed_of(graph, &world, &vars);
+        let seed = seed_of(graph, &world, &vars).expect("room for a seed");
         let shape = GroupShape::of(graph);
         let search = portfolio::Budget { pruning, ..Default::default() };
 

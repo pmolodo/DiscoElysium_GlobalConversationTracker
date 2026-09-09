@@ -753,7 +753,7 @@ mod tests {
         let layout = DataLayout::for_graph(graph, CAP, None, false);
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(world);
-        let seed = seed_of(graph, world, &vars);
+        let seed = seed_of(graph, world, &vars).expect("room for a seed");
 
         best_novelty(
             graph,
@@ -783,7 +783,7 @@ mod tests {
         let layout = DataLayout::for_graph(graph, CAP, None, false);
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(world);
-        let seed = seed_of(graph, world, &vars);
+        let seed = seed_of(graph, world, &vars).expect("room for a seed");
 
         best_novelty(
             graph,
@@ -1031,7 +1031,7 @@ mod tests {
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let world = TestWorld::new();
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
-        let seed = seed_of(&graph, &world, &vars);
+        let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
 
         let answer = best_novelty(
             &graph,

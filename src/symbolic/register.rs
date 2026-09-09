@@ -65,6 +65,23 @@ impl Register {
 ///
 /// Holds the variables rather than looking them up, because every operation here touches
 /// all of them and a register is small.
+///
+/// ## `None` MEANS THE MANAGER RAN OUT OF ROOM
+///
+/// Every method here returns an option and every `None` says the same thing: a diagram
+/// operation could not complete for want of nodes, so there is no answer at all. It is
+/// never "the empty set" and never "nothing to do" - a caller that reads it as either
+/// reports a settled verdict it has no evidence for, which is the failure that looks like
+/// success.
+///
+/// Running out of nodes is a RESULT rather than a fault: the player's manager is a budget
+/// small enough for a wide purse to reach, and a register is where a search stands when
+/// it does. Unwrapping here aborts the process - not a panic a host can turn into a
+/// partial answer, and not a row a measurement can keep.
+///
+/// [`Self::compare`] folds one more case into the same `None`: an operator this does not
+/// know. Both are "no formula, fall back rather than answer a different question", and
+/// every caller does the same thing about them, so they are not worth telling apart.
 pub struct RegisterOps<'a> {
     register: Register,
     /// The register's variables, low bit first.
@@ -90,19 +107,22 @@ impl<'a> RegisterOps<'a> {
     }
 
     /// The conjunction of every variable, which is the cube to quantify over.
-    pub fn cube(&self) -> BDDFunction {
+    pub fn cube(&self) -> Option<BDDFunction> {
         let mut cube = self.top.clone();
         for var in &self.vars {
-            cube = cube.and(var).expect("and");
+            cube = cube.and(var).ok()?;
         }
 
-        cube
+        Some(cube)
     }
 
     /// "The register holds exactly `value`."
-    pub fn equals(&self, value: u32) -> BDDFunction {
+    ///
+    /// A value the register is too narrow to hold gives the EMPTY SET rather than `None`:
+    /// the equality is false everywhere, which is an answer.
+    pub fn equals(&self, value: u32) -> Option<BDDFunction> {
         if value > self.register.ceiling() {
-            return self.bottom.clone();
+            return Some(self.bottom.clone());
         }
 
         let mut all = self.top.clone();
@@ -110,12 +130,12 @@ impl<'a> RegisterOps<'a> {
             let literal = if (value >> bit) & 1 == 1 {
                 (*var).clone()
             } else {
-                var.not().expect("not")
+                var.not().ok()?
             };
-            all = all.and(&literal).expect("and");
+            all = all.and(&literal).ok()?;
         }
 
-        all
+        Some(all)
     }
 
     /// "The register holds at least `value`."
@@ -123,13 +143,13 @@ impl<'a> RegisterOps<'a> {
     /// Built from the top bit down, which is what makes it O(bits): at each bit, either
     /// the register's bit is set where `value`'s is clear - and everything below is then
     /// free - or the two agree and the question moves down one bit.
-    pub fn at_least(&self, value: u32) -> BDDFunction {
+    pub fn at_least(&self, value: u32) -> Option<BDDFunction> {
         if value == 0 {
-            return self.top.clone();
+            return Some(self.top.clone());
         }
 
         if value > self.register.ceiling() {
-            return self.bottom.clone();
+            return Some(self.bottom.clone());
         }
 
         // `greater` holds where the register is already strictly above `value`'s prefix;
@@ -143,31 +163,32 @@ impl<'a> RegisterOps<'a> {
             if wanted {
                 // The register must have this bit too to stay equal; there is no way to
                 // become strictly greater at a bit where `value` is already 1.
-                equal = equal.and(var).expect("and");
+                equal = equal.and(var).ok()?;
             } else {
-                let above = equal.and(var).expect("and");
-                greater = greater.or(&above).expect("or");
-                equal = equal.and(&var.not().expect("not")).expect("and");
+                let above = equal.and(var).ok()?;
+                greater = greater.or(&above).ok()?;
+                equal = equal.and(&var.not().ok()?).ok()?;
             }
         }
 
         // At or above: strictly above at some bit, or equal all the way down.
-        greater.or(&equal).expect("or")
+        greater.or(&equal).ok()
     }
 
     /// "The register holds at most `value`."
-    pub fn at_most(&self, value: u32) -> BDDFunction {
+    pub fn at_most(&self, value: u32) -> Option<BDDFunction> {
         if value >= self.register.ceiling() {
-            return self.top.clone();
+            return Some(self.top.clone());
         }
 
-        self.at_least(value + 1).not().expect("not")
+        self.at_least(value + 1)?.not().ok()
     }
 
     /// A comparison against a constant, spelled as the guard language spells it.
     ///
-    /// `None` for an operator this does not know, so a caller falls back rather than
-    /// quietly answering a different question.
+    /// `None` for an operator this does not know, and for a manager with no room left to
+    /// say it in. Either way a caller falls back rather than quietly answering a different
+    /// question, which is why the two are not told apart.
     pub fn compare(&self, operator: &str, value: i64) -> Option<BDDFunction> {
         // A negative constant is not representable and every register is unsigned, so the
         // answer is settled by the operator alone without looking at a bit.
@@ -181,16 +202,24 @@ impl<'a> RegisterOps<'a> {
 
         let value = value.min(u32::MAX as i64) as u32;
         match operator {
-            "==" => Some(self.equals(value)),
-            "~=" | "!=" => Some(self.equals(value).not().expect("not")),
-            ">=" => Some(self.at_least(value)),
-            ">" => Some(if value == u32::MAX {
-                self.bottom.clone()
-            } else {
-                self.at_least(value + 1)
-            }),
-            "<=" => Some(self.at_most(value)),
-            "<" => Some(if value == 0 { self.bottom.clone() } else { self.at_most(value - 1) }),
+            "==" => self.equals(value),
+            "~=" | "!=" => self.equals(value)?.not().ok(),
+            ">=" => self.at_least(value),
+            ">" => {
+                if value == u32::MAX {
+                    Some(self.bottom.clone())
+                } else {
+                    self.at_least(value + 1)
+                }
+            }
+            "<=" => self.at_most(value),
+            "<" => {
+                if value == 0 {
+                    Some(self.bottom.clone())
+                } else {
+                    self.at_most(value - 1)
+                }
+            }
             _ => None,
         }
     }
@@ -200,8 +229,8 @@ impl<'a> RegisterOps<'a> {
     /// Forget what it held, then assert the new value. The quantifier is what makes this
     /// an assignment rather than a filter.
     pub fn assign(&self, states: &BDDFunction, value: u32) -> Option<BDDFunction> {
-        let forgotten = states.exists(&self.cube()).ok()?;
-        forgotten.and(&self.equals(value)).ok()
+        let forgotten = states.exists(&self.cube()?).ok()?;
+        forgotten.and(&self.equals(value)?).ok()
     }
 
     /// The image of `states` under `register := register + delta`, modulo `2^bits`.
@@ -282,27 +311,27 @@ impl<'a> RegisterOps<'a> {
         }
 
         let delta = delta % modulus;
-        let in_range = self.at_most(modulus - 1);
+        let in_range = self.at_most(modulus - 1)?;
         let states = states.and(&in_range).ok()?;
         if delta == 0 {
             return Some(states);
         }
 
         // Below the wrap: the value simply moves up, and cannot pass the modulus.
-        let below = states.and(&self.at_most(modulus - 1 - delta)).ok()?;
+        let below = states.and(&self.at_most(modulus - 1 - delta)?).ok()?;
         let moved = self.shift(&below, delta as i64)?;
 
         // At or above it: the value moves up and then loses a whole modulus, which is one
         // shift by `delta - modulus` rather than two operations.
-        let over = states.and(&self.at_least(modulus - delta)).ok()?;
+        let over = states.and(&self.at_least(modulus - delta)?).ok()?;
         let wrapped = self.shift(&over, delta as i64 - modulus as i64)?;
 
         // Each piece is intersected back into the range it must land in. The shift is a
         // bijection so this cannot remove anything real; it is here so that a register too
         // narrow for `modulus` cannot smuggle a value in from the far side of the wrap.
-        let moved = moved.and(&self.at_least(delta)).ok()?;
-        let moved = moved.and(&self.at_most(modulus - 1)).ok()?;
-        let wrapped = wrapped.and(&self.at_most(delta - 1)).ok()?;
+        let moved = moved.and(&self.at_least(delta)?).ok()?;
+        let moved = moved.and(&self.at_most(modulus - 1)?).ok()?;
+        let wrapped = wrapped.and(&self.at_most(delta - 1)?).ok()?;
 
         moved.or(&wrapped).ok()
     }
@@ -323,11 +352,11 @@ impl<'a> RegisterOps<'a> {
             return self.assign(states, ceiling);
         }
 
-        let below = states.and(&self.at_most(ceiling - amount)).ok()?;
+        let below = states.and(&self.at_most(ceiling - amount)?).ok()?;
         let moved = self.shift(&below, amount as i64)?;
-        let moved = moved.and(&self.at_least(amount)).ok()?;
+        let moved = moved.and(&self.at_least(amount)?).ok()?;
 
-        let over = states.and(&self.at_least(ceiling - amount + 1)).ok()?;
+        let over = states.and(&self.at_least(ceiling - amount + 1)?).ok()?;
         let saturated = self.assign(&over, ceiling)?;
 
         moved.or(&saturated).ok()
@@ -377,19 +406,19 @@ impl<'a> RegisterOps<'a> {
         let below = if amount >= ceiling {
             self.bottom.clone()
         } else {
-            let landed = states.and(&self.at_least(amount)).ok()?;
-            let landed = landed.and(&self.at_most(ceiling - 1)).ok()?;
+            let landed = states.and(&self.at_least(amount)?).ok()?;
+            let landed = landed.and(&self.at_most(ceiling - 1)?).ok()?;
             let came = self.shift(&landed, -(amount as i64))?;
-            came.and(&self.at_most(ceiling - amount - 1)).ok()?
+            came.and(&self.at_most(ceiling - amount - 1)?).ok()?
         };
 
         // Landed ON the ceiling: everything from `ceiling - amount` upwards did, and so
         // did `ceiling - amount` itself only if the addition reaches it. Forgetting the
         // register first is what turns the point into the range.
-        let at_top = states.and(&self.equals(ceiling)).ok()?;
-        let forgotten = at_top.exists(&self.cube()).ok()?;
+        let at_top = states.and(&self.equals(ceiling)?).ok()?;
+        let forgotten = at_top.exists(&self.cube()?).ok()?;
         let from = ceiling.saturating_sub(amount);
-        let above = forgotten.and(&self.at_least(from)).ok()?;
+        let above = forgotten.and(&self.at_least(from)?).ok()?;
 
         below.or(&above).ok()
     }
@@ -411,16 +440,16 @@ impl<'a> RegisterOps<'a> {
         let above = if amount > ceiling {
             self.bottom.clone()
         } else {
-            let landed = states.and(&self.at_least(1)).ok()?;
-            let landed = landed.and(&self.at_most(ceiling - amount)).ok()?;
+            let landed = states.and(&self.at_least(1)?).ok()?;
+            let landed = landed.and(&self.at_most(ceiling - amount)?).ok()?;
             let came = self.shift(&landed, amount as i64)?;
-            came.and(&self.at_least(amount)).ok()?
+            came.and(&self.at_least(amount)?).ok()?
         };
 
         // Landed on zero: everything at or below the amount did.
-        let at_zero = states.and(&self.equals(0)).ok()?;
-        let forgotten = at_zero.exists(&self.cube()).ok()?;
-        let below = forgotten.and(&self.at_most(amount.min(ceiling))).ok()?;
+        let at_zero = states.and(&self.equals(0)?).ok()?;
+        let forgotten = at_zero.exists(&self.cube()?).ok()?;
+        let below = forgotten.and(&self.at_most(amount.min(ceiling))?).ok()?;
 
         above.or(&below).ok()
     }
@@ -436,11 +465,11 @@ impl<'a> RegisterOps<'a> {
             return self.assign(states, 0);
         }
 
-        let above = states.and(&self.at_least(amount)).ok()?;
+        let above = states.and(&self.at_least(amount)?).ok()?;
         let moved = self.shift(&above, -(amount as i64))?;
-        let moved = moved.and(&self.at_most(ceiling - amount)).ok()?;
+        let moved = moved.and(&self.at_most(ceiling - amount)?).ok()?;
 
-        let below = states.and(&self.at_most(amount - 1)).ok()?;
+        let below = states.and(&self.at_most(amount - 1)?).ok()?;
         let floored = self.assign(&below, 0)?;
 
         moved.or(&floored).ok()
@@ -469,7 +498,12 @@ mod tests {
 
     impl Bench {
         fn new(bits: u8) -> Self {
-            let manager = new_manager(NODES, CACHE, 1);
+            Self::within(bits, NODES)
+        }
+
+        /// The same, with the manager held to `nodes` so that it can be filled.
+        fn within(bits: u8, nodes: usize) -> Self {
+            let manager = new_manager(nodes, CACHE, 1);
             let vars: Vec<BDDFunction> = manager.with_manager_exclusive(|m| {
                 m.add_vars(bits as u32)
                     .map(|v| BDDFunction::var(m, v).expect("a fresh variable"))
@@ -508,7 +542,7 @@ mod tests {
             let ops = self.ops();
             let mut all = self.bottom.clone();
             for value in values {
-                all = all.or(&ops.equals(*value)).expect("or");
+                all = all.or(&ops.equals(*value).expect("room")).expect("or");
             }
 
             all
@@ -792,7 +826,7 @@ mod tests {
         let bench = Bench::new(13);
         let ops = bench.ops();
 
-        let at_least = ops.at_least(4_999);
+        let at_least = ops.at_least(4_999).expect("room");
         assert!(
             at_least.node_count() <= 4 * 13,
             "a 13-bit comparator grew to {} nodes",
@@ -802,5 +836,29 @@ mod tests {
         // And it is still the right answer at the boundary.
         assert!(at_least.eval(bench.at(4_999).iter().copied()));
         assert!(!at_least.eval(bench.at(4_998).iter().copied()));
+    }
+
+    /// A manager with no room left answers `None`, rather than taking the process with it.
+    ///
+    /// These four are where a search stands when the purse is wide and the budget is the
+    /// player's, and they are reached before any search starts - `seed_of` conjoins an
+    /// equality per slot and then the purse. Unwrapped, running out of nodes here ABORTS:
+    /// not a panic a host can turn into a partial answer, and not a row a measurement can
+    /// keep. de-nyv2.
+    ///
+    /// The width and the node count are chosen so that laying the variables out already
+    /// spends most of the manager, which is what leaves nothing for the conjunctions.
+    #[test]
+    fn a_full_manager_is_reported_rather_than_unwrapped() {
+        const WIDE: u8 = 24;
+        const CRAMPED: usize = 26;
+
+        let bench = Bench::within(WIDE, CRAMPED);
+        let ops = bench.ops();
+
+        assert!(ops.equals(9_999_999).is_none(), "equals should report the full manager");
+        assert!(ops.at_least(9_999_999).is_none(), "at_least should report it too");
+        assert!(ops.at_most(9_999_999).is_none(), "and at_most, which is built on it");
+        assert!(ops.cube().is_none(), "and the cube over every variable");
     }
 }

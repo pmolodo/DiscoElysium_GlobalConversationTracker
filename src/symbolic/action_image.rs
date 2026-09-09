@@ -72,6 +72,23 @@ impl<'a> ActionImage<'a> {
         }
     }
 
+    /// A slot formula whose slot the layout is already known to carry.
+    ///
+    /// [`DataVars`] answers `None` both for a slot it has no variables for and for a
+    /// manager with no room to build the formula, and the two want opposite things here:
+    /// the first is an action this model does not apply, which is counted in
+    /// [`Self::ignored`] and carried past, while the second is no answer at all and must
+    /// stop the run. Every caller settles the first with [`DataVars::slot_ceiling`], which
+    /// reads the layout and touches no diagram, so what reaches this can only be the
+    /// second.
+    fn in_layout(&mut self, formula: Option<BDDFunction>) -> Option<BDDFunction> {
+        if formula.is_none() {
+            self.out_of_memory = true;
+        }
+
+        formula
+    }
+
     /// How many actions were skipped because the layout does not carry their subject.
     ///
     /// Money and the clock when they are not laid out, and anything the action parser
@@ -205,10 +222,14 @@ impl<'a> ActionImage<'a> {
     /// That is where the backward search gets its variable pruning: not from a cone
     /// somebody computed, but from the pre-image itself.
     pub fn pre_assign(&mut self, states: &BDDFunction, slot: usize, value: u32) -> BDDFunction {
-        let (Some(cube), Some(equals)) =
-            (self.vars.slot_cube(slot), self.vars.slot_equals(slot, value))
-        else {
+        if self.vars.slot_ceiling(slot).is_none() {
             self.ignored += 1;
+            return states.clone();
+        }
+
+        let cube = self.vars.slot_cube(slot);
+        let equals = self.vars.slot_equals(slot, value);
+        let (Some(cube), Some(equals)) = (self.in_layout(cube), self.in_layout(equals)) else {
             return states.clone();
         };
 
@@ -234,12 +255,14 @@ impl<'a> ActionImage<'a> {
         };
 
         let cap = self.counter_cap.min(ceiling);
-        let cube = self.vars.slot_cube(slot).expect("a slot in the layout has a cube");
+        let cube = self.vars.slot_cube(slot);
+        let Some(cube) = self.in_layout(cube) else { return states.clone() };
         let mut result = self.vars.bottom();
 
         for value in 0..=ceiling {
             let raised = (value as i64 + amount as i64).clamp(0, cap as i64) as u32;
-            let becomes = self.vars.slot_equals(slot, raised).expect("in the layout");
+            let becomes = self.vars.slot_equals(slot, raised);
+            let Some(becomes) = self.in_layout(becomes) else { return states.clone() };
             let landed = self.or_no_room(states.and(&becomes), states);
             if self.out_of_memory {
                 return states.clone();
@@ -248,7 +271,8 @@ impl<'a> ActionImage<'a> {
                 continue;
             }
 
-            let holding = self.vars.slot_equals(slot, value).expect("in the layout");
+            let holding = self.vars.slot_equals(slot, value);
+            let Some(holding) = self.in_layout(holding) else { return states.clone() };
             let forgotten = self.or_no_room(landed.exists(&cube), states);
             let came_from = self.or_no_room(forgotten.and(&holding), states);
             result = self.or_no_room(result.or(&came_from), states);
@@ -375,10 +399,14 @@ impl<'a> ActionImage<'a> {
     /// makes this an assignment rather than a filter: without it the result would be the
     /// states that ALREADY held the value.
     pub fn assign(&mut self, states: &BDDFunction, slot: usize, value: u32) -> BDDFunction {
-        let (Some(cube), Some(equals)) =
-            (self.vars.slot_cube(slot), self.vars.slot_equals(slot, value))
-        else {
+        if self.vars.slot_ceiling(slot).is_none() {
             self.ignored += 1;
+            return states.clone();
+        }
+
+        let cube = self.vars.slot_cube(slot);
+        let equals = self.vars.slot_equals(slot, value);
+        let (Some(cube), Some(equals)) = (self.in_layout(cube), self.in_layout(equals)) else {
             return states.clone();
         };
 
@@ -396,11 +424,13 @@ impl<'a> ActionImage<'a> {
         // The cap the counter saturates at, and never above what the slot can hold - a
         // value the slot is too narrow for would silently become a different value.
         let cap = self.counter_cap.min(ceiling);
-        let cube = self.vars.slot_cube(slot).expect("a slot in the layout has a cube");
+        let cube = self.vars.slot_cube(slot);
+        let Some(cube) = self.in_layout(cube) else { return states.clone() };
         let mut result = self.vars.bottom();
 
         for value in 0..=ceiling {
-            let holding = self.vars.slot_equals(slot, value).expect("in the layout");
+            let holding = self.vars.slot_equals(slot, value);
+            let Some(holding) = self.in_layout(holding) else { return states.clone() };
             let matching = self.or_no_room(states.and(&holding), states);
             if self.out_of_memory {
                 return states.clone();
@@ -410,7 +440,8 @@ impl<'a> ActionImage<'a> {
             }
 
             let raised = (value as i64 + amount as i64).clamp(0, cap as i64) as u32;
-            let becomes = self.vars.slot_equals(slot, raised).expect("in the layout");
+            let becomes = self.vars.slot_equals(slot, raised);
+            let Some(becomes) = self.in_layout(becomes) else { return states.clone() };
             let forgotten = self.or_no_room(matching.exists(&cube), states);
             let moved = self.or_no_room(forgotten.and(&becomes), states);
             result = self.or_no_room(result.or(&moved), states);

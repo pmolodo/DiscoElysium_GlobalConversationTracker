@@ -138,7 +138,7 @@ fn branch_destinations(
     let layout = DataLayout::for_group(graph, world, COUNTER_CAP);
     let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
     let mut compiler = GuardCompiler::new(&vars).with_world(world);
-    let seed = seed_of(graph, world, &vars);
+    let seed = seed_of(graph, world, &vars).expect("room for a seed");
 
     let mut from = Where::of(
         graph, start, branch, &seed, &mut compiler, world, COUNTER_CAP as u32,

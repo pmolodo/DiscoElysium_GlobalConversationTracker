@@ -111,7 +111,7 @@ fn compare(index: &lookahead_engine::index::Index, conversation: i32) -> bool {
     let mut compiler = GuardCompiler::new(&vars)
         .with_world(&world)
         .with_constant_clock(DataLayout::group_passes_time(&graph));
-    let seed = seed_of(&graph, &world, &vars);
+    let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
 
     let exact = Reachability::explore_within(
         &graph, start, &seed, &mut compiler, &world, COUNTER_CAP as u32, &Budget::default(),

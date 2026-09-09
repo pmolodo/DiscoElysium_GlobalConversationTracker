@@ -64,19 +64,34 @@ use crate::world::world::ILookAheadWorld;
 /// dropped. That can only happen where the world reports a value larger than any action
 /// in the group writes, and the alternative - an empty seed - would report nothing
 /// reachable at all, which is the failure that looks like success.
+///
+/// ## `None` WHERE THE MANAGER FILLED, because there is no honest fallback
+///
+/// A seed is diagram work like any other and the player's budget is small enough for a
+/// wide purse to reach it: squeezing a twenty-bit purse into eight kilobytes fills the
+/// manager here, before the search has started. Neither shape of failure can be returned
+/// in a set. The empty seed reports nothing reachable at all, which the comment above
+/// calls the failure that looks like success; dropping the constraint that would not
+/// build leaves the register free, which starts the search rich AND poor at once and
+/// undoes the whole of `affordable`. So a seed that cannot be built is not a seed, and
+/// this says so rather than aborting the process on an unwrapped operation.
+///
+/// The slot loop asks [`DataVars::slot_ceiling`] first, which answers out of the layout
+/// without touching the manager - so a slot that gets past it and then yields no formula
+/// yielded none for want of room, and there is no third case to confuse it with.
 pub fn seed_of(
     graph: &LookAheadGraph,
     world: &dyn ILookAheadWorld,
     vars: &DataVars<'_>,
-) -> BDDFunction {
+) -> Option<BDDFunction> {
     let state = crate::core::state::seed_state(graph, world);
     let mut set = vars.top();
 
     for slot in 0..vars.layout().slot_count() {
         let Some(ceiling) = vars.slot_ceiling(slot) else { continue };
         let value = state.get(slot).max(0) as u32;
-        let Some(holds) = vars.slot_equals(slot, value.min(ceiling)) else { continue };
-        set = set.and(&holds).expect("and");
+        let holds = vars.slot_equals(slot, value.min(ceiling))?;
+        set = set.and(&holds).ok()?;
     }
 
     // AND THE PURSE, where the layout carries one. A seed that left money free would start
@@ -86,11 +101,11 @@ pub fn seed_of(
     // empty seed would report nothing reachable at all.
     if let Some(money) = vars.money_ops() {
         let ceiling = money.register().ceiling();
-        let holds = money.equals((state.money().max(0) as u32).min(ceiling));
-        set = set.and(&holds).expect("and");
+        let holds = money.equals((state.money().max(0) as u32).min(ceiling))?;
+        set = set.and(&holds).ok()?;
     }
 
-    set
+    Some(set)
 }
 
 /// How far a search is allowed to go, and what it should say while it goes.
@@ -389,10 +404,13 @@ impl<'a> Forgetter<'a> {
             return None;
         }
 
+        // A slot with no cube - no room to build one, or no such slot - gives up the whole
+        // abstraction rather than a quieter version of it, the same answer `apply` gives a
+        // quantifier that will not run. Forgetting some of what is dead would be sound, but
+        // it would be a saving nobody asked for at a moment the manager is already full.
         let mut cube = self.vars.top();
         for slot in dead {
-            let Some(slot_cube) = self.vars.slot_cube(slot) else { continue };
-            cube = cube.and(&slot_cube).ok()?;
+            cube = cube.and(&self.vars.slot_cube(slot)?).ok()?;
         }
 
         Some(cube)
@@ -1149,7 +1167,14 @@ impl<'a> Reachability<'a> {
             return states.clone();
         };
 
-        let enough = self.or_no_room(states.and(&money.at_least(node.cost.max(0) as u32)));
+        // The price formula is diagram work and can be the operation that fills the
+        // manager, which is a different thing from a layout that carries no money: that
+        // one is undecided and permissive, this one is no answer at all.
+        let Some(price) = money.at_least(node.cost.max(0) as u32) else {
+            self.stats.out_of_memory = true;
+            return self.vars.bottom();
+        };
+        let enough = self.or_no_room(states.and(&price));
 
         match self.already_paid(node) {
             Some(paid) => {
@@ -1165,7 +1190,7 @@ impl<'a> Reachability<'a> {
     /// `None` where the question does not arise - an unpriced entry, a price payable every
     /// time, or one with no slot to remember the payment in - so a caller can tell "no
     /// state has paid" from "there is nothing to have paid".
-    fn already_paid(&self, node: &LookAheadNode) -> Option<BDDFunction> {
+    fn already_paid(&mut self, node: &LookAheadNode) -> Option<BDDFunction> {
         if !node.is_cost_option() || !node.cost_once {
             return None;
         }
@@ -1173,9 +1198,23 @@ impl<'a> Reachability<'a> {
     }
 
     /// A slot's "is set" formula, for a slot number that may be -1 for "no slot".
-    fn flag(&self, slot: i32) -> Option<BDDFunction> {
+    ///
+    /// `None` FOR TWO REASONS THAT WANT OPPOSITE THINGS, so the second is recorded. A slot
+    /// the layout does not carry constrains nothing, and every caller here is right to
+    /// carry on without it. A manager with no room to build the formula also constrains
+    /// nothing, and carrying on then is how a search comes to widen a set it never
+    /// narrowed - so the stats say so and the loop stops on it.
+    ///
+    /// The two are told apart by asking the layout first, which touches no diagram.
+    fn flag(&mut self, slot: i32) -> Option<BDDFunction> {
         let slot = usize::try_from(slot).ok()?;
-        self.vars.slot_is_set(slot)
+        self.vars.slot_ceiling(slot)?;
+        let formula = self.vars.slot_is_set(slot);
+        if formula.is_none() {
+            self.stats.out_of_memory = true;
+        }
+
+        formula
     }
 
     /// This node's compiled guard, compiled once and remembered.
@@ -1245,7 +1284,7 @@ mod branch_tests {
         let layout = DataLayout::for_graph(graph, CAP, None, false);
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
-        let seed = seed_of(graph, &world, &vars);
+        let seed = seed_of(graph, &world, &vars).expect("room for a seed");
 
         let found = Reachability::explore_branch_within(
             graph,
@@ -1300,6 +1339,14 @@ mod branch_tests {
     /// what a full manager DOES, not about this number.
     const SQUEEZED: usize = 16 * 1024;
 
+    /// Half of [`SQUEEZED`], which is not enough to lay the seed out at all.
+    ///
+    /// The other side of the same window, and the reason [`SQUEEZED`] is a window: at this
+    /// budget the manager fills while the purse's equality is being built, before the
+    /// search has a starting point to explore from. Re-tune it with [`SQUEEZED`] if a
+    /// layout change moves the boundary; the two are one measurement read at both ends.
+    const TOO_SQUEEZED: usize = SQUEEZED / 2;
+
     /// A purse wide enough that arithmetic over it does not fit in [`SQUEEZED`].
     ///
     /// THE ROOM IS TAKEN BY A REGISTER RATHER THAN BY A BIG GRAPH, because the two cost
@@ -1331,7 +1378,7 @@ mod branch_tests {
         let layout = DataLayout::for_graph(&graph, CAP, Some(DEEP_PURSE), false);
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::new(SQUEEZED));
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
-        let seed = seed_of(&graph, &world, &vars);
+        let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
 
         let found = Reachability::explore_branch_within(
             &graph,
@@ -1348,6 +1395,36 @@ mod branch_tests {
         assert!(
             !found.stats().reached_fixed_point,
             "and an answer built on a manager that filled is not a settled one",
+        );
+    }
+
+    /// A manager too full to lay the SEED out says so, rather than taking the process.
+    ///
+    /// One layer below the search, and on a path with no stats to report through: a seed
+    /// is a slot equality per slot conjoined with the purse, and over a wide register that
+    /// is the arithmetic the module exists for. Unwrapped, it aborts before the search
+    /// starts, which is the failure a player meets as a mod that vanished.
+    ///
+    /// The empty set is not an answer here and neither is a seed with the purse left out -
+    /// the first reports nothing reachable at all and the second starts the search rich
+    /// and poor at once - so the option is the whole of the fix. de-nyv2.
+    #[test]
+    fn a_manager_too_full_for_the_seed_says_so_rather_than_aborting() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(Entry::new(1).cost(7).cost_once().links(&[2]))
+            .add(Entry::new(2).cost(11).links(&[3]))
+            .add(Entry::new(3))
+            .build();
+
+        let world = TestWorld::new().with_money(DEEP_PURSE as i32 / 2);
+        let symbols = graph.symbols().clone();
+        let layout = DataLayout::for_graph(&graph, CAP, Some(DEEP_PURSE), false);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::new(TOO_SQUEEZED));
+
+        assert!(
+            seed_of(&graph, &world, &vars).is_none(),
+            "a seed the manager has no room for is no seed, and must not be a set",
         );
     }
 

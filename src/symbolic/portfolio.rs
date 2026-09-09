@@ -493,7 +493,7 @@ mod tests {
         let layout = DataLayout::for_graph(graph, CAP, None, false);
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(world);
-        let seed = seed_of(graph, world, &vars);
+        let seed = seed_of(graph, world, &vars).expect("room for a seed");
 
         // The caller's job, as it is the bridge's: one walk of the links names the class,
         // and the search is not asked to work it out again. The floor when nothing is
@@ -522,7 +522,7 @@ mod tests {
         let layout = DataLayout::for_graph(graph, CAP, None, false);
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(world);
-        let seed = seed_of(graph, world, &vars);
+        let seed = seed_of(graph, world, &vars).expect("room for a seed");
 
         // The caller's walk, as the bridge's would be: from what the outcome opens, so the
         // class hunted is the best that outcome can reach.

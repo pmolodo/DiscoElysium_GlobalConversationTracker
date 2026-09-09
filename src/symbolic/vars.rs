@@ -157,6 +157,10 @@ impl<'a> DataVars<'a> {
     ///
     /// A value the slot is too narrow to hold gives the empty set rather than nothing:
     /// the equality is false everywhere, which is an answer, not a failure.
+    ///
+    /// `None` MEANS THERE IS NO FORMULA, for either of two reasons - the layout carries no
+    /// such slot, or the manager had no room left to build one. See the note on the three
+    /// slot formulas below for why they are not told apart.
     pub fn slot_equals(&self, slot: usize, value: u32) -> Option<BDDFunction> {
         let (base, bits) = self.layout.slot(slot)?;
         if bits < 32 && value >= (1u32 << bits) {
@@ -169,20 +173,22 @@ impl<'a> DataVars<'a> {
             let literal = if (value >> bit) & 1 == 1 {
                 var.clone()
             } else {
-                var.not().expect("negation")
+                var.not().ok()?
             };
-            all = all.and(&literal).expect("and");
+            all = all.and(&literal).ok()?;
         }
 
         Some(all)
     }
 
     /// "This slot is non-zero", as a formula.
+    ///
+    /// `None` as for [`Self::slot_equals`]: no such slot, or no room to say it in.
     pub fn slot_is_set(&self, slot: usize) -> Option<BDDFunction> {
         let (base, bits) = self.layout.slot(slot)?;
         let mut any = self.bottom();
         for bit in 0..bits as u32 {
-            any = any.or(self.var(base + bit)).expect("or");
+            any = any.or(self.var(base + bit)).ok()?;
         }
 
         Some(any)
@@ -190,11 +196,23 @@ impl<'a> DataVars<'a> {
 
     /// The conjunction of a slot's variables, which is the cube to quantify over when
     /// forgetting what it held.
+    ///
+    /// ## WHY THESE THREE FOLD "NO SLOT" AND "NO ROOM" INTO ONE `None`
+    ///
+    /// Because every caller does the same thing about them: there is no formula, so carry
+    /// on without the constraint or give up, and neither answer changes with the reason.
+    /// What is NOT allowed is to read the `None` as an empty set or as a formula that
+    /// holds everywhere - a dropped slot constraint is how a seed comes to say the player
+    /// is rich and poor at once, and an unwrapped operation here aborts the process.
+    ///
+    /// A caller that must tell the two apart can: [`Self::slot_ceiling`] answers "is there
+    /// such a slot" without touching the manager, so asking it first leaves `None` here
+    /// meaning no room and nothing else. `seed_of` does exactly that.
     pub fn slot_cube(&self, slot: usize) -> Option<BDDFunction> {
         let (base, bits) = self.layout.slot(slot)?;
         let mut cube = self.top();
         for bit in 0..bits as u32 {
-            cube = cube.and(self.var(base + bit)).expect("and");
+            cube = cube.and(self.var(base + bit)).ok()?;
         }
 
         Some(cube)

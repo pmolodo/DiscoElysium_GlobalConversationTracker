@@ -404,7 +404,7 @@ fn settles_forgetting(
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(&world)
             .with_constant_clock(DataLayout::group_passes_time(&graph));
-        let seed = seed_of(&graph, &world, &vars);
+        let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
 
         // BUILT INSIDE THE THREAD, like everything else here: the liveness is a fact about
         // the group rather than about a world or a manager, but building it out here would

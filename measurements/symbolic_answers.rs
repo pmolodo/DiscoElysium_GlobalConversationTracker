@@ -457,7 +457,7 @@ pub fn classify(
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(world)
             .with_constant_clock(DataLayout::group_passes_time(graph));
-        let seed = seed_of(graph, world, &vars);
+        let seed = seed_of(graph, world, &vars).expect("room for a seed");
 
         // EVERY CANDIDATE IS THE QUARRY, because the question is which of them can be
         // reached rather than whether any can.
@@ -620,7 +620,7 @@ fn answer(
                 let mut compiler = GuardCompiler::new(&vars)
                     .with_world(world)
                     .with_constant_clock(DataLayout::group_passes_time(graph));
-                let seed = seed_of(graph, world, &vars);
+                let seed = seed_of(graph, world, &vars).expect("room for a seed");
 
                 let novelty = |id: DialogueNodeId| {
                     if unseen.contains(&id) {
