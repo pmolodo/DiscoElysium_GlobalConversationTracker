@@ -29,12 +29,26 @@ use crate::core::guard::{Guard, GuardExpression, GuardRef};
 use crate::core::state::{
     StateSymbols, ITEM_PREFIX, ONCE_PREFIX, SEEN_PREFIX, TASK_PREFIX, THOUGHT_PREFIX,
 };
+use crate::core::types::DialogueNodeId;
 use crate::graph::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
 use crate::world::world::MONEY_QUERY;
 
 /// Minutes in a day; the clock is wrapped into `0..MINUTES_IN_DAY`.
 const MINUTES_IN_DAY: u32 = 1440;
+
+/// What a slot held as a DELTA needs from the encoding it replaced.
+///
+/// Both numbers describe the ABSOLUTE reading - the value a guard is written about - which
+/// the slot no longer holds. See [`DataLayout::narrow_to_deltas`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DeltaSlot {
+    /// What the search's starting value was clamped into, which is the width the slot would
+    /// have had without rebasing.
+    pub ceiling: u32,
+    /// What an increment saturates at, which is the counter cap held down to the ceiling.
+    pub cap: u32,
+}
 
 /// How many bits it takes to represent `0..=max`.
 fn bits_for(max: u32) -> u8 {
@@ -49,6 +63,12 @@ pub struct DataLayout {
     money: Option<(u32, u8)>,
     clock: Option<(u32, u8)>,
     total: u32,
+    /// The slots held as a DELTA from the value the search started with, and the value the
+    /// absolute reading of each saturates at. See [`Self::narrow_to_deltas`].
+    ///
+    /// A map rather than a per-slot field because it is nearly always empty: 26 slots of
+    /// 104 over the whole game, in 24 of its 521 groups.
+    deltas: HashMap<usize, DeltaSlot>,
 }
 
 impl DataLayout {
@@ -99,6 +119,7 @@ impl DataLayout {
         }
 
         Self::narrow_to_thresholds(graph, &mut widths, &assigned);
+        let deltas = Self::narrow_to_deltas(graph, &mut widths, counter_cap);
 
         let mut next = 0u32;
         let mut slots = Vec::with_capacity(slot_count);
@@ -121,7 +142,7 @@ impl DataLayout {
             None
         };
 
-        Self { slots, money, clock, total: next }
+        Self { slots, money, clock, total: next, deltas }
     }
 
     /// Squeezes each slot to the largest value its guards can still tell apart.
@@ -179,6 +200,159 @@ impl DataLayout {
             let wanted = bits_for(high.saturating_add(1)).max(assigned[slot]);
             *width = (*width).min(wanted);
         }
+    }
+
+    /// Squeezes each slot to the range its own increments can COVER, by holding the
+    /// distance from the value the search started at rather than the value itself.
+    ///
+    /// ## The argument
+    ///
+    /// The threshold narrowing above bounds a slot by what the guards can distinguish. It
+    /// cannot bound it by what the group can REACH, because the search starts at whatever
+    /// the save holds and the save can hold anything. Rebasing removes that: the slot holds
+    /// `d`, the search's own contribution, and the true value is `v0 + d` where `v0` is what
+    /// the save held. `v0` never enters the slot, so the slot only has to be wide enough for
+    /// what the group's own increments add up to.
+    ///
+    /// Where the group adds at most two and the guards compare against seven, that is two
+    /// bits instead of three.
+    ///
+    /// ## What it costs, and where the cost is paid
+    ///
+    /// The value the guards want is the absolute one, so every comparison against a rebased
+    /// slot has to be rewritten - `v >= c` becomes `d >= c - v0` - and that needs `v0`, which
+    /// is world-dependent. THE LAYOUT STAYS WORLD-INDEPENDENT ANYWAY, which is what keeps
+    /// [`crate::workspace::Key`] intact: the WIDTH is the sum of the group's increments and
+    /// the sum does not depend on the save. Only the rewriting does, and guards are compiled
+    /// per request already. [`super::guard_formula::GuardCompiler`] does it.
+    ///
+    /// `saturates_at` is the other half of the bargain, and the reason the map holds a value
+    /// rather than a flag. The absolute reading saturates - a counter stops at its cap - and
+    /// a rebased slot has lost the ceiling that used to do it, so the ceiling has to be
+    /// remembered for the rewriting to saturate in its place. Without it a slot whose group
+    /// adds thirty would answer a guard the shipped encoding saturates at sixteen.
+    ///
+    /// ## The three things that disqualify a slot
+    ///
+    /// AN ASSIGN, which writes a number rather than adding one: `d := c - v0` is negative
+    /// wherever the save holds more than the assignment.
+    ///
+    /// A DECREMENT, for the same reason from the other side.
+    ///
+    /// AN INCREMENT THAT CAN FIRE TWICE, which is where the strongly connected components
+    /// come in: the bound is "every site fired once, summed", and a site inside a dialogue
+    /// loop fires as often as the loop goes round. An action marked `once` is exempt - it
+    /// fires at most once whatever the link structure does.
+    ///
+    /// ## Only where it actually wins
+    ///
+    /// A slot keeps the absolute encoding unless rebasing makes it strictly narrower, so
+    /// the rewriting above applies to the few slots that paid for it rather than to every
+    /// counter in the game.
+    fn narrow_to_deltas(
+        graph: &LookAheadGraph,
+        widths: &mut [u8],
+        counter_cap: i32,
+    ) -> HashMap<usize, DeltaSlot> {
+        /// What one slot's increments add up to, and whether anything disqualifies it.
+        #[derive(Default)]
+        struct Reach {
+            sum: u32,
+            barred: bool,
+        }
+
+        let order = super::order::IterationOrder::of(graph);
+        let cyclic = Self::entries_on_a_cycle(graph, &order);
+
+        let mut reach: HashMap<usize, Reach> = HashMap::new();
+        for node in graph.nodes() {
+            let repeatable = cyclic.contains(&node.id);
+            for action in &node.actions {
+                let slot = action.slot();
+                if slot < 0 || slot as usize >= widths.len() {
+                    continue;
+                }
+                let slot = slot as usize;
+                match action.kind() {
+                    DialogueActionKind::Increment => {
+                        let entry = reach.entry(slot).or_default();
+                        let amount = action.value();
+                        if amount < 0 || (repeatable && !action.once()) {
+                            entry.barred = true;
+                        }
+                        entry.sum = entry.sum.saturating_add(amount.max(0) as u32);
+                    }
+                    DialogueActionKind::Assign => reach.entry(slot).or_default().barred = true,
+                    _ => {}
+                }
+            }
+        }
+
+        // THE SEED MUST BE RECOVERABLE FROM THE VARIABLE'S OWN VALUE, because the rewriting
+        // has to reproduce exactly what the slot would have started at. `seed_state` fills
+        // these five kinds from somewhere else - the inventory, the journal, the thought
+        // cabinet, and the entries the save records as seen - so a rebasing of one of them
+        // would be rebasing by the wrong number. None of them is a counter in this content;
+        // barring them costs nothing and removes the whole question.
+        let symbols = graph.symbols();
+        let elsewhere = |slot: usize| {
+            symbols.name_of(slot).is_some_and(|name| {
+                [ITEM_PREFIX, TASK_PREFIX, THOUGHT_PREFIX, ONCE_PREFIX, SEEN_PREFIX]
+                    .iter()
+                    .any(|prefix| name.starts_with(prefix))
+            })
+        };
+
+        let mut deltas = HashMap::new();
+        for (slot, found) in reach {
+            if found.barred || found.sum == 0 || elsewhere(slot) {
+                continue;
+            }
+            let absolute = widths[slot];
+            let rebased = bits_for(found.sum);
+            if rebased >= absolute {
+                continue;
+            }
+            // WHAT THE ABSOLUTE ENCODING DID, which the rewriting now has to do by hand:
+            // the seed clamped into the slot's own ceiling, and an increment saturated at
+            // the counter cap. The two are different numbers whenever the thresholds left
+            // the slot wider than the cap needs, and a rewriting that used one for both
+            // would answer a guard the shipped encoding does not.
+            let ceiling = (1u32 << absolute) - 1;
+            deltas.insert(slot, DeltaSlot { ceiling, cap: ceiling.min(counter_cap.max(0) as u32) });
+            widths[slot] = rebased;
+        }
+
+        deltas
+    }
+
+    /// Every entry the group can arrive at twice.
+    ///
+    /// A strongly connected component of more than one entry is a cycle by definition, and
+    /// an entry that links to itself is a cycle of one - which Tarjan puts in a component by
+    /// itself, so it has to be caught separately rather than by the size.
+    fn entries_on_a_cycle(
+        graph: &LookAheadGraph,
+        order: &super::order::IterationOrder,
+    ) -> HashSet<DialogueNodeId> {
+        let mut size: HashMap<u32, usize> = HashMap::new();
+        for node in graph.nodes() {
+            if let Some(component) = order.component_of(node.id) {
+                *size.entry(component).or_default() += 1;
+            }
+        }
+
+        graph
+            .nodes()
+            .filter(|node| {
+                node.links.contains(&node.id)
+                    || order
+                        .component_of(node.id)
+                        .and_then(|component| size.get(&component))
+                        .is_some_and(|members| *members > 1)
+            })
+            .map(|node| node.id)
+            .collect()
     }
 
     /// Collects, per slot, the largest constant compared against it - and which slots are
@@ -454,6 +628,21 @@ impl DataLayout {
         self.total = next;
     }
 
+    /// Whether this slot holds a DELTA from the value the search started at, and if so the
+    /// value its absolute reading saturates at.
+    ///
+    /// Everything that reads or writes such a slot has to know: [`super::action_image`] so an
+    /// increment saturates at the slot's own top rather than at the counter cap, the guard
+    /// compiler so a comparison is rebased, and [`super::reachability::seed_of`] so the
+    /// search starts at a distance of nothing rather than at the save's value. See
+    /// [`Self::narrow_to_deltas`].
+    pub fn delta_slot(&self, slot: usize) -> Option<DeltaSlot> {
+        // A DROPPED SLOT IS NOT A DELTA SLOT, because it is not a slot - `keeping_only_read`
+        // zeroes the width and leaves the index, and this map is keyed by index.
+        self.slot(slot)?;
+        self.deltas.get(&slot).copied()
+    }
+
     /// Whether a slot is a single bit, which is the common case.
     pub fn is_boolean(&self, slot: usize) -> bool {
         self.slots.get(slot).map(|(_, bits)| *bits == 1).unwrap_or(false)
@@ -649,13 +838,25 @@ mod tests {
     use crate::graph::node::LookAheadNode;
 
     fn graph_with(actions: Vec<DialogueAction>, symbols: StateSymbols) -> LookAheadGraph {
+        graph_linking(actions, symbols, vec![])
+    }
+
+    /// The same one-entry graph, linking where it is told to.
+    ///
+    /// A link back to itself is what makes an increment repeatable, which is what keeps a
+    /// slot on the absolute encoding - see [`DataLayout::narrow_to_deltas`].
+    fn graph_linking(
+        actions: Vec<DialogueAction>,
+        symbols: StateSymbols,
+        links: Vec<DialogueNodeId>,
+    ) -> LookAheadGraph {
         let node = LookAheadNode::new(
             DialogueNodeId::new(1, 0),
             false,
             DialogueCheckKind::None,
             Guard::always_true(),
             actions,
-            vec![],
+            links,
             0,
             false,
             false,
@@ -665,6 +866,11 @@ mod tests {
             -1,
         );
         LookAheadGraph::new(vec![node], symbols).unwrap()
+    }
+
+    /// A one-entry graph whose increment can fire again, because the entry links to itself.
+    fn looping_graph_with(actions: Vec<DialogueAction>, symbols: StateSymbols) -> LookAheadGraph {
+        graph_linking(actions, symbols, vec![DialogueNodeId::new(1, 0)])
     }
 
     #[test]
@@ -686,7 +892,9 @@ mod tests {
     fn an_incremented_slot_gets_room_for_the_counter_cap() {
         let mut symbols = StateSymbols::new();
         let slot = symbols.variable("loop_counter");
-        let graph = graph_with(
+        // ON A LOOP, so the increment can fire as often as the loop goes round and the cap
+        // is what bounds it. An increment that fires once is bounded by its own amount.
+        let graph = looping_graph_with(
             vec![DialogueAction::increment(slot, 1, false, "SetVariableValue".to_string())],
             symbols,
         );
@@ -717,7 +925,7 @@ mod tests {
         let first = symbols.variable("a");
         let counter = symbols.variable("b");
         let last = symbols.variable("c");
-        let graph = graph_with(
+        let graph = looping_graph_with(
             vec![DialogueAction::increment(counter, 1, false, "SetVariableValue".to_string())],
             symbols,
         );
@@ -745,6 +953,127 @@ mod tests {
         assert_eq!(moving.money(), Some((1, 10)));
         assert_eq!(moving.clock(), Some((11, 11)));
         assert_eq!(moving.total_vars(), 22);
+    }
+
+    /// The saving the whole rebasing exists for: a counter nothing can fire twice needs room
+    /// for its own increments and nothing more.
+    #[test]
+    fn an_increment_that_cannot_repeat_is_held_as_a_distance() {
+        let mut symbols = StateSymbols::new();
+        let slot = symbols.variable("bribes_taken");
+        let graph = graph_with(
+            vec![DialogueAction::increment(slot, 1, false, "SetVariableValue".to_string())],
+            symbols,
+        );
+
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+        assert_eq!(layout.slot(slot), Some((0, 1)));
+        let delta = layout.delta_slot(slot).expect("rebased, since it narrowed the slot");
+        // The absolute reading is what the cap and the old five-bit ceiling described.
+        assert_eq!(delta.ceiling, 31);
+        assert_eq!(delta.cap, 16);
+    }
+
+    /// The bound is the SUM of the sites, not the largest of them.
+    #[test]
+    fn a_distance_has_room_for_every_site_firing() {
+        let mut symbols = StateSymbols::new();
+        let slot = symbols.variable("tally");
+        let graph = graph_with(
+            vec![
+                DialogueAction::increment(slot, 2, false, "SetVariableValue".to_string()),
+                DialogueAction::increment(slot, 3, false, "SetVariableValue".to_string()),
+            ],
+            symbols,
+        );
+
+        // Five needs three bits, which is still narrower than the cap's five.
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+        assert_eq!(layout.slot(slot), Some((0, 3)));
+        assert!(layout.delta_slot(slot).is_some());
+    }
+
+    /// An assign writes a number rather than adding one, so a distance cannot express it.
+    #[test]
+    fn a_slot_something_assigns_is_not_rebased() {
+        let mut symbols = StateSymbols::new();
+        let slot = symbols.variable("stage");
+        let graph = graph_with(
+            vec![
+                DialogueAction::increment(slot, 1, false, "SetVariableValue".to_string()),
+                DialogueAction::assign(slot, 4, "SetVariableValue".to_string()),
+            ],
+            symbols,
+        );
+
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+        assert_eq!(layout.delta_slot(slot), None);
+        assert_eq!(layout.slot(slot), Some((0, 5)));
+    }
+
+    /// The soundness condition: a site on a loop fires as often as the loop goes round, so
+    /// the sum of the sites is not a bound on anything.
+    #[test]
+    fn an_increment_on_a_loop_is_not_rebased() {
+        let mut symbols = StateSymbols::new();
+        let slot = symbols.variable("loop_counter");
+        let graph = looping_graph_with(
+            vec![DialogueAction::increment(slot, 1, false, "SetVariableValue".to_string())],
+            symbols,
+        );
+
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+        assert_eq!(layout.delta_slot(slot), None);
+    }
+
+    /// Unless the action fires at most once by construction, which a loop cannot undo.
+    #[test]
+    fn a_once_increment_on_a_loop_is_still_rebased() {
+        let mut symbols = StateSymbols::new();
+        let slot = symbols.variable("first_time_only");
+        let graph = looping_graph_with(
+            vec![DialogueAction::increment(slot, 1, true, "SetVariableValue".to_string())],
+            symbols,
+        );
+
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+        assert!(layout.delta_slot(slot).is_some());
+        assert_eq!(layout.slot(slot), Some((0, 1)));
+    }
+
+    /// Rebasing may only ever narrow. A slot the guards have already squeezed below what its
+    /// increments add up to keeps what it has, and stays on the absolute encoding.
+    #[test]
+    fn rebasing_never_widens_a_slot_the_thresholds_already_squeezed() {
+        let mut symbols = StateSymbols::new();
+        let slot = symbols.variable("tally");
+        let mut node = LookAheadNode::new(
+            DialogueNodeId::new(1, 0),
+            false,
+            DialogueCheckKind::None,
+            Guard::comparison(
+                ">=".to_string(),
+                Guard::variable("tally".to_string()),
+                Guard::literal(crate::core::guard_value::GuardValue::from_number(1.0)),
+            ),
+            vec![DialogueAction::increment(slot, 9, false, "SetVariableValue".to_string())],
+            vec![],
+            0,
+            false,
+            false,
+            -1,
+            -1,
+            false,
+            -1,
+        );
+        node.actions.push(DialogueAction::increment(slot, 9, false, "s".to_string()));
+        let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
+
+        // The only threshold is 1, so the slot saturates at 2 and needs two bits; the
+        // eighteen its increments add up to would ask for five.
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+        assert_eq!(layout.slot(slot), Some((0, 2)));
+        assert_eq!(layout.delta_slot(slot), None);
     }
 
     #[test]

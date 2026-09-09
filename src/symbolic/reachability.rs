@@ -89,7 +89,14 @@ pub fn seed_of(
 
     for slot in 0..vars.layout().slot_count() {
         let Some(ceiling) = vars.slot_ceiling(slot) else { continue };
-        let value = state.get(slot).max(0) as u32;
+        // A REBASED SLOT STARTS AT NOTHING, because it holds the distance the search has
+        // travelled rather than where it started - see `DataLayout::narrow_to_deltas`. The
+        // save's value is not lost; it moves into the guards, which are rebased by it.
+        let value = if vars.layout().delta_slot(slot).is_some() {
+            0
+        } else {
+            state.get(slot).max(0) as u32
+        };
         let holds = vars.slot_equals(slot, value.min(ceiling))?;
         set = set.and(&holds).ok()?;
     }

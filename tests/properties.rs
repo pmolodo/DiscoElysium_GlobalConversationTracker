@@ -22,7 +22,7 @@
 //! Both are total statements about all inputs, both are cheap to check, and both are the
 //! kind of thing that stays true for a thousand cases and then does not.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use lookahead_engine::core::action::DialogueAction;
 use lookahead_engine::core::guard::Guard;
@@ -248,12 +248,24 @@ proptest! {
     ///
     /// A generated action set is the natural way to ask, because the case that breaks is
     /// several writes to one slot where the widest is not the last.
+    ///
+    /// A REBASED SLOT IS HELD TO A DIFFERENT LAW, and it is the same law: it holds the
+    /// distance the search has moved rather than the value, so what has to fit is every one
+    /// of its increments firing and summed. `DataLayout::narrow_to_deltas` is what decides
+    /// which slots those are, and it only ever picks slots where the sum is the true bound.
     #[test]
     fn a_slot_is_wide_enough_for_everything_written_to_it(
         writes in prop::collection::vec(written(), 1..8),
     ) {
         let (graph, symbols) = graph_of(&writes);
         let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
+
+        let mut summed: HashMap<&str, u32> = HashMap::new();
+        for write in &writes {
+            if write.increment {
+                *summed.entry(write.slot.as_str()).or_default() += write.amount.max(0) as u32;
+            }
+        }
 
         for write in &writes {
             let slot = symbols.find(&write.slot).expect("the slot was interned");
@@ -263,7 +275,9 @@ proptest! {
             // An assignment must be representable outright. An increment saturates at the
             // counter cap, so what has to fit is the cap rather than the step - a step
             // larger than the cap simply arrives at the cap.
-            let needed = if write.increment {
+            let needed = if layout.delta_slot(slot).is_some() {
+                summed.get(write.slot.as_str()).copied().unwrap_or(0)
+            } else if write.increment {
                 COUNTER_CAP.max(0) as u32
             } else {
                 write.amount.max(0) as u32

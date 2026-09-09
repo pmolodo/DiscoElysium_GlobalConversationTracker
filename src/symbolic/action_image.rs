@@ -46,6 +46,24 @@ impl<'a> ActionImage<'a> {
         Self { vars, counter_cap, ignored: 0, out_of_memory: false }
     }
 
+    /// The value an increment on this slot stops at.
+    ///
+    /// The counter cap, held down to what the slot can hold, because a value the slot is too
+    /// narrow for would silently become a different value.
+    ///
+    /// A REBASED SLOT STOPS AT ITS OWN TOP INSTEAD. It holds the distance the search has
+    /// travelled rather than the value itself, so the cap is not a bound on it at all - the
+    /// cap bounds `start + distance`, which is applied where the guards read it. Its width is
+    /// the sum of the group's own increments, so the top is never actually reached; capping
+    /// at the counter cap here would clip a distance that had every right to be larger.
+    fn saturation(&self, slot: usize, ceiling: u32) -> u32 {
+        if self.vars.layout().delta_slot(slot).is_some() {
+            ceiling
+        } else {
+            self.counter_cap.min(ceiling)
+        }
+    }
+
     /// Whether the manager ran out of nodes part way through.
     ///
     /// A caller that sees this MUST STOP: once it is set, every set this has produced
@@ -254,7 +272,7 @@ impl<'a> ActionImage<'a> {
             return states.clone();
         };
 
-        let cap = self.counter_cap.min(ceiling);
+        let cap = self.saturation(slot, ceiling);
         let cube = self.vars.slot_cube(slot);
         let Some(cube) = self.in_layout(cube) else { return states.clone() };
         let mut result = self.vars.bottom();
@@ -423,7 +441,7 @@ impl<'a> ActionImage<'a> {
 
         // The cap the counter saturates at, and never above what the slot can hold - a
         // value the slot is too narrow for would silently become a different value.
-        let cap = self.counter_cap.min(ceiling);
+        let cap = self.saturation(slot, ceiling);
         let cube = self.vars.slot_cube(slot);
         let Some(cube) = self.in_layout(cube) else { return states.clone() };
         let mut result = self.vars.bottom();

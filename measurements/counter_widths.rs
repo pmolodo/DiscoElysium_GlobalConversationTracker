@@ -28,13 +28,27 @@
 //! would give, and the width the slot HAS today. A slot where the shipped width is already the
 //! smallest of the four is a slot neither new encoding can improve.
 //!
-//! ## What it cannot answer, and says so rather than guessing
+//! ## The cycle test, which decides whether either delta encoding is legal
 //!
-//! WHETHER A SITE SITS INSIDE A CYCLE. Encoding 1's bound holds only if each site fires at
-//! most once on a path, which the group's LINK STRUCTURE decides rather than its action list.
-//! This reports the site count as an upper bound on what that encoding could buy and marks the
-//! slot, rather than pretending the question is settled. de-3x76.2 rejected the site-count
-//! bound partly for needing an SCC pass, and that objection stands until someone does one.
+//! BOTH new encodings bound the slot by what a path can ADD, and both assume each site fires
+//! at most once. A site inside a dialogue loop breaks that: encoding 3 undercounts the sum,
+//! and encoding 1 records a SET of writers, so a site firing twice decodes to one helping of
+//! its amount rather than two. A slot with a repeatable site therefore keeps the shipped
+//! ceiling whatever the delta arithmetic says.
+//!
+//! A site is repeatable when its entry sits on a cycle AND the action is not marked `once` -
+//! a `once` action fires at most once by construction, loop or no loop. `on_a_cycle` answers
+//! the first half with Tarjan; `DialogueAction::once` answers the second.
+//!
+//! A DECREMENT disqualifies a slot for the same kind of reason: a distance goes negative and
+//! the slot is unsigned. `reputation.kim` is the only one in this dialogue set.
+//!
+//! ## What this reports once the rule ships
+//!
+//! `DataLayout::narrow_to_deltas` applies the rule, and the `today` column reads the layout
+//! the engine actually builds. So the saving printed at the end is what is still LEFT on the
+//! table, and a run where that is zero is a run where the layout takes everything the three
+//! encodings offer.
 //!
 //! ## How to run it
 //!
@@ -45,10 +59,11 @@
 //!
 //! `DEGCT_CONVERSATION=631,368` picks the groups.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use lookahead_engine::core::action::DialogueActionKind;
 use lookahead_engine::core::types::DialogueNodeId;
+use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::world::world::ILookAheadWorld;
@@ -71,6 +86,104 @@ fn gcd(a: u32, b: u32) -> u32 {
     if b == 0 { a } else { gcd(b, a % b) }
 }
 
+/// Every entry that sits on a cycle, by strongly connected component.
+///
+/// ## Why this decides whether the delta encoding is legal at all
+///
+/// The delta bound is "every increment site fired once, summed". That holds only if each site
+/// fires at most once on a path - and a site inside a loop can fire again and again, so the
+/// delta is bounded by the counter cap rather than by the sum. Saturating at the sum would
+/// then be UNSOUND: a guard whose rebased threshold sits above it folds to "always false"
+/// when it should sometimes be true.
+///
+/// A node is on a cycle if its strongly connected component holds more than one entry, or if
+/// it links to itself. de-3x76.2 rejected the site-count bound partly for needing this pass;
+/// the pass is thirty lines and the group graph is a few thousand entries, so what it needed
+/// was doing rather than avoiding.
+fn on_a_cycle(graph: &LookAheadGraph) -> HashSet<DialogueNodeId> {
+    // ITERATIVE TARJAN, because the recursive one is a stack overflow waiting on conversation
+    // 631's 4,514 entries - the same fault de-fpax spent a week on in the diagram code.
+    let mut index_of: HashMap<DialogueNodeId, u32> = HashMap::new();
+    let mut low: HashMap<DialogueNodeId, u32> = HashMap::new();
+    let mut on_stack: HashSet<DialogueNodeId> = HashSet::new();
+    let mut stack: Vec<DialogueNodeId> = Vec::new();
+    let mut next_index = 0u32;
+    let mut cyclic: HashSet<DialogueNodeId> = HashSet::new();
+
+    // (node, how many of its links have been walked)
+    let mut work: Vec<(DialogueNodeId, usize)> = Vec::new();
+
+    for node in graph.nodes() {
+        if index_of.contains_key(&node.id) {
+            continue;
+        }
+        work.push((node.id, 0));
+
+        while let Some((id, child)) = work.pop() {
+            if child == 0 {
+                index_of.insert(id, next_index);
+                low.insert(id, next_index);
+                next_index += 1;
+                stack.push(id);
+                on_stack.insert(id);
+            }
+
+            let links: &[DialogueNodeId] =
+                graph.get(id).map(|node| node.links.as_slice()).unwrap_or(&[]);
+
+            // A SELF LINK IS A CYCLE OF ONE, and Tarjan puts it in a component by itself, so
+            // it has to be caught here rather than by the size test below.
+            if child == 0 && links.contains(&id) {
+                cyclic.insert(id);
+            }
+
+            let mut descended = false;
+            for (at, &next) in links.iter().enumerate().skip(child) {
+                if graph.get(next).is_none() {
+                    continue;
+                }
+                if !index_of.contains_key(&next) {
+                    work.push((id, at + 1));
+                    work.push((next, 0));
+                    descended = true;
+                    break;
+                }
+                if on_stack.contains(&next) {
+                    let seen = index_of[&next];
+                    let mine = low[&id];
+                    low.insert(id, mine.min(seen));
+                }
+            }
+            if descended {
+                continue;
+            }
+
+            // EVERY LINK WALKED, so this entry's component is decided. Fold its low link into
+            // its parent's before the parent is looked at again.
+            if low[&id] == index_of[&id] {
+                let mut component = Vec::new();
+                while let Some(member) = stack.pop() {
+                    on_stack.remove(&member);
+                    component.push(member);
+                    if member == id {
+                        break;
+                    }
+                }
+                if component.len() > 1 {
+                    cyclic.extend(component);
+                }
+            }
+            if let Some(&(parent, _)) = work.last() {
+                let mine = low[&id];
+                let theirs = low[&parent];
+                low.insert(parent, theirs.min(mine));
+            }
+        }
+    }
+
+    cyclic
+}
+
 /// What one slot's increments look like.
 #[derive(Default)]
 struct Counter {
@@ -79,6 +192,18 @@ struct Counter {
     /// Whether anything ASSIGNS this slot, which puts a floor under it no delta encoding can
     /// lower - `ActionImage::assign` writes the number directly.
     assigned: Vec<i32>,
+    /// Whether any increment site can fire more than once: on a cycle, and not `once`.
+    looped: bool,
+    /// Whether anything DECREMENTS the slot, which no delta encoding can express.
+    ///
+    /// A distance from the arriving value goes negative as soon as the group can subtract,
+    /// and the slot is an unsigned run of bits. It is also order-dependent in a way a sum is
+    /// not: the absolute encoding clamps at zero after EACH step, so `+1 -2 +1` from a
+    /// starting value of zero ends at one, and no summed distance says so.
+    ///
+    /// This is what `reputation.kim` is, and it is the whole of what the delta encoding
+    /// leaves on the table in this dialogue set - four slots and seven bits.
+    signed: bool,
 }
 
 fn main() {
@@ -125,9 +250,13 @@ fn main() {
         // `DataLayout::for_group`'s doc warns about, which caught `layout_shape` once.
         let layout = DataLayout::for_group(&graph, &world, COUNTER_CAP);
         let symbols = graph.symbols();
+        let cyclic = on_a_cycle(&graph);
 
         let mut counters: BTreeMap<usize, Counter> = BTreeMap::new();
         for node in graph.nodes() {
+            // A SITE THAT CAN FIRE TWICE, which is what disqualifies a slot from either delta
+            // encoding. `once` survives a loop; anything else on one does not.
+            let repeatable = cyclic.contains(&node.id);
             for action in &node.actions {
                 let slot = action.slot();
                 if slot < 0 || slot as usize >= symbols.count() {
@@ -136,7 +265,10 @@ fn main() {
                 let slot = slot as usize;
                 match action.kind() {
                     DialogueActionKind::Increment => {
-                        counters.entry(slot).or_default().amounts.push(action.value());
+                        let counter = counters.entry(slot).or_default();
+                        counter.amounts.push(action.value());
+                        counter.looped |= repeatable && !action.once();
+                        counter.signed |= action.value() < 0;
                     }
                     DialogueActionKind::Assign => {
                         counters.entry(slot).or_default().assigned.push(action.value());
@@ -193,10 +325,12 @@ fn main() {
             let today = layout.slot(*slot).map(|(_, width)| width).unwrap_or(0);
 
             // AN ASSIGN PUTS A FLOOR UNDER THE SLOT that no delta encoding can lower, so a
-            // slot the group assigns is marked rather than counted as narrowable.
+            // slot the group assigns is marked rather than counted as narrowable. A
+            // repeatable site does the same for the reason the cycle test exists.
             let assigned = counter.assigned.iter().copied().max().unwrap_or(0);
+            let delta_legal = assigned == 0 && !counter.looped && !counter.signed;
             let best_new = writer_bits.min(value_bits);
-            if best_new < today && assigned == 0 {
+            if best_new < today && delta_legal {
                 slots_a_new_encoding_could_narrow += 1;
             }
 
@@ -204,10 +338,10 @@ fn main() {
             // available" has to mean if it is never to cost a slot anything. A slot the
             // group ASSIGNS keeps what it has: an assign writes the number directly, so
             // neither delta encoding is legal there whatever its width would be.
-            let best = if assigned > 0 { today } else { today.min(best_new) };
+            let best = if delta_legal { today.min(best_new) } else { today };
             bits_today += today as u32;
             bits_best += best as u32;
-            if assigned == 0 && writer_bits < value_bits && writer_bits < today {
+            if delta_legal && writer_bits < value_bits && writer_bits < today {
                 writer_wins += 1;
             }
 
@@ -216,6 +350,10 @@ fn main() {
             // answers the question the other five only supply the evidence for.
             let win = if assigned > 0 {
                 "ceiling (assigned)"
+            } else if counter.looped {
+                "ceiling (looped)"
+            } else if counter.signed {
+                "ceiling (signed)"
             } else if today <= writer_bits && today <= value_bits {
                 "ceiling"
             } else if value_bits <= writer_bits {
@@ -293,8 +431,8 @@ fn main() {
 fn money_report(index: &lookahead_engine::index::Index, world: &dyn ILookAheadWorld) {
     println!("\nMONEY, which is the slot the sneakers-and-speakers case actually lives in\n");
     println!(
-        "{:>6}  {:>10}  {:>10}  {:>8}  {:>6}  {:>6}  {:>6}",
-        "conv", "ceiling", "gained", "gcd", "today", "scaled", "saved",
+        "{:>6}  {:>10}  {:>10}  {:>8}  {:>6}  {:>6}  {:>6}  {:>6}",
+        "conv", "ceiling", "gained", "gcd", "today", "scaled", "saved", "looped",
     );
 
     let mut today_total = 0u32;
@@ -306,18 +444,31 @@ fn money_report(index: &lookahead_engine::index::Index, world: &dyn ILookAheadWo
             continue;
         };
 
-        let amounts: Vec<u32> = graph
-            .nodes()
-            .flat_map(|node| &node.actions)
-            .filter(|action| {
-                matches!(
+        // THE SAME CYCLE TEST THE COUNTERS GET. A gain the player can walk back round to is a
+        // gain the summed delta undercounts, so the scaling is unsound on that group however
+        // well the gcd divides.
+        let cyclic = on_a_cycle(&graph);
+        let mut looped = false;
+        let mut amounts: Vec<u32> = Vec::new();
+        for node in graph.nodes() {
+            for action in &node.actions {
+                if !matches!(
                     action.kind(),
                     DialogueActionKind::GainMoney | DialogueActionKind::LoseMoney
-                )
-            })
-            .map(|action| action.value().unsigned_abs())
-            .filter(|value| *value > 0)
-            .collect();
+                ) {
+                    continue;
+                }
+                if action.value() != 0 {
+                    amounts.push(action.value().unsigned_abs());
+                }
+                looped |= cyclic.contains(&node.id) && !action.once();
+            }
+            // A COST IS CHARGED EVERY TIME THE OPTION IS TAKEN unless it is `cost_once`, so a
+            // priced option on a loop drains the purse repeatedly.
+            if node.is_cost_option() && node.cost != 0 && !node.cost_once {
+                looped |= cyclic.contains(&node.id);
+            }
+        }
 
         // THE COSTS COUNT TOO, not only the gains. A cost is what a guard compares against,
         // so a scaling that did not divide the costs would be dividing half the arithmetic.
@@ -338,14 +489,15 @@ fn money_report(index: &lookahead_engine::index::Index, world: &dyn ILookAheadWo
         let gained: u32 = amounts.iter().sum();
 
         let today = bits_for(ceiling);
-        let scaled = bits_for(gained / unit);
+        let scaled = if looped { today } else { bits_for(gained / unit).min(today) };
         today_total += today as u32;
         scaled_total += scaled as u32;
 
         println!(
             "{conversation:>6}  {ceiling:>10}  {gained:>10}  {unit:>8}  {today:>6}  \
-             {scaled:>6}  {:>6}",
+             {scaled:>6}  {:>6}  {:>6}",
             today as i32 - scaled as i32,
+            if looped { "yes" } else { "" },
         );
     }
 

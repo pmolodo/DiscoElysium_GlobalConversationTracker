@@ -230,6 +230,11 @@ pub(crate) mod tests {
 
 
     /// A graph whose symbol table holds `names`, with `counter` incremented so it is wide.
+    ///
+    /// THE ENTRY LINKS TO ITSELF, which is what makes the counter wide rather than the
+    /// increment alone: an increment that can only fire once is held as a DELTA and needs
+    /// exactly the bits its own amount asks for, which for a single `+1` is one.
+    /// `DataLayout::narrow_to_deltas` is where that is decided.
     pub(crate) fn fixture(
         names: &[&str],
         counter: Option<&str>,
@@ -245,7 +250,8 @@ pub(crate) mod tests {
 
         let node = LookAheadNode::new(
             DialogueNodeId::new(1, 0), false, DialogueCheckKind::None,
-            Guard::always_true(), actions, vec![], 0, false, false, -1, -1, false, -1,
+            Guard::always_true(), actions, vec![DialogueNodeId::new(1, 0)],
+            0, false, false, -1, -1, false, -1,
         );
         let snapshot = symbols.clone();
         (LookAheadGraph::new(vec![node], symbols).unwrap(), snapshot)
