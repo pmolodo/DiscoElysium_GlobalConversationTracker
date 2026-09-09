@@ -15,8 +15,12 @@
 //!    by the greatest common divisor of the amounts, with the arriving value folded into the
 //!    guard rather than carried in the slot.
 //!
-//! Two of the three are only worth their risk on slots where they beat what is already there,
-//! and nobody has counted those. This counts them.
+//! ALL THREE STAY CANDIDATES even where one of them wins nothing today. From the user,
+//! 2026-09-09: this codebase may be ported to an entirely different dialogue set, and the
+//! writer encoding is the one that does not care what the amounts ARE - so it is the one that
+//! pays where they vary wildly, which is exactly the case this game does not contain. The
+//! choice is made per slot from the numbers below, so a corpus that needs it gets it without
+//! anybody revisiting the decision.
 //!
 //! ## What it reports, per counter slot
 //!
@@ -47,6 +51,7 @@ use lookahead_engine::core::action::DialogueActionKind;
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
+use lookahead_engine::world::world::ILookAheadWorld;
 
 #[path = "../tests/common/mod.rs"]
 mod common;
@@ -152,7 +157,7 @@ fn main() {
 
         println!(
             "conversation {conversation}: {} counter slot(s) of {} slots\n\
-             {:>34}  {:>5}  {:>18}  {:>5}  {:>7}  {:>6}  {:>5}  {:>5}",
+             {:>34}  {:>5}  {:>18}  {:>5}  {:>7}  {:>6}  {:>5}  {:>5}  {:>4}  {}",
             counters.len(),
             symbols.count(),
             "slot",
@@ -163,6 +168,8 @@ fn main() {
             "writer",
             "value",
             "today",
+            "best",
+            "win",
         );
 
         for (slot, counter) in &counters {
@@ -204,10 +211,23 @@ fn main() {
                 writer_wins += 1;
             }
 
+            // WHICH ENCODING THIS SLOT WOULD TAKE, named rather than left to a reader
+            // comparing three columns. On a different dialogue set this is the column that
+            // answers the question the other five only supply the evidence for.
+            let win = if assigned > 0 {
+                "ceiling (assigned)"
+            } else if today <= writer_bits && today <= value_bits {
+                "ceiling"
+            } else if value_bits <= writer_bits {
+                "value"
+            } else {
+                "writer"
+            };
+
             let name = symbols.name_of(*slot).unwrap_or("?");
             let shown: Vec<String> = distinct.iter().take(4).map(|a| a.to_string()).collect();
             println!(
-                "{:>34}  {:>5}  {:>18}  {:>5}  {:>7}  {:>6}  {:>5}  {:>5}{}",
+                "{:>34}  {:>5}  {:>18}  {:>5}  {:>7}  {:>6}  {:>5}  {:>5}  {:>4}  {}",
                 &name[name.len().saturating_sub(34)..],
                 counter.amounts.len(),
                 shown.join(","),
@@ -216,7 +236,8 @@ fn main() {
                 writer_bits,
                 value_bits,
                 today,
-                if assigned > 0 { format!("  assigned up to {assigned}") } else { String::new() },
+                best,
+                win,
             );
         }
         println!();
@@ -230,15 +251,108 @@ fn main() {
     println!(
         "\nTAKING THE NARROWEST OF THE THREE, per slot, including the one that ships:\n\
          \x20 {bits_today} bits today -> {bits_best} bits, a saving of {} across every counter \
-         in the six\n  heaviest groups. A rule shaped as a minimum cannot cost a slot \
+         in the groups measured. A rule shaped as a minimum cannot cost a slot \
          anything, so this is\n  the whole of what the standardisation is worth.",
         bits_today - bits_best,
     );
+    money_report(&index, &world);
+
     println!(
-        "\nTHE WRITER ENCODING WINS OUTRIGHT ON {writer_wins} SLOT(S). Where that is zero it \
-         need not be\n  one of the candidates at all: every amount here is an integer with a \
-         GCD of 1, so the\n  value encoding is never wider than the writer one, and dropping \
-         it removes a code path\n  without changing a single width."
+        "\nTHE WRITER ENCODING WINS OUTRIGHT ON {writer_wins} SLOT(S) IN THIS DIALOGUE SET, and \
+         is kept\n  as a candidate anyway. It is the encoding that does not care what the \
+         amounts ARE, so\n  it is the one that pays where they vary wildly - an option costing \
+         50 beside one costing\n  0.5 - and every amount in THIS game is an integer with a GCD \
+         of 1, which is precisely\n  the case it cannot beat. A different dialogue set is the \
+         reason it stays: the choice is\n  made per slot from the numbers above, so a corpus \
+         that needs it gets it without anybody\n  revisiting this decision. See the `win` \
+         column for which encoding each slot would take."
+    );
+}
+
+/// The same three encodings applied to MONEY, which is where the wildly varying amounts are.
+///
+/// ## Why money and not a counter slot
+///
+/// From the user, 2026-09-09: the sneakers-and-speakers case - one option costing 50 and
+/// another 0.5 - is MONEY, and money in this game is integer centimes. So it never was a
+/// fractional counter; it is 5,000 centimes beside 50, and it lives in its own slot rather
+/// than among the counters above.
+///
+/// THAT IS THE SLOT WHERE THE SCALING PAYS. A counter here spans one to five bits. Money is
+/// sized by `DataLayout::money_ceiling` - the starting purse plus everything the group can
+/// gain - as an ABSOLUTE centime value, so it is the widest thing in the layout by a long way,
+/// and every amount in it is a multiple of something.
+///
+/// ## What the two columns mean
+///
+/// `today` is `bits_for(ceiling)`. `scaled` is what the same slot costs holding the DELTA from
+/// the arriving purse, in units of the greatest common divisor of the amounts the group can
+/// gain: `bits_for(gained / gcd)`. The delta is a property of the group's actions and the gcd
+/// of its amounts, so neither depends on how much the player happens to be carrying - which is
+/// what keeps the layout world-independent and the workspace's key intact.
+fn money_report(index: &lookahead_engine::index::Index, world: &dyn ILookAheadWorld) {
+    println!("\nMONEY, which is the slot the sneakers-and-speakers case actually lives in\n");
+    println!(
+        "{:>6}  {:>10}  {:>10}  {:>8}  {:>6}  {:>6}  {:>6}",
+        "conv", "ceiling", "gained", "gcd", "today", "scaled", "saved",
+    );
+
+    let mut today_total = 0u32;
+    let mut scaled_total = 0u32;
+    for conversation in numbers("CONVERSATION", &GROUPS) {
+        let Ok((graph, _)) = build_group_graph(index, conversation) else { continue };
+        let Some(ceiling) = DataLayout::money_ceiling(&graph, world.money()) else {
+            println!("{conversation:>6}  {:>10}", "not read");
+            continue;
+        };
+
+        let amounts: Vec<u32> = graph
+            .nodes()
+            .flat_map(|node| &node.actions)
+            .filter(|action| {
+                matches!(
+                    action.kind(),
+                    DialogueActionKind::GainMoney | DialogueActionKind::LoseMoney
+                )
+            })
+            .map(|action| action.value().unsigned_abs())
+            .filter(|value| *value > 0)
+            .collect();
+
+        // THE COSTS COUNT TOO, not only the gains. A cost is what a guard compares against,
+        // so a scaling that did not divide the costs would be dividing half the arithmetic.
+        let costs: Vec<u32> = graph
+            .nodes()
+            .filter(|node| node.is_cost_option())
+            .map(|node| node.cost.unsigned_abs())
+            .filter(|value| *value > 0)
+            .collect();
+
+        let unit = amounts
+            .iter()
+            .chain(costs.iter())
+            .copied()
+            .reduce(gcd)
+            .unwrap_or(1)
+            .max(1);
+        let gained: u32 = amounts.iter().sum();
+
+        let today = bits_for(ceiling);
+        let scaled = bits_for(gained / unit);
+        today_total += today as u32;
+        scaled_total += scaled as u32;
+
+        println!(
+            "{conversation:>6}  {ceiling:>10}  {gained:>10}  {unit:>8}  {today:>6}  \
+             {scaled:>6}  {:>6}",
+            today as i32 - scaled as i32,
+        );
+    }
+
+    println!(
+        "\n  {today_total} bits of money today -> {scaled_total} scaled, a saving of {} over \
+         the groups measured.",
+        today_total as i32 - scaled_total as i32,
     );
 }
 
