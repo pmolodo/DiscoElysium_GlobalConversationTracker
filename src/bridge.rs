@@ -682,6 +682,8 @@ impl LookAheadRequest {
                 // Nothing to prune with: the forward slice gets no time at all here, so
                 // there is no settled run and `Known` would refuse to narrow anyway.
                 pruning: default.pruning,
+                // Nothing on the wire selects the abstraction, so the default decides it.
+                forget_dead: default.forget_dead.clone(),
             };
         }
 
@@ -708,6 +710,7 @@ impl LookAheadRequest {
             backwards: whole,
             each: default.each.min(whole),
             pruning: default.pruning,
+            forget_dead: default.forget_dead.clone(),
         }
     }
 

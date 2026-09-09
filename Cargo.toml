@@ -91,6 +91,12 @@ path = "measurements/layout_shape.rs"
 name = "live_ranges"
 path = "measurements/live_ranges.rs"
 
+# What live_ranges only counted, applied and priced. Two arms behind one `main`, picked by
+# argument - the fixed point over a group, and the shipped call over a menu.
+[[example]]
+name = "dead_quantify"
+path = "measurements/dead_quantify.rs"
+
 # Driven by tools/measure-matrix.sh, one row per process, for hours. Runnable by hand for
 # a single row: CONVERSATION=368 PROFILE=deepest-1 cargo run --release --example
 # performance_matrix

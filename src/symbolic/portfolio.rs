@@ -51,6 +51,7 @@
 //! which is going to be slow is usually slow immediately.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::Duration;
 
 use oxidd::bdd::BDDFunction;
@@ -59,6 +60,7 @@ use crate::core::types::{DialogueNodeId, Novelty, StartBranch};
 use crate::graph::graph::LookAheadGraph;
 use crate::symbolic::guard_formula::GuardCompiler;
 use crate::symbolic::known::GroupShape;
+use crate::symbolic::live_slots::LiveSlots;
 use crate::symbolic::novelty_search::{self, StoppedBy};
 use crate::symbolic::reachability::{self, Reachability};
 use crate::world::world::ILookAheadWorld;
@@ -156,6 +158,22 @@ pub struct Budget {
     /// worth: one run cannot show a difference, and both arms have to be the shipped path
     /// rather than a hand-built search beside it.
     pub pruning: bool,
+
+    /// The group's liveness analysis, for a forward slice that should forget what nothing
+    /// onward reads; `None` to hold every set exactly.
+    ///
+    /// THE SLICE ONLY. The backward driver's sets say "arriving here, the target is
+    /// reachable" and their approximation runs the other way, so nothing here reaches them.
+    /// See [`reachability::Budget::forget_dead`] for what the abstraction is and why it
+    /// cannot lose an answer.
+    ///
+    /// A FIELD RATHER THAN A LITERAL, for the same reason [`Self::pruning`] is one: what it
+    /// is worth can only be read off two runs of the shipped path, and the two effects it
+    /// has pull against each other. Smaller sets can let a slice SETTLE where it did not,
+    /// which is what lets the backward passes be narrowed at all; larger sets - and an
+    /// abstracted set is larger - narrow them less once it has. See
+    /// `measurements/dead_quantify.rs`.
+    pub forget_dead: Option<Arc<LiveSlots>>,
 }
 
 impl Default for Budget {
@@ -187,6 +205,9 @@ impl Default for Budget {
             // do, so most of the game has a settled run to narrow with and nothing was
             // using it.
             pruning: true,
+            // OFF, because nothing has yet said it is worth its quantifier. See
+            // `measurements/dead_quantify.rs`, which is what would change this.
+            forget_dead: None,
         }
     }
 }
@@ -210,6 +231,7 @@ fn forwards_for<'a, F>(
     within: Duration,
     slice_memory: usize,
     slice_steps: usize,
+    forget_dead: Option<Arc<LiveSlots>>,
     shape: &GroupShape,
 ) -> Reachability<'a>
 where
@@ -243,6 +265,7 @@ where
             memory: slice_memory,
             steps: slice_steps,
             halt_on: Some(Box::new(move |id| quarry.contains(&id))),
+            forget_dead,
             ..Default::default()
         },
         shape.order(),
@@ -322,7 +345,7 @@ where
     let forwards = (hunting > Novelty::SeenThisGame && !slice.is_zero()).then(|| {
         forwards_for(
             graph, start, branch, seed, compiler, world, counter_cap, hunting, &novelty,
-            slice, budget.slice_memory, budget.slice_steps, shape,
+            slice, budget.slice_memory, budget.slice_steps, budget.forget_dead.clone(), shape,
         )
     });
 

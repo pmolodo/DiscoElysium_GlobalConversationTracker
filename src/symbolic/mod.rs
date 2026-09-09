@@ -28,6 +28,7 @@ pub mod dominators;
 pub mod guard_formula;
 pub mod isolated;
 pub mod known;
+pub mod live_slots;
 pub mod novelty_search;
 pub mod order;
 pub mod portfolio;

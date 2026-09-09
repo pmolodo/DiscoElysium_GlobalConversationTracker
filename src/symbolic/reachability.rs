@@ -41,13 +41,14 @@
 use std::collections::HashMap;
 
 use oxidd::bdd::BDDFunction;
-use oxidd::{BooleanFunction, Function};
+use oxidd::{BooleanFunction, BooleanFunctionQuant, Function};
 
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, StartBranch, Ternary};
 use crate::graph::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
 use crate::symbolic::action_image::ActionImage;
 use crate::symbolic::guard_formula::GuardCompiler;
+use crate::symbolic::live_slots::LiveSlots;
 use crate::symbolic::order::{Direction, IterationOrder, Worklist};
 use crate::symbolic::vars::DataVars;
 use crate::world::world::ILookAheadWorld;
@@ -218,6 +219,41 @@ pub struct Budget {
     /// Called once per entry, when it is first reached.
     #[allow(clippy::type_complexity)]
     pub halt_on: Option<Box<dyn Fn(DialogueNodeId) -> bool>>,
+
+    /// Quantify each entry's dead slots out of the set held there, or `None` to hold the
+    /// set exactly.
+    ///
+    /// ## What it does
+    ///
+    /// A slot no path onward from an entry reads before overwriting it cannot change any
+    /// answer from that entry on, so the set held there need not distinguish its values.
+    /// Existentially abstracting those variables collapses every pair of states differing
+    /// only in them into one. [`LiveSlots`] is the analysis that says which they are.
+    ///
+    /// ## Why it does not lose an answer
+    ///
+    /// The sets stay an OVER-approximation, which is the direction this search is allowed
+    /// to be wrong in and the one every other approximation here takes: abstraction only
+    /// ever adds states, so no reachable entry can go missing and `halt_on` fires on
+    /// exactly the entries it fires on without this.
+    ///
+    /// It is also exact on the abstracted sets rather than merely safe. For a slot dead at
+    /// an entry, every successor either assigns it - in which case the image forgets it and
+    /// asserts a constant, so the free values collapse there - or is itself an entry the
+    /// slot is dead at, in which case the successor's own abstraction removes it again.
+    ///
+    /// ## What it costs
+    ///
+    /// A quantifier per widening, over a cube built once per entry and kept. That is a
+    /// diagram operation on the set itself, so a cheap win on paper can be a wash in a fixed
+    /// point that steps an entry a dozen times - which is why this is a field and not a
+    /// decision. See `measurements/dead_quantify.rs`, which runs both arms.
+    ///
+    /// ## Not the backward pass
+    ///
+    /// Backward sets say "arriving here, the target is reachable", and their approximation
+    /// runs the other way. Nothing here applies to them.
+    pub forget_dead: Option<std::sync::Arc<LiveSlots>>,
 }
 
 impl Default for Budget {
@@ -238,6 +274,7 @@ impl Default for Budget {
             on_step: None,
             system_reserve: crate::core::system_memory::DEFAULT_RESERVE,
             halt_on: None,
+            forget_dead: None,
         }
     }
 }
@@ -304,6 +341,62 @@ pub struct Reachability<'a> {
     vars: &'a DataVars<'a>,
     sets: HashMap<DialogueNodeId, BDDFunction>,
     stats: ReachabilityStats,
+}
+
+/// The cube of dead variables to quantify away at each entry, built once and kept.
+///
+/// ONCE PER ENTRY, WHICH IS THE WHOLE REASON THIS IS A STRUCT. An entry is widened many
+/// times over a search and its dead set never moves, so building the cube at each widening
+/// would spend more diagram operations on the abstraction than the abstraction saves.
+///
+/// A [`None`] analysis is the off switch and every method is then a clone, which is what
+/// keeps [`Budget::forget_dead`] cost-free for the callers that do not use it.
+struct Forgetter<'a> {
+    live: Option<std::sync::Arc<LiveSlots>>,
+    vars: &'a DataVars<'a>,
+    /// `None` against an entry means "nothing to forget here", which is a real answer and
+    /// is cached like any other.
+    cubes: HashMap<DialogueNodeId, Option<BDDFunction>>,
+}
+
+impl<'a> Forgetter<'a> {
+    fn new(live: Option<std::sync::Arc<LiveSlots>>, vars: &'a DataVars<'a>) -> Self {
+        Self { live, vars, cubes: HashMap::new() }
+    }
+
+    /// `states` with everything dead at `id` quantified away.
+    fn apply(&mut self, id: DialogueNodeId, states: &BDDFunction) -> BDDFunction {
+        let Some(live) = self.live.clone() else { return states.clone() };
+
+        if !self.cubes.contains_key(&id) {
+            let cube = self.cube_for(&live, id);
+            self.cubes.insert(id, cube);
+        }
+
+        match &self.cubes[&id] {
+            // OUT OF NODES IS THE UNABSTRACTED SET, not a failure. Abstraction is an
+            // optimisation and the set without it is the correct one, so a manager too full
+            // to take the quantifier gives up the saving and keeps the answer. Whatever the
+            // search does next will meet the same wall and report it.
+            Some(cube) => states.exists(cube).unwrap_or_else(|_| states.clone()),
+            None => states.clone(),
+        }
+    }
+
+    fn cube_for(&self, live: &LiveSlots, id: DialogueNodeId) -> Option<BDDFunction> {
+        let dead = live.dead_out(id, self.vars.layout());
+        if dead.is_empty() {
+            return None;
+        }
+
+        let mut cube = self.vars.top();
+        for slot in dead {
+            let Some(slot_cube) = self.vars.slot_cube(slot) else { continue };
+            cube = cube.and(&slot_cube).ok()?;
+        }
+
+        Some(cube)
+    }
 }
 
 impl<'a> Reachability<'a> {
@@ -461,8 +554,15 @@ impl<'a> Reachability<'a> {
         // of what was already sent plus the image of what is new. Sending the whole set
         // every time recomputes the first half at every visit, and on a group of four
         // thousand entries that is the difference between minutes and not finishing.
+        let mut forget = Forgetter::new(budget.forget_dead.clone(), vars);
+
         let mut frontier: HashMap<DialogueNodeId, BDDFunction> = HashMap::new();
-        this.sets.insert(start, entered.clone());
+        // THE STORED SET IS ABSTRACTED AND THE PENDING ONE IS NOT, here and at every
+        // widening below. What is pending is only ever a set to take the image of, and the
+        // image of an abstracted state is the abstracted image of the concrete one - see
+        // [`Budget::forget_dead`] - so abstracting the delta as well would cost a
+        // quantifier to arrive at the same place.
+        this.sets.insert(start, forget.apply(start, &entered));
         frontier.insert(start, entered);
 
         // The start node counts as reached, so a halt condition it satisfies must fire
@@ -634,7 +734,7 @@ impl<'a> Reachability<'a> {
                     this.stats.out_of_memory = true;
                     break 'search;
                 };
-                this.sets.insert(child_id, widened);
+                this.sets.insert(child_id, forget.apply(child_id, &widened));
 
                 let pending = frontier
                     .get(&child_id)

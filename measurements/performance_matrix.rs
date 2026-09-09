@@ -1271,6 +1271,9 @@ fn search_budget_for(engine: Engine) -> portfolio::Budget {
             slice_memory: budget().memory(),
             slice_steps: usize::MAX,
             pruning: portfolio::Budget::default().pruning,
+            // The matrix measures the shipped method, so it takes the shipped answer to
+            // whether the slice forgets dead slots rather than deciding for itself.
+            forget_dead: portfolio::Budget::default().forget_dead.clone(),
         },
     }
 }
@@ -1469,6 +1472,10 @@ fn symbolic_forward(
         // The same early exit the forward search has: the question is whether ANY unseen
         // entry is reachable, not what the whole reachable set is.
         halt_on: Some(Box::new(move |id| quarry.contains(&id))),
+        // THE EXACT SETS. This column exists to say what the forward search costs, and an
+        // abstracted run is a different search - see `measurements/dead_quantify.rs`, which
+        // is where the two are compared.
+        forget_dead: None,
     };
 
     let found = Reachability::explore_within(

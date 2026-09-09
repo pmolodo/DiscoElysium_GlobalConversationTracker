@@ -44,13 +44,16 @@ log to read afterwards:
     RUN_LOG_DIR=measurements/logs CONVERSATION=14 \
       tools/run-logged.sh cargo slots -- cargo run --release --example layout_shape -- slots
 
-Two of them take an argument, and it selects a stage rather than a setting. `layout_shape`
+Several take an argument, and it selects a stage rather than a setting. `layout_shape`
 takes `groups` (the default), which counts the slot classes per group, or `slots`, which
 lists one group's slots so the classifier behind the counts can be read rather than trusted.
 `dominance_share` takes `rows` (the default), `menu`, `all` for the whole game, or `verify`,
 which re-derives its dominator relation by deleting entries and comparing. `candidate_recurrence`
 takes `links` (the default), where a menu's options are one node's own links, or `deepest`,
 where they come from the adversarial profile - and the two disagree on purpose.
+`dead_quantify` takes `sets` (the default), the forward fixed point over a whole group, or
+`menu`, the shipped call over an adversarial menu - and those two can move opposite ways,
+which is the reason both are there.
 
 ## Where a run's results are
 
