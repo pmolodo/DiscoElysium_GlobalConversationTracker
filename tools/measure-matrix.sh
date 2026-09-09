@@ -392,6 +392,15 @@ cargo build --release --example performance_matrix \
 # folder as fourteen thousand findings.
 MEASUREMENT="${CARGO_TARGET_DIR:-$ROOT/target}/release/examples/performance_matrix"
 [ -x "$MEASUREMENT" ] || MEASUREMENT="$MEASUREMENT.exe"
+
+# WHETHER THE CENSUS CAME FROM AN EARLIER RUN, which is what makes a contradiction
+# repairable rather than a bug. A census this run took itself contradicting its own rows
+# means the census or the search is wrong, and repairing it would send the run round a loop
+# hiding a real fault. See the census block below and `repair_census_for`.
+CENSUS_REUSED=no
+# Groups already repaired once. A second contradiction after a fresh census is not staleness.
+declare -A CENSUS_REPAIRED=()
+CENSUS_REPAIRS=0
 if [ ! -x "$MEASUREMENT" ]; then
     echo "the measurement did not build - no runnable binary at $MEASUREMENT" >&2
     exit 1
@@ -535,15 +544,56 @@ if [ "$NEEDS_CENSUS" = yes ] && [ -z "${CENSUS_FILE:-}" ]; then
     if [ -e "$CENSUS_FILE" ]; then
         echo "using the census this folder already holds: $CENSUS_FILE"
     else
-        echo "taking a census first - the grid has an unreachable profile and none was named"
-        # THE SAME GROUPS THE ROWS WILL ASK ABOUT, named rather than `all`. A whole-game
-        # census over 1,422 groups to serve a run of six is hours spent on rows nobody
-        # asked for.
-        CENSUS_OUT="$LOGS/census" "$ROOT/tools/measure-census.sh" "${CONVERSATIONS[@]}"
-        if [ ! -e "$CENSUS_FILE" ]; then
-            echo "the census produced no $CENSUS_FILE - stopping rather than measuring" >&2
-            echo "rows against a census that is not there." >&2
-            exit 1
+        # A CENSUS FROM AN EARLIER RUN, ASSUMED GOOD AND REPAIRED WHERE IT IS NOT.
+        #
+        # Taking one costs about eight minutes on the whole game, which is a third of the
+        # run, and two runs an hour apart produced byte-identical censuses on all 521 groups
+        # - so the common case is paying a third of a run to reproduce an answer already on
+        # disk.
+        #
+        # WHY THIS IS SAFE WITHOUT A STALENESS RULE, which is what kept it from being reused
+        # before. A census that is wrong about a group makes that group's unreachable
+        # profiles ask about entries that are not unreachable, and the measurement ALREADY
+        # CATCHES THAT: a `found` on a deepest-unreach profile is impossible by construction,
+        # and it prints CONTRADICTION when it happens. So the run does not have to predict
+        # staleness, it can detect it - and being wrong costs one group's census and one
+        # group's unreachable rows rather than the run's correctness. See `repair_census_for`.
+        #
+        # WHAT IT DOES NOT CATCH is a census that named too FEW unreachable entries: the
+        # profile is built from that shorter list, so every row in it is answerable and
+        # nothing contradicts. That is the residual risk of assuming a census is good, and it
+        # is why the reuse says so loudly rather than quietly.
+        #
+        # COPIED IN RATHER THAN READ IN PLACE. The rows about to be written depend on it, so
+        # it belongs beside them - the same rule the TSVs follow. It also means the repair
+        # edits this run's copy and not the record of the run it came from.
+        CENSUS_REUSED_FROM=""
+        while IFS= read -r folder; do
+            folder="${folder%/}"
+            [ "$folder" = "$LOGS" ] && continue
+            [ -s "$folder/census/census.tsv" ] || continue
+            CENSUS_REUSED_FROM="$folder/census/census.tsv"
+            break
+        done < <(ls -dt "$OUT"/logs/*/ 2>/dev/null)
+
+        if [ -n "$CENSUS_REUSED_FROM" ] && [ "${CENSUS_REUSE:-yes}" = yes ]; then
+            mkdir -p "$LOGS/census"
+            cp "$CENSUS_REUSED_FROM" "$CENSUS_FILE"
+            CENSUS_REUSED=yes
+            echo "REUSING a census rather than taking one: $CENSUS_REUSED_FROM"
+            echo "  copied to $CENSUS_FILE. It is assumed good; a group whose rows contradict"
+            echo "  it is re-censused and re-measured. CENSUS_REUSE=no takes a fresh one."
+        else
+            echo "taking a census first - the grid has an unreachable profile and none was named"
+            # THE SAME GROUPS THE ROWS WILL ASK ABOUT, named rather than `all`. A whole-game
+            # census over 1,422 groups to serve a run of six is hours spent on rows nobody
+            # asked for.
+            CENSUS_OUT="$LOGS/census" "$ROOT/tools/measure-census.sh" "${CONVERSATIONS[@]}"
+            if [ ! -e "$CENSUS_FILE" ]; then
+                echo "the census produced no $CENSUS_FILE - stopping rather than measuring" >&2
+                echo "rows against a census that is not there." >&2
+                exit 1
+            fi
         fi
     fi
 fi
@@ -649,6 +699,13 @@ IN_PARALLEL=0
 # against its full weight drags the pace down. On a resumed whole-game run those are most of
 # the rows.
 row_finished() {
+    # A REPAIRED ROW IS NOT ONE OF THE RUN'S ROWS. The run planned TOTAL_ROWS of them and
+    # `progress` reads its position out of ROW_KEYS by index, so counting an unplanned
+    # re-measurement walks off the end of that array - which is exactly what it did, with
+    # `set -u` turning it into an abort mid-repair. The row is re-measured, its result
+    # appended and its verdict what the run reports; only the accounting ignores it.
+    [ -z "${IN_REPAIR:-}" ] || return 0
+
     if [ "$IN_PARALLEL" = 1 ]; then
         GROUP_ROWS=$(( GROUP_ROWS + 1 ))
         if [ "${1:-}" != "skipped" ]; then
@@ -672,8 +729,88 @@ row_finished() {
 # line needs it live, within the group, to know what this run actually measured, so the
 # fold cannot wait until the group ends. In the parallel phase that increment lands in the
 # fork and is discarded, and GROUP_SKIPPED is what the parent folds instead.
+# WHETHER THIS GROUP'S ROWS CONTRADICTED THE CENSUS.
+#
+# The measurement says so itself, on stderr, and the row logs hold stderr: a `found` on a
+# deepest-unreach profile is impossible, because every entry in that set was PROVED
+# unreachable, so finding one means the census and the search disagree. `CONTRADICTION:` is
+# the interface between the two halves - the measurement prints it at
+# measurements/performance_matrix.rs's unreachable-profile check - so whichever end changes
+# the word changes both.
+contradicted() {
+    local conversation="$1" profile
+    for profile in "${PROFILES[@]}"; do
+        case "$profile" in deepest-unreach-*) ;; *) continue ;; esac
+        grep -q '^CONTRADICTION:' "$LOGS/matrix-$conversation-$profile.log" 2>/dev/null \
+            && return 0
+    done
+
+    return 1
+}
+
+# RE-CENSUS ONE GROUP AND RE-MEASURE WHAT READ THE CENSUS.
+#
+# Only for a census this run did NOT take. One this run took contradicting its own rows is
+# a fault in the census or the search, and repairing it would loop while hiding that.
+#
+# ONCE PER GROUP. If a freshly taken census contradicts again, staleness was not the cause:
+# say so and leave the row as it came, because a repair that can run twice can run for ever.
+#
+# THE CENSUS ROW IS APPENDED, NOT REWRITTEN. `measure-census.sh` and the measurement both
+# read the LAST row per conversation, so the fresh row simply sits after the stale one - the
+# same rule that makes the census resumable.
+repair_census_for() {
+    local conversation="$1" fresh row
+    [ "$CENSUS_REUSED" = yes ] || {
+        echo "  CONTRADICTION on $conversation against a census THIS RUN TOOK - not repairing."
+        echo "  That is a fault in the census or the search rather than a stale file."
+        return
+    }
+    [ -z "${CENSUS_REPAIRED[$conversation]:-}" ] || {
+        echo "  $conversation contradicts a census taken for it moments ago - not repairing again."
+        return
+    }
+    CENSUS_REPAIRED[$conversation]=1
+    CENSUS_REPAIRS=$(( CENSUS_REPAIRS + 1 ))
+
+    echo "  REPAIRING $conversation: its rows contradict the reused census, so re-censusing"
+    echo "  that one group and re-measuring the profiles that read it."
+
+    fresh="$LOGS/census/repair-$conversation.log"
+    if ! CENSUS=1 NO_HEADER=1 CONVERSATION="$conversation" \
+        CENSUS_JOURNAL="$LOGS/census/$conversation.repair.journal.tsv" \
+        "$MEASUREMENT" > "$fresh" 2>&1
+    then
+        echo "  the re-census of $conversation failed - see $fresh. Leaving its rows as measured."
+        return
+    fi
+
+    row="$(grep -E "^$conversation$TAB" "$fresh" | tail -1)"
+    if [ -z "$row" ]; then
+        echo "  the re-census of $conversation produced no row - see $fresh."
+        return
+    fi
+    printf '%s\n' "$row" >> "$CENSUS_FILE"
+
+    local -a reads_census=()
+    for profile in "${PROFILES[@]}"; do
+        case "$profile" in deepest-unreach-*) reads_census+=("$profile") ;; esac
+    done
+    [ "${#reads_census[@]}" -gt 0 ] || return
+
+    IN_REPAIR=1 REDO_ROWS=1 measure_group "$conversation" "${reads_census[@]}"
+    IN_REPAIR=""
+    REDO_ROWS=""
+}
+
 measure_group() {
     local conversation="$1"
+    shift
+    # THE PROFILES TO RUN, defaulting to the whole grid. A repair names the ones that read
+    # the census and nothing else - see `repair_census_for`, which is the only caller that
+    # passes any.
+    local -a wanted=("$@")
+    [ "${#wanted[@]}" -eq 0 ] && wanted=("${PROFILES[@]}")
     local tsv log row status profile
     GROUP_NOT_MEASURED=0
     GROUP_NO_ROWS=0
@@ -691,7 +828,7 @@ measure_group() {
     [ -e "$tsv" ] || echo "$HEADER" > "$tsv"
     echo "=== $conversation -> $tsv"
 
-    for profile in "${PROFILES[@]}"; do
+    for profile in "${wanted[@]}"; do
         log="$LOGS/matrix-$conversation-$profile.log"
         # THE SAME SHAPE `matrix-remaining.awk` READS, and the same one ROW_KEYS holds for
         # the serial phase. Built here rather than indexed out of that array because a
@@ -700,7 +837,11 @@ measure_group() {
 
         # ALREADY ANSWERED, so not asked again. Counted as done for the progress line, since
         # what the run has left is what it has left however the rows got there.
-        if [ -n "${ROW_DONE[$conversation:$profile]:-}" ]; then
+        # A REPAIR RE-ASKS A ROW THE FOLDER ALREADY HOLDS, which is the one case where
+        # `already measured` is the wrong answer: the row is there and it was measured
+        # against a census since replaced. The appended row wins, by the same last-row-per-key
+        # rule the resume reads by, so nothing has to be deleted first.
+        if [ -z "${REDO_ROWS:-}" ] && [ -n "${ROW_DONE[$conversation:$profile]:-}" ]; then
             # NO CLOCK, DELIBERATELY: nothing ran, so there is no start to report. The space
             # where one would go is held open so this line stays in the same column as the
             # rows that did run.
@@ -982,6 +1123,7 @@ window_max_nodes=0
 
 for conversation in "${CONVERSATIONS[@]}"; do
     measure_group "$conversation"
+    contradicted "$conversation" && repair_census_for "$conversation"
     not_measured=$(( not_measured + GROUP_NOT_MEASURED ))
     no_rows=$(( no_rows + GROUP_NO_ROWS ))
     serial_done=$(( serial_done + 1 ))
@@ -1300,6 +1442,11 @@ if [ "${#parallel_groups[@]}" -gt 0 ]; then
         else
             echo "WORKER LOST for group $group - its finished rows are in the TSV, its tally is not"
         fi
+        # REPAIRED IN THE PARENT, AFTER REAPING, and never inside a worker. The census is
+        # one file the whole run reads, so several workers repairing at once would append to
+        # it concurrently and re-measure against a file still being written. Repairs are rare
+        # and a serial one costs only itself.
+        contradicted "$group" && repair_census_for "$group"
         group_finished "$outcome"
     }
 
@@ -1337,6 +1484,23 @@ fi
 
 echo
 echo "wrote $(ls -1 "$LOGS"/performance-matrix-*.tsv | wc -l) file(s) in: $LOGS"
+
+# WHAT THE REUSED CENSUS COST, said plainly. A repair is real time in the middle of a run,
+# so a run that repaired should say so rather than merely run long.
+#
+# AND MANY REPAIRS MEAN THE WRONG CENSUS, not a few stale groups: if a run is repairing a
+# large share of its groups it would have been quicker, and safer, to take a fresh one.
+# Saying which file it reused is what lets somebody decide that for the next run.
+if [ "$CENSUS_REUSED" = yes ]; then
+    if [ "$CENSUS_REPAIRS" -gt 0 ]; then
+        echo "reused a census and REPAIRED $CENSUS_REPAIRS group(s) that contradicted it:"
+        echo "  ${!CENSUS_REPAIRED[*]}"
+        echo "  it came from $CENSUS_REUSED_FROM - if this number is large, take a fresh one"
+        echo "  with CENSUS_REUSE=no rather than repairing group by group."
+    else
+        echo "reused a census from $CENSUS_REUSED_FROM; no group contradicted it."
+    fi
+fi
 
 # NAMED ONE BY ONE ONLY WHEN THERE ARE FEW. A whole-game run writes fourteen hundred of
 # them and the list is not a summary of anything.
