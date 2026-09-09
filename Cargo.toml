@@ -181,6 +181,10 @@ name = "row_overhead"
 path = "measurements/row_overhead.rs"
 
 [[example]]
+name = "slice_on_menus"
+path = "measurements/slice_on_menus.rs"
+
+[[example]]
 name = "counter_widths"
 path = "measurements/counter_widths.rs"
 

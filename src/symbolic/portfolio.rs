@@ -226,27 +226,49 @@ impl Default for Budget {
         // candidates behind it.
         let backwards = Duration::from_secs(2);
         Self {
-            // FIFTY MILLISECONDS, and the shape of the measurement rather than a guess.
-            // A forward pass that is going to answer at all answers in under one on every
-            // group measured - it halts on the first entry worth reporting - so this is not
-            // sized to let it finish. It is sized to be worth the sets it leaves behind for
-            // the backward half to meet, and to be small enough that spending all of it and
-            // learning nothing costs a twentieth of the backward allowance.
-            forwards: Duration::from_millis(50),
-            // THE SLICE PLUS THE BACKWARD ATTEMPT, which is what this arrangement was always
-            // meant to cost and what it now cannot exceed. Stated rather than derived so a
-            // reader can see the number the answer is promised in.
-            overall: Duration::from_millis(2050),
-            // WHAT THE SLICE WAS ALREADY GETTING, stated instead of inherited, so this
-            // default changes nothing while making the numbers visible.
+            // OFF, and measured rather than argued. de-dt75.1.
+            //
+            // The case FOR a slice is that it halts on the first entry worth reporting, so
+            // it answers outright in under a millisecond on the common shapes, and where it
+            // does not the sets it leaves behind are handed to the backward half to meet.
+            // Both halves of that are true. Neither is worth what the slice costs.
+            //
+            // Over the whole game, 395 response menus of eight options each - which is the
+            // unit a player waits for, not the single option a matrix row measures - the
+            // slice answers 80% of the options and still makes the menus 2.4 times slower:
+            // 22.9 seconds against 9.5. The options it answers are the EASY ones, the ones
+            // where something novel is close, which is exactly why it answers them; and an
+            // option that is easy for a forward pass is cheap for a backward one too. So
+            // what the slice absorbs is not work the backward driver would have struggled
+            // with, and its fifty milliseconds an option is spent on top rather than
+            // instead. It is slower even on the menus where it answers every option.
+            //
+            // The per-option reading agrees, which is what settles it: over 2,605 matrix
+            // rows the two arms return the same verdict on every one, and cost 20.6 seconds
+            // against 13.5.
+            //
+            // measurements/slice_on_menus.rs is the per-menu measurement and
+            // tools/matrix-slice-worth.py the per-option one. Raising this above zero is a
+            // one-field change, so either can be re-run against the other arm at any time.
+            forwards: Duration::ZERO,
+            // THE BACKWARD ATTEMPT, which is now the whole of the search. Stated rather than
+            // derived so a reader can see the number the answer is promised in.
+            overall: backwards,
+            // WHAT A SLICE WOULD GET, which at `forwards` of zero bounds nothing. Kept as
+            // real numbers rather than zeroed: raising `forwards` is meant to be a one-field
+            // change, and a caller that did it against zeroed bounds would get a slice that
+            // could not take a step.
             slice_memory: crate::symbolic::budget::DiagramBudget::DEFAULT_MEMORY_BUDGET,
             slice_steps: 2_000_000,
             backwards,
             each: backwards,
-            // ON. `measurements/settles_within.rs` is why: at the fifty milliseconds above,
-            // 119 of 120 ordinary groups settle and 25 of the 50 that span conversations
-            // do, so most of the game has a settled run to narrow with and nothing was
-            // using it.
+            // ON, and inert at a `forwards` of zero: narrowing needs a SETTLED forward run
+            // and there is no forward run at all, so `Known` refuses to narrow and this
+            // costs nothing. It stays true because it belongs to the slice rather than to
+            // the driver - a caller that gives `forwards` time back gets the narrowing that
+            // was measured to be worth having. `measurements/settles_within.rs` is that
+            // measurement: at fifty milliseconds 119 of 120 ordinary groups settle, and 25
+            // of the 50 that span conversations do.
             pruning: true,
             // OFF, because nothing has yet said it is worth its quantifier. See
             // `measurements/dead_quantify.rs`, which is what would change this.
@@ -618,6 +640,16 @@ mod tests {
         }
     }
 
+    /// The default budget with the forward slice turned back on.
+    ///
+    /// The slice is off by default - see [`Budget::default`] for what measuring it cost -
+    /// but it is still a supported arm of the portfolio and the tests below are about what
+    /// it does when it runs. Fifty milliseconds is what it was given when it was on, so a
+    /// test here exercises the arrangement the measurements were taken against.
+    fn with_slice() -> Budget {
+        Budget { forwards: Duration::from_millis(50), ..Budget::default() }
+    }
+
     fn unseen(ids: &[i32]) -> impl Fn(DialogueNodeId) -> Novelty + '_ {
         let set: HashSet<i32> = ids.iter().copied().collect();
         move |id| {
@@ -638,7 +670,7 @@ mod tests {
             .add(Entry::new(2))
             .build();
 
-        let answer = run(&graph, &TestWorld::new(), unseen(&[2]), &Budget::default());
+        let answer = run(&graph, &TestWorld::new(), unseen(&[2]), &with_slice());
         assert_eq!(answer.best, Novelty::UnseenAnyGame);
         assert_eq!(answer.by, Answered::Forwards, "it halts on the unseen entry");
         assert_eq!(answer.witness, Some(node(2)));
@@ -700,7 +732,7 @@ mod tests {
             .add(Entry::new(2))
             .build();
 
-        let answer = run(&graph, &TestWorld::new(), classes(&[2], &[1]), &Budget::default());
+        let answer = run(&graph, &TestWorld::new(), classes(&[2], &[1]), &with_slice());
 
         assert_eq!(answer.best, Novelty::UnseenAnyGame);
         assert_eq!(answer.by, Answered::Forwards);
@@ -716,7 +748,7 @@ mod tests {
             .add(Entry::new(2))
             .build();
 
-        let answer = run(&graph, &TestWorld::new(), classes(&[], &[1, 2]), &Budget::default());
+        let answer = run(&graph, &TestWorld::new(), classes(&[], &[1, 2]), &with_slice());
 
         assert_eq!(answer.best, Novelty::UnseenThisGame);
         assert_eq!(answer.by, Answered::Forwards);

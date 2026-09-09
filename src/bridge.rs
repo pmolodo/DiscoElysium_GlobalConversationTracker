@@ -677,8 +677,8 @@ impl LookAheadRequest {
     /// gets it and so does a candidate - a candidate allowed longer than the whole search
     /// would make the outer limit decorative, and one allowed less only makes the search
     /// give up sooner, which is what [`portfolio::Budget::each`] is about. The forward
-    /// slice keeps its own 50ms: it is sized to be worth the sets it leaves behind, not to
-    /// finish, and it is spent before the clock the player set starts mattering.
+    /// slice takes none of it, because it is off by default and the `min` below leaves it
+    /// off; see [`portfolio::Budget::default`] for what it was measured to cost.
     /// PUBLIC SO THE WALL CAN BE ASSERTED, since de-cluo. What the dial produces is a claim
     /// made to the player - "the longest one option's look-ahead may run for" - and
     /// tests/time_budget_binds.rs pins its SHAPE rather than timing a real search, because a
