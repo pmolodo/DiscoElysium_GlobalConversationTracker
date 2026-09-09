@@ -12,8 +12,8 @@ Genuinely instant things - `ls`, `git status`, reading a file - do not need it.
 
 ```sh
 tools/run-logged.sh cargo full-suite -- cargo test --release
-RUN_LOG_DIR=measurements/logs \
-  CONVERSATION=631 tools/run-logged.sh cargo shared-symbolic -- \
+DEGCT_RUN_LOG_DIR=measurements/logs \
+  DEGCT_CONVERSATION=631 tools/run-logged.sh cargo shared-symbolic -- \
   cargo run --release --example shared_symbolic
 ```
 

@@ -41,7 +41,7 @@ log to read afterwards:
 
     tools/run-logged.sh cargo answers -- cargo run --release --example symbolic_answers
 
-    RUN_LOG_DIR=measurements/logs CONVERSATION=14 \
+    DEGCT_RUN_LOG_DIR=measurements/logs DEGCT_CONVERSATION=14 \
       tools/run-logged.sh cargo slots -- cargo run --release --example layout_shape -- slots
 
 Several take an argument, and it selects a stage rather than a setting. `layout_shape`
@@ -243,9 +243,9 @@ cap on several rows.
 
 ### The whole game, resumably
 
-    MATRIX_OUT=measurements/logs/whole-game tools/measure-matrix.sh all
+    DEGCT_MATRIX_OUT=measurements/logs/whole-game tools/measure-matrix.sh all
 
-`all` asks the measurement which groups exist - `GROUPS_ONLY=1`, one canonical start per
+`all` asks the measurement which groups exist - `DEGCT_GROUPS_ONLY=1`, one canonical start per
 distinct closure, heaviest first - so nothing decides what is in the run except the index.
 It is 1,422 groups against the six a default run does, and it is a run of days rather than
 of an hour.
@@ -281,9 +281,9 @@ the ten groups after the seven heavy ones look exactly like the tail, and then 8
 hands all four to the workers. Ten does not switch until group 35, after which the
 heaviest group left in the game is 15s and 33 MB, or two per cent of a worker's cap.
 
-`SETTLE_GROUPS`, `SETTLE_FACTOR` and `MEMORY_HEADROOM` move the rule; `SERIAL_GROUPS=n`
+`SETTLE_GROUPS`, `SETTLE_FACTOR` and `MEMORY_HEADROOM` move the rule; `DEGCT_SERIAL_GROUPS=n`
 replaces it with a fixed count, which is how a run that has to be comparable with an
-existing folder asks for one; `WORKERS=1` never switches at all.
+existing folder asks for one; `DEGCT_WORKERS=1` never switches at all.
 
 `MATRIX_OUT` names the folder instead of generating one, and THAT is the resume: run the
 same command again after a kill, a crash or a reboot and every row already in that folder

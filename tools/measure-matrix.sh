@@ -5,7 +5,7 @@
 # KEPT RATHER THAN DELETED, and not for sentiment. Two reasons, both practical:
 #
 #   1. The recorded incantations. Dozens of places - CLAUDE.md, the measurement README, the
-#      beads history, the run logs themselves - say `MATRIX_OUT=... tools/measure-matrix.sh
+#      beads history, the run logs themselves - say `DEGCT_MATRIX_OUT=... tools/measure-matrix.sh
 #      all`. Every one of those keeps working, which is the whole point of a driver being
 #      resumable by the same command that started it.
 #   2. tools/stop-measurements.sh finds a run by matching `measure-matrix` on the command

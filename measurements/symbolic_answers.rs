@@ -86,7 +86,7 @@ const DEFAULT_PROGRESS_SECONDS: u64 = 30;
 
 /// The gap between progress lines, or `None` where they are turned off.
 ///
-/// `PROGRESS_SECONDS` overrides, and `PROGRESS_SECONDS=0` turns them off - which is what the
+/// `PROGRESS_SECONDS` overrides, and `DEGCT_PROGRESS_SECONDS=0` turns them off - which is what the
 /// "greater than zero" filter below has always meant and also expresses.
 ///
 /// SHARED BY THE MATRIX AND THE CENSUS. measurements/performance_matrix.rs pulls this file
@@ -94,7 +94,7 @@ const DEFAULT_PROGRESS_SECONDS: u64 = 30;
 /// to keep in step, and the whole question - how often should a long run speak - has one
 /// answer rather than one per measurement.
 pub fn progress_every() -> Option<std::time::Duration> {
-    let seconds = match std::env::var("PROGRESS_SECONDS") {
+    let seconds = match lookahead_engine::core::env::var("PROGRESS_SECONDS") {
         Ok(named) => named.trim().parse::<u64>().unwrap_or(DEFAULT_PROGRESS_SECONDS),
         Err(_) => DEFAULT_PROGRESS_SECONDS,
     };
@@ -116,7 +116,7 @@ fn main() {
     let index = read_index(&path).expect("the index reads");
     let world = common::measurement_save();
 
-    let asked: Vec<i32> = match std::env::var("CONVERSATION") {
+    let asked: Vec<i32> = match lookahead_engine::core::env::var("CONVERSATION") {
         Ok(named) => named.split(',').filter_map(|id| id.trim().parse().ok()).collect(),
         Err(_) => MEASURED.to_vec(),
     };
@@ -323,7 +323,7 @@ impl Journal {
     /// is the thing that knows where a run's folder is.
     fn of(total: usize) -> Self {
         let mut journal = Self { total, every: progress_every(), ..Self::quiet() };
-        let Ok(path) = std::env::var("CENSUS_JOURNAL") else {
+        let Ok(path) = lookahead_engine::core::env::var("CENSUS_JOURNAL") else {
             return journal;
         };
         let path = std::path::PathBuf::from(path);

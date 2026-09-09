@@ -77,7 +77,7 @@
 //! ## How to run it
 //!
 //! ```text
-//! RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo manager-reuse -- \
+//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo manager-reuse -- \
 //!   cargo run --release --example manager_reuse
 //! ```
 
@@ -266,5 +266,5 @@ fn flush() {
 }
 
 fn from_env(name: &str, fallback: usize) -> usize {
-    std::env::var(name).ok().and_then(|text| text.trim().parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name).ok().and_then(|text| text.trim().parse().ok()).unwrap_or(fallback)
 }

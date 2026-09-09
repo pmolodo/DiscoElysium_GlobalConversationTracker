@@ -110,7 +110,7 @@
 //! ## How to run it
 //!
 //! ```text
-//! RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo settles-within -- \
+//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo settles-within -- \
 //!   cargo run --release --example settles_within
 //! ```
 //!
@@ -120,7 +120,7 @@
 //! The `sweep` arm runs both arms of the abstraction over a list of budgets:
 //!
 //! ```text
-//! RUN_LOG_DIR=measurements/logs SWEEP_MS=50 tools/run-logged.sh cargo settles-sweep-50 -- \
+//! DEGCT_RUN_LOG_DIR=measurements/logs DEGCT_SWEEP_MS=50 tools/run-logged.sh cargo settles-sweep-50 -- \
 //!   cargo run --release --example settles_within sweep
 //! ```
 //!
@@ -294,7 +294,7 @@ fn sweep(index: &lookahead_engine::index::Index) {
     // budget - seventeen hundred of them in a default run, which is enough for a machine to
     // run out of memory part way through and lose the rows already printed. A run that has to
     // finish should ask for one budget at a time and keep the logs.
-    let wanted: Vec<u64> = match std::env::var("SWEEP_MS") {
+    let wanted: Vec<u64> = match lookahead_engine::core::env::var("SWEEP_MS") {
         Ok(value) => value.split(',').filter_map(|ms| ms.trim().parse().ok()).collect(),
         Err(_) => SWEEP_MS.to_vec(),
     };
@@ -427,5 +427,5 @@ fn settles_forgetting(
 }
 
 fn from_env(name: &str, fallback: usize) -> usize {
-    std::env::var(name).ok().and_then(|text| text.trim().parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name).ok().and_then(|text| text.trim().parse().ok()).unwrap_or(fallback)
 }

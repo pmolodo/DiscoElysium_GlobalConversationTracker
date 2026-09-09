@@ -6,7 +6,7 @@
 //! player's own settings, and `bwd-ingame`, the same method with its forward slice off. The
 //! pair is what says whether the slice earns its place, and one column alone cannot. The
 //! other four are evidence for the tuning and cost several times what those two do, so they
-//! are asked for rather than assumed - `ENGINES=all` for the grid, or any of the names for
+//! are asked for rather than assumed - `DEGCT_ENGINES=all` for the grid, or any of the names for
 //! one column. See [`engines`] for the measured argument.
 //!
 //! The measurements this repository already has each ask one question well. This asks the
@@ -31,7 +31,7 @@
 //! reading of `bwd` against `fwdbwd` can do - those two differ in their rations as much as
 //! in their method. See [`Engine::BackwardInGame`].
 //!
-//! THESE ARE THE NAMES `ENGINES=` TAKES, and [`Engine::label`] is where they live. The
+//! THESE ARE THE NAMES `DEGCT_ENGINES=` TAKES, and [`Engine::label`] is where they live. The
 //! recorded results further down were measured under older names and each says so; the
 //! table under "The names have moved twice" translates them.
 //!
@@ -108,13 +108,13 @@
 //! Which entries those are is not something a row can work out for itself. It takes a
 //! bounded backward pass per candidate, so two runs could disagree about what the profile
 //! even is, and the cost would land inside the clock the row exists to report. So it is
-//! measured once, over every group, and written down - `CENSUS=1`, driven by
+//! measured once, over every group, and written down - `DEGCT_CENSUS=1`, driven by
 //! `tools/measure-census.sh` - and the rows READ it:
 //!
 //! ```text
-//! CENSUS_OUT=measurements/logs/2026-09-08_census tools/measure-census.sh all
-//! CENSUS_FILE=measurements/logs/2026-09-08_census/census.tsv \
-//!   PROFILES=deepest-unreach-1,deepest-unreach-5 tools/measure-matrix.sh all
+//! DEGCT_CENSUS_OUT=measurements/logs/2026-09-08_census tools/measure-census.sh all
+//! DEGCT_CENSUS_FILE=measurements/logs/2026-09-08_census/census.tsv \
+//!   DEGCT_PROFILES=deepest-unreach-1,deepest-unreach-5 tools/measure-matrix.sh all
 //! ```
 //!
 //! THE SCRIPT TAKES ONE WHEN THE GRID NEEDS IT AND NOTHING NAMED ONE, into the run's own
@@ -321,26 +321,26 @@
 //! One conversation per process, because a diagram manager that runs out of nodes takes the
 //! whole process with it and a crash in the fourth row should not cost the other five:
 //!
-//!     CONVERSATION=368 cargo run --release --example performance_matrix
+//!     DEGCT_CONVERSATION=368 cargo run --release --example performance_matrix
 //!
 //! `CONVERSATION`, `PROFILE` and `ENGINES` each narrow the grid, and all three take a
 //! comma-separated list. A third engine triples what a full run costs, so being able to
 //! ask one question of one group is not a convenience:
 //!
-//!     CONVERSATION=14 PROFILE=deepest-1 ENGINES=bwd cargo run --release \
+//!     DEGCT_CONVERSATION=14 DEGCT_PROFILE=deepest-1 DEGCT_ENGINES=bwd cargo run --release \
 //!         --example performance_matrix
 //!
 //! THE HEADER FOLLOWS THE SELECTION - a run that names one engine prints that engine's
 //! columns and no others, so a narrowed run is never a wide row with holes in it. Ask for
-//! the header alone with `HEADER_ONLY=1`, which is how `tools/measure-matrix.py` learns the
+//! the header alone with `DEGCT_HEADER_ONLY=1`, which is how `tools/measure-matrix.py` learns the
 //! column names rather than keeping its own copy of them.
 //!
-//! `CONSTANTS_ONLY=1` prints, in the same spirit, the numbers the driver has to do
+//! `DEGCT_CONSTANTS_ONLY=1` prints, in the same spirit, the numbers the driver has to do
 //! arithmetic with - the memory budget in megabytes, the bytes a diagram node costs, and the
 //! per-engine cap in seconds. They live in `src/symbolic/budget.rs` and the driver used to
 //! carry its own copies.
 //!
-//! ## Every group in the game, with `GROUPS_ONLY=1`
+//! ## Every group in the game, with `DEGCT_GROUPS_ONLY=1`
 //!
 //! Prints one line per DISTINCT group - `start`, `conversations`, `entries`, `reachable` -
 //! and measures nothing. It is how a whole-game run enumerates its rows, for the same
@@ -434,7 +434,7 @@ const HEAVIEST: [i32; 6] = [362, 368, 631, 14, 28, 1030];
 /// should say which time cap - two rows given different budgets are not comparable, and
 /// nothing in a TSV records the budget.
 fn memory() -> usize {
-    std::env::var("ROW_MEMORY_MB")
+    lookahead_engine::core::env::var("ROW_MEMORY_MB")
         .ok()
         .and_then(|value| value.trim().parse::<usize>().ok())
         .map(|mb| mb * 1024 * 1024)
@@ -462,7 +462,7 @@ fn budget() -> DiagramBudget {
 const DEFAULT_ROW_SECONDS: u64 = 600;
 
 fn row_time() -> std::time::Duration {
-    let seconds = std::env::var("ROW_SECONDS")
+    let seconds = lookahead_engine::core::env::var("ROW_SECONDS")
         .ok()
         .and_then(|value| value.trim().parse().ok())
         .unwrap_or(DEFAULT_ROW_SECONDS);
@@ -491,7 +491,7 @@ fn row_time() -> std::time::Duration {
 /// answered by nothing, because the cap is 600 seconds PER ENGINE and a heavy row could be
 /// silent for half an hour.
 ///
-/// `PROGRESS_SECONDS` still overrides, and `PROGRESS_SECONDS=0` still turns it off.
+/// `PROGRESS_SECONDS` still overrides, and `DEGCT_PROGRESS_SECONDS=0` still turns it off.
 ///
 /// LIVES IN `symbolic_answers.rs`, along with [`symbolic_answers::PROGRESS`] and
 /// [`symbolic_answers::mmss`], because the census narrates itself on the same clock and two
@@ -554,7 +554,7 @@ enum Profile {
     /// completion rather than stumbling on a yes.
     ///
     /// THE SET IS READ, NOT DERIVED. Which entries those are comes out of a census taken
-    /// beforehand (`CENSUS=1`, see [`census`]) and named by `CENSUS_FILE`. Classifying per
+    /// beforehand (`DEGCT_CENSUS=1`, see [`census`]) and named by `CENSUS_FILE`. Classifying per
     /// row instead would be wrong twice over: the classification is a bounded pass, so two
     /// runs could disagree about what the profile even IS, and its cost would land inside
     /// the clock the row exists to report.
@@ -572,7 +572,7 @@ impl Profile {
             // do not spell one profile two ways. FIXED rather than carrying how many of the
             // set were genuinely unreachable, which the label used to say there: a label
             // that varies per group cannot be asked for by name, and both the resume and
-            // `PROFILE=` key on it. What was real is the `real` column instead.
+            // `DEGCT_PROFILE=` key on it. What was real is the `real` column instead.
             Profile::DeepestUnreachable(n) => format!("deepest-unreach-{n}"),
             Profile::PercentSeen(p) => format!("{p}pc-seen"),
         }
@@ -635,7 +635,7 @@ const PROFILES: [Profile; 5] = [
 ///
 /// They remain a sweep of their own, and nothing about a run that names them has changed:
 ///
-///     PROFILES=95pc-seen,50pc-seen,5pc-seen tools/measure-matrix.sh all
+///     DEGCT_PROFILES=95pc-seen,50pc-seen,5pc-seen tools/measure-matrix.sh all
 ///
 /// A RUN WITH THIS GRID DOES NOT COMPARE ROW FOR ROW WITH ONE TAKEN BEFORE THE SPLIT. The
 /// rows that survive compare exactly as they always did - a profile's definition has not
@@ -734,7 +734,7 @@ const ALL_ENGINES: [Engine; 6] = [
 /// any part of it buys.
 ///
 /// The other four are evidence rather than products and cost several times what these two
-/// do; `ENGINES=all` measures the lot. See [`engines`].
+/// do; `DEGCT_ENGINES=all` measures the lot. See [`engines`].
 const DEFAULT_ENGINES: [Engine; 2] = [Engine::InGame, Engine::BackwardInGame];
 
 /// What to pass for the whole grid, since naming one engine no longer implies the rest.
@@ -820,7 +820,7 @@ impl Engine {
 /// THE SHIPPED METHOD AND ITS CONTROLLED ARM BY DEFAULT - see [`DEFAULT_ENGINES`]. `fwd`,
 /// `bwd` and the two unlimited columns are evidence for the tuning rather than products in
 /// their own right, and they are expensive out of all proportion to how often the evidence
-/// is wanted. `ENGINES=all` measures the six, and naming any of them works as it always did.
+/// is wanted. `DEGCT_ENGINES=all` measures the six, and naming any of them works as it always did.
 ///
 /// WHAT IT SAVES, measured over the two whole-game datasets rather than asserted. Engine time
 /// by column on the ten-profile grid (measurements/logs/whole-game, 5,210 measured rows) was
@@ -844,7 +844,7 @@ impl Engine {
 /// A narrowed run is a NARROWER ROW, not a wide one with holes in it: the header follows
 /// the selection, so nothing has to be told apart from a result later.
 fn engines() -> Vec<Engine> {
-    let named = std::env::var("ENGINES").unwrap_or_default();
+    let named = lookahead_engine::core::env::var("ENGINES").unwrap_or_default();
     let wanted: Vec<&str> = named.split(',').map(str::trim).filter(|n| !n.is_empty()).collect();
 
     // SET BUT EMPTY MEANS THE DEFAULT, the same as unset. A driver script that passes the
@@ -892,7 +892,7 @@ fn engines() -> Vec<Engine> {
 /// `discover_group` is a forward closure, so two starts in the same group can reach
 /// different sets and only some of them reach all of it. The start kept here is the
 /// SMALLEST ONE WHOSE OWN CLOSURE IS THE WHOLE SET, which is what makes the line
-/// reproducible: handing it back as `CONVERSATION=` rebuilds exactly the group it came
+/// reproducible: handing it back as `DEGCT_CONVERSATION=` rebuilds exactly the group it came
 /// from. Taking the smallest member instead would sometimes name a start that reaches a
 /// smaller group, and the row would quietly be about something else.
 ///
@@ -1003,14 +1003,14 @@ fn measurable(
 }
 
 fn conversations(default: &[i32]) -> Vec<i32> {
-    match std::env::var("CONVERSATION") {
+    match lookahead_engine::core::env::var("CONVERSATION") {
         Ok(named) => named
             .split(',')
             .map(str::trim)
             .filter(|id| !id.is_empty())
             .map(|id| {
                 id.parse().unwrap_or_else(|_| {
-                    refuse(&format!("CONVERSATION={id:?} is not a conversation id"))
+                    refuse(&format!("{}={id:?} is not a conversation id", lookahead_engine::core::env::qualified("CONVERSATION")))
                 })
             })
             .collect(),
@@ -1055,7 +1055,7 @@ fn refuse(why: &str) -> ! {
 /// Answering the whole list when nothing is named keeps the test runnable on its own; the
 /// script is what makes the results survivable.
 fn profiles() -> Vec<Profile> {
-    match std::env::var("PROFILE") {
+    match lookahead_engine::core::env::var("PROFILE") {
         Ok(named) => named
             .split(',')
             .map(str::trim)
@@ -1063,7 +1063,7 @@ fn profiles() -> Vec<Profile> {
             .map(|label| {
                 known_profiles()
                     .find(|profile| profile.label() == label)
-                    .unwrap_or_else(|| refuse(&format!("PROFILE={label:?} is not a profile")))
+                    .unwrap_or_else(|| refuse(&format!("{}={label:?} is not a profile", lookahead_engine::core::env::qualified("PROFILE"))))
             })
             .collect(),
         Err(_) => PROFILES.to_vec(),
@@ -1092,14 +1092,14 @@ impl Census {
             return None;
         }
 
-        let Ok(path) = std::env::var("CENSUS_FILE") else {
+        let Ok(path) = lookahead_engine::core::env::var("CENSUS_FILE") else {
             refuse(
                 "an unreachable profile needs CENSUS_FILE, naming the census.tsv that says \
                  which entries are unreachable. Take one with tools/measure-census.sh.",
             )
         };
         let Ok(text) = std::fs::read_to_string(&path) else {
-            refuse(&format!("CENSUS_FILE={path:?} could not be read"))
+            refuse(&format!("{}={path:?} could not be read", lookahead_engine::core::env::qualified("CENSUS_FILE")))
         };
 
         let mut rows = HashMap::new();
@@ -1651,7 +1651,7 @@ fn symbolic_forward_one(
                       bytes: usize| {
                     // THE LABEL COMES FROM THE ENGINE, and is padded to the width of the
                     // longest so the columns line up. A progress line names itself with
-                    // the same word `ENGINES=` takes, so a line watched during a long run
+                    // the same word `DEGCT_ENGINES=` takes, so a line watched during a long run
                     // can be typed straight back to reproduce it.
                     println!(
                         "{PROGRESS} {:<6} {:>7}  {steps:>10} steps  {reached:>6} reached  \
@@ -1897,11 +1897,11 @@ const CENSUS_WANTED: usize = 10;
 /// the whole game: 250 of 521 groups hit the cap, and only 10.9 per cent of link-reachable
 /// entries came out with a world-conditioned status.
 ///
-/// `CENSUS_ALL=1` scans every candidate instead. That is a different and much longer run -
+/// `DEGCT_CENSUS_ALL=1` scans every candidate instead. That is a different and much longer run -
 /// classification is a bounded backward pass per candidate - so it is asked for rather than
 /// assumed.
 fn census_wanted() -> usize {
-    if std::env::var("CENSUS_ALL").is_ok() {
+    if lookahead_engine::core::env::is_set("CENSUS_ALL") {
         usize::MAX
     } else {
         CENSUS_WANTED
@@ -1940,7 +1940,7 @@ fn census_wanted() -> usize {
 /// THE CAP IS SAID OUT LOUD ON STDERR, because two censuses taken under different caps are
 /// not the same artefact and nothing in the TSV records it.
 fn census(index: &lookahead_engine::index::Index, world: &dyn ILookAheadWorld) {
-    if std::env::var("NO_HEADER").is_err() {
+    if !lookahead_engine::core::env::is_set("NO_HEADER") {
         println!("{}", CENSUS_COLUMNS.join("\t"));
     }
     let wanted = census_wanted();
@@ -2015,7 +2015,7 @@ fn main() {
 
     // ASKED FOR ON ITS OWN by the driver, which needs the column names before it has a row
     // and should not keep a second copy of them to go stale.
-    if std::env::var("HEADER_ONLY").is_ok() {
+    if lookahead_engine::core::env::is_set("HEADER_ONLY") {
         println!("{}", header.join("\t"));
         return;
     }
@@ -2033,7 +2033,7 @@ fn main() {
     // ONE PAIR PER LINE, `name<tab>value`, so a reader with no parser gets the same answer
     // as the driver. `memory_mb` follows ROW_MEMORY_MB where a run sets one, which is what
     // makes the printed value the budget this run will actually use rather than the default.
-    if std::env::var("CONSTANTS_ONLY").is_ok() {
+    if lookahead_engine::core::env::is_set("CONSTANTS_ONLY") {
         println!("memory_mb\t{}", memory() / (1024 * 1024));
         println!("bytes_per_node\t{}", DiagramBudget::BYTES_PER_NODE);
         println!("row_seconds\t{}", row_time().as_secs());
@@ -2045,7 +2045,7 @@ fn main() {
     // ASKED FOR ON ITS OWN, like the header, and for the same reason: a whole-game run has
     // to know what the rows ARE before it measures any, and a list kept anywhere else can
     // omit a group and never say so.
-    if std::env::var("GROUPS_ONLY").is_ok() {
+    if lookahead_engine::core::env::is_set("GROUPS_ONLY") {
         let counted: Vec<(i32, usize, usize, usize)> = group_starts(&index)
             .into_iter()
             .map(|(start, conversations, entries)| {
@@ -2107,7 +2107,7 @@ fn main() {
     // profile is run, so that the profiles are built from a recorded set rather than from a
     // classification each row repeats - which would also put the classification's cost
     // inside the row's clock.
-    if std::env::var("CENSUS").is_ok() {
+    if lookahead_engine::core::env::is_set("CENSUS") {
         census(&index, &world);
         return;
     }
@@ -2119,7 +2119,7 @@ fn main() {
 
     // SUPPRESSIBLE, because the driver script runs one row per process and wants one header
     // in the file rather than one per row.
-    if std::env::var("NO_HEADER").is_err() {
+    if !lookahead_engine::core::env::is_set("NO_HEADER") {
         println!("{}", header.join("\t"));
     }
 

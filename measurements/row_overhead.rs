@@ -40,11 +40,11 @@
 //! ## How to run it
 //!
 //! ```text
-//! RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo row-overhead -- \
+//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo row-overhead -- \
 //!   cargo run --release --example row_overhead
 //! ```
 //!
-//! `CONVERSATION=631,368` picks the groups; `ROUNDS=3` says how many times each part is
+//! `DEGCT_CONVERSATION=631,368` picks the groups; `DEGCT_ROUNDS=3` says how many times each part is
 //! timed, and the row reports the FASTEST of them, since what is wanted is the cost of the
 //! work rather than of the machine's worst moment.
 
@@ -274,12 +274,12 @@ fn ms(took: Duration) -> f64 {
 
 /// A number from the environment, or the default written down here.
 fn from_env(name: &str, fallback: usize) -> usize {
-    std::env::var(name).ok().and_then(|value| value.trim().parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name).ok().and_then(|value| value.trim().parse().ok()).unwrap_or(fallback)
 }
 
 /// A comma-separated list from the environment, or the default written down here.
 fn numbers(name: &str, fallback: &[i32]) -> Vec<i32> {
-    match std::env::var(name) {
+    match lookahead_engine::core::env::var(name) {
         Ok(named) => named
             .split(',')
             .map(str::trim)

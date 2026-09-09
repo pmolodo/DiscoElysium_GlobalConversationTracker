@@ -13,7 +13,7 @@ Usage:
 Examples:
     tools/measure-census.py 368 631      # just these two
     tools/measure-census.py all          # every group in the game, resumably
-    WORKERS=1 tools/measure-census.py all   # one at a time, the way it used to run
+    DEGCT_WORKERS=1 tools/measure-census.py all   # one at a time, the way it used to run
 
 ONE PROCESS PER GROUP for the reason the matrix driver gives at length: a group can take its
 process down - conversation 28's deepest entries overflow the stack inside a recursive diagram
@@ -29,7 +29,7 @@ each build a graph to find the same nothing.
 RESUMING. Rows are written as they finish, and pointing a later run at the same folder makes
 it skip the groups already there:
 
-    CENSUS_OUT=measurements/logs/2026-09-08_census tools/measure-census.py all
+    DEGCT_CENSUS_OUT=measurements/logs/2026-09-08_census tools/measure-census.py all
 
 The same command is the start and the resume; there is no separate mode to remember. Without
 CENSUS_OUT each run gets its own folder and resumes nothing.
@@ -90,7 +90,7 @@ to divide.
 THAT IS WHY THE WORKER COUNT IS BOUNDED BY MEMORY AS WELL AS BY CORES here and not there. It
 is the smaller of the logical processors and what the free memory affords at 512 MB apiece,
 holding back five per cent of total memory for the machine to keep working in - see
-`measurement_common.default_workers`. WORKERS=n overrides it either way.
+`measurement_common.default_workers`. DEGCT_WORKERS=n overrides it either way.
 
 THE JOURNALS MAKE AN OVER-AMBITIOUS CHOICE CHEAP TO RECOVER FROM. A group killed for want of
 memory resumes inside itself rather than from the start.
@@ -125,8 +125,11 @@ from measurement_common import (  # noqa: E402
     TAB,
     build_measurement,
     default_workers,
+    env,
+    env_for_child,
     open_lf,
     progress_line,
+    qualified,
     refuse,
     run_groups,
     write_lf,
@@ -187,7 +190,7 @@ class Census:
             capture_output=True,
             text=True,
             errors="replace",
-            env={**dict(os.environ), "CENSUS": "1", "CONVERSATION": "-1"},
+            env=env_for_child(CENSUS="1", CONVERSATION="-1"),
         )
         for line in answer.stdout.splitlines():
             if line.startswith("conv"):
@@ -206,7 +209,7 @@ class Census:
             capture_output=True,
             text=True,
             errors="replace",
-            env={**dict(os.environ), "GROUPS_ONLY": "1"},
+            env=env_for_child(GROUPS_ONLY="1"),
         )
         write_lf(self.out / "groups.tsv", answer.stdout)
         write_lf(self.out / "groups.log", answer.stderr)
@@ -241,10 +244,10 @@ class Census:
                 stderr=subprocess.STDOUT,
                 env={
                     **dict(os.environ),
-                    "CENSUS": "1",
-                    "NO_HEADER": "1",
-                    "CONVERSATION": str(conversation),
-                    "CENSUS_JOURNAL": str(self.groups_dir / f"{conversation}.journal.tsv"),
+                    qualified("CENSUS"): "1",
+                    qualified("NO_HEADER"): "1",
+                    qualified("CONVERSATION"): str(conversation),
+                    qualified("CENSUS_JOURNAL"): str(self.groups_dir / f"{conversation}.journal.tsv"),
                 },
             ).returncode
         took = time.monotonic() - began
@@ -283,10 +286,7 @@ class Census:
 
 
 def measure(named):
-    out = Path(
-        os.environ.get("CENSUS_OUT")
-        or (ROOT / "measurements" / "logs" / f"{time.strftime('%Y-%m-%d_%H,%M,%S')}_census")
-    )
+    out = Path(env("CENSUS_OUT") or (ROOT / "measurements" / "logs" / f"{time.strftime('%Y-%m-%d_%H,%M,%S')}_census"))
     if not out.is_absolute():
         out = ROOT / out
 

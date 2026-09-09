@@ -781,9 +781,9 @@ fn what_each_group_carries() {
 /// classifier. This prints the slots themselves so the claim can be read rather than
 /// trusted.
 ///
-/// `CONVERSATION=14 cargo run --release --example layout_shape -- slots`
+/// `DEGCT_CONVERSATION=14 cargo run --release --example layout_shape -- slots`
 fn list_the_slots() {
-    let conversation: i32 = std::env::var("CONVERSATION")
+    let conversation: i32 = lookahead_engine::core::env::var("CONVERSATION")
         .ok()
         .and_then(|v| v.trim().parse().ok())
         .unwrap_or(14);

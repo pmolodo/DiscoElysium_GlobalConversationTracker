@@ -34,11 +34,11 @@
 //! ## How to run it
 //!
 //! ```text
-//! RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo menu-wall -- \
+//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo menu-wall -- \
 //!   cargo run --release --example menu_wall
 //! ```
 //!
-//! `CONVERSATION=631,368` picks the groups, `STARTS=12` the width, `TIME_BUDGET_MS` the
+//! `DEGCT_CONVERSATION=631,368` picks the groups, `DEGCT_STARTS=12` the width, `TIME_BUDGET_MS` the
 //! per-option dial and `MENU_TIME_BUDGET_MS` the wall - which defaults to zero here, because
 //! the question is what a menu costs WITHOUT one. Set it to see the wall bind.
 
@@ -165,12 +165,12 @@ fn main() {
 
 /// A number from the environment, or the default written down here.
 fn from_env(name: &str, fallback: usize) -> usize {
-    std::env::var(name).ok().and_then(|value| value.trim().parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name).ok().and_then(|value| value.trim().parse().ok()).unwrap_or(fallback)
 }
 
 /// A comma-separated list from the environment, or the default written down here.
 fn numbers(name: &str, fallback: &[i32]) -> Vec<i32> {
-    match std::env::var(name) {
+    match lookahead_engine::core::env::var(name) {
         Ok(named) => named
             .split(',')
             .map(str::trim)

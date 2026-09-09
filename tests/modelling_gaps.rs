@@ -54,7 +54,7 @@ const SUBJECT: i32 = 631;
 /// One per process, the way every measurement over a group is run here - see
 /// `tools/measure-symbolic.sh` for why.
 fn subject() -> i32 {
-    std::env::var("CONVERSATION")
+    lookahead_engine::core::env::var("CONVERSATION")
         .ok()
         .and_then(|named| named.trim().parse().ok())
         .unwrap_or(SUBJECT)

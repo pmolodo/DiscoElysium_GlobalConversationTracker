@@ -325,7 +325,7 @@ impl Work {
 
 /// A number from the environment, or the default written down here.
 fn from_env(name: &str, fallback: usize) -> usize {
-    std::env::var(name)
+    lookahead_engine::core::env::var(name)
         .ok()
         .and_then(|value| value.trim().parse().ok())
         .unwrap_or(fallback)

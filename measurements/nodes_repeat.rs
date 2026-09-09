@@ -28,12 +28,12 @@
 //! ## How to run it
 //!
 //! ```text
-//! RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo nodes-repeat -- \
+//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo nodes-repeat -- \
 //!   cargo run --release --example nodes_repeat
 //! ```
 //!
-//! `CONVERSATION=1030` picks the group, `ROUNDS=5` how many times the search is run, and
-//! `UNSEEN=1` how many of the deepest entries are unseen - `deepest-1` by default, which is
+//! `DEGCT_CONVERSATION=1030` picks the group, `DEGCT_ROUNDS=5` how many times the search is run, and
+//! `DEGCT_UNSEEN=1` how many of the deepest entries are unseen - `deepest-1` by default, which is
 //! the profile the control run moved most on.
 
 use std::collections::HashSet;
@@ -199,9 +199,9 @@ fn main() {
 }
 
 fn from_env(name: &str, fallback: usize) -> usize {
-    std::env::var(name).ok().and_then(|value| value.trim().parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name).ok().and_then(|value| value.trim().parse().ok()).unwrap_or(fallback)
 }
 
 fn from_env_i32(name: &str, fallback: i32) -> i32 {
-    std::env::var(name).ok().and_then(|value| value.trim().parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name).ok().and_then(|value| value.trim().parse().ok()).unwrap_or(fallback)
 }

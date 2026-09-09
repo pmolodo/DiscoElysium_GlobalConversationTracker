@@ -49,27 +49,30 @@ fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+# The prefix is applied by the helper rather than typed - see CLAUDE.md.
+. "$ROOT/tools/degct-env.sh"
+
 # ONE FOLDER PER RUN, and under measurements/ rather than target/ - a `cargo clean` should
 # not take measurements with it, and a run's logs only mean anything as a set. LOG_DIR
 # still overrides the whole thing, which is what a one-off comparison wants.
-RUN_NAME="${MEASUREMENT}${STAGE:+-$STAGE}"
-LOG_DIR="${LOG_DIR:-$(RUN_LOG_DIR="$ROOT/measurements/logs" \
-    "$ROOT/tools/run-logged.sh" --folder-only measure "$RUN_NAME")}"
-mkdir -p "$LOG_DIR"
+DEGCT_RUN_NAME="${DEGCT_MEASUREMENT}${STAGE:+-$STAGE}"
+DEGCT_LOG_DIR="$(degct_env LOG_DIR "$(DEGCT_RUN_LOG_DIR="$ROOT/measurements/logs" \
+    "$ROOT/tools/run-logged.sh" --folder-only measure "$DEGCT_RUN_NAME")")"
+mkdir -p "$DEGCT_LOG_DIR"
 
-echo "measuring ${RUN_NAME}, one process per conversation"
-echo "logs in ${LOG_DIR}"
+echo "measuring ${DEGCT_RUN_NAME}, one process per conversation"
+echo "logs in ${DEGCT_LOG_DIR}"
 echo
 
 # Build once, so a compile does not get charged to the first conversation's timing.
-cargo build --release --example "${MEASUREMENT}" --quiet || exit 1
+cargo build --release --example "${DEGCT_MEASUREMENT}" --quiet || exit 1
 
 for conversation in "${CONVERSATIONS[@]}"; do
-    log="${LOG_DIR}/${RUN_NAME}-${conversation}.log"
+    log="${DEGCT_LOG_DIR}/${DEGCT_RUN_NAME}-${conversation}.log"
     echo "=== conversation ${conversation} ==="
 
-    CONVERSATION="${conversation}" cargo run --release --quiet \
-        --example "${MEASUREMENT}" ${STAGE:+-- "$STAGE"} >"${log}" 2>&1
+    DEGCT_CONVERSATION="${conversation}" cargo run --release --quiet \
+        --example "${DEGCT_MEASUREMENT}" ${STAGE:+-- "$STAGE"} >"${log}" 2>&1
     status=$?
 
     # A crash is a data point, not a reason to stop. Report how it died and carry on.
@@ -89,4 +92,4 @@ for conversation in "${CONVERSATIONS[@]}"; do
     echo
 done
 
-echo "done; full output per conversation is in ${LOG_DIR}"
+echo "done; full output per conversation is in ${DEGCT_LOG_DIR}"

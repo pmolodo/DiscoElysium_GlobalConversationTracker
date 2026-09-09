@@ -70,7 +70,7 @@ const TARGETS: usize = 40;
 
 /// Which conversations this process should check, one per process being the intended way.
 fn conversations(default: &[i32]) -> Vec<i32> {
-    match std::env::var("CONVERSATION") {
+    match lookahead_engine::core::env::var("CONVERSATION") {
         Ok(named) => named.split(',').filter_map(|id| id.trim().parse().ok()).collect(),
         Err(_) => default.to_vec(),
     }

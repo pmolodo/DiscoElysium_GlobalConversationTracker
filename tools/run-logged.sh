@@ -30,9 +30,14 @@ set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+# READ THROUGH THE HELPER, not by name. Every environment variable this project defines is
+# DEGCT_ prefixed and the prefix is applied by `degct_env` rather than typed - see CLAUDE.md
+# for the rule and docs/environment.md for the list.
+. "$ROOT/tools/degct-env.sh"
+
 # testing/logs unless a caller says otherwise. The measurement scripts point this at
 # measurements/logs, so that a measurement's raw output stays beside the rows it produced.
-LOG_DIR="${RUN_LOG_DIR:-$ROOT/testing/logs}"
+DEGCT_LOG_DIR="$(degct_env RUN_LOG_DIR "$ROOT/testing/logs")"
 
 usage() {
     sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'
@@ -84,13 +89,13 @@ unique() {
 case "${1:-}" in
     --name-only)
         [ $# -eq 3 ] || usage
-        unique "$LOG_DIR/$(stem "$2" "$3")" ".txt"
+        unique "$DEGCT_LOG_DIR/$(stem "$2" "$3")" ".txt"
         echo
         exit 0
         ;;
     --folder-only)
         [ $# -eq 3 ] || usage
-        unique "$LOG_DIR/$(stem "$2" "$3")" ""
+        unique "$DEGCT_LOG_DIR/$(stem "$2" "$3")" ""
         echo
         exit 0
         ;;
@@ -107,8 +112,8 @@ shift 2
 [ "${1:-}" = "--" ] && shift
 [ $# -ge 1 ] || usage
 
-mkdir -p "$LOG_DIR"
-LOG="$(unique "$LOG_DIR/$(stem "$TOOL" "$VERB")" ".txt")"
+mkdir -p "$DEGCT_LOG_DIR"
+LOG="$(unique "$DEGCT_LOG_DIR/$(stem "$TOOL" "$VERB")" ".txt")"
 
 {
     printf '# %s\n\n' "$*"

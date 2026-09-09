@@ -109,7 +109,7 @@
 //! ## How to run it
 //!
 //! ```text
-//! RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo dominance-share -- \
+//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo dominance-share -- \
 //!   cargo run --release --example dominance_share
 //! ```
 //!
@@ -181,7 +181,7 @@ fn main() {
 /// One start per group, swept over the percentage profiles: the matrix's own population.
 fn rows(index: &lookahead_engine::index::Index) {
     let groups = env_list("CONVERSATION", &GROUPS);
-    let percents: Vec<u32> = match std::env::var("PROFILES") {
+    let percents: Vec<u32> = match lookahead_engine::core::env::var("PROFILES") {
         Ok(value) => value.split(',').filter_map(|p| p.trim().parse().ok()).collect(),
         Err(_) => PERCENTS.to_vec(),
     };
@@ -258,7 +258,7 @@ fn all(index: &lookahead_engine::index::Index) {
     conversations.sort_unstable();
 
     // One canonical start per distinct group: the smallest conversation whose own closure is
-    // the whole set, which is what `performance_matrix` hands back as `CONVERSATION=`.
+    // the whole set, which is what `performance_matrix` hands back as `DEGCT_CONVERSATION=`.
     let mut canonical: HashMap<Vec<i32>, i32> = HashMap::new();
     for &conversation in &conversations {
         let mut group = discover_group(index, conversation);
@@ -511,11 +511,11 @@ fn share(part: usize, whole: usize) -> String {
 }
 
 fn from_env(name: &str, fallback: usize) -> usize {
-    std::env::var(name).ok().and_then(|value| value.parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name).ok().and_then(|value| value.parse().ok()).unwrap_or(fallback)
 }
 
 fn env_list(name: &str, fallback: &[i32]) -> Vec<i32> {
-    match std::env::var(name) {
+    match lookahead_engine::core::env::var(name) {
         Ok(value) => value.split(',').filter_map(|c| c.trim().parse().ok()).collect(),
         Err(_) => fallback.to_vec(),
     }

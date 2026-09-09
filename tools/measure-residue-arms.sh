@@ -22,9 +22,12 @@
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BUDGET_MB="${BUDGET_MB:-6144}"
-SEARCHES="${SEARCHES:-5}"
-ARMS="${ARMS:-main one each one-manager}"
+
+# The prefix is applied by the helper rather than typed - see CLAUDE.md.
+. "$ROOT/tools/degct-env.sh"
+DEGCT_BUDGET_MB="$(degct_env BUDGET_MB 6144)"
+DEGCT_SEARCHES="$(degct_env SEARCHES 5)"
+DEGCT_ARMS="$(degct_env ARMS 'main one each one-manager')"
 
 # The counts behind the recorded table, per arm. An arm not named here falls back to 20.
 runs_for() {
@@ -43,7 +46,7 @@ OVERRIDE="${1:-}"
 OUT="$ROOT/measurements/logs/$(date +%Y-%m-%d_%H,%M,%S)_residue-arms"
 mkdir -p "$OUT"
 
-echo "budget ${BUDGET_MB} MB, ${SEARCHES} searches per run"
+echo "budget ${DEGCT_BUDGET_MB} MB, ${DEGCT_SEARCHES} searches per run"
 echo "logs in $OUT"
 echo
 
@@ -51,12 +54,12 @@ cd "$ROOT" || exit 1
 cargo build --release --example search_residue || exit 1
 
 printf '%-14s %8s %8s\n' arrangement runs died
-for arm in $ARMS; do
+for arm in $DEGCT_ARMS; do
     runs="$(runs_for "$arm" "$OVERRIDE")"
     died=0
     for run in $(seq 1 "$runs"); do
         log="$OUT/${arm}-${run}.txt"
-        if ! BUDGET_MB="$BUDGET_MB" SEARCHES="$SEARCHES" THREAD="$arm" \
+        if ! DEGCT_BUDGET_MB="$DEGCT_BUDGET_MB" DEGCT_SEARCHES="$DEGCT_SEARCHES" DEGCT_THREAD="$arm" \
             ./target/release/examples/search_residue >"$log" 2>&1; then
             died=$((died + 1))
         fi

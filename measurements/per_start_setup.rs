@@ -23,7 +23,7 @@
 //! ## How to run it
 //!
 //! ```text
-//! RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo per-start-setup -- \
+//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo per-start-setup -- \
 //!   cargo run --release --example per_start_setup
 //! ```
 //!
@@ -177,11 +177,11 @@ fn ms(took: Duration) -> f64 {
 }
 
 fn from_env(name: &str, fallback: usize) -> usize {
-    std::env::var(name).ok().and_then(|text| text.parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name).ok().and_then(|text| text.parse().ok()).unwrap_or(fallback)
 }
 
 fn numbers(name: &str, fallback: &[i32]) -> Vec<i32> {
-    match std::env::var(name) {
+    match lookahead_engine::core::env::var(name) {
         Ok(text) => text.split(',').filter_map(|part| part.trim().parse().ok()).collect(),
         Err(_) => fallback.to_vec(),
     }

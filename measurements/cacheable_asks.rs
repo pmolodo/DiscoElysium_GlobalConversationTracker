@@ -121,7 +121,7 @@
 //! ## How to run it
 //!
 //! ```text
-//! RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo cacheable-asks -- \
+//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo cacheable-asks -- \
 //!   cargo run --release --example cacheable_asks
 //! ```
 //!
@@ -755,18 +755,18 @@ fn share(part: usize, whole: usize) -> String {
 }
 
 fn percents() -> Vec<u32> {
-    match std::env::var("PROFILES") {
+    match lookahead_engine::core::env::var("PROFILES") {
         Ok(text) => text.split(',').filter_map(|part| part.trim().parse().ok()).collect(),
         Err(_) => PERCENTS.to_vec(),
     }
 }
 
 fn from_env(name: &str, fallback: usize) -> usize {
-    std::env::var(name).ok().and_then(|text| text.trim().parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name).ok().and_then(|text| text.trim().parse().ok()).unwrap_or(fallback)
 }
 
 fn numbers(name: &str, fallback: &[i32]) -> Vec<i32> {
-    match std::env::var(name) {
+    match lookahead_engine::core::env::var(name) {
         Ok(text) => text.split(',').filter_map(|part| part.trim().parse().ok()).collect(),
         Err(_) => fallback.to_vec(),
     }

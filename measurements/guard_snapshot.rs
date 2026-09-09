@@ -14,7 +14,7 @@
 //!
 //! ## How
 //!
-//! `GUARD_SNAPSHOT=<path> cargo run --release --example guard_snapshot`
+//! `DEGCT_GUARD_SNAPSHOT=<path> cargo run --release --example guard_snapshot`
 //!
 //! It is kept rather than deleted because the next person to touch the parser wants it, and
 //! it costs nothing while nothing runs it.
@@ -29,7 +29,7 @@ use lookahead_engine::parser::guard_parser::parse_guard;
 mod common;
 
 fn main() {
-    let out = std::env::var("GUARD_SNAPSHOT")
+    let out = lookahead_engine::core::env::var("GUARD_SNAPSHOT")
         .expect("set GUARD_SNAPSHOT to the file to write");
     let Some(path) = common::conversation_index() else {
         panic!("no conversation index, so there is nothing to snapshot");

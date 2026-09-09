@@ -24,7 +24,7 @@ and that is sound only where it looked at everything, which is what `exact = all
 Where it stopped early (`at-least`, the CENSUS_WANTED cap) the rest were never examined and
 belong in `not covered`.
 
-Run a census with CENSUS_ALL=1 to remove that cap; then `not covered` should be zero and
+Run a census with DEGCT_CENSUS_ALL=1 to remove that cap; then `not covered` should be zero and
 `undecided` is the only thing between the artefact and full coverage.
 """
 

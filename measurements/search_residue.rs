@@ -41,7 +41,7 @@
 //! never earlier, never later, in four runs out of ten:
 //!
 //! ```text
-//! BUDGET_MB=6144 SEARCHES=5 cargo run --release --example search_residue
+//! DEGCT_BUDGET_MB=6144 DEGCT_SEARCHES=5 cargo run --release --example search_residue
 //! ```
 //!
 //! A run that dies takes the process with it - a stack overflow is not a panic - so the LAST
@@ -108,7 +108,7 @@ const BUDGET_MB: usize = 512;
 
 /// A number from the environment, or the default written down above.
 fn from_env(name: &str, fallback: usize) -> usize {
-    std::env::var(name)
+    lookahead_engine::core::env::var(name)
         .ok()
         .and_then(|value| value.trim().parse().ok())
         .unwrap_or(fallback)
@@ -155,7 +155,7 @@ fn main() {
     // matters has moved: `bridge::answer` takes ONE thread per request and runs every start
     // of a menu on it, so "many searches, one big thread" is now the shipped arrangement
     // rather than a control.
-    let arm = std::env::var("THREAD").unwrap_or_else(|_| "main".to_string());
+    let arm = lookahead_engine::core::env::var("THREAD").unwrap_or_else(|_| "main".to_string());
     println!("thread: {arm}");
     println!("\n{:>6}  {:>12}  {:>12}  {:>12}", "search", "peak", "after", "residue");
 
@@ -241,7 +241,7 @@ fn main() {
             }
         }),
         other => {
-            eprintln!("THREAD={other:?} is not one of main, one, each, one-manager");
+            eprintln!("{}={other:?} is not one of main, one, each, one-manager", lookahead_engine::core::env::qualified("THREAD"));
             std::process::exit(2);
         }
     }

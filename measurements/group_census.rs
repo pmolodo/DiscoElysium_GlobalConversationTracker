@@ -31,7 +31,7 @@
 //! ## How to run it
 //!
 //! ```text
-//! RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo group-census -- \
+//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo group-census -- \
 //!   cargo run --release --example group_census
 //! ```
 //!

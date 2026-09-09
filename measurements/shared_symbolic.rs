@@ -74,7 +74,7 @@
 //! what it was recording: something accumulates per thread inside the diagram manager, so
 //! this file's three or four searches in one thread died on the third and pruning only
 //! moved which round that was. The searches each get their own thread now (de-fpax), and
-//! at PRUNING=1 all five groups here run to completion. Nothing overflows.
+//! at DEGCT_PRUNING=1 all five groups here run to completion. Nothing overflows.
 //!
 //! WHAT IT BUYS, on the SETTLED rows, which is the only place it applies:
 //!
@@ -124,7 +124,7 @@
 //!
 //! So run this ONE CONVERSATION PER PROCESS, the way every other measurement here is run:
 //!
-//!     CONVERSATION=631 cargo run --release --example shared_symbolic
+//!     DEGCT_CONVERSATION=631 cargo run --release --example shared_symbolic
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -161,20 +161,20 @@ const PERCENT_SEEN: u32 = 50;
 const FORWARD_STEPS: usize = 5_000;
 
 fn conversations(default: &[i32]) -> Vec<i32> {
-    match std::env::var("CONVERSATION") {
+    match lookahead_engine::core::env::var("CONVERSATION") {
         Ok(named) => named.split(',').filter_map(|id| id.trim().parse().ok()).collect(),
         Err(_) => default.to_vec(),
     }
 }
 
-/// Whether the shared run narrows its backward passes. `PRUNING=0` turns it off.
+/// Whether the shared run narrows its backward passes. `DEGCT_PRUNING=0` turns it off.
 ///
 /// ON BY DEFAULT HERE and off everywhere else, which is the arrangement de-fawk wants
 /// measured: what a settled forward run is worth as a bound is the only thing measured so
 /// far that can shorten a REFUSAL, and a refusal is where the driver's cost is - 25 of
 /// conversation 28's 26 candidates.
 fn pruning() -> bool {
-    std::env::var("PRUNING").map(|on| on.trim() != "0").unwrap_or(true)
+    lookahead_engine::core::env::var("PRUNING").map(|on| on.trim() != "0").unwrap_or(true)
 }
 
 /// The same xorshift the matrix uses, so the two measurements draw the same profiles.
@@ -343,7 +343,7 @@ fn shared(
     // half of what this file is for.
     //
     // A SWITCH RATHER THAN A CONSTANT since de-fawk, because the number that matters is
-    // the DIFFERENCE and one run cannot show it. `PRUNING=0` runs the same rows with the
+    // the DIFFERENCE and one run cannot show it. `DEGCT_PRUNING=0` runs the same rows with the
     // narrowing off, so the two can be read against each other on the same machine.
     let known = Known::of(graph)
         .from(start, &seed)

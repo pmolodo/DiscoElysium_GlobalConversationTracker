@@ -17,14 +17,14 @@ Usage:
 Examples:
     tools/measure-matrix.py                 # the six heavy conversations, every profile
     tools/measure-matrix.py 368 631         # just these two
-    ENGINES=bwd tools/measure-matrix.py 14  # one engine, one group
-    PROFILES=deepest-1 ENGINES=bwd tools/measure-matrix.py 14   # one row
-    PROFILES=95pc-seen,50pc-seen tools/measure-matrix.py 14     # a held-back profile
+    DEGCT_ENGINES=bwd tools/measure-matrix.py 14  # one engine, one group
+    DEGCT_PROFILES=deepest-1 DEGCT_ENGINES=bwd tools/measure-matrix.py 14   # one row
+    DEGCT_PROFILES=95pc-seen,50pc-seen tools/measure-matrix.py 14     # a held-back profile
     tools/measure-matrix.py all             # EVERY group in the game, resumably
 
 THE DEFAULT GRID IS FIVE DEEP PROFILES - deepest-1, -5, -10, deepest-unreach-1 and -5. The
 seven percentage-seen profiles that used to be in it were measured to be too easy to be
-worth a run's time and are held back, nameable by PROFILES=. See PROFILES and TOO_EASY in
+worth a run's time and are held back, nameable by DEGCT_PROFILES=. See PROFILES and TOO_EASY in
 measurements/performance_matrix.rs for the table.
 
 A GRID WITH AN UNREACHABLE PROFILE NEEDS A CENSUS, and this takes one into the run's own
@@ -32,7 +32,7 @@ folder if CENSUS_FILE names none and the folder holds none - see `arrange_census
 for why it is taken there and why nothing tries to decide that an existing one is out of
 date.
 
-`all` asks the measurement itself which groups exist - GROUPS_ONLY=1, one canonical start
+`all` asks the measurement itself which groups exist - DEGCT_GROUPS_ONLY=1, one canonical start
 per distinct closure, heaviest first - rather than reading a list kept here, which could
 omit a group and never say so. It is 1,422 groups against the six a default run does.
 
@@ -50,7 +50,7 @@ with no rows is that a person typed it - `all` prunes them first.
 RESUMING. A run writes its rows as it finishes them, and pointing a later run at the same
 folder makes it skip what is already there:
 
-    MATRIX_OUT=measurements/logs/2026-09-07_whole-game tools/measure-matrix.py all
+    DEGCT_MATRIX_OUT=measurements/logs/2026-09-07_whole-game tools/measure-matrix.py all
 
 Run that again after a kill, a crash, or a reboot and it picks up where it stopped. It is
 the same command every time - there is no separate resume mode to remember, and no way to
@@ -130,6 +130,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import measurement_common as common  # noqa: E402
 
+from measurement_common import env, env_for_child, qualified  # noqa: E402
+
 ###############################################################################
 # Where things are
 ###############################################################################
@@ -145,7 +147,7 @@ DEFAULT_CONVERSATIONS = [362, 368, 631, 14, 28, 1030]
 # THE DEEP PROFILES, AND ONLY THOSE. The seven percentage-seen ones were measured to be too
 # easy to be worth a run's time - about a fifth of a second whatever the group, and one
 # single answer between all seven on 92.5 per cent of them - and are held back. They are
-# still runnable by name: PROFILES=95pc-seen,50pc-seen. See PROFILES and TOO_EASY in
+# still runnable by name: DEGCT_PROFILES=95pc-seen,50pc-seen. See PROFILES and TOO_EASY in
 # measurements/performance_matrix.rs for the table this came from.
 DEFAULT_PROFILES = [
     "deepest-1",
@@ -239,7 +241,7 @@ class RowWeights:
         self.total = {}
         self.count = {}
 
-        # ROW_OVERHEAD=n still moves it and 0 still restores weighting by engine time alone;
+        # DEGCT_ROW_OVERHEAD=n still moves it and 0 still restores weighting by engine time alone;
         # what changed is that leaving it unset now means "measure it" rather than "use 1.4".
         self.fixed_overhead = row_overhead
         self.overhead_total = 0.0
@@ -506,9 +508,9 @@ class Run:
         # default, so this is belt and braces - but an empty selection exported into a
         # measurement is the kind of thing that should not have two chances to mean nothing.
         self.child_env = dict(os.environ)
-        engines = os.environ.get("ENGINES", "").strip()
+        engines = env("ENGINES", "").strip()
         if engines:
-            self.child_env["ENGINES"] = engines
+            self.child_env[qualified("ENGINES")] = engines
         else:
             self.child_env.pop("ENGINES", None)
 
@@ -516,7 +518,7 @@ class Run:
         # measurement's own default is ten minutes and this passes whatever is set through
         # unchanged. EACH ENGINE gets it separately, so a row of four columns can spend four.
         self.row_seconds = env_int("ROW_SECONDS", FALLBACK_ROW_SECONDS)
-        self.child_env["ROW_SECONDS"] = str(self.row_seconds)
+        self.child_env[qualified("ROW_SECONDS")] = str(self.row_seconds)
 
         self.measurement = self._build()
         self.header = self._read_header()
@@ -536,7 +538,7 @@ class Run:
         self.conversations = list(conversations)
         self.empty_groups = []
 
-        self.census_file = os.environ.get("CENSUS_FILE", "").strip() or None
+        self.census_file = env("CENSUS_FILE", "").strip() or None
         self.census_reused = False
         self.census_reused_from = None
         self.census_repaired = set()
@@ -573,7 +575,7 @@ class Run:
 
         self.in_parallel = False
         # ONE PROCESS FOR THE WHOLE GROUP, off for the serial heavy prefix and on for the
-        # tail. See `measure_group_at_once` for the trade; PER_GROUP=0 keeps a run on one
+        # tail. See `measure_group_at_once` for the trade; DEGCT_PER_GROUP=0 keeps a run on one
         # process per row throughout, which is what a folder that has to be comparable with an
         # older one asks for.
         self.per_group = False
@@ -606,7 +608,7 @@ class Run:
         same rows, the ones already in it skipped. A generated name cannot be resumed into
         because the next run generates a different one.
         """
-        named = os.environ.get("MATRIX_OUT", "").strip()
+        named = env("MATRIX_OUT", "").strip()
         if named:
             path = Path(named)
             return path if path.is_absolute() else ROOT / path
@@ -615,7 +617,7 @@ class Run:
             [str(ROOT / "tools" / "run-logged.sh"), "--folder-only", "measure", "matrix"],
             capture_output=True,
             text=True,
-            env={**os.environ, "RUN_LOG_DIR": str(OUT / "logs")},
+            env=env_for_child(RUN_LOG_DIR=str(OUT / "logs")),
             check=True,
         ).stdout.strip()
         return Path(folder)
@@ -653,7 +655,7 @@ class Run:
             check=False,
         )
 
-        target = Path(os.environ.get("CARGO_TARGET_DIR") or (ROOT / "target"))
+        target = Path(env("CARGO_TARGET_DIR", foreign=True) or (ROOT / "target"))
         binary = target / "release" / "examples" / "performance_matrix"
         if not os.access(binary, os.X_OK):
             binary = binary.with_suffix(".exe")
@@ -680,7 +682,7 @@ class Run:
         run and silently wrong for a renamed column - which is the mistake de-zovl exists to
         correct, in the one place it would still be possible to make.
         """
-        answer = self._ask({"HEADER_ONLY": "1"})
+        answer = self._ask({qualified("HEADER_ONLY"): "1"})
         for line in answer.stdout.splitlines():
             if line.startswith("conv"):
                 return line
@@ -702,7 +704,7 @@ class Run:
         AN OLDER BINARY SAYS NOTHING AND IS NOT AN ERROR. It falls back to the figures the
         shell carried, which is exactly where it would have been anyway.
         """
-        answer = self._ask({"CONSTANTS_ONLY": "1"})
+        answer = self._ask({qualified("CONSTANTS_ONLY"): "1"})
         constants = {}
         for line in answer.stdout.splitlines():
             name, _, value = line.partition(TAB)
@@ -729,7 +731,7 @@ class Run:
         already and the question is one walk per group.
         """
         print("asking the measurement which groups exist...")
-        answer = self._ask({"GROUPS_ONLY": "1"})
+        answer = self._ask({qualified("GROUPS_ONLY"): "1"})
 
         # KEPT AS WELL AS READ, since de-cziy. The empty groups no longer get a row apiece, so
         # these two files are the whole record of which groups the run considered and why it
@@ -793,13 +795,13 @@ class Run:
         needs = any(name.startswith("deepest-unreach-") for name in self.profiles)
         if not needs or self.census_file:
             if self.census_file:
-                self.child_env["CENSUS_FILE"] = self.census_file
+                self.child_env[qualified("CENSUS_FILE")] = self.census_file
             return
 
         self.census_file = str(self.logs / "census" / "census.tsv")
         if Path(self.census_file).exists():
             print(f"using the census this folder already holds: {self.census_file}")
-            self.child_env["CENSUS_FILE"] = self.census_file
+            self.child_env[qualified("CENSUS_FILE")] = self.census_file
             return
 
         # A CENSUS FROM AN EARLIER RUN, ASSUMED GOOD AND REPAIRED WHERE IT IS NOT.
@@ -832,14 +834,14 @@ class Run:
                 reuse_from = candidate
                 break
 
-        if reuse_from is not None and os.environ.get("CENSUS_REUSE", "yes") == "yes":
+        if reuse_from is not None and env("CENSUS_REUSE", "yes") == "yes":
             (self.logs / "census").mkdir(parents=True, exist_ok=True)
             shutil.copyfile(reuse_from, self.census_file)
             self.census_reused = True
             self.census_reused_from = reuse_from
             print(f"REUSING a census rather than taking one: {reuse_from}")
             print(f"  copied to {self.census_file}. It is assumed good; a group whose rows contradict")
-            print("  it is re-censused and re-measured. CENSUS_REUSE=no takes a fresh one.")
+            print("  it is re-censused and re-measured. DEGCT_CENSUS_REUSE=no takes a fresh one.")
         else:
             print("taking a census first - the grid has an unreachable profile and none was named")
             # THE SAME GROUPS THE ROWS WILL ASK ABOUT, named rather than `all`. A whole-game
@@ -854,7 +856,7 @@ class Run:
             # census before its first row.
             subprocess.run(
                 [sys.executable, str(ROOT / "tools" / "measure-census.py")] + [str(c) for c in self.conversations],
-                env={**os.environ, "CENSUS_OUT": str(self.logs / "census")},
+                env=env_for_child(CENSUS_OUT=str(self.logs / "census")),
                 check=False,
             )
             if not Path(self.census_file).exists():
@@ -864,7 +866,7 @@ class Run:
                     code=1,
                 )
 
-        self.child_env["CENSUS_FILE"] = self.census_file
+        self.child_env[qualified("CENSUS_FILE")] = self.census_file
 
     def _folders_newest_first(self):
         try:
@@ -903,7 +905,7 @@ class Run:
             tsvs.extend(here)
             kept += 1
 
-        overhead = os.environ.get("ROW_OVERHEAD", "").strip()
+        overhead = env("ROW_OVERHEAD", "").strip()
         self.weights = RowWeights(self.engine_names, tsvs, float(overhead) if overhead else None)
 
     def read_folder(self):
@@ -1255,9 +1257,9 @@ class Run:
     def _run_rows(self, conversation, profiles, log):
         """One process for several profiles of one group, tee'd to the group's log."""
         env = dict(self.child_env)
-        env["CONVERSATION"] = str(conversation)
-        env["PROFILE"] = ",".join(profiles)
-        env["NO_HEADER"] = "1"
+        env[qualified("CONVERSATION")] = str(conversation)
+        env[qualified("PROFILE")] = ",".join(profiles)
+        env[qualified("NO_HEADER")] = "1"
 
         with common.open_lf(log, "w") as handle:
             process = subprocess.Popen(
@@ -1292,9 +1294,9 @@ class Run:
         artefact of a row that said nothing.
         """
         env = dict(self.child_env)
-        env["CONVERSATION"] = str(conversation)
-        env["PROFILE"] = profile
-        env["NO_HEADER"] = "1"
+        env[qualified("CONVERSATION")] = str(conversation)
+        env[qualified("PROFILE")] = profile
+        env[qualified("NO_HEADER")] = "1"
 
         with common.open_lf(log, "w") as handle:
             process = subprocess.Popen(
@@ -1469,10 +1471,10 @@ class Run:
         fresh.parent.mkdir(parents=True, exist_ok=True)
         answer = self._ask(
             {
-                "CENSUS": "1",
-                "NO_HEADER": "1",
-                "CONVERSATION": str(conversation),
-                "CENSUS_JOURNAL": str(self.logs / "census" / f"{conversation}.repair.journal.tsv"),
+                qualified("CENSUS"): "1",
+                qualified("NO_HEADER"): "1",
+                qualified("CONVERSATION"): str(conversation),
+                qualified("CENSUS_JOURNAL"): str(self.logs / "census" / f"{conversation}.repair.journal.tsv"),
             }
         )
         common.write_lf(fresh, answer.stdout + answer.stderr)
@@ -1527,7 +1529,7 @@ def split_message(run, workers, serial_groups, fits_nodes, worker_nodes, worker_
         # exists to avoid. Refusing to switch is slow; switching blind manufactures rows.
         print("no engine in this selection reports nodes held, so nothing can say whether a group")
         print("would fit a worker's share of the budget: every group one at a time. Name")
-        print("SERIAL_GROUPS=n to split anyway.")
+        print(f"{qualified('SERIAL_GROUPS')}=n to split anyway.")
     else:
         cheap_says = f"within {settle_factor}x the cheapest group so far"
         if settle_ms > 0:
@@ -1562,7 +1564,7 @@ def serial_phase(run, workers, serial_groups, fits_nodes, settle):
        within SETTLE_FACTOR of the run's own cheapest group so far - OR under SETTLE_MS
        outright.
 
-       TWO ARMS BECAUSE THE TWO REGIMES ARE NOT ALIKE. Under ENGINES=all a group can cost
+       TWO ARMS BECAUSE THE TWO REGIMES ARE NOT ALIKE. Under DEGCT_ENGINES=all a group can cost
        minutes, no group would pass an absolute two and a half seconds, and the relative arm is
        the only one that can say anything. The default grid has the opposite shape: both its
        engines are walled by the player's own time budget, so every row returns in about two
@@ -1702,7 +1704,7 @@ def parallel_phase(run, groups, workers, worker_mb):
         if any(not run.row_done.get((str(conversation), profile)) for profile in run.profiles)
     )
 
-    run.child_env["ROW_MEMORY_MB"] = str(worker_mb)
+    run.child_env[qualified("ROW_MEMORY_MB")] = str(worker_mb)
     print(f"each worker is allowed {worker_mb} MB of the {run.full_budget_mb} MB budget")
     with common.open_lf(run.logs / "parallel-phase.txt", "a") as handle:
         handle.write(
@@ -1978,7 +1980,7 @@ def summarise(run):
             print(f"reused a census and REPAIRED {len(run.census_repaired)} group(s) that contradicted it:")
             print("  " + " ".join(str(g) for g in sorted(run.census_repaired)))
             print(f"  it came from {run.census_reused_from} - if this number is large, take a fresh one")
-            print("  with CENSUS_REUSE=no rather than repairing group by group.")
+            print("  with DEGCT_CENSUS_REUSE=no rather than repairing group by group.")
         else:
             print(f"reused a census from {run.census_reused_from}; no group contradicted it.")
 

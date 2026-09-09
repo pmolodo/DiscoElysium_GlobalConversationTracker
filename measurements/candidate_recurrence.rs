@@ -149,9 +149,9 @@
 //! ## How to run it
 //!
 //! ```text
-//! RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo candidate-recurrence -- \
+//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo candidate-recurrence -- \
 //!   cargo run --release --example candidate_recurrence
-//! RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo recurrence-walk -- \
+//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo recurrence-walk -- \
 //!   cargo run --release --example candidate_recurrence walk
 //! ```
 //!
@@ -262,7 +262,7 @@ const WALK_MENUS: usize = 40;
 /// number after dominance.
 fn walk(index: &lookahead_engine::index::Index) {
     let groups = env_list("CONVERSATION", &GROUPS);
-    let percents: Vec<u32> = match std::env::var("PROFILES") {
+    let percents: Vec<u32> = match lookahead_engine::core::env::var("PROFILES") {
         Ok(value) => value.split(',').filter_map(|p| p.trim().parse().ok()).collect(),
         Err(_) => PERCENTS.to_vec(),
     };
@@ -364,7 +364,7 @@ fn walk(index: &lookahead_engine::index::Index) {
 /// bottom of it.
 fn links(index: &lookahead_engine::index::Index) {
     let groups = env_list("CONVERSATION", &GROUPS);
-    let percents: Vec<u32> = match std::env::var("PROFILES") {
+    let percents: Vec<u32> = match lookahead_engine::core::env::var("PROFILES") {
         Ok(value) => value.split(',').filter_map(|p| p.trim().parse().ok()).collect(),
         Err(_) => PERCENTS.to_vec(),
     };
@@ -565,7 +565,7 @@ fn wide_nodes(
 /// The adversarial arm, kept for the contrast it draws rather than for its number.
 fn deepest(index: &lookahead_engine::index::Index) {
     let groups = env_list("CONVERSATION", &GROUPS);
-    let widths: Vec<usize> = match std::env::var("WIDTHS") {
+    let widths: Vec<usize> = match lookahead_engine::core::env::var("WIDTHS") {
         Ok(value) => value.split(',').filter_map(|w| w.trim().parse().ok()).collect(),
         Err(_) => WIDTHS.to_vec(),
     };
@@ -797,11 +797,11 @@ fn share(part: usize, whole: usize) -> String {
 }
 
 fn from_env(name: &str, fallback: usize) -> usize {
-    std::env::var(name).ok().and_then(|value| value.parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name).ok().and_then(|value| value.parse().ok()).unwrap_or(fallback)
 }
 
 fn env_list(name: &str, fallback: &[i32]) -> Vec<i32> {
-    match std::env::var(name) {
+    match lookahead_engine::core::env::var(name) {
         Ok(value) => value.split(',').filter_map(|c| c.trim().parse().ok()).collect(),
         Err(_) => fallback.to_vec(),
     }

@@ -30,7 +30,7 @@
 //! ## How to run it
 //!
 //! ```text
-//! RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo repeat-question -- \
+//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo repeat-question -- \
 //!   cargo run --release --example repeat_question
 //! ```
 //!
@@ -261,7 +261,7 @@ fn main() {
 
 /// A number from the environment, or the default written down here.
 fn from_env(name: &str, fallback: usize) -> usize {
-    std::env::var(name)
+    lookahead_engine::core::env::var(name)
         .ok()
         .and_then(|value| value.trim().parse().ok())
         .unwrap_or(fallback)
@@ -269,7 +269,7 @@ fn from_env(name: &str, fallback: usize) -> usize {
 
 /// A comma-separated list from the environment, or the default written down here.
 fn numbers(name: &str, fallback: &[i32]) -> Vec<i32> {
-    match std::env::var(name) {
+    match lookahead_engine::core::env::var(name) {
         Ok(named) => named
             .split(',')
             .map(str::trim)

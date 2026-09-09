@@ -120,22 +120,79 @@ def clock(seconds):
     return f"{seconds // 3600}:{(seconds % 3600) // 60:02d}:{seconds % 60:02d}"
 
 
+# The prefix on every environment variable this project defines. See CLAUDE.md for the rule
+# and docs/environment.md for the list.
+ENV_PREFIX = "DEGCT_"
+
+
+def qualified(name):
+    """The full name of one of ours, from its bare one.
+
+    Idempotent, because callers build names from both halves - a bare one they were given and
+    a full one read back out of a message - and DEGCT_DEGCT_CONVERSATION would be unset,
+    silently, and read as a default.
+    """
+    return name if name.startswith(ENV_PREFIX) else ENV_PREFIX + name
+
+
+def env(name, fallback=None, foreign=False):
+    """One of ours, by its BARE name: `env("MATRIX_OUT")` reads DEGCT_MATRIX_OUT.
+
+    ## Why a helper rather than a convention
+
+    A convention a person has to remember grows exceptions, and the whole reason the prefix
+    exists is that the shell owns a pile of short generic names - GROUPS is a built-in array,
+    and assigning to it looks like it works. The prefix is applied here, so a new variable is
+    named right because there is no other way to name it.
+
+    `foreign=True` reads a name somebody else owns - PATH, CARGO_TARGET_DIR,
+    NUMBER_OF_PROCESSORS - under its own spelling. It is a named argument rather than a second
+    function so the call site says which of the two it means.
+    """
+    key = name if foreign else qualified(name)
+    value = os.environ.get(key)
+    return fallback if value is None else value
+
+
+def env_is_set(name):
+    """Whether one of ours is set at all, whatever it is set to.
+
+    The shape a flag takes here: several measurements switch on PRESENCE rather than value, so
+    DEGCT_CENSUS=1 and DEGCT_CENSUS= mean the same and neither has to be parsed.
+    """
+    return qualified(name) in os.environ
+
+
 def env_list(name):
-    """A comma or space separated environment list, or None where it is unset or empty."""
-    raw = os.environ.get(name, "").strip()
+    """A comma or space separated list from one of ours, or None where unset or empty."""
+    raw = (env(name) or "").strip()
     if not raw:
         return None
     return [piece for piece in re.split(r"[,\s]+", raw) if piece]
 
 
 def env_int(name, fallback):
-    raw = os.environ.get(name, "").strip()
+    raw = (env(name) or "").strip()
     if not raw:
         return fallback
     try:
         return int(raw)
     except ValueError:
-        refuse(f"{name}={raw!r} is not a number")
+        refuse(f"{qualified(name)}={raw!r} is not a number")
+
+
+def env_for_child(**names):
+    """An environment dict for a child process, with our names qualified.
+
+    Handed the BARE names - `env_for_child(CONVERSATION="631", NO_HEADER="1")` - so the same
+    rule that governs reading governs setting, and a driver cannot pass a child a variable the
+    measurement will not recognise. Everything already in os.environ is carried through
+    untouched, because a child needs PATH and the rest.
+    """
+    child = dict(os.environ)
+    for name, value in names.items():
+        child[qualified(name)] = str(value)
+    return child
 
 
 def folders_newest_first():
@@ -181,7 +238,7 @@ def build_measurement(quiet=False):
         check=False,
     )
 
-    target = Path(os.environ.get("CARGO_TARGET_DIR") or (ROOT / "target"))
+    target = Path(env("CARGO_TARGET_DIR", foreign=True) or (ROOT / "target"))
     binary = target / "release" / "examples" / "performance_matrix"
     if not os.access(binary, os.X_OK):
         binary = binary.with_suffix(".exe")
@@ -209,7 +266,7 @@ def read_constants(binary, base_env=None):
     AN OLDER BINARY SAYS NOTHING AND IS NOT AN ERROR. The caller falls back to the figures the
     shell carried, which is exactly where it would have been anyway.
     """
-    answer = ask(binary, {"CONSTANTS_ONLY": "1"}, base_env)
+    answer = ask(binary, {qualified("CONSTANTS_ONLY"): "1"}, base_env)
     constants = {}
     for line in answer.stdout.splitlines():
         name, _, value = line.partition(TAB)
@@ -314,10 +371,10 @@ def default_workers(memory_per_worker_mb=None):
     on, which is the whole point: a constant picked from one box is silently in the wrong
     place on the next, and in the direction that matters.
 
-    WORKERS=n overrides it outright, including upwards - a person who knows what their machine
+    DEGCT_WORKERS=n overrides it outright, including upwards - a person who knows what their machine
     can take is not second-guessed.
     """
-    named = os.environ.get("WORKERS", "").strip()
+    named = env("WORKERS", "").strip()
     if named:
         return max(1, env_int("WORKERS", 1))
 

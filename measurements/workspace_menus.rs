@@ -10,7 +10,7 @@
 //! a player's menu costs.
 //!
 //! Both arms are that same call. The difference is only whether the workspace is allowed to
-//! serve: `FRESH=1` sends every request for a DIFFERENT group in rotation, so the workspace
+//! serve: `DEGCT_FRESH=1` sends every request for a DIFFERENT group in rotation, so the workspace
 //! is replaced each time and every request pays what it always paid.
 //!
 //! ## What it said, 2026-09-07: about twice as fast per menu
@@ -48,7 +48,7 @@
 //! ## How to run it
 //!
 //! ```text
-//! RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo workspace-menus -- \
+//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo workspace-menus -- \
 //!   cargo run --release --example workspace_menus
 //! ```
 
@@ -86,7 +86,7 @@ fn main() {
 
     let rounds = from_env("ROUNDS", ROUNDS);
     let starts_wanted = from_env("STARTS", STARTS);
-    let fresh = std::env::var("FRESH").map(|on| on.trim() != "0").unwrap_or(false);
+    let fresh = lookahead_engine::core::env::var("FRESH").map(|on| on.trim() != "0").unwrap_or(false);
 
     // The starts and quarry for each group, worked out once so neither arm pays for it.
     //
@@ -167,5 +167,5 @@ fn main() {
 }
 
 fn from_env(name: &str, fallback: usize) -> usize {
-    std::env::var(name).ok().and_then(|text| text.trim().parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name).ok().and_then(|text| text.trim().parse().ok()).unwrap_or(fallback)
 }

@@ -49,7 +49,7 @@ const EXPENSIVE: [i32; 5] = [368, 631, 14, 28, 1030];
 const PROBES: usize = 24;
 
 fn conversations(default: &[i32]) -> Vec<i32> {
-    match std::env::var("CONVERSATION") {
+    match lookahead_engine::core::env::var("CONVERSATION") {
         Ok(named) => named.split(',').filter_map(|id| id.trim().parse().ok()).collect(),
         Err(_) => default.to_vec(),
     }
