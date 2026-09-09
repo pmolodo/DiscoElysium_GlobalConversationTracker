@@ -126,8 +126,10 @@ from measurement_common import (  # noqa: E402
     build_measurement,
     clock,
     default_workers,
+    open_lf,
     refuse,
     run_groups,
+    write_lf,
 )
 
 # What a census process is allowed, mirrored here only to be REPORTED. It is
@@ -174,7 +176,7 @@ class Census:
             target = self.row_file(cells[0])
             if target.exists():
                 continue
-            target.write_text(line + "\n", encoding="utf-8")
+            write_lf(target, line + "\n")
             adopted += 1
         return adopted
 
@@ -206,8 +208,8 @@ class Census:
             errors="replace",
             env={**dict(os.environ), "GROUPS_ONLY": "1"},
         )
-        (self.out / "groups.tsv").write_text(answer.stdout, encoding="utf-8")
-        (self.out / "groups.log").write_text(answer.stderr, encoding="utf-8")
+        write_lf(self.out / "groups.tsv", answer.stdout)
+        write_lf(self.out / "groups.log", answer.stderr)
 
         found = []
         empty = []
@@ -220,7 +222,7 @@ class Census:
             else:
                 empty.append(cells[0])
 
-        (self.out / "skipped.tsv").write_text("".join(f"{start}{TAB}NO-ROWS\n" for start in empty), encoding="utf-8")
+        write_lf(self.out / "skipped.tsv", "".join(f"{start}{TAB}NO-ROWS\n" for start in empty))
         print(f"  {len(found)} group(s) to census, {len(empty)} recorded NO-ROWS")
         return found
 
@@ -232,7 +234,7 @@ class Census:
         """
         log = self.groups_dir / f"{conversation}.log"
         began = time.monotonic()
-        with log.open("w", encoding="utf-8") as handle:
+        with open_lf(log, "w") as handle:
             status = subprocess.run(
                 [str(self.binary)],
                 stdout=handle,
@@ -252,13 +254,12 @@ class Census:
         if status != 0 or not rows:
             # A CRASH IS THE ANSWER FOR THIS GROUP, written down so a resume does not retry it
             # for ever and a reader can tell it from a group nobody ran.
-            self.row_file(conversation).write_text(
-                f"{conversation}{TAB}CRASHED{TAB}{TAB}{TAB}{TAB}{int(took * 1000)}{TAB}\n",
-                encoding="utf-8",
+            write_lf(
+                self.row_file(conversation), f"{conversation}{TAB}CRASHED{TAB}{TAB}{TAB}{TAB}{int(took * 1000)}{TAB}\n"
             )
             return f"CRASHED exit {status}, see {log}", took
 
-        self.row_file(conversation).write_text(rows[-1] + "\n", encoding="utf-8")
+        write_lf(self.row_file(conversation), rows[-1] + "\n")
         # NOTHING TO SAY ABOUT A GROUP THAT WORKED. The duration is printed by the caller, in
         # its own fixed-width column, so that 521 of these lines can be read down rather than
         # across. de-12wr.7.
@@ -278,7 +279,7 @@ class Census:
             if not path.exists():
                 continue
             lines.extend(line for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
-        self.rows.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        write_lf(self.rows, "\n".join(lines) + "\n")
 
 
 def measure(named):
@@ -300,7 +301,7 @@ def measure(named):
                 groups.append(int(value))
             except ValueError:
                 refuse(f"{value!r} is not a conversation id")
-        (out / "skipped.tsv").write_text("", encoding="utf-8")
+        write_lf(out / "skipped.tsv", "")
 
     adopted = census.adopt_existing_rows()
     if adopted:

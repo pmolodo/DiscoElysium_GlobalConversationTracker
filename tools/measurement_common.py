@@ -37,6 +37,26 @@ OUT = ROOT / "measurements"
 TAB = "\t"
 
 
+def write_lf(path, text):
+    """Write text with LF endings, whatever platform this is on.
+
+    PYTHON'S TEXT MODE TRANSLATES `\\n` TO `os.linesep` ON WRITE, so a driver that simply
+    called `write_text` produced CRLF on Windows where the shell drivers it replaced produced
+    LF. That is not cosmetic: the artefacts are read back by awk and by other tools, and a
+    trailing carriage return turns a numeric field into a string - `awk -F'\\t' '$4 > 0'` over
+    a CRLF groups.tsv compares "0\\r" against 0 AS TEXT and passes every line, which is how a
+    filter for "groups with rows" silently returned the 901 groups that have none.
+
+    Found 2026-09-09 while timing de-12wr.6, and it had already reached a whole-game folder.
+    """
+    Path(path).write_text(text, encoding="utf-8", newline="\n")
+
+
+def open_lf(path, mode="a"):
+    """Open a file for text writing with LF endings. See `write_lf` for why."""
+    return Path(path).open(mode, encoding="utf-8", newline="\n")
+
+
 def refuse(message, code=2):
     """Stops the run, saying why, rather than measuring something nobody asked for."""
     print(message, file=sys.stderr)

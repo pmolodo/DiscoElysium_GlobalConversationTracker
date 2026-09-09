@@ -728,8 +728,8 @@ class Run:
         # KEPT AS WELL AS READ, since de-cziy. The empty groups no longer get a row apiece, so
         # these two files are the whole record of which groups the run considered and why it
         # left some out.
-        (self.logs / "groups.log").write_text(answer.stderr, encoding="utf-8")
-        (self.logs / "groups.tsv").write_text(answer.stdout, encoding="utf-8")
+        common.write_lf(self.logs / "groups.log", answer.stderr)
+        common.write_lf(self.logs / "groups.tsv", answer.stdout)
 
         found = []
         empty = []
@@ -971,7 +971,7 @@ class Run:
         # ONLY WHEN THE FILE IS NEW. Truncating it here is what a resume must not do, and the
         # header is the one line that would otherwise be written twice.
         if not tsv.exists():
-            tsv.write_text(self.header + "\n", encoding="utf-8")
+            common.write_lf(tsv, self.header + "\n")
         say(f"=== {conversation} -> {tsv}")
 
         for profile in wanted:
@@ -1042,7 +1042,7 @@ class Run:
             )
             if row:
                 with self.lock:
-                    with tsv.open("a", encoding="utf-8") as handle:
+                    with common.open_lf(tsv, "a") as handle:
                         handle.write(row + "\n")
 
                 # THREE OUTCOMES, NOT TWO, and the third is not a result. The measurement
@@ -1097,7 +1097,7 @@ class Run:
                 # NOT-MEASURED above: this row died, that one never ran. And distinct from
                 # NO-ROWS: that one looked and found nothing, this one never came back.
                 with self.lock:
-                    with tsv.open("a", encoding="utf-8") as handle:
+                    with common.open_lf(tsv, "a") as handle:
                         handle.write(self.verdict_row(conversation, profile, "CRASHED") + "\n")
                 say(prefix + f"CRASHED (see {log})")
 
@@ -1131,7 +1131,7 @@ class Run:
         env["PROFILE"] = profile
         env["NO_HEADER"] = "1"
 
-        with log.open("w", encoding="utf-8") as handle:
+        with common.open_lf(log, "w") as handle:
             process = subprocess.Popen(
                 [str(self.measurement)],
                 stdout=subprocess.PIPE,
@@ -1299,7 +1299,7 @@ class Run:
                 "CENSUS_JOURNAL": str(self.logs / "census" / f"{conversation}.repair.journal.tsv"),
             }
         )
-        fresh.write_text(answer.stdout + answer.stderr, encoding="utf-8")
+        common.write_lf(fresh, answer.stdout + answer.stderr)
         if answer.returncode != 0:
             print(f"  the re-census of {conversation} failed - see {fresh}. Leaving its rows as measured.")
             return
@@ -1523,7 +1523,7 @@ def parallel_phase(run, groups, workers, worker_mb):
 
     run.child_env["ROW_MEMORY_MB"] = str(worker_mb)
     print(f"each worker is allowed {worker_mb} MB of the {run.full_budget_mb} MB budget")
-    with (run.logs / "parallel-phase.txt").open("a", encoding="utf-8") as handle:
+    with common.open_lf(run.logs / "parallel-phase.txt", "a") as handle:
         handle.write(
             f"workers={workers} budget_mb={worker_mb} of={run.full_budget_mb} "
             f"groups={len(groups)} started={time.strftime('%F %T')}\n"
