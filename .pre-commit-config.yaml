@@ -71,11 +71,17 @@ repos:
     #
     # PER FILE, because prek passes only the staged .rs files - so a commit touching one file
     # does not reformat the tree.
+    #
+    # NO --edition FLAG. rustfmt would default to 2015 if nothing said otherwise, but
+    # rustfmt.toml does say otherwise, and rustfmt finds it by searching upwards from the file
+    # it is given: `rustfmt --print-config current src/lib.rs` reports edition 2024. Naming it
+    # here as well would be a second place to keep in step with Cargo.toml, and the one nobody
+    # would think to look at.
     - repo: local
       hooks:
           - id: rustfmt
             name: rustfmt
-            entry: rustfmt --edition 2024
+            entry: rustfmt
             language: system
             types: [rust]
             pass_filenames: true
