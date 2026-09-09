@@ -229,6 +229,18 @@ impl Service {
         Ok(self.answer_through_workspace(parsed))
     }
 
+    /// How many diagram nodes the live workspace's manager holds, or `None` where there is
+    /// no workspace - the per-request path builds and drops a manager per call, so there is
+    /// nothing to accumulate and nothing to ask about.
+    ///
+    /// For measuring what a SESSION accumulates, which is a question the per-request path
+    /// could not raise: one manager now serves every menu of a conversation, so the store
+    /// grows across menus rather than starting empty each time. See
+    /// `measurements/workspace_menus.rs` and de-dt75.2.
+    pub fn workspace_held(&self) -> Option<usize> {
+        self.workspace.lock().ok()?.as_ref()?.held()
+    }
+
     /// Answers through the live workspace where one serves, and otherwise builds a new one.
     ///
     /// ## What a hit skips

@@ -172,11 +172,25 @@ impl DiagramBudget {
     /// 256 MB, which is what every shipped configuration has run under. It buys diagram
     /// nodes, at [`Self::BYTES_PER_NODE`] apiece.
     ///
-    /// WHETHER IT IS THE RIGHT ALLOWANCE IS A MEASUREMENT NOBODY HAS MADE. The number was
-    /// arrived at against a different way of spending it - states kept, not nodes held - so
-    /// it is a figure with a history rather than a conclusion about this manager. Changing
-    /// it wants a matrix run either side of the change, since a regression traced to a
-    /// budget that moved in the same commit is not traced at all.
+    /// IT IS ENOUGH, AND THAT IS MEASURED. de-dt75.2 asked the question two ways.
+    ///
+    /// NOTHING IN THE GAME RUNS OUT. A whole-game matrix, 2,334 measured rows across both
+    /// engine arms, records no manager that filled - `no-room` and `no-ram` appear on no row.
+    ///
+    /// AND A SESSION DOES NOT ACCUMULATE INTO IT, which is the question one manager per
+    /// conversation raises and a per-request manager could not. `measurements/workspace_menus.rs`
+    /// walks forty menus through the shipped call: conversation 761, the heaviest group in
+    /// the game, leaves the store holding 17.9% of this, and the next highest of the forty
+    /// heaviest is 1.5%. The store is filled by the FIRST request and the other thirty-nine
+    /// add two tenths of a per cent, so what a group holds is a constant of the group rather
+    /// than a curve heading for the ceiling.
+    ///
+    /// So there is 5.6 times the headroom on the worst group, and raising this would be
+    /// memory every player gives up whether their conversations need it or not - the node
+    /// store is one preallocation made in-process with a Unity game.
+    ///
+    /// Raising it anyway would want a matrix run either side of the change, since a
+    /// regression traced to a budget that moved in the same commit is not traced at all.
     pub const DEFAULT_MEMORY_BUDGET: usize = 256 * 1024 * 1024;
 
     /// What a measurement gets: six gigabytes, and the same six for every one of them.

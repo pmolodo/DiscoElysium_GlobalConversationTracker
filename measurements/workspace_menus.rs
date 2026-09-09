@@ -45,12 +45,40 @@
 //! follow a replacement rather than each other, which is the honest version of "the
 //! workspace did not serve this".
 //!
+//! ## What the manager holds, which is the other question this answers
+//!
+//! de-dt75.2 asked whether the default memory budget should move, since one manager now
+//! serves every menu of a conversation and could in principle accumulate. The `held` column
+//! says it does not. Forty-menu sessions at the shipped 256 MB, which is about 6.7 million
+//! nodes:
+//!
+//! ```text
+//!   conv       held   of cap
+//!     28      2,464     0.0%
+//!    368     10,294     0.2%
+//!    631     78,895     1.2%
+//!     14     93,833     1.4%
+//!    761  1,198,484    17.9%
+//! ```
+//!
+//! FLAT, NOT CLIMBING. The store is filled by the first request and the next thirty-nine add
+//! two tenths of a per cent. Over the forty heaviest groups in the game, 761 is the only one
+//! above two per cent and the next highest is 1030 at 1.5%.
+//!
+//! THE SHRINKING QUARRY IS WHAT MAKES THAT A MEASUREMENT. Held fixed, every round after the
+//! first asks the same question, the memo answers it without running a pass, and the manager
+//! allocates nothing - so the column reads perfectly constant and means nothing at all. A
+//! session's unseen set shrinks as the player reads, and this mirrors that.
+//!
 //! ## How to run it
 //!
 //! ```text
 //! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo workspace-menus -- \
 //!   cargo run --release --example workspace_menus
 //! ```
+//!
+//! `DEGCT_CONVERSATION=14,368,631` picks the groups, the FIRST of which is the one a kept
+//! session stands in. `DEGCT_ROUNDS` is how many menus, and `DEGCT_STARTS` how wide each is.
 
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
@@ -96,7 +124,10 @@ fn main() {
     // request while measuring nothing at all. That is exactly the trap the first cut of
     // `menu_residue` fell into and the reason the profile is shared.
     let mut menus: Vec<(i32, Vec<NodeRef>, Vec<NodeRef>)> = Vec::new();
-    for conversation in CONVERSATIONS {
+    // THE FIRST ONE IS THE SESSION, since the kept arm stands in `menus[0]` throughout and
+    // the rest are only there to defeat the workspace in the fresh arm. So
+    // `DEGCT_CONVERSATION=14,368,631` measures a session in conversation 14.
+    for conversation in conversations() {
         let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
         let root = DialogueNodeId::new(conversation, 0);
         if graph.get(root).is_none() {
@@ -123,7 +154,25 @@ fn main() {
             "KEPT - the same group each time, so the workspace serves after the first"
         },
     );
-    println!("{:>7}  {:>6}  {:>10}", "round", "conv", "request ms");
+    println!("{:>7}  {:>6}  {:>10}  {:>12}  {:>8}", "round", "conv", "request ms", "held", "of cap");
+
+    // WHAT THE MANAGER HOLDS, ROUND BY ROUND, which is the question de-dt75.2 asks and the
+    // one the per-request path could never raise: a manager now serves every menu of a
+    // conversation, so the store grows ACROSS menus rather than starting empty each time.
+    //
+    // IT IS THE STORE'S OCCUPANCY, not what is still referenced. Every search dropped its
+    // sets as it went, so a rising number says how far the store grew and not how much any
+    // one menu needs. That is the right currency for "does the budget fill" and the wrong
+    // one for "how much does a menu cost".
+    //
+    // WHAT TO READ IT FOR IS THE SHAPE. A curve that flattens is a session that has reached
+    // whatever it is going to hold, and the cap is then a question about the plateau. One
+    // still climbing at the last round has not been run long enough to say anything, and
+    // DEGCT_ROUNDS is how to run it longer.
+    let cap = lookahead_engine::symbolic::budget::DiagramBudget::new(
+        lookahead_engine::symbolic::budget::DiagramBudget::DEFAULT_MEMORY_BUDGET,
+    )
+    .nodes();
 
     let mut took_each: Vec<Duration> = Vec::new();
     for round in 0..rounds {
@@ -134,10 +183,18 @@ fn main() {
 
         // A DIFFERENT WORLD EVERY ROUND, in the field that actually moves between menus.
         let seen: HashSet<NodeRef> = starts.iter().take(round % starts.len()).copied().collect();
+
+        // AND A SHRINKING QUARRY, which is what a session IS: the player reads lines, so
+        // entries leave `unseen_any_game` as the conversation goes on. Holding it fixed
+        // makes every round after the first the same question, which the memo answers
+        // without running a pass - so the manager never allocates and a measurement of what
+        // it accumulates measures nothing. de-dt75.2.
+        let read = (round * unseen.len()) / rounds.max(1);
+        let hunting = unseen.iter().skip(read).copied().collect();
         let request = LookAheadRequest {
             conversation: *conversation,
             starts: starts.clone(),
-            unseen_any_game: unseen.iter().copied().collect(),
+            unseen_any_game: hunting,
             world: WorldSnapshot {
                 day_minutes: 720,
                 day_counter: 1,
@@ -153,7 +210,17 @@ fn main() {
         let took = began.elapsed();
         std::hint::black_box(&response);
 
-        println!("{:>7}  {conversation:>6}  {:>10.0}", round + 1, took.as_secs_f64() * 1000.0);
+        // AFTER THE REQUEST, so what is reported is the store as the menu left it. The
+        // query queues behind the request on the owner thread, so it cannot race it.
+        let held = service.workspace_held();
+        println!(
+            "{:>7}  {conversation:>6}  {:>10.0}  {:>12}  {:>8}",
+            round + 1,
+            took.as_secs_f64() * 1000.0,
+            held.map(|n| n.to_string()).unwrap_or_else(|| "no workspace".to_string()),
+            held.map(|n| format!("{:.1}%", 100.0 * n as f64 / cap as f64))
+                .unwrap_or_default(),
+        );
         took_each.push(took);
     }
 
@@ -164,6 +231,23 @@ fn main() {
         took_each.len() - 1,
         after_first.as_secs_f64() * 1000.0 / (took_each.len() - 1).max(1) as f64,
     );
+}
+
+/// The groups to walk, the first of which is the one a kept session stands in.
+fn conversations() -> Vec<i32> {
+    match lookahead_engine::core::env::var("CONVERSATION") {
+        Ok(named) => named
+            .split(',')
+            .map(str::trim)
+            .filter(|piece| !piece.is_empty())
+            .map(|piece| {
+                piece.parse().unwrap_or_else(|_| {
+                    panic!("{}={piece:?} is not a conversation id", lookahead_engine::core::env::qualified("CONVERSATION"))
+                })
+            })
+            .collect(),
+        Err(_) => CONVERSATIONS.to_vec(),
+    }
 }
 
 fn from_env(name: &str, fallback: usize) -> usize {

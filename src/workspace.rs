@@ -140,16 +140,25 @@ struct Key {
 }
 
 /// One request for the owner thread, and where to send the answers.
-struct Job {
-    request: LookAheadRequest,
-    /// The answers, or WHY THERE ARE NONE.
+enum Job {
+    Answer {
+        request: LookAheadRequest,
+        /// The answers, or WHY THERE ARE NONE.
+        ///
+        /// A refusal has to travel as a refusal. It used to come back as an empty answer
+        /// list, which the caller could only read as "nothing was established" - so a world
+        /// answering the wrong questions, the one failure a positional answer list makes
+        /// possible, arrived at the plugin indistinguishable from a search that found
+        /// nothing. de-r4e0.
+        answers: Sender<Result<Vec<LookAheadAnswer>, String>>,
+    },
+    /// How many diagram nodes the manager is holding right now.
     ///
-    /// A refusal has to travel as a refusal. It used to come back as an empty answer
-    /// list, which the caller could only read as "nothing was established" - so a world
-    /// answering the wrong questions, the one failure a positional answer list makes
-    /// possible, arrived at the plugin indistinguishable from a search that found
-    /// nothing. de-r4e0.
-    answers: Sender<Result<Vec<LookAheadAnswer>, String>>,
+    /// ON THE OWNER THREAD, because that is where the manager lives and nothing else may
+    /// touch it - one manager per thread is the invariant the whole arrangement rests on.
+    /// It queues behind the requests ahead of it like any other job, so what it reports is
+    /// the store as of the last request answered rather than a racing snapshot.
+    Held(Sender<usize>),
 }
 
 /// A live manager for one group, and the thread that owns it.
@@ -249,7 +258,25 @@ impl Workspace {
         request: LookAheadRequest,
     ) -> Option<Result<Vec<LookAheadAnswer>, String>> {
         let (answers, waiting) = std::sync::mpsc::channel();
-        self.jobs.send(Job { request, answers }).ok()?;
+        self.jobs.send(Job::Answer { request, answers }).ok()?;
+        waiting.recv().ok()
+    }
+
+    /// How many diagram nodes this workspace's manager is holding, or `None` if its thread
+    /// is gone.
+    ///
+    /// THE OCCUPANCY OF THE STORE, not what is still referenced - `oxidd`'s
+    /// `num_inner_nodes`. Every search this workspace has served dropped its sets as it
+    /// went, so this says how far the store GREW rather than how much any one menu needs.
+    /// That is the right currency for asking whether the budget is enough, since the budget
+    /// is the store's capacity, and the wrong one for asking what a menu costs.
+    ///
+    /// Here so that what a session accumulates can be measured rather than reasoned about -
+    /// see `measurements/workspace_menus.rs` and the note on [`memo_cap`], whose quarter is
+    /// argued from the other three quarters rather than from any measurement of this.
+    pub fn held(&self) -> Option<usize> {
+        let (held, waiting) = std::sync::mpsc::channel();
+        self.jobs.send(Job::Held(held)).ok()?;
         waiting.recv().ok()
     }
 }
@@ -313,15 +340,24 @@ fn own(
     }
 
     while let Ok(job) = inbox.recv() {
+        // THE STORE IS READ AND NOTHING ELSE HAPPENS, which is why it is a job at all: the
+        // manager belongs to this thread and may not be touched from another.
+        let Job::Answer { request: job_request, answers: job_answers } = job else {
+            if let Job::Held(held) = job {
+                let _ = held.send(vars.node_count());
+            }
+            continue;
+        };
+
         // RESOLVED FIRST, exactly as `bridge::answer` does: the plugin answers the engine's
         // questions positionally, and `resolve` puts those answers back onto their names.
         // A request whose answers do not line up is refused rather than guessed at, AND THE
         // REASON TRAVELS WITH THE REFUSAL - see `Job::answers`. Sending an empty answer
         // list instead, which is what this did, made a misaligned world look exactly like a
         // search that found nothing (de-r4e0).
-        let mut snapshot = job.request.world.clone();
+        let mut snapshot = job_request.world.clone();
         if let Err(reason) = snapshot.resolve(&questions) {
-            let _ = job.answers.send(Err(reason));
+            let _ = job_answers.send(Err(reason));
             continue;
         }
         // AFTER `resolve` AND BEFORE THE SNAPSHOT MOVES. Resolving puts the positional
@@ -342,9 +378,9 @@ fn own(
         // answerable rather than fatal: every start is nothing established, exactly as
         // `bridge::answer` answers a manager the machine would not give it. The workspace
         // stays up, because the next request may carry a world that seeds more cheaply.
-        let request = &job.request;
+        let request = &job_request;
         let Some(seed) = seed_of(&graph, &world, &vars) else {
-            let _ = job.answers.send(Ok(crate::bridge::all_unanswered(request, "no-ram")));
+            let _ = job_answers.send(Ok(crate::bridge::all_unanswered(request, "no-ram")));
             continue;
         };
 
@@ -374,7 +410,7 @@ fn own(
 
         // A caller that has gone away is not an error - it means the request was abandoned,
         // and the next one is already waiting.
-        let _ = job.answers.send(Ok(answers));
+        let _ = job_answers.send(Ok(answers));
     }
 }
 
@@ -392,9 +428,13 @@ fn own(
 ///
 /// `measurements/cacheable_asks.rs` puts an average pass at about thirty thousand nodes, so
 /// at the player's 256 MB this is room for something like fifty of them before anything is
-/// evicted - against the twenty menus that measurement walked. The number to re-run if this
-/// is ever suspected of being wrong is that one, and de-dt75.2 is where what the manager
-/// actually holds gets measured.
+/// evicted - against the twenty menus that measurement walked.
+///
+/// AND THE OTHER THREE QUARTERS ARE NOT SHORT, which de-dt75.2 measured rather than assumed.
+/// A forty-menu session through [`crate::service::Service::look_ahead`] leaves the manager
+/// holding 2,464 nodes on conversation 28, 93,833 on 14 and 1,198,484 on 761 - the heaviest
+/// group in the game and the only one above two per cent of the store. Nowhere near the cap,
+/// and flat: the store is filled by the first request and the next thirty-nine add 0.2%.
 fn memo_cap(budget: DiagramBudget) -> usize {
     budget.nodes() / 4
 }
