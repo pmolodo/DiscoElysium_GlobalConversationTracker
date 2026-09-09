@@ -6,7 +6,7 @@
         "files.eol": "\r\n",
         "files.trimTrailingWhitespace": true
     },
-    "[c][cpp][csharp][json][jsonc][rust][shellscript][toml][yaml]": {
+    "[c][cpp][csharp][json][jsonc][shellscript][toml][yaml]": {
         "editor.formatOnSave": true,
         "editor.insertSpaces": true,
         "editor.tabSize": 4,
@@ -35,6 +35,19 @@
             80,
             120
         ],
+        "editor.tabSize": 4,
+        "files.eol": "\n",
+        "files.trimTrailingWhitespace": true
+    },
+    "[rust]": {
+        // Named for the same reason python's is: defaultFormatter takes an extension id, so
+        // there is no generic equivalent and a machine with a second Rust extension installed
+        // would otherwise format by whichever one won. rust-analyzer shells out to the
+        // toolchain's rustfmt, which reads rustfmt.toml at the repository root - so an editor
+        // save and `cargo fmt` lay the code out the same way.
+        "editor.defaultFormatter": "rust-lang.rust-analyzer",
+        "editor.formatOnSave": true,
+        "editor.insertSpaces": true,
         "editor.tabSize": 4,
         "files.eol": "\n",
         "files.trimTrailingWhitespace": true

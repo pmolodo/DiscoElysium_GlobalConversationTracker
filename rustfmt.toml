@@ -1,0 +1,19 @@
+# rustfmt's defaults, written down rather than assumed.
+#
+# EXPLICIT RATHER THAN EMPTY. An absent rustfmt.toml means "whatever this toolchain's rustfmt
+# defaults to", which is a moving target across Rust releases and across the people running
+# it. Naming the values pins them, so a reformat is a decision somebody made rather than a
+# side effect of an upgrade.
+#
+# THESE ARE THE DEFAULTS. Nothing here is a house style: max_width 100 and four-space indent
+# are what rustfmt does unasked, and they already agree with .editorconfig's four spaces, LF
+# endings, trimmed trailing whitespace and final newline for .rs. The point of the file is
+# that they cannot drift, not that they are unusual.
+#
+# FOLLOWS Cargo.toml, which is where the crate's edition is actually decided. rustfmt reads
+# this one rather than that one, so the two have to be kept in step by hand - and a mismatch
+# is not cosmetic, since the edition changes what rustfmt is allowed to rewrite.
+edition = "2024"
+max_width = 100
+tab_spaces = 4
+newline_style = "Unix"

@@ -58,3 +58,24 @@ repos:
                 \.(?:bat|cmd|ps1|psd1|psm1)$
           - id: check-yaml
           - id: check-toml
+
+    # rustfmt, against the rustfmt.toml at the repository root. Python has had a formatter
+    # here since this file existed and Rust has not, so `cargo fmt --check` disagreed with
+    # most of the codebase and nothing said so - while the .vscode block that turns
+    # formatOnSave on already named rust, so an editor was reformatting whatever a person
+    # happened to touch. A one-line change then arrived as a fifty-line diff.
+    #
+    # LOCAL RATHER THAN A PUBLISHED HOOK REPO, because the formatter that must run is the
+    # one the toolchain already has: a pinned rustfmt from elsewhere would lay the code out
+    # differently from `cargo fmt` run by hand, and then the two would fight.
+    #
+    # PER FILE, because prek passes only the staged .rs files - so a commit touching one file
+    # does not reformat the tree.
+    - repo: local
+      hooks:
+          - id: rustfmt
+            name: rustfmt
+            entry: rustfmt --edition 2024
+            language: system
+            types: [rust]
+            pass_filenames: true
