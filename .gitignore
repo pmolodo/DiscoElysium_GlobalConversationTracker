@@ -57,3 +57,8 @@ uv.lock
 
 # Place to stash miscellaneous testing logs we want to keep around
 /testing/logs/
+
+# What measurements/static_analysis.rs writes. Derived from the shipped index and nothing
+# else, so a checked-in copy is a second copy of the index's shape and goes wrong silently
+# the first time a group grows an entry. Regenerate it when something wants it.
+/analysis/

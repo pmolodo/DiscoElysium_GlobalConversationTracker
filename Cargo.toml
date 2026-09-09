@@ -91,10 +91,6 @@ path = "measurements/layout_shape.rs"
 name = "live_ranges"
 path = "measurements/live_ranges.rs"
 
-[[example]]
-name = "order_sensitivity"
-path = "measurements/order_sensitivity.rs"
-
 # Driven by tools/measure-matrix.sh, one row per process, for hours. Runnable by hand for
 # a single row: CONVERSATION=368 PROFILE=deepest-1 cargo run --release --example
 # performance_matrix
@@ -115,14 +111,6 @@ name = "group_census"
 path = "measurements/group_census.rs"
 
 [[example]]
-name = "reachable_states"
-path = "measurements/reachable_states.rs"
-
-[[example]]
-name = "requeue_shape"
-path = "measurements/requeue_shape.rs"
-
-[[example]]
 name = "search_residue"
 path = "measurements/search_residue.rs"
 
@@ -139,10 +127,6 @@ path = "measurements/static_analysis.rs"
 [[example]]
 name = "unread_slots"
 path = "measurements/unread_slots.rs"
-
-[[example]]
-name = "parsed_vs_source"
-path = "measurements/parsed_vs_source.rs"
 
 [[example]]
 name = "settles_within"

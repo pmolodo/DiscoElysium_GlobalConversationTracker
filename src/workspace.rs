@@ -13,6 +13,13 @@
 //!
 //! This keeps the expensive half alive between requests. de-2wtl.
 //!
+//! WHAT IT IS WORTH THROUGH THE SHIPPED CALL, rather than through the portfolio underneath:
+//! `measurements/workspace_menus.rs` drives [`crate::service::Service::look_ahead`] twelve
+//! times over one group and finds a served request costs 53 to 60 milliseconds where an
+//! unserved one costs 116 to 126 - about a halving, on every menu after the first in a
+//! group. That is the measurement to re-run if this is ever suspected of not paying; the
+//! two above say where the saving comes from, and it alone says what a player gets.
+//!
 //! ## What is kept and what is rebuilt, which is not what the issue assumed
 //!
 //! KEPT: the graph, the layout, the manager ([`DataVars`]) and the [`GroupShape`].

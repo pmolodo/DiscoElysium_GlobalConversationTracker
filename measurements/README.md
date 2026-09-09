@@ -20,12 +20,18 @@ its contents are a different kind of thing, and they are here because the split 
 matters is "runs in the suite" against "run by hand" - a second directory for two files
 would be a distinction nobody remembers:
 
-- `static_analysis.rs` is a GENERATOR. Two of its three passes write the committed files
-  under `analysis/`. Nothing in the repository reads those yet - the prefilter they exist
-  for was measured and reverted, see de-asw.3 - so a stale one is not by itself a bug.
+- `static_analysis.rs` is a GENERATOR. Two of its three passes write a group partition and
+  a link-reachability table under `analysis/`, from the link structure alone. NOTHING READS
+  THEM AND THEY ARE NOT COMMITTED: the prefilter they were built for was measured and
+  reverted (de-asw.3), and a checked-in table derived from the index is a second copy of the
+  index's shape - wrong, and silently wrong, the first time a group grows an entry. It is
+  kept because it is where a structural precomputation would live if one ever pays; run it
+  when something wants the answer, and delete what it wrote afterwards.
 - `guard_snapshot.rs` is a SNAPSHOT. It dumps every parsed guard to the file named by
   `GUARD_SNAPSHOT`, to be run on both sides of a parser change and diffed. Identical output
   over 26,210 guards is the equivalence claim; a diff is the list that changed meaning.
+  NOTHING RUNS IT ON A SCHEDULE - it is reached for when the parser is about to move, and
+  it is the person making that change who has to remember it.
 
 What they have in common with the measurements is the thing that got them moved: none of
 them passes or fails on its own, so none of them belongs in `tests/`.

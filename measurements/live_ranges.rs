@@ -44,6 +44,37 @@
 //! layout uses, so this cannot drift from what the engine actually consults - and it already
 //! includes a rolled check's own pass and fail flags.
 //!
+//! ## What it said, 2026-09-08: the opportunity is large, and smallest where it is needed
+//!
+//! ```text
+//!   conv  entries   vars   live median   live mean   dead mean
+//!    362     1860    109            51        47.9   61.1 (56%)
+//!     28     2186    138            52        41.2   96.8 (70%)
+//!    368     4724    225            44        51.8  173.2 (77%)
+//!     14     3594    233           135       114.9  118.1 (51%)
+//!    631     4514    249           127       117.5  131.5 (53%)
+//!   1030     1476     73            49        48.1   24.9 (34%)
+//! ```
+//!
+//! HALF TO THREE QUARTERS OF THE LAYOUT IS DEAD at the average entry, so the idea is not
+//! refuted the cheap way - there really is state no path onward will read.
+//!
+//! BUT IT IS INVERSELY ORDERED AGAINST THE PROBLEM. Conversation 368, which settles, has
+//! the most to gain at 77 per cent dead; conversation 14, the group that never settles,
+//! has the least of the heavy groups at 51 per cent, and 631, the other one that does not
+//! settle, is next at 53. The two groups this was written to rescue are the two with the
+//! least dead state to quantify away.
+//!
+//! WHY THAT IS ENOUGH TO CLOSE IT FOR 14 rather than merely discouraging: collapsing
+//! states that differ only in dead variables can only help where there ARE states to
+//! collapse, and 14 holds 3,927 of them in 3,640 nodes - one node per state, a diagram
+//! compressing nothing (de-3x76.11). Halving the variables that vary cannot compress a set
+//! that small and that structureless. 368 has fifteen times the states and already
+//! finishes.
+//!
+//! So this measures a real opportunity for a DIFFERENT question - what an average menu
+//! costs, rather than what makes 14 fail - and de-3x76 was the wrong epic for it.
+//!
 //! Run it with `cargo run --release --example live_ranges`.
 
 use std::collections::{HashMap, HashSet};
