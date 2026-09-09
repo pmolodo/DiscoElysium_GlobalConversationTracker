@@ -124,9 +124,9 @@ from measurement_common import (  # noqa: E402
     ROOT,
     TAB,
     build_measurement,
-    clock,
     default_workers,
     open_lf,
+    progress_line,
     refuse,
     run_groups,
     write_lf,
@@ -322,12 +322,8 @@ def measure(named):
     if census.done:
         print(f"resuming in {out}: {census.done} group(s) already done")
 
-    # EVERY COLUMN THE SAME WIDTH ON EVERY LINE, because a whole-game census is 521 of these
-    # and the only reason to print a per-group duration is to compare one against the next.
-    # The count is padded to the width of the total, the conversation to the widest id the run
-    # will meet, and the duration to a fixed field - so the elapsed and estimate columns stay
-    # in one place instead of walking left and right down the log. de-12wr.7.
-    count_width = len(str(census.total))
+    # THE WIDEST CONVERSATION ID THE RUN WILL MEET, so the item column is as fixed as the
+    # count is. The rest of the layout is `progress_line`'s, shared with the matrix driver.
     id_width = max((len(str(g)) for g in groups), default=4)
 
     def reap(conversation, result):
@@ -345,17 +341,17 @@ def measure(named):
         estimate = elapsed * left / census.measured if census.measured else 0
         # THE PERCENTAGE IS OF THE WHOLE RUN, not of what is left to do, so a resume that
         # skipped four hundred groups opens near the number it deserves rather than at zero.
-        # de-12wr.5. The matrix driver's line carries one in the same place, and two drivers
-        # whose progress lines read differently cost a reader every time they switch logs.
-        percent = census.done * 100 // max(1, census.total)
-        # THE NOTE IS LAST AND IS USUALLY EMPTY, so a crash lengthens its own line and no
-        # other. Putting it in a column of its own would pad 520 lines to fit the one that
-        # names a log path.
+        # de-12wr.5, and `progress_line` is where it lives now.
         print(
-            f"[{census.done:>{count_width}}/{census.total} {percent:>3}%] "
-            f"{conversation:>{id_width}}  {seconds:>8.2f}s  "
-            f"elapsed {clock(elapsed)}  est. left ~{clock(estimate)}"
-            f"{'  ' + note if note else ''}",
+            progress_line(
+                census.done,
+                census.total,
+                f"{conversation:>{id_width}}",
+                seconds=seconds,
+                elapsed=elapsed,
+                estimate=estimate,
+                note=note,
+            ),
             flush=True,
         )
         # ASSEMBLED AS IT GOES, not only at the end, so a run that is killed still leaves a

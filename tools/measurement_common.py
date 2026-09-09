@@ -63,6 +63,56 @@ def refuse(message, code=2):
     raise SystemExit(code)
 
 
+# HOW LONG A THING HAS TO TAKE BEFORE IT IS WORTH A LINE OF ITS OWN.
+#
+# From the user, de-12wr.8. On the tail - which is most of a whole-game run - a row is a few
+# hundred milliseconds and five of them scroll past faster than anyone reads, while the group
+# line that follows says everything. A line printed for each is noise that buries the lines
+# that matter.
+#
+# IT ALSO SETTLES THE INTERLEAVING. A row that never printed its opening cannot have the
+# measurement's own progress lines land mid-line, so the one-line form is safe precisely where
+# it is used; a row slow enough to earn an opening is a row slow enough to want those progress
+# lines underneath it.
+WORTH_A_LINE = 2.0
+
+
+def progress_line(done, total, item, seconds=None, elapsed=None, estimate=None, note=""):
+    """The one progress line every driver prints, in every phase.
+
+    ## Why there is a function rather than four format strings
+
+    de-12wr.8. The matrix's serial phase, its parallel phase and the census each grew their own
+    layout, saying the same four things - where the run is, how far in, how long it has taken,
+    how long is left - in three different orders with three different punctuations. A reader
+    switching between a census log and a matrix log paid for that every time, and two separate
+    issues had already moved one of them a step closer to the others by hand.
+
+    ## Fixed width, which is the whole point of printing hundreds of them
+
+    The count is padded to the width of the total and the item to the width it was given, so
+    the elapsed and estimate columns stay in one place down the page instead of walking left
+    and right. That is what makes two adjacent lines comparable at a glance, which is the only
+    reason a per-item duration is printed at all.
+
+    Returns the line rather than printing it, because the matrix's parallel phase buffers a
+    group's output and prints it whole when the group is reaped - so that several groups at
+    once do not interleave into something nobody can read.
+    """
+    width = len(str(total))
+    percent = done * 100 // max(1, total)
+    line = f"[{done:>{width}}/{total} {percent:>3}%] {item}"
+    if seconds is not None:
+        line += f"  {seconds:>8.2f}s"
+    if elapsed is not None:
+        line += f"  elapsed {clock(elapsed)}"
+    if estimate is not None:
+        line += f"  est. left ~{clock(estimate)}"
+    if note:
+        line += f"  {note}"
+    return line
+
+
 def clock(seconds):
     """h:mm:ss. A run of this length is watched rather than read afterwards, and seconds
     since the epoch is not something a person can watch."""

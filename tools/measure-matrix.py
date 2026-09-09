@@ -999,10 +999,10 @@ class Run:
             # against a census since replaced. The appended row wins, by the same
             # last-row-per-key rule the resume reads by, so nothing has to be deleted first.
             if not redo and self.row_done.get(key):
-                # NO CLOCK, DELIBERATELY: nothing ran, so there is no start to report. The
-                # space where one would go is held open so this line stays in the same column
-                # as the rows that did run.
-                say(f"  {'':8}  {profile:<18} already measured")
+                # NOTHING PRINTED FOR A ROW THAT DID NOT RUN. de-12wr.8: a per-profile line is
+                # worth printing only when the row took longer than `WORTH_A_LINE`, and a row
+                # the folder already held took no time at all. The progress line that follows
+                # says the run advanced, which is the whole of what happened.
                 tally["skipped"] += 1
                 tally["rows"] += 1
                 if not in_repair and self._row_finished(key, None, "\n".join(out)):
@@ -1018,21 +1018,27 @@ class Run:
             row_started = time.monotonic()
             row_clock = time.strftime("%H:%M:%S")
 
-            # THE WALL CLOCK IS ON THIS LINE, THE ONE THAT EXISTS WHILE THE ROW IS RUNNING.
-            # de-p58a. The progress line carries durations only - all relative to a start
-            # nobody wrote down - so a reader could not say when a row began and, for the row
-            # in flight, could not say anything at all.
-            say(f"  {row_clock}  {profile:<18} ...")
-
             status = self._run_row(conversation, profile, log)
             took = time.monotonic() - row_started
 
+            # ONE LINE PER ROW, NOT TWO, AND ONLY FOR A ROW THAT TOOK LONG ENOUGH TO NOTICE.
+            # de-12wr.8. The opening `...` and the verdict used to be separate lines so that
+            # the measurement's own progress lines could land between them; a row under
+            # `WORTH_A_LINE` prints nothing at all now, and a row over it is summarised in one
+            # line after the fact, with the progress lines already above it.
+            #
+            # THE WALL CLOCK STAYS ON IT - de-p58a. The progress line carries durations only,
+            # all relative to a start nobody wrote down, so without this a reader cannot say
+            # when a row began. `row_clock` is the START, not the finish, which is what pairs
+            # it with the progress lines above.
+            #
             # THE SEPARATOR IS PRINTED, NOT IMPLIED. de-qm7a: this used to let the field
             # padding supply the gap before the verdict, and "deepest-unreach-1" at seventeen
             # characters overflowed a twelve-wide field, so the log said
             # "deepest-unreach-1ok". The width is for ALIGNMENT and the trailing space is for
             # correctness.
-            prefix = f"  {row_clock}  {profile:<18} "
+            prefix = f"  {row_clock}  {profile:<18} {took:>8.2f}s "
+            worth_saying = took > common.WORTH_A_LINE
 
             text = log.read_text(encoding="utf-8", errors="replace")
 
@@ -1067,7 +1073,12 @@ class Run:
                     say(prefix + "NOT MEASURED - no memory for the budget; rerun this row")
                     tally["not_measured"] += 1
                 else:
-                    say(prefix + "ok")
+                    # A ROW THAT TOOK LONGER THAN WORTH_A_LINE SAYS SO; a quick one says
+                    # nothing and lets the progress line speak for it. NOT-MEASURED and the
+                    # two failures below are never gated - they are the lines somebody is
+                    # looking for.
+                    if worth_saying:
+                        say(prefix + "ok")
                     # WHAT THE ROW COST BEYOND ITS ENGINES, which is what makes ROW_OVERHEAD a
                     # measurement rather than a constant. Only from a row that measured
                     # something: a NOT-MEASURED row never ran its engines.
@@ -1163,10 +1174,13 @@ class Run:
             common.write_lf(tsv, self.header + "\n")
         out.append(f"=== {conversation} -> {tsv}")
 
+        # NOTHING PRINTED FOR A ROW THAT DID NOT RUN, and nothing printed for the process
+        # opening either. de-12wr.8: what a reader wants from the tail is the group line, and
+        # five per-profile lines per group buries it. The block below prints only what took
+        # longer than `WORTH_A_LINE`, or went wrong.
         asking = []
         for profile in wanted:
             if not redo and self.row_done.get((str(conversation), profile)):
-                out.append(f"  {'':8}  {profile:<18} already measured")
                 tally["skipped"] += 1
                 tally["rows"] += 1
             else:
@@ -1178,11 +1192,14 @@ class Run:
 
         log = self.logs / f"matrix-{conversation}.log"
         clock_at = time.strftime("%H:%M:%S")
-        out.append(f"  {clock_at}  {len(asking)} profile(s) in one process ...")
 
         began = time.monotonic()
         status = self._run_rows(conversation, asking, log)
         took = time.monotonic() - began
+        # ONE CLOCK FOR THE PROCESS, SHARED OUT, because a row inside a shared process has
+        # none of its own - the same even split the pace calibration uses below.
+        each = took / max(1, len(asking))
+        worth_saying = each > common.WORTH_A_LINE
 
         text = log.read_text(encoding="utf-8", errors="replace")
 
@@ -1201,12 +1218,11 @@ class Run:
             if len(cells) > 2 and cells[0] == str(conversation) and cells[2] in asking:
                 rows[cells[2]] = line
 
-        # AN EVEN SHARE OF THE PROCESS'S WALL TIME, since a row inside a shared process has no
-        # clock of its own. It is only used to calibrate the pace, where what matters is that
-        # the total is right rather than the split - and the alternative, attributing the whole
-        # of it to each row, would say the group cost five times what it did.
-        each = took / max(1, len(asking))
-
+        # `each` IS AN EVEN SHARE OF THE PROCESS'S WALL TIME, taken above, since a row inside a
+        # shared process has no clock of its own. It is only used to calibrate the pace, where
+        # what matters is that the total is right rather than the split - and the alternative,
+        # attributing the whole of it to each row, would say the group cost five times what it
+        # did.
         for profile in asking:
             row = rows.get(profile)
             if row is None:
@@ -1216,16 +1232,19 @@ class Run:
                 with self.lock:
                     with common.open_lf(tsv, "a") as handle:
                         handle.write(self.verdict_row(conversation, profile, "CRASHED") + "\n")
-                out.append(f"  {clock_at}  {profile:<18} CRASHED (see {log})")
+                out.append(f"  {clock_at}  {profile:<18} {each:>8.2f}s CRASHED (see {log})")
             else:
                 with self.lock:
                     with common.open_lf(tsv, "a") as handle:
                         handle.write(row + "\n")
                 if "NOT-MEASURED" in row:
-                    out.append(f"  {clock_at}  {profile:<18} NOT MEASURED - no memory for the budget")
+                    out.append(f"  {clock_at}  {profile:<18} {each:>8.2f}s NOT MEASURED - no memory for the budget")
                     tally["not_measured"] += 1
                 else:
-                    out.append(f"  {clock_at}  {profile:<18} ok")
+                    # ONLY WHERE IT TOOK LONG ENOUGH TO NOTICE. The crash and NOT-MEASURED
+                    # lines above are never gated: they are what somebody is looking for.
+                    if worth_saying:
+                        out.append(f"  {clock_at}  {profile:<18} {each:>8.2f}s ok")
                     self.weights.observe(each, row_engine_seconds(row, self.header_fields))
             tally["rows"] += 1
             tally["done_spec"].append((str(conversation), profile, each))
@@ -1337,10 +1356,15 @@ class Run:
         estimate, note = self._estimate(left, self.done_spec, self.left_spec, now)
 
         print(
-            f"    {self.done_rows}/{self.total_rows} "
-            f"({self.done_rows * 100 // max(1, self.total_rows)}%)  "
-            f"row {clock(took or 0)}  elapsed {clock(elapsed)}  "
-            f"est. left ~{clock(estimate)}{note}",
+            common.progress_line(
+                self.done_rows,
+                self.total_rows,
+                f"{key[0]:>6} {key[1]:<18}",
+                seconds=took,
+                elapsed=elapsed,
+                estimate=estimate,
+                note=note.strip(),
+            ),
             flush=True,
         )
         return True
@@ -1799,11 +1823,19 @@ def parallel_phase(run, groups, workers, worker_mb):
                 estimate = None
                 note = " (nothing measured yet)"
 
-        shown = "?" if estimate is None else clock(estimate)
+        # THE SAME LINE THE SERIAL PHASE AND THE CENSUS PRINT, so a reader switching between
+        # the three logs is reading one layout. What differs is only what the item column
+        # names - a row there, a group here - and the tail, which says how many of these
+        # groups actually cost this run anything. de-12wr.8.
         print(
-            f"    group {state['done']}/{len(groups)}  "
-            f"measured {state['measured']}/{groups_with_work}  "
-            f"elapsed {clock(elapsed)}  est. left ~{shown}{note}",
+            common.progress_line(
+                state["done"],
+                len(groups),
+                f"{conversation:>6} {'(group)':<18}",
+                elapsed=elapsed,
+                estimate=estimate,
+                note=f"measured {state['measured']}/{groups_with_work}{note}",
+            ),
             flush=True,
         )
 
