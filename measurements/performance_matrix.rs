@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-//! Two allowances, six conversations, five profiles: the whole grid. Plus seven more
-//! profiles held back for being too easy, and a census of the game two of the five depend on.
+//! Two allowances, six conversations, five profiles: the whole grid. Plus a census of the
+//! game, which two of the five profiles depend on.
 //!
 //! A DEFAULT RUN MEASURES ONE OF THE TWO: `ingame`, the search the game runs at a player's
 //! own settings, which is the column every tuning decision is read off. `nolimit` is the
@@ -49,11 +49,8 @@
 //! - the deepest 1, 5 and 10 entries unseen;
 //! - the deepest 1 and 5 entries NO PATH CAN REACH.
 //!
-//! ALL FIVE ARE DEEP PROFILES, and the seven percentage-seen ones that used to sit beside
-//! them are held back now. See [`PROFILES`] and [`TOO_EASY`] for the measurement that split
-//! them: the deep profiles reach twenty-two to fifty-four seconds on the `nolimit` column
-//! while the percentage ones top out at 1.1, and the seven of them give one single answer
-//! on 92.5 per cent of groups. They are still runnable by name.
+//! ALL FIVE ARE DEEP, and that is what a performance matrix is for - see [`PROFILES`] for
+//! the measurement behind it.
 //!
 //! ## The two that need a census: `deepest-unreach-1` and `-5`
 //!
@@ -103,9 +100,7 @@
 //! cause - a `CENSUS_FILE` taken under a different world from the one being measured, which
 //! nothing checks.
 //!
-//! ## Why "deepest" for the small counts and "random" for the percentages
-//!
-//! They are asking different things and the difference is the point.
+//! ## Why "deepest", and what it is not
 //!
 //! DEEPEST IS THE ADVERSARIAL CASE. An entry at the end of the longest chain is the one the
 //! search reaches last, so seeding it and nothing else poses the hardest question the group
@@ -123,12 +118,11 @@
 //! nobody wants the curve. Said plainly rather than cited, because this file pointed at
 //! that path for months after it stopped existing.
 //!
-//! RANDOM IS THE TYPICAL CASE. A save does not read a conversation depth-first; it reads
-//! whatever the conversation led it to. Drawing uniformly from the structurally reachable
-//! entries is the closest thing to a real profile that needs no real profile.
-//!
-//! The seed is the percentage, so a row is reproducible and two rows are not accidentally
-//! the same draw.
+//! AND THE TYPICAL CASE IS NOT MEASURED HERE, on purpose. Drawing a random share of a
+//! group models what a save has actually read, and it is what
+//! `measurements/cacheable_asks.rs` and `measurements/candidate_recurrence.rs` do - but it
+//! answers in a fraction of a second whatever the group, so a performance matrix spends its
+//! time confirming that the easy case is still easy. See [`PROFILES`].
 //!
 //! ## Why there is no all-seen row any more
 //!
@@ -164,8 +158,8 @@
 //!
 //! WHAT IT DOES NOT SAY is anything about a long candidate list. One candidate is the shape
 //! this is best at, and the expensive case - a long list none of which is reachable, where
-//! a refusal is paid for once per candidate - is untouched at `cands` of one. That is what
-//! the percentage profiles are for.
+//! a refusal is paid for once per candidate - is untouched at `cands` of one. The deepest
+//! profiles at higher counts are what reach it.
 //!
 //! ## Running it
 //!
@@ -258,7 +252,7 @@ mod symbolic_answers;
 // profile name have to mean ONE set of unseen entries wherever the pair is written down.
 #[path = "seen_profile.rs"]
 mod seen_profile;
-use seen_profile::{candidates, percent_unseen};
+use seen_profile::candidates;
 
 /// The six heaviest groups, 362 included.
 const HEAVIEST: [i32; 6] = [362, 368, 631, 14, 28, 1030];
@@ -373,8 +367,6 @@ const COUNTER_CAP: i32 = 16;
 /// How much of a group a profile has read.
 #[derive(Debug, Clone, Copy)]
 enum Profile {
-    /// Everything seen. Nothing to find, and the shortcut should say so without searching.
-
     /// The n structurally deepest entries unseen: the adversarial case.
     DeepestUnseen(usize),
     /// The n deepest entries NO PATH CAN REACH: the case that has to prove a no.
@@ -391,8 +383,6 @@ enum Profile {
     /// runs could disagree about what the profile even IS, and its cost would land inside
     /// the clock the row exists to report.
     DeepestUnreachable(usize),
-    /// This percentage of entries seen, the rest unseen, drawn at random: the typical case.
-    PercentSeen(u32),
 }
 
 impl Profile {
@@ -405,7 +395,6 @@ impl Profile {
             // that varies per group cannot be asked for by name, and both the resume and
             // `DEGCT_PROFILE=` key on it. What was real is the `real` column instead.
             Profile::DeepestUnreachable(n) => format!("deepest-unreach-{n}"),
-            Profile::PercentSeen(p) => format!("{p}pc-seen"),
         }
     }
 }
@@ -427,12 +416,18 @@ impl Profile {
 ///   deepest-1              96.0%      155    331    21932    22636
 ///   25pc-seen              99.5%      173    298      489     1127
 ///   75pc-seen             100.0%      178    299      429      437
-///   ... the other five percentage profiles, all within that band
 /// ```
 ///
-/// The five deep profiles reach twenty-two to fifty-four SECONDS; the seven percentage ones
-/// top out at 1.1, and six of the seven never pass half a second. That is a fiftyfold gap in
-/// the ninety-ninth percentile and it is the whole reason for the split below.
+/// THE LAST TWO ROWS ARE WHY THERE ARE ONLY FIVE PROFILES. They are two of seven
+/// percentage-seen profiles this used to carry, kept in the table as the evidence against
+/// them: the five deep profiles reach twenty-two to fifty-four SECONDS where the seven
+/// percentage ones topped out at 1.1, and six of the seven never passed half a second. A
+/// fiftyfold gap in the ninety-ninth percentile.
+///
+/// THEY WERE ALSO REDUNDANT WITH EACH OTHER, which is why the answer was none of them rather
+/// than one of them. Over the same 200 groups all seven gave a single answer on 185 - 92.5
+/// per cent - while the five deep profiles agree with each other on 33 per cent. Seven
+/// readings of one question is not seven questions.
 ///
 /// READ ON `nolimit`, NOT `ingame`, AND THAT IS NOT A DETAIL. The in-game column is walled by
 /// the player's own `LookAheadTimeBudgetMs`, so no row of it can be slow - every profile is
@@ -451,40 +446,18 @@ const PROFILES: [Profile; 5] = [
     Profile::DeepestUnreachable(5),
 ];
 
-/// The percentage-seen profiles: runnable by name, and NOT part of the default grid.
+/// Every profile a run can name.
 ///
-/// KEPT OUT OF [`PROFILES`] because they are too easy to be worth a whole-game run's time.
-/// The table above is the measurement; what it says is that these seven answer in about a
-/// fifth of a second whatever the group, so seven tenths of every run was spent confirming
-/// that the typical case is still typical.
+/// THE SAME LIST AS [`PROFILES`], and a function rather than a second constant so that the
+/// two cannot drift: a profile the grid runs is a profile a run may ask for by name, and
+/// there is no longer any third category.
 ///
-/// THEY ARE ALSO REDUNDANT WITH EACH OTHER, which is the second reason and the one that
-/// says why the answer is none of them rather than one of them. Over the same 200 groups all
-/// seven give a single answer on 185 of them - 92.5 per cent - while the five deep profiles
-/// agree with each other on 33 per cent. Seven readings of one question is not seven
-/// questions.
-///
-/// They remain a sweep of their own, and nothing about a run that names them has changed:
-///
-///     DEGCT_PROFILES=95pc-seen,50pc-seen,5pc-seen tools/measure-matrix.sh all
-///
-/// A RUN WITH THIS GRID DOES NOT COMPARE ROW FOR ROW WITH ONE TAKEN BEFORE THE SPLIT. The
-/// rows that survive compare exactly as they always did - a profile's definition has not
-/// moved - but "a whole-game run" now means five profiles over 1,422 groups rather than ten,
-/// and a summary that divides by the row count will not agree with an older one.
-const TOO_EASY: [Profile; 7] = [
-    Profile::PercentSeen(95),
-    Profile::PercentSeen(90),
-    Profile::PercentSeen(75),
-    Profile::PercentSeen(50),
-    Profile::PercentSeen(25),
-    Profile::PercentSeen(10),
-    Profile::PercentSeen(5),
-];
-
-/// Every profile a run can name, which is the default grid plus the ones held back from it.
+/// A RUN OF THIS GRID DOES NOT COMPARE ROW FOR ROW WITH AN OLDER FOLDER. The rows that
+/// survive compare exactly as they always did - a profile's definition has not moved - but
+/// a whole-game run is five profiles over 1,422 groups where it was once ten, and a summary
+/// that divides by the row count will not agree with an older one.
 fn known_profiles() -> impl Iterator<Item = Profile> {
-    PROFILES.into_iter().chain(TOO_EASY)
+    PROFILES.into_iter()
 }
 
 /// The two searches a row can hold, named for what tells them apart.
@@ -830,7 +803,6 @@ fn profiles() -> Vec<Profile> {
     }
 }
 
-/// The entries a profile leaves unseen.
 /// A census read back: which entries a group's own census proved unreachable, deepest first.
 ///
 /// EMPTY IS A FINDING, not a missing row - a group whose census found nothing unreachable is
@@ -960,7 +932,6 @@ fn unseen_for(profile: Profile, candidates: &[DialogueNodeId]) -> HashSet<Dialog
         // Built by `unreachable_for`, which needs the census this does not have. Reaching
         // here would mean the row loop stopped asking it first.
         Profile::DeepestUnreachable(_) => unreachable!("an unreachable profile reads the census"),
-        Profile::PercentSeen(percent) => percent_unseen(candidates, percent),
     }
 }
 

@@ -19,13 +19,11 @@ Examples:
     tools/measure-matrix.py 368 631         # just these two
     DEGCT_ENGINES=nolimit tools/measure-matrix.py 14  # one column, one group
     DEGCT_PROFILES=deepest-1 DEGCT_ENGINES=nolimit tools/measure-matrix.py 14   # one row
-    DEGCT_PROFILES=95pc-seen,50pc-seen tools/measure-matrix.py 14     # a held-back profile
     tools/measure-matrix.py all             # EVERY group in the game, resumably
 
-THE DEFAULT GRID IS FIVE DEEP PROFILES - deepest-1, -5, -10, deepest-unreach-1 and -5. The
-seven percentage-seen profiles that used to be in it were measured to be too easy to be
-worth a run's time and are held back, nameable by DEGCT_PROFILES=. See PROFILES and TOO_EASY in
-measurements/performance_matrix.rs for the table.
+THE GRID IS FIVE DEEP PROFILES - deepest-1, -5, -10, deepest-unreach-1 and -5 - and they are
+all of them, so DEGCT_PROFILES= narrows the grid rather than reaching outside it. See
+PROFILES in measurements/performance_matrix.rs for the measurement behind the list.
 
 A GRID WITH AN UNREACHABLE PROFILE NEEDS A CENSUS, and this takes one into the run's own
 folder if CENSUS_FILE names none and the folder holds none - see `arrange_census`, below,
@@ -143,10 +141,9 @@ TAB = "\t"
 # The six heavy conversations the matrix has always meant, when nothing is named.
 DEFAULT_CONVERSATIONS = [362, 368, 631, 14, 28, 1030]
 
-# THE DEEP PROFILES, AND ONLY THOSE. The seven percentage-seen ones were measured to be too
-# easy to be worth a run's time - about a fifth of a second whatever the group, and one
-# single answer between all seven on 92.5 per cent of them - and are held back. They are
-# still runnable by name: DEGCT_PROFILES=95pc-seen,50pc-seen. See PROFILES and TOO_EASY in
+# THE DEEP PROFILES, WHICH ARE ALL OF THEM. Percentage-seen profiles were measured to be
+# too easy to be worth a run's time - about a fifth of a second whatever the group, and one
+# single answer between all seven of them on 92.5 per cent of groups. See PROFILES in
 # measurements/performance_matrix.rs for the table this came from.
 DEFAULT_PROFILES = [
     "deepest-1",
