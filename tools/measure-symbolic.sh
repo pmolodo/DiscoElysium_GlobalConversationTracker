@@ -18,7 +18,7 @@
 #   tools/measure-symbolic.sh symbolic_answers
 #   tools/measure-symbolic.sh shared_symbolic 631
 #   tools/measure-symbolic.sh backward_support 368 631
-#   tools/measure-symbolic.sh money_and_clock shipped 28
+#   tools/measure-symbolic.sh layout_shape slots 14
 #
 # THE MEASUREMENT IS AN EXAMPLE under measurements/, named the way Cargo.toml names it.
 # It used to be a test NAME plus a TEST_BINARY saying which binary to find it in; an
@@ -26,9 +26,9 @@
 # gone stale - its documented default named a test file that no longer exists, so running
 # this with no arguments could not work at all.
 #
-# A measurement holding several stages behind one `main` - money_and_clock, layout_shape -
-# takes the stage name as a second argument. Anything that parses as a number is read as a
-# conversation, so the stage is optional and order still reads naturally.
+# A measurement holding several stages behind one `main` - layout_shape is the one that
+# does - takes the stage name as a second argument. Anything that parses as a number is
+# read as a conversation, so the stage is optional and order still reads naturally.
 set -u
 
 MEASUREMENT="${1:-symbolic_answers}"

@@ -82,11 +82,6 @@ path = "measurements/manager_memory.rs"
 name = "menu_residue"
 path = "measurements/menu_residue.rs"
 
-# Four stages of one investigation behind one `main`, picked by name - see the note there.
-[[example]]
-name = "money_and_clock"
-path = "measurements/money_and_clock.rs"
-
 # Two measurements behind one `main`, picked by argument - see the note on `main` there.
 [[example]]
 name = "layout_shape"

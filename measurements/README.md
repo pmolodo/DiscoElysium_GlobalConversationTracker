@@ -72,7 +72,7 @@ costing one row rather than every row after it:
 
     tools/measure-symbolic.sh shared_symbolic 631
     tools/measure-symbolic.sh backward_support 368 631
-    tools/measure-symbolic.sh money_and_clock shipped 28
+    tools/measure-symbolic.sh layout_shape slots 14
 
 The first argument is the example's name. A measurement with several stages behind one
 `main` takes the stage second; anything that looks like a number is read as a conversation,
