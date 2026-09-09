@@ -410,8 +410,20 @@ where
 
     let forwards = (hunting > Novelty::SeenThisGame && !slice.is_zero()).then(|| {
         forwards_for(
-            graph, start, branch, seed, compiler, world, counter_cap, hunting, &novelty,
-            slice, budget.slice_memory, budget.slice_steps, budget.forget_dead.clone(), shape,
+            graph,
+            start,
+            branch,
+            seed,
+            compiler,
+            world,
+            counter_cap,
+            hunting,
+            &novelty,
+            slice,
+            budget.slice_memory,
+            budget.slice_steps,
+            budget.forget_dead.clone(),
+            shape,
         )
     });
 
@@ -436,9 +448,7 @@ where
     // that is its destinations holding what entering by that outcome left - never the check
     // itself, whose pre-entry states are reachable by either roll and would let a meet
     // there prove the wrong thing.
-    let from = novelty_search::Where::of(
-        graph, start, branch, seed, compiler, world, counter_cap,
-    );
+    let from = novelty_search::Where::of(graph, start, branch, seed, compiler, world, counter_cap);
     // AND NARROWED BY IT WHERE THE RUN SETTLED. A settled forward run says exactly what can
     // arrive at an entry, so a backward pass may intersect every pre-image against it, and
     // an entry the run never reached at all is refused without a fixed point. On
@@ -486,7 +496,9 @@ where
         // remains of THIS in turn - so the three rations compose into one deadline rather
         // than adding up.
         &novelty_search::Budget {
-            time: budget.backwards.min(budget.overall.saturating_sub(began.elapsed())),
+            time: budget
+                .backwards
+                .min(budget.overall.saturating_sub(began.elapsed())),
             each: crate::symbolic::backward::Budget {
                 steps: usize::MAX,
                 time: budget.each,
@@ -533,13 +545,17 @@ mod tests {
     use crate::symbolic::data_layout::DataLayout;
     use crate::symbolic::reachability::seed_of;
     use crate::symbolic::vars::DataVars;
-    use crate::test_graph::{node, Entry, GraphBuilder};
+    use crate::test_graph::{Entry, GraphBuilder, node};
     use crate::world::test_world::TestWorld;
 
     const CAP: i32 = 16;
 
-    fn run<F>(graph: &LookAheadGraph, world: &TestWorld, novelty: F, budget: &Budget)
-        -> PortfolioAnswer
+    fn run<F>(
+        graph: &LookAheadGraph,
+        world: &TestWorld,
+        novelty: F,
+        budget: &Budget,
+    ) -> PortfolioAnswer
     where
         F: Fn(DialogueNodeId) -> Novelty,
     {
@@ -557,8 +573,18 @@ mod tests {
             .unwrap_or(Novelty::SeenThisGame);
 
         best_novelty(
-            graph, node(0), StartBranch::Either, &seed, &mut compiler, world, CAP as u32,
-            novelty, hunting, budget, &GroupShape::of(graph), None,
+            graph,
+            node(0),
+            StartBranch::Either,
+            &seed,
+            &mut compiler,
+            world,
+            CAP as u32,
+            novelty,
+            hunting,
+            budget,
+            &GroupShape::of(graph),
+            None,
         )
     }
 
@@ -590,8 +616,18 @@ mod tests {
             .unwrap_or(Novelty::SeenThisGame);
 
         best_novelty(
-            graph, node(0), branch, &seed, &mut compiler, world, CAP as u32, novelty,
-            hunting, &Budget::default(), &GroupShape::of(graph), None,
+            graph,
+            node(0),
+            branch,
+            &seed,
+            &mut compiler,
+            world,
+            CAP as u32,
+            novelty,
+            hunting,
+            &Budget::default(),
+            &GroupShape::of(graph),
+            None,
         )
     }
 
@@ -604,8 +640,17 @@ mod tests {
     #[test]
     fn an_outcome_is_answered_from_its_own_half_of_the_check() {
         let graph = GraphBuilder::new()
-            .add(Entry::new(0).kind(DialogueCheckKind::White).flag("roll").links(&[1, 3]))
-            .add(Entry::new(1).guard(r#"Variable["roll"] == true"#).links(&[2]))
+            .add(
+                Entry::new(0)
+                    .kind(DialogueCheckKind::White)
+                    .flag("roll")
+                    .links(&[1, 3]),
+            )
+            .add(
+                Entry::new(1)
+                    .guard(r#"Variable["roll"] == true"#)
+                    .links(&[2]),
+            )
             .add(Entry::new(2))
             .add(Entry::new(3).guard(r#"Variable["roll"] == false"#))
             .build();
@@ -647,7 +692,10 @@ mod tests {
     /// it does when it runs. Fifty milliseconds is what it was given when it was on, so a
     /// test here exercises the arrangement the measurements were taken against.
     fn with_slice() -> Budget {
-        Budget { forwards: Duration::from_millis(50), ..Budget::default() }
+        Budget {
+            forwards: Duration::from_millis(50),
+            ..Budget::default()
+        }
     }
 
     fn unseen(ids: &[i32]) -> impl Fn(DialogueNodeId) -> Novelty + '_ {
@@ -672,7 +720,11 @@ mod tests {
 
         let answer = run(&graph, &TestWorld::new(), unseen(&[2]), &with_slice());
         assert_eq!(answer.best, Novelty::UnseenAnyGame);
-        assert_eq!(answer.by, Answered::Forwards, "it halts on the unseen entry");
+        assert_eq!(
+            answer.by,
+            Answered::Forwards,
+            "it halts on the unseen entry"
+        );
         assert_eq!(answer.witness, Some(node(2)));
         assert_eq!(answer.targets_asked, 0, "and no candidate was asked about");
     }
@@ -691,7 +743,12 @@ mod tests {
 
         // Only the start is unseen anywhere, which is the shape a rolled check makes when
         // its outcome opens something already read - see the bridge's own test.
-        let answer = run(&graph, &TestWorld::new(), classes(&[0], &[]), &Budget::default());
+        let answer = run(
+            &graph,
+            &TestWorld::new(),
+            classes(&[0], &[]),
+            &Budget::default(),
+        );
 
         assert_eq!(answer.best, Novelty::UnseenAnyGame);
         assert_eq!(answer.by, Answered::Forwards);
@@ -732,11 +789,20 @@ mod tests {
             .add(Entry::new(2))
             .build();
 
-        let answer = run(&graph, &TestWorld::new(), classes(&[2], &[1]), &with_slice());
+        let answer = run(
+            &graph,
+            &TestWorld::new(),
+            classes(&[2], &[1]),
+            &with_slice(),
+        );
 
         assert_eq!(answer.best, Novelty::UnseenAnyGame);
         assert_eq!(answer.by, Answered::Forwards);
-        assert_eq!(answer.witness, Some(node(2)), "and 2 is what it stopped at, not 1");
+        assert_eq!(
+            answer.witness,
+            Some(node(2)),
+            "and 2 is what it stopped at, not 1"
+        );
     }
 
     /// And hunts the rung below when the top one is nowhere reachable.
@@ -748,11 +814,20 @@ mod tests {
             .add(Entry::new(2))
             .build();
 
-        let answer = run(&graph, &TestWorld::new(), classes(&[], &[1, 2]), &with_slice());
+        let answer = run(
+            &graph,
+            &TestWorld::new(),
+            classes(&[], &[1, 2]),
+            &with_slice(),
+        );
 
         assert_eq!(answer.best, Novelty::UnseenThisGame);
         assert_eq!(answer.by, Answered::Forwards);
-        assert_eq!(answer.witness, Some(node(1)), "the nearest of the class it hunts");
+        assert_eq!(
+            answer.witness,
+            Some(node(1)),
+            "the nearest of the class it hunts"
+        );
     }
 
     /// Nothing unseen anywhere in reach: no slice runs at all, and the answer is settled.
@@ -770,7 +845,12 @@ mod tests {
             .add(Entry::new(2))
             .build();
 
-        let answer = run(&graph, &TestWorld::new(), classes(&[], &[]), &Budget::default());
+        let answer = run(
+            &graph,
+            &TestWorld::new(),
+            classes(&[], &[]),
+            &Budget::default(),
+        );
 
         assert_eq!(answer.best, Novelty::SeenThisGame);
         assert_eq!(answer.by, Answered::Backwards);
@@ -791,7 +871,10 @@ mod tests {
             .add(Entry::new(2))
             .build();
 
-        let no_forward = Budget { forwards: Duration::ZERO, ..Default::default() };
+        let no_forward = Budget {
+            forwards: Duration::ZERO,
+            ..Default::default()
+        };
         let answer = run(&graph, &TestWorld::new(), unseen(&[2]), &no_forward);
         assert_eq!(answer.best, Novelty::UnseenAnyGame);
         assert_eq!(answer.by, Answered::Backwards);
@@ -822,7 +905,11 @@ mod tests {
         let answer = run(&graph, &TestWorld::new(), unseen(&[2]), &starved);
 
         assert_eq!(answer.by, Answered::Partly);
-        assert_ne!(answer.stopped_by, StoppedBy::Nothing, "and it says which ration ran out");
+        assert_ne!(
+            answer.stopped_by,
+            StoppedBy::Nothing,
+            "and it says which ration ran out"
+        );
         assert_eq!(
             answer.best,
             Novelty::SeenThisGame,

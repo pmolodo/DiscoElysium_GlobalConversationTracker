@@ -27,7 +27,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::core::guard::{Guard, GuardExpression, GuardRef};
 use crate::core::state::{
-    StateSymbols, ITEM_PREFIX, ONCE_PREFIX, SEEN_PREFIX, TASK_PREFIX, THOUGHT_PREFIX,
+    ITEM_PREFIX, ONCE_PREFIX, SEEN_PREFIX, StateSymbols, TASK_PREFIX, THOUGHT_PREFIX,
 };
 use crate::core::types::DialogueNodeId;
 use crate::graph::graph::LookAheadGraph;
@@ -52,7 +52,11 @@ pub struct DeltaSlot {
 
 /// How many bits it takes to represent `0..=max`.
 fn bits_for(max: u32) -> u8 {
-    if max == 0 { 1 } else { (u32::BITS - max.leading_zeros()) as u8 }
+    if max == 0 {
+        1
+    } else {
+        (u32::BITS - max.leading_zeros()) as u8
+    }
 }
 
 /// Where each part of a data state lives, in variable numbers.
@@ -142,7 +146,13 @@ impl DataLayout {
             None
         };
 
-        Self { slots, money, clock, total: next, deltas }
+        Self {
+            slots,
+            money,
+            clock,
+            total: next,
+            deltas,
+        }
     }
 
     /// Squeezes each slot to the largest value its guards can still tell apart.
@@ -196,7 +206,9 @@ impl DataLayout {
             }
             // No comparison at all means the slot is read as a condition, or not read - and
             // one bit already tells zero from non-zero, so there is nothing to squeeze.
-            let Some(&high) = highest.get(&slot) else { continue };
+            let Some(&high) = highest.get(&slot) else {
+                continue;
+            };
             let wanted = bits_for(high.saturating_add(1)).max(assigned[slot]);
             *width = (*width).min(wanted);
         }
@@ -297,9 +309,15 @@ impl DataLayout {
         let symbols = graph.symbols();
         let elsewhere = |slot: usize| {
             symbols.name_of(slot).is_some_and(|name| {
-                [ITEM_PREFIX, TASK_PREFIX, THOUGHT_PREFIX, ONCE_PREFIX, SEEN_PREFIX]
-                    .iter()
-                    .any(|prefix| name.starts_with(prefix))
+                [
+                    ITEM_PREFIX,
+                    TASK_PREFIX,
+                    THOUGHT_PREFIX,
+                    ONCE_PREFIX,
+                    SEEN_PREFIX,
+                ]
+                .iter()
+                .any(|prefix| name.starts_with(prefix))
             })
         };
 
@@ -319,7 +337,13 @@ impl DataLayout {
             // the slot wider than the cap needs, and a rewriting that used one for both
             // would answer a guard the shipped encoding does not.
             let ceiling = (1u32 << absolute) - 1;
-            deltas.insert(slot, DeltaSlot { ceiling, cap: ceiling.min(counter_cap.max(0) as u32) });
+            deltas.insert(
+                slot,
+                DeltaSlot {
+                    ceiling,
+                    cap: ceiling.min(counter_cap.max(0) as u32),
+                },
+            );
             widths[slot] = rebased;
         }
 
@@ -372,7 +396,9 @@ impl DataLayout {
             match node.expression() {
                 GuardExpression::Comparison(_, a, b) => {
                     for (side, other) in [(a, b), (b, a)] {
-                        let Some(slot) = Self::slot_named(side, symbols) else { continue };
+                        let Some(slot) = Self::slot_named(side, symbols) else {
+                            continue;
+                        };
                         let GuardExpression::Literal(value) = other.expression() else {
                             unreadable.insert(slot);
                             continue;
@@ -401,7 +427,9 @@ impl DataLayout {
 
     /// The slot a guard expression names, if it simply names one.
     fn slot_named(guard: GuardRef<'_>, symbols: &StateSymbols) -> Option<usize> {
-        let GuardExpression::Variable(name) = guard.expression() else { return None };
+        let GuardExpression::Variable(name) = guard.expression() else {
+            return None;
+        };
         (0..symbols.count()).find(|slot| symbols.name_of(*slot) == Some(name))
     }
 
@@ -473,8 +501,13 @@ impl DataLayout {
             None => Self::read_by(graph),
         };
 
-        Self::for_graph(graph, counter_cap, Self::money_ceiling(graph, world.money()), false)
-            .keeping_only_read(graph.symbols(), &reads)
+        Self::for_graph(
+            graph,
+            counter_cap,
+            Self::money_ceiling(graph, world.money()),
+            false,
+        )
+        .keeping_only_read(graph.symbols(), &reads)
     }
 
     /// Every entry reachable by links from any entry of `conversations`, those included.
@@ -564,7 +597,9 @@ impl DataLayout {
     /// them.
     pub fn keeping_only_read(mut self, symbols: &StateSymbols, reads: &HashSet<String>) -> Self {
         for slot in 0..self.slots.len() {
-            let Some(name) = symbols.name_of(slot) else { continue };
+            let Some(name) = symbols.name_of(slot) else {
+                continue;
+            };
             // The engine's own bookkeeping, which no guard mentions and every search needs.
             if name.starts_with(SEEN_PREFIX) || name.starts_with(ONCE_PREFIX) {
                 continue;
@@ -645,7 +680,10 @@ impl DataLayout {
 
     /// Whether a slot is a single bit, which is the common case.
     pub fn is_boolean(&self, slot: usize) -> bool {
-        self.slots.get(slot).map(|(_, bits)| *bits == 1).unwrap_or(false)
+        self.slots
+            .get(slot)
+            .map(|(_, bits)| *bits == 1)
+            .unwrap_or(false)
     }
 
     /// The variable run for money, if it is tracked.
@@ -785,7 +823,9 @@ impl DataLayout {
                     };
 
                     let Some(prefix) = prefix else { continue };
-                    let Some(only) = arguments.only() else { continue };
+                    let Some(only) = arguments.only() else {
+                        continue;
+                    };
                     if let GuardExpression::Literal(value) = only.expression() {
                         names.insert(format!("{prefix}{}", value.text()));
                     }
@@ -806,7 +846,9 @@ impl DataLayout {
     /// does not model at all - is de-sze.10 and is a different question.
     pub fn group_passes_time(graph: &LookAheadGraph) -> bool {
         graph.nodes().any(|node| {
-            node.actions.iter().any(|a| a.kind() == DialogueActionKind::PassTime)
+            node.actions
+                .iter()
+                .any(|a| a.kind() == DialogueActionKind::PassTime)
         })
     }
 
@@ -816,7 +858,11 @@ impl DataLayout {
     /// what the group actually manipulates rather than what the game contains.
     pub fn slots_named(symbols: &crate::core::state::StateSymbols, prefix: &str) -> usize {
         (0..symbols.count())
-            .filter(|slot| symbols.name_of(*slot).is_some_and(|name| name.starts_with(prefix)))
+            .filter(|slot| {
+                symbols
+                    .name_of(*slot)
+                    .is_some_and(|name| name.starts_with(prefix))
+            })
             .count()
     }
 
@@ -878,7 +924,11 @@ mod tests {
         let mut symbols = StateSymbols::new();
         let slot = symbols.variable("met_kim");
         let graph = graph_with(
-            vec![DialogueAction::assign(slot, 1, "SetVariableValue".to_string())],
+            vec![DialogueAction::assign(
+                slot,
+                1,
+                "SetVariableValue".to_string(),
+            )],
             symbols,
         );
 
@@ -895,7 +945,12 @@ mod tests {
         // ON A LOOP, so the increment can fire as often as the loop goes round and the cap
         // is what bounds it. An increment that fires once is bounded by its own amount.
         let graph = looping_graph_with(
-            vec![DialogueAction::increment(slot, 1, false, "SetVariableValue".to_string())],
+            vec![DialogueAction::increment(
+                slot,
+                1,
+                false,
+                "SetVariableValue".to_string(),
+            )],
             symbols,
         );
 
@@ -911,7 +966,11 @@ mod tests {
         let mut symbols = StateSymbols::new();
         let slot = symbols.variable("stage");
         let graph = graph_with(
-            vec![DialogueAction::assign(slot, 5, "SetVariableValue".to_string())],
+            vec![DialogueAction::assign(
+                slot,
+                5,
+                "SetVariableValue".to_string(),
+            )],
             symbols,
         );
 
@@ -926,7 +985,12 @@ mod tests {
         let counter = symbols.variable("b");
         let last = symbols.variable("c");
         let graph = looping_graph_with(
-            vec![DialogueAction::increment(counter, 1, false, "SetVariableValue".to_string())],
+            vec![DialogueAction::increment(
+                counter,
+                1,
+                false,
+                "SetVariableValue".to_string(),
+            )],
             symbols,
         );
 
@@ -962,13 +1026,20 @@ mod tests {
         let mut symbols = StateSymbols::new();
         let slot = symbols.variable("bribes_taken");
         let graph = graph_with(
-            vec![DialogueAction::increment(slot, 1, false, "SetVariableValue".to_string())],
+            vec![DialogueAction::increment(
+                slot,
+                1,
+                false,
+                "SetVariableValue".to_string(),
+            )],
             symbols,
         );
 
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         assert_eq!(layout.slot(slot), Some((0, 1)));
-        let delta = layout.delta_slot(slot).expect("rebased, since it narrowed the slot");
+        let delta = layout
+            .delta_slot(slot)
+            .expect("rebased, since it narrowed the slot");
         // The absolute reading is what the cap and the old five-bit ceiling described.
         assert_eq!(delta.ceiling, 31);
         assert_eq!(delta.cap, 16);
@@ -1018,7 +1089,12 @@ mod tests {
         let mut symbols = StateSymbols::new();
         let slot = symbols.variable("loop_counter");
         let graph = looping_graph_with(
-            vec![DialogueAction::increment(slot, 1, false, "SetVariableValue".to_string())],
+            vec![DialogueAction::increment(
+                slot,
+                1,
+                false,
+                "SetVariableValue".to_string(),
+            )],
             symbols,
         );
 
@@ -1032,7 +1108,12 @@ mod tests {
         let mut symbols = StateSymbols::new();
         let slot = symbols.variable("first_time_only");
         let graph = looping_graph_with(
-            vec![DialogueAction::increment(slot, 1, true, "SetVariableValue".to_string())],
+            vec![DialogueAction::increment(
+                slot,
+                1,
+                true,
+                "SetVariableValue".to_string(),
+            )],
             symbols,
         );
 
@@ -1056,7 +1137,12 @@ mod tests {
                 Guard::variable("tally".to_string()),
                 Guard::literal(crate::core::guard_value::GuardValue::from_number(1.0)),
             ),
-            vec![DialogueAction::increment(slot, 9, false, "SetVariableValue".to_string())],
+            vec![DialogueAction::increment(
+                slot,
+                9,
+                false,
+                "SetVariableValue".to_string(),
+            )],
             vec![],
             0,
             false,
@@ -1066,7 +1152,8 @@ mod tests {
             false,
             -1,
         );
-        node.actions.push(DialogueAction::increment(slot, 9, false, "s".to_string()));
+        node.actions
+            .push(DialogueAction::increment(slot, 9, false, "s".to_string()));
         let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
 
         // The only threshold is 1, so the slot saturates at 2 and needs two bits; the

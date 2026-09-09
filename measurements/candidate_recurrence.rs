@@ -164,7 +164,7 @@ use std::collections::{HashMap, HashSet};
 
 use lookahead_engine::core::types::{DialogueNodeId, Novelty};
 use lookahead_engine::index::{build_group_graph, read_index};
-use lookahead_engine::symbolic::novelty_search::{candidates_from, Nearest};
+use lookahead_engine::symbolic::novelty_search::{Nearest, candidates_from};
 
 #[path = "../tests/common/mod.rs"]
 mod common;
@@ -263,7 +263,10 @@ const WALK_MENUS: usize = 40;
 fn walk(index: &lookahead_engine::index::Index) {
     let groups = env_list("CONVERSATION", &GROUPS);
     let percents: Vec<u32> = match lookahead_engine::core::env::var("PROFILES") {
-        Ok(value) => value.split(',').filter_map(|p| p.trim().parse().ok()).collect(),
+        Ok(value) => value
+            .split(',')
+            .filter_map(|p| p.trim().parse().ok())
+            .collect(),
         Err(_) => PERCENTS.to_vec(),
     };
     let menus_wanted = from_env("MENUS", WALK_MENUS);
@@ -287,7 +290,9 @@ fn walk(index: &lookahead_engine::index::Index) {
     let mut overall: HashMap<u32, menu_walk::Recurrence> = HashMap::new();
 
     for conversation in groups {
-        let Ok((graph, _)) = build_group_graph(index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(index, conversation) else {
+            continue;
+        };
         let root = DialogueNodeId::new(conversation, 0);
         if graph.get(root).is_none() {
             continue;
@@ -365,7 +370,10 @@ fn walk(index: &lookahead_engine::index::Index) {
 fn links(index: &lookahead_engine::index::Index) {
     let groups = env_list("CONVERSATION", &GROUPS);
     let percents: Vec<u32> = match lookahead_engine::core::env::var("PROFILES") {
-        Ok(value) => value.split(',').filter_map(|p| p.trim().parse().ok()).collect(),
+        Ok(value) => value
+            .split(',')
+            .filter_map(|p| p.trim().parse().ok())
+            .collect(),
         Err(_) => PERCENTS.to_vec(),
     };
     let menus_wanted = from_env("MENUS", MENUS);
@@ -384,8 +392,15 @@ fn links(index: &lookahead_engine::index::Index) {
     );
     println!(
         "{:>6}  {:>12}  {:>6}  {:>7}  {:>8}  {:>7}  {:>9}  {:>8}  {:>9}",
-        "conv", "profile", "menus", "options", "asks", "targets", "asks each",
-        "asked", "each after",
+        "conv",
+        "profile",
+        "menus",
+        "options",
+        "asks",
+        "targets",
+        "asks each",
+        "asked",
+        "each after",
     );
 
     let mut overall: HashMap<u32, Totals> = HashMap::new();
@@ -394,7 +409,9 @@ fn links(index: &lookahead_engine::index::Index) {
     let mut widths_after: HashMap<usize, Totals> = HashMap::new();
 
     for conversation in groups {
-        let Ok((graph, _)) = build_group_graph(index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(index, conversation) else {
+            continue;
+        };
         let root = DialogueNodeId::new(conversation, 0);
         if graph.get(root).is_none() {
             continue;
@@ -438,8 +455,11 @@ fn links(index: &lookahead_engine::index::Index) {
                 // that matters now that de-rn59.4 ships. Most of a candidate list is refused
                 // for free by something above it, and a candidate that costs no fixed point
                 // is one there is nothing to remember about.
-                let asked: Vec<Vec<DialogueNodeId>> =
-                    options.iter().zip(&lists).map(|(start, list)| menu_walk::minimal(&graph, *start, list)).collect();
+                let asked: Vec<Vec<DialogueNodeId>> = options
+                    .iter()
+                    .zip(&lists)
+                    .map(|(start, list)| menu_walk::minimal(&graph, *start, list))
+                    .collect();
                 let after = count(&asked, asked.len());
                 group_after.merge(&after);
                 widths_after.entry(after.options).or_default().add(&after);
@@ -553,7 +573,9 @@ fn wide_nodes(
     menus.sort_unstable_by(|a, b| {
         b.len().cmp(&a.len()).then_with(|| {
             let key = |m: &Vec<DialogueNodeId>| {
-                m.first().map(|id| (id.conversation_id, id.entry_id)).unwrap_or_default()
+                m.first()
+                    .map(|id| (id.conversation_id, id.entry_id))
+                    .unwrap_or_default()
             };
             key(a).cmp(&key(b))
         })
@@ -566,7 +588,10 @@ fn wide_nodes(
 fn deepest(index: &lookahead_engine::index::Index) {
     let groups = env_list("CONVERSATION", &GROUPS);
     let widths: Vec<usize> = match lookahead_engine::core::env::var("WIDTHS") {
-        Ok(value) => value.split(',').filter_map(|w| w.trim().parse().ok()).collect(),
+        Ok(value) => value
+            .split(',')
+            .filter_map(|w| w.trim().parse().ok())
+            .collect(),
         Err(_) => WIDTHS.to_vec(),
     };
     let unseen_wanted = from_env("UNSEEN", UNSEEN);
@@ -586,7 +611,9 @@ fn deepest(index: &lookahead_engine::index::Index) {
     let mut widest: Vec<(i32, Vec<Option<Overlap>>)> = Vec::new();
 
     for conversation in groups {
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            continue;
+        };
         let root = DialogueNodeId::new(conversation, 0);
         if graph.get(root).is_none() {
             continue;
@@ -627,12 +654,18 @@ fn deepest(index: &lookahead_engine::index::Index) {
         }
         println!();
 
-        widest.push((conversation, per_option(&lists, *widths.iter().max().unwrap_or(&STARTS))));
+        widest.push((
+            conversation,
+            per_option(&lists, *widths.iter().max().unwrap_or(&STARTS)),
+        ));
     }
 
     println!("PER OPTION at the widest menu: how much of each option's list an EARLIER");
     println!("option had already asked about. Option one can never have any, by definition.\n");
-    println!("{:>6}  {:>7}  {:>6}  {:>7}  {:>6}", "conv", "option", "asks", "already", "share");
+    println!(
+        "{:>6}  {:>7}  {:>6}  {:>7}  {:>6}",
+        "conv", "option", "asks", "already", "share"
+    );
     for (conversation, options) in &widest {
         for (at, overlap) in options.iter().enumerate() {
             let Some(overlap) = overlap else { continue };
@@ -745,7 +778,10 @@ fn per_option(lists: &[Vec<DialogueNodeId>], width: usize) -> Vec<Option<Overlap
         .map(|list| {
             let already = list.iter().filter(|id| seen.contains(*id)).count();
             seen.extend(list.iter().copied());
-            Some(Overlap { asks: list.len(), already })
+            Some(Overlap {
+                asks: list.len(),
+                already,
+            })
         })
         .collect()
 }
@@ -797,12 +833,18 @@ fn share(part: usize, whole: usize) -> String {
 }
 
 fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name).ok().and_then(|value| value.parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(fallback)
 }
 
 fn env_list(name: &str, fallback: &[i32]) -> Vec<i32> {
     match lookahead_engine::core::env::var(name) {
-        Ok(value) => value.split(',').filter_map(|c| c.trim().parse().ok()).collect(),
+        Ok(value) => value
+            .split(',')
+            .filter_map(|c| c.trim().parse().ok())
+            .collect(),
         Err(_) => fallback.to_vec(),
     }
 }

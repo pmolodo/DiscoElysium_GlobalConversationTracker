@@ -17,8 +17,8 @@
 
 use std::collections::HashSet;
 
-use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::core::state::{ONCE_PREFIX, SEEN_PREFIX};
+use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 
 #[path = "../tests/common/mod.rs"]
@@ -38,7 +38,9 @@ const HEAVIEST: [i32; 6] = [362, 368, 631, 14, 28, 1030];
 const KEPT_PREFIXES: [&str; 2] = [SEEN_PREFIX, ONCE_PREFIX];
 
 fn main() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
 
     println!(
@@ -47,7 +49,9 @@ fn main() {
     );
 
     for conversation in HEAVIEST {
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            continue;
+        };
         let symbols = graph.symbols();
         let reads: HashSet<String> = DataLayout::read_by(&graph);
 
@@ -61,9 +65,7 @@ fn main() {
                 continue;
             };
 
-            if KEPT_PREFIXES.iter().any(|prefix| name.starts_with(prefix))
-                || reads.contains(name)
-            {
+            if KEPT_PREFIXES.iter().any(|prefix| name.starts_with(prefix)) || reads.contains(name) {
                 needed += 1;
             }
         }

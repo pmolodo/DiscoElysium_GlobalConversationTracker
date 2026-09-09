@@ -46,7 +46,7 @@ use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::known::Known;
 use lookahead_engine::symbolic::novelty_search::{
-    best_novelty, classify_candidates, Budget as SearchBudget, Classify, StoppedBy, Wants,
+    Budget as SearchBudget, Classify, StoppedBy, Wants, best_novelty, classify_candidates,
 };
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
@@ -95,7 +95,10 @@ const DEFAULT_PROGRESS_SECONDS: u64 = 30;
 /// answer rather than one per measurement.
 pub fn progress_every() -> Option<std::time::Duration> {
     let seconds = match lookahead_engine::core::env::var("PROGRESS_SECONDS") {
-        Ok(named) => named.trim().parse::<u64>().unwrap_or(DEFAULT_PROGRESS_SECONDS),
+        Ok(named) => named
+            .trim()
+            .parse::<u64>()
+            .unwrap_or(DEFAULT_PROGRESS_SECONDS),
         Err(_) => DEFAULT_PROGRESS_SECONDS,
     };
     (seconds > 0).then(|| std::time::Duration::from_secs(seconds))
@@ -107,7 +110,6 @@ pub fn mmss(elapsed: std::time::Duration) -> String {
     format!("{}m{:02}s", seconds / 60, seconds % 60)
 }
 
-
 fn main() {
     let Some(path) = common::conversation_index() else {
         eprintln!("no conversation index; nothing to measure");
@@ -117,7 +119,10 @@ fn main() {
     let world = common::measurement_save();
 
     let asked: Vec<i32> = match lookahead_engine::core::env::var("CONVERSATION") {
-        Ok(named) => named.split(',').filter_map(|id| id.trim().parse().ok()).collect(),
+        Ok(named) => named
+            .split(',')
+            .filter_map(|id| id.trim().parse().ok())
+            .collect(),
         Err(_) => MEASURED.to_vec(),
     };
 
@@ -127,7 +132,9 @@ fn main() {
     );
 
     for conversation in asked {
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            continue;
+        };
         let start = DialogueNodeId::new(conversation, 0);
         if graph.get(start).is_none() {
             continue;
@@ -293,11 +300,18 @@ const VERDICTS: [(&str, Option<bool>); 3] = [
 ];
 
 fn spelled(verdict: Option<bool>) -> &'static str {
-    VERDICTS.iter().find(|(_, v)| *v == verdict).expect("a known verdict").0
+    VERDICTS
+        .iter()
+        .find(|(_, v)| *v == verdict)
+        .expect("a known verdict")
+        .0
 }
 
 fn parsed(word: &str) -> Option<Option<bool>> {
-    VERDICTS.iter().find(|(name, _)| *name == word).map(|(_, verdict)| *verdict)
+    VERDICTS
+        .iter()
+        .find(|(name, _)| *name == word)
+        .map(|(_, verdict)| *verdict)
 }
 
 impl Journal {
@@ -322,7 +336,11 @@ impl Journal {
     /// and does not want the file; `tools/measure-census.sh` names one per group because it
     /// is the thing that knows where a run's folder is.
     fn of(total: usize) -> Self {
-        let mut journal = Self { total, every: progress_every(), ..Self::quiet() };
+        let mut journal = Self {
+            total,
+            every: progress_every(),
+            ..Self::quiet()
+        };
         let Ok(path) = lookahead_engine::core::env::var("CENSUS_JOURNAL") else {
             return journal;
         };
@@ -330,8 +348,12 @@ impl Journal {
 
         if let Ok(text) = std::fs::read_to_string(&path) {
             for line in text.lines() {
-                let Some((id, word)) = line.split_once('\t') else { continue };
-                let Some((conversation, entry)) = id.split_once(':') else { continue };
+                let Some((id, word)) = line.split_once('\t') else {
+                    continue;
+                };
+                let Some((conversation, entry)) = id.split_once(':') else {
+                    continue;
+                };
                 let (Ok(conversation), Ok(entry), Some(verdict)) =
                     (conversation.parse(), entry.parse(), parsed(word))
                 else {
@@ -340,7 +362,9 @@ impl Journal {
                     // exists for. Dropping it costs the one candidate, asked again.
                     continue;
                 };
-                journal.before.insert(DialogueNodeId::new(conversation, entry), verdict);
+                journal
+                    .before
+                    .insert(DialogueNodeId::new(conversation, entry), verdict);
             }
         }
 
@@ -348,14 +372,25 @@ impl Journal {
         // process's share of it. A resumed run that reported only its own settled candidates
         // would appear to be starting over.
         journal.settled = journal.before.len();
-        journal.unreachable = journal.before.values().filter(|v| **v == Some(false)).count();
+        journal.unreachable = journal
+            .before
+            .values()
+            .filter(|v| **v == Some(false))
+            .count();
         journal.undecided = journal.before.values().filter(|v| v.is_none()).count();
 
-        match std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        match std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
             Ok(file) => journal.file = Some(std::io::BufWriter::new(file)),
             // LOUD, because a run that believes it is resumable and is not would find out
             // hours later, by having lost everything.
-            Err(why) => panic!("the census journal {} could not be opened: {why}", path.display()),
+            Err(why) => panic!(
+                "the census journal {} could not be opened: {why}",
+                path.display()
+            ),
         }
 
         if journal.settled > 0 {
@@ -382,7 +417,13 @@ impl Journal {
         if let Some(file) = &mut self.file {
             // FLUSHED PER LINE. What is still in this buffer is exactly what a kill would
             // lose, and losing it is what the file is here to prevent.
-            let _ = writeln!(file, "{}:{}\t{}", id.conversation_id, id.entry_id, spelled(verdict));
+            let _ = writeln!(
+                file,
+                "{}:{}\t{}",
+                id.conversation_id,
+                id.entry_id,
+                spelled(verdict)
+            );
             let _ = file.flush();
         }
 
@@ -463,7 +504,11 @@ pub fn classify(
         // reached rather than whether any can.
         let asking: HashSet<DialogueNodeId> = deepest.iter().copied().collect();
         let novelty = |id: DialogueNodeId| {
-            if asking.contains(&id) { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
+            if asking.contains(&id) {
+                Novelty::UnseenAnyGame
+            } else {
+                Novelty::SeenThisGame
+            }
         };
 
         // SHARED, which the per-candidate version could not be: what a run over this group
@@ -512,10 +557,17 @@ pub fn classify(
                 // A RESUMED RUN COUNTS WHAT THE RUN BEFORE IT FOUND, since the journal's
                 // verdicts are already in this list - so a group continued twice still
                 // stops at `wanted` in total rather than at `wanted` per attempt.
-                if unreachable.len() >= wanted { Wants::Enough } else { Wants::More }
+                if unreachable.len() >= wanted {
+                    Wants::Enough
+                } else {
+                    Wants::More
+                }
             };
             let settled = |id: DialogueNodeId| already.contains_key(&id);
-            let mut census = Classify { verdict: &mut record, settled: &settled };
+            let mut census = Classify {
+                verdict: &mut record,
+                settled: &settled,
+            };
 
             classify_candidates(
                 graph,
@@ -555,8 +607,11 @@ pub fn classify(
         // Worth keeping rather than trusting the walk. Comparing group 436 against an
         // earlier census caught exactly this once already: same count, entirely different
         // list.
-        let rank: std::collections::HashMap<DialogueNodeId, usize> =
-            deepest.iter().enumerate().map(|(at, id)| (*id, at)).collect();
+        let rank: std::collections::HashMap<DialogueNodeId, usize> = deepest
+            .iter()
+            .enumerate()
+            .map(|(at, id)| (*id, at))
+            .collect();
         unreachable.sort_by_key(|id| rank.get(id).copied().unwrap_or(usize::MAX));
         unreachable.truncate(wanted);
 
@@ -617,52 +672,52 @@ fn answer(
     // A THREAD PER SEARCH. See the note at the top: this is de-fpax's remedy, and without it
     // this measurement loses whole groups partway through.
     on_its_own_thread(|| {
-                let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
-                let mut compiler = GuardCompiler::new(&vars)
-                    .with_world(world)
-                    .with_constant_clock(DataLayout::group_passes_time(graph));
-                let seed = seed_of(graph, world, &vars).expect("room for a seed");
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
+        let mut compiler = GuardCompiler::new(&vars)
+            .with_world(world)
+            .with_constant_clock(DataLayout::group_passes_time(graph));
+        let seed = seed_of(graph, world, &vars).expect("room for a seed");
 
-                let novelty = |id: DialogueNodeId| {
-                    if unseen.contains(&id) {
-                        Novelty::UnseenAnyGame
-                    } else {
-                        Novelty::SeenThisGame
-                    }
-                };
+        let novelty = |id: DialogueNodeId| {
+            if unseen.contains(&id) {
+                Novelty::UnseenAnyGame
+            } else {
+                Novelty::SeenThisGame
+            }
+        };
 
-                let known = shared.then(|| Known::of_from(graph, start).from(start, &seed));
+        let known = shared.then(|| Known::of_from(graph, start).from(start, &seed));
 
-                let began = std::time::Instant::now();
-                let found = best_novelty(
-                    graph,
-                    start,
-                    StartBranch::Either,
-                    &seed,
-                    &mut compiler,
-                    world,
-                    COUNTER_CAP as u32,
-                    &novelty,
-                    &SearchBudget {
-                        time: cap,
-                        each: BackwardBudget {
-                            steps: usize::MAX,
-                            time: cap,
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    },
-                    known.as_ref(),
-                    None,
-                );
+        let began = std::time::Instant::now();
+        let found = best_novelty(
+            graph,
+            start,
+            StartBranch::Either,
+            &seed,
+            &mut compiler,
+            world,
+            COUNTER_CAP as u32,
+            &novelty,
+            &SearchBudget {
+                time: cap,
+                each: BackwardBudget {
+                    steps: usize::MAX,
+                    time: cap,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            known.as_ref(),
+            None,
+        );
 
-                Answer {
-                    verdict: match found.stopped_by {
-                        StoppedBy::Nothing => format!("{:?}", found.best),
-                        _ => "Incomplete".to_string(),
-                    },
-                    millis: began.elapsed().as_millis(),
-                    asked: found.targets_asked.to_string(),
-                }
+        Answer {
+            verdict: match found.stopped_by {
+                StoppedBy::Nothing => format!("{:?}", found.best),
+                _ => "Incomplete".to_string(),
+            },
+            millis: began.elapsed().as_millis(),
+            asked: found.targets_asked.to_string(),
+        }
     })
 }

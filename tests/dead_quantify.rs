@@ -53,7 +53,9 @@ const GROUPS: usize = 12;
 
 #[test]
 fn forgetting_dead_slots_reaches_the_same_entries_and_loses_no_state() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
 
     let mut sizes: Vec<(i32, usize)> = index
@@ -86,7 +88,9 @@ fn forgetting_dead_slots_reaches_the_same_entries_and_loses_no_state() {
 
 /// Runs one group both ways, or `false` where it could not be compared.
 fn compare(index: &lookahead_engine::index::Index, conversation: i32) -> bool {
-    let Ok((graph, _)) = build_group_graph(index, conversation) else { return false };
+    let Ok((graph, _)) = build_group_graph(index, conversation) else {
+        return false;
+    };
     let start = DialogueNodeId::new(conversation, 0);
     if graph.get(start).is_none() {
         return false;
@@ -94,7 +98,11 @@ fn compare(index: &lookahead_engine::index::Index, conversation: i32) -> bool {
 
     let symbols = graph.symbols().clone();
     let world = SnapshotWorld::declaring(
-        WorldSnapshot { day_minutes: 720, day_counter: 1, ..Default::default() },
+        WorldSnapshot {
+            day_minutes: 720,
+            day_counter: 1,
+            ..Default::default()
+        },
         None,
     );
     let layout = DataLayout::for_group(&graph, &world, COUNTER_CAP);
@@ -103,18 +111,21 @@ fn compare(index: &lookahead_engine::index::Index, conversation: i32) -> bool {
     // ONE MANAGER FOR BOTH ARMS, so the two sets can be intersected. Diagrams from two
     // managers cannot be combined at all, and the containment check is the whole reason
     // this is worth doing.
-    let vars = lookahead_engine::symbolic::vars::DataVars::new(
-        &layout,
-        &symbols,
-        DiagramBudget::modest(),
-    );
+    let vars =
+        lookahead_engine::symbolic::vars::DataVars::new(&layout, &symbols, DiagramBudget::modest());
     let mut compiler = GuardCompiler::new(&vars)
         .with_world(&world)
         .with_constant_clock(DataLayout::group_passes_time(&graph));
     let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
 
     let exact = Reachability::explore_within(
-        &graph, start, &seed, &mut compiler, &world, COUNTER_CAP as u32, &Budget::default(),
+        &graph,
+        start,
+        &seed,
+        &mut compiler,
+        &world,
+        COUNTER_CAP as u32,
+        &Budget::default(),
     );
     if !exact.stats().reached_fixed_point {
         return false;
@@ -127,14 +138,19 @@ fn compare(index: &lookahead_engine::index::Index, conversation: i32) -> bool {
         &mut compiler,
         &world,
         COUNTER_CAP as u32,
-        &Budget { forget_dead: Some(live), ..Default::default() },
+        &Budget {
+            forget_dead: Some(live),
+            ..Default::default()
+        },
     );
     if !forgetful.stats().reached_fixed_point {
         return false;
     }
 
     let reached = |run: &Reachability| -> BTreeSet<(i32, i32)> {
-        run.entries().map(|id| (id.conversation_id, id.entry_id)).collect()
+        run.entries()
+            .map(|id| (id.conversation_id, id.entry_id))
+            .collect()
     };
     assert_eq!(
         reached(&exact),

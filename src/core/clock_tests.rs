@@ -10,10 +10,16 @@ use crate::core::guard_value::{GuardValue, GuardValueKind};
 
 /// Asks a clock question at a given hour, as the engine would.
 fn ask(name: &str, hour: i32, arguments: &[f64]) -> bool {
-    let values: Vec<GuardValue> =
-        arguments.iter().map(|a| GuardValue::from_number(*a)).collect();
+    let values: Vec<GuardValue> = arguments
+        .iter()
+        .map(|a| GuardValue::from_number(*a))
+        .collect();
     let result = ClockTime::answer(name, &values, hour * 60, 1);
-    assert_eq!(result.kind(), GuardValueKind::Boolean, "{name} should answer a boolean");
+    assert_eq!(
+        result.kind(),
+        GuardValueKind::Boolean,
+        "{name} should answer a boolean"
+    );
     result.boolean()
 }
 
@@ -92,7 +98,11 @@ fn night_predicates_are_different_sets() {
     ];
 
     for (hour, is_nighttime, is_night) in cases {
-        assert_eq!(ask("IsNighttime", hour, &[]), is_nighttime, "IsNighttime at {hour}");
+        assert_eq!(
+            ask("IsNighttime", hour, &[]),
+            is_nighttime,
+            "IsNighttime at {hour}"
+        );
         assert_eq!(ask("IsNight", hour, &[]), is_night, "IsNight at {hour}");
     }
 }
@@ -137,7 +147,11 @@ fn is_hour_between_is_inclusive_at_both_ends() {
 #[test]
 fn is_hour_between_wraps_when_first_exceeds_second() {
     for (hour, expected) in [(23, true), (2, true), (4, true), (5, false), (12, false)] {
-        assert_eq!(ask("IsHourBetween", hour, &[22.0, 4.0]), expected, "at {hour}");
+        assert_eq!(
+            ask("IsHourBetween", hour, &[22.0, 4.0]),
+            expected,
+            "at {hour}"
+        );
     }
 }
 
@@ -156,7 +170,13 @@ fn hour_count_and_total_hour_count() {
 /// look.
 #[test]
 fn owns_disclaims_queries_the_clock_cannot_answer() {
-    for name in ["DayCount", "IsDayFrom", "IsDayUntil", "IsKimHere", "CheckItem"] {
+    for name in [
+        "DayCount",
+        "IsDayFrom",
+        "IsDayUntil",
+        "IsKimHere",
+        "CheckItem",
+    ] {
         assert!(!ClockTime::owns(name), "{name} should not be the clock's");
         assert_eq!(
             ClockTime::answer(name, &[], 0, 1).kind(),
@@ -168,7 +188,13 @@ fn owns_disclaims_queries_the_clock_cannot_answer() {
 
 #[test]
 fn owns_claims_the_hour_queries() {
-    for name in ["IsMorning", "IsHourBetween", "HourCount", "TotalHourCount", "IsMidnight"] {
+    for name in [
+        "IsMorning",
+        "IsHourBetween",
+        "HourCount",
+        "TotalHourCount",
+        "IsMidnight",
+    ] {
         assert!(ClockTime::owns(name), "{name} should be the clock's");
     }
 }
@@ -186,7 +212,10 @@ fn the_day_questions_are_owned_separately_from_the_hour_ones() {
     }
 
     for name in ["IsMorning", "HourCount", "IsKimHere", "CheckItem"] {
-        assert!(!ClockTime::owns_day(name), "{name} does not read the day counter");
+        assert!(
+            !ClockTime::owns_day(name),
+            "{name} does not read the day counter"
+        );
     }
 }
 

@@ -29,11 +29,7 @@ impl<'a> DataVars<'a> {
     /// A MEMORY BUDGET, not a node count. How many nodes and how many cache entries that
     /// works out to is [`DiagramBudget`]'s business, so that every caller states the one
     /// quantity a budget is actually spent in and no caller has to know what a node costs.
-    pub fn new(
-        layout: &'a DataLayout,
-        symbols: &'a StateSymbols,
-        budget: DiagramBudget,
-    ) -> Self {
+    pub fn new(layout: &'a DataLayout, symbols: &'a StateSymbols, budget: DiagramBudget) -> Self {
         Self::over(layout, symbols, budget.manager())
     }
 
@@ -60,18 +56,19 @@ impl<'a> DataVars<'a> {
     }
 
     /// Declares the layout's variables in a manager somebody else built.
-    fn over(
-        layout: &'a DataLayout,
-        symbols: &'a StateSymbols,
-        manager: BDDManagerRef,
-    ) -> Self {
+    fn over(layout: &'a DataLayout, symbols: &'a StateSymbols, manager: BDDManagerRef) -> Self {
         let vars = manager.with_manager_exclusive(|m| {
             m.add_vars(layout.total_vars())
                 .map(|v| BDDFunction::var(m, v).expect("a freshly added variable"))
                 .collect()
         });
 
-        Self { manager, vars, layout, symbols }
+        Self {
+            manager,
+            vars,
+            layout,
+            symbols,
+        }
     }
 
     /// How many nodes the diagram manager is holding.
@@ -144,13 +141,19 @@ impl<'a> DataVars<'a> {
     }
 
     fn ops_over(&self, register: Register) -> RegisterOps<'_> {
-        RegisterOps::new(register, self.top(), self.bottom(), |number| self.var(number))
+        RegisterOps::new(register, self.top(), self.bottom(), |number| {
+            self.var(number)
+        })
     }
 
     /// The largest value a slot can hold, given its width.
     pub fn slot_ceiling(&self, slot: usize) -> Option<u32> {
         let (_, bits) = self.layout.slot(slot)?;
-        Some(if bits >= 32 { u32::MAX } else { (1u32 << bits) - 1 })
+        Some(if bits >= 32 {
+            u32::MAX
+        } else {
+            (1u32 << bits) - 1
+        })
     }
 
     /// "This slot holds exactly this value", as a formula.
@@ -228,17 +231,13 @@ pub(crate) mod tests {
     use crate::graph::graph::LookAheadGraph;
     use crate::graph::node::LookAheadNode;
 
-
     /// A graph whose symbol table holds `names`, with `counter` incremented so it is wide.
     ///
     /// THE ENTRY LINKS TO ITSELF, which is what makes the counter wide rather than the
     /// increment alone: an increment that can only fire once is held as a DELTA and needs
     /// exactly the bits its own amount asks for, which for a single `+1` is one.
     /// `DataLayout::narrow_to_deltas` is where that is decided.
-    pub(crate) fn fixture(
-        names: &[&str],
-        counter: Option<&str>,
-    ) -> (LookAheadGraph, StateSymbols) {
+    pub(crate) fn fixture(names: &[&str], counter: Option<&str>) -> (LookAheadGraph, StateSymbols) {
         let mut symbols = StateSymbols::new();
         let mut actions = Vec::new();
         for name in names {
@@ -249,9 +248,19 @@ pub(crate) mod tests {
         }
 
         let node = LookAheadNode::new(
-            DialogueNodeId::new(1, 0), false, DialogueCheckKind::None,
-            Guard::always_true(), actions, vec![DialogueNodeId::new(1, 0)],
-            0, false, false, -1, -1, false, -1,
+            DialogueNodeId::new(1, 0),
+            false,
+            DialogueCheckKind::None,
+            Guard::always_true(),
+            actions,
+            vec![DialogueNodeId::new(1, 0)],
+            0,
+            false,
+            false,
+            -1,
+            -1,
+            false,
+            -1,
         );
         let snapshot = symbols.clone();
         (LookAheadGraph::new(vec![node], symbols).unwrap(), snapshot)
@@ -267,7 +276,9 @@ pub(crate) mod tests {
 
         let three = vars.slot_equals(slot, 3).unwrap();
         let at = |value: u32| -> Vec<(u32, bool)> {
-            (0..bits as u32).map(|b| (base + b, (value >> b) & 1 == 1)).collect()
+            (0..bits as u32)
+                .map(|b| (base + b, (value >> b) & 1 == 1))
+                .collect()
         };
 
         assert!(three.eval(at(3).iter().copied()));
@@ -299,8 +310,7 @@ pub(crate) mod tests {
         // Only the all-ones assignment satisfies it.
         let all_set: Vec<(u32, bool)> = (0..bits as u32).map(|b| (base + b, true)).collect();
         assert!(cube.eval(all_set.iter().copied()));
-        let one_clear: Vec<(u32, bool)> =
-            (0..bits as u32).map(|b| (base + b, b != 0)).collect();
+        let one_clear: Vec<(u32, bool)> = (0..bits as u32).map(|b| (base + b, b != 0)).collect();
         assert!(!cube.eval(one_clear.iter().copied()));
     }
 

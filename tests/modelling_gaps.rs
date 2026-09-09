@@ -38,11 +38,11 @@ use std::collections::HashMap;
 use lookahead_engine::core::action::DialogueActionKind;
 use lookahead_engine::core::guard::GuardExpression;
 use lookahead_engine::core::modelling::{self, Decision};
-use lookahead_engine::index::{build_group_graph, read_index, Index};
+use lookahead_engine::index::{Index, build_group_graph, read_index};
+use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::vars::DataVars;
-use lookahead_engine::symbolic::budget::DiagramBudget;
 
 mod common;
 
@@ -95,8 +95,10 @@ fn by_frequency(items: &[String]) -> Vec<(String, usize)> {
         *counts.entry(item.as_str()).or_default() += 1;
     }
 
-    let mut rows: Vec<(String, usize)> =
-        counts.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+    let mut rows: Vec<(String, usize)> = counts
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
     rows.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
     rows
 }
@@ -128,11 +130,12 @@ fn subjects_of(script: &str, name: &str) -> Vec<String> {
 
 #[test]
 fn what_is_still_unmodelled_in_the_subject_conversation() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
     let subject = subject();
-    let (graph, group) =
-        build_group_graph(&index, subject).expect("the subject group builds");
+    let (graph, group) = build_group_graph(&index, subject).expect("the subject group builds");
     let symbols = graph.symbols().clone();
     let world = common::measurement_save();
 
@@ -352,9 +355,7 @@ fn report_exposure(
         if !both.is_empty() {
             println!("      EXPOSED - written and asked about here: {both:?}");
         } else if writes.is_empty() && !asked.is_empty() {
-            println!(
-                "      EXPOSED, unmatched - no subject to match on, and the group does both"
-            );
+            println!("      EXPOSED, unmatched - no subject to match on, and the group does both");
         } else if asked.is_empty() {
             println!("      the group asks none of these questions: no exposure");
         } else {

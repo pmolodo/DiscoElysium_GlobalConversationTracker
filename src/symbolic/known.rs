@@ -54,8 +54,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use oxidd::bdd::BDDFunction;
 use oxidd::BooleanFunction;
+use oxidd::bdd::BDDFunction;
 
 use crate::core::types::DialogueNodeId;
 use crate::graph::graph::LookAheadGraph;
@@ -158,7 +158,10 @@ impl GroupShape {
             }
         }
 
-        Self { parents: Arc::new(parents), order: IterationOrder::of(graph) }
+        Self {
+            parents: Arc::new(parents),
+            order: IterationOrder::of(graph),
+        }
     }
 
     /// The order a search over this group should take its entries in.
@@ -228,7 +231,6 @@ impl Known {
         self
     }
 
-
     /// The order to take entries in.
     ///
     /// An order changes no settled answer - only how many pops reaching it takes - so a
@@ -295,7 +297,9 @@ impl Known {
 
         let mut no_room = false;
         for parent in self.parents_of(id) {
-            let Some(held) = self.forward.get(parent) else { continue };
+            let Some(held) = self.forward.get(parent) else {
+                continue;
+            };
             union = match union.take() {
                 None => Some(held.clone()),
                 // An `Err` is the manager out of room. Give up on bounding this entry
@@ -337,7 +341,10 @@ impl Known {
         if matches!(&self.start, Some((start, _)) if *start == id) {
             return false;
         }
-        !self.parents_of(id).iter().any(|parent| self.forward.contains_key(parent))
+        !self
+            .parents_of(id)
+            .iter()
+            .any(|parent| self.forward.contains_key(parent))
     }
 
     /// `states` narrowed to what could actually be held on arrival at `id`.
@@ -400,7 +407,12 @@ impl Known {
     /// proof it does not have.
     pub fn meets(&self, id: DialogueNodeId, wanted: &BDDFunction) -> bool {
         if let Some((start, seed)) = &self.start {
-            if *start == id && seed.and(wanted).map(|both| both.satisfiable()).unwrap_or(false) {
+            if *start == id
+                && seed
+                    .and(wanted)
+                    .map(|both| both.satisfiable())
+                    .unwrap_or(false)
+            {
                 return true;
             }
         }

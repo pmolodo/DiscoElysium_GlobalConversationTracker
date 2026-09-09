@@ -114,7 +114,9 @@ fn main() {
 
     let rounds = from_env("ROUNDS", ROUNDS);
     let starts_wanted = from_env("STARTS", STARTS);
-    let fresh = lookahead_engine::core::env::var("FRESH").map(|on| on.trim() != "0").unwrap_or(false);
+    let fresh = lookahead_engine::core::env::var("FRESH")
+        .map(|on| on.trim() != "0")
+        .unwrap_or(false);
 
     // The starts and quarry for each group, worked out once so neither arm pays for it.
     //
@@ -128,12 +130,16 @@ fn main() {
     // the rest are only there to defeat the workspace in the fresh arm. So
     // `DEGCT_CONVERSATION=14,368,631` measures a session in conversation 14.
     for conversation in conversations() {
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            continue;
+        };
         let root = DialogueNodeId::new(conversation, 0);
         if graph.get(root).is_none() {
             continue;
         }
-        let Some(profile) = MenuProfile::of(&graph, root, 10, starts_wanted) else { continue };
+        let Some(profile) = MenuProfile::of(&graph, root, 10, starts_wanted) else {
+            continue;
+        };
         menus.push((
             conversation,
             profile.starts.iter().map(|id| NodeRef::from(*id)).collect(),
@@ -154,7 +160,10 @@ fn main() {
             "KEPT - the same group each time, so the workspace serves after the first"
         },
     );
-    println!("{:>7}  {:>6}  {:>10}  {:>12}  {:>8}", "round", "conv", "request ms", "held", "of cap");
+    println!(
+        "{:>7}  {:>6}  {:>10}  {:>12}  {:>8}",
+        "round", "conv", "request ms", "held", "of cap"
+    );
 
     // WHAT THE MANAGER HOLDS, ROUND BY ROUND, which is the question de-dt75.2 asks and the
     // one the per-request path could never raise: a manager now serves every menu of a
@@ -178,8 +187,7 @@ fn main() {
     for round in 0..rounds {
         // ONE GROUP THROUGHOUT for the kept arm, which is a player standing in a
         // conversation; rotating for the fresh arm, which is what defeats the workspace.
-        let (conversation, starts, unseen) =
-            &menus[if fresh { round % menus.len() } else { 0 }];
+        let (conversation, starts, unseen) = &menus[if fresh { round % menus.len() } else { 0 }];
 
         // A DIFFERENT WORLD EVERY ROUND, in the field that actually moves between menus.
         let seen: HashSet<NodeRef> = starts.iter().take(round % starts.len()).copied().collect();
@@ -206,7 +214,9 @@ fn main() {
         let json = serde_json::to_string(&request).expect("a request serialises");
 
         let began = Instant::now();
-        let response = service.look_ahead(&json).expect("a well-formed request is answered");
+        let response = service
+            .look_ahead(&json)
+            .expect("a well-formed request is answered");
         let took = began.elapsed();
         std::hint::black_box(&response);
 
@@ -217,7 +227,8 @@ fn main() {
             "{:>7}  {conversation:>6}  {:>10.0}  {:>12}  {:>8}",
             round + 1,
             took.as_secs_f64() * 1000.0,
-            held.map(|n| n.to_string()).unwrap_or_else(|| "no workspace".to_string()),
+            held.map(|n| n.to_string())
+                .unwrap_or_else(|| "no workspace".to_string()),
             held.map(|n| format!("{:.1}%", 100.0 * n as f64 / cap as f64))
                 .unwrap_or_default(),
         );
@@ -242,7 +253,10 @@ fn conversations() -> Vec<i32> {
             .filter(|piece| !piece.is_empty())
             .map(|piece| {
                 piece.parse().unwrap_or_else(|_| {
-                    panic!("{}={piece:?} is not a conversation id", lookahead_engine::core::env::qualified("CONVERSATION"))
+                    panic!(
+                        "{}={piece:?} is not a conversation id",
+                        lookahead_engine::core::env::qualified("CONVERSATION")
+                    )
                 })
             })
             .collect(),
@@ -251,5 +265,8 @@ fn conversations() -> Vec<i32> {
 }
 
 fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name).ok().and_then(|text| text.trim().parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name)
+        .ok()
+        .and_then(|text| text.trim().parse().ok())
+        .unwrap_or(fallback)
 }

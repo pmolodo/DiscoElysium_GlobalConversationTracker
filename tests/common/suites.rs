@@ -34,9 +34,15 @@ impl Table {
             .iter()
             .find(|suite| suite.suite == name)
             .unwrap_or_else(|| {
-                let names: Vec<&str> =
-                    self.suites.iter().map(|suite| suite.suite.as_str()).collect();
-                panic!("no suite '{name}' in {TABLE}; there are: {}", names.join(", "))
+                let names: Vec<&str> = self
+                    .suites
+                    .iter()
+                    .map(|suite| suite.suite.as_str())
+                    .collect();
+                panic!(
+                    "no suite '{name}' in {TABLE}; there are: {}",
+                    names.join(", ")
+                )
             })
     }
 }

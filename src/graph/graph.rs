@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
-use serde::{Deserialize, Serialize};
 
-use crate::core::types::{DialogueNodeId, Novelty};
 use crate::core::state::StateSymbols;
+use crate::core::types::{DialogueNodeId, Novelty};
 use crate::graph::node::LookAheadNode;
 
 /// The dialogue entries the look-ahead can walk, indexed by id.
@@ -62,7 +62,11 @@ impl LookAheadGraph {
         let mut order: Vec<DialogueNodeId> = map.keys().copied().collect();
         order.sort_unstable_by_key(|id| (id.conversation_id, id.entry_id));
 
-        Ok(Self { nodes: map, order, symbols })
+        Ok(Self {
+            nodes: map,
+            order,
+            symbols,
+        })
     }
 
     pub fn symbols(&self) -> &StateSymbols {
@@ -153,7 +157,9 @@ impl LookAheadGraph {
         while let Some(id) = pending.pop_front() {
             let Some(node) = self.get(id) else { continue };
             for &child_id in &node.links {
-                let Some(child) = self.get(child_id) else { continue };
+                let Some(child) = self.get(child_id) else {
+                    continue;
+                };
 
                 if consider(child_id, child) {
                     return best;
@@ -179,14 +185,19 @@ impl LookAheadGraph {
 
 impl fmt::Display for LookAheadGraph {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "LookAheadGraph({} nodes, {} slots)", self.nodes.len(), self.symbols.count())
+        write!(
+            f,
+            "LookAheadGraph({} nodes, {} slots)",
+            self.nodes.len(),
+            self.symbols.count()
+        )
     }
 }
 
 #[cfg(test)]
 mod best_linked_class_tests {
     use super::*;
-    use crate::test_graph::{node, Entry, GraphBuilder};
+    use crate::test_graph::{Entry, GraphBuilder, node};
 
     /// A novelty function from two lists, so a fixture can say which entry is which class.
     fn classes<'a>(
@@ -344,7 +355,11 @@ mod iteration_order_tests {
             .build();
 
         let order: Vec<i32> = shuffled.nodes().map(|node| node.id.entry_id).collect();
-        assert_eq!(order, vec![1, 2, 4, 7, 30], "entries should come back by id");
+        assert_eq!(
+            order,
+            vec![1, 2, 4, 7, 30],
+            "entries should come back by id"
+        );
 
         // NUMERIC, NOT LEXICOGRAPHIC, which is what the 30 is there to catch: sorted as text
         // it lands between 2 and 4, and a run ordered that way would be perfectly stable and
@@ -355,10 +370,16 @@ mod iteration_order_tests {
     /// The same entries in a different arrival order build the same iteration order.
     #[test]
     fn the_order_does_not_depend_on_how_the_graph_was_built() {
-        let forwards =
-            GraphBuilder::new().add(Entry::new(1)).add(Entry::new(2)).add(Entry::new(3)).build();
-        let backwards =
-            GraphBuilder::new().add(Entry::new(3)).add(Entry::new(2)).add(Entry::new(1)).build();
+        let forwards = GraphBuilder::new()
+            .add(Entry::new(1))
+            .add(Entry::new(2))
+            .add(Entry::new(3))
+            .build();
+        let backwards = GraphBuilder::new()
+            .add(Entry::new(3))
+            .add(Entry::new(2))
+            .add(Entry::new(1))
+            .build();
 
         let one: Vec<DialogueNodeId> = forwards.nodes().map(|node| node.id).collect();
         let other: Vec<DialogueNodeId> = backwards.nodes().map(|node| node.id).collect();

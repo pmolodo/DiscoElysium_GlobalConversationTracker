@@ -95,7 +95,11 @@ fn main() {
     println!(
         "a cold menu of up to {starts_wanted} starts per group, per-option budget \
          {time_budget_ms} ms, menu wall {}\n",
-        if menu_budget_ms == 0 { "none".to_string() } else { format!("{menu_budget_ms} ms") },
+        if menu_budget_ms == 0 {
+            "none".to_string()
+        } else {
+            format!("{menu_budget_ms} ms")
+        },
     );
     println!(
         "{:>6}  {:>6}  {:>7}  {:>6}  {:>8}  {:>10}  {:>9}",
@@ -104,12 +108,16 @@ fn main() {
 
     let mut worst: Option<(i32, f64)> = None;
     for conversation in groups {
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            continue;
+        };
         let root = DialogueNodeId::new(conversation, 0);
         if graph.get(root).is_none() {
             continue;
         }
-        let Some(profile) = MenuProfile::of(&graph, root, UNSEEN, starts_wanted) else { continue };
+        let Some(profile) = MenuProfile::of(&graph, root, UNSEEN, starts_wanted) else {
+            continue;
+        };
 
         let request = LookAheadRequest {
             conversation,
@@ -117,7 +125,11 @@ fn main() {
             unseen_any_game: profile.unseen.iter().map(|id| NodeRef::from(*id)).collect(),
             time_budget_ms,
             menu_time_budget_ms: menu_budget_ms,
-            world: WorldSnapshot { day_minutes: 720, day_counter: 1, ..Default::default() },
+            world: WorldSnapshot {
+                day_minutes: 720,
+                day_counter: 1,
+                ..Default::default()
+            },
             ..Default::default()
         };
         let json = serde_json::to_string(&request).expect("a request serialises");
@@ -128,12 +140,19 @@ fn main() {
         let service = Service::open(&path, None).expect("the engine opens");
 
         let began = Instant::now();
-        let response = service.look_ahead(&json).expect("a well-formed request is answered");
+        let response = service
+            .look_ahead(&json)
+            .expect("a well-formed request is answered");
         let took = began.elapsed().as_secs_f64() * 1000.0;
 
         let asked = request.starts.len();
         let answers = response.answers.len();
-        let slowest = response.answers.iter().map(|a| a.elapsed_ms).max().unwrap_or(0);
+        let slowest = response
+            .answers
+            .iter()
+            .map(|a| a.elapsed_ms)
+            .max()
+            .unwrap_or(0);
         let gave_up = response.answers.iter().filter(|a| !a.complete).count();
 
         println!(
@@ -165,7 +184,10 @@ fn main() {
 
 /// A number from the environment, or the default written down here.
 fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name).ok().and_then(|value| value.trim().parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name)
+        .ok()
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or(fallback)
 }
 
 /// A comma-separated list from the environment, or the default written down here.
@@ -176,7 +198,9 @@ fn numbers(name: &str, fallback: &[i32]) -> Vec<i32> {
             .map(str::trim)
             .filter(|piece| !piece.is_empty())
             .map(|piece| {
-                piece.parse().unwrap_or_else(|_| panic!("{name}={piece:?} is not a number"))
+                piece
+                    .parse()
+                    .unwrap_or_else(|_| panic!("{name}={piece:?} is not a number"))
             })
             .collect(),
         Err(_) => fallback.to_vec(),

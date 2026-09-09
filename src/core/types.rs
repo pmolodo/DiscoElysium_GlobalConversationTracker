@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use serde::{Deserialize, Serialize};
 
 /// Identifies one dialogue entry: the conversation it belongs to, and its id within that conversation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -12,7 +12,10 @@ pub struct DialogueNodeId {
 
 impl DialogueNodeId {
     pub const fn new(conversation_id: i32, entry_id: i32) -> Self {
-        Self { conversation_id, entry_id }
+        Self {
+            conversation_id,
+            entry_id,
+        }
     }
 }
 

@@ -44,7 +44,7 @@ use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::known::GroupShape;
-use lookahead_engine::symbolic::portfolio::{best_novelty, Budget};
+use lookahead_engine::symbolic::portfolio::{Budget, best_novelty};
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 
@@ -100,13 +100,19 @@ fn main() {
         .map(|node| format!("{}:{}", node.id.conversation_id, node.id.entry_id))
         .collect();
     println!("conversation {conversation}, {} entries", graph.count());
-    println!("the first entries graph.nodes() yields: {}\n", order.join(" "));
+    println!(
+        "the first entries graph.nodes() yields: {}\n",
+        order.join(" ")
+    );
 
     let deepest = candidates(&graph, start);
-    let unseen: HashSet<DialogueNodeId> =
-        deepest.iter().take(unseen_wanted).copied().collect();
+    let unseen: HashSet<DialogueNodeId> = deepest.iter().take(unseen_wanted).copied().collect();
     let novelty = |id: DialogueNodeId| {
-        if unseen.contains(&id) { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
+        if unseen.contains(&id) {
+            Novelty::UnseenAnyGame
+        } else {
+            Novelty::SeenThisGame
+        }
     };
 
     // BOTH IN-GAME ARMS, because the control run moved them differently: on 1030 at
@@ -119,10 +125,15 @@ fn main() {
         ..Default::default()
     };
     let in_game = request.search_budget();
-    let backward_only =
-        Budget { forwards: std::time::Duration::ZERO, ..request.search_budget() };
+    let backward_only = Budget {
+        forwards: std::time::Duration::ZERO,
+        ..request.search_budget()
+    };
 
-    println!("{:>6}  {:>12}  {:>10}  {:>12}  {:>7}  {:>6}", "round", "arm", "verdict", "nodes", "asked", "ms");
+    println!(
+        "{:>6}  {:>12}  {:>10}  {:>12}  {:>7}  {:>6}",
+        "round", "arm", "verdict", "nodes", "asked", "ms"
+    );
 
     let shape = GroupShape::of(&graph);
     let mut counts: Vec<usize> = Vec::new();
@@ -188,7 +199,11 @@ fn main() {
         let high = counts.iter().copied().max().unwrap_or(0);
         println!(
             "{arm:>12}: {low} to {high} nodes within this process, a spread of {:.1}%",
-            if low == 0 { 0.0 } else { 100.0 * (high - low) as f64 / low as f64 },
+            if low == 0 {
+                0.0
+            } else {
+                100.0 * (high - low) as f64 / low as f64
+            },
         );
     }
     println!(
@@ -199,9 +214,15 @@ fn main() {
 }
 
 fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name).ok().and_then(|value| value.trim().parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name)
+        .ok()
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or(fallback)
 }
 
 fn from_env_i32(name: &str, fallback: i32) -> i32 {
-    lookahead_engine::core::env::var(name).ok().and_then(|value| value.trim().parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name)
+        .ok()
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or(fallback)
 }

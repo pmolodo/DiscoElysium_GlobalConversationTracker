@@ -104,7 +104,9 @@ pub struct GraphBuilder {
 
 impl GraphBuilder {
     pub fn new() -> Self {
-        Self { entries: Vec::new() }
+        Self {
+            entries: Vec::new(),
+        }
     }
 
     pub fn add(mut self, entry: Entry) -> Self {
@@ -137,7 +139,11 @@ impl GraphBuilder {
 
             let closes_once_seen = entry.kind == DialogueCheckKind::Fake
                 || (entry.kind == DialogueCheckKind::KimSwitch && !entry.boolean_only);
-            let seen_slot = if closes_once_seen { symbols.seen(id) as i32 } else { -1 };
+            let seen_slot = if closes_once_seen {
+                symbols.seen(id) as i32
+            } else {
+                -1
+            };
 
             let links: Vec<DialogueNodeId> = entry.links.iter().map(|l| node(*l)).collect();
 

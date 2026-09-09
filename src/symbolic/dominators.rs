@@ -198,7 +198,10 @@ fn postorder(graph: &LookAheadGraph, starts: &[DialogueNodeId]) -> Vec<DialogueN
         }
         stack.push((start, 0));
         while let Some((id, next)) = stack.pop() {
-            let links = graph.get(id).map(|node| node.links.clone()).unwrap_or_default();
+            let links = graph
+                .get(id)
+                .map(|node| node.links.clone())
+                .unwrap_or_default();
             if next < links.len() {
                 stack.push((id, next + 1));
                 let child = links[next];
@@ -243,7 +246,7 @@ fn intersect(mut a: usize, mut b: usize, idom: &[Option<usize>]) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_graph::{node, Entry, GraphBuilder};
+    use crate::test_graph::{Entry, GraphBuilder, node};
 
     /// A graph whose entry `id` links to `children`. Guards and actions are left empty:
     /// dominance is over the LINKS, and a fixture carrying guards would suggest otherwise.
@@ -269,8 +272,7 @@ mod tests {
     fn a_diamond_leaves_neither_branch_dominating_the_join() {
         // 0 -> 1 -> 3, 0 -> 2 -> 3. Both routes reach 3, so neither 1 nor 2 is on every
         // path to it - which is the case a reachability rule would get wrong.
-        let graph =
-            graph_of(&[(0, &[1, 2]), (1, &[3]), (2, &[3]), (3, &[])]);
+        let graph = graph_of(&[(0, &[1, 2]), (1, &[3]), (2, &[3]), (3, &[])]);
         let doms = Dominators::of(&graph, &[node(0)]);
 
         assert!(!doms.dominates(node(1), node(3)));
@@ -281,17 +283,14 @@ mod tests {
     #[test]
     fn an_entry_reached_through_one_neck_is_dominated_by_it() {
         // The hub shape: 0 -> 1, and everything past 1 goes through it.
-        let graph = graph_of(&[
-            (0, &[1]),
-            (1, &[2, 3]),
-            (2, &[4]),
-            (3, &[4]),
-            (4, &[]),
-        ]);
+        let graph = graph_of(&[(0, &[1]), (1, &[2, 3]), (2, &[4]), (3, &[4]), (4, &[])]);
         let doms = Dominators::of(&graph, &[node(0)]);
 
         for entry in [2, 3, 4] {
-            assert!(doms.dominates(node(1), node(entry)), "1 should dominate {entry}");
+            assert!(
+                doms.dominates(node(1), node(entry)),
+                "1 should dominate {entry}"
+            );
         }
         assert!(!doms.dominates(node(2), node(4)));
     }
@@ -300,7 +299,7 @@ mod tests {
     fn a_cycle_does_not_make_its_members_dominate_each_other() {
         // 1 and 2 are a component: each is reachable from the other, and neither is on
         // every path to the other, because the entry into the loop is 0.
-        let graph = graph_of(&[(0, &[1, 2]), (1, &[2]), (2, &[1]), ]);
+        let graph = graph_of(&[(0, &[1, 2]), (1, &[2]), (2, &[1])]);
         let doms = Dominators::of(&graph, &[node(0)]);
 
         assert!(!doms.dominates(node(1), node(2)));
@@ -314,22 +313,24 @@ mod tests {
 
         assert!(!doms.dominates(node(0), node(0)));
         assert!(!doms.dominates(node(1), node(1)));
-        assert_eq!(doms.immediate(node(0)), None, "a root has no strict dominator");
+        assert_eq!(
+            doms.immediate(node(0)),
+            None,
+            "a root has no strict dominator"
+        );
     }
 
     #[test]
     fn two_starts_are_two_roots_and_neither_dominates_the_others_side() {
         // What a rolled check's outcome looks like: the search begins at 1 and 2 at once,
         // and 0 above them is NOT something a run must have passed through.
-        let graph = graph_of(&[
-            (0, &[1, 2]),
-            (1, &[3]),
-            (2, &[3]),
-            (3, &[]),
-        ]);
+        let graph = graph_of(&[(0, &[1, 2]), (1, &[3]), (2, &[3]), (3, &[])]);
         let doms = Dominators::of(&graph, &[node(1), node(2)]);
 
-        assert!(!doms.dominates(node(1), node(3)), "3 is reachable from 2 as well");
+        assert!(
+            !doms.dominates(node(1), node(3)),
+            "3 is reachable from 2 as well"
+        );
         assert!(!doms.dominates(node(2), node(3)));
         assert_eq!(doms.immediate(node(1)), None);
         assert_eq!(doms.immediate(node(2)), None);

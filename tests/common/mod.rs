@@ -68,12 +68,16 @@ const SOURCE_ASSET: &str = ".game_reference_copies/AssetRipperExport/ExportedPro
 Dialogue Databases/Disco Elysium.asset";
 
 /// What to run to rebuild the corpus files.
-const CORPUS_COMMAND: [&str; 5] =
-    ["run", "--project", "tools/DialogueExtract", "--", "corpus"];
+const CORPUS_COMMAND: [&str; 5] = ["run", "--project", "tools/DialogueExtract", "--", "corpus"];
 
 /// What to run to rebuild the conversation index.
-const INDEX_COMMAND: [&str; 5] =
-    ["run", "--project", "tools/DialogueExtract", "--", "conversation-index"];
+const INDEX_COMMAND: [&str; 5] = [
+    "run",
+    "--project",
+    "tools/DialogueExtract",
+    "--",
+    "conversation-index",
+];
 
 /// The repo root, found by walking up from this crate.
 pub fn repo_root() -> PathBuf {
@@ -97,7 +101,10 @@ fn source_asset_present(root: &Path) -> bool {
 
 /// Runs the extractor, and fails loudly if it does not succeed.
 fn extract(root: &Path, args: &[&str], what: &str) {
-    println!("{what} is missing; regenerating with: dotnet {}", args.join(" "));
+    println!(
+        "{what} is missing; regenerating with: dotnet {}",
+        args.join(" ")
+    );
     let output = Command::new("dotnet")
         .args(args)
         .current_dir(root)
@@ -174,8 +181,13 @@ pub fn conversation_index() -> Option<PathBuf> {
 }
 
 /// What to run to rebuild the trimmed index the mod ships.
-const SHIPPED_INDEX_COMMAND: [&str; 5] =
-    ["run", "--project", "tools/DialogueExtract", "--", "shipped-index"];
+const SHIPPED_INDEX_COMMAND: [&str; 5] = [
+    "run",
+    "--project",
+    "tools/DialogueExtract",
+    "--",
+    "shipped-index",
+];
 
 /// The index as the mod ships it, regenerated if absent.
 ///
@@ -192,8 +204,13 @@ pub fn shipped_index() -> Option<PathBuf> {
 }
 
 /// What to run to rebuild the variable table.
-const VARIABLES_COMMAND: [&str; 5] =
-    ["run", "--project", "tools/DialogueExtract", "--", "variables"];
+const VARIABLES_COMMAND: [&str; 5] = [
+    "run",
+    "--project",
+    "tools/DialogueExtract",
+    "--",
+    "variables",
+];
 
 /// The database's variable table, read once and shared.
 ///
@@ -213,7 +230,9 @@ fn variable_table() -> Option<std::sync::Arc<lookahead_engine::index::VariableTa
                 &VARIABLES_COMMAND,
                 lookahead_engine::index::VariableTable::FILE_NAME,
             )?;
-            lookahead_engine::index::VariableTable::read(&path).ok().map(std::sync::Arc::new)
+            lookahead_engine::index::VariableTable::read(&path)
+                .ok()
+                .map(std::sync::Arc::new)
         })
         .clone()
 }
@@ -429,9 +448,7 @@ impl ILookAheadWorld for SaveWorld {
             // answered false, which is the opposite of what the game says.
             "IsTHCCookingOrFixed" => Self::subject(arguments)
                 .map(|s| {
-                    GuardValue::from_boolean(
-                        self.cooking.contains(s) || self.fixed.contains(s),
-                    )
+                    GuardValue::from_boolean(self.cooking.contains(s) || self.fixed.contains(s))
                 })
                 .unwrap_or_else(GuardValue::unknown),
             _ => GuardValue::unknown(),

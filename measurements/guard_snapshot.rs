@@ -69,7 +69,10 @@ fn main() {
     }
 
     fs::write(&out, text).expect("the snapshot writes");
-    eprintln!("{guards} guards and {} shapes written to {out}", TRICKY.len());
+    eprintln!(
+        "{guards} guards and {} shapes written to {out}",
+        TRICKY.len()
+    );
 }
 
 /// Hand-written guards that pin down the grammar's corners.

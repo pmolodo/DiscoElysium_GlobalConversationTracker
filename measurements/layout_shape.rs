@@ -72,7 +72,11 @@ fn main() {
 
 /// How many bits it takes to represent 0..=max, mirroring the layout's own rule.
 fn bits_for(max: u32) -> u8 {
-    if max == 0 { 1 } else { (u32::BITS - max.leading_zeros()) as u8 }
+    if max == 0 {
+        1
+    } else {
+        (u32::BITS - max.leading_zeros()) as u8
+    }
 }
 
 /// Slots that every action writes together, with the same value, at the same entry.
@@ -114,9 +118,7 @@ fn write_equivalence_classes(
         if layout.slot(slot).is_none_or(|(_, bits)| bits == 0) {
             continue;
         }
-        writes.sort_by_key(|(id, kind, value)| {
-            (id.conversation_id, id.entry_id, *kind, *value)
-        });
+        writes.sort_by_key(|(id, kind, value)| (id.conversation_id, id.entry_id, *kind, *value));
         by_signature.entry(writes).or_default().push(slot);
     }
 
@@ -168,7 +170,9 @@ fn slot_named(
     symbols: &lookahead_engine::core::state::StateSymbols,
 ) -> Option<usize> {
     use lookahead_engine::core::guard::GuardExpression as G;
-    let G::Variable(name) = guard.expression() else { return None };
+    let G::Variable(name) = guard.expression() else {
+        return None;
+    };
     (0..symbols.count()).find(|slot| symbols.name_of(*slot) == Some(name))
 }
 
@@ -189,7 +193,9 @@ fn walk_comparisons(
         match node.expression() {
             G::Comparison(_, a, b) => {
                 for (side, other) in [(a, b), (b, a)] {
-                    let Some(slot) = slot_named(side, symbols) else { continue };
+                    let Some(slot) = slot_named(side, symbols) else {
+                        continue;
+                    };
                     // The slot IS one side of this comparison. Whether it can be narrowed
                     // turns on whether the other side is a constant this can read.
                     let G::Literal(value) = other.expression() else {
@@ -225,7 +231,6 @@ const GROUPS: [i32; 6] = [362, 28, 368, 14, 631, 1030];
 
 /// The cap every symbolic measurement in this repository uses.
 const COUNTER_CAP: i32 = 16;
-
 
 /// Which entries lie on a cycle.
 ///
@@ -363,9 +368,16 @@ impl Writes {
     }
 }
 
-fn writes_of(graph: &LookAheadGraph, cyclic: &HashSet<DialogueNodeId>, slots: usize) -> Vec<Writes> {
+fn writes_of(
+    graph: &LookAheadGraph,
+    cyclic: &HashSet<DialogueNodeId>,
+    slots: usize,
+) -> Vec<Writes> {
     let mut found: Vec<Writes> = (0..slots)
-        .map(|_| Writes { every_increment_is_once: true, ..Writes::default() })
+        .map(|_| Writes {
+            every_increment_is_once: true,
+            ..Writes::default()
+        })
         .collect();
 
     for node in graph.nodes() {
@@ -374,7 +386,12 @@ fn writes_of(graph: &LookAheadGraph, cyclic: &HashSet<DialogueNodeId>, slots: us
         // `flag_slot` and `failed_flag_slot`, and a `seen_slot` closes a one-time entry;
         // none of those is a parsed action, so a scan of actions alone calls them "never
         // written". Counting them here is what makes the unwritten column mean what it says.
-        for slot in [node.flag_slot, node.failed_flag_slot, node.seen_slot, node.once_slot] {
+        for slot in [
+            node.flag_slot,
+            node.failed_flag_slot,
+            node.seen_slot,
+            node.once_slot,
+        ] {
             if let Ok(slot) = usize::try_from(slot) {
                 if slot < slots {
                     found[slot].written = true;
@@ -468,7 +485,9 @@ fn what_each_group_carries() {
         let mut widths: HashMap<u8, usize> = HashMap::new();
 
         for slot in 0..symbols.count() {
-            let Some((_, bits)) = layout.slot(slot) else { continue };
+            let Some((_, bits)) = layout.slot(slot) else {
+                continue;
+            };
             if bits == 0 {
                 continue;
             }
@@ -580,8 +599,10 @@ fn what_each_group_carries() {
         );
         let mut by_width: Vec<(u8, usize)> = widths.into_iter().collect();
         by_width.sort();
-        let shown: Vec<String> =
-            by_width.iter().map(|(bits, count)| format!("{bits}b x{count}")).collect();
+        let shown: Vec<String> = by_width
+            .iter()
+            .map(|(bits, count)| format!("{bits}b x{count}"))
+            .collect();
         println!("      widths: {}", shown.join(", "));
 
         // WHAT de-3x76.2 WOULD BUY. Each slot re-widened to the largest value it can
@@ -590,7 +611,9 @@ fn what_each_group_carries() {
         let mut derived = 0usize;
         let mut narrowed: Vec<String> = Vec::new();
         for slot in 0..symbols.count() {
-            let Some((_, bits)) = layout.slot(slot) else { continue };
+            let Some((_, bits)) = layout.slot(slot) else {
+                continue;
+            };
             if bits == 0 {
                 continue;
             }
@@ -614,7 +637,11 @@ fn what_each_group_carries() {
             "      derived widths would give {derived} variables against {vars}, saving {} \
              ({:.1}%)",
             vars - derived,
-            if vars > 0 { (vars - derived) as f64 / vars as f64 * 100.0 } else { 0.0 },
+            if vars > 0 {
+                (vars - derived) as f64 / vars as f64 * 100.0
+            } else {
+                0.0
+            },
         );
         // AND WHAT IT WOULD BUY SOUNDLY. The derivation above is UNSAFE on its own:
         // `seed_of` clamps the save's starting value to the slot's ceiling, and the site
@@ -631,7 +658,9 @@ fn what_each_group_carries() {
         let mut sound = 0usize;
         let mut blocked = 0usize;
         for slot in 0..symbols.count() {
-            let Some((_, bits)) = layout.slot(slot) else { continue };
+            let Some((_, bits)) = layout.slot(slot) else {
+                continue;
+            };
             if bits == 0 {
                 continue;
             }
@@ -663,7 +692,11 @@ fn what_each_group_carries() {
             "      sound derived widths give {sound} variables against {vars}, saving {} \
              ({:.1}%); {blocked} counter(s) held back by a comparison it cannot read",
             vars - sound,
-            if vars > 0 { (vars - sound) as f64 / vars as f64 * 100.0 } else { 0.0 },
+            if vars > 0 {
+                (vars - sound) as f64 / vars as f64 * 100.0
+            } else {
+                0.0
+            },
         );
 
         // AND THE SAME THING WITHOUT ANY GRAPH ANALYSIS AT ALL. The derivation above needs
@@ -681,7 +714,9 @@ fn what_each_group_carries() {
         // one bit already covers, so it keeps the width it has rather than being widened.
         let mut threshold_only = 0usize;
         for slot in 0..symbols.count() {
-            let Some((_, bits)) = layout.slot(slot) else { continue };
+            let Some((_, bits)) = layout.slot(slot) else {
+                continue;
+            };
             if bits == 0 {
                 continue;
             }
@@ -721,7 +756,9 @@ fn what_each_group_carries() {
         // the read trim that already exists.
         let mut dead: Vec<String> = Vec::new();
         for slot in 0..symbols.count() {
-            let Some((_, bits)) = layout.slot(slot) else { continue };
+            let Some((_, bits)) = layout.slot(slot) else {
+                continue;
+            };
             if bits == 0 || unreadable.contains(&slot) {
                 continue;
             }
@@ -757,8 +794,10 @@ fn what_each_group_carries() {
             classes.len(),
         );
         for class in &classes {
-            let names: Vec<&str> =
-                class.iter().map(|slot| symbols.name_of(*slot).unwrap_or("?")).collect();
+            let names: Vec<&str> = class
+                .iter()
+                .map(|slot| symbols.name_of(*slot).unwrap_or("?"))
+                .collect();
             println!("        {}", names.join(" = "));
         }
 
@@ -772,7 +811,6 @@ fn what_each_group_carries() {
          layout and never runs a search, so two runs agree exactly."
     );
 }
-
 
 /// Every live slot in one group, with how it is written.
 ///
@@ -802,14 +840,16 @@ fn list_the_slots() {
     let reads = DataLayout::read_by(&graph);
     let passes_time = DataLayout::group_passes_time(&graph);
     // The shipped layout, as above: no clock run, because the compiler folds it in.
-    let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false)
-        .keeping_only_read(&symbols, &reads);
+    let layout =
+        DataLayout::for_graph(&graph, COUNTER_CAP, None, false).keeping_only_read(&symbols, &reads);
     let cyclic = on_a_cycle(&graph);
     let writes = writes_of(&graph, &cyclic, symbols.count());
 
     let mut rows: Vec<(String, u8, String)> = Vec::new();
     for slot in 0..symbols.count() {
-        let Some((_, bits)) = layout.slot(slot) else { continue };
+        let Some((_, bits)) = layout.slot(slot) else {
+            continue;
+        };
         if bits == 0 {
             continue;
         }
@@ -821,8 +861,16 @@ fn list_the_slots() {
             format!(
                 "INCREMENTED at {} site(s){}{}",
                 write.increment_sites,
-                if write.every_increment_is_once { ", all once-guarded" } else { "" },
-                if write.increments_on_a_cycle { ", ON A CYCLE" } else { "" },
+                if write.every_increment_is_once {
+                    ", all once-guarded"
+                } else {
+                    ""
+                },
+                if write.increments_on_a_cycle {
+                    ", ON A CYCLE"
+                } else {
+                    ""
+                },
             )
         } else {
             format!("assigned, largest {}", write.max_assigned)

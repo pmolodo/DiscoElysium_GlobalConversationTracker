@@ -75,8 +75,8 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use oxidd::bdd::BDDFunction;
 use oxidd::BooleanFunction;
+use oxidd::bdd::BDDFunction;
 
 use crate::core::types::DialogueNodeId;
 use crate::symbolic::backward::{Backward, SettledPass};
@@ -193,8 +193,10 @@ fn hash_set(set: &std::collections::HashSet<String>, hasher: &mut impl std::hash
 
 /// A set of entries, in order.
 fn hash_nodes(set: &crate::bridge::NodeSet, hasher: &mut impl std::hash::Hasher) {
-    let mut entries: Vec<(i32, i32)> =
-        set.iter().map(|node| (node.conversation, node.entry)).collect();
+    let mut entries: Vec<(i32, i32)> = set
+        .iter()
+        .map(|node| (node.conversation, node.entry))
+        .collect();
     entries.sort_unstable();
     for entry in entries {
         std::hash::Hash::hash(&entry, hasher);
@@ -234,7 +236,10 @@ impl SettledPass for Kept {
         match self.sets.get(&node) {
             // An `Err` is the manager out of room, and answering "not reachable" on it
             // would be the one wrong direction - the same reading `Backward` gives it.
-            Some(set) => set.and(states).map(|both| both.satisfiable()).unwrap_or(true),
+            Some(set) => set
+                .and(states)
+                .map(|both| both.satisfiable())
+                .unwrap_or(true),
             None => false,
         }
     }
@@ -340,11 +345,7 @@ impl Memo {
         // forward run, so this asks whether one was available rather than whether pruning
         // was requested - see the module note on why that is a test and not a setting.
         let narrowed = known.is_some_and(|known| known.forward_settled());
-        if !stats.reached_fixed_point
-            || stats.met_at.is_some()
-            || stats.out_of_memory
-            || narrowed
-        {
+        if !stats.reached_fixed_point || stats.met_at.is_some() || stats.out_of_memory || narrowed {
             let mut counted = self.stats.borrow_mut();
             // ONE REASON EACH, and `reached_fixed_point` is asked LAST rather than first.
             // It is false for a pass that met and for one that ran out of nodes as well as
@@ -367,7 +368,11 @@ impl Memo {
             .entries()
             .filter_map(|entry| backward.states_at(entry).map(|set| (entry, set.clone())))
             .collect();
-        let kept = Kept { sets, nodes: stats.diagram_nodes, took: stats.elapsed };
+        let kept = Kept {
+            sets,
+            nodes: stats.diagram_nodes,
+            took: stats.elapsed,
+        };
 
         self.make_room_for(kept.nodes);
         let mut passes = self.passes.borrow_mut();
@@ -421,8 +426,9 @@ impl Memo {
         // Cheapest first, and the identifier breaks the tie so eviction is not decided by
         // whatever order the hash map happened to yield.
         order.sort_by(|a, b| {
-            a.1.total_cmp(&b.1)
-                .then_with(|| (a.0.conversation_id, a.0.entry_id).cmp(&(b.0.conversation_id, b.0.entry_id)))
+            a.1.total_cmp(&b.1).then_with(|| {
+                (a.0.conversation_id, a.0.entry_id).cmp(&(b.0.conversation_id, b.0.entry_id))
+            })
         });
 
         let mut held = self.held.borrow_mut();
@@ -491,9 +497,18 @@ mod tests {
 
         // No room for this without dropping something, and the cheap one goes.
         put(&memo, target(3), kept_of(20, 5));
-        assert!(memo.recall(target(2)).is_none(), "the cheap-per-node pass survived");
-        assert!(memo.recall(target(1)).is_some(), "the dear-per-node pass was evicted");
-        assert!(memo.recall(target(3)).is_some(), "the new pass did not go in");
+        assert!(
+            memo.recall(target(2)).is_none(),
+            "the cheap-per-node pass survived"
+        );
+        assert!(
+            memo.recall(target(1)).is_some(),
+            "the dear-per-node pass was evicted"
+        );
+        assert!(
+            memo.recall(target(3)).is_some(),
+            "the new pass did not go in"
+        );
         assert!(memo.held() <= 100, "the cap was exceeded: {}", memo.held());
     }
 
@@ -502,8 +517,14 @@ mod tests {
         let memo = Memo::new(7, 100);
         put(&memo, target(1), kept_of(40, 10));
         put(&memo, target(2), kept_of(500, 10));
-        assert!(memo.recall(target(2)).is_some(), "the outsized pass was refused");
-        assert!(memo.recall(target(1)).is_none(), "the room for it was not made");
+        assert!(
+            memo.recall(target(2)).is_some(),
+            "the outsized pass was refused"
+        );
+        assert!(
+            memo.recall(target(1)).is_none(),
+            "the room for it was not made"
+        );
     }
 
     #[test]
@@ -536,12 +557,26 @@ mod tests {
     fn what_has_been_seen_is_not_part_of_the_key() {
         use crate::bridge::{NodeRef, WorldSnapshot};
 
-        let mut early = WorldSnapshot { money: 40, day_minutes: 720, ..Default::default() };
-        early.seen.insert(NodeRef { conversation: 1, entry: 2 });
+        let mut early = WorldSnapshot {
+            money: 40,
+            day_minutes: 720,
+            ..Default::default()
+        };
+        early.seen.insert(NodeRef {
+            conversation: 1,
+            entry: 2,
+        });
         let mut later = early.clone();
-        later.seen.insert(NodeRef { conversation: 1, entry: 3 });
+        later.seen.insert(NodeRef {
+            conversation: 1,
+            entry: 3,
+        });
 
-        assert_eq!(key_of(&early), key_of(&later), "reading a line emptied the memo");
+        assert_eq!(
+            key_of(&early),
+            key_of(&later),
+            "reading a line emptied the memo"
+        );
     }
 
     /// And anything a guard reads does not.
@@ -549,7 +584,11 @@ mod tests {
     fn what_a_guard_reads_is_part_of_the_key() {
         use crate::bridge::{WireValue, WorldSnapshot};
 
-        let before = WorldSnapshot { money: 40, day_minutes: 720, ..Default::default() };
+        let before = WorldSnapshot {
+            money: 40,
+            day_minutes: 720,
+            ..Default::default()
+        };
 
         let mut spent = before.clone();
         spent.money = 10;
@@ -557,15 +596,28 @@ mod tests {
 
         let mut later = before.clone();
         later.day_minutes = 1200;
-        assert_ne!(key_of(&before), key_of(&later), "the clock is not in the key");
+        assert_ne!(
+            key_of(&before),
+            key_of(&later),
+            "the clock is not in the key"
+        );
 
         let mut told = before.clone();
-        told.variables.insert("x".into(), WireValue::Bool { value: true });
-        assert_ne!(key_of(&before), key_of(&told), "a variable is not in the key");
+        told.variables
+            .insert("x".into(), WireValue::Bool { value: true });
+        assert_ne!(
+            key_of(&before),
+            key_of(&told),
+            "a variable is not in the key"
+        );
 
         let mut carrying = before.clone();
         carrying.items.insert("a-key".into());
-        assert_ne!(key_of(&before), key_of(&carrying), "an item is not in the key");
+        assert_ne!(
+            key_of(&before),
+            key_of(&carrying),
+            "an item is not in the key"
+        );
     }
 
     /// The two spellings of one world key alike, once the positional form is resolved.
@@ -576,12 +628,19 @@ mod tests {
         let mut one = WorldSnapshot::default();
         let mut other = WorldSnapshot::default();
         for name in ["a", "b", "c", "d", "e", "f", "g", "h"] {
-            one.variables.insert(name.into(), WireValue::Text { value: name.into() });
+            one.variables
+                .insert(name.into(), WireValue::Text { value: name.into() });
         }
         for name in ["h", "g", "f", "e", "d", "c", "b", "a"] {
-            other.variables.insert(name.into(), WireValue::Text { value: name.into() });
+            other
+                .variables
+                .insert(name.into(), WireValue::Text { value: name.into() });
         }
 
-        assert_eq!(key_of(&one), key_of(&other), "the key followed the insertion order");
+        assert_eq!(
+            key_of(&one),
+            key_of(&other),
+            "the key followed the insertion order"
+        );
     }
 }

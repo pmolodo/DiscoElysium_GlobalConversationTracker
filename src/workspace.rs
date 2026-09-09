@@ -85,17 +85,15 @@
 //! thread that already holds one is the failing arrangement exactly. So the thread is shut
 //! down and a fresh one takes its place.
 
-use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
+use std::sync::mpsc::{Receiver, Sender};
 use std::thread::JoinHandle;
 
 use crate::bridge::{
-    answer_starts, LookAheadAnswer, LookAheadRequest, SnapshotWorld, WorldSnapshot,
-    COUNTER_CAP,
+    COUNTER_CAP, LookAheadAnswer, LookAheadRequest, SnapshotWorld, WorldSnapshot, answer_starts,
 };
 use crate::core::types::{DialogueNodeId, Novelty};
 use crate::graph::graph::LookAheadGraph;
-use crate::world::world::ILookAheadWorld;
 use crate::index::VariableTable;
 use crate::symbolic::budget::DiagramBudget;
 use crate::symbolic::data_layout::DataLayout;
@@ -105,6 +103,7 @@ use crate::symbolic::known::GroupShape;
 use crate::symbolic::memo::{self, Memo};
 use crate::symbolic::reachability::seed_of;
 use crate::symbolic::vars::DataVars;
+use crate::world::world::ILookAheadWorld;
 
 /// What a workspace is valid FOR. A request whose key differs needs a new one.
 ///
@@ -213,14 +212,23 @@ impl Workspace {
         let owned = Arc::clone(&graph);
         let thread = std::thread::Builder::new()
             .stack_size(isolated::STACK)
-            .spawn(move || own(owned, group, entered_at, world, declared, budget, inbox, ready))
+            .spawn(move || {
+                own(
+                    owned, group, entered_at, world, declared, budget, inbox, ready,
+                )
+            })
             .ok()?;
 
         // WAITED FOR, because the manager is what can fail and the caller has to be told
         // now rather than on the first request. A thread that could not allocate says so
         // and ends; `None` here means fall back to the per-request path.
         match started.recv() {
-            Ok(true) => Some(Self { key, graph, jobs, thread: Some(thread) }),
+            Ok(true) => Some(Self {
+                key,
+                graph,
+                jobs,
+                thread: Some(thread),
+            }),
             _ => {
                 let _ = thread.join();
                 None
@@ -316,8 +324,7 @@ fn own(
     // ceiling that produced - so a later request whose money moves the ceiling is refused
     // by `serves` rather than answered against a layout that does not fit it.
     let opening = SnapshotWorld::declaring(layout_world, declared.clone());
-    let layout =
-        DataLayout::for_group_entered_at(&graph, &opening, COUNTER_CAP, Some(&entered_at));
+    let layout = DataLayout::for_group_entered_at(&graph, &opening, COUNTER_CAP, Some(&entered_at));
 
     // FALLIBLY, and reported before any request is accepted: the node store is one big
     // preallocation and asking for it infallibly aborts rather than fails - de-0a3a.
@@ -342,7 +349,11 @@ fn own(
     while let Ok(job) = inbox.recv() {
         // THE STORE IS READ AND NOTHING ELSE HAPPENS, which is why it is a job at all: the
         // manager belongs to this thread and may not be touched from another.
-        let Job::Answer { request: job_request, answers: job_answers } = job else {
+        let Job::Answer {
+            request: job_request,
+            answers: job_answers,
+        } = job
+        else {
             if let Job::Held(held) = job {
                 let _ = held.send(vars.node_count());
             }
@@ -405,7 +416,14 @@ fn own(
         }
 
         let answers = answer_starts(
-            &graph, &world, request, &novelty, &mut compiler, &seed, &shape, Some(&memo),
+            &graph,
+            &world,
+            request,
+            &novelty,
+            &mut compiler,
+            &seed,
+            &shape,
+            Some(&memo),
         );
 
         // A caller that has gone away is not an error - it means the request was abandoned,

@@ -28,7 +28,9 @@ use lookahead_engine::parser::guard_parser::parse_guard;
 mod common;
 
 fn main() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
 
     let mut histogram: BTreeMap<usize, usize> = BTreeMap::new();
@@ -62,7 +64,10 @@ fn main() {
         println!("{depth:>6}  {count:>7}");
     }
 
-    println!("\nDEEPEST: {} levels, at {}:{}", deepest.0, deepest.2, deepest.3);
+    println!(
+        "\nDEEPEST: {} levels, at {}:{}",
+        deepest.0, deepest.2, deepest.3
+    );
     let text = deepest.1.trim();
     println!("{}", &text[..text.len().min(600)]);
 }

@@ -89,8 +89,7 @@ where
     F: FnOnce() -> T + Send,
     T: Send,
 {
-    on_its_own_thread_caught(search)
-        .unwrap_or_else(|panicked| std::panic::resume_unwind(panicked))
+    on_its_own_thread_caught(search).unwrap_or_else(|panicked| std::panic::resume_unwind(panicked))
 }
 
 /// The same thread, but a panic inside comes back as an error instead of being re-raised.

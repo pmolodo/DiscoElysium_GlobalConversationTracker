@@ -48,7 +48,10 @@ const TARGETS: usize = 300;
 
 fn conversations(default: &[i32]) -> Vec<i32> {
     match lookahead_engine::core::env::var("CONVERSATION") {
-        Ok(named) => named.split(',').filter_map(|id| id.trim().parse().ok()).collect(),
+        Ok(named) => named
+            .split(',')
+            .filter_map(|id| id.trim().parse().ok())
+            .collect(),
         Err(_) => default.to_vec(),
     }
 }
@@ -73,7 +76,11 @@ fn largest_scc(graph: &LookAheadGraph) -> usize {
         }
     }
 
-    tarjan_scc(&petg).into_iter().map(|component| component.len()).max().unwrap_or(0)
+    tarjan_scc(&petg)
+        .into_iter()
+        .map(|component| component.len())
+        .max()
+        .unwrap_or(0)
 }
 
 /// Every entry's incoming links.
@@ -114,7 +121,9 @@ fn spread(values: &mut [usize]) -> (usize, usize) {
 
 #[test]
 fn how_much_does_one_target_prune() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
 
     println!(
@@ -125,7 +134,9 @@ fn how_much_does_one_target_prune() {
     let mut measured = 0;
 
     for conversation in conversations(&EXPENSIVE) {
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            continue;
+        };
         let symbols = graph.symbols().clone();
         let entries = graph.count();
         if entries == 0 {

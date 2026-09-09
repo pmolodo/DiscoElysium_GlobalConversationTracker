@@ -65,7 +65,10 @@ fn every_guard_in_the_database_parses() {
         }
     }
 
-    assert!(guards > 0, "the index carried no guards at all, so this checked nothing");
+    assert!(
+        guards > 0,
+        "the index carried no guards at all, so this checked nothing"
+    );
     assert!(
         refused.is_empty(),
         "{} of {guards} guards in the database no longer parse:\n  {}",

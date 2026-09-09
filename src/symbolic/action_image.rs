@@ -24,8 +24,8 @@
 //! space.
 
 use oxidd::BooleanFunction;
-use oxidd::bdd::BDDFunction;
 use oxidd::BooleanFunctionQuant;
+use oxidd::bdd::BDDFunction;
 
 use crate::core::action::{DialogueAction, DialogueActionKind};
 use crate::symbolic::register::RegisterOps;
@@ -43,7 +43,12 @@ pub struct ActionImage<'a> {
 
 impl<'a> ActionImage<'a> {
     pub fn new(vars: &'a DataVars<'a>, counter_cap: u32) -> Self {
-        Self { vars, counter_cap, ignored: 0, out_of_memory: false }
+        Self {
+            vars,
+            counter_cap,
+            ignored: 0,
+            out_of_memory: false,
+        }
     }
 
     /// The value an increment on this slot stops at.
@@ -80,7 +85,11 @@ impl<'a> ActionImage<'a> {
     /// The fallback is returned only so the types stay simple; it is not a meaningful
     /// answer and nothing downstream should be trusted once [`Self::out_of_memory`] is
     /// set.
-    fn or_no_room<E>(&mut self, attempt: Result<BDDFunction, E>, fallback: &BDDFunction) -> BDDFunction {
+    fn or_no_room<E>(
+        &mut self,
+        attempt: Result<BDDFunction, E>,
+        fallback: &BDDFunction,
+    ) -> BDDFunction {
         match attempt {
             Ok(function) => function,
             Err(_) => {
@@ -261,12 +270,7 @@ impl<'a> ActionImage<'a> {
     /// reason. Saturation makes this many-to-one - every value at or above the cap lands
     /// on the cap - so the pre-image of the cap is a range rather than a point, which the
     /// case split handles without any special pleading.
-    pub fn pre_increment(
-        &mut self,
-        states: &BDDFunction,
-        slot: usize,
-        amount: i32,
-    ) -> BDDFunction {
+    pub fn pre_increment(&mut self, states: &BDDFunction, slot: usize, amount: i32) -> BDDFunction {
         let Some(ceiling) = self.vars.slot_ceiling(slot) else {
             self.ignored += 1;
             return states.clone();
@@ -274,13 +278,17 @@ impl<'a> ActionImage<'a> {
 
         let cap = self.saturation(slot, ceiling);
         let cube = self.vars.slot_cube(slot);
-        let Some(cube) = self.in_layout(cube) else { return states.clone() };
+        let Some(cube) = self.in_layout(cube) else {
+            return states.clone();
+        };
         let mut result = self.vars.bottom();
 
         for value in 0..=ceiling {
             let raised = (value as i64 + amount as i64).clamp(0, cap as i64) as u32;
             let becomes = self.vars.slot_equals(slot, raised);
-            let Some(becomes) = self.in_layout(becomes) else { return states.clone() };
+            let Some(becomes) = self.in_layout(becomes) else {
+                return states.clone();
+            };
             let landed = self.or_no_room(states.and(&becomes), states);
             if self.out_of_memory {
                 return states.clone();
@@ -290,7 +298,9 @@ impl<'a> ActionImage<'a> {
             }
 
             let holding = self.vars.slot_equals(slot, value);
-            let Some(holding) = self.in_layout(holding) else { return states.clone() };
+            let Some(holding) = self.in_layout(holding) else {
+                return states.clone();
+            };
             let forgotten = self.or_no_room(landed.exists(&cube), states);
             let came_from = self.or_no_room(forgotten.and(&holding), states);
             result = self.or_no_room(result.or(&came_from), states);
@@ -329,9 +339,7 @@ impl<'a> ActionImage<'a> {
                 let value = action.value().max(0) as u32;
                 self.assign(states, slot, value)
             }
-            DialogueActionKind::Increment => {
-                self.increment(states, slot, action.value())
-            }
+            DialogueActionKind::Increment => self.increment(states, slot, action.value()),
             _ => {
                 self.ignored += 1;
                 states.clone()
@@ -346,12 +354,16 @@ impl<'a> ActionImage<'a> {
     /// from any other such balance as far as this group's guards are concerned, so
     /// collapsing them loses nothing a search over it could observe.
     fn gain_money(&mut self, states: &BDDFunction, amount: i32) -> BDDFunction {
-        self.on_money(states, |ops, set| ops.saturating_add(set, amount.max(0) as u32))
+        self.on_money(states, |ops, set| {
+            ops.saturating_add(set, amount.max(0) as u32)
+        })
     }
 
     /// `money := max(money - amount, 0)`, where the layout carries money.
     fn lose_money(&mut self, states: &BDDFunction, amount: i32) -> BDDFunction {
-        self.on_money(states, |ops, set| ops.saturating_sub(set, amount.max(0) as u32))
+        self.on_money(states, |ops, set| {
+            ops.saturating_sub(set, amount.max(0) as u32)
+        })
     }
 
     /// `clock := (clock + minutes) mod 1440`, where the layout carries the clock.
@@ -443,12 +455,16 @@ impl<'a> ActionImage<'a> {
         // value the slot is too narrow for would silently become a different value.
         let cap = self.saturation(slot, ceiling);
         let cube = self.vars.slot_cube(slot);
-        let Some(cube) = self.in_layout(cube) else { return states.clone() };
+        let Some(cube) = self.in_layout(cube) else {
+            return states.clone();
+        };
         let mut result = self.vars.bottom();
 
         for value in 0..=ceiling {
             let holding = self.vars.slot_equals(slot, value);
-            let Some(holding) = self.in_layout(holding) else { return states.clone() };
+            let Some(holding) = self.in_layout(holding) else {
+                return states.clone();
+            };
             let matching = self.or_no_room(states.and(&holding), states);
             if self.out_of_memory {
                 return states.clone();
@@ -459,7 +475,9 @@ impl<'a> ActionImage<'a> {
 
             let raised = (value as i64 + amount as i64).clamp(0, cap as i64) as u32;
             let becomes = self.vars.slot_equals(slot, raised);
-            let Some(becomes) = self.in_layout(becomes) else { return states.clone() };
+            let Some(becomes) = self.in_layout(becomes) else {
+                return states.clone();
+            };
             let forgotten = self.or_no_room(matching.exists(&cube), states);
             let moved = self.or_no_room(forgotten.and(&becomes), states);
             result = self.or_no_room(result.or(&moved), states);
@@ -475,19 +493,15 @@ impl<'a> ActionImage<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::symbolic::budget::DiagramBudget;
     use crate::core::state::StateSymbols;
+    use crate::symbolic::budget::DiagramBudget;
     use crate::symbolic::data_layout::DataLayout;
     use crate::symbolic::vars::tests::fixture;
 
     const CAP: u32 = 16;
 
     /// Reads back which values of `slot` a set allows, by trying them all.
-    fn values_of(
-        vars: &DataVars,
-        set: &BDDFunction,
-        slot: usize,
-    ) -> Vec<u32> {
+    fn values_of(vars: &DataVars, set: &BDDFunction, slot: usize) -> Vec<u32> {
         let ceiling = vars.slot_ceiling(slot).unwrap();
         (0..=ceiling)
             .filter(|v| {
@@ -588,10 +602,19 @@ mod tests {
         let fired = symbols.variable("fired");
         let actions = vec![DialogueAction::increment(counter, 1, true, "s".to_string())];
         let node = crate::graph::node::LookAheadNode::new(
-            crate::core::types::DialogueNodeId::new(1, 0), false,
+            crate::core::types::DialogueNodeId::new(1, 0),
+            false,
             crate::core::types::DialogueCheckKind::None,
-            crate::core::guard::Guard::always_true(), actions.clone(), vec![],
-            0, false, false, -1, -1, false, -1,
+            crate::core::guard::Guard::always_true(),
+            actions.clone(),
+            vec![],
+            0,
+            false,
+            false,
+            -1,
+            -1,
+            false,
+            -1,
         );
         let snapshot = symbols.clone();
         let graph = crate::graph::graph::LookAheadGraph::new(vec![node], symbols).unwrap();
@@ -620,7 +643,12 @@ mod tests {
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut image = ActionImage::new(&vars, CAP);
 
-        let money = vec![DialogueAction::money(true, 50, false, "GainMoney".to_string())];
+        let money = vec![DialogueAction::money(
+            true,
+            50,
+            false,
+            "GainMoney".to_string(),
+        )];
         let before = vars.top();
         let after = image.apply(&before, &money, &vars.bottom());
 

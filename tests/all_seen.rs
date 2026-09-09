@@ -48,7 +48,9 @@ const BIGGEST: usize = 6;
 
 #[test]
 fn the_suite_still_asks_the_biggest_conversations() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
 
     let mut sizes: Vec<(i32, usize)> = index
@@ -76,7 +78,10 @@ fn the_suite_still_asks_the_biggest_conversations() {
                 .position(|(id, _)| *id == scenario.conversation)
                 .map(|at: usize| (at + 1).to_string())
                 .unwrap_or_else(|| "not in the index".to_string());
-            format!("{} ({}) is rank {rank}", scenario.conversation, scenario.save)
+            format!(
+                "{} ({}) is rank {rank}",
+                scenario.conversation, scenario.save
+            )
         })
         .collect();
 
@@ -90,7 +95,9 @@ fn the_suite_still_asks_the_biggest_conversations() {
 /// And the whole engine agrees, not just the short-circuit in front of it.
 #[test]
 fn the_engine_finds_nothing_either() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
 
     let table = suites::table();
@@ -99,7 +106,9 @@ fn the_engine_finds_nothing_either() {
 
     for scenario in &suite.scenarios {
         let conversation = scenario.conversation;
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            continue;
+        };
         let start = DialogueNodeId::new(conversation, 0);
         if graph.get(start).is_none() {
             continue;

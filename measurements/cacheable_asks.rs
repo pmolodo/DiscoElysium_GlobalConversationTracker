@@ -143,7 +143,7 @@ use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
 use lookahead_engine::symbolic::known::GroupShape;
 use lookahead_engine::symbolic::portfolio;
-use lookahead_engine::symbolic::reachability::{seed_of, Budget as ForwardBudget, Reachability};
+use lookahead_engine::symbolic::reachability::{Budget as ForwardBudget, Reachability, seed_of};
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::world::world::ILookAheadWorld;
 
@@ -194,9 +194,10 @@ fn main() {
 
     let budget = DiagramBudget::new(from_env("BUDGET_MB", BUDGET_MB) * 1024 * 1024);
     let menus_wanted = from_env("MENUS", MENUS);
-    let each = Duration::from_millis(
-        from_env("EACH_MS", portfolio::Budget::default().each.as_millis() as usize) as u64,
-    );
+    let each = Duration::from_millis(from_env(
+        "EACH_MS",
+        portfolio::Budget::default().each.as_millis() as usize,
+    ) as u64);
 
     println!(
         "WHAT A MEMO BETWEEN REQUESTS COULD HOLD. The walk `candidate_recurrence` counts, \
@@ -252,7 +253,9 @@ fn main() {
                 eprintln!("conversation {conversation}: no room for the manager; skipping.");
                 continue;
             };
-            let Some(on) = arm(&graph, &menus, budget, each, true) else { continue };
+            let Some(on) = arm(&graph, &menus, budget, each, true) else {
+                continue;
+            };
 
             // A LINE AS EACH WALK LANDS, because every table here is printed at the end and
             // a heavy group is minutes of silence otherwise. It says what the walk cost and
@@ -268,7 +271,13 @@ fn main() {
                 off.millis,
                 on.millis,
             );
-            every.push(Walked { conversation, percent, ceiling, off, on });
+            every.push(Walked {
+                conversation,
+                percent,
+                ceiling,
+                off,
+                on,
+            });
         }
     }
 
@@ -387,7 +396,11 @@ fn arm(
     isolated::on_its_own_thread(|| {
         let symbols = graph.symbols().clone();
         let world = SnapshotWorld::declaring(
-            WorldSnapshot { day_minutes: 720, day_counter: 1, ..Default::default() },
+            WorldSnapshot {
+                day_minutes: 720,
+                day_counter: 1,
+                ..Default::default()
+            },
             None,
         );
         let layout = DataLayout::for_group(graph, &world, COUNTER_CAP);
@@ -434,7 +447,14 @@ fn arm(
                 };
 
                 let forward = slice(
-                    graph, start, &seed, &mut compiler, &world, hunting, &novelty, &shipped,
+                    graph,
+                    start,
+                    &seed,
+                    &mut compiler,
+                    &world,
+                    hunting,
+                    &novelty,
+                    &shipped,
                     &shape,
                 );
                 if forward.stats().halted_at.is_some() {
@@ -457,11 +477,20 @@ fn arm(
                     .with_forward(&forward)
                     .pruning(pruning);
 
-                let pass = BackwardBudget { steps: usize::MAX, time: each, ..Default::default() };
+                let pass = BackwardBudget {
+                    steps: usize::MAX,
+                    time: each,
+                    ..Default::default()
+                };
                 for target in targets {
                     let began = Instant::now();
                     let backward = Backward::reaching_knowing(
-                        graph, target, &mut compiler, &world, COUNTER_CAP as u32, &pass,
+                        graph,
+                        target,
+                        &mut compiler,
+                        &world,
+                        COUNTER_CAP as u32,
+                        &pass,
                         Some(&known),
                     );
                     let took = began.elapsed().as_secs_f64() * 1000.0;
@@ -538,8 +567,11 @@ where
 {
     // THE SET RATHER THAN THE CLOSURE, because `halt_on` outlives this call and cannot
     // borrow the novelty function.
-    let quarry: HashSet<DialogueNodeId> =
-        graph.nodes().map(|node| node.id).filter(|id| novelty(*id) == hunting).collect();
+    let quarry: HashSet<DialogueNodeId> = graph
+        .nodes()
+        .map(|node| node.id)
+        .filter(|id| novelty(*id) == hunting)
+        .collect();
 
     Reachability::explore_branch_knowing(
         graph,
@@ -566,7 +598,15 @@ fn per_walk(every: &[Walked]) {
     println!("would have answered, which needs the first ask to have settled without meeting.\n");
     println!(
         "{:>6}  {:>10}  {:>6}  {:>7}  {:>7}  {:>7}  {:>7}  {:>7}  {:>9}  {:>7}",
-        "conv", "profile", "menus", "asked", "repeat", "ran", "cacheab", "saved", "of repeat",
+        "conv",
+        "profile",
+        "menus",
+        "asked",
+        "repeat",
+        "ran",
+        "cacheab",
+        "saved",
+        "of repeat",
         "of ran",
     );
     for walked in every {
@@ -696,7 +736,10 @@ fn the_answer(every: &[Walked]) {
     part("passes a memo would replace", off.saved, off.asks);
     println!();
     millis("one cacheable pass, ms", off.each_cacheable_ms());
-    counted("one cacheable pass, nodes", off.each_cacheable_nodes().round() as usize);
+    counted(
+        "one cacheable pass, nodes",
+        off.each_cacheable_nodes().round() as usize,
+    );
     counted("every cacheable pass summed", off.cacheable_nodes);
     counted("the worst manager at walk's end", off.manager_nodes);
     println!();
@@ -756,18 +799,27 @@ fn share(part: usize, whole: usize) -> String {
 
 fn percents() -> Vec<u32> {
     match lookahead_engine::core::env::var("PROFILES") {
-        Ok(text) => text.split(',').filter_map(|part| part.trim().parse().ok()).collect(),
+        Ok(text) => text
+            .split(',')
+            .filter_map(|part| part.trim().parse().ok())
+            .collect(),
         Err(_) => PERCENTS.to_vec(),
     }
 }
 
 fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name).ok().and_then(|text| text.trim().parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name)
+        .ok()
+        .and_then(|text| text.trim().parse().ok())
+        .unwrap_or(fallback)
 }
 
 fn numbers(name: &str, fallback: &[i32]) -> Vec<i32> {
     match lookahead_engine::core::env::var(name) {
-        Ok(text) => text.split(',').filter_map(|part| part.trim().parse().ok()).collect(),
+        Ok(text) => text
+            .split(',')
+            .filter_map(|part| part.trim().parse().ok())
+            .collect(),
         Err(_) => fallback.to_vec(),
     }
 }

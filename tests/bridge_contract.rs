@@ -15,7 +15,7 @@
 use std::collections::HashSet;
 
 use lookahead_engine::bridge::{
-    answer, questions_for, LookAheadRequest, NodeRef, SnapshotWorld, WireValue, WorldSnapshot,
+    LookAheadRequest, NodeRef, SnapshotWorld, WireValue, WorldSnapshot, answer, questions_for,
 };
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::index::{build_group_graph, read_index};
@@ -42,7 +42,9 @@ const RICH: [i32; 3] = [631, 368, 14];
 
 #[test]
 fn the_engine_names_questions_the_snapshot_can_answer() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
 
     for conversation in RICH.iter().copied().chain(CHECKABLE) {
@@ -71,7 +73,9 @@ fn the_engine_names_questions_the_snapshot_can_answer() {
         // them all true and none may come back unknown.
         let mut world = WorldSnapshot::default();
         for key in &questions.queries {
-            world.queries.insert(key.clone(), WireValue::Bool { value: true });
+            world
+                .queries
+                .insert(key.clone(), WireValue::Bool { value: true });
         }
         let filled = SnapshotWorld::new(world);
 
@@ -91,20 +95,22 @@ fn the_engine_names_questions_the_snapshot_can_answer() {
 /// Walks the parsed guard and asks the world exactly what the engine would ask it, so a
 /// key that does not match shows up as an unanswered question rather than as a passing
 /// test.
-fn answered_queries(
-    guard: &lookahead_engine::core::guard::Guard,
-    world: &SnapshotWorld,
-) -> usize {
+fn answered_queries(guard: &lookahead_engine::core::guard::Guard, world: &SnapshotWorld) -> usize {
     use lookahead_engine::core::guard::GuardExpression as G;
     use lookahead_engine::core::guard_value::{GuardValue, GuardValueKind};
     use lookahead_engine::world::world::ILookAheadWorld;
 
     let mut answered = 0;
     for node in guard.nodes() {
-        let G::Call(name, args) = node.expression() else { continue };
+        let G::Call(name, args) = node.expression() else {
+            continue;
+        };
         // The subject-taking three are answered from items/tasks/thoughts instead, and
         // a flag is a variable, so none of those is a query key.
-        if matches!(name, "CheckItem" | "IsTaskActive" | "IsTHCPresent" | "FlagSet") {
+        if matches!(
+            name,
+            "CheckItem" | "IsTaskActive" | "IsTHCPresent" | "FlagSet"
+        ) {
             continue;
         }
 
@@ -132,7 +138,9 @@ fn answered_queries(
 /// The same world, once through JSON and once in the engine's hands, must score the same.
 #[test]
 fn an_answer_survives_the_crossing() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
 
     let mut compared = 0;
@@ -160,10 +168,14 @@ fn an_answer_survives_the_crossing() {
         };
         let questions = questions_for(&index, conversation).expect("the group builds");
         for key in &questions.queries {
-            snapshot.queries.insert(key.clone(), WireValue::Bool { value: true });
+            snapshot
+                .queries
+                .insert(key.clone(), WireValue::Bool { value: true });
         }
         for name in &questions.variables {
-            snapshot.variables.insert(name.clone(), WireValue::Bool { value: false });
+            snapshot
+                .variables
+                .insert(name.clone(), WireValue::Bool { value: false });
         }
 
         let request = LookAheadRequest {
@@ -231,7 +243,9 @@ fn an_answer_survives_the_crossing() {
 /// about the SHAPE of what comes back rather than about how long anything took.
 #[test]
 fn a_menu_that_runs_out_of_its_wall_still_answers_every_option() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
 
     let conversation = RICH[0];
@@ -241,7 +255,10 @@ fn a_menu_that_runs_out_of_its_wall_still_answers_every_option() {
         .expect("the group is big enough to draw an adversarial menu from");
 
     let starts: Vec<NodeRef> = profile.starts.iter().map(|id| NodeRef::from(*id)).collect();
-    assert!(starts.len() > 1, "the group is too small to run out of anything");
+    assert!(
+        starts.len() > 1,
+        "the group is too small to run out of anything"
+    );
 
     let request = LookAheadRequest {
         conversation,
@@ -265,7 +282,10 @@ fn a_menu_that_runs_out_of_its_wall_still_answers_every_option() {
 
     for start in &starts {
         assert!(
-            response.answers.iter().any(|answered| answered.start == *start),
+            response
+                .answers
+                .iter()
+                .any(|answered| answered.start == *start),
             "conversation {conversation}: {start:?} was left out of the menu entirely",
         );
     }
@@ -278,6 +298,12 @@ fn a_menu_that_runs_out_of_its_wall_still_answers_every_option() {
         .iter()
         .filter(|answered| answered.stopped_by == "time" && answered.elapsed_ms == 0)
         .count();
-    println!("{conversation}: {walled} of {} answers refused by the menu wall", starts.len());
-    assert!(walled > 0, "a wall of one millisecond stopped nothing, so nothing was tested");
+    println!(
+        "{conversation}: {walled} of {} answers refused by the menu wall",
+        starts.len()
+    );
+    assert!(
+        walled > 0,
+        "a wall of one millisecond stopped nothing, so nothing was tested"
+    );
 }

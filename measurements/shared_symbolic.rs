@@ -136,8 +136,8 @@ use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::known::Known;
-use lookahead_engine::symbolic::novelty_search::{best_novelty, Budget as SearchBudget};
-use lookahead_engine::symbolic::reachability::{seed_of, Budget as ForwardBudget, Reachability};
+use lookahead_engine::symbolic::novelty_search::{Budget as SearchBudget, best_novelty};
+use lookahead_engine::symbolic::reachability::{Budget as ForwardBudget, Reachability, seed_of};
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::world::world::ILookAheadWorld;
 
@@ -162,7 +162,10 @@ const FORWARD_STEPS: usize = 5_000;
 
 fn conversations(default: &[i32]) -> Vec<i32> {
     match lookahead_engine::core::env::var("CONVERSATION") {
-        Ok(named) => named.split(',').filter_map(|id| id.trim().parse().ok()).collect(),
+        Ok(named) => named
+            .split(',')
+            .filter_map(|id| id.trim().parse().ok())
+            .collect(),
         Err(_) => default.to_vec(),
     }
 }
@@ -174,7 +177,9 @@ fn conversations(default: &[i32]) -> Vec<i32> {
 /// far that can shorten a REFUSAL, and a refusal is where the driver's cost is - 25 of
 /// conversation 28's 26 candidates.
 fn pruning() -> bool {
-    lookahead_engine::core::env::var("PRUNING").map(|on| on.trim() != "0").unwrap_or(true)
+    lookahead_engine::core::env::var("PRUNING")
+        .map(|on| on.trim() != "0")
+        .unwrap_or(true)
 }
 
 /// The same xorshift the matrix uses, so the two measurements draw the same profiles.
@@ -282,8 +287,17 @@ fn alone(
         let known = Known::of(graph);
         let began = std::time::Instant::now();
         let answer = best_novelty(
-            graph, start, StartBranch::Either, &seed, &mut compiler, world,
-            COUNTER_CAP as u32, &novelty, &search_budget(), Some(&known), None,
+            graph,
+            start,
+            StartBranch::Either,
+            &seed,
+            &mut compiler,
+            world,
+            COUNTER_CAP as u32,
+            &novelty,
+            &search_budget(),
+            Some(&known),
+            None,
         );
 
         Run {
@@ -319,72 +333,92 @@ fn shared(
     // ONE, and they have to: the forward run's sets are handed to the backward half through
     // `Known`, and two formulas built over different managers cannot be combined at all.
     on_its_own_thread(|| {
-    let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
-    let mut compiler = GuardCompiler::new(&vars)
-        .with_world(world)
-        .with_constant_clock(DataLayout::group_passes_time(graph));
-    let seed = seed_of(graph, world, &vars).expect("room for a seed");
-    let novelty = novelty_of(unseen);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
+        let mut compiler = GuardCompiler::new(&vars)
+            .with_world(world)
+            .with_constant_clock(DataLayout::group_passes_time(graph));
+        let seed = seed_of(graph, world, &vars).expect("room for a seed");
+        let novelty = novelty_of(unseen);
 
-    // BOTH HALVES ARE TIMED. The forward run is work this arrangement pays for, and a
-    // comparison that started the clock after it would be measuring a free lunch.
-    let began = std::time::Instant::now();
-    let forward = Reachability::explore_within(
-        graph, start, &seed, &mut compiler, world, COUNTER_CAP as u32,
-        &ForwardBudget {
-            steps,
-            time: std::time::Duration::from_secs(60),
-            ..Default::default()
-        },
-    );
-    let forward_ms = began.elapsed().as_millis() as usize;
-    // PRUNING FOLLOWS THE FORWARD RUN: it does nothing without a settled one, and it is
-    // off by default everywhere else. Asked for here because measuring what it costs is
-    // half of what this file is for.
-    //
-    // A SWITCH RATHER THAN A CONSTANT since de-fawk, because the number that matters is
-    // the DIFFERENCE and one run cannot show it. `DEGCT_PRUNING=0` runs the same rows with the
-    // narrowing off, so the two can be read against each other on the same machine.
-    let known = Known::of(graph)
-        .from(start, &seed)
-        .with_forward(&forward)
-        .pruning(pruning());
+        // BOTH HALVES ARE TIMED. The forward run is work this arrangement pays for, and a
+        // comparison that started the clock after it would be measuring a free lunch.
+        let began = std::time::Instant::now();
+        let forward = Reachability::explore_within(
+            graph,
+            start,
+            &seed,
+            &mut compiler,
+            world,
+            COUNTER_CAP as u32,
+            &ForwardBudget {
+                steps,
+                time: std::time::Duration::from_secs(60),
+                ..Default::default()
+            },
+        );
+        let forward_ms = began.elapsed().as_millis() as usize;
+        // PRUNING FOLLOWS THE FORWARD RUN: it does nothing without a settled one, and it is
+        // off by default everywhere else. Asked for here because measuring what it costs is
+        // half of what this file is for.
+        //
+        // A SWITCH RATHER THAN A CONSTANT since de-fawk, because the number that matters is
+        // the DIFFERENCE and one run cannot show it. `DEGCT_PRUNING=0` runs the same rows with the
+        // narrowing off, so the two can be read against each other on the same machine.
+        let known = Known::of(graph)
+            .from(start, &seed)
+            .with_forward(&forward)
+            .pruning(pruning());
 
-    // THE BACKWARD HALF ON ITS OWN, which is the honest number for the case this feature
-    // is actually for: a forward run that happened earlier, for some other question, and
-    // whose cost is already spent. The total beside it is the honest number for paying for
-    // the forward half here and now, and the two answer different questions.
-    let backward_began = std::time::Instant::now();
-    let answer = best_novelty(
-        graph, start, StartBranch::Either, &seed, &mut compiler, world, COUNTER_CAP as u32,
-        &novelty, &search_budget(), Some(&known), None,
-    );
+        // THE BACKWARD HALF ON ITS OWN, which is the honest number for the case this feature
+        // is actually for: a forward run that happened earlier, for some other question, and
+        // whose cost is already spent. The total beside it is the honest number for paying for
+        // the forward half here and now, and the two answer different questions.
+        let backward_began = std::time::Instant::now();
+        let answer = best_novelty(
+            graph,
+            start,
+            StartBranch::Either,
+            &seed,
+            &mut compiler,
+            world,
+            COUNTER_CAP as u32,
+            &novelty,
+            &search_budget(),
+            Some(&known),
+            None,
+        );
 
-    (
-        Run {
-            verdict: format!("{:?}", answer.best),
-            millis: began.elapsed().as_millis(),
-            nodes: vars.node_count(),
-            asked: answer.targets_asked,
-            guards: compiler.guard_cache(),
-            met: answer.met_at.is_some(),
-            backward_millis: backward_began.elapsed().as_millis(),
-            settled: forward.stats().reached_fixed_point,
-        },
-        forward_ms,
-    )
+        (
+            Run {
+                verdict: format!("{:?}", answer.best),
+                millis: began.elapsed().as_millis(),
+                nodes: vars.node_count(),
+                asked: answer.targets_asked,
+                guards: compiler.guard_cache(),
+                met: answer.met_at.is_some(),
+                backward_millis: backward_began.elapsed().as_millis(),
+                settled: forward.stats().reached_fixed_point,
+            },
+            forward_ms,
+        )
     })
 }
 
 fn novelty_of(unseen: &HashSet<DialogueNodeId>) -> impl Fn(DialogueNodeId) -> Novelty + '_ {
     move |id| {
-        if unseen.contains(&id) { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
+        if unseen.contains(&id) {
+            Novelty::UnseenAnyGame
+        } else {
+            Novelty::SeenThisGame
+        }
     }
 }
 
 /// What sharing a partial forward run does to the backward driver.
 fn main() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
     let world = common::measurement_save();
 
@@ -394,7 +428,9 @@ fn main() {
     );
 
     for conversation in conversations(&HEAVIEST) {
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            continue;
+        };
         let start = DialogueNodeId::new(conversation, 0);
         if graph.get(start).is_none() {
             continue;
@@ -414,14 +450,25 @@ fn main() {
         let one = alone(&graph, start, &world, &unseen);
         println!(
             "{conversation:>6} {:>8} {:>7}  alone     {:>16} {:>8} {:>10} {:>6}",
-            graph.count(), unseen.len(), one.verdict, one.millis, one.nodes, one.asked,
+            graph.count(),
+            unseen.len(),
+            one.verdict,
+            one.millis,
+            one.nodes,
+            one.asked,
         );
 
         let (two, forward_ms) = shared(&graph, start, &world, &unseen, FORWARD_STEPS);
         println!(
             "{:>23}  partial   {:>16} {:>8} {:>10} {:>6}  met {}, {} fwd + {} bwd",
-            "", two.verdict, two.millis, two.nodes, two.asked,
-            if two.met { "yes" } else { "no" }, forward_ms, two.backward_millis,
+            "",
+            two.verdict,
+            two.millis,
+            two.nodes,
+            two.asked,
+            if two.met { "yes" } else { "no" },
+            forward_ms,
+            two.backward_millis,
         );
         assert_eq!(
             one.verdict, two.verdict,
@@ -435,10 +482,18 @@ fn main() {
         println!(
             "{:>23}  {:9} {:>16} {:>8} {:>10} {:>6}  met {}, {} fwd + {} bwd",
             "",
-            if three.settled { "SETTLED" } else { "unsettled" },
-            three.verdict, three.millis, three.nodes, three.asked,
+            if three.settled {
+                "SETTLED"
+            } else {
+                "unsettled"
+            },
+            three.verdict,
+            three.millis,
+            three.nodes,
+            three.asked,
             if three.met { "yes" } else { "no" },
-            settled_forward_ms, three.backward_millis,
+            settled_forward_ms,
+            three.backward_millis,
         );
         assert_eq!(
             one.verdict, three.verdict,
@@ -448,8 +503,12 @@ fn main() {
         println!(
             "{:>23}  guards held/reused: {} / {} alone, {} / {} partial, {} / {} settled",
             "",
-            one.guards.0, one.guards.1, two.guards.0, two.guards.1,
-            three.guards.0, three.guards.1,
+            one.guards.0,
+            one.guards.1,
+            two.guards.0,
+            two.guards.1,
+            three.guards.0,
+            three.guards.1,
         );
     }
 }

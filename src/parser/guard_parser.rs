@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-use std::fmt;
 use crate::core::guard::Guard;
 use crate::core::guard_value::GuardValue;
+use std::fmt;
 
 #[derive(Debug, Clone)]
 pub struct GuardParseError {
@@ -55,7 +55,9 @@ fn strip_comments(text: &str) -> String {
                         while let Some(c) = chars.next() {
                             if c == ']' && chars.next() == Some(']') {
                                 depth -= 1;
-                                if depth == 0 { break; }
+                                if depth == 0 {
+                                    break;
+                                }
                             } else if c == '[' && chars.next() == Some('[') {
                                 depth += 1;
                             }
@@ -66,7 +68,9 @@ fn strip_comments(text: &str) -> String {
                 }
                 // Line comment -- ...
                 while let Some(c) = chars.next() {
-                    if c == '\n' { break; }
+                    if c == '\n' {
+                        break;
+                    }
                 }
                 continue;
             }
@@ -193,7 +197,11 @@ enum FrameKind {
     /// `( ... )`, whose value is simply what is inside it.
     Group,
     /// `name( ... )`, gathering arguments until the closing parenthesis.
-    Call { name: String, args: Vec<Guard>, deepest: usize },
+    Call {
+        name: String,
+        args: Vec<Guard>,
+        deepest: usize,
+    },
 }
 
 /// One open bracket, and where the work inside it starts.
@@ -290,7 +298,11 @@ impl Parser {
             TokenKind::Name if self.peek_at(1) == TokenKind::OpenParen => {
                 let name = self.take().value;
                 self.take();
-                self.open(FrameKind::Call { name, args: Vec::new(), deepest: 0 });
+                self.open(FrameKind::Call {
+                    name,
+                    args: Vec::new(),
+                    deepest: 0,
+                });
                 return Ok(true);
             }
             _ => {}
@@ -344,7 +356,10 @@ impl Parser {
             // what decides whether it answers.
             TokenKind::Name => Guard::call(self.take().value, Vec::new()),
             _ => {
-                return Err(GuardParseError::new("unexpected token".into(), self.source.clone()))
+                return Err(GuardParseError::new(
+                    "unexpected token".into(),
+                    self.source.clone(),
+                ));
             }
         };
         self.push_leaf(leaf)?;
@@ -403,7 +418,11 @@ impl Parser {
             }
             // An argument list says so, because it is the more useful half of "expected a
             // comma or a close" and because it is the message this parser has always given.
-            let message = if self.inside_a_call() { "bad argument list" } else { "expected CloseParen" };
+            let message = if self.inside_a_call() {
+                "bad argument list"
+            } else {
+                "expected CloseParen"
+            };
             return Err(GuardParseError::new(message.into(), self.source.clone()));
         }
     }
@@ -423,9 +442,11 @@ impl Parser {
             self.add_argument(argument);
         }
         match self.frames.pop().map(|frame| frame.kind) {
-            Some(FrameKind::Call { name, args, deepest }) => {
-                self.push_operand(Guard::call(name, args), deepest + 1)
-            }
+            Some(FrameKind::Call {
+                name,
+                args,
+                deepest,
+            }) => self.push_operand(Guard::call(name, args), deepest + 1),
             _ => Err(self.confused()),
         }
     }
@@ -447,7 +468,10 @@ impl Parser {
     fn push_op(&mut self, op: Pending) -> Result<(), GuardParseError> {
         let power = op.binding_power();
         while self.ops.len() > self.floor().1
-            && self.ops.last().is_some_and(|top| top.binding_power() >= power)
+            && self
+                .ops
+                .last()
+                .is_some_and(|top| top.binding_power() >= power)
         {
             self.reduce()?;
         }
@@ -515,7 +539,9 @@ impl Parser {
 
     /// Where the innermost frame's operands and operators begin.
     fn floor(&self) -> (usize, usize) {
-        self.frames.last().map_or((0, 0), |frame| (frame.operands, frame.ops))
+        self.frames
+            .last()
+            .map_or((0, 0), |frame| (frame.operands, frame.ops))
     }
 
     fn compared(&self) -> bool {
@@ -523,11 +549,17 @@ impl Parser {
     }
 
     fn inside_a_call(&self) -> bool {
-        matches!(self.frames.last().map(|frame| &frame.kind), Some(FrameKind::Call { .. }))
+        matches!(
+            self.frames.last().map(|frame| &frame.kind),
+            Some(FrameKind::Call { .. })
+        )
     }
 
     fn inside_a_group(&self) -> bool {
-        matches!(self.frames.last().map(|frame| &frame.kind), Some(FrameKind::Group))
+        matches!(
+            self.frames.last().map(|frame| &frame.kind),
+            Some(FrameKind::Group)
+        )
     }
 
     /// The error for a state the grammar cannot reach.
@@ -542,16 +574,25 @@ impl Parser {
     /// The kind `offset` tokens ahead, for the two decisions that need to look past the
     /// next token: whether a minus begins a negative number, and whether a name is a call.
     fn peek_at(&self, offset: usize) -> TokenKind {
-        self.tokens.get(self.pos + offset).map(|t| t.kind.clone()).unwrap_or(TokenKind::End)
+        self.tokens
+            .get(self.pos + offset)
+            .map(|t| t.kind.clone())
+            .unwrap_or(TokenKind::End)
     }
 
     /// The next token's text, or empty at the end of the input.
     fn peek_value(&self) -> &str {
-        self.tokens.get(self.pos).map(|t| t.value.as_str()).unwrap_or("")
+        self.tokens
+            .get(self.pos)
+            .map(|t| t.value.as_str())
+            .unwrap_or("")
     }
 
     fn peek(&self) -> TokenKind {
-        self.tokens.get(self.pos).map(|t| t.kind.clone()).unwrap_or(TokenKind::End)
+        self.tokens
+            .get(self.pos)
+            .map(|t| t.kind.clone())
+            .unwrap_or(TokenKind::End)
     }
 
     /// The next token, consumed.
@@ -566,13 +607,19 @@ impl Parser {
                 self.pos += 1;
                 token
             }
-            None => Token { kind: TokenKind::End, value: String::new() },
+            None => Token {
+                kind: TokenKind::End,
+                value: String::new(),
+            },
         }
     }
 
     fn expect_end(&mut self) -> Result<(), GuardParseError> {
         if self.pos != self.tokens.len() {
-            Err(GuardParseError::new("trailing tokens".into(), self.source.clone()))
+            Err(GuardParseError::new(
+                "trailing tokens".into(),
+                self.source.clone(),
+            ))
         } else {
             Ok(())
         }
@@ -591,60 +638,113 @@ fn tokenize(text: &str, _original: &str) -> Result<Vec<Token>, GuardParseError> 
     let mut tokens = Vec::new();
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
-        if c.is_whitespace() { continue; }
+        if c.is_whitespace() {
+            continue;
+        }
 
         match c {
-            '(' => tokens.push(Token { kind: TokenKind::OpenParen, value: "(".into() }),
-            ')' => tokens.push(Token { kind: TokenKind::CloseParen, value: ")".into() }),
-            ',' => tokens.push(Token { kind: TokenKind::Comma, value: ",".into() }),
+            '(' => tokens.push(Token {
+                kind: TokenKind::OpenParen,
+                value: "(".into(),
+            }),
+            ')' => tokens.push(Token {
+                kind: TokenKind::CloseParen,
+                value: ")".into(),
+            }),
+            ',' => tokens.push(Token {
+                kind: TokenKind::Comma,
+                value: ",".into(),
+            }),
             '"' => {
                 let mut s = String::new();
                 while let Some(c) = chars.next() {
-                    if c == '"' { break; }
+                    if c == '"' {
+                        break;
+                    }
                     s.push(c);
                 }
-                tokens.push(Token { kind: TokenKind::Text, value: s });
+                tokens.push(Token {
+                    kind: TokenKind::Text,
+                    value: s,
+                });
             }
             c if c.is_ascii_digit() => {
                 let mut s = String::new();
                 s.push(c);
                 while let Some(&c) = chars.peek() {
-                    if c.is_ascii_digit() || c == '.' { s.push(chars.next().unwrap()); } else { break; }
+                    if c.is_ascii_digit() || c == '.' {
+                        s.push(chars.next().unwrap());
+                    } else {
+                        break;
+                    }
                 }
-                tokens.push(Token { kind: TokenKind::Number, value: s });
+                tokens.push(Token {
+                    kind: TokenKind::Number,
+                    value: s,
+                });
             }
             c if c.is_ascii_alphabetic() || c == '_' => {
                 let mut s = String::new();
                 s.push(c);
                 while let Some(&c) = chars.peek() {
-                    if c.is_ascii_alphanumeric() || c == '_' || c == '.' { s.push(chars.next().unwrap()); } else { break; }
+                    if c.is_ascii_alphanumeric() || c == '_' || c == '.' {
+                        s.push(chars.next().unwrap());
+                    } else {
+                        break;
+                    }
                 }
                 if s == "Variable" {
                     // Try to read Variable["name"]
                     let _save_pos = chars.clone();
                     let mut temp = chars.clone();
                     let mut ws = String::new();
-                    while let Some(&c) = temp.peek() { if c.is_whitespace() { ws.push(temp.next().unwrap()); } else { break; } }
+                    while let Some(&c) = temp.peek() {
+                        if c.is_whitespace() {
+                            ws.push(temp.next().unwrap());
+                        } else {
+                            break;
+                        }
+                    }
                     if temp.next() == Some('[') {
                         let mut ws2 = String::new();
-                        while let Some(&c) = temp.peek() { if c.is_whitespace() { ws2.push(temp.next().unwrap()); } else { break; } }
+                        while let Some(&c) = temp.peek() {
+                            if c.is_whitespace() {
+                                ws2.push(temp.next().unwrap());
+                            } else {
+                                break;
+                            }
+                        }
                         if temp.next() == Some('"') {
                             let mut name = String::new();
                             while let Some(c) = temp.next() {
-                                if c == '"' { break; }
+                                if c == '"' {
+                                    break;
+                                }
                                 name.push(c);
                             }
                             let mut ws3 = String::new();
-                            while let Some(&c) = temp.peek() { if c.is_whitespace() { ws3.push(temp.next().unwrap()); } else { break; } }
+                            while let Some(&c) = temp.peek() {
+                                if c.is_whitespace() {
+                                    ws3.push(temp.next().unwrap());
+                                } else {
+                                    break;
+                                }
+                            }
                             if temp.next() == Some(']') {
                                 chars = temp;
-                                tokens.push(Token { kind: TokenKind::Variable, value: name });
+                                tokens.push(Token {
+                                    kind: TokenKind::Variable,
+                                    value: name,
+                                });
                                 continue;
                             }
                         }
                     }
                     // Not a Variable[...], treat as name
-                    tokens.push(Token { kind: TokenKind::Name, value: s });
+                    tokens.push(Token {
+                        kind: TokenKind::Name,
+                        value: s,
+                    });
                 } else {
                     let kind = match s.as_str() {
                         "and" => TokenKind::And,
@@ -667,13 +767,16 @@ fn tokenize(text: &str, _original: &str) -> Result<Vec<Token>, GuardParseError> 
                         s.push(chars.next().unwrap());
                     }
                 }
-                tokens.push(Token { kind: TokenKind::Operator, value: s });
+                tokens.push(Token {
+                    kind: TokenKind::Operator,
+                    value: s,
+                });
             }
             _ => {
                 return Err(GuardParseError::new(
                     format!("unexpected character {c:?}"),
                     text.to_string(),
-                ))
+                ));
             }
         }
     }

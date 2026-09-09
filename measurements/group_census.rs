@@ -109,13 +109,13 @@ fn main() {
     let entries: usize = groups
         .keys()
         .map(|group| {
-            group.iter().map(|id| index[id].entries.len()).sum::<usize>()
+            group
+                .iter()
+                .map(|id| index[id].entries.len())
+                .sum::<usize>()
         })
         .sum();
-    let all_entries: usize = conversations
-        .iter()
-        .map(|id| index[id].entries.len())
-        .sum();
+    let all_entries: usize = conversations.iter().map(|id| index[id].entries.len()).sum();
 
     println!("conversations in the index      {}", conversations.len());
     println!("distinct groups                 {}", groups.len());
@@ -130,7 +130,11 @@ fn main() {
         "entries over all distinct groups {entries}, which is {:.1}x the index",
         entries as f64 / all_entries.max(1) as f64,
     );
-    println!("\ndiscovering all {} closures took {:.1?}", conversations.len(), took);
+    println!(
+        "\ndiscovering all {} closures took {:.1?}",
+        conversations.len(),
+        took
+    );
 
     // THE SPLIT THAT DECIDES WHAT IS WORTH SHIPPING. A group of one conversation is a few
     // dozen entries and parses in microseconds; the groups that cost milliseconds are the
@@ -167,12 +171,16 @@ fn main() {
     // entries then what is shipped is dominated by those, however many groups there are.
     let mut by_size: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
     for group in groups.keys() {
-        by_size.entry(group.len()).or_default().push(
-            group.iter().map(|id| index[id].entries.len()).sum(),
-        );
+        by_size
+            .entry(group.len())
+            .or_default()
+            .push(group.iter().map(|id| index[id].entries.len()).sum());
     }
 
-    println!("\n{:>14}  {:>8}  {:>12}", "conversations", "groups", "entries");
+    println!(
+        "\n{:>14}  {:>8}  {:>12}",
+        "conversations", "groups", "entries"
+    );
     for (size, sizes) in by_size.iter() {
         println!(
             "{size:>14}  {:>8}  {:>12}",
@@ -184,7 +192,13 @@ fn main() {
     let mut largest: Vec<(usize, usize)> = groups
         .keys()
         .map(|group| {
-            (group.iter().map(|id| index[id].entries.len()).sum::<usize>(), group.len())
+            (
+                group
+                    .iter()
+                    .map(|id| index[id].entries.len())
+                    .sum::<usize>(),
+                group.len(),
+            )
         })
         .collect();
     largest.sort_unstable_by(|a, b| b.cmp(a));

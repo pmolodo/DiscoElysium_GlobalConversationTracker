@@ -68,9 +68,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use lookahead_engine::bridge::{
-    answer, LookAheadRequest, NodeRef, SnapshotWorld, WorldSnapshot,
-};
+use lookahead_engine::bridge::{LookAheadRequest, NodeRef, SnapshotWorld, WorldSnapshot, answer};
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
@@ -79,7 +77,6 @@ use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
-
 
 #[path = "../tests/common/mod.rs"]
 mod common;
@@ -154,8 +151,11 @@ fn main() {
 
     let ranked = deepest_first(&graph, root);
     let unseen_count = from_env("UNSEEN", UNSEEN);
-    let unseen: Vec<NodeRef> =
-        ranked.iter().take(unseen_count).map(|id| NodeRef::from(*id)).collect();
+    let unseen: Vec<NodeRef> = ranked
+        .iter()
+        .take(unseen_count)
+        .map(|id| NodeRef::from(*id))
+        .collect();
     if unseen.is_empty() {
         eprintln!("nothing reachable from {root:?}; skipping.");
         return;
@@ -206,7 +206,11 @@ fn main() {
         unseen_this_game: Default::default(),
         memory_budget_mb,
         time_budget_ms,
-        world: WorldSnapshot { day_minutes: 720, day_counter: 1, ..Default::default() },
+        world: WorldSnapshot {
+            day_minutes: 720,
+            day_counter: 1,
+            ..Default::default()
+        },
         ..Default::default()
     };
 
@@ -224,7 +228,11 @@ fn main() {
         let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false)
             .keeping_only_read(&symbols, &DataLayout::read_by(&graph));
         let world = SnapshotWorld::declaring(
-            WorldSnapshot { day_minutes: 720, day_counter: 1, ..Default::default() },
+            WorldSnapshot {
+                day_minutes: 720,
+                day_counter: 1,
+                ..Default::default()
+            },
             None,
         );
         let budget = DiagramBudget::new(memory_budget_mb * 1024 * 1024);
@@ -243,7 +251,10 @@ fn main() {
                 let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
                 std::hint::black_box((&compiler, &seed));
             }
-            println!("  {n:>3}: {:>8.1} ms", each.elapsed().as_secs_f64() * 1000.0);
+            println!(
+                "  {n:>3}: {:>8.1} ms",
+                each.elapsed().as_secs_f64() * 1000.0
+            );
             flush();
         }
 
@@ -336,7 +347,6 @@ fn flush() {
     let _ = std::io::stdout().flush();
 }
 
-
 /// Every entry from which at least one of `targets` is link-reachable.
 ///
 /// ONE WALK BACKWARDS rather than a forward walk per candidate: the question is asked of
@@ -364,7 +374,9 @@ fn can_reach(graph: &LookAheadGraph, targets: &[NodeRef]) -> HashSet<DialogueNod
     }
 
     while let Some(id) = queue.pop_front() {
-        let Some(above) = parents.get(&id) else { continue };
+        let Some(above) = parents.get(&id) else {
+            continue;
+        };
         for parent in above {
             if reaching.insert(*parent) {
                 queue.push_back(*parent);

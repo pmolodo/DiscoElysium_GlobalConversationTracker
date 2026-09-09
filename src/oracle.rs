@@ -33,7 +33,7 @@
 use std::collections::{HashSet, VecDeque};
 
 use crate::core::action::{CounterCaps, DialogueAction};
-use crate::core::state::{seed_state, LookAheadState};
+use crate::core::state::{LookAheadState, seed_state};
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, Novelty, StartBranch, Ternary};
 use crate::graph::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
@@ -117,7 +117,14 @@ pub fn walk(
     world: &dyn ILookAheadWorld,
     counter_cap: i32,
 ) -> Walk {
-    walk_branch(graph, start, StartBranch::Either, world, counter_cap, CEILING)
+    walk_branch(
+        graph,
+        start,
+        StartBranch::Either,
+        world,
+        counter_cap,
+        CEILING,
+    )
 }
 
 /// The same walk, told which outcome of a rolled start to explore and what it may hold.
@@ -138,7 +145,10 @@ pub fn walk_branch(
     let clock_locked = world.is_clock_locked();
 
     let seed = seed_state(graph, world);
-    let entered = keep(branch, enter(start_node, &seed, &context, &caps, clock_locked));
+    let entered = keep(
+        branch,
+        enter(start_node, &seed, &context, &caps, clock_locked),
+    );
 
     let mut walk = Walk::default();
     if entered.is_empty() {
@@ -164,7 +174,9 @@ pub fn walk_branch(
 
         let node = graph.get(id).expect("a queued entry is in the graph");
         for &child_id in &node.links {
-            let Some(child) = graph.get(child_id) else { continue };
+            let Some(child) = graph.get(child_id) else {
+                continue;
+            };
 
             for next in enter(child, &state, &context, &caps, clock_locked) {
                 // SCORED ON ARRIVAL AND EXPANDED ONCE ARE DIFFERENT QUESTIONS. An entry a
@@ -355,7 +367,7 @@ fn charge(
 mod tests {
     use super::*;
     use crate::core::guard_value::GuardValue;
-    use crate::test_graph::{node, Entry, GraphBuilder};
+    use crate::test_graph::{Entry, GraphBuilder, node};
     use crate::world::test_world::TestWorld;
 
     /// A white check, which is the rolled kind these fixtures use.
@@ -374,7 +386,10 @@ mod tests {
         }
         let graph = builder.build();
         let walk = walk(&graph, node(0), world, COUNTER_CAP);
-        assert!(!walk.exhausted(), "a fixture this small should be exhaustible");
+        assert!(
+            !walk.exhausted(),
+            "a fixture this small should be exhaustible"
+        );
         walk
     }
 
@@ -411,7 +426,9 @@ mod tests {
         let walk = walked(
             vec![
                 Entry::new(0).links(&[1]),
-                Entry::new(1).script(r#"SetVariableValue("opened", true)"#).links(&[2]),
+                Entry::new(1)
+                    .script(r#"SetVariableValue("opened", true)"#)
+                    .links(&[2]),
                 Entry::new(2).guard(r#"Variable["opened"]"#),
             ],
             &TestWorld::new(),
@@ -432,7 +449,10 @@ mod tests {
             ],
             &world,
         );
-        assert!(!walk.reached(node(1)), "ten centimes out of a purse of five");
+        assert!(
+            !walk.reached(node(1)),
+            "ten centimes out of a purse of five"
+        );
         assert!(walk.reached(node(4)), "five out of five is affordable");
     }
 
@@ -472,7 +492,10 @@ mod tests {
             ],
             &world,
         );
-        assert!(!walk.reached(node(3)), "one step cannot reach a threshold of three");
+        assert!(
+            !walk.reached(node(3)),
+            "one step cannot reach a threshold of three"
+        );
     }
 
     #[test]
@@ -489,7 +512,10 @@ mod tests {
             ],
             &world,
         );
-        assert!(walk.reached(node(3)), "an unconditioned increment round a loop reaches it");
+        assert!(
+            walk.reached(node(3)),
+            "an unconditioned increment round a loop reaches it"
+        );
     }
 
     #[test]
@@ -517,7 +543,11 @@ mod tests {
         );
         assert!(walk.reached(node(1)), "a group is walked through");
         let unseen = |id: DialogueNodeId| {
-            if id == node(1) { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
+            if id == node(1) {
+                Novelty::UnseenAnyGame
+            } else {
+                Novelty::SeenThisGame
+            }
         };
         assert_eq!(
             walk.best_novelty(unseen),
@@ -529,7 +559,11 @@ mod tests {
     #[test]
     fn the_start_is_scored_only_where_a_link_leads_back_to_it() {
         let unseen = |id: DialogueNodeId| {
-            if id == node(0) { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
+            if id == node(0) {
+                Novelty::UnseenAnyGame
+            } else {
+                Novelty::SeenThisGame
+            }
         };
 
         let onward = walked(
@@ -554,18 +588,36 @@ mod tests {
             .build();
         let world = TestWorld::new();
 
-        let passing =
-            walk_branch(&graph, node(0), StartBranch::Pass, &world, COUNTER_CAP, CEILING);
+        let passing = walk_branch(
+            &graph,
+            node(0),
+            StartBranch::Pass,
+            &world,
+            COUNTER_CAP,
+            CEILING,
+        );
         assert!(passing.reached(node(1)));
         assert!(!passing.reached(node(2)));
 
-        let failing =
-            walk_branch(&graph, node(0), StartBranch::Fail, &world, COUNTER_CAP, CEILING);
+        let failing = walk_branch(
+            &graph,
+            node(0),
+            StartBranch::Fail,
+            &world,
+            COUNTER_CAP,
+            CEILING,
+        );
         assert!(!failing.reached(node(1)));
         assert!(failing.reached(node(2)));
 
-        let either =
-            walk_branch(&graph, node(0), StartBranch::Either, &world, COUNTER_CAP, CEILING);
+        let either = walk_branch(
+            &graph,
+            node(0),
+            StartBranch::Either,
+            &world,
+            COUNTER_CAP,
+            CEILING,
+        );
         assert!(either.reached(node(1)) && either.reached(node(2)));
     }
 

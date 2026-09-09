@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-use std::fmt;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 use crate::core::types::Ternary;
 
@@ -80,7 +80,11 @@ impl GuardValue {
     pub fn as_condition(&self) -> Ternary {
         match self.kind {
             GuardValueKind::Boolean => {
-                if self.boolean { Ternary::True } else { Ternary::False }
+                if self.boolean {
+                    Ternary::True
+                } else {
+                    Ternary::False
+                }
             }
             GuardValueKind::Number | GuardValueKind::Text => Ternary::True,
             GuardValueKind::Unknown => Ternary::Unknown,

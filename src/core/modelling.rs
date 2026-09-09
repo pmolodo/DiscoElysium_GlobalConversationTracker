@@ -144,9 +144,22 @@ pub const DECISIONS: &[Decision] = &[
     Decision {
         writers: &["NextMorningTime"],
         readers: &[
-            "DayCount", "HourCount", "TotalHourCount", "IsHour", "IsHourBetween",
-            "IsMorning", "IsAfternoon", "IsEvening", "IsNight", "IsNighttime",
-            "IsDaytime", "IsNoon", "IsDusk", "IsMidnight", "IsDayFrom", "IsDayUntil",
+            "DayCount",
+            "HourCount",
+            "TotalHourCount",
+            "IsHour",
+            "IsHourBetween",
+            "IsMorning",
+            "IsAfternoon",
+            "IsEvening",
+            "IsNight",
+            "IsNighttime",
+            "IsDaytime",
+            "IsNoon",
+            "IsDusk",
+            "IsMidnight",
+            "IsDayFrom",
+            "IsDayUntil",
         ],
         why: "Sleeping to the next morning is the one thing that moves the clock by more \
               than a PassTime, and it ends the day - which is past where a look-ahead is \
@@ -154,8 +167,17 @@ pub const DECISIONS: &[Decision] = &[
               approximation already covers the readers.",
     },
     Decision {
-        writers: &["SellItemGroup", "SellItemGroupWithModifier", "ShowInventoryForPawning"],
-        readers: &["MoneyAmount", "CheckItem", "CheckItemGroup", "HasPawnablesInInventory"],
+        writers: &[
+            "SellItemGroup",
+            "SellItemGroupWithModifier",
+            "ShowInventoryForPawning",
+        ],
+        readers: &[
+            "MoneyAmount",
+            "CheckItem",
+            "CheckItemGroup",
+            "HasPawnablesInInventory",
+        ],
         why: "Pawning turns items into money, and the search models both - but how much \
               money depends on what is in the inventory, which the search only knows about \
               for items this group itself moved. Three scripts in the database.",
@@ -258,11 +280,18 @@ mod tests {
     /// be a decision nobody could see taking effect.
     #[test]
     fn every_declared_function_is_declared_once() {
-        let mut seen: Vec<&str> = DECISIONS.iter().flat_map(|d| d.writers.iter().copied()).collect();
+        let mut seen: Vec<&str> = DECISIONS
+            .iter()
+            .flat_map(|d| d.writers.iter().copied())
+            .collect();
         let count = seen.len();
         seen.sort_unstable();
         seen.dedup();
-        assert_eq!(count, seen.len(), "a script function is declared by two decisions");
+        assert_eq!(
+            count,
+            seen.len(),
+            "a script function is declared by two decisions"
+        );
     }
 
     /// A decision with no reason is not a decision.
@@ -270,7 +299,11 @@ mod tests {
     fn every_decision_says_why() {
         for decision in DECISIONS {
             assert!(!decision.writers.is_empty(), "a decision covers nothing");
-            assert!(decision.why.len() > 40, "a decision without a reason: {:?}", decision.writers);
+            assert!(
+                decision.why.len() > 40,
+                "a decision without a reason: {:?}",
+                decision.writers
+            );
         }
     }
 }

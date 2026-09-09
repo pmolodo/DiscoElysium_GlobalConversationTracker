@@ -266,7 +266,9 @@ struct Queued {
 
 impl Ord for Queued {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.priority.cmp(&other.priority).then_with(|| other.seq.cmp(&self.seq))
+        self.priority
+            .cmp(&other.priority)
+            .then_with(|| other.seq.cmp(&self.seq))
     }
 }
 
@@ -291,7 +293,12 @@ pub struct Worklist<'a> {
 
 impl<'a> Worklist<'a> {
     pub fn new(order: &'a IterationOrder, direction: Direction) -> Self {
-        Self { order, direction, queue: BinaryHeap::new(), pushed: 0 }
+        Self {
+            order,
+            direction,
+            queue: BinaryHeap::new(),
+            pushed: 0,
+        }
     }
 
     /// Queues `id`, which may already be waiting.
@@ -372,7 +379,10 @@ impl Tarjan {
         self.open(root);
 
         while let Some(&(id, followed)) = calls.last() {
-            let links = graph.get(id).map(|node| node.links.as_slice()).unwrap_or(&[]);
+            let links = graph
+                .get(id)
+                .map(|node| node.links.as_slice())
+                .unwrap_or(&[]);
 
             let Some(&child) = links.get(followed) else {
                 // Every link followed, so this is where a component can close.
@@ -452,12 +462,15 @@ impl Tarjan {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_graph::{node, Entry, GraphBuilder};
+    use crate::test_graph::{Entry, GraphBuilder, node};
 
     /// Every entry's rank, by entry id, for a graph whose ids are all in one conversation.
     fn ranks(graph: &LookAheadGraph) -> HashMap<i32, u64> {
         let order = IterationOrder::of(graph);
-        graph.nodes().map(|n| (n.id.entry_id, order.rank_of(n.id))).collect()
+        graph
+            .nodes()
+            .map(|n| (n.id.entry_id, order.rank_of(n.id)))
+            .collect()
     }
 
     #[test]
@@ -469,7 +482,10 @@ mod tests {
             .build();
 
         let rank = ranks(&graph);
-        assert!(rank[&0] < rank[&1], "the start ranks before what it links to");
+        assert!(
+            rank[&0] < rank[&1],
+            "the start ranks before what it links to"
+        );
         assert!(rank[&1] < rank[&2]);
 
         let order = IterationOrder::of(&graph);
@@ -509,8 +525,14 @@ mod tests {
         assert_eq!(order.components(), 3, "the start, the loop, and the tail");
 
         let rank = ranks(&graph);
-        assert!(rank[&0] < rank[&1].min(rank[&2]), "the start ranks before the loop");
-        assert!(rank[&1].max(rank[&2]) < rank[&3], "and the whole loop before the tail");
+        assert!(
+            rank[&0] < rank[&1].min(rank[&2]),
+            "the start ranks before the loop"
+        );
+        assert!(
+            rank[&1].max(rank[&2]) < rank[&3],
+            "and the whole loop before the tail"
+        );
     }
 
     /// The claim that lets one rank serve both searches.
@@ -528,7 +550,11 @@ mod tests {
         for id in [node(0), node(1), node(3)] {
             backward.push(id);
         }
-        assert_eq!(backward.pop(), Some(node(3)), "a backward pass starts at the join");
+        assert_eq!(
+            backward.pop(),
+            Some(node(3)),
+            "a backward pass starts at the join"
+        );
         assert_eq!(backward.pop(), Some(node(1)));
         assert_eq!(backward.pop(), Some(node(0)));
 
@@ -536,7 +562,11 @@ mod tests {
         for id in [node(3), node(1), node(0)] {
             forward.push(id);
         }
-        assert_eq!(forward.pop(), Some(node(0)), "a forward pass starts at the start");
+        assert_eq!(
+            forward.pop(),
+            Some(node(0)),
+            "a forward pass starts at the start"
+        );
         assert_eq!(forward.pop(), Some(node(1)));
         assert_eq!(forward.pop(), Some(node(3)));
     }
@@ -556,13 +586,22 @@ mod tests {
             .build();
         let order = IterationOrder::of_from(&graph, node(0));
 
-        assert!(order.rank_of(node(1)) < order.rank_of(node(2)), "nearer ranks lower");
+        assert!(
+            order.rank_of(node(1)) < order.rank_of(node(2)),
+            "nearer ranks lower"
+        );
         assert!(order.rank_of(node(2)) < order.rank_of(node(3)));
 
         // THE PART THE DISTANCE MAY NOT BREAK. It is a tie-break inside a component, so it
         // may never lift a member above something the component leads to, however deep.
-        assert!(order.rank_of(node(0)) < order.rank_of(node(1)), "the way in stays below");
-        assert!(order.rank_of(node(3)) < order.rank_of(node(4)), "the tail stays above");
+        assert!(
+            order.rank_of(node(0)) < order.rank_of(node(1)),
+            "the way in stays below"
+        );
+        assert!(
+            order.rank_of(node(3)) < order.rank_of(node(4)),
+            "the tail stays above"
+        );
     }
 
     /// Entries the distance does not separate keep the order they were pushed in.
@@ -576,7 +615,11 @@ mod tests {
             .add(Entry::new(3).links(&[1, 2]))
             .build();
         let order = IterationOrder::of_from(&graph, node(0));
-        assert_eq!(order.rank_of(node(1)), order.rank_of(node(2)), "same component, same step");
+        assert_eq!(
+            order.rank_of(node(1)),
+            order.rank_of(node(2)),
+            "same component, same step"
+        );
 
         let pushed = [node(2), node(1)];
         let mut queue = Worklist::new(&order, Direction::Forward);
@@ -606,7 +649,10 @@ mod tests {
             blind.rank_of(node(2)),
             "with no distances the members of a component tie",
         );
-        assert!(blind.rank_of(node(0)) < blind.rank_of(node(1)), "and the order still holds");
+        assert!(
+            blind.rank_of(node(0)) < blind.rank_of(node(1)),
+            "and the order still holds"
+        );
     }
 
     /// The same entry queued twice is popped twice; both searches rely on it.
@@ -659,7 +705,11 @@ mod tests {
             .build();
 
         let order = IterationOrder::of(&graph);
-        assert_eq!(order.components(), 2, "the missing entry is not one of them");
+        assert_eq!(
+            order.components(),
+            2,
+            "the missing entry is not one of them"
+        );
         assert!(order.rank_of(node(0)) < order.rank_of(node(1)));
     }
 }

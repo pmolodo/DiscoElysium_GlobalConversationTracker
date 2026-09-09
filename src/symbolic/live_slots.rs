@@ -92,8 +92,10 @@ impl LiveSlots {
 
         // Backward to a fixed point. The link graph is cyclic, so this iterates rather than
         // walking a topological order; sets only grow, so it terminates.
-        let mut live_in: HashMap<DialogueNodeId, HashSet<usize>> =
-            graph.nodes().map(|node| (node.id, HashSet::new())).collect();
+        let mut live_in: HashMap<DialogueNodeId, HashSet<usize>> = graph
+            .nodes()
+            .map(|node| (node.id, HashSet::new()))
+            .collect();
         let mut changed = true;
         while changed {
             changed = false;
@@ -101,7 +103,9 @@ impl LiveSlots {
                 let mut mine = reads[&node.id].clone();
                 let killed = &kills[&node.id];
                 for to in &node.links {
-                    let Some(theirs) = live_in.get(to) else { continue };
+                    let Some(theirs) = live_in.get(to) else {
+                        continue;
+                    };
                     mine.extend(theirs.iter().copied().filter(|slot| !killed.contains(slot)));
                 }
 
@@ -138,7 +142,10 @@ impl LiveSlots {
     /// EMPTY FOR AN ENTRY THE GROUP DOES NOT HOLD, which is the same answer as an entry with
     /// no successors and is the right one either way: nothing onward reads anything.
     pub fn live_out(&self, id: DialogueNodeId) -> &[usize] {
-        self.live_out.get(&id).map(|slots| slots.as_slice()).unwrap_or(&[])
+        self.live_out
+            .get(&id)
+            .map(|slots| slots.as_slice())
+            .unwrap_or(&[])
     }
 
     /// The slots `layout` carries that nothing onward from `id` reads.
@@ -148,7 +155,12 @@ impl LiveSlots {
     pub fn dead_out(&self, id: DialogueNodeId, layout: &DataLayout) -> Vec<usize> {
         let live = self.live_out(id);
         (0..layout.slot_count())
-            .filter(|slot| layout.slot(*slot).map(|(_, bits)| bits > 0).unwrap_or(false))
+            .filter(|slot| {
+                layout
+                    .slot(*slot)
+                    .map(|(_, bits)| bits > 0)
+                    .unwrap_or(false)
+            })
             .filter(|slot| live.binary_search(slot).is_err())
             .collect()
     }
@@ -234,16 +246,22 @@ mod tests {
         LookAheadGraph::new(built, symbols).unwrap()
     }
 
-    fn node(entry: i32, guard: Guard, actions: Vec<DialogueAction>, links: Vec<i32>)
-        -> LookAheadNode
-    {
+    fn node(
+        entry: i32,
+        guard: Guard,
+        actions: Vec<DialogueAction>,
+        links: Vec<i32>,
+    ) -> LookAheadNode {
         LookAheadNode::new(
             DialogueNodeId::new(1, entry),
             false,
             DialogueCheckKind::None,
             guard,
             actions,
-            links.into_iter().map(|to| DialogueNodeId::new(1, to)).collect(),
+            links
+                .into_iter()
+                .map(|to| DialogueNodeId::new(1, to))
+                .collect(),
             0,
             false,
             false,
@@ -267,7 +285,10 @@ mod tests {
         let live = LiveSlots::of(&graph);
 
         // Entry 0 hands on to an entry that reads `a` and nothing else.
-        assert_eq!(live.live_out(DialogueNodeId::new(1, 0)), &[slot(&graph, "a")]);
+        assert_eq!(
+            live.live_out(DialogueNodeId::new(1, 0)),
+            &[slot(&graph, "a")]
+        );
         // Entry 1 hands on to nothing at all.
         assert!(live.live_out(DialogueNodeId::new(1, 1)).is_empty());
     }
@@ -298,7 +319,10 @@ mod tests {
         // Entry 1 overwrites `b` before entry 2 reads it, so what entry 0 hands on cannot
         // matter.
         assert!(live.live_out(DialogueNodeId::new(1, 0)).is_empty());
-        assert_eq!(live.live_out(DialogueNodeId::new(1, 1)), &[slot(&graph, "b")]);
+        assert_eq!(
+            live.live_out(DialogueNodeId::new(1, 1)),
+            &[slot(&graph, "b")]
+        );
     }
 
     #[test]
@@ -313,8 +337,9 @@ mod tests {
         // fired - so both survive back to entry 0.
         let out = live.live_out(DialogueNodeId::new(1, 0));
         assert!(out.contains(&slot(&graph, "b")));
-        assert!(out.contains(&usize::try_from(graph.get(DialogueNodeId::new(1, 1))
-            .unwrap().once_slot).unwrap()));
+        assert!(out.contains(
+            &usize::try_from(graph.get(DialogueNodeId::new(1, 1)).unwrap().once_slot).unwrap()
+        ));
     }
 
     #[test]
@@ -325,7 +350,10 @@ mod tests {
         ]);
         let live = LiveSlots::of(&graph);
 
-        assert_eq!(live.live_out(DialogueNodeId::new(1, 0)), &[slot(&graph, "c")]);
+        assert_eq!(
+            live.live_out(DialogueNodeId::new(1, 0)),
+            &[slot(&graph, "c")]
+        );
     }
 
     #[test]

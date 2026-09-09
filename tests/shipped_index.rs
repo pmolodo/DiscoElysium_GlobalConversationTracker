@@ -21,9 +21,7 @@
 
 use std::collections::HashMap;
 
-use lookahead_engine::index::{
-    build_group_graph, discover_group, read_index, ENTRY_FIELDS_READ,
-};
+use lookahead_engine::index::{ENTRY_FIELDS_READ, build_group_graph, discover_group, read_index};
 
 mod common;
 
@@ -51,7 +49,9 @@ fn the_trimmed_index_keeps_every_field_the_engine_reads() {
     let mut kept: HashMap<&str, usize> = HashMap::new();
 
     for (id, conversation) in &full {
-        let other = trimmed.get(id).unwrap_or_else(|| panic!("conversation {id} was dropped"));
+        let other = trimmed
+            .get(id)
+            .unwrap_or_else(|| panic!("conversation {id} was dropped"));
         assert_eq!(
             conversation.entries.len(),
             other.entries.len(),
@@ -63,13 +63,22 @@ fn the_trimmed_index_keeps_every_field_the_engine_reads() {
 
             // The parts the engine deserialises, which must survive whole.
             assert_eq!(entry.guard, slim.guard, "{id}:{} lost its guard", entry.id);
-            assert_eq!(entry.script, slim.script, "{id}:{} lost its script", entry.id);
+            assert_eq!(
+                entry.script, slim.script,
+                "{id}:{} lost its script",
+                entry.id
+            );
             assert_eq!(entry.to, slim.to, "{id}:{} lost its links", entry.id);
             assert_eq!(
                 entry.to_conversation, slim.to_conversation,
-                "{id}:{} lost its cross-conversation links", entry.id,
+                "{id}:{} lost its cross-conversation links",
+                entry.id,
             );
-            assert_eq!(entry.group, slim.group, "{id}:{} lost its group flag", entry.id);
+            assert_eq!(
+                entry.group, slim.group,
+                "{id}:{} lost its group flag",
+                entry.id
+            );
 
             for name in ENTRY_FIELDS_READ {
                 match entry.fields.get(name) {
@@ -95,7 +104,10 @@ fn the_trimmed_index_keeps_every_field_the_engine_reads() {
         }
     }
 
-    println!("{checked} entries checked across {} conversations", full.len());
+    println!(
+        "{checked} entries checked across {} conversations",
+        full.len()
+    );
     let mut rows: Vec<(&&str, &usize)> = kept.iter().collect();
     rows.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
     for (name, count) in rows {
@@ -128,11 +140,16 @@ fn a_group_built_from_the_trimmed_index_is_the_same_group() {
     let trimmed = read_index(&trimmed).expect("the trimmed index reads");
 
     for conversation in EXPENSIVE {
-        let Ok((one, group)) = build_group_graph(&full, conversation) else { continue };
+        let Ok((one, group)) = build_group_graph(&full, conversation) else {
+            continue;
+        };
         let (other, other_group) =
             build_group_graph(&trimmed, conversation).expect("the trimmed group builds");
 
-        assert_eq!(group, other_group, "conversation {conversation}: the group changed");
+        assert_eq!(
+            group, other_group,
+            "conversation {conversation}: the group changed"
+        );
         assert_eq!(
             one.count(),
             other.count(),
@@ -147,12 +164,21 @@ fn a_group_built_from_the_trimmed_index_is_the_same_group() {
 
             assert_eq!(node.kind, twin.kind, "{}: the check kind changed", node.id);
             assert_eq!(node.cost, twin.cost, "{}: the cost changed", node.id);
-            assert_eq!(node.cost_once, twin.cost_once, "{}: cost_once changed", node.id);
-            assert_eq!(node.is_group, twin.is_group, "{}: the group flag changed", node.id);
+            assert_eq!(
+                node.cost_once, twin.cost_once,
+                "{}: cost_once changed",
+                node.id
+            );
+            assert_eq!(
+                node.is_group, twin.is_group,
+                "{}: the group flag changed",
+                node.id
+            );
             assert_eq!(node.links, twin.links, "{}: the links changed", node.id);
             assert_eq!(
                 node.boolean_only, twin.boolean_only,
-                "{}: boolean_only changed", node.id,
+                "{}: boolean_only changed",
+                node.id,
             );
             assert_eq!(
                 node.guard.to_string(),
@@ -222,8 +248,15 @@ fn the_whole_games_group_list_survives_the_trim() {
     let ours = groups_of(&full);
     let theirs = groups_of(&trimmed);
 
-    assert_eq!(ours.len(), theirs.len(), "the trim changed how many groups there are");
-    assert_eq!(ours, theirs, "the trim changed which conversations reach which");
+    assert_eq!(
+        ours.len(),
+        theirs.len(),
+        "the trim changed how many groups there are"
+    );
+    assert_eq!(
+        ours, theirs,
+        "the trim changed which conversations reach which"
+    );
 
     println!("{} groups identical across the whole index", ours.len());
 }
@@ -239,7 +272,10 @@ fn groups_of(
     index
         .keys()
         .map(|conversation| {
-            (*conversation, discover_group(index, *conversation).into_iter().collect())
+            (
+                *conversation,
+                discover_group(index, *conversation).into_iter().collect(),
+            )
         })
         .collect()
 }

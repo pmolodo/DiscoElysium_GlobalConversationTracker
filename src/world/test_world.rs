@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-use std::collections::HashMap;
-use crate::core::types::{DialogueNodeId, Ternary};
 use crate::core::guard_value::GuardValue;
+use crate::core::types::{DialogueNodeId, Ternary};
 use crate::world::world::ILookAheadWorld;
+use std::collections::HashMap;
 
 /// Test implementation of ILookAheadWorld for unit tests.
 #[derive(Debug, Clone, Default)]
@@ -101,21 +101,44 @@ impl TestWorld {
 }
 
 impl ILookAheadWorld for TestWorld {
-    fn money(&self) -> i32 { self.money }
-    fn day_minutes(&self) -> i32 { self.day_minutes }
-    fn day_counter(&self) -> i32 { self.day_counter }
-    fn is_clock_locked(&self) -> bool { self.clock_locked }
-    fn get_variable(&self, name: &str) -> GuardValue {
-        self.variables.get(name).cloned().unwrap_or(GuardValue::unknown())
+    fn money(&self) -> i32 {
+        self.money
     }
-    fn initially_has_item(&self, name: &str) -> bool { self.items.get(name).copied().unwrap_or(false) }
-    fn initially_task_active(&self, name: &str) -> bool { self.tasks.get(name).copied().unwrap_or(false) }
-    fn initially_has_thought(&self, name: &str) -> bool { self.thoughts.get(name).copied().unwrap_or(false) }
+    fn day_minutes(&self) -> i32 {
+        self.day_minutes
+    }
+    fn day_counter(&self) -> i32 {
+        self.day_counter
+    }
+    fn is_clock_locked(&self) -> bool {
+        self.clock_locked
+    }
+    fn get_variable(&self, name: &str) -> GuardValue {
+        self.variables
+            .get(name)
+            .cloned()
+            .unwrap_or(GuardValue::unknown())
+    }
+    fn initially_has_item(&self, name: &str) -> bool {
+        self.items.get(name).copied().unwrap_or(false)
+    }
+    fn initially_task_active(&self, name: &str) -> bool {
+        self.tasks.get(name).copied().unwrap_or(false)
+    }
+    fn initially_has_thought(&self, name: &str) -> bool {
+        self.thoughts.get(name).copied().unwrap_or(false)
+    }
     fn query(&self, name: &str, _arguments: &[GuardValue]) -> GuardValue {
-        self.queries.get(name).cloned().unwrap_or(GuardValue::unknown())
+        self.queries
+            .get(name)
+            .cloned()
+            .unwrap_or(GuardValue::unknown())
     }
     fn check_passes(&self, node: DialogueNodeId) -> Ternary {
-        self.check_results.get(&node).copied().unwrap_or(Ternary::Unknown)
+        self.check_results
+            .get(&node)
+            .copied()
+            .unwrap_or(Ternary::Unknown)
     }
     fn is_seen(&self, node: DialogueNodeId) -> bool {
         self.seen.get(&node).copied().unwrap_or(false)

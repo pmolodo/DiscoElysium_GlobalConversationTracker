@@ -46,8 +46,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::guard::{Guard, GuardExpression};
 use crate::core::guard_value::{GuardValue, GuardValueKind};
-use crate::core::types::{DialogueCheckKind, DialogueNodeId, Novelty, Ternary};
 use crate::core::types::StartBranch;
+use crate::core::types::{DialogueCheckKind, DialogueNodeId, Novelty, Ternary};
+use crate::graph::graph::LookAheadGraph;
+use crate::index::{Index, VariableTable, build_group_graph};
 use crate::symbolic::budget::DiagramBudget;
 use crate::symbolic::data_layout::DataLayout;
 use crate::symbolic::guard_formula::GuardCompiler;
@@ -57,10 +59,8 @@ use crate::symbolic::novelty_search;
 use crate::symbolic::portfolio;
 use crate::symbolic::reachability::seed_of;
 use crate::symbolic::vars::DataVars;
-use oxidd::bdd::BDDFunction;
-use crate::graph::graph::LookAheadGraph;
-use crate::index::{build_group_graph, Index, VariableTable};
 use crate::world::world::ILookAheadWorld;
+use oxidd::bdd::BDDFunction;
 
 /// One entry, as it crosses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -71,7 +71,10 @@ pub struct NodeRef {
 
 impl From<DialogueNodeId> for NodeRef {
     fn from(id: DialogueNodeId) -> Self {
-        Self { conversation: id.conversation_id, entry: id.entry_id }
+        Self {
+            conversation: id.conversation_id,
+            entry: id.entry_id,
+        }
     }
 }
 
@@ -170,7 +173,10 @@ impl NodeSet {
     fn runs(&self) -> BTreeMap<String, String> {
         let mut by_conversation: BTreeMap<i32, Vec<i32>> = BTreeMap::new();
         for node in &self.nodes {
-            by_conversation.entry(node.conversation).or_default().push(node.entry);
+            by_conversation
+                .entry(node.conversation)
+                .or_default()
+                .push(node.entry);
         }
 
         by_conversation
@@ -185,7 +191,9 @@ impl NodeSet {
 
 impl FromIterator<NodeRef> for NodeSet {
     fn from_iter<T: IntoIterator<Item = NodeRef>>(nodes: T) -> Self {
-        Self { nodes: nodes.into_iter().collect() }
+        Self {
+            nodes: nodes.into_iter().collect(),
+        }
     }
 }
 
@@ -216,7 +224,10 @@ impl<'de> Deserialize<'de> for NodeSet {
                         ))
                     })?;
                     for entry in read_runs(&entries).map_err(serde::de::Error::custom)? {
-                        set.insert(NodeRef { conversation, entry });
+                        set.insert(NodeRef {
+                            conversation,
+                            entry,
+                        });
                     }
                 }
                 Ok(set)
@@ -391,8 +402,18 @@ impl WorldSnapshot {
     /// difference land on the wrong variable, and the marker would be wrong with nothing
     /// to report it.
     pub fn resolve(&mut self, questions: &Questions) -> Result<(), String> {
-        place("variable", &questions.variables, &self.variable_values, &mut self.variables)?;
-        place("query", &questions.queries, &self.query_values, &mut self.queries)?;
+        place(
+            "variable",
+            &questions.variables,
+            &self.variable_values,
+            &mut self.variables,
+        )?;
+        place(
+            "query",
+            &questions.queries,
+            &self.query_values,
+            &mut self.queries,
+        )?;
         self.variable_values.clear();
         self.query_values.clear();
         Ok(())
@@ -450,7 +471,10 @@ pub struct SnapshotWorld {
 impl SnapshotWorld {
     /// A world that knows only what the snapshot says.
     pub fn new(snapshot: WorldSnapshot) -> Self {
-        Self { snapshot, declared: None }
+        Self {
+            snapshot,
+            declared: None,
+        }
     }
 
     /// The same, falling back to the database's declared variables.
@@ -871,7 +895,10 @@ impl LookAheadResponse {
     /// there came back as an empty answer list instead - which reads as "nothing was
     /// established" rather than "this was not asked".
     pub(crate) fn failed(reason: String) -> Self {
-        Self { answers: Vec::new(), error: Some(reason) }
+        Self {
+            answers: Vec::new(),
+            error: Some(reason),
+        }
     }
 
     /// The answer for one start, or for one outcome of it.
@@ -908,7 +935,10 @@ pub fn questions_for(index: &Index, conversation: i32) -> Result<Questions, Stri
 /// Public so [`crate::workspace`] can work them out ONCE for a group it will serve many
 /// requests over. They depend on the graph and on nothing a request carries.
 pub fn questions_of(graph: &LookAheadGraph, group: Vec<i32>) -> Questions {
-    let mut found = Questions { conversations: group, ..Default::default() };
+    let mut found = Questions {
+        conversations: group,
+        ..Default::default()
+    };
     let mut variables = HashSet::new();
     let mut queries = HashSet::new();
     let mut items = HashSet::new();
@@ -941,8 +971,12 @@ pub fn questions_of(graph: &LookAheadGraph, group: Vec<i32>) -> Questions {
     found.items = sorted(items);
     found.tasks = sorted(tasks);
     found.thoughts = sorted(thoughts);
-    found.entries.sort_by_key(|node| (node.conversation, node.entry));
-    found.checks.sort_by_key(|node| (node.conversation, node.entry));
+    found
+        .entries
+        .sort_by_key(|node| (node.conversation, node.entry));
+    found
+        .checks
+        .sort_by_key(|node| (node.conversation, node.entry));
 
     found
 }
@@ -976,9 +1010,7 @@ fn collect(
             }
             GuardExpression::Call(name, args) => {
                 let subject = args.only().and_then(|only| match only.expression() {
-                    GuardExpression::Literal(value)
-                        if value.kind() == GuardValueKind::Text =>
-                    {
+                    GuardExpression::Literal(value) if value.kind() == GuardValueKind::Text => {
                         Some(value.text().to_string())
                     }
                     _ => None,
@@ -1052,8 +1084,11 @@ fn collect(
 /// A request with no starts falls back to the conversation it names, so the layout is
 /// narrowed to something rather than to nothing.
 pub fn entered_at_of(request: &LookAheadRequest) -> Vec<i32> {
-    let mut conversations: Vec<i32> =
-        request.starts.iter().map(|start| start.conversation).collect();
+    let mut conversations: Vec<i32> = request
+        .starts
+        .iter()
+        .map(|start| start.conversation)
+        .collect();
     if conversations.is_empty() {
         conversations.push(request.conversation);
     }
@@ -1121,20 +1156,23 @@ pub fn answer(
     //
     // IT DOES NOT COVER THE FAULT THE THREAD IS FOR. A stack overflow is not a panic and
     // cannot be caught - see `symbolic::isolated`.
-    let answers = isolated::on_its_own_thread_caught(|| {
-        answer_within(&graph, &world, request, &novelty)
-    });
+    let answers =
+        isolated::on_its_own_thread_caught(|| answer_within(&graph, &world, request, &novelty));
 
     match answers {
-        Ok(Some(answers)) => LookAheadResponse { answers, error: None },
+        Ok(Some(answers)) => LookAheadResponse {
+            answers,
+            error: None,
+        },
         // THE MACHINE, not the budget: the manager preallocates its node store and that
         // allocation aborts rather than failing, so it is asked for fallibly first - see
         // de-0a3a. Every option is answered "nothing established" rather than the request
         // failing, because a menu with no markers is what a mod without an engine draws
         // and the player has seen it before.
-        Ok(None) => {
-            LookAheadResponse { answers: all_unanswered(request, "no-ram"), error: None }
-        }
+        Ok(None) => LookAheadResponse {
+            answers: all_unanswered(request, "no-ram"),
+            error: None,
+        },
         // THE SAME SHAPE AS "no-ram", DELIBERATELY. Both mean the same thing to the caller -
         // no start was established, draw the menu unmarked - and the mod already knows how
         // to do that. A different shape here would be a second thing for it to learn in
@@ -1155,7 +1193,10 @@ pub fn answer(
                 isolated::panic_message(panicked.as_ref()),
                 request.starts.len(),
             );
-            LookAheadResponse { answers: all_unanswered(request, "crashed"), error: None }
+            LookAheadResponse {
+                answers: all_unanswered(request, "crashed"),
+                error: None,
+            }
         }
     }
 }
@@ -1188,12 +1229,8 @@ where
     // NARROWED TO WHAT THE REQUEST'S CONVERSATION CAN REACH - de-3x76.8. The group is much
     // bigger than the conversation the player is standing in, and a slot read only by
     // guards beyond what this one reaches is carried for nothing.
-    let layout = DataLayout::for_group_entered_at(
-        graph,
-        world,
-        COUNTER_CAP,
-        Some(&entered_at_of(request)),
-    );
+    let layout =
+        DataLayout::for_group_entered_at(graph, world, COUNTER_CAP, Some(&entered_at_of(request)));
     let vars = DataVars::try_new(&layout, &symbols, request.diagram_budget())?;
     let mut compiler = GuardCompiler::new(&vars)
         .with_world(world)
@@ -1211,7 +1248,16 @@ where
     // lines up, and that manager is dropped when this call returns - so there is nothing for
     // a kept pass to outlive. A memo belongs to a caller that holds a manager between
     // requests, which is `crate::workspace` and only that.
-    Some(answer_starts(graph, world, request, novelty, &mut compiler, &seed, &shape, None))
+    Some(answer_starts(
+        graph,
+        world,
+        request,
+        novelty,
+        &mut compiler,
+        &seed,
+        &shape,
+        None,
+    ))
 }
 
 /// The answers for one request, against a manager and a compiler somebody else built.
@@ -1301,8 +1347,7 @@ where
             // the one place a wall tested per option could be overrun by a whole option.
             let ration = budget.within(menu.saturating_sub(began.elapsed()));
             answers.push(scored(
-                graph, id, *start, world, novelty, *branch, seed, compiler, &ration, shape,
-                memo,
+                graph, id, *start, world, novelty, *branch, seed, compiler, &ration, shape, memo,
             ));
         }
     }
@@ -1316,11 +1361,12 @@ where
 /// engine at all - so the shape is the same whatever stopped it, and only `stopped_by`
 /// differs. Shared with [`crate::workspace`], which reaches the same wall a request later
 /// rather than a request earlier.
-pub(crate) fn all_unanswered(
-    request: &LookAheadRequest,
-    stopped_by: &str,
-) -> Vec<LookAheadAnswer> {
-    request.starts.iter().map(|start| unanswered(*start, stopped_by)).collect()
+pub(crate) fn all_unanswered(request: &LookAheadRequest, stopped_by: &str) -> Vec<LookAheadAnswer> {
+    request
+        .starts
+        .iter()
+        .map(|start| unanswered(*start, stopped_by))
+        .collect()
 }
 
 /// An option with nothing established about it, and why.
@@ -1370,9 +1416,8 @@ where
     // itself, or the entries the outcome opens. The baseline is their best class, and they
     // are also where the refusal walks from - one fact, used twice, so a walk can never be
     // measuring from somewhere the baseline did not come from.
-    let mut where_from = novelty_search::Where::of(
-        graph, id, branch, seed, compiler, world, COUNTER_CAP as u32,
-    );
+    let mut where_from =
+        novelty_search::Where::of(graph, id, branch, seed, compiler, world, COUNTER_CAP as u32);
     let from: Vec<DialogueNodeId> = match branch {
         StartBranch::Either => vec![id],
         _ => where_from.destinations(graph, compiler, world, COUNTER_CAP as u32),
@@ -1383,29 +1428,28 @@ where
         .max()
         .unwrap_or(Novelty::SeenThisGame);
 
-    let answered = |best: Novelty,
-                    complete,
-                    witness: Option<DialogueNodeId>,
-                    asked,
-                    stopped: &str| LookAheadAnswer {
-        start,
-        branch: match branch {
-            StartBranch::Either => None,
-            branch => Some(branch_name(branch).to_string()),
-        },
-        destination: destination as i32,
-        best: best as i32,
-        witness: witness.map(NodeRef::from),
-        complete,
-        elapsed_ms: began.elapsed().as_millis() as u64,
-        // A SET-BASED SEARCH DOES NOT ENUMERATE STATES, so a count of them is meaningless
-        // here and reported as the zero it is. What this search counts instead is candidates
-        // asked about, which is `nodes_reached`'s nearest true relative: the entries it had
-        // to consider before it could answer.
-        states_explored: 0,
-        nodes_reached: asked,
-        stopped_by: stopped.to_string(),
-    };
+    let answered =
+        |best: Novelty, complete, witness: Option<DialogueNodeId>, asked, stopped: &str| {
+            LookAheadAnswer {
+                start,
+                branch: match branch {
+                    StartBranch::Either => None,
+                    branch => Some(branch_name(branch).to_string()),
+                },
+                destination: destination as i32,
+                best: best as i32,
+                witness: witness.map(NodeRef::from),
+                complete,
+                elapsed_ms: began.elapsed().as_millis() as u64,
+                // A SET-BASED SEARCH DOES NOT ENUMERATE STATES, so a count of them is meaningless
+                // here and reported as the zero it is. What this search counts instead is candidates
+                // asked about, which is `nodes_reached`'s nearest true relative: the entries it had
+                // to consider before it could answer.
+                states_explored: 0,
+                nodes_reached: asked,
+                stopped_by: stopped.to_string(),
+            }
+        };
 
     // THE BASELINE COULD NOT BE BUILT. Entering the start to find where this outcome lands
     // filled the manager, so `from` is empty for want of nodes rather than because the
@@ -1430,8 +1474,18 @@ where
     };
 
     let found = portfolio::best_novelty(
-        graph, id, branch, seed, compiler, world, COUNTER_CAP as u32, &novelty, hunting,
-        budget, shape, memo,
+        graph,
+        id,
+        branch,
+        seed,
+        compiler,
+        world,
+        COUNTER_CAP as u32,
+        &novelty,
+        hunting,
+        budget,
+        shape,
+        memo,
     );
 
     answered(
@@ -1463,7 +1517,6 @@ fn stopped_name(stopped: novelty_search::StoppedBy) -> &'static str {
         novelty_search::StoppedBy::Incomplete => "memory",
     }
 }
-
 
 /// The class a search from these starts should hunt, or `None` when there is nothing to find.
 ///
@@ -1533,7 +1586,7 @@ where
 #[cfg(test)]
 mod branch_wire_tests {
     use super::*;
-    use crate::test_graph::{node, Entry, GraphBuilder};
+    use crate::test_graph::{Entry, GraphBuilder, node};
     use crate::world::test_world::TestWorld;
 
     /// One start scored, with the diagram apparatus `answer_within` would have built.
@@ -1579,8 +1632,17 @@ mod branch_wire_tests {
     /// OPTION not worth searching while one of its OUTCOMES still is.
     fn check_landing_on_something_read() -> LookAheadGraph {
         GraphBuilder::new()
-            .add(Entry::new(0).kind(DialogueCheckKind::White).flag("roll").links(&[1, 3]))
-            .add(Entry::new(1).guard(r#"Variable["roll"] == true"#).links(&[2]))
+            .add(
+                Entry::new(0)
+                    .kind(DialogueCheckKind::White)
+                    .flag("roll")
+                    .links(&[1, 3]),
+            )
+            .add(
+                Entry::new(1)
+                    .guard(r#"Variable["roll"] == true"#)
+                    .links(&[2]),
+            )
             .add(Entry::new(2))
             .add(Entry::new(3).guard(r#"Variable["roll"] == false"#))
             .build()
@@ -1601,7 +1663,11 @@ mod branch_wire_tests {
 
         // 1 is read; everything else is unseen this game. Nothing is unseen anywhere.
         let novelty = |id: DialogueNodeId| {
-            if id == node(1) { Novelty::SeenThisGame } else { Novelty::UnseenThisGame }
+            if id == node(1) {
+                Novelty::SeenThisGame
+            } else {
+                Novelty::UnseenThisGame
+            }
         };
 
         assert!(
@@ -1611,15 +1677,24 @@ mod branch_wire_tests {
 
         let pass = score_one(&graph, &world, node(0), StartBranch::Pass, novelty);
         assert_eq!(pass.branch.as_deref(), Some(PASS));
-        assert_eq!(pass.destination, Novelty::SeenThisGame as i32, "passing opens 1");
         assert_eq!(
-            pass.best, Novelty::UnseenThisGame as i32,
+            pass.destination,
+            Novelty::SeenThisGame as i32,
+            "passing opens 1"
+        );
+        assert_eq!(
+            pass.best,
+            Novelty::UnseenThisGame as i32,
             "the unread entry past 1 outranks where passing lands, and should be reported",
         );
 
         let fail = score_one(&graph, &world, node(0), StartBranch::Fail, novelty);
         assert_eq!(fail.branch.as_deref(), Some(FAIL));
-        assert_eq!(fail.destination, Novelty::UnseenThisGame as i32, "failing opens 3");
+        assert_eq!(
+            fail.destination,
+            Novelty::UnseenThisGame as i32,
+            "failing opens 3"
+        );
         assert_eq!(fail.best, fail.destination, "and nothing past 3 beats it");
 
         // THE TWO ARE ONE START EACH, and they say so: same entry, different outcome.
@@ -1661,7 +1736,11 @@ mod branch_wire_tests {
 
         // One entry past the check is unseen ANYWHERE, and that outranks the same baseline.
         let one_top_rung = |id: DialogueNodeId| {
-            if id == node(2) { Novelty::UnseenAnyGame } else { Novelty::UnseenThisGame }
+            if id == node(2) {
+                Novelty::UnseenAnyGame
+            } else {
+                Novelty::UnseenThisGame
+            }
         };
         assert_eq!(
             class_worth_hunting(&graph, &[node(0)], Novelty::UnseenThisGame, one_top_rung),
@@ -1685,7 +1764,11 @@ mod branch_wire_tests {
 
         // The check is unseen anywhere; everything it opens has been read here.
         let novelty = |id: DialogueNodeId| {
-            if id == node(0) { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
+            if id == node(0) {
+                Novelty::UnseenAnyGame
+            } else {
+                Novelty::SeenThisGame
+            }
         };
 
         // Passing opens 1. From there, nothing outranks the floor - 2 is read as well.
@@ -1709,7 +1792,11 @@ mod branch_wire_tests {
 
         // Passing opens 1, which is read; 2 lies past it and no save has read that.
         let novelty = |id: DialogueNodeId| {
-            if id == node(2) { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
+            if id == node(2) {
+                Novelty::UnseenAnyGame
+            } else {
+                Novelty::SeenThisGame
+            }
         };
 
         assert_eq!(
@@ -1725,14 +1812,20 @@ mod branch_wire_tests {
         let read = |_: DialogueNodeId| Novelty::SeenThisGame;
 
         assert_eq!(graph.best_linked_class(node(0), read), None);
-        assert_eq!(class_worth_hunting(&graph, &[node(0)], Novelty::SeenThisGame, read), None);
+        assert_eq!(
+            class_worth_hunting(&graph, &[node(0)], Novelty::SeenThisGame, read),
+            None
+        );
     }
 
     /// An outcome's answer round-trips as JSON, naming which outcome it is.
     #[test]
     fn an_outcome_survives_the_wire() {
         let answer = LookAheadAnswer {
-            start: NodeRef { conversation: 451, entry: 12 },
+            start: NodeRef {
+                conversation: 451,
+                entry: 12,
+            },
             branch: Some(PASS.to_string()),
             destination: 0,
             best: 2,
@@ -1756,7 +1849,10 @@ mod branch_wire_tests {
     #[test]
     fn an_ordinary_option_names_no_outcome() {
         let answer = LookAheadAnswer {
-            start: NodeRef { conversation: 451, entry: 12 },
+            start: NodeRef {
+                conversation: 451,
+                entry: 12,
+            },
             branch: None,
             destination: 0,
             best: 0,
@@ -1769,7 +1865,10 @@ mod branch_wire_tests {
         };
 
         let text = serde_json::to_string(&answer).expect("an answer serialises");
-        assert!(!text.contains("branch"), "an absent outcome still crossed: {text}");
+        assert!(
+            !text.contains("branch"),
+            "an absent outcome still crossed: {text}"
+        );
 
         let back: LookAheadAnswer = serde_json::from_str(&text).expect("and parses back");
         assert_eq!(back.branch, None);
@@ -1783,7 +1882,10 @@ mod branch_wire_tests {
 
         let answer: LookAheadAnswer = serde_json::from_str(text).expect("it parses");
         assert_eq!(answer.branch, None);
-        assert_eq!(answer.destination, 0, "an absent destination reads as the bottom rung");
+        assert_eq!(
+            answer.destination, 0,
+            "an absent destination reads as the bottom rung"
+        );
     }
 
     /// A rolled check comes back as TWO answers, and an ordinary option as one.
@@ -1865,14 +1967,16 @@ mod tests {
     /// what the plugin must supply for them is a starting value rather than an answer.
     #[test]
     fn the_slot_backed_queries_are_asked_for_by_subject() {
-        let found = asked(
-            r#"CheckItem("badge") and IsTaskActive("TASK.x") and IsTHCPresent("jamais_vu")"#,
-        );
+        let found =
+            asked(r#"CheckItem("badge") and IsTaskActive("TASK.x") and IsTHCPresent("jamais_vu")"#);
 
         assert_eq!(found.items, vec!["badge".to_string()]);
         assert_eq!(found.tasks, vec!["TASK.x".to_string()]);
         assert_eq!(found.thoughts, vec!["jamais_vu".to_string()]);
-        assert!(found.queries.is_empty(), "these must not also be asked as calls");
+        assert!(
+            found.queries.is_empty(),
+            "these must not also be asked as calls"
+        );
     }
 
     /// A flag is a dialogue variable written another way, and is asked for as one.
@@ -1888,7 +1992,10 @@ mod tests {
         let found = asked(r#"IsKimHere() and CheckEquipped("neck_tie")"#);
         assert_eq!(
             found.queries,
-            vec!["CheckEquipped(\"neck_tie\")".to_string(), "IsKimHere()".to_string()],
+            vec![
+                "CheckEquipped(\"neck_tie\")".to_string(),
+                "IsKimHere()".to_string()
+            ],
         );
     }
 
@@ -1900,14 +2007,19 @@ mod tests {
         let key = &found.queries[0];
 
         let mut world = WorldSnapshot::default();
-        world.queries.insert(key.clone(), WireValue::Bool { value: true });
+        world
+            .queries
+            .insert(key.clone(), WireValue::Bool { value: true });
         let world = SnapshotWorld::new(world);
 
         let answer = world.query(
             "CheckEquipped",
             &[GuardValue::from_text("neck_tie".to_string())],
         );
-        assert!(answer.boolean(), "the answer did not come back under the key given");
+        assert!(
+            answer.boolean(),
+            "the answer did not come back under the key given"
+        );
     }
 
     /// A variable the plugin could not read falls back to what the database declares.
@@ -1931,18 +2043,32 @@ mod tests {
 
         let mut snapshot = WorldSnapshot::default();
         // What the plugin sends for a variable Lua would not answer.
-        snapshot.variables.insert("church.done".to_string(), WireValue::Unknown);
-        // And one it did answer, which must not be overridden by the table's initial.
         snapshot
             .variables
-            .insert("jam.lorrymans_questioned".to_string(), WireValue::Number { value: 4.0 });
+            .insert("church.done".to_string(), WireValue::Unknown);
+        // And one it did answer, which must not be overridden by the table's initial.
+        snapshot.variables.insert(
+            "jam.lorrymans_questioned".to_string(),
+            WireValue::Number { value: 4.0 },
+        );
 
         let world = SnapshotWorld::declaring(snapshot, Some(Arc::new(table)));
 
-        assert_eq!(world.get_variable("jam.lorrymans_questioned").try_as_number(), Some(4.0));
-        assert_eq!(world.get_variable("church.done").kind(), GuardValueKind::Boolean);
+        assert_eq!(
+            world
+                .get_variable("jam.lorrymans_questioned")
+                .try_as_number(),
+            Some(4.0)
+        );
+        assert_eq!(
+            world.get_variable("church.done").kind(),
+            GuardValueKind::Boolean
+        );
         // Never named at all, and the table does not declare it either.
-        assert_eq!(world.get_variable("nothing.declares.this").kind(), GuardValueKind::Unknown);
+        assert_eq!(
+            world.get_variable("nothing.declares.this").kind(),
+            GuardValueKind::Unknown
+        );
     }
 
     /// A declared counter nobody wrote answers as a NUMBER, so an ordering guard decides.
@@ -1958,11 +2084,17 @@ mod tests {
         // Nothing about it in the snapshot at all, which is what a group whose variable
         // the plugin never saw looks like.
         let world = SnapshotWorld::declaring(WorldSnapshot::default(), Some(Arc::new(table)));
-        assert_eq!(world.get_variable("pier.reporting_counter").try_as_number(), Some(0.0));
+        assert_eq!(
+            world.get_variable("pier.reporting_counter").try_as_number(),
+            Some(0.0)
+        );
 
         // And without the table it is Unknown, which is what it was before.
         let bare = SnapshotWorld::new(WorldSnapshot::default());
-        assert_eq!(bare.get_variable("pier.reporting_counter").kind(), GuardValueKind::Unknown);
+        assert_eq!(
+            bare.get_variable("pier.reporting_counter").kind(),
+            GuardValueKind::Unknown
+        );
     }
 
     /// A positional answer lands on the name the engine asked under.
@@ -1982,7 +2114,9 @@ mod tests {
             query_values: vec![WireValue::Bool { value: true }],
             ..Default::default()
         };
-        snapshot.resolve(&questions).expect("the lists are the same length");
+        snapshot
+            .resolve(&questions)
+            .expect("the lists are the same length");
 
         let world = SnapshotWorld::new(snapshot);
         assert_eq!(world.get_variable("a.first").try_as_number(), Some(4.0));
@@ -2002,11 +2136,17 @@ mod tests {
             variable_values: vec![WireValue::Number { value: 4.0 }],
             ..Default::default()
         };
-        snapshot.variables.insert("a.first".to_string(), WireValue::Number { value: 9.0 });
-        snapshot.resolve(&questions).expect("the lists are the same length");
+        snapshot
+            .variables
+            .insert("a.first".to_string(), WireValue::Number { value: 9.0 });
+        snapshot
+            .resolve(&questions)
+            .expect("the lists are the same length");
 
         assert_eq!(
-            SnapshotWorld::new(snapshot).get_variable("a.first").try_as_number(),
+            SnapshotWorld::new(snapshot)
+                .get_variable("a.first")
+                .try_as_number(),
             Some(9.0),
         );
     }
@@ -2028,8 +2168,13 @@ mod tests {
             ..Default::default()
         };
 
-        let refused = snapshot.resolve(&questions).expect_err("it must be refused");
-        assert!(refused.contains("1 variable answers came back for 2"), "{refused}");
+        let refused = snapshot
+            .resolve(&questions)
+            .expect_err("it must be refused");
+        assert!(
+            refused.contains("1 variable answers came back for 2"),
+            "{refused}"
+        );
     }
 
     /// Anything unanswered reads Unknown, which is the permissive direction.
@@ -2037,29 +2182,53 @@ mod tests {
     fn an_unanswered_question_is_unknown_rather_than_false() {
         let world = SnapshotWorld::new(WorldSnapshot::default());
 
-        assert_eq!(world.get_variable("never.mentioned").kind(), GuardValueKind::Unknown);
-        assert_eq!(world.query("IsKimHere", &[]).kind(), GuardValueKind::Unknown);
-        assert_eq!(world.check_passes(DialogueNodeId::new(1, 2)), Ternary::Unknown);
+        assert_eq!(
+            world.get_variable("never.mentioned").kind(),
+            GuardValueKind::Unknown
+        );
+        assert_eq!(
+            world.query("IsKimHere", &[]).kind(),
+            GuardValueKind::Unknown
+        );
+        assert_eq!(
+            world.check_passes(DialogueNodeId::new(1, 2)),
+            Ternary::Unknown
+        );
     }
 
     /// All three check outcomes come across, and the third one is silence.
     #[test]
     fn a_check_answer_carries_all_three_outcomes() {
         let world = SnapshotWorld::new(WorldSnapshot {
-            checks_pass: NodeSet::from_iter([NodeRef { conversation: 1, entry: 1 }]),
-            checks_fail: NodeSet::from_iter([NodeRef { conversation: 1, entry: 2 }]),
+            checks_pass: NodeSet::from_iter([NodeRef {
+                conversation: 1,
+                entry: 1,
+            }]),
+            checks_fail: NodeSet::from_iter([NodeRef {
+                conversation: 1,
+                entry: 2,
+            }]),
             ..Default::default()
         });
 
         assert_eq!(world.check_passes(DialogueNodeId::new(1, 1)), Ternary::True);
-        assert_eq!(world.check_passes(DialogueNodeId::new(1, 2)), Ternary::False);
-        assert_eq!(world.check_passes(DialogueNodeId::new(1, 3)), Ternary::Unknown);
+        assert_eq!(
+            world.check_passes(DialogueNodeId::new(1, 2)),
+            Ternary::False
+        );
+        assert_eq!(
+            world.check_passes(DialogueNodeId::new(1, 3)),
+            Ternary::Unknown
+        );
     }
 
     #[test]
     fn seen_entries_are_carried_across() {
         let world = SnapshotWorld::new(WorldSnapshot {
-            seen: NodeSet::from_iter([NodeRef { conversation: 7, entry: 3 }]),
+            seen: NodeSet::from_iter([NodeRef {
+                conversation: 7,
+                entry: 3,
+            }]),
             ..Default::default()
         });
 
@@ -2072,9 +2241,15 @@ mod tests {
     fn an_entry_set_is_written_as_runs_by_conversation() {
         let set = NodeSet::from_iter(
             [0, 1, 2, 3, 5, 9, 10]
-                .map(|entry| NodeRef { conversation: 631, entry })
+                .map(|entry| NodeRef {
+                    conversation: 631,
+                    entry,
+                })
                 .into_iter()
-                .chain([NodeRef { conversation: 636, entry: 7 }]),
+                .chain([NodeRef {
+                    conversation: 636,
+                    entry: 7,
+                }]),
         );
 
         assert_eq!(
@@ -2093,9 +2268,10 @@ mod tests {
     /// ambiguous, a negative id at BOTH ends of a run.
     #[test]
     fn a_negative_id_survives_the_hyphen_at_either_end_of_a_run() {
-        let set = NodeSet::from_iter(
-            [-5, -4, -3, -1, 2, 3].map(|entry| NodeRef { conversation: 9, entry }),
-        );
+        let set = NodeSet::from_iter([-5, -4, -3, -1, 2, 3].map(|entry| NodeRef {
+            conversation: 9,
+            entry,
+        }));
 
         let written = serde_json::to_string(&set).expect("it serialises");
         assert_eq!(written, r#"{"9":"-5--3,-1,2-3"}"#);
@@ -2106,13 +2282,21 @@ mod tests {
 
     #[test]
     fn an_entry_set_comes_back_from_its_runs() {
-        let set: NodeSet =
-            serde_json::from_str(r#"{"631":"0-3,5","636":"7"}"#).expect("it reads");
+        let set: NodeSet = serde_json::from_str(r#"{"631":"0-3,5","636":"7"}"#).expect("it reads");
 
         assert_eq!(set.len(), 6);
-        assert!(set.contains(&NodeRef { conversation: 631, entry: 3 }));
-        assert!(!set.contains(&NodeRef { conversation: 631, entry: 4 }));
-        assert!(set.contains(&NodeRef { conversation: 636, entry: 7 }));
+        assert!(set.contains(&NodeRef {
+            conversation: 631,
+            entry: 3
+        }));
+        assert!(!set.contains(&NodeRef {
+            conversation: 631,
+            entry: 4
+        }));
+        assert!(set.contains(&NodeRef {
+            conversation: 636,
+            entry: 7
+        }));
     }
 
     /// An empty set is an empty object, not an absent field with a different meaning.
@@ -2134,7 +2318,10 @@ mod tests {
         .expect("it reads");
 
         assert_eq!(set.len(), 2);
-        assert!(set.contains(&NodeRef { conversation: 631, entry: 5 }));
+        assert!(set.contains(&NodeRef {
+            conversation: 631,
+            entry: 5
+        }));
     }
 
     /// A run list that is not understood is refused, not half-read.
@@ -2156,14 +2343,28 @@ mod tests {
     /// form either of them ever travels in.
     #[test]
     fn a_request_survives_json() {
-        let mut world = WorldSnapshot { money: 250, day_minutes: 720, ..Default::default() };
-        world.variables.insert("x".to_string(), WireValue::Number { value: 3.0 });
-        world.queries.insert("IsKimHere()".to_string(), WireValue::Bool { value: true });
+        let mut world = WorldSnapshot {
+            money: 250,
+            day_minutes: 720,
+            ..Default::default()
+        };
+        world
+            .variables
+            .insert("x".to_string(), WireValue::Number { value: 3.0 });
+        world
+            .queries
+            .insert("IsKimHere()".to_string(), WireValue::Bool { value: true });
 
         let request = LookAheadRequest {
             conversation: 631,
-            starts: vec![NodeRef { conversation: 631, entry: 4 }],
-            unseen_any_game: NodeSet::from_iter([NodeRef { conversation: 631, entry: 9 }]),
+            starts: vec![NodeRef {
+                conversation: 631,
+                entry: 4,
+            }],
+            unseen_any_game: NodeSet::from_iter([NodeRef {
+                conversation: 631,
+                entry: 9,
+            }]),
             unseen_this_game: NodeSet::default(),
             state_budget: 0,
             time_budget_ms: 0,
@@ -2177,7 +2378,10 @@ mod tests {
 
         assert_eq!(back.conversation, 631);
         assert_eq!(back.world.money, 250);
-        assert!(back.unseen_any_game.contains(&NodeRef { conversation: 631, entry: 9 }));
+        assert!(back.unseen_any_game.contains(&NodeRef {
+            conversation: 631,
+            entry: 9
+        }));
         assert!(matches!(
             back.world.queries.get("IsKimHere()"),
             Some(WireValue::Bool { value: true }),
@@ -2235,7 +2439,10 @@ mod tests {
             request.diagram_budget().memory(),
             DiagramBudget::DEFAULT_MEMORY_BUDGET,
         );
-        assert!(request.diagram_budget().memory() > 0, "the default turned the budget off");
+        assert!(
+            request.diagram_budget().memory() > 0,
+            "the default turned the budget off"
+        );
     }
 
     /// A time budget on the wire is the one the backward driver runs under.
@@ -2259,8 +2466,14 @@ mod tests {
 
         let budget = request.search_budget();
         assert_eq!(budget.backwards, std::time::Duration::from_millis(250));
-        assert!(budget.each <= budget.backwards, "a candidate may not outlast the search");
-        assert!(budget.forwards <= budget.backwards, "nor may the slice before it");
+        assert!(
+            budget.each <= budget.backwards,
+            "a candidate may not outlast the search"
+        );
+        assert!(
+            budget.forwards <= budget.backwards,
+            "nor may the slice before it"
+        );
     }
 
     /// Zero means "this engine's default" for memory and "the search's own pacing" for time.
@@ -2289,8 +2502,14 @@ mod tests {
         );
 
         // No number of the player's, so every part of the search keeps its own pacing.
-        assert_eq!(request.search_budget().backwards, portfolio::Budget::default().backwards);
-        assert_eq!(request.search_budget().each, portfolio::Budget::default().each);
+        assert_eq!(
+            request.search_budget().backwards,
+            portfolio::Budget::default().backwards
+        );
+        assert_eq!(
+            request.search_budget().each,
+            portfolio::Budget::default().each
+        );
     }
 
     /// A value's wire form is what the other side has to write, so it is pinned here.

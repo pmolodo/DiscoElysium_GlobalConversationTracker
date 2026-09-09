@@ -30,8 +30,7 @@
 use std::collections::HashSet;
 
 use lookahead_engine::bridge::{
-    answer, questions_for, LookAheadAnswer, LookAheadRequest, NodeRef, WireValue,
-    WorldSnapshot,
+    LookAheadAnswer, LookAheadRequest, NodeRef, WireValue, WorldSnapshot, answer, questions_for,
 };
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::service::Service;
@@ -47,17 +46,22 @@ const ROUNDS: usize = 4;
 
 #[test]
 fn a_kept_manager_answers_what_a_fresh_one_answers() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
     let service = Service::open(&path, None).expect("the engine opens over the index");
 
     let mut compared = 0;
     for conversation in GROUPS {
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
-        let Ok(questions) = questions_for(&index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            continue;
+        };
+        let Ok(questions) = questions_for(&index, conversation) else {
+            continue;
+        };
 
-        let mut entries: Vec<NodeRef> =
-            graph.nodes().map(|node| NodeRef::from(node.id)).collect();
+        let mut entries: Vec<NodeRef> = graph.nodes().map(|node| NodeRef::from(node.id)).collect();
         entries.sort_by_key(|node| (node.conversation, node.entry));
         if entries.len() < 8 {
             continue;
@@ -66,10 +70,8 @@ fn a_kept_manager_answers_what_a_fresh_one_answers() {
         for round in 0..ROUNDS {
             // A DIFFERENT WORLD EACH ROUND, and different in what has been seen - which is
             // what the compiler bakes and therefore what a stale workspace would get wrong.
-            let seen: HashSet<NodeRef> =
-                entries.iter().take(round * 3).copied().collect();
-            let unseen: HashSet<NodeRef> =
-                entries.iter().rev().take(4).copied().collect();
+            let seen: HashSet<NodeRef> = entries.iter().take(round * 3).copied().collect();
+            let unseen: HashSet<NodeRef> = entries.iter().rev().take(4).copied().collect();
 
             let world = WorldSnapshot {
                 day_minutes: 720,
@@ -139,13 +141,17 @@ fn a_kept_manager_answers_what_a_fresh_one_answers() {
 /// length to get wrong.
 #[test]
 fn a_world_answering_the_wrong_questions_is_refused_through_a_workspace() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
     let service = Service::open(&path, None).expect("the engine opens over the index");
 
     let mut refused = 0;
     for conversation in GROUPS {
-        let Ok(questions) = questions_for(&index, conversation) else { continue };
+        let Ok(questions) = questions_for(&index, conversation) else {
+            continue;
+        };
 
         // ONE ANSWER TOO FEW, whatever the group asks - and a group that asks for exactly
         // one would make this an empty list, which `place` reads as "not answering
@@ -168,7 +174,10 @@ fn a_world_answering_the_wrong_questions_is_refused_through_a_workspace() {
         };
         let request = LookAheadRequest {
             conversation,
-            starts: vec![NodeRef { conversation, entry: 0 }],
+            starts: vec![NodeRef {
+                conversation,
+                entry: 0,
+            }],
             world,
             ..Default::default()
         };
@@ -215,7 +224,9 @@ fn a_world_answering_the_wrong_questions_is_refused_through_a_workspace() {
 /// the first.
 #[test]
 fn a_workspace_replaced_by_another_group_still_answers_the_first() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
     let service = Service::open(&path, None).expect("the engine opens over the index");
 
@@ -230,7 +241,11 @@ fn a_workspace_replaced_by_another_group_still_answers_the_first() {
                 conversation: *conversation,
                 starts: entries.iter().take(4).copied().collect(),
                 unseen_any_game: entries.iter().rev().take(3).copied().collect(),
-                world: WorldSnapshot { day_minutes: 720, day_counter: 1, ..Default::default() },
+                world: WorldSnapshot {
+                    day_minutes: 720,
+                    day_counter: 1,
+                    ..Default::default()
+                },
                 ..Default::default()
             })
         })
@@ -253,7 +268,11 @@ fn a_workspace_replaced_by_another_group_still_answers_the_first() {
     }
     let again = ask(&requests[0]);
 
-    assert_eq!(first.len(), again.len(), "the same request gave a different shape");
+    assert_eq!(
+        first.len(),
+        again.len(),
+        "the same request gave a different shape"
+    );
     for (before, after) in first.iter().zip(again.iter()) {
         assert!(
             same(before, after),

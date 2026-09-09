@@ -115,7 +115,9 @@ fn main() {
     let mut menus = 0;
 
     for conversation in numbers("CONVERSATION", &CONVERSATIONS) {
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            continue;
+        };
         let root = DialogueNodeId::new(conversation, 0);
         if graph.get(root).is_none() {
             continue;
@@ -166,7 +168,11 @@ fn main() {
         "\n{menus} menu(s): {:.0} ms with the slice, {:.0} ms without, a {} of {:.0} ms.",
         ms(total_on),
         ms(total_off),
-        if total_off > total_on { "saving" } else { "cost" },
+        if total_off > total_on {
+            "saving"
+        } else {
+            "cost"
+        },
         (ms(total_off) - ms(total_on)).abs(),
     );
     println!(
@@ -192,7 +198,11 @@ where
     isolated::on_its_own_thread(|| {
         let symbols = graph.symbols().clone();
         let world = SnapshotWorld::declaring(
-            WorldSnapshot { day_minutes: 720, day_counter: 1, ..Default::default() },
+            WorldSnapshot {
+                day_minutes: 720,
+                day_counter: 1,
+                ..Default::default()
+            },
             None,
         );
         let layout = DataLayout::for_group(graph, &world, COUNTER_CAP);
@@ -223,7 +233,9 @@ where
             // here either - `bridge::scored` refuses when nothing link-reachable beats the
             // baseline. Counting those would put the same free rows in both arms and dilute
             // the difference.
-            let Some(hunting) = graph.best_linked_class(start, novelty) else { continue };
+            let Some(hunting) = graph.best_linked_class(start, novelty) else {
+                continue;
+            };
             if hunting <= Novelty::SeenThisGame {
                 continue;
             }
@@ -247,7 +259,11 @@ where
             asked += answer.targets_asked;
         }
 
-        Some(Arm { took: began.elapsed(), answered, asked })
+        Some(Arm {
+            took: began.elapsed(),
+            answered,
+            asked,
+        })
     })
 }
 
@@ -269,7 +285,9 @@ fn numbers(name: &str, fallback: &[i32]) -> Vec<i32> {
             .map(str::trim)
             .filter(|piece| !piece.is_empty())
             .map(|piece| {
-                piece.parse().unwrap_or_else(|_| panic!("{name}={piece:?} is not a number"))
+                piece
+                    .parse()
+                    .unwrap_or_else(|_| panic!("{name}={piece:?} is not a number"))
             })
             .collect(),
         Err(_) => fallback.to_vec(),

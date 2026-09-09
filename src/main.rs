@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: MIT
+use clap::Parser;
 use std::collections::HashSet;
 use std::path::PathBuf;
-use clap::Parser;
 
-use lookahead_engine::bridge::{
-    answer, LookAheadAnswer, LookAheadRequest, NodeRef, WorldSnapshot,
-};
+use lookahead_engine::bridge::{LookAheadAnswer, LookAheadRequest, NodeRef, WorldSnapshot, answer};
 use lookahead_engine::core::types::DialogueNodeId;
+use lookahead_engine::core::types::StartBranch;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::world::test_world::TestWorld;
-use lookahead_engine::core::types::StartBranch;
 
 #[derive(Parser, Debug)]
 #[command(name = "lookahead-offline")]
@@ -99,7 +97,10 @@ fn node_ref(text: &str) -> anyhow::Result<NodeRef> {
         .split_once(':')
         .ok_or_else(|| anyhow::anyhow!("'{text}' is not a conv:entry pair"))?;
 
-    Ok(NodeRef { conversation: conversation.trim().parse()?, entry: entry.trim().parse()? })
+    Ok(NodeRef {
+        conversation: conversation.trim().parse()?,
+        entry: entry.trim().parse()?,
+    })
 }
 
 /// A novelty as the mod's colours name it, since that is what a fixture is arranging.
@@ -151,7 +152,13 @@ fn branch_destinations(
     let seed = seed_of(graph, world, &vars).expect("room for a seed");
 
     let mut from = Where::of(
-        graph, start, branch, &seed, &mut compiler, world, COUNTER_CAP as u32,
+        graph,
+        start,
+        branch,
+        &seed,
+        &mut compiler,
+        world,
+        COUNTER_CAP as u32,
     );
     from.destinations(graph, &mut compiler, world, COUNTER_CAP as u32)
 }
@@ -165,11 +172,13 @@ fn main() -> anyhow::Result<()> {
     // boundaries, and clipping at the boundary would throw away most of the region a
     // search can actually walk - searching from WHIRLING / LENA INTRO's 511 entries
     // reaches 1,844 nodes across three conversations.
-    let (graph, group) = build_group_graph(&index, args.conversation_id)
-        .map_err(anyhow::Error::msg)?;
+    let (graph, group) =
+        build_group_graph(&index, args.conversation_id).map_err(anyhow::Error::msg)?;
     println!(
         "Built graph: {} nodes, {} slots, over {} conversation(s)",
-        graph.count(), graph.symbols().count(), group.len()
+        graph.count(),
+        graph.symbols().count(),
+        group.len()
     );
 
     // Create world
@@ -183,12 +192,15 @@ fn main() -> anyhow::Result<()> {
         let start = DialogueNodeId::new(args.conversation_id, entry_id);
         for branch in [StartBranch::Pass, StartBranch::Fail] {
             let destinations = branch_destinations(&graph, &world, start, branch);
-            let names: Vec<String> =
-                destinations.iter().map(|id| format!("{}", id)).collect();
+            let names: Vec<String> = destinations.iter().map(|id| format!("{}", id)).collect();
             println!(
                 "{:?} leads to {}",
                 branch,
-                if names.is_empty() { "nowhere".to_string() } else { names.join(", ") }
+                if names.is_empty() {
+                    "nowhere".to_string()
+                } else {
+                    names.join(", ")
+                }
             );
         }
 
@@ -304,11 +316,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     let settled = response.answers.iter().filter(|a| a.complete).count();
-    eprintln!(
-        "{} answer(s), {} settled",
-        response.answers.len(),
-        settled,
-    );
+    eprintln!("{} answer(s), {} settled", response.answers.len(), settled,);
 
     if args.json {
         println!("{}", serde_json::to_string_pretty(&response.answers)?);
@@ -318,9 +326,17 @@ fn main() -> anyhow::Result<()> {
                 "{}:{}{} -> best {}, {}{}",
                 answer.start.conversation,
                 answer.start.entry,
-                answer.branch.as_deref().map(|b| format!(" ({b})")).unwrap_or_default(),
+                answer
+                    .branch
+                    .as_deref()
+                    .map(|b| format!(" ({b})"))
+                    .unwrap_or_default(),
                 answer.best,
-                if answer.complete { "settled" } else { "a lower bound" },
+                if answer.complete {
+                    "settled"
+                } else {
+                    "a lower bound"
+                },
                 answer
                     .witness
                     .map(|w| format!(", proved by {}:{}", w.conversation, w.entry))

@@ -195,7 +195,10 @@ impl Runway {
 
     /// The same, reading the machine on a different cadence.
     pub fn every(reserve: f64, interval: usize) -> Option<Self> {
-        Some(Self { interval: interval.max(1), ..Self::new(reserve)? })
+        Some(Self {
+            interval: interval.max(1),
+            ..Self::new(reserve)?
+        })
     }
 
     /// What the machine said at the last reading, for a caller that wants to report it.
@@ -251,7 +254,10 @@ mod tests {
             return;
         };
 
-        assert!(memory.total > 0, "a machine with no memory is running this test");
+        assert!(
+            memory.total > 0,
+            "a machine with no memory is running this test"
+        );
         assert!(
             memory.available <= memory.total,
             "{} available of {} total",
@@ -268,7 +274,10 @@ mod tests {
 
     #[test]
     fn a_reserve_is_measured_against_the_total_and_not_against_what_is_left() {
-        let machine = SystemMemory { total: 1000, available: 100 };
+        let machine = SystemMemory {
+            total: 1000,
+            available: 100,
+        };
 
         // A twentieth of a thousand is fifty, and there are a hundred: room for forty.
         assert!(!machine.would_dip_below(40, 0.05));
@@ -281,7 +290,10 @@ mod tests {
     /// A reserve bigger than what is free refuses everything, which is how a test arms it.
     #[test]
     fn a_reserve_of_nearly_everything_refuses_even_a_byte() {
-        let machine = SystemMemory { total: 1000, available: 999 };
+        let machine = SystemMemory {
+            total: 1000,
+            available: 999,
+        };
         assert!(machine.would_dip_below(1, 0.999));
     }
 }

@@ -126,7 +126,7 @@ use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
-use lookahead_engine::symbolic::reachability::{seed_of, Budget, Reachability};
+use lookahead_engine::symbolic::reachability::{Budget, Reachability, seed_of};
 use lookahead_engine::symbolic::vars::DataVars;
 
 #[path = "../tests/common/mod.rs"]
@@ -211,7 +211,14 @@ fn main() {
 
     println!(
         "{:>6}  {:>8}  {:>6}  {:>12}  {:>12}  {:>9}  {:>9}  {:>10}  {:>12}",
-        "conv", "entries", "split", "nodes", "cache", "built ms", "search ms", "verdict",
+        "conv",
+        "entries",
+        "split",
+        "nodes",
+        "cache",
+        "built ms",
+        "search ms",
+        "verdict",
         "held nodes",
     );
 
@@ -255,7 +262,10 @@ fn main() {
                         &mut compiler,
                         &world,
                         COUNTER_CAP as u32,
-                        &Budget { time: cap, ..Default::default() },
+                        &Budget {
+                            time: cap,
+                            ..Default::default()
+                        },
                     );
 
                     // READ BEFORE THE MANAGER GOES, and read at all so nothing can be

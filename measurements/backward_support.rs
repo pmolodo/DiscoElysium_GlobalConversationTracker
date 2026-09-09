@@ -26,17 +26,19 @@
 
 use std::collections::HashMap;
 
-use lookahead_engine::core::state::{ITEM_PREFIX, ONCE_PREFIX, SEEN_PREFIX, TASK_PREFIX, THOUGHT_PREFIX};
+use lookahead_engine::core::state::{
+    ITEM_PREFIX, ONCE_PREFIX, SEEN_PREFIX, TASK_PREFIX, THOUGHT_PREFIX,
+};
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::backward::Backward;
+use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::vars::DataVars;
 use oxidd::{BooleanFunctionQuant, Function};
-use lookahead_engine::symbolic::budget::DiagramBudget;
 
 #[path = "../tests/common/mod.rs"]
 mod common;
@@ -50,7 +52,10 @@ const PROBES: usize = 24;
 
 fn conversations(default: &[i32]) -> Vec<i32> {
     match lookahead_engine::core::env::var("CONVERSATION") {
-        Ok(named) => named.split(',').filter_map(|id| id.trim().parse().ok()).collect(),
+        Ok(named) => named
+            .split(',')
+            .filter_map(|id| id.trim().parse().ok())
+            .collect(),
         Err(_) => default.to_vec(),
     }
 }
@@ -92,12 +97,16 @@ fn depths(graph: &LookAheadGraph, start: DialogueNodeId) -> HashMap<DialogueNode
 }
 
 fn main() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
     let world = common::measurement_save();
 
     for conversation in conversations(&EXPENSIVE) {
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            continue;
+        };
         let start = DialogueNodeId::new(conversation, 0);
         if graph.get(start).is_none() {
             continue;
@@ -109,8 +118,10 @@ fn main() {
         // entries are not the expensive ones - probing those on conversation 631 found a
         // worst set of five diagram nodes, against a median of 3,942 over the spread - so
         // "hardest question" and "furthest away" are not the same thing here.
-        let mut ordered: Vec<(usize, DialogueNodeId)> =
-            depths(&graph, start).into_iter().map(|(id, d)| (d, id)).collect();
+        let mut ordered: Vec<(usize, DialogueNodeId)> = depths(&graph, start)
+            .into_iter()
+            .map(|(id, d)| (d, id))
+            .collect();
         ordered.sort_by_key(|(depth, id)| (*depth, id.conversation_id, id.entry_id));
         let step = (ordered.len() / PROBES).max(1);
 
@@ -118,45 +129,49 @@ fn main() {
         // numbers that come back are plain data; the sets they were read off are not, and
         // do not leave.
         let worst = on_its_own_thread(|| {
-        let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
-        let mut compiler = GuardCompiler::new(&vars)
-            .with_world(&world)
-            .with_constant_clock(DataLayout::group_passes_time(&graph));
+            let vars = DataVars::new(&layout, &symbols, DiagramBudget::over_a_group());
+            let mut compiler = GuardCompiler::new(&vars)
+                .with_world(&world)
+                .with_constant_clock(DataLayout::group_passes_time(&graph));
 
-        let mut worst: Option<(usize, DialogueNodeId, Vec<usize>)> = None;
-        for (_, target) in ordered.iter().step_by(step) {
-            let backward =
-                Backward::reaching(&graph, *target, &mut compiler, &world, COUNTER_CAP as u32);
-            let size = backward.stats().largest_set;
-            if worst.as_ref().is_none_or(|(biggest, _, _)| size > *biggest) {
-                // The one entry holding the biggest set, and the slots it constrains.
-                let mut widest: Option<(usize, Vec<usize>)> = None;
-                for id in backward.entries().collect::<Vec<_>>() {
-                    let Some(set) = backward.states_at(id) else { continue };
-                    if set.node_count() < size {
-                        continue;
-                    }
-
-                    let mut constrained = Vec::new();
-                    for slot in 0..layout.slot_count() {
-                        let Some(cube) = vars.slot_cube(slot) else { continue };
-                        // Forgetting a slot the set does not depend on changes nothing,
-                        // and diagrams are canonical, so this is exact.
-                        if set.exists(&cube).is_ok_and(|forgotten| forgotten != *set) {
-                            constrained.push(slot);
+            let mut worst: Option<(usize, DialogueNodeId, Vec<usize>)> = None;
+            for (_, target) in ordered.iter().step_by(step) {
+                let backward =
+                    Backward::reaching(&graph, *target, &mut compiler, &world, COUNTER_CAP as u32);
+                let size = backward.stats().largest_set;
+                if worst.as_ref().is_none_or(|(biggest, _, _)| size > *biggest) {
+                    // The one entry holding the biggest set, and the slots it constrains.
+                    let mut widest: Option<(usize, Vec<usize>)> = None;
+                    for id in backward.entries().collect::<Vec<_>>() {
+                        let Some(set) = backward.states_at(id) else {
+                            continue;
+                        };
+                        if set.node_count() < size {
+                            continue;
                         }
-                    }
-                    widest = Some((set.node_count(), constrained));
-                    break;
-                }
 
-                if let Some((_, constrained)) = widest {
-                    worst = Some((size, *target, constrained));
+                        let mut constrained = Vec::new();
+                        for slot in 0..layout.slot_count() {
+                            let Some(cube) = vars.slot_cube(slot) else {
+                                continue;
+                            };
+                            // Forgetting a slot the set does not depend on changes nothing,
+                            // and diagrams are canonical, so this is exact.
+                            if set.exists(&cube).is_ok_and(|forgotten| forgotten != *set) {
+                                constrained.push(slot);
+                            }
+                        }
+                        widest = Some((set.node_count(), constrained));
+                        break;
+                    }
+
+                    if let Some((_, constrained)) = widest {
+                        worst = Some((size, *target, constrained));
+                    }
                 }
             }
-        }
 
-        worst
+            worst
         });
 
         let Some((size, target, constrained)) = worst else {

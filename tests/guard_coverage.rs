@@ -21,10 +21,10 @@ use std::path::PathBuf;
 
 use lookahead_engine::core::guard::{Guard, GuardExpression, GuardRef};
 use lookahead_engine::index::{build_group_graph, read_index};
+use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::vars::DataVars;
-use lookahead_engine::symbolic::budget::DiagramBudget;
 
 mod common;
 
@@ -96,7 +96,9 @@ fn how_much_of_the_guard_corpus_compiles() {
     let mut measured = 0;
 
     for conversation_id in BIGGEST {
-        let Ok((graph, _)) = build_group_graph(&index, conversation_id) else { continue };
+        let Ok((graph, _)) = build_group_graph(&index, conversation_id) else {
+            continue;
+        };
         // Money and the clock are reached through world queries, which fall back anyway,
         // so they cost no variables here.
         let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false);
@@ -135,7 +137,10 @@ fn how_much_of_the_guard_corpus_compiles() {
         let mut distinct: Vec<&String> = mentioned.iter().collect();
         distinct.sort();
         distinct.dedup();
-        let known = distinct.iter().filter(|n| symbols.find(n).is_some()).count();
+        let known = distinct
+            .iter()
+            .filter(|n| symbols.find(n).is_some())
+            .count();
         println!(
             "       guard variables: {} distinct, {} in the symbol table, {} not",
             distinct.len(),
@@ -152,7 +157,11 @@ fn how_much_of_the_guard_corpus_compiles() {
             guards,
             compiled,
             fallbacks,
-            if total == 0 { 0.0 } else { 100.0 * compiled as f64 / total as f64 },
+            if total == 0 {
+                0.0
+            } else {
+                100.0 * compiled as f64 / total as f64
+            },
             layout.total_vars(),
         );
         println!(
@@ -167,8 +176,11 @@ fn how_much_of_the_guard_corpus_compiles() {
         }
         let mut call_rows: Vec<(&String, &usize)> = calls.iter().collect();
         call_rows.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
-        let shown: Vec<String> =
-            call_rows.iter().take(8).map(|(n, c)| format!("{n} x{c}")).collect();
+        let shown: Vec<String> = call_rows
+            .iter()
+            .take(8)
+            .map(|(n, c)| format!("{n} x{c}"))
+            .collect();
         println!("         world queries: {}", shown.join(", "));
         measured += 1;
     }
@@ -226,7 +238,11 @@ fn how_much_of_the_guard_corpus_parses() {
     println!(
         "{total} entries in the whole index, {empty} with no guard, {with_guard} with one:\n  \
          {parsed} parsed, {failures} failed ({:.2}% of those with a guard)",
-        if with_guard == 0 { 0.0 } else { 100.0 * failures as f64 / with_guard as f64 }
+        if with_guard == 0 {
+            0.0
+        } else {
+            100.0 * failures as f64 / with_guard as f64
+        }
     );
 
     if !failed_examples.is_empty() {

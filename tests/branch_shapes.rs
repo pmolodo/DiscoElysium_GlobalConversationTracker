@@ -30,9 +30,7 @@
 
 use std::collections::HashSet;
 
-use lookahead_engine::bridge::{
-    answer, LookAheadAnswer, LookAheadRequest, NodeRef, WorldSnapshot,
-};
+use lookahead_engine::bridge::{LookAheadAnswer, LookAheadRequest, NodeRef, WorldSnapshot, answer};
 use lookahead_engine::index::{build_group_graph, read_index};
 use serde::Deserialize;
 
@@ -207,7 +205,10 @@ fn every_shape_the_suites_arrange_is_reached_offline() {
 /// ONE CHECK AT A TIME because the graph is the expensive part and it is per check, not
 /// per row: the group is built once here and every row of the check is answered over it.
 fn disagreements(index: &lookahead_engine::index::Index, check: &Check) -> Vec<String> {
-    let start = NodeRef { conversation: check.conversation, entry: check.entry };
+    let start = NodeRef {
+        conversation: check.conversation,
+        entry: check.entry,
+    };
     let (graph, group) = build_group_graph(index, check.conversation)
         .unwrap_or_else(|error| panic!("{}'s group builds: {error}", check.what));
     let everything: Vec<NodeRef> = graph.nodes().map(|node| NodeRef::from(node.id)).collect();
@@ -252,12 +253,21 @@ fn disagreements(index: &lookahead_engine::index::Index, check: &Check) -> Vec<S
                 .filter(|node| rung_of(node) == 1)
                 .collect(),
             state_budget: row.state_budget,
-            world: WorldSnapshot { day_minutes: 720, day_counter: 1, ..Default::default() },
+            world: WorldSnapshot {
+                day_minutes: 720,
+                day_counter: 1,
+                ..Default::default()
+            },
             ..Default::default()
         };
 
         let response = answer(index, None, &request);
-        assert!(response.error.is_none(), "{}: {:?}", row.suite, response.error);
+        assert!(
+            response.error.is_none(),
+            "{}: {:?}",
+            row.suite,
+            response.error
+        );
 
         // TWO ANSWERS, ONE PER OUTCOME. A check is two options wearing one line of
         // text, and since de-8hh2.6 the engine says so directly rather than nesting a
@@ -360,8 +370,11 @@ fn every_half_covers_what_its_check_claims() {
                 ),
             };
 
-            let missing: Vec<&str> =
-                wanted.iter().copied().filter(|shape| !seen.contains(*shape)).collect();
+            let missing: Vec<&str> = wanted
+                .iter()
+                .copied()
+                .filter(|shape| !seen.contains(*shape))
+                .collect();
             assert!(
                 missing.is_empty(),
                 "on {}, no fixture puts these on the {name} half: {}",

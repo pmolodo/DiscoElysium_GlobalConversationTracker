@@ -75,7 +75,9 @@ impl MenuProfile {
     }
 
     /// The novelty function this profile describes.
-    pub fn novelty(&self) -> impl Fn(DialogueNodeId) -> lookahead_engine::core::types::Novelty + '_ {
+    pub fn novelty(
+        &self,
+    ) -> impl Fn(DialogueNodeId) -> lookahead_engine::core::types::Novelty + '_ {
         use lookahead_engine::core::types::Novelty;
         move |id| {
             if self.unseen.contains(&id) {
@@ -112,16 +114,17 @@ fn deepest_first(graph: &LookAheadGraph, start: DialogueNodeId) -> Vec<DialogueN
     // DETERMINISTIC, so two arms of a comparison rank the same entries the same way.
     // DialogueNodeId is not Ord, so the tie-break is spelled out from its parts.
     ranked.sort_unstable_by_key(|id| {
-        (std::cmp::Reverse(depth[id]), id.conversation_id, id.entry_id)
+        (
+            std::cmp::Reverse(depth[id]),
+            id.conversation_id,
+            id.entry_id,
+        )
     });
     ranked
 }
 
 /// Every entry from which some member of `unseen` is link-reachable.
-fn can_reach(
-    graph: &LookAheadGraph,
-    unseen: &HashSet<DialogueNodeId>,
-) -> HashSet<DialogueNodeId> {
+fn can_reach(graph: &LookAheadGraph, unseen: &HashSet<DialogueNodeId>) -> HashSet<DialogueNodeId> {
     let mut parents: HashMap<DialogueNodeId, Vec<DialogueNodeId>> = HashMap::new();
     for node in graph.nodes() {
         for &child in &node.links {

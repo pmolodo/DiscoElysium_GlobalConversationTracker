@@ -118,11 +118,24 @@ fn main() {
 
         // Only slots the layout actually carries; a width of zero is one already trimmed.
         let carried: Vec<usize> = (0..symbols.count())
-            .filter(|slot| layout.slot(*slot).map(|(_, bits)| bits > 0).unwrap_or(false))
+            .filter(|slot| {
+                layout
+                    .slot(*slot)
+                    .map(|(_, bits)| bits > 0)
+                    .unwrap_or(false)
+            })
             .collect();
         let width: HashMap<usize, usize> = carried
             .iter()
-            .map(|slot| (*slot, layout.slot(*slot).map(|(_, bits)| bits as usize).unwrap_or(0)))
+            .map(|slot| {
+                (
+                    *slot,
+                    layout
+                        .slot(*slot)
+                        .map(|(_, bits)| bits as usize)
+                        .unwrap_or(0),
+                )
+            })
             .collect();
         let total_vars: usize = width.values().sum();
 
@@ -142,7 +155,9 @@ fn main() {
 
             let mut killed = HashSet::new();
             for action in &node.actions {
-                let Ok(slot) = usize::try_from(action.slot()) else { continue };
+                let Ok(slot) = usize::try_from(action.slot()) else {
+                    continue;
+                };
                 if !width.contains_key(&slot) {
                     continue;
                 }
@@ -161,7 +176,12 @@ fn main() {
             }
 
             // The engine's own writes are assignments of 1.
-            for slot in [node.flag_slot, node.failed_flag_slot, node.seen_slot, node.once_slot] {
+            for slot in [
+                node.flag_slot,
+                node.failed_flag_slot,
+                node.seen_slot,
+                node.once_slot,
+            ] {
                 if let Ok(slot) = usize::try_from(slot) {
                     if width.contains_key(&slot) {
                         killed.insert(slot);
@@ -175,8 +195,10 @@ fn main() {
 
         // Backward to a fixed point. The graph is cyclic, so this iterates rather than
         // walking a topological order; sets only grow, so it terminates.
-        let mut live: HashMap<DialogueNodeId, HashSet<usize>> =
-            graph.nodes().map(|node| (node.id, HashSet::new())).collect();
+        let mut live: HashMap<DialogueNodeId, HashSet<usize>> = graph
+            .nodes()
+            .map(|node| (node.id, HashSet::new()))
+            .collect();
         let mut changed = true;
         let mut rounds = 0usize;
         while changed {

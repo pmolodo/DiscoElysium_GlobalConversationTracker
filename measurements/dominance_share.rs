@@ -130,7 +130,7 @@ use lookahead_engine::core::types::{DialogueNodeId, Novelty};
 use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, discover_group, read_index};
 use lookahead_engine::symbolic::dominators::Dominators;
-use lookahead_engine::symbolic::novelty_search::{candidates_from, Nearest};
+use lookahead_engine::symbolic::novelty_search::{Nearest, candidates_from};
 use lookahead_engine::symbolic::order::IterationOrder;
 
 #[path = "../tests/common/mod.rs"]
@@ -182,7 +182,10 @@ fn main() {
 fn rows(index: &lookahead_engine::index::Index) {
     let groups = env_list("CONVERSATION", &GROUPS);
     let percents: Vec<u32> = match lookahead_engine::core::env::var("PROFILES") {
-        Ok(value) => value.split(',').filter_map(|p| p.trim().parse().ok()).collect(),
+        Ok(value) => value
+            .split(',')
+            .filter_map(|p| p.trim().parse().ok())
+            .collect(),
         Err(_) => PERCENTS.to_vec(),
     };
 
@@ -191,7 +194,9 @@ fn rows(index: &lookahead_engine::index::Index) {
 
     let mut totals = Totals::default();
     for conversation in groups {
-        let Ok((graph, _)) = build_group_graph(index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(index, conversation) else {
+            continue;
+        };
         let start = DialogueNodeId::new(conversation, 0);
         if graph.get(start).is_none() {
             continue;
@@ -203,7 +208,12 @@ fn rows(index: &lookahead_engine::index::Index) {
             let unseen = percent_unseen(&profile_pool, percent);
             let counted = count(&graph, &[start], &unseen);
             totals.add(&counted);
-            row(&format!("{conversation}"), &format!("{percent}pc-seen"), &counted, &shape);
+            row(
+                &format!("{conversation}"),
+                &format!("{percent}pc-seen"),
+                &counted,
+                &shape,
+            );
         }
     }
 
@@ -227,7 +237,9 @@ fn menu(index: &lookahead_engine::index::Index) {
 
     let mut totals = Totals::default();
     for conversation in groups {
-        let Ok((graph, _)) = build_group_graph(index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(index, conversation) else {
+            continue;
+        };
         let root = DialogueNodeId::new(conversation, 0);
         if graph.get(root).is_none() {
             continue;
@@ -242,7 +254,12 @@ fn menu(index: &lookahead_engine::index::Index) {
             let counted = count(&graph, &[start], &profile.unseen);
             group.add(&counted);
             totals.add(&counted);
-            row(&format!("{conversation}"), &format!("option {}", option + 1), &counted, &shape);
+            row(
+                &format!("{conversation}"),
+                &format!("option {}", option + 1),
+                &counted,
+                &shape,
+            );
         }
         group.report(&format!("conversation {conversation}"));
         println!();
@@ -284,7 +301,9 @@ fn all(index: &lookahead_engine::index::Index) {
     let mut best: Vec<(i32, u32, Counted, Shape)> = Vec::new();
 
     for conversation in starts {
-        let Ok((graph, _)) = build_group_graph(index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(index, conversation) else {
+            continue;
+        };
         let start = DialogueNodeId::new(conversation, 0);
         if graph.get(start).is_none() {
             continue;
@@ -320,7 +339,12 @@ fn all(index: &lookahead_engine::index::Index) {
         println!("THE ROWS THAT COLLECT THE MOST, at most twenty:\n");
         header();
         for (conversation, percent, counted, shape) in best.iter().take(20) {
-            row(&format!("{conversation}"), &format!("{percent}pc-seen"), counted, shape);
+            row(
+                &format!("{conversation}"),
+                &format!("{percent}pc-seen"),
+                counted,
+                shape,
+            );
         }
         println!();
     }
@@ -355,7 +379,10 @@ impl Shape {
             .max()
             .unwrap_or(0);
         let order = IterationOrder::of(graph);
-        Self { reachable, largest_component: order.largest_component() }
+        Self {
+            reachable,
+            largest_component: order.largest_component(),
+        }
     }
 
     /// The share of the group inside its largest strongly connected component, where
@@ -393,7 +420,10 @@ fn count(
 
     let in_list: HashSet<DialogueNodeId> = ordered.iter().copied().collect();
     let mut asked: HashSet<DialogueNodeId> = HashSet::new();
-    let mut counted = Counted { candidates: ordered.len(), ..Default::default() };
+    let mut counted = Counted {
+        candidates: ordered.len(),
+        ..Default::default()
+    };
 
     for &target in &ordered {
         let mut has_dominator = false;
@@ -511,12 +541,18 @@ fn share(part: usize, whole: usize) -> String {
 }
 
 fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name).ok().and_then(|value| value.parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(fallback)
 }
 
 fn env_list(name: &str, fallback: &[i32]) -> Vec<i32> {
     match lookahead_engine::core::env::var(name) {
-        Ok(value) => value.split(',').filter_map(|c| c.trim().parse().ok()).collect(),
+        Ok(value) => value
+            .split(',')
+            .filter_map(|c| c.trim().parse().ok())
+            .collect(),
         Err(_) => fallback.to_vec(),
     }
 }
@@ -549,7 +585,9 @@ fn verify(index: &lookahead_engine::index::Index) {
     let mut checked = 0usize;
     let mut wrong = 0usize;
     for conversation in groups {
-        let Ok((graph, _)) = build_group_graph(index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(index, conversation) else {
+            continue;
+        };
         let start = DialogueNodeId::new(conversation, 0);
         if graph.get(start).is_none() {
             continue;

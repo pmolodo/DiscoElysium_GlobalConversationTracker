@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 
-pub mod env;
-pub mod types;
-pub mod guard_value;
-pub mod state;
 pub mod action;
-pub mod guard;
 pub mod clock;
+pub mod env;
+pub mod guard;
+pub mod guard_value;
 pub mod modelling;
 pub mod passive_check;
+pub mod state;
+pub mod types;
 
 /// What the MACHINE has left, which is a different question from what a budget allows.
 ///
@@ -44,13 +44,16 @@ mod tests {
 
     #[test]
     fn test_ternary() {
-        use types::{Ternary, ternary_not, ternary_and, ternary_or};
+        use types::{Ternary, ternary_and, ternary_not, ternary_or};
         assert!(Ternary::True.can_pass());
         assert!(!Ternary::False.can_pass());
         assert!(Ternary::Unknown.can_pass());
         assert_eq!(ternary_not(Ternary::True), Ternary::False);
         assert_eq!(ternary_and(Ternary::True, Ternary::False), Ternary::False);
-        assert_eq!(ternary_or(Ternary::False, Ternary::Unknown), Ternary::Unknown);
+        assert_eq!(
+            ternary_or(Ternary::False, Ternary::Unknown),
+            Ternary::Unknown
+        );
     }
 
     #[test]
@@ -111,7 +114,7 @@ mod tests {
     fn test_clock_time() {
         use clock::ClockTime;
         assert_eq!(ClockTime::hours_of(720), 12); // noon
-        assert_eq!(ClockTime::hours_of(0), 0);    // midnight
+        assert_eq!(ClockTime::hours_of(0), 0); // midnight
         assert_eq!(ClockTime::advance(720), 735); // +15 min
         assert_eq!(ClockTime::advance(1439), 14); // wrap at midnight
     }

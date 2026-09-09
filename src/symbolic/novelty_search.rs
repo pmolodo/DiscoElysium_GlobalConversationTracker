@@ -33,8 +33,8 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use oxidd::bdd::BDDFunction;
 use oxidd::BooleanFunction;
+use oxidd::bdd::BDDFunction;
 
 use crate::core::types::{DialogueNodeId, Novelty, StartBranch};
 use crate::graph::graph::LookAheadGraph;
@@ -249,23 +249,35 @@ impl Where {
         counter_cap: u32,
     ) -> Self {
         if branch == StartBranch::Either {
-            return Self { at: vec![start], holding: seed.clone(), out_of_nodes: false };
+            return Self {
+                at: vec![start],
+                holding: seed.clone(),
+                out_of_nodes: false,
+            };
         }
 
-        let Some(holding) = Reachability::entry_states(
-            graph, start, branch, seed, compiler, world, counter_cap,
-        ) else {
+        let Some(holding) =
+            Reachability::entry_states(graph, start, branch, seed, compiler, world, counter_cap)
+        else {
             // NO ENTRIES, so nothing can be asked from here even by a caller that ignores
             // the flag. The set is the seed only because the field needs one; it is not an
             // answer, and `out_of_nodes` is what says so.
-            return Self { at: Vec::new(), holding: seed.clone(), out_of_nodes: true };
+            return Self {
+                at: Vec::new(),
+                holding: seed.clone(),
+                out_of_nodes: true,
+            };
         };
         let at = graph
             .get(start)
             .map(|node| node.links.clone())
             .unwrap_or_default();
 
-        Self { at, holding, out_of_nodes: false }
+        Self {
+            at,
+            holding,
+            out_of_nodes: false,
+        }
     }
 
     /// Whether working out where this search begins ran the manager out of nodes.
@@ -315,7 +327,13 @@ impl Where {
         while let Some((id, arriving)) = pending.pop_front() {
             let Some(node) = graph.get(id) else { continue };
             let Some(entered) = Reachability::entry_states(
-                graph, id, StartBranch::Either, &arriving, compiler, world, counter_cap,
+                graph,
+                id,
+                StartBranch::Either,
+                &arriving,
+                compiler,
+                world,
+                counter_cap,
             ) else {
                 self.out_of_nodes = true;
                 return Vec::new();
@@ -349,7 +367,9 @@ impl Where {
     /// one are read by the same line. The sets are the same sets; only who paid for them
     /// differs, and this is the place where that must not matter.
     fn reaches<P: SettledPass + ?Sized>(&self, pass: &P) -> bool {
-        self.at.iter().any(|id| pass.reachable_from(*id, &self.holding))
+        self.at
+            .iter()
+            .any(|id| pass.reachable_from(*id, &self.holding))
     }
 
     /// What an earlier search may treat as already known, for the meet.
@@ -388,8 +408,18 @@ where
     F: Fn(DialogueNodeId) -> Novelty,
 {
     search(
-        graph, start, branch, seed, compiler, world, counter_cap, novelty, budget, known,
-        memo, None,
+        graph,
+        start,
+        branch,
+        seed,
+        compiler,
+        world,
+        counter_cap,
+        novelty,
+        budget,
+        known,
+        memo,
+        None,
     )
 }
 
@@ -442,8 +472,18 @@ where
     F: Fn(DialogueNodeId) -> Novelty,
 {
     search(
-        graph, start, branch, seed, compiler, world, counter_cap, novelty, budget, known,
-        memo, Some(census),
+        graph,
+        start,
+        branch,
+        seed,
+        compiler,
+        world,
+        counter_cap,
+        novelty,
+        budget,
+        known,
+        memo,
+        Some(census),
     )
 }
 
@@ -526,7 +566,11 @@ where
     // came for, and what it came for is the DEEPEST of them, so taking the near end first
     // would leave it holding the shallowest instead. A look-ahead has no cap on findings and
     // wants its cheapest proof first.
-    let nearest = if every.is_some() { Nearest::Last } else { Nearest::First };
+    let nearest = if every.is_some() {
+        Nearest::Last
+    } else {
+        Nearest::First
+    };
     let starts = from.nodes();
     let ordered = candidates_from(graph, &starts, &novelty, nearest);
 
@@ -569,7 +613,10 @@ where
         // ALREADY ANSWERED BY THE RUN THIS ONE IS CONTINUING, so it is not asked again -
         // before the budget checks, because a candidate that costs nothing should not be
         // able to end the search by exhausting a ration it never spends.
-        if every.as_ref().is_some_and(|census| (census.settled)(target)) {
+        if every
+            .as_ref()
+            .is_some_and(|census| (census.settled)(target))
+        {
             continue;
         }
 
@@ -630,7 +677,13 @@ where
                 let mut each = budget.each.clone();
                 each.time = each.time.min(left);
                 let backward = Backward::reaching_knowing(
-                    graph, target, compiler, world, counter_cap, &each, known,
+                    graph,
+                    target,
+                    compiler,
+                    world,
+                    counter_cap,
+                    &each,
+                    known,
                 );
                 // OFFERED RATHER THAN STORED. The memo takes it only if it settled, did not
                 // meet, was not narrowed and did not run out of room - see its module note,
@@ -655,7 +708,9 @@ where
         // keeping it, so both of these read as the answer for a hit rather than as
         // assumptions about one.
         let met = ran.as_ref().and_then(|backward| backward.stats().met_at);
-        let settled = ran.as_ref().is_none_or(|backward| backward.stats().reached_fixed_point);
+        let settled = ran
+            .as_ref()
+            .is_none_or(|backward| backward.stats().reached_fixed_point);
 
         // TWO WAYS TO PROVE IT, and the cheap one is asked first. A meet is a proof that
         // stopped the pass early - a state an earlier search can hold at some entry is one
@@ -689,8 +744,9 @@ where
             // remaining answer for the sake of one it could not give.
             if every.is_none() {
                 answer.stopped_by = StoppedBy::Incomplete;
-                answer.out_of_nodes =
-                    ran.as_ref().is_some_and(|backward| backward.stats().out_of_memory);
+                answer.out_of_nodes = ran
+                    .as_ref()
+                    .is_some_and(|backward| backward.stats().out_of_memory);
                 break;
             }
             None
@@ -777,7 +833,7 @@ mod tests {
     use crate::symbolic::data_layout::DataLayout;
     use crate::symbolic::reachability::seed_of;
     use crate::symbolic::vars::DataVars;
-    use crate::test_graph::{node, Entry, GraphBuilder};
+    use crate::test_graph::{Entry, GraphBuilder, node};
     use crate::world::test_world::TestWorld;
 
     const CAP: i32 = 16;
@@ -853,8 +909,17 @@ mod tests {
     /// 0 is a white check: passing opens 1 with 2 beyond it, failing opens 3.
     fn rolled_check() -> LookAheadGraph {
         GraphBuilder::new()
-            .add(Entry::new(0).kind(DialogueCheckKind::White).flag("roll").links(&[1, 3]))
-            .add(Entry::new(1).guard(r#"Variable["roll"] == true"#).links(&[2]))
+            .add(
+                Entry::new(0)
+                    .kind(DialogueCheckKind::White)
+                    .flag("roll")
+                    .links(&[1, 3]),
+            )
+            .add(
+                Entry::new(1)
+                    .guard(r#"Variable["roll"] == true"#)
+                    .links(&[2]),
+            )
             .add(Entry::new(2))
             .add(Entry::new(3).guard(r#"Variable["roll"] == false"#))
             .build()
@@ -911,7 +976,11 @@ mod tests {
         assert_eq!(passing, vec![node(2)], "3 is the failing half's business");
 
         let failing = candidates_from(&graph, &[node(3)], &unseen, Nearest::First);
-        assert_eq!(failing, vec![node(3)], "and its own destination is a candidate");
+        assert_eq!(
+            failing,
+            vec![node(3)],
+            "and its own destination is a candidate"
+        );
     }
 
     /// THE START IS A CANDIDATE, at distance zero, whether or not a link leads back to it.
@@ -929,7 +998,11 @@ mod tests {
         let novelty = novel(&[0], Novelty::UnseenAnyGame);
         let ordered = candidates(&graph, node(0), &novelty);
 
-        assert_eq!(ordered, vec![node(0)], "the start, and nothing else is unseen");
+        assert_eq!(
+            ordered,
+            vec![node(0)],
+            "the start, and nothing else is unseen"
+        );
     }
 
     /// And it sorts FIRST within its class, being the one that needs no walking at all.
@@ -983,7 +1056,11 @@ mod tests {
             .add(Entry::new(2))
             .build();
 
-        let answer = search(&graph, &TestWorld::new(), novel(&[2], Novelty::UnseenAnyGame));
+        let answer = search(
+            &graph,
+            &TestWorld::new(),
+            novel(&[2], Novelty::UnseenAnyGame),
+        );
         assert_eq!(answer.best, Novelty::UnseenAnyGame);
         assert_eq!(answer.witness, Some(node(2)));
     }
@@ -1011,7 +1088,11 @@ mod tests {
 
         let answer = search(&graph, &TestWorld::new(), novelty);
         assert_eq!(answer.best, Novelty::UnseenAnyGame);
-        assert_eq!(answer.witness, Some(node(4)), "the near worse candidate won");
+        assert_eq!(
+            answer.witness,
+            Some(node(4)),
+            "the near worse candidate won"
+        );
         // And it never had to ask about the near one: the better class is exhausted first.
         assert_eq!(answer.targets_asked, 1);
     }
@@ -1039,7 +1120,11 @@ mod tests {
             answer.targets_asked, 1,
             "1 dominates 2 and 3, so refusing it should have answered for both",
         );
-        assert_eq!(answer.stopped_by, StoppedBy::Nothing, "it ran out of candidates, not budget");
+        assert_eq!(
+            answer.stopped_by,
+            StoppedBy::Nothing,
+            "it ran out of candidates, not budget"
+        );
     }
 
     /// And it must NOT fire where the entry is reachable another way.
@@ -1097,7 +1182,10 @@ mod tests {
                 time: std::time::Duration::from_secs(5),
                 // NO STEPS AT ALL, so no pass can reach a fixed point. That is the state a
                 // refusal must not be inferred from.
-                each: crate::symbolic::backward::Budget { steps: 0, ..Default::default() },
+                each: crate::symbolic::backward::Budget {
+                    steps: 0,
+                    ..Default::default()
+                },
             },
             None,
             None,
@@ -1108,7 +1196,11 @@ mod tests {
             StoppedBy::Incomplete,
             "an unsettled pass is not a refusal and must stop the search",
         );
-        assert_eq!(answer.best, Novelty::SeenThisGame, "and it establishes nothing");
+        assert_eq!(
+            answer.best,
+            Novelty::SeenThisGame,
+            "and it establishes nothing"
+        );
     }
 
     /// The worse class is only reached once the better one is refused entirely.
@@ -1131,7 +1223,10 @@ mod tests {
         let answer = search(&graph, &world, novelty);
         assert_eq!(answer.best, Novelty::UnseenThisGame);
         assert_eq!(answer.witness, Some(node(2)));
-        assert_eq!(answer.targets_asked, 2, "the shut candidate had to be asked first");
+        assert_eq!(
+            answer.targets_asked, 2,
+            "the shut candidate had to be asked first"
+        );
     }
 
     /// Early exit: a search that settles without asking about everything.
@@ -1152,7 +1247,10 @@ mod tests {
         );
         assert_eq!(answer.best, Novelty::UnseenAnyGame);
         assert_eq!(answer.candidates, 4);
-        assert_eq!(answer.targets_asked, 1, "the nearest witness should have ended it");
+        assert_eq!(
+            answer.targets_asked, 1,
+            "the nearest witness should have ended it"
+        );
         assert_eq!(answer.witness, Some(node(1)));
     }
 
@@ -1233,7 +1331,10 @@ mod tests {
         for (name, graph, world, unseen) in fixtures {
             let novelty = novel(&unseen, Novelty::UnseenAnyGame);
             let walk = crate::oracle::walk(&graph, node(0), world, CAP);
-            assert!(!walk.exhausted(), "{name}: the fixture should be exhaustible");
+            assert!(
+                !walk.exhausted(),
+                "{name}: the fixture should be exhaustible"
+            );
             let expected = walk.best_novelty(&novelty);
             let answer = search(&graph, world, &novelty);
 
@@ -1255,7 +1356,11 @@ mod tests {
             .add(Entry::new(2))
             .build();
 
-        let answer = search(&graph, &TestWorld::new(), novel(&[1], Novelty::UnseenAnyGame));
+        let answer = search(
+            &graph,
+            &TestWorld::new(),
+            novel(&[1], Novelty::UnseenAnyGame),
+        );
         assert_eq!(answer.best, Novelty::SeenThisGame);
         assert_eq!(answer.candidates, 0);
     }

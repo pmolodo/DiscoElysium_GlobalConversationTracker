@@ -36,7 +36,9 @@ fn variables_of(guard: &Guard, out: &mut HashSet<String>) {
 
 #[test]
 fn is_any_xp_flag_both_written_and_read_inside_one_group() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
 
     // The whole database first, which is the loosest possible test: if a name is never
@@ -92,7 +94,9 @@ fn is_any_xp_flag_both_written_and_read_inside_one_group() {
             continue;
         }
 
-        let Ok((graph, _)) = build_group_graph(&index, start) else { continue };
+        let Ok((graph, _)) = build_group_graph(&index, start) else {
+            continue;
+        };
         let symbols = graph.symbols();
 
         // Written: an action assigns a slot whose name is an XP flag.
@@ -132,7 +136,11 @@ fn is_any_xp_flag_both_written_and_read_inside_one_group() {
             written.len(),
             read.len(),
             overlap.len(),
-            if overlap.is_empty() { "" } else { " <-- the slot earns its place" },
+            if overlap.is_empty() {
+                ""
+            } else {
+                " <-- the slot earns its place"
+            },
         );
         for name in overlap.iter().take(6) {
             println!("            {name}");
@@ -151,5 +159,8 @@ fn is_any_xp_flag_both_written_and_read_inside_one_group() {
     // Deliberately no assertion on the verdict. This is a question about the shipped
     // content, and the answer is allowed to change when the content does; a test that
     // failed on a rewrite of the database would be reporting the wrong thing.
-    assert!(!written_anywhere.is_empty(), "no XP flags found at all - the corpus is wrong");
+    assert!(
+        !written_anywhere.is_empty(),
+        "no XP flags found at all - the corpus is wrong"
+    );
 }

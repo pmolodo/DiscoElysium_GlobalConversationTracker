@@ -202,7 +202,14 @@ impl<'a> Backward<'a> {
         world: &dyn ILookAheadWorld,
         counter_cap: u32,
     ) -> Self {
-        Self::reaching_within(graph, target, compiler, world, counter_cap, &Budget::default())
+        Self::reaching_within(
+            graph,
+            target,
+            compiler,
+            world,
+            counter_cap,
+            &Budget::default(),
+        )
     }
 
     /// The same, under a budget.
@@ -348,7 +355,12 @@ impl<'a> Backward<'a> {
             if let Some(report) = &budget.on_progress {
                 if !budget.report_gap.is_zero() && last_report.elapsed() >= budget.report_gap {
                     last_report = std::time::Instant::now();
-                    report(this.stats.steps, this.sets.len(), queue.len(), vars.node_count());
+                    report(
+                        this.stats.steps,
+                        this.sets.len(),
+                        queue.len(),
+                        vars.node_count(),
+                    );
                 }
             }
 
@@ -357,7 +369,9 @@ impl<'a> Backward<'a> {
                     continue;
                 }
 
-                let Some(node) = graph.get(parent) else { continue };
+                let Some(node) = graph.get(parent) else {
+                    continue;
+                };
                 // Entering the parent has to leave the search somewhere that can go on to
                 // reach the target through this child.
                 let before = this.pre_enter(node, &delta, compiler, world, &mut image);
@@ -436,7 +450,11 @@ impl<'a> Backward<'a> {
             return None;
         }
 
-        let known = self.sets.get(&node).cloned().unwrap_or_else(|| self.vars.bottom());
+        let known = self
+            .sets
+            .get(&node)
+            .cloned()
+            .unwrap_or_else(|| self.vars.bottom());
         // Diagrams are canonical for a fixed variable order, so an empty difference is
         // exactly "nothing changed" - no membership test and no approximation in it.
         let (Ok(complement), Ok(())) = (known.not(), Ok::<(), ()>(())) else {
@@ -795,9 +813,7 @@ impl<'a> Backward<'a> {
     }
 
     /// Every entry's incoming links, which is the edge direction this search walks.
-    fn parents_of(
-        graph: &LookAheadGraph,
-    ) -> HashMap<DialogueNodeId, Vec<DialogueNodeId>> {
+    fn parents_of(graph: &LookAheadGraph) -> HashMap<DialogueNodeId, Vec<DialogueNodeId>> {
         let mut parents: HashMap<DialogueNodeId, Vec<DialogueNodeId>> = HashMap::new();
         for node in graph.nodes() {
             for &child in &node.links {
@@ -828,8 +844,12 @@ impl<'a> Backward<'a> {
     fn finish(&mut self) {
         self.stats.entries_reaching = self.sets.len();
         self.stats.diagram_nodes = self.sets.values().map(|s| s.node_count()).sum();
-        self.stats.largest_set =
-            self.sets.values().map(|s| s.node_count()).max().unwrap_or(0);
+        self.stats.largest_set = self
+            .sets
+            .values()
+            .map(|s| s.node_count())
+            .max()
+            .unwrap_or(0);
     }
 
     /// The states from which ENTERING `node` goes on to reach the target.
@@ -861,7 +881,10 @@ impl SettledPass for Backward<'_> {
             // An `Err` here is the manager out of room, and answering "not reachable" on
             // it would be the one wrong direction. Say reachable and let the caller read
             // `out_of_memory`.
-            Some(set) => set.and(states).map(|both| both.satisfiable()).unwrap_or(true),
+            Some(set) => set
+                .and(states)
+                .map(|both| both.satisfiable())
+                .unwrap_or(true),
             None => false,
         }
     }
@@ -874,8 +897,8 @@ mod tests {
 
     use crate::core::guard_value::GuardValue;
     use crate::symbolic::data_layout::DataLayout;
-    use crate::symbolic::reachability::{seed_of, Reachability};
-    use crate::test_graph::{node, Entry, GraphBuilder};
+    use crate::symbolic::reachability::{Reachability, seed_of};
+    use crate::test_graph::{Entry, GraphBuilder, node};
     use crate::world::test_world::TestWorld;
 
     const CAP: i32 = 16;
@@ -886,11 +909,7 @@ mod tests {
     /// Asked together on purpose. The backward answer alone proves nothing - a pre-image
     /// that dropped every state would answer "no" to everything and look tidy doing it -
     /// so every case here checks it against the search that is already trusted.
-    fn both(
-        entries: Vec<Entry>,
-        world: &TestWorld,
-        target: i32,
-    ) -> (bool, bool) {
+    fn both(entries: Vec<Entry>, world: &TestWorld, target: i32) -> (bool, bool) {
         let mut builder = GraphBuilder::new();
         for entry in entries {
             builder = builder.add(entry);
@@ -916,9 +935,7 @@ mod tests {
         let start = node(0);
         let target = node(target);
 
-        let forward = Reachability::explore(
-            &graph, start, &seed, &mut compiler, world, CAP as u32,
-        );
+        let forward = Reachability::explore(&graph, start, &seed, &mut compiler, world, CAP as u32);
         let reached = forward
             .states_at(target)
             .is_some_and(|states| states.satisfiable());
@@ -986,7 +1003,9 @@ mod tests {
         agree(
             vec![
                 Entry::new(0).links(&[1]),
-                Entry::new(1).script(r#"SetVariableValue("opened", true)"#).links(&[2]),
+                Entry::new(1)
+                    .script(r#"SetVariableValue("opened", true)"#)
+                    .links(&[2]),
                 Entry::new(2).guard(r#"Variable["opened"]"#).links(&[3]),
                 Entry::new(3),
             ],
@@ -1082,12 +1101,17 @@ mod tests {
         let layout = DataLayout::for_graph(&graph, CAP, None, false);
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
-        let backward =
-            Backward::reaching(&graph, node(3), &mut compiler, &world, CAP as u32);
+        let backward = Backward::reaching(&graph, node(3), &mut compiler, &world, CAP as u32);
 
-        let entering = backward.states_at(node(1)).expect("entry 1 can reach the target");
+        let entering = backward
+            .states_at(node(1))
+            .expect("entry 1 can reach the target");
         let once = symbols
-            .find(&format!("once:{}:{}", node(1).conversation_id, node(1).entry_id))
+            .find(&format!(
+                "once:{}:{}",
+                node(1).conversation_id,
+                node(1).entry_id
+            ))
             .expect("a once action interns a once slot");
         let count = symbols.find("count").expect("the counter is interned");
 
@@ -1161,7 +1185,9 @@ mod tests {
                     .kind(DialogueCheckKind::White)
                     .flag("check.jump")
                     .links(&[2]),
-                Entry::new(2).guard(r#"Variable["check.jump_failed"]"#).links(&[3]),
+                Entry::new(2)
+                    .guard(r#"Variable["check.jump_failed"]"#)
+                    .links(&[3]),
                 Entry::new(3),
             ],
             &TestWorld::new(),
@@ -1174,7 +1200,12 @@ mod tests {
     /// IS the target reaches it with no steps at all.
     #[test]
     fn a_start_that_is_the_target_reaches_it() {
-        agree(vec![Entry::new(0).links(&[1]), Entry::new(1)], &TestWorld::new(), 0, true);
+        agree(
+            vec![Entry::new(0).links(&[1]), Entry::new(1)],
+            &TestWorld::new(),
+            0,
+            true,
+        );
     }
 
     /// An entry no link leads to is unreachable, and the backward pass never visits it.
@@ -1240,7 +1271,9 @@ mod tests {
                 Entry::new(2)
                     .script(r#"SetVariableValue("rounds", Variable["rounds"] + 1)"#)
                     .links(&[1, 3]),
-                Entry::new(3).guard(r#"Variable["rounds"] >= 3"#).links(&[4]),
+                Entry::new(3)
+                    .guard(r#"Variable["rounds"] >= 3"#)
+                    .links(&[4]),
                 Entry::new(4),
             ]
         };
@@ -1340,7 +1373,11 @@ mod tests {
     fn a_slot_nothing_reads_leaves_no_trace_in_the_backward_sets() {
         let graph = GraphBuilder::new()
             .add(Entry::new(0).links(&[1]))
-            .add(Entry::new(1).script(r#"SetVariableValue("noise", true)"#).links(&[2]))
+            .add(
+                Entry::new(1)
+                    .script(r#"SetVariableValue("noise", true)"#)
+                    .links(&[2]),
+            )
             .add(Entry::new(2))
             .build();
         let symbols = graph.symbols().clone();
@@ -1350,13 +1387,14 @@ mod tests {
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
 
-        let backward =
-            Backward::reaching(&graph, node(2), &mut compiler, &world, CAP as u32);
+        let backward = Backward::reaching(&graph, node(2), &mut compiler, &world, CAP as u32);
 
         // Nothing reads `noise`, so every backward set is everywhere-true: the target is
         // reachable whatever the state holds.
         for id in [node(0), node(1), node(2)] {
-            let set = backward.states_at(id).expect("every entry can reach the target");
+            let set = backward
+                .states_at(id)
+                .expect("every entry can reach the target");
             assert!(set.valid(), "entry {id} carries a constraint it should not");
         }
 

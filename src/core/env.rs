@@ -38,7 +38,10 @@ pub fn is_set(name: &str) -> bool {
 
 /// One of ours as a number, or `fallback` where it is unset, empty or unparseable.
 pub fn number<T: std::str::FromStr>(name: &str, fallback: T) -> T {
-    var(name).ok().and_then(|value| value.trim().parse().ok()).unwrap_or(fallback)
+    var(name)
+        .ok()
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or(fallback)
 }
 
 /// Sets one of ours, for a child process built with [`std::process::Command`].
@@ -67,7 +70,11 @@ pub fn foreign(name: &str) -> Result<String, std::env::VarError> {
 /// Public because a message about a variable should name it as the person would have to type
 /// it, and because the drivers check for the OLD unprefixed spellings to refuse them.
 pub fn qualified(name: &str) -> String {
-    if name.starts_with(PREFIX) { name.to_string() } else { format!("{PREFIX}{name}") }
+    if name.starts_with(PREFIX) {
+        name.to_string()
+    } else {
+        format!("{PREFIX}{name}")
+    }
 }
 
 #[cfg(test)]

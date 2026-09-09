@@ -2,7 +2,7 @@
 //! Pins the oxidd API this crate depends on, so an upgrade that moves it fails here
 //! rather than somewhere in the middle of the symbolic encoding.
 
-use oxidd::bdd::{new_manager, BDDFunction};
+use oxidd::bdd::{BDDFunction, new_manager};
 use oxidd::{BooleanFunction, Manager, ManagerRef};
 
 /// Sized for the test, not for a conversation: a handful of nodes and a small cache.

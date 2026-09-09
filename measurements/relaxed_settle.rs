@@ -79,14 +79,14 @@ use std::time::{Duration, Instant};
 
 use oxidd::{BooleanFunction, BooleanFunctionQuant};
 
-use lookahead_engine::bridge::{SnapshotWorld, WorldSnapshot, COUNTER_CAP};
+use lookahead_engine::bridge::{COUNTER_CAP, SnapshotWorld, WorldSnapshot};
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
-use lookahead_engine::symbolic::reachability::{seed_of, Budget, Reachability};
+use lookahead_engine::symbolic::reachability::{Budget, Reachability, seed_of};
 use lookahead_engine::symbolic::vars::DataVars;
 
 #[path = "../tests/common/mod.rs"]
@@ -109,8 +109,7 @@ fn main() {
     let index = read_index(&path).expect("the shipped index reads");
 
     let budget = DiagramBudget::new(from_env("BUDGET_MB", BUDGET_MB) * 1024 * 1024);
-    let settle =
-        Duration::from_millis(from_env("SETTLE_MS", SETTLE_MS as usize) as u64);
+    let settle = Duration::from_millis(from_env("SETTLE_MS", SETTLE_MS as usize) as u64);
 
     println!(
         "{} MB, {} ms to settle\n",
@@ -123,7 +122,9 @@ fn main() {
     );
 
     for conversation in numbers("CONVERSATION", &CONVERSATIONS) {
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            continue;
+        };
         let start = DialogueNodeId::new(conversation, 0);
         if graph.get(start).is_none() {
             continue;
@@ -163,7 +164,11 @@ fn run(
 ) -> Option<(usize, (Duration, bool), (Duration, bool))> {
     let symbols = graph.symbols().clone();
     let world = SnapshotWorld::declaring(
-        WorldSnapshot { day_minutes: 720, day_counter: 1, ..Default::default() },
+        WorldSnapshot {
+            day_minutes: 720,
+            day_counter: 1,
+            ..Default::default()
+        },
         None,
     );
     let layout = DataLayout::for_group(graph, &world, COUNTER_CAP);
@@ -203,7 +208,10 @@ fn run(
             compiler,
             &world,
             COUNTER_CAP as u32,
-            &Budget { time: settle, ..Default::default() },
+            &Budget {
+                time: settle,
+                ..Default::default()
+            },
         );
         (began.elapsed(), found.stats().reached_fixed_point)
     };
@@ -214,12 +222,18 @@ fn run(
 }
 
 fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name).ok().and_then(|text| text.trim().parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name)
+        .ok()
+        .and_then(|text| text.trim().parse().ok())
+        .unwrap_or(fallback)
 }
 
 fn numbers(name: &str, fallback: &[i32]) -> Vec<i32> {
     match lookahead_engine::core::env::var(name) {
-        Ok(text) => text.split(',').filter_map(|part| part.trim().parse().ok()).collect(),
+        Ok(text) => text
+            .split(',')
+            .filter_map(|part| part.trim().parse().ok())
+            .collect(),
         Err(_) => fallback.to_vec(),
     }
 }

@@ -23,7 +23,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::index::{read_index_with_header, Index, IndexHeader, VariableTable};
+use crate::index::{Index, IndexHeader, VariableTable, read_index_with_header};
 
 /// What a call reports. Zero is success; everything else is a reason.
 ///
@@ -130,10 +130,14 @@ impl Service {
         // An index whose header names a version this build does not read is refused
         // outright rather than half-understood: it would pass a content check while
         // missing fields the engine has since started reading.
-        let (index, header) =
-            read_index_with_header(index).map_err(|_| Status::IndexUnreadable)?;
+        let (index, header) = read_index_with_header(index).map_err(|_| Status::IndexUnreadable)?;
 
-        Ok(Self { index, declared, header, workspace: Default::default() })
+        Ok(Self {
+            index,
+            declared,
+            header,
+            workspace: Default::default(),
+        })
     }
 
     /// An engine over nothing, for the tests that are about the ARGUMENT rather than the
@@ -219,10 +223,7 @@ impl Service {
     /// status: the caller then has one thing to parse and one place to look. A status is
     /// for what happens before there is a response at all - here, a request that is not
     /// JSON.
-    pub fn look_ahead(
-        &self,
-        request: &str,
-    ) -> Result<crate::bridge::LookAheadResponse, Status> {
+    pub fn look_ahead(&self, request: &str) -> Result<crate::bridge::LookAheadResponse, Status> {
         let parsed: crate::bridge::LookAheadRequest =
             serde_json::from_str(request).map_err(|_| Status::BadArgument)?;
 
@@ -314,8 +315,14 @@ impl Service {
             );
         }
 
-        match held.as_ref().and_then(|workspace| workspace.answer(request.clone())) {
-            Some(Ok(answers)) => crate::bridge::LookAheadResponse { answers, error: None },
+        match held
+            .as_ref()
+            .and_then(|workspace| workspace.answer(request.clone()))
+        {
+            Some(Ok(answers)) => crate::bridge::LookAheadResponse {
+                answers,
+                error: None,
+            },
             // REFUSED, and the reason has to reach the caller. This is the one failure a
             // positional answer list makes possible - a world answering a different set of
             // questions than the group asks - and it is refused precisely so that it cannot
@@ -353,7 +360,10 @@ mod tests {
     #[test]
     fn a_status_crosses_as_its_number() {
         assert_eq!(serde_json::to_string(&Status::Ok).unwrap(), "0");
-        assert_eq!(serde_json::to_string(&Status::NoSuchConversation).unwrap(), "-5");
+        assert_eq!(
+            serde_json::to_string(&Status::NoSuchConversation).unwrap(),
+            "-5"
+        );
         assert_eq!(
             serde_json::from_str::<Status>("-3").unwrap(),
             Status::IndexUnreadable,
@@ -373,15 +383,27 @@ mod tests {
     #[test]
     fn an_absent_conversation_is_refused_by_every_call_that_names_one() {
         let service = Service::empty();
-        assert!(matches!(service.entry_count(631), Err(Status::NoSuchConversation)));
-        assert!(matches!(service.conversation_hash(631), Err(Status::NoSuchConversation)));
-        assert!(matches!(service.questions(631), Err(Status::NoSuchConversation)));
+        assert!(matches!(
+            service.entry_count(631),
+            Err(Status::NoSuchConversation)
+        ));
+        assert!(matches!(
+            service.conversation_hash(631),
+            Err(Status::NoSuchConversation)
+        ));
+        assert!(matches!(
+            service.questions(631),
+            Err(Status::NoSuchConversation)
+        ));
     }
 
     #[test]
     fn a_request_that_is_not_json_is_a_bad_argument() {
         let service = Service::empty();
-        assert!(matches!(service.look_ahead("not json at all"), Err(Status::BadArgument)));
+        assert!(matches!(
+            service.look_ahead("not json at all"),
+            Err(Status::BadArgument)
+        ));
     }
 
     /// An empty index answers nothing, and says so as a RESPONSE rather than as a status.

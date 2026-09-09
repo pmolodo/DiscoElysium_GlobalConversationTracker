@@ -46,7 +46,7 @@ use std::collections::HashSet;
 use lookahead_engine::core::types::{DialogueNodeId, Novelty};
 use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::symbolic::dominators::Dominators;
-use lookahead_engine::symbolic::novelty_search::{candidates_from, Nearest};
+use lookahead_engine::symbolic::novelty_search::{Nearest, candidates_from};
 
 /// How many non-group links a node needs before it counts as a menu.
 ///
@@ -151,7 +151,10 @@ pub fn menus(
             continue;
         }
 
-        found.push(Menu { asks, unseen: unseen.clone() });
+        found.push(Menu {
+            asks,
+            unseen: unseen.clone(),
+        });
     }
 
     found

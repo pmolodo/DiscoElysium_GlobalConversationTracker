@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::action::DialogueActionKind;
 use crate::core::guard::Guard;
-use crate::core::state::{StateSymbols, ONCE_PREFIX, SEEN_PREFIX};
+use crate::core::state::{ONCE_PREFIX, SEEN_PREFIX, StateSymbols};
 use crate::core::types::{DialogueCheckKind, DialogueNodeId};
 use crate::graph::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
@@ -274,7 +274,9 @@ impl VariableTable {
                 // answered at all.
                 GuardValue::from_number(record.initial.trim().parse::<f64>().unwrap_or(0.0))
             }
-            "Boolean" => GuardValue::from_boolean(record.initial.trim().eq_ignore_ascii_case("true")),
+            "Boolean" => {
+                GuardValue::from_boolean(record.initial.trim().eq_ignore_ascii_case("true"))
+            }
             // Anything else is carried as text rather than guessed at. Nothing in the
             // shipped database is anything else, so this is a door rather than a path.
             _ => GuardValue::from_text(record.initial.clone()),
@@ -338,7 +340,9 @@ pub fn discover_group(index: &Index, start: i32) -> Vec<i32> {
     pending.push_back(start);
 
     while let Some(id) = pending.pop_front() {
-        let Some(conversation) = index.get(&id) else { continue };
+        let Some(conversation) = index.get(&id) else {
+            continue;
+        };
         for entry in &conversation.entries {
             for &destination in &entry.to_conversation {
                 // A link to a conversation the index does not hold ends the branch
@@ -360,10 +364,7 @@ pub fn discover_group(index: &Index, start: i32) -> Vec<i32> {
 ///
 /// Returns the graph and the conversations it spans, in the order they were built - the
 /// order that fixed the slot numbering.
-pub fn build_group_graph(
-    index: &Index,
-    start: i32,
-) -> Result<(LookAheadGraph, Vec<i32>), String> {
+pub fn build_group_graph(index: &Index, start: i32) -> Result<(LookAheadGraph, Vec<i32>), String> {
     if !index.contains_key(&start) {
         return Err(format!("Conversation {} is not in the index.", start));
     }
@@ -378,8 +379,7 @@ pub fn build_group_graph(
             // restart at 0 in every conversation.
             let node_id = DialogueNodeId::new(conversation_id, entry.id);
 
-            let guard =
-                parse_guard(&entry.guard).unwrap_or_else(|_| Guard::always_true());
+            let guard = parse_guard(&entry.guard).unwrap_or_else(|_| Guard::always_true());
             let actions = parse_actions(&entry.script, &mut symbols);
 
             let kind = determine_kind(&entry.fields);
@@ -388,7 +388,11 @@ pub fn build_group_graph(
             let boolean_only = read_boolean(&entry.fields, BOOLEAN_ONLY_FIELD);
             let closes_once_seen = kind == DialogueCheckKind::Fake
                 || (kind == DialogueCheckKind::KimSwitch && !boolean_only);
-            let seen_slot = if closes_once_seen { symbols.seen(node_id) as i32 } else { -1 };
+            let seen_slot = if closes_once_seen {
+                symbols.seen(node_id) as i32
+            } else {
+                -1
+            };
 
             nodes.push(LookAheadNode::new(
                 node_id,
@@ -554,8 +558,11 @@ pub fn links_of(entry: &EntryRecord, conversation_id: i32) -> Vec<DialogueNodeId
         .enumerate()
         .map(|(i, &destination_entry)| {
             // Short or absent means the link stays in this conversation.
-            let destination_conversation =
-                entry.to_conversation.get(i).copied().unwrap_or(conversation_id);
+            let destination_conversation = entry
+                .to_conversation
+                .get(i)
+                .copied()
+                .unwrap_or(conversation_id);
             DialogueNodeId::new(destination_conversation, destination_entry)
         })
         .collect()
@@ -567,23 +574,40 @@ pub fn links_of(entry: &EntryRecord, conversation_id: i32) -> Vec<DialogueNodeId
 /// entry carrying two of these would otherwise get a different kind on different runs.
 /// The order matches the C# `ConversationIndex.KindOf`.
 pub fn determine_kind(fields: &HashMap<String, String>) -> DialogueCheckKind {
-    if fields.contains_key(PASSIVE_FIELD) { return DialogueCheckKind::Passive; }
-    if fields.contains_key(RED_FIELD) { return DialogueCheckKind::Red; }
-    if fields.contains_key(WHITE_FIELD) { return DialogueCheckKind::White; }
-    if fields.contains_key(FAKE_FIELD) { return DialogueCheckKind::Fake; }
-    if fields.contains_key(TEST_FIELD) { return DialogueCheckKind::Test; }
-    if fields.contains_key(KIM_WATCH_FIELD) { return DialogueCheckKind::KimSwitch; }
+    if fields.contains_key(PASSIVE_FIELD) {
+        return DialogueCheckKind::Passive;
+    }
+    if fields.contains_key(RED_FIELD) {
+        return DialogueCheckKind::Red;
+    }
+    if fields.contains_key(WHITE_FIELD) {
+        return DialogueCheckKind::White;
+    }
+    if fields.contains_key(FAKE_FIELD) {
+        return DialogueCheckKind::Fake;
+    }
+    if fields.contains_key(TEST_FIELD) {
+        return DialogueCheckKind::Test;
+    }
+    if fields.contains_key(KIM_WATCH_FIELD) {
+        return DialogueCheckKind::KimSwitch;
+    }
     DialogueCheckKind::None
 }
 
 /// A boolean field, read case-insensitively as the C# `bool.TryParse` does.
 fn read_boolean(fields: &HashMap<String, String>, name: &str) -> bool {
-    fields.get(name).is_some_and(|value| value.eq_ignore_ascii_case("true"))
+    fields
+        .get(name)
+        .is_some_and(|value| value.eq_ignore_ascii_case("true"))
 }
 
 /// An entry's cost, whether it is charged once, and whether poverty hides it.
 pub fn parse_cost(fields: &HashMap<String, String>) -> (i32, bool, bool) {
-    let cost = fields.get(CLICK_COST_FIELD).and_then(|v| v.parse().ok()).unwrap_or(0);
+    let cost = fields
+        .get(CLICK_COST_FIELD)
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
     (
         cost,
         read_boolean(fields, COST_ONCE_FIELD),
@@ -628,7 +652,11 @@ mod tests {
     }
 
     fn conversation(id: i32, entries: Vec<EntryRecord>) -> ConversationRecord {
-        ConversationRecord { id, hash: String::new(), entries }
+        ConversationRecord {
+            id,
+            hash: String::new(),
+            entries,
+        }
     }
 
     fn index_of(conversations: Vec<ConversationRecord>) -> Index {
@@ -745,10 +773,7 @@ mod tests {
     /// cache hits on a file that cannot answer the question.
     #[test]
     fn an_index_from_another_format_is_refused() {
-        let path = written(concat!(
-            "{\"format\":99}\n",
-            "{\"id\":7,\"entries\":[]}\n",
-        ));
+        let path = written(concat!("{\"format\":99}\n", "{\"id\":7,\"entries\":[]}\n",));
 
         let refused = read_index_with_header(path.path()).expect_err("it must be refused");
         assert!(refused.to_string().contains("version 99"), "{refused}");

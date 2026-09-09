@@ -370,19 +370,17 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use lookahead_engine::core::state::StateSymbols;
 use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
-use lookahead_engine::symbolic::portfolio;
 use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, discover_group, read_index};
+use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
-use lookahead_engine::symbolic::known::{GroupShape, Known};
-use lookahead_engine::symbolic::novelty_search::{
-    best_novelty, Budget as SearchBudget, StoppedBy,
-};
-use lookahead_engine::symbolic::reachability::{seed_of, Budget, Reachability};
-use lookahead_engine::symbolic::vars::DataVars;
-use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::isolated;
+use lookahead_engine::symbolic::known::{GroupShape, Known};
+use lookahead_engine::symbolic::novelty_search::{Budget as SearchBudget, StoppedBy, best_novelty};
+use lookahead_engine::symbolic::portfolio;
+use lookahead_engine::symbolic::reachability::{Budget, Reachability, seed_of};
+use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::world::world::ILookAheadWorld;
 
 #[path = "../tests/common/mod.rs"]
@@ -513,7 +511,7 @@ fn gb(bytes: usize) -> String {
     format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
 }
 
-use symbolic_answers::{mmss, PROGRESS};
+use symbolic_answers::{PROGRESS, mmss};
 
 /// The verdict for a row nothing was learned from, in every engine's columns.
 ///
@@ -566,7 +564,6 @@ enum Profile {
 impl Profile {
     fn label(self) -> String {
         match self {
-
             Profile::DeepestUnseen(n) => format!("deepest-{n}"),
             // THE SAME NAME measurements/symbolic_answers.rs uses, so the two measurements
             // do not spell one profile two ways. FIXED rather than carrying how many of the
@@ -803,15 +800,17 @@ impl Engine {
             // process, so the backward work followed a different order in every run - three
             // processes gave 126,106, 126,588 and 126,148 on one row, and one of them
             // overflowed a stack the others did not. `graph.nodes()` is ordered now.
-            Engine::InGame
-            | Engine::NoLimit
-            | Engine::BackwardInGame
-            | Engine::BackwardNoLimit => &["verdict", "ms", "setup", "nodes", "by", "asked"],
+            Engine::InGame | Engine::NoLimit | Engine::BackwardInGame | Engine::BackwardNoLimit => {
+                &["verdict", "ms", "setup", "nodes", "by", "asked"]
+            }
         }
     }
 
     fn headers(self) -> Vec<String> {
-        self.columns().iter().map(|name| format!("{}_{name}", self.label())).collect()
+        self.columns()
+            .iter()
+            .map(|name| format!("{}_{name}", self.label()))
+            .collect()
     }
 }
 
@@ -845,7 +844,11 @@ impl Engine {
 /// the selection, so nothing has to be told apart from a result later.
 fn engines() -> Vec<Engine> {
     let named = lookahead_engine::core::env::var("ENGINES").unwrap_or_default();
-    let wanted: Vec<&str> = named.split(',').map(str::trim).filter(|n| !n.is_empty()).collect();
+    let wanted: Vec<&str> = named
+        .split(',')
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .collect();
 
     // SET BUT EMPTY MEANS THE DEFAULT, the same as unset. A driver script that passes the
     // selection through has nothing to pass when there is no selection, and this is what it
@@ -882,7 +885,10 @@ fn engines() -> Vec<Engine> {
         );
     }
 
-    ALL_ENGINES.into_iter().filter(|engine| wanted.contains(&engine.label())).collect()
+    ALL_ENGINES
+        .into_iter()
+        .filter(|engine| wanted.contains(&engine.label()))
+        .collect()
 }
 
 /// One canonical start per DISTINCT group, heaviest first: (start, conversations, entries).
@@ -1010,7 +1016,10 @@ fn conversations(default: &[i32]) -> Vec<i32> {
             .filter(|id| !id.is_empty())
             .map(|id| {
                 id.parse().unwrap_or_else(|_| {
-                    refuse(&format!("{}={id:?} is not a conversation id", lookahead_engine::core::env::qualified("CONVERSATION")))
+                    refuse(&format!(
+                        "{}={id:?} is not a conversation id",
+                        lookahead_engine::core::env::qualified("CONVERSATION")
+                    ))
                 })
             })
             .collect(),
@@ -1038,7 +1047,10 @@ fn refuse(why: &str) -> ! {
     eprintln!("{why}");
     eprintln!(
         "profiles: {}",
-        known_profiles().map(|p| p.label()).collect::<Vec<_>>().join(", "),
+        known_profiles()
+            .map(|p| p.label())
+            .collect::<Vec<_>>()
+            .join(", "),
     );
     eprintln!("conversations: any group id the index carries, comma separated");
     std::process::exit(2);
@@ -1063,7 +1075,12 @@ fn profiles() -> Vec<Profile> {
             .map(|label| {
                 known_profiles()
                     .find(|profile| profile.label() == label)
-                    .unwrap_or_else(|| refuse(&format!("{}={label:?} is not a profile", lookahead_engine::core::env::qualified("PROFILE"))))
+                    .unwrap_or_else(|| {
+                        refuse(&format!(
+                            "{}={label:?} is not a profile",
+                            lookahead_engine::core::env::qualified("PROFILE")
+                        ))
+                    })
             })
             .collect(),
         Err(_) => PROFILES.to_vec(),
@@ -1088,7 +1105,10 @@ impl Census {
     /// something that cannot be produced honestly, and saying so on stderr and stopping is
     /// the answer - the same shape [`refuse`] already takes for an unknown profile.
     fn of(profiles: &[Profile]) -> Option<Self> {
-        if !profiles.iter().any(|p| matches!(p, Profile::DeepestUnreachable(_))) {
+        if !profiles
+            .iter()
+            .any(|p| matches!(p, Profile::DeepestUnreachable(_)))
+        {
             return None;
         }
 
@@ -1099,7 +1119,10 @@ impl Census {
             )
         };
         let Ok(text) = std::fs::read_to_string(&path) else {
-            refuse(&format!("{}={path:?} could not be read", lookahead_engine::core::env::qualified("CENSUS_FILE")))
+            refuse(&format!(
+                "{}={path:?} could not be read",
+                lookahead_engine::core::env::qualified("CENSUS_FILE")
+            ))
         };
 
         let mut rows = HashMap::new();
@@ -1153,7 +1176,10 @@ fn entries(list: &str) -> Vec<DialogueNodeId> {
         .filter(|cell| !cell.is_empty())
         .filter_map(|cell| {
             let (conversation, entry) = cell.split_once(':')?;
-            Some(DialogueNodeId::new(conversation.parse().ok()?, entry.parse().ok()?))
+            Some(DialogueNodeId::new(
+                conversation.parse().ok()?,
+                entry.parse().ok()?,
+            ))
         })
         .collect()
 }
@@ -1185,12 +1211,8 @@ impl Skipped {
     }
 }
 
-fn unseen_for(
-    profile: Profile,
-    candidates: &[DialogueNodeId],
-) -> HashSet<DialogueNodeId> {
+fn unseen_for(profile: Profile, candidates: &[DialogueNodeId]) -> HashSet<DialogueNodeId> {
     match profile {
-
         Profile::DeepestUnseen(n) => candidates.iter().take(n).copied().collect(),
         // Built by `unreachable_for`, which needs the census this does not have. Reaching
         // here would mean the row loop stopped asking it first.
@@ -1265,8 +1287,7 @@ impl Cells {
     /// the cost of a search that never happened; and 16/deepest-1 recorded 647,709 ms
     /// against a 600,000 ms cap, which looked like an overrun and was a cap plus its setup.
     fn of(verdict: &str, millis: u128, setup: u128, sizes: &[usize]) -> Self {
-        let mut cells =
-            vec![verdict.to_string(), millis.to_string(), setup.to_string()];
+        let mut cells = vec![verdict.to_string(), millis.to_string(), setup.to_string()];
         cells.extend(sizes.iter().map(|size| size.to_string()));
         Self(cells)
     }
@@ -1422,7 +1443,10 @@ fn forward_backward_all(
 
     let layout = DataLayout::for_group(graph, world, COUNTER_CAP);
     let Some(vars) = DataVars::try_new(&layout, symbols, manager) else {
-        return work.iter().map(|_| Cells::absent(NOT_MEASURED, engine)).collect();
+        return work
+            .iter()
+            .map(|_| Cells::absent(NOT_MEASURED, engine))
+            .collect();
     };
     let mut compiler = GuardCompiler::new(&vars)
         .with_world(world)
@@ -1471,7 +1495,11 @@ fn forward_backward_one(
     let began = std::time::Instant::now();
 
     let novelty = |id: DialogueNodeId| {
-        if unseen.contains(&id) { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
+        if unseen.contains(&id) {
+            Novelty::UnseenAnyGame
+        } else {
+            Novelty::SeenThisGame
+        }
     };
 
     // THE GATE THE GAME APPLIES, and this column exists to be the game. de-qh27.
@@ -1580,7 +1608,10 @@ fn symbolic_forward_all(
     // machine could not supply the budget, which is not a finding about the search - the
     // row is NOT MEASURED and wants running again with the memory free.
     let Some(vars) = DataVars::try_new(&layout, symbols, budget()) else {
-        return work.iter().map(|_| Cells::absent(NOT_MEASURED, Engine::Forward)).collect();
+        return work
+            .iter()
+            .map(|_| Cells::absent(NOT_MEASURED, Engine::Forward))
+            .collect();
     };
     let mut compiler = GuardCompiler::new(&vars)
         .with_world(world)
@@ -1636,7 +1667,11 @@ fn symbolic_forward_one(
         // overshoot in time rather than in steps, which can only make the no-room verdict
         // land closer to the budget it names.
         report_every: if every.is_some() { 500 } else { 20_000 },
-        check_gap: if every.is_some() { CHECK_GAP } else { std::time::Duration::ZERO },
+        check_gap: if every.is_some() {
+            CHECK_GAP
+        } else {
+            std::time::Duration::ZERO
+        },
         // The measurement allowance is far larger than the plugin's, so the machine is the
         // real ceiling here and the guard matters more, not less.
         on_step: None,
@@ -1644,11 +1679,7 @@ fn symbolic_forward_one(
         report_gap: every.unwrap_or_default(),
         on_progress: every.map(|_| {
             Box::new(
-                move |steps: usize,
-                      reached: usize,
-                      held: usize,
-                      largest: usize,
-                      bytes: usize| {
+                move |steps: usize, reached: usize, held: usize, largest: usize, bytes: usize| {
                     // THE LABEL COMES FROM THE ENGINE, and is padded to the width of the
                     // longest so the columns line up. A progress line names itself with
                     // the same word `DEGCT_ENGINES=` takes, so a line watched during a long run
@@ -1674,7 +1705,13 @@ fn symbolic_forward_one(
     };
 
     let found = Reachability::explore_within(
-        graph, start, seed, compiler, world, COUNTER_CAP as u32, &sym_budget,
+        graph,
+        start,
+        seed,
+        compiler,
+        world,
+        COUNTER_CAP as u32,
+        &sym_budget,
     );
     let stats = found.stats();
 
@@ -1741,7 +1778,10 @@ fn symbolic_backward_all(
 
     let layout = DataLayout::for_group(graph, world, COUNTER_CAP);
     let Some(vars) = DataVars::try_new(&layout, symbols, budget()) else {
-        return work.iter().map(|_| Cells::absent(NOT_MEASURED, Engine::Backward)).collect();
+        return work
+            .iter()
+            .map(|_| Cells::absent(NOT_MEASURED, Engine::Backward))
+            .collect();
     };
     let mut compiler = GuardCompiler::new(&vars)
         .with_world(world)
@@ -1782,7 +1822,11 @@ fn symbolic_backward_one(
 ) -> Cells {
     let began = std::time::Instant::now();
     let novelty = |id: DialogueNodeId| {
-        if unseen.contains(&id) { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
+        if unseen.contains(&id) {
+            Novelty::UnseenAnyGame
+        } else {
+            Novelty::SeenThisGame
+        }
     };
 
     // THE GRAPH'S SHAPE ONLY, and deliberately nothing else. Every candidate's pass used
@@ -1819,14 +1863,16 @@ fn symbolic_backward_one(
                     // the budget was turned into - so this is the same question in the
                     // units the answer will arrive in.
                     let capacity = budget().nodes();
-                    std::rc::Rc::new(move |steps: usize, known: usize, queued: usize, nodes: usize| {
-                        println!(
-                            "{PROGRESS} {:<6} {:>7}  {steps:>10} steps  {known:>6} reaching  \
+                    std::rc::Rc::new(
+                        move |steps: usize, known: usize, queued: usize, nodes: usize| {
+                            println!(
+                                "{PROGRESS} {:<6} {:>7}  {steps:>10} steps  {known:>6} reaching  \
                              {queued:>6} queued  {nodes:>12} / {capacity} nodes",
-                            Engine::Backward.label(),
-                            mmss(began.elapsed()),
-                        );
-                    }) as std::rc::Rc<dyn Fn(usize, usize, usize, usize)>
+                                Engine::Backward.label(),
+                                mmss(began.elapsed()),
+                            );
+                        },
+                    ) as std::rc::Rc<dyn Fn(usize, usize, usize, usize)>
                 }),
             },
             ..Default::default()
@@ -1845,7 +1891,11 @@ fn symbolic_backward_one(
             // A pass that did not settle proves nothing by saying no, and WHY it did not
             // settle is the same distinction the other two columns keep.
             StoppedBy::Incomplete => {
-                if answer.out_of_nodes { "no-room" } else { "gave-up" }
+                if answer.out_of_nodes {
+                    "no-room"
+                } else {
+                    "gave-up"
+                }
             }
         }
     };
@@ -1877,7 +1927,13 @@ const ROW_COLUMNS: [&str; 4] = ["conv", "entries", "profile", "unseen"];
 
 /// The columns of a census row, written down here and nowhere else.
 const CENSUS_COLUMNS: [&str; 8] = [
-    "conv", "candidates", "unreachable", "undecided", "exact", "ms", "deepest_unreachable",
+    "conv",
+    "candidates",
+    "unreachable",
+    "undecided",
+    "exact",
+    "ms",
+    "deepest_unreachable",
     "undecided_entries",
 ];
 
@@ -1975,7 +2031,11 @@ fn census(index: &lookahead_engine::index::Index, world: &dyn ILookAheadWorld) {
 
         // `all` means the scan ran out of candidates, so the count is the whole truth for
         // this group; `at-least` means it ran out of room.
-        let exact = if unreachable.len() == wanted { "at-least" } else { "all" };
+        let exact = if unreachable.len() == wanted {
+            "at-least"
+        } else {
+            "all"
+        };
 
         println!(
             "{conversation}\t{}\t{}\t{}\t{exact}\t{millis}\t{}\t{}",
@@ -2001,7 +2061,9 @@ fn main() {
     // conversations, which is what decides the rows a run has - to be the same list. A row
     // is a function of the graph, the world, the budget, the cap and the profile, and only
     // the graph comes out of the index.
-    let Some(path) = common::shipped_index() else { return };
+    let Some(path) = common::shipped_index() else {
+        return;
+    };
     let engines = engines();
 
     // Tab separated, so a run pipes straight into a file that something else can read -

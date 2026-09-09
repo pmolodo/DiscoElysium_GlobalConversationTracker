@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 
 pub mod core;
-pub mod parser;
 pub mod graph;
-pub mod world;
 pub mod index;
+pub mod parser;
 pub mod symbolic;
+pub mod world;
 
 /// What crosses between the plugin and this engine, and what it means.
 pub mod bridge;

@@ -71,10 +71,22 @@ impl ClockTime {
     }
 
     pub fn owns(name: &str) -> bool {
-        matches!(name,
-            "IsDaytime" | "IsNighttime" | "IsNight" | "IsDawn" | "IsMorning" |
-            "IsNoon" | "IsAfternoon" | "IsDusk" | "IsEvening" | "IsMidnight" |
-            "IsHour" | "IsHourBetween" | "HourCount" | "TotalHourCount"
+        matches!(
+            name,
+            "IsDaytime"
+                | "IsNighttime"
+                | "IsNight"
+                | "IsDawn"
+                | "IsMorning"
+                | "IsNoon"
+                | "IsAfternoon"
+                | "IsDusk"
+                | "IsEvening"
+                | "IsMidnight"
+                | "IsHour"
+                | "IsHourBetween"
+                | "HourCount"
+                | "TotalHourCount"
         )
     }
 
@@ -128,18 +140,33 @@ impl ClockTime {
         let daytime = Self::daytime_of(hours);
 
         match name {
-            "IsDaytime" => GuardValue::from_boolean(matches!(daytime, Daytime::Dawn | Daytime::Morning | Daytime::Noon | Daytime::Afternoon)),
-            "IsNighttime" => GuardValue::from_boolean(matches!(daytime, Daytime::Dusk | Daytime::Evening | Daytime::Night)),
-            "IsNight" => GuardValue::from_boolean(matches!(daytime, Daytime::Night | Daytime::Midnight)),
+            "IsDaytime" => GuardValue::from_boolean(matches!(
+                daytime,
+                Daytime::Dawn | Daytime::Morning | Daytime::Noon | Daytime::Afternoon
+            )),
+            "IsNighttime" => GuardValue::from_boolean(matches!(
+                daytime,
+                Daytime::Dusk | Daytime::Evening | Daytime::Night
+            )),
+            "IsNight" => {
+                GuardValue::from_boolean(matches!(daytime, Daytime::Night | Daytime::Midnight))
+            }
             "IsDawn" => GuardValue::from_boolean(daytime == Daytime::Dawn),
-            "IsMorning" => GuardValue::from_boolean(matches!(daytime, Daytime::Dawn | Daytime::Morning)),
+            "IsMorning" => {
+                GuardValue::from_boolean(matches!(daytime, Daytime::Dawn | Daytime::Morning))
+            }
             "IsNoon" => GuardValue::from_boolean(daytime == Daytime::Noon),
-            "IsAfternoon" => GuardValue::from_boolean(matches!(daytime, Daytime::Noon | Daytime::Afternoon)),
+            "IsAfternoon" => {
+                GuardValue::from_boolean(matches!(daytime, Daytime::Noon | Daytime::Afternoon))
+            }
             "IsDusk" => GuardValue::from_boolean(daytime == Daytime::Dusk),
-            "IsEvening" => GuardValue::from_boolean(matches!(daytime, Daytime::Dusk | Daytime::Evening)),
+            "IsEvening" => {
+                GuardValue::from_boolean(matches!(daytime, Daytime::Dusk | Daytime::Evening))
+            }
             "IsMidnight" => GuardValue::from_boolean(daytime == Daytime::Midnight),
             "IsHour" => {
-                if let Some(h) = arguments.get(0)
+                if let Some(h) = arguments
+                    .get(0)
                     .filter(|v| v.kind() == GuardValueKind::Number)
                     .map(|v| v.number())
                 {
@@ -153,7 +180,9 @@ impl ClockTime {
                     let f = arguments[0].try_as_number();
                     let s = arguments[1].try_as_number();
                     if let (Some(f), Some(s)) = (f, s) {
-                        return GuardValue::from_boolean(Self::is_hour_between(hours, f as i32, s as i32));
+                        return GuardValue::from_boolean(Self::is_hour_between(
+                            hours, f as i32, s as i32,
+                        ));
                     }
                 }
                 GuardValue::unknown()

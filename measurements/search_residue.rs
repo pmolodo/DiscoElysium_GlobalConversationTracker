@@ -63,7 +63,7 @@ use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
-use lookahead_engine::symbolic::reachability::{seed_of, Reachability};
+use lookahead_engine::symbolic::reachability::{Reachability, seed_of};
 use lookahead_engine::symbolic::vars::DataVars;
 
 #[path = "../tests/common/mod.rs"]
@@ -77,7 +77,7 @@ mod common;
 #[path = "../tests/common/counting_allocator.rs"]
 mod counting_allocator;
 
-use counting_allocator::{live, Counting};
+use counting_allocator::{Counting, live};
 
 #[global_allocator]
 static ALLOCATOR: Counting = Counting;
@@ -157,7 +157,10 @@ fn main() {
     // rather than a control.
     let arm = lookahead_engine::core::env::var("THREAD").unwrap_or_else(|_| "main".to_string());
     println!("thread: {arm}");
-    println!("\n{:>6}  {:>12}  {:>12}  {:>12}", "search", "peak", "after", "residue");
+    println!(
+        "\n{:>6}  {:>12}  {:>12}  {:>12}",
+        "search", "peak", "after", "residue"
+    );
 
     let one_search = |run: usize| {
         let peak;
@@ -174,7 +177,12 @@ fn main() {
 
             let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
             let found = Reachability::explore(
-                &graph, start, &seed, &mut compiler, &world, COUNTER_CAP as u32,
+                &graph,
+                start,
+                &seed,
+                &mut compiler,
+                &world,
+                COUNTER_CAP as u32,
             );
 
             // Read something off it so nothing can be optimised away.
@@ -207,8 +215,7 @@ fn main() {
         "one" => isolated::on_its_own_thread(|| (1..=searches).for_each(&one_search)),
         // A THREAD EACH: the arrangement de-8hh2.13 verified over twelve searches, and what
         // every converted measurement in this repository now does.
-        "each" => (1..=searches)
-            .for_each(|run| isolated::on_its_own_thread(|| one_search(run))),
+        "each" => (1..=searches).for_each(|run| isolated::on_its_own_thread(|| one_search(run))),
         // ONE MANAGER FOR ALL OF THEM, on one thread: what `bridge::answer` actually does
         // with a menu, and the arm that separates "per search" from "per manager".
         //
@@ -225,7 +232,12 @@ fn main() {
 
             for run in 1..=searches {
                 let found = Reachability::explore(
-                    &graph, start, &seed, &mut compiler, &world, COUNTER_CAP as u32,
+                    &graph,
+                    start,
+                    &seed,
+                    &mut compiler,
+                    &world,
+                    COUNTER_CAP as u32,
                 );
                 let reached = found.entries().count();
                 assert!(reached > 0, "search {run} reached nothing at all");
@@ -241,7 +253,10 @@ fn main() {
             }
         }),
         other => {
-            eprintln!("{}={other:?} is not one of main, one, each, one-manager", lookahead_engine::core::env::qualified("THREAD"));
+            eprintln!(
+                "{}={other:?} is not one of main, one, each, one-manager",
+                lookahead_engine::core::env::qualified("THREAD")
+            );
             std::process::exit(2);
         }
     }

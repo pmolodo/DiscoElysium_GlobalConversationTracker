@@ -16,7 +16,7 @@
 use std::io::{BufReader, BufWriter};
 use std::process::{Child, Command, Stdio};
 
-use lookahead_engine::host::{read_frame, write_frame, Request, Response};
+use lookahead_engine::host::{Request, Response, read_frame, write_frame};
 use lookahead_engine::service::{Service, Status};
 
 mod common;
@@ -52,7 +52,11 @@ impl Host {
 
         let input = BufWriter::new(child.stdin.take().expect("its stdin is a pipe"));
         let output = BufReader::new(child.stdout.take().expect("its stdout is a pipe"));
-        Self { child, input, output }
+        Self {
+            child,
+            input,
+            output,
+        }
     }
 
     /// Sends one request and reads the answer back.
@@ -77,15 +81,23 @@ impl Host {
     /// code is where that shows.
     fn finish(mut self) {
         drop(self.input);
-        let ended = self.child.wait().expect("the child ends when its input does");
-        assert!(ended.success(), "the host should exit cleanly on a closed pipe: {ended}");
+        let ended = self
+            .child
+            .wait()
+            .expect("the child ends when its input does");
+        assert!(
+            ended.success(),
+            "the host should exit cleanly on a closed pipe: {ended}"
+        );
     }
 }
 
 /// Every accessor, over the real index, answered both ways and compared.
 #[test]
 fn the_host_answers_what_the_service_answers() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let here = Service::open(&path, None).expect("the index reads in this process");
     let mut host = Host::spawn();
 
@@ -101,14 +113,24 @@ fn the_host_answers_what_the_service_answers() {
         index: path.to_string_lossy().into_owned(),
         variables: None,
     });
-    assert_eq!(opened.status, Status::Ok, "the host would not open the index");
+    assert_eq!(
+        opened.status,
+        Status::Ok,
+        "the host would not open the index"
+    );
 
     assert_eq!(
         host.ask(Request::ConversationCount).value,
         Some(here.conversation_count()),
     );
-    assert_eq!(host.ask(Request::VariableCount).value, Some(here.variable_count()));
-    assert_eq!(host.ask(Request::IndexFormat).value, Some(here.index_format()));
+    assert_eq!(
+        host.ask(Request::VariableCount).value,
+        Some(here.variable_count())
+    );
+    assert_eq!(
+        host.ask(Request::IndexFormat).value,
+        Some(here.index_format())
+    );
 
     for conversation in CHECKABLE {
         assert_eq!(
@@ -117,8 +139,13 @@ fn the_host_answers_what_the_service_answers() {
             "entry count for {conversation}",
         );
         assert_eq!(
-            host.ask(Request::ConversationHash { conversation }).text.as_deref(),
-            Some(here.conversation_hash(conversation).expect("the index holds it")),
+            host.ask(Request::ConversationHash { conversation })
+                .text
+                .as_deref(),
+            Some(
+                here.conversation_hash(conversation)
+                    .expect("the index holds it")
+            ),
             "hash for {conversation}",
         );
 
@@ -146,7 +173,9 @@ fn the_host_answers_what_the_service_answers() {
 /// exercises the framing rather than merely using it.
 #[test]
 fn a_look_ahead_crosses_and_comes_back_the_same() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let here = Service::open(&path, None).expect("the index reads in this process");
     let mut host = Host::spawn();
 
@@ -165,7 +194,9 @@ fn a_look_ahead_crosses_and_comes_back_the_same() {
                "clock_locked":false}}}}"#,
         );
 
-        let crossed = host.ask(Request::LookAhead { request: request.clone() });
+        let crossed = host.ask(Request::LookAhead {
+            request: request.clone(),
+        });
         assert_eq!(crossed.status, Status::Ok, "look-ahead for {conversation}");
         assert_eq!(
             crossed.text,
@@ -190,7 +221,10 @@ fn a_refusal_crosses_as_a_status_and_leaves_the_host_serving() {
     let mut host = Host::spawn();
 
     // Before the open, when there is no engine to ask.
-    assert_eq!(host.ask(Request::ConversationCount).status, Status::BadHandle);
+    assert_eq!(
+        host.ask(Request::ConversationCount).status,
+        Status::BadHandle
+    );
 
     let missing = host.ask(Request::Open {
         index: "no-such-file.jsonl".into(),
@@ -198,28 +232,46 @@ fn a_refusal_crosses_as_a_status_and_leaves_the_host_serving() {
     });
     assert_eq!(missing.status, Status::IndexUnreadable);
 
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let opened = host.ask(Request::Open {
         index: path.to_string_lossy().into_owned(),
         variables: None,
     });
-    assert_eq!(opened.status, Status::Ok, "a failed open must not poison the next one");
+    assert_eq!(
+        opened.status,
+        Status::Ok,
+        "a failed open must not poison the next one"
+    );
 
     // And after it, when the engine is there and the question is not answerable.
     assert_eq!(
-        host.ask(Request::EntryCount { conversation: ABSENT }).status,
+        host.ask(Request::EntryCount {
+            conversation: ABSENT
+        })
+        .status,
         Status::NoSuchConversation,
     );
     assert_eq!(
-        host.ask(Request::ConversationHash { conversation: ABSENT }).status,
+        host.ask(Request::ConversationHash {
+            conversation: ABSENT
+        })
+        .status,
         Status::NoSuchConversation,
     );
     assert_eq!(
-        host.ask(Request::Questions { conversation: ABSENT }).status,
+        host.ask(Request::Questions {
+            conversation: ABSENT
+        })
+        .status,
         Status::NoSuchConversation,
     );
     assert_eq!(
-        host.ask(Request::LookAhead { request: "not json at all".into() }).status,
+        host.ask(Request::LookAhead {
+            request: "not json at all".into()
+        })
+        .status,
         Status::BadArgument,
     );
 

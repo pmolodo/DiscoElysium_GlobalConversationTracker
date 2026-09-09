@@ -50,7 +50,11 @@ const MINUTES_IN_DAY: u32 = 1440;
 
 /// How many bits it takes to represent `0..=max`.
 fn bits_for(max: u32) -> usize {
-    if max == 0 { 0 } else { (u32::BITS - max.leading_zeros()) as usize }
+    if max == 0 {
+        0
+    } else {
+        (u32::BITS - max.leading_zeros()) as usize
+    }
 }
 
 /// What a state looked like across a whole sample, so only what MOVES gets encoded.
@@ -119,7 +123,9 @@ impl Profile {
 
     /// The slots that took more than one value, in slot order.
     pub fn moving_slots(&self) -> Vec<usize> {
-        let mut moving: Vec<usize> = self.slot_min.keys()
+        let mut moving: Vec<usize> = self
+            .slot_min
+            .keys()
             .copied()
             .filter(|slot| self.slot_min[slot] != self.slot_max[slot])
             .collect();
@@ -167,7 +173,8 @@ impl StateEncoding {
         let mut next = node_bits;
 
         let moving = profile.moving_slots();
-        let slot_span = moving.iter()
+        let slot_span = moving
+            .iter()
             .map(|slot| bits_for(profile.slot_max[slot].max(0) as u32))
             .max()
             .unwrap_or(0);
@@ -186,13 +193,33 @@ impl StateEncoding {
         } else {
             0
         };
-        let money = if money_bits > 0 { let at = next; next += money_bits; Some(at) } else { None };
+        let money = if money_bits > 0 {
+            let at = next;
+            next += money_bits;
+            Some(at)
+        } else {
+            None
+        };
 
-        let clock_bits = if profile.clock_moves() { bits_for(MINUTES_IN_DAY - 1) } else { 0 };
-        let clock = if clock_bits > 0 { let at = next; next += clock_bits; Some(at) } else { None };
+        let clock_bits = if profile.clock_moves() {
+            bits_for(MINUTES_IN_DAY - 1)
+        } else {
+            0
+        };
+        let clock = if clock_bits > 0 {
+            let at = next;
+            next += clock_bits;
+            Some(at)
+        } else {
+            None
+        };
 
         Self {
-            node_index: profile.node_seen.iter().map(|(k, v)| (*k, *v as u32)).collect(),
+            node_index: profile
+                .node_seen
+                .iter()
+                .map(|(k, v)| (*k, *v as u32))
+                .collect(),
             node_bits,
             slots,
             slot_bits: slot_span,
@@ -233,13 +260,14 @@ impl StateEncoding {
     /// Returns `None` for a value the layout cannot hold, which can only happen if a
     /// state is encoded that the profile never saw - the widths come from the profile.
     /// A caller that profiles and encodes the same sample never sees `None`.
-    pub fn encode(
-        &self,
-        node: DialogueNodeId,
-        state: &LookAheadState,
-    ) -> Option<Vec<(u32, bool)>> {
+    pub fn encode(&self, node: DialogueNodeId, state: &LookAheadState) -> Option<Vec<(u32, bool)>> {
         let mut bits = Vec::with_capacity(self.total_vars);
-        push_bits(&mut bits, 0, self.node_bits, *self.node_index.get(&node)? as u32)?;
+        push_bits(
+            &mut bits,
+            0,
+            self.node_bits,
+            *self.node_index.get(&node)? as u32,
+        )?;
 
         for &(slot, at) in &self.slots {
             let value = state.get(slot);
@@ -260,7 +288,12 @@ impl StateEncoding {
         }
 
         if let Some(at) = self.clock {
-            push_bits(&mut bits, at, self.clock_bits, state.day_minutes().max(0) as u32)?;
+            push_bits(
+                &mut bits,
+                at,
+                self.clock_bits,
+                state.day_minutes().max(0) as u32,
+            )?;
         }
 
         if self.reversed {
@@ -316,7 +349,11 @@ impl StateSet {
             (vars, BDDFunction::f(m))
         });
 
-        Self { _manager: manager, vars, set: empty }
+        Self {
+            _manager: manager,
+            vars,
+            set: empty,
+        }
     }
 
     /// Adds one state.
@@ -332,7 +369,9 @@ impl StateSet {
             let literal = if value {
                 self.vars[var as usize].clone()
             } else {
-                self.vars[var as usize].not().expect("negation of a variable")
+                self.vars[var as usize]
+                    .not()
+                    .expect("negation of a variable")
             };
             minterm = minterm.and(&literal).expect("conjunction of literals");
         }
@@ -422,7 +461,10 @@ mod tests {
         }
 
         for (n, s) in &members {
-            assert!(set.contains(&encoding.encode(*n, s).unwrap()), "{n} should be in the set");
+            assert!(
+                set.contains(&encoding.encode(*n, s).unwrap()),
+                "{n} should be in the set"
+            );
         }
 
         // A state that was never inserted must not be.

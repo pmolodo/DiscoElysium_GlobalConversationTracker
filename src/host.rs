@@ -47,7 +47,7 @@
 //! response whose body carries `error`, so the caller has one thing to parse.
 
 use std::io::{BufReader, BufWriter, Read, Write};
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 
 use crate::service::{Service, Status};
@@ -74,7 +74,10 @@ pub enum Request {
     /// A serving process holds ONE engine, so there is no handle in the protocol: the
     /// process IS the handle, and closing it is closing the process. That is the whole
     /// reason `gct_engine_close` has no counterpart here either.
-    Open { index: String, variables: Option<String> },
+    Open {
+        index: String,
+        variables: Option<String>,
+    },
     /// How many conversations the open index holds.
     ConversationCount,
     /// How many variables the deployed table declares; zero if none was read.
@@ -112,17 +115,29 @@ impl Response {
     /// A status and nothing else - a refusal, or a call whose whole answer is that it
     /// worked.
     fn bare(status: Status) -> Self {
-        Self { status, value: None, text: None }
+        Self {
+            status,
+            value: None,
+            text: None,
+        }
     }
 
     /// A number.
     fn value(value: i32) -> Self {
-        Self { status: Status::Ok, value: Some(value), text: None }
+        Self {
+            status: Status::Ok,
+            value: Some(value),
+            text: None,
+        }
     }
 
     /// A string, which for most calls is a JSON document.
     fn text(text: impl Into<String>) -> Self {
-        Self { status: Status::Ok, value: None, text: Some(text.into()) }
+        Self {
+            status: Status::Ok,
+            value: None,
+            text: Some(text.into()),
+        }
     }
 
     /// A value serialised to JSON, or [`Status::SerialiseFailed`] if it would not.
@@ -147,7 +162,10 @@ pub fn write_frame(out: &mut impl Write, body: &[u8]) -> std::io::Result<()> {
     if body.len() > MAX_FRAME {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            format!("a frame of {} bytes is past the {MAX_FRAME} limit", body.len()),
+            format!(
+                "a frame of {} bytes is past the {MAX_FRAME} limit",
+                body.len()
+            ),
         ));
     }
 
@@ -316,17 +334,25 @@ mod tests {
         let wrote = |request: &Request| serde_json::to_string(request).expect("serialises");
 
         assert_eq!(wrote(&Request::Version), r#""version""#);
-        assert_eq!(wrote(&Request::ConversationCount), r#""conversation_count""#);
+        assert_eq!(
+            wrote(&Request::ConversationCount),
+            r#""conversation_count""#
+        );
         assert_eq!(
             wrote(&Request::EntryCount { conversation: 631 }),
             r#"{"entry_count":{"conversation":631}}"#,
         );
         assert_eq!(
-            wrote(&Request::Open { index: "i.jsonl".into(), variables: None }),
+            wrote(&Request::Open {
+                index: "i.jsonl".into(),
+                variables: None
+            }),
             r#"{"open":{"index":"i.jsonl","variables":null}}"#,
         );
         assert_eq!(
-            wrote(&Request::LookAhead { request: "{}".into() }),
+            wrote(&Request::LookAhead {
+                request: "{}".into()
+            }),
             r#"{"look_ahead":{"request":"{}"}}"#,
         );
     }
@@ -352,9 +378,16 @@ mod tests {
         write_frame(&mut buffer, b"").expect("an empty body is a legal frame");
 
         let mut reader = buffer.as_slice();
-        assert_eq!(read_frame(&mut reader).unwrap().as_deref(), Some(&b"hello"[..]));
+        assert_eq!(
+            read_frame(&mut reader).unwrap().as_deref(),
+            Some(&b"hello"[..])
+        );
         assert_eq!(read_frame(&mut reader).unwrap().as_deref(), Some(&b""[..]));
-        assert_eq!(read_frame(&mut reader).unwrap(), None, "and then the end of the pipe");
+        assert_eq!(
+            read_frame(&mut reader).unwrap(),
+            None,
+            "and then the end of the pipe"
+        );
     }
 
     /// A length nobody meant to send is an error, not an allocation.
@@ -390,26 +423,41 @@ mod tests {
         let answers = served(&[
             Request::ConversationCount,
             Request::EntryCount { conversation: 631 },
-            Request::LookAhead { request: "{}".into() },
+            Request::LookAhead {
+                request: "{}".into(),
+            },
         ]);
 
         assert_eq!(answers.len(), 3);
         for answer in &answers {
             assert_eq!(answer.status, Status::BadHandle);
-            assert!(answer.value.is_none(), "a refused call must not answer a number");
-            assert!(answer.text.is_none(), "a refused call must not answer a string");
+            assert!(
+                answer.value.is_none(),
+                "a refused call must not answer a number"
+            );
+            assert!(
+                answer.text.is_none(),
+                "a refused call must not answer a string"
+            );
         }
     }
 
     #[test]
     fn opening_a_path_that_is_not_an_index_reports_it_and_keeps_serving() {
         let answers = served(&[
-            Request::Open { index: "no-such-file.jsonl".into(), variables: None },
+            Request::Open {
+                index: "no-such-file.jsonl".into(),
+                variables: None,
+            },
             Request::Version,
         ]);
 
         assert_eq!(answers[0].status, Status::IndexUnreadable);
-        assert_eq!(answers[1].status, Status::Ok, "one bad request does not end the server");
+        assert_eq!(
+            answers[1].status,
+            Status::Ok,
+            "one bad request does not end the server"
+        );
     }
 
     /// A frame that is not a request at all is answered rather than acted on.

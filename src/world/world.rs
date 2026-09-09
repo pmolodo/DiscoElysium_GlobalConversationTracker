@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-use crate::core::types::{DialogueNodeId, Ternary};
-use crate::core::guard_value::GuardValue;
-use crate::core::guard::IGuardContext;
 use crate::core::clock::ClockTime;
-use crate::core::state::StateSymbols;
+use crate::core::guard::IGuardContext;
+use crate::core::guard_value::GuardValue;
 use crate::core::state::LookAheadState;
+use crate::core::state::StateSymbols;
 use crate::core::state::{ITEM_PREFIX, TASK_PREFIX, THOUGHT_PREFIX};
+use crate::core::types::{DialogueNodeId, Ternary};
 
 /// The guard-language call that asks what the player is carrying, in centimes.
 ///
@@ -79,13 +79,21 @@ impl<'w> CrawlContext<'w> {
     where
         'w: 's,
     {
-        BoundContext { symbols: self.symbols, world: self.world, state: Some(state) }
+        BoundContext {
+            symbols: self.symbols,
+            world: self.world,
+            state: Some(state),
+        }
     }
 
     /// A view with no state behind it, for the seeding pass that runs before the first
     /// state exists.
     pub fn unbound(&self) -> BoundContext<'_> {
-        BoundContext { symbols: self.symbols, world: self.world, state: None }
+        BoundContext {
+            symbols: self.symbols,
+            world: self.world,
+            state: None,
+        }
     }
 }
 
@@ -169,7 +177,8 @@ impl IGuardContext for BoundContext<'_> {
             // variable - so this is `Variable[name]` written another way, and is answered
             // from the same place. Nine guards in the database use it.
             "FlagSet" => {
-                match arguments.first()
+                match arguments
+                    .first()
                     .filter(|v| v.kind() == GuardValueKind::Text)
                     .map(|v| v.text())
                 {

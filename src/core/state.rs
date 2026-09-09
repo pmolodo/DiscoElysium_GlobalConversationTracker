@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-use std::collections::HashMap;
 use ahash::AHasher;
-use std::hash::{Hash, Hasher};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
 use crate::core::types::DialogueNodeId;
 
@@ -68,11 +68,17 @@ impl StateSymbols {
     }
 
     pub fn once(&mut self, node: DialogueNodeId) -> usize {
-        self.intern(format!("{ONCE_PREFIX}{}:{}", node.conversation_id, node.entry_id))
+        self.intern(format!(
+            "{ONCE_PREFIX}{}:{}",
+            node.conversation_id, node.entry_id
+        ))
     }
 
     pub fn seen(&mut self, node: DialogueNodeId) -> usize {
-        self.intern(format!("{SEEN_PREFIX}{}:{}", node.conversation_id, node.entry_id))
+        self.intern(format!(
+            "{SEEN_PREFIX}{}:{}",
+            node.conversation_id, node.entry_id
+        ))
     }
 
     pub fn find(&self, name: &str) -> Option<usize> {
@@ -192,7 +198,8 @@ impl LookAheadState {
             money: self.money,
             day_minutes: self.day_minutes,
             hash: 0, // will be computed
-        }.rehashed()
+        }
+        .rehashed()
     }
 
     pub fn with_money(&self, money: i32) -> Self {
@@ -205,7 +212,8 @@ impl LookAheadState {
             money,
             day_minutes: self.day_minutes,
             hash: 0,
-        }.rehashed()
+        }
+        .rehashed()
     }
 
     pub fn with_day_minutes(&self, day_minutes: i32) -> Self {
@@ -218,15 +226,11 @@ impl LookAheadState {
             money: self.money,
             day_minutes: wrapped,
             hash: 0,
-        }.rehashed()
+        }
+        .rehashed()
     }
 
-    pub fn with_changes(
-        &self,
-        changes: &[(usize, i32)],
-        money: i32,
-        day_minutes: i32,
-    ) -> Self {
+    pub fn with_changes(&self, changes: &[(usize, i32)], money: i32, day_minutes: i32) -> Self {
         let mut slots = self.slots.clone();
         let mut max_idx = slots.len();
         for &(idx, _) in changes {
@@ -245,7 +249,8 @@ impl LookAheadState {
             money: money.max(0),
             day_minutes: Self::wrap_minutes(day_minutes),
             hash: 0,
-        }.rehashed()
+        }
+        .rehashed()
     }
 
     fn rehashed(mut self) -> Self {
@@ -272,7 +277,10 @@ impl LookAheadState {
 
 impl PartialEq for LookAheadState {
     fn eq(&self, other: &Self) -> bool {
-        if self.hash != other.hash || self.money != other.money || self.day_minutes != other.day_minutes {
+        if self.hash != other.hash
+            || self.money != other.money
+            || self.day_minutes != other.day_minutes
+        {
             return false;
         }
         let shared = self.slots.len().min(other.slots.len());
@@ -280,7 +288,8 @@ impl PartialEq for LookAheadState {
             return false;
         }
         // Check tails are zero
-        self.slots[shared..].iter().all(|&v| v == 0) && other.slots[shared..].iter().all(|&v| v == 0)
+        self.slots[shared..].iter().all(|&v| v == 0)
+            && other.slots[shared..].iter().all(|&v| v == 0)
     }
 }
 
@@ -329,7 +338,8 @@ pub fn seed_state(
                 }
             } else if !name.starts_with("once:") && !name.starts_with("seen:") {
                 let val = world.get_variable(name);
-                if val.kind() == crate::core::guard_value::GuardValueKind::Boolean && val.boolean() {
+                if val.kind() == crate::core::guard_value::GuardValueKind::Boolean && val.boolean()
+                {
                     state = state.with(slot, 1);
                 } else if val.kind() == crate::core::guard_value::GuardValueKind::Number
                     && val.number() != 0.0

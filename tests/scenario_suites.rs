@@ -44,7 +44,7 @@
 
 use std::collections::HashSet;
 
-use lookahead_engine::bridge::{answer, LookAheadAnswer, LookAheadRequest, NodeRef, WorldSnapshot};
+use lookahead_engine::bridge::{LookAheadAnswer, LookAheadRequest, NodeRef, WorldSnapshot, answer};
 use lookahead_engine::core::types::{DialogueNodeId, Novelty};
 use lookahead_engine::index::{build_group_graph, read_index};
 
@@ -125,7 +125,10 @@ impl Staged {
 
     /// The request, asking about these starts.
     fn asking(&self, starts: Vec<NodeRef>) -> LookAheadRequest {
-        LookAheadRequest { starts, ..self.request.clone() }
+        LookAheadRequest {
+            starts,
+            ..self.request.clone()
+        }
     }
 }
 
@@ -174,8 +177,11 @@ fn stage(
     };
 
     // The three rungs, exactly as the plugin builds them.
-    let everything: Vec<NodeRef> =
-        staged.graph.nodes().map(|node| NodeRef::from(node.id)).collect();
+    let everything: Vec<NodeRef> = staged
+        .graph
+        .nodes()
+        .map(|node| NodeRef::from(node.id))
+        .collect();
     staged.request.unseen_any_game = everything
         .iter()
         .copied()
@@ -233,7 +239,10 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
                 scenario
                     .options
                     .iter()
-                    .map(|option| NodeRef { conversation, entry: option.entry })
+                    .map(|option| NodeRef {
+                        conversation,
+                        entry: option.entry,
+                    })
                     .collect(),
             );
             let response = answer(&index, None, &request);
@@ -260,7 +269,10 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
                     continue;
                 };
 
-                let own = staged.novelty_of(NodeRef { conversation, entry: option.entry });
+                let own = staged.novelty_of(NodeRef {
+                    conversation,
+                    entry: option.entry,
+                });
                 let got = drawn(own, reply);
                 checked += 1;
 
@@ -276,7 +288,11 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
                         option.marker,
                         option.why,
                         reply.best,
-                        if reply.complete { "finished" } else { "gave up" },
+                        if reply.complete {
+                            "finished"
+                        } else {
+                            "gave up"
+                        },
                         reply.states_explored,
                         reply.nodes_reached,
                         suite.suite,
@@ -332,7 +348,9 @@ fn every_offline_claim_holds_over_the_whole_group() {
             continue;
         }
 
-        let Some(claim) = &suite.offline else { continue };
+        let Some(claim) = &suite.offline else {
+            continue;
+        };
 
         let known = ["nothingIsWorthCrawling", "unseenAnywhereIsNeverCrawled"];
         if !known.contains(&claim.claim.as_str()) {
@@ -442,7 +460,12 @@ fn every_offline_claim_holds_over_the_whole_group() {
                                 .best_linked_class(id, |id| staged.novelty(id))
                                 .is_some_and(|best| best > own)
                     })
-                    .map(|node| format!("{}:{} is still worth a search", node.conversation, node.entry))
+                    .map(|node| {
+                        format!(
+                            "{}:{} is still worth a search",
+                            node.conversation, node.entry
+                        )
+                    })
                     .collect::<Vec<_>>(),
             };
 
@@ -454,14 +477,22 @@ fn every_offline_claim_holds_over_the_whole_group() {
                     scenario.save,
                     claim.claim,
                     refused.len(),
-                    refused.iter().take(10).cloned().collect::<Vec<_>>().join(", "),
+                    refused
+                        .iter()
+                        .take(10)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", "),
                 ));
             }
         }
     }
 
     assert!(failures.is_empty(), "\n{}", failures.join("\n"));
-    assert!(asked > 0, "{TABLE} makes no offline claim, so this checked nothing");
+    assert!(
+        asked > 0,
+        "{TABLE} makes no offline claim, so this checked nothing"
+    );
     eprintln!("{asked} entries refused a search, as claimed");
 }
 

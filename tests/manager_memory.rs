@@ -21,11 +21,10 @@ use lookahead_engine::symbolic::budget::DiagramBudget;
 #[path = "common/counting_allocator.rs"]
 mod counting_allocator;
 
-use counting_allocator::{live, Counting};
+use counting_allocator::{Counting, live};
 
 #[global_allocator]
 static ALLOCATOR: Counting = Counting;
-
 
 /// What a manager built for this budget actually allocates.
 fn cost_of(budget: usize) -> usize {
@@ -54,8 +53,10 @@ const BUDGETS: [usize; 4] = [
 fn a_budget_buys_a_manager_that_fits_inside_it_and_mostly_fills_it() {
     // Measured first and judged afterwards, so one run reports the whole table rather
     // than stopping at the first budget that disappoints.
-    let measured: Vec<(usize, usize)> =
-        BUDGETS.iter().map(|&budget| (budget, cost_of(budget))).collect();
+    let measured: Vec<(usize, usize)> = BUDGETS
+        .iter()
+        .map(|&budget| (budget, cost_of(budget)))
+        .collect();
 
     for &(budget, cost) in &measured {
         let percent = (cost as f64 / budget as f64) * 100.0;

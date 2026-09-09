@@ -88,7 +88,9 @@ pub fn seed_of(
     let mut set = vars.top();
 
     for slot in 0..vars.layout().slot_count() {
-        let Some(ceiling) = vars.slot_ceiling(slot) else { continue };
+        let Some(ceiling) = vars.slot_ceiling(slot) else {
+            continue;
+        };
         // A REBASED SLOT STARTS AT NOTHING, because it holds the distance the search has
         // travelled rather than where it started - see `DataLayout::narrow_to_deltas`. The
         // save's value is not lost; it moves into the guards, which are rebased by it.
@@ -383,12 +385,18 @@ struct Forgetter<'a> {
 
 impl<'a> Forgetter<'a> {
     fn new(live: Option<std::sync::Arc<LiveSlots>>, vars: &'a DataVars<'a>) -> Self {
-        Self { live, vars, cubes: HashMap::new() }
+        Self {
+            live,
+            vars,
+            cubes: HashMap::new(),
+        }
     }
 
     /// `states` with everything dead at `id` quantified away.
     fn apply(&mut self, id: DialogueNodeId, states: &BDDFunction) -> BDDFunction {
-        let Some(live) = self.live.clone() else { return states.clone() };
+        let Some(live) = self.live.clone() else {
+            return states.clone();
+        };
 
         if !self.cubes.contains_key(&id) {
             let cube = self.cube_for(&live, id);
@@ -439,7 +447,13 @@ impl<'a> Reachability<'a> {
         counter_cap: u32,
     ) -> Self {
         Self::explore_within(
-            graph, start, seed, compiler, world, counter_cap, &Budget::default(),
+            graph,
+            start,
+            seed,
+            compiler,
+            world,
+            counter_cap,
+            &Budget::default(),
         )
     }
 
@@ -455,7 +469,16 @@ impl<'a> Reachability<'a> {
         budget: &Budget,
     ) -> Self {
         let order = IterationOrder::of(graph);
-        Self::explore_knowing(graph, start, seed, compiler, world, counter_cap, budget, &order)
+        Self::explore_knowing(
+            graph,
+            start,
+            seed,
+            compiler,
+            world,
+            counter_cap,
+            budget,
+            &order,
+        )
     }
 
     /// What entering `start` by one outcome leaves, without exploring anything.
@@ -526,7 +549,15 @@ impl<'a> Reachability<'a> {
     ) -> Self {
         let order = IterationOrder::of(graph);
         Self::explore_branch_knowing(
-            graph, start, branch, seed, compiler, world, counter_cap, budget, &order,
+            graph,
+            start,
+            branch,
+            seed,
+            compiler,
+            world,
+            counter_cap,
+            budget,
+            &order,
         )
     }
 
@@ -549,7 +580,14 @@ impl<'a> Reachability<'a> {
         order: &IterationOrder,
     ) -> Self {
         Self::explore_branch_knowing(
-            graph, start, StartBranch::Either, seed, compiler, world, counter_cap, budget,
+            graph,
+            start,
+            StartBranch::Either,
+            seed,
+            compiler,
+            world,
+            counter_cap,
+            budget,
             order,
         )
     }
@@ -578,7 +616,9 @@ impl<'a> Reachability<'a> {
         // Entering the start node is a step like any other, so the seed is what arrives
         // AT it rather than what leaves it - and where the start ROLLS, which of the two
         // ways in this search is about.
-        let Some(start_node) = graph.get(start) else { return this };
+        let Some(start_node) = graph.get(start) else {
+            return this;
+        };
         let entered = this.enter_branch(start_node, branch, seed, compiler, world, &mut image);
         // The start's own entry filled the manager, so what came back is the image of
         // nothing in particular and there is nothing to explore from. That is the search's
@@ -737,7 +777,9 @@ impl<'a> Reachability<'a> {
             let Some(node) = graph.get(id) else { continue };
 
             for &child_id in &node.links {
-                let Some(child) = graph.get(child_id) else { continue };
+                let Some(child) = graph.get(child_id) else {
+                    continue;
+                };
                 let arriving = this.enter(child, &delta, compiler, world, &mut image);
                 // Entering gave up for want of nodes, so what it just returned is the
                 // image of nothing in particular and everything after it would be built
@@ -752,7 +794,11 @@ impl<'a> Reachability<'a> {
                     continue;
                 }
 
-                let known = this.sets.get(&child_id).cloned().unwrap_or_else(|| vars.bottom());
+                let known = this
+                    .sets
+                    .get(&child_id)
+                    .cloned()
+                    .unwrap_or_else(|| vars.bottom());
                 // Only what is genuinely new. Diagrams are canonical for a fixed variable
                 // order, so this difference being empty is exactly "nothing changed" -
                 // there is no membership test to do and no approximation in the check.
@@ -950,9 +996,7 @@ impl<'a> Reachability<'a> {
                 self.charge(node, &fresh, image)
             }
 
-            DialogueCheckKind::Red | DialogueCheckKind::White => {
-                self.rolled(node, &allowed, image)
-            }
+            DialogueCheckKind::Red | DialogueCheckKind::White => self.rolled(node, &allowed, image),
 
             DialogueCheckKind::Passive => {
                 let passes = world.check_passes(node.id);
@@ -1243,8 +1287,12 @@ impl<'a> Reachability<'a> {
     fn finish(&mut self) {
         self.stats.entries_reached = self.sets.len();
         self.stats.diagram_nodes = self.sets.values().map(|s| s.node_count()).sum();
-        self.stats.largest_set =
-            self.sets.values().map(|s| s.node_count()).max().unwrap_or(0);
+        self.stats.largest_set = self
+            .sets
+            .values()
+            .map(|s| s.node_count())
+            .max()
+            .unwrap_or(0);
     }
 
     /// The entries the search can reach.
@@ -1269,7 +1317,7 @@ mod branch_tests {
     use crate::symbolic::budget::DiagramBudget;
     use crate::symbolic::data_layout::DataLayout;
     use crate::symbolic::vars::DataVars;
-    use crate::test_graph::{node, Entry, GraphBuilder};
+    use crate::test_graph::{Entry, GraphBuilder, node};
     use crate::world::test_world::TestWorld;
 
     const CAP: i32 = 16;
@@ -1277,8 +1325,17 @@ mod branch_tests {
     /// 0 is a white check. Passing opens 1 and 2 beyond it; failing opens 3.
     fn check() -> LookAheadGraph {
         GraphBuilder::new()
-            .add(Entry::new(0).kind(DialogueCheckKind::White).flag("roll").links(&[1, 3]))
-            .add(Entry::new(1).guard(r#"Variable["roll"] == true"#).links(&[2]))
+            .add(
+                Entry::new(0)
+                    .kind(DialogueCheckKind::White)
+                    .flag("roll")
+                    .links(&[1, 3]),
+            )
+            .add(
+                Entry::new(1)
+                    .guard(r#"Variable["roll"] == true"#)
+                    .links(&[2]),
+            )
             .add(Entry::new(2))
             .add(Entry::new(3).guard(r#"Variable["roll"] == false"#))
             .build()
@@ -1307,7 +1364,10 @@ mod branch_tests {
         let mut entries: Vec<i32> = found
             .entries()
             .filter(|id| {
-                found.states_at(*id).map(|states| states.satisfiable()).unwrap_or(false)
+                found
+                    .states_at(*id)
+                    .map(|states| states.satisfiable())
+                    .unwrap_or(false)
             })
             .map(|id| id.entry_id)
             .collect();
@@ -1398,7 +1458,10 @@ mod branch_tests {
             &Budget::default(),
         );
 
-        assert!(found.stats().out_of_memory, "the search should say the nodes ran out");
+        assert!(
+            found.stats().out_of_memory,
+            "the search should say the nodes ran out"
+        );
         assert!(
             !found.stats().reached_fixed_point,
             "and an answer built on a manager that filled is not a settled one",

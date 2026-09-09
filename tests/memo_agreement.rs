@@ -34,7 +34,7 @@
 
 use std::collections::HashSet;
 
-use lookahead_engine::bridge::{NodeRef, SnapshotWorld, WorldSnapshot, COUNTER_CAP};
+use lookahead_engine::bridge::{COUNTER_CAP, NodeRef, SnapshotWorld, WorldSnapshot};
 use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::budget::DiagramBudget;
@@ -71,15 +71,22 @@ const UNREAD: usize = 6;
 
 #[test]
 fn a_remembered_pass_answers_what_a_fresh_one_answers() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
 
     let mut compared = 0;
     let mut memos = lookahead_engine::symbolic::memo::MemoStats::default();
     for conversation in GROUPS {
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
-        let mut entries: Vec<NodeRef> =
-            graph.nodes().filter(|node| !node.is_group).map(|node| NodeRef::from(node.id)).collect();
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            continue;
+        };
+        let mut entries: Vec<NodeRef> = graph
+            .nodes()
+            .filter(|node| !node.is_group)
+            .map(|node| NodeRef::from(node.id))
+            .collect();
         // Ordered, so the rounds mark the same entries on every machine.
         entries.sort_unstable_by_key(|node| (node.conversation, node.entry));
         if entries.len() < UNREAD {
@@ -88,7 +95,9 @@ fn a_remembered_pass_answers_what_a_fresh_one_answers() {
 
         // ONE MANAGER, MANY SEARCHES, ONE THREAD - de-fpax, and it is also what a memo
         // requires: every set it holds is a formula in this manager.
-        let Some((asked, stats)) = one_group(&graph, &entries) else { continue };
+        let Some((asked, stats)) = one_group(&graph, &entries) else {
+            continue;
+        };
         compared += asked;
         memos.hits += stats.hits;
         memos.misses += stats.misses;
@@ -100,7 +109,10 @@ fn a_remembered_pass_answers_what_a_fresh_one_answers() {
         memos.evicted += stats.evicted;
     }
 
-    assert!(compared > 0, "no starts were compared, so nothing was checked");
+    assert!(
+        compared > 0,
+        "no starts were compared, so nothing was checked"
+    );
     assert!(
         memos.hits > 0,
         "{compared} answers agreed and the memo never once answered one - a feature that \
@@ -122,15 +134,21 @@ fn one_group(
         let layout = DataLayout::for_group(graph, &opening, COUNTER_CAP);
         let vars = DataVars::try_new(&layout, &symbols, DiagramBudget::over_a_group())?;
         let shape = GroupShape::of(graph);
-        let memo = Memo::new(memo::key_of(&world), DiagramBudget::over_a_group().nodes() / 4);
+        let memo = Memo::new(
+            memo::key_of(&world),
+            DiagramBudget::over_a_group().nodes() / 4,
+        );
 
         // ORDERED BEFORE TAKING, and this is not tidiness. `LookAheadGraph::nodes` yields
         // whatever the hash map does, which Rust seeds afresh per process - so taking the
         // first dozen gave a DIFFERENT dozen starts every run. Two runs in eight then asked
         // only about starts whose candidates were all reachable, every pass met, nothing was
         // keepable, and the test failed for reasons that were nobody's fault.
-        let mut starts: Vec<DialogueNodeId> =
-            graph.nodes().filter(|node| !node.is_group).map(|node| node.id).collect();
+        let mut starts: Vec<DialogueNodeId> = graph
+            .nodes()
+            .filter(|node| !node.is_group)
+            .map(|node| node.id)
+            .collect();
         starts.sort_unstable_by_key(|id| (id.conversation_id, id.entry_id));
         starts.truncate(STARTS);
 
@@ -160,19 +178,41 @@ fn one_group(
             };
 
             for &start in &starts {
-                let Some(hunting) = graph.best_linked_class(start, novelty) else { continue };
+                let Some(hunting) = graph.best_linked_class(start, novelty) else {
+                    continue;
+                };
                 if hunting <= Novelty::SeenThisGame {
                     continue;
                 }
 
                 for budget in budgets() {
                     let remembering = portfolio::best_novelty(
-                        graph, start, StartBranch::Either, &seed, &mut compiler, &world,
-                        COUNTER_CAP as u32, novelty, hunting, &budget, &shape, Some(&memo),
+                        graph,
+                        start,
+                        StartBranch::Either,
+                        &seed,
+                        &mut compiler,
+                        &world,
+                        COUNTER_CAP as u32,
+                        novelty,
+                        hunting,
+                        &budget,
+                        &shape,
+                        Some(&memo),
                     );
                     let fresh = portfolio::best_novelty(
-                        graph, start, StartBranch::Either, &seed, &mut compiler, &world,
-                        COUNTER_CAP as u32, novelty, hunting, &budget, &shape, None,
+                        graph,
+                        start,
+                        StartBranch::Either,
+                        &seed,
+                        &mut compiler,
+                        &world,
+                        COUNTER_CAP as u32,
+                        novelty,
+                        hunting,
+                        &budget,
+                        &shape,
+                        None,
                     );
 
                     assert_eq!(
@@ -232,7 +272,10 @@ fn budgets() -> [portfolio::Budget; 2] {
     };
     [
         generous(),
-        portfolio::Budget { forwards: std::time::Duration::ZERO, ..generous() },
+        portfolio::Budget {
+            forwards: std::time::Duration::ZERO,
+            ..generous()
+        },
     ]
 }
 
@@ -258,8 +301,12 @@ fn budgets() -> [portfolio::Budget; 2] {
 /// worth 68.6 per cent of its passes in, and it is what a player deep in a conversation they
 /// have mostly exhausted actually has.
 fn snapshot(entries: &[NodeRef], round: usize) -> WorldSnapshot {
-    let mut world =
-        WorldSnapshot { money: 500, day_minutes: 720, day_counter: 1, ..Default::default() };
+    let mut world = WorldSnapshot {
+        money: 500,
+        day_minutes: 720,
+        day_counter: 1,
+        ..Default::default()
+    };
     let unread = UNREAD.saturating_sub(round);
     for entry in entries.iter().take(entries.len().saturating_sub(unread)) {
         world.seen.insert(*entry);

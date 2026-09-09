@@ -37,9 +37,9 @@ use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated::on_its_own_thread;
-use lookahead_engine::symbolic::reachability::{seed_of, Reachability};
+use lookahead_engine::symbolic::reachability::{Reachability, seed_of};
 use lookahead_engine::symbolic::vars::DataVars;
-use lookahead_engine::test_graph::{node, Entry, GraphBuilder};
+use lookahead_engine::test_graph::{Entry, GraphBuilder, node};
 use lookahead_engine::world::test_world::TestWorld;
 use proptest::prelude::*;
 
@@ -62,10 +62,12 @@ fn variable_name() -> impl Strategy<Value = String> {
 
 /// A function name, which the tokeniser reads as a bare word.
 fn call_name() -> impl Strategy<Value = String> {
-    "[A-Za-z][A-Za-z0-9]{0,10}".prop_filter(
-        "a keyword is a token rather than a name",
-        |name| !matches!(name.as_str(), "and" | "or" | "not" | "true" | "false" | "nil"),
-    )
+    "[A-Za-z][A-Za-z0-9]{0,10}".prop_filter("a keyword is a token rather than a name", |name| {
+        !matches!(
+            name.as_str(),
+            "and" | "or" | "not" | "true" | "false" | "nil"
+        )
+    })
 }
 
 /// A literal that survives being printed.
@@ -104,10 +106,8 @@ fn guard(depth: u32) -> impl Strategy<Value = Guard> {
     leaf.prop_recursive(depth, 64, 3, |inner| {
         prop_oneof![
             inner.clone().prop_map(Guard::not),
-            (inner.clone(), inner.clone())
-                .prop_map(|(l, r)| Guard::and(l, r)),
-            (inner.clone(), inner.clone())
-                .prop_map(|(l, r)| Guard::or(l, r)),
+            (inner.clone(), inner.clone()).prop_map(|(l, r)| Guard::and(l, r)),
+            (inner.clone(), inner.clone()).prop_map(|(l, r)| Guard::or(l, r)),
             (comparison_operator(), inner.clone(), inner.clone())
                 .prop_map(|(op, l, r)| Guard::comparison(op, l, r)),
             (call_name(), prop::collection::vec(inner, 0..3))
@@ -233,7 +233,10 @@ fn graph_of(writes: &[Written]) -> (LookAheadGraph, StateSymbols) {
     );
 
     let snapshot = symbols.clone();
-    (LookAheadGraph::new(vec![node], symbols).expect("one node is a graph"), snapshot)
+    (
+        LookAheadGraph::new(vec![node], symbols).expect("one node is a graph"),
+        snapshot,
+    )
 }
 
 proptest! {
@@ -394,7 +397,9 @@ fn graph_from(shapes: &[Shape]) -> LookAheadGraph {
             // check cannot be retried: a white check with nowhere to record its failure is
             // retryable for ever, and a generated graph full of them would spend the walk's
             // whole ceiling on one shape.
-            1 => entry.kind(DialogueCheckKind::White).flag(&format!("roll{index}")),
+            1 => entry
+                .kind(DialogueCheckKind::White)
+                .flag(&format!("roll{index}")),
             2 => entry.kind(DialogueCheckKind::Passive),
             _ => entry,
         };

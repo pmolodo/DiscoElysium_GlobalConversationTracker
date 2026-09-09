@@ -84,7 +84,9 @@ const STARTS: usize = 24;
 const UNSEEN: usize = 10;
 
 fn main() {
-    let arm = std::env::args().nth(1).unwrap_or_else(|| "sets".to_string());
+    let arm = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "sets".to_string());
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
         return;
@@ -111,7 +113,9 @@ fn sets_arm(index: &lookahead_engine::index::Index, budget: DiagramBudget) {
     );
 
     for conversation in numbers("CONVERSATION", &CONVERSATIONS) {
-        let Some((graph, start)) = group(index, conversation) else { continue };
+        let Some((graph, start)) = group(index, conversation) else {
+            continue;
+        };
         let live = Arc::new(LiveSlots::of(&graph));
         let dead = dead_share(&graph, &live);
 
@@ -163,7 +167,9 @@ fn menu_arm(index: &lookahead_engine::index::Index, budget: DiagramBudget) {
     );
 
     for conversation in numbers("CONVERSATION", &CONVERSATIONS) {
-        let Some((graph, start)) = group(index, conversation) else { continue };
+        let Some((graph, start)) = group(index, conversation) else {
+            continue;
+        };
         let Some(profile) = MenuProfile::of(&graph, start, unseen_wanted, starts_wanted) else {
             eprintln!("conversation {conversation}: every start would be refused; skipping.");
             continue;
@@ -303,18 +309,33 @@ where
             .with_constant_clock(DataLayout::group_passes_time(graph));
         let seed = seed_of(graph, &world, &vars).expect("room for a seed");
         let shape = GroupShape::of(graph);
-        let search = portfolio::Budget { forget_dead, ..Default::default() };
+        let search = portfolio::Budget {
+            forget_dead,
+            ..Default::default()
+        };
 
         let mut backward = 0;
         let began = Instant::now();
         for &start in starts {
-            let Some(hunting) = graph.best_linked_class(start, novelty) else { continue };
+            let Some(hunting) = graph.best_linked_class(start, novelty) else {
+                continue;
+            };
             if hunting <= Novelty::SeenThisGame {
                 continue;
             }
             let answer = portfolio::best_novelty(
-                graph, start, StartBranch::Either, &seed, &mut compiler, &world,
-                COUNTER_CAP as u32, novelty, hunting, &search, &shape, None,
+                graph,
+                start,
+                StartBranch::Either,
+                &seed,
+                &mut compiler,
+                &world,
+                COUNTER_CAP as u32,
+                novelty,
+                hunting,
+                &search,
+                &shape,
+                None,
             );
             if answer.by != portfolio::Answered::Forwards {
                 backward += 1;
@@ -350,7 +371,12 @@ fn dead_share(graph: &LookAheadGraph, live: &LiveSlots) -> f64 {
     let world = measuring_world();
     let layout = DataLayout::for_group(graph, &world, COUNTER_CAP);
 
-    let width = |slot: usize| layout.slot(slot).map(|(_, bits)| bits as usize).unwrap_or(0);
+    let width = |slot: usize| {
+        layout
+            .slot(slot)
+            .map(|(_, bits)| bits as usize)
+            .unwrap_or(0)
+    };
     let carried: usize = (0..layout.slot_count()).map(width).sum();
     if carried == 0 {
         return 0.0;
@@ -359,7 +385,11 @@ fn dead_share(graph: &LookAheadGraph, live: &LiveSlots) -> f64 {
     let mut dead = 0usize;
     let mut entries = 0usize;
     for node in graph.nodes() {
-        dead += live.dead_out(node.id, &layout).into_iter().map(width).sum::<usize>();
+        dead += live
+            .dead_out(node.id, &layout)
+            .into_iter()
+            .map(width)
+            .sum::<usize>();
         entries += 1;
     }
 
@@ -368,7 +398,11 @@ fn dead_share(graph: &LookAheadGraph, live: &LiveSlots) -> f64 {
 
 fn measuring_world() -> SnapshotWorld {
     SnapshotWorld::declaring(
-        WorldSnapshot { day_minutes: 720, day_counter: 1, ..Default::default() },
+        WorldSnapshot {
+            day_minutes: 720,
+            day_counter: 1,
+            ..Default::default()
+        },
         None,
     )
 }
@@ -379,12 +413,18 @@ fn ratio(exact: f64, forgetful: f64) -> String {
 }
 
 fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name).ok().and_then(|text| text.trim().parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name)
+        .ok()
+        .and_then(|text| text.trim().parse().ok())
+        .unwrap_or(fallback)
 }
 
 fn numbers(name: &str, fallback: &[i32]) -> Vec<i32> {
     match lookahead_engine::core::env::var(name) {
-        Ok(text) => text.split(',').filter_map(|part| part.trim().parse().ok()).collect(),
+        Ok(text) => text
+            .split(',')
+            .filter_map(|part| part.trim().parse().ok())
+            .collect(),
         Err(_) => fallback.to_vec(),
     }
 }

@@ -82,7 +82,11 @@ fn normalize(text: &str) -> String {
             // newline it stands for. Anything else escaped out here is not Lua the
             // parser can read, so it goes the same way rather than being left to start
             // a name.
-            out.push(if chars.get(i + 1) == Some(&SEPARATOR_ESCAPE) { '\n' } else { ' ' });
+            out.push(if chars.get(i + 1) == Some(&SEPARATOR_ESCAPE) {
+                '\n'
+            } else {
+                ' '
+            });
             i += if i + 1 < chars.len() { 2 } else { 1 };
             continue;
         }
@@ -96,7 +100,9 @@ fn normalize(text: &str) -> String {
                     if chars[i] == ']' && chars.get(i + 1) == Some(&']') {
                         i += 2;
                         depth -= 1;
-                        if depth == 0 { break; }
+                        if depth == 0 {
+                            break;
+                        }
                     } else if chars[i] == '[' && chars.get(i + 1) == Some(&'[') {
                         i += 2;
                         depth += 1;
@@ -142,13 +148,23 @@ fn invocations(script: &str) -> Vec<Invocation> {
     let mut i = 0;
     let chars: Vec<char> = script.chars().collect();
     while i < chars.len() {
-        while i < chars.len() && !is_name_start(chars[i]) { i += 1; }
-        if i >= chars.len() { break; }
+        while i < chars.len() && !is_name_start(chars[i]) {
+            i += 1;
+        }
+        if i >= chars.len() {
+            break;
+        }
         let start = i;
-        while i < chars.len() && is_name_part(chars[i]) { i += 1; }
+        while i < chars.len() && is_name_part(chars[i]) {
+            i += 1;
+        }
         let name = chars[start..i].iter().collect::<String>();
-        while i < chars.len() && chars[i].is_whitespace() { i += 1; }
-        if i >= chars.len() || chars[i] != '(' { continue; }
+        while i < chars.len() && chars[i].is_whitespace() {
+            i += 1;
+        }
+        if i >= chars.len() || chars[i] != '(' {
+            continue;
+        }
         let mut args = Vec::new();
         let mut current = String::new();
         // One, not zero: the call's own opening bracket is consumed just below, so the
@@ -290,7 +306,11 @@ fn translate_call(call: Invocation, symbols: &mut StateSymbols, actions: &mut Ve
                 // The amount is the second argument, and the game reads it as an int.
                 // An amount that will not parse is a script this cannot read, so it moves
                 // nothing rather than moving by a guessed step.
-                _ => call.args.get(1).and_then(|a| a.trim().parse::<i32>().ok()).unwrap_or(0),
+                _ => call
+                    .args
+                    .get(1)
+                    .and_then(|a| a.trim().parse::<i32>().ok())
+                    .unwrap_or(0),
             };
             actions.push(DialogueAction::increment(slot, step, true, call.name));
         }
@@ -339,7 +359,11 @@ fn translate_call(call: Invocation, symbols: &mut StateSymbols, actions: &mut Ve
         "GainMoneyOnce" | "GainMoneyAlways" | "LoseMoneyOnce" | "LoseMoneyAlways" => {
             let gain = call.name.starts_with("Gain");
             let once = call.name.ends_with("Once");
-            let amount = call.args.get(0).and_then(|s| s.trim().parse::<i32>().ok()).unwrap_or(0);
+            let amount = call
+                .args
+                .get(0)
+                .and_then(|s| s.trim().parse::<i32>().ok())
+                .unwrap_or(0);
             actions.push(DialogueAction::money(gain, amount, once, call.name));
         }
         "PassTime" => {
@@ -359,35 +383,53 @@ fn translate_call(call: Invocation, symbols: &mut StateSymbols, actions: &mut Ve
 
 fn try_read_increment(value: &str, variable: &str, amount: &mut i32, once: &mut bool) -> bool {
     let self_ref = format!("Variable[\"{variable}\"]");
-    let Some(idx) = value.find(&self_ref) else { return false; };
+    let Some(idx) = value.find(&self_ref) else {
+        return false;
+    };
     let rest = &value[idx + self_ref.len()..].trim();
-    if !rest.starts_with('+') { return false; }
+    if !rest.starts_with('+') {
+        return false;
+    }
     let rest = &rest[1..].trim();
     *once = false;
     let rest = if rest.starts_with(ONCE_FN) {
         *once = true;
         if let Some(open) = rest.find('(') {
             if let Some(close) = rest.rfind(')') {
-                &rest[open+1..close]
-            } else { return false; }
-        } else { return false; }
-    } else { rest };
+                &rest[open + 1..close]
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    } else {
+        rest
+    };
     if let Ok(v) = rest.trim().parse::<i32>() {
         *amount = v;
         true
-    } else { false }
+    } else {
+        false
+    }
 }
 
 fn read_assigned_value(value: &str) -> i32 {
     let t = value.trim();
-    if t.eq_ignore_ascii_case("true") { return 1; }
-    if t.eq_ignore_ascii_case("false") { return 0; }
+    if t.eq_ignore_ascii_case("true") {
+        return 1;
+    }
+    if t.eq_ignore_ascii_case("false") {
+        return 0;
+    }
     t.parse().unwrap_or(1)
 }
 
 fn unquote(s: &str) -> String {
     let t = s.trim();
     if t.len() >= 2 && t.starts_with('"') && t.ends_with('"') {
-        t[1..t.len()-1].to_string()
-    } else { t.to_string() }
+        t[1..t.len() - 1].to_string()
+    } else {
+        t.to_string()
+    }
 }

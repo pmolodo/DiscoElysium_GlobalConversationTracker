@@ -11,7 +11,7 @@
 //! compared, and a verdict of "no room" then said the harness rationed the diagram rather
 //! than the diagram failing to fit.
 
-use oxidd::bdd::{new_manager, BDDManagerRef};
+use oxidd::bdd::{BDDManagerRef, new_manager};
 
 /// A memory allowance for one diagram, and the capacities it works out to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,7 +121,10 @@ impl DiagramBudget {
 
     /// An allowance of this many bytes, split the way every caller has always split it.
     pub const fn new(memory: usize) -> Self {
-        Self { memory, cache_split: Self::NODES_PER_CACHE_ENTRY }
+        Self {
+            memory,
+            cache_split: Self::NODES_PER_CACHE_ENTRY,
+        }
     }
 
     /// The same allowance, divided differently between the node store and the apply cache.
@@ -146,8 +149,14 @@ impl DiagramBudget {
     /// If `nodes_per_entry` is zero, which would ask for one cache entry per node and
     /// divide by zero pricing it.
     pub fn with_cache_split(self, nodes_per_entry: usize) -> Self {
-        assert!(nodes_per_entry > 0, "a cache split of zero is one entry per node");
-        Self { cache_split: nodes_per_entry, ..self }
+        assert!(
+            nodes_per_entry > 0,
+            "a cache split of zero is one entry per node"
+        );
+        Self {
+            cache_split: nodes_per_entry,
+            ..self
+        }
     }
 
     /// What a node costs under THIS split, in bytes.
@@ -351,7 +360,10 @@ mod tests {
     fn the_capacities_divide_the_allowance_the_way_the_constants_say() {
         let budget = DiagramBudget::new(DiagramBudget::BYTES_PER_NODE * 1024);
         assert_eq!(budget.nodes(), 1024);
-        assert_eq!(budget.cache_entries(), 1024 / DiagramBudget::NODES_PER_CACHE_ENTRY);
+        assert_eq!(
+            budget.cache_entries(),
+            1024 / DiagramBudget::NODES_PER_CACHE_ENTRY
+        );
     }
 
     #[test]
@@ -396,8 +408,8 @@ mod tests {
         // headroom check rather than an equality.
         for split in [1, 2, 4, 8, 16, 64] {
             let budget = DiagramBudget::new(64 * 1024 * 1024).with_cache_split(split);
-            let up_front = budget.nodes() * 16
-                + budget.cache_entries() * DiagramBudget::BYTES_PER_CACHE_ENTRY;
+            let up_front =
+                budget.nodes() * 16 + budget.cache_entries() * DiagramBudget::BYTES_PER_CACHE_ENTRY;
             assert!(
                 up_front <= budget.memory(),
                 "a split of {split} asks for {up_front} bytes up front out of {}",

@@ -29,7 +29,7 @@ use lookahead_engine::symbolic::budget::DiagramBudget;
 #[path = "../tests/common/counting_allocator.rs"]
 mod counting_allocator;
 
-use counting_allocator::{live, Counting};
+use counting_allocator::{Counting, live};
 
 #[global_allocator]
 static ALLOCATOR: Counting = Counting;
@@ -54,14 +54,7 @@ const GROWTH_BUDGET: usize = 1024 * 1024 * 1024;
 /// may not be finished halfway - a marginal cost measured at half the store can miss a
 /// doubling that only happens near the end, and near the end is where a budget is spent.
 const SAMPLES: [usize; 9] = [
-    2_000_000,
-    5_000_000,
-    9_000_000,
-    13_000_000,
-    17_000_000,
-    21_000_000,
-    25_000_000,
-    28_000_000,
+    2_000_000, 5_000_000, 9_000_000, 13_000_000, 17_000_000, 21_000_000, 25_000_000, 28_000_000,
     31_000_000,
 ];
 
@@ -87,7 +80,6 @@ fn grow_to(
     manager: &BDDManagerRef,
     target: usize,
 ) -> usize {
-
     // POLLED EVERY FEW CUBES, not every one: num_inner_nodes appears to walk the store, so
     // asking after each cube made the fill quadratic and a three-budget run took four
     // minutes. The overshoot past `target` this allows is a few cubes' worth, which against
@@ -107,7 +99,11 @@ fn grow_to(
             *seed ^= *seed << 13;
             *seed ^= *seed >> 7;
             *seed ^= *seed << 17;
-            let literal = match if *seed & 1 == 0 { Ok(var.clone()) } else { var.not() } {
+            let literal = match if *seed & 1 == 0 {
+                Ok(var.clone())
+            } else {
+                var.not()
+            } {
                 Ok(literal) => literal,
                 Err(_) => return manager.with_manager_shared(|m| m.num_inner_nodes()),
             };
@@ -223,7 +219,10 @@ fn main() {
         }
     }
 
-    assert!(!marginals.is_empty(), "no sample grew the store, so nothing was measured");
+    assert!(
+        !marginals.is_empty(),
+        "no sample grew the store, so nothing was measured"
+    );
     marginals.sort_by(|a, b| a.partial_cmp(b).expect("no NaN"));
     let marginal = marginals[marginals.len() / 2];
 

@@ -179,7 +179,11 @@ where
     isolated::on_its_own_thread(|| {
         let symbols = graph.symbols().clone();
         let world = SnapshotWorld::declaring(
-            WorldSnapshot { day_minutes: 720, day_counter: 1, ..Default::default() },
+            WorldSnapshot {
+                day_minutes: 720,
+                day_counter: 1,
+                ..Default::default()
+            },
             None,
         );
         let layout = DataLayout::for_group(graph, &world, COUNTER_CAP);
@@ -189,7 +193,10 @@ where
             .with_constant_clock(DataLayout::group_passes_time(graph));
         let seed = seed_of(graph, &world, &vars).expect("room for a seed");
         let shape = GroupShape::of(graph);
-        let search = portfolio::Budget { pruning, ..Default::default() };
+        let search = portfolio::Budget {
+            pruning,
+            ..Default::default()
+        };
 
         // WARMED, so the first start does not pay the manager's first allocations for the
         // whole arm. The two arms are separate processes' worth of manager either way, and
@@ -197,13 +204,25 @@ where
         let mut settled = 0;
         let began = Instant::now();
         for &start in starts {
-            let Some(hunting) = graph.best_linked_class(start, novelty) else { continue };
+            let Some(hunting) = graph.best_linked_class(start, novelty) else {
+                continue;
+            };
             if hunting <= Novelty::SeenThisGame {
                 continue;
             }
             let answer = portfolio::best_novelty(
-                graph, start, StartBranch::Either, &seed, &mut compiler, &world,
-                COUNTER_CAP as u32, novelty, hunting, &search, &shape, None,
+                graph,
+                start,
+                StartBranch::Either,
+                &seed,
+                &mut compiler,
+                &world,
+                COUNTER_CAP as u32,
+                novelty,
+                hunting,
+                &search,
+                &shape,
+                None,
             );
             // STARTS THAT REACHED THE BACKWARD DRIVER, which is not the same as starts with
             // a settled forward run and must not be labelled as though it were. A slice
@@ -220,12 +239,18 @@ where
 }
 
 fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name).ok().and_then(|text| text.trim().parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name)
+        .ok()
+        .and_then(|text| text.trim().parse().ok())
+        .unwrap_or(fallback)
 }
 
 fn numbers(name: &str, fallback: &[i32]) -> Vec<i32> {
     match lookahead_engine::core::env::var(name) {
-        Ok(text) => text.split(',').filter_map(|part| part.trim().parse().ok()).collect(),
+        Ok(text) => text
+            .split(',')
+            .filter_map(|part| part.trim().parse().ok())
+            .collect(),
         Err(_) => fallback.to_vec(),
     }
 }

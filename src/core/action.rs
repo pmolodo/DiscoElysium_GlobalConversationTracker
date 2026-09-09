@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-use std::fmt;
-use serde::{Deserialize, Serialize};
 use crate::core::state::LookAheadState;
+use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// What kind of change an action makes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,7 +25,7 @@ pub enum DialogueActionKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DialogueAction {
     kind: DialogueActionKind,
-    slot: i32,           // -1 for money/unmodelled
+    slot: i32, // -1 for money/unmodelled
     value: i32,
     once: bool,
     name: String,
@@ -50,7 +50,10 @@ pub struct CounterCaps<'a> {
 impl<'a> CounterCaps<'a> {
     /// The same cap for every slot.
     pub fn flat(default: i32) -> Self {
-        Self { default, per_slot: None }
+        Self {
+            default,
+            per_slot: None,
+        }
     }
 
     /// A cap that may be overridden per slot; `None` from `per_slot` means the default.
@@ -58,7 +61,10 @@ impl<'a> CounterCaps<'a> {
         default: i32,
         per_slot: &'a (dyn Fn(usize) -> Option<i32> + Send + Sync),
     ) -> Self {
-        Self { default, per_slot: Some(per_slot) }
+        Self {
+            default,
+            per_slot: Some(per_slot),
+        }
     }
 
     /// The cap that applies to one slot.
@@ -77,16 +83,32 @@ impl DialogueAction {
     }
 
     pub fn assign(slot: usize, value: i32, name: String) -> Self {
-        Self { kind: DialogueActionKind::Assign, slot: slot as i32, value, once: false, name }
+        Self {
+            kind: DialogueActionKind::Assign,
+            slot: slot as i32,
+            value,
+            once: false,
+            name,
+        }
     }
 
     pub fn increment(slot: usize, amount: i32, once: bool, name: String) -> Self {
-        Self { kind: DialogueActionKind::Increment, slot: slot as i32, value: amount, once, name }
+        Self {
+            kind: DialogueActionKind::Increment,
+            slot: slot as i32,
+            value: amount,
+            once,
+            name,
+        }
     }
 
     pub fn money(gain: bool, amount: i32, once: bool, name: String) -> Self {
         Self {
-            kind: if gain { DialogueActionKind::GainMoney } else { DialogueActionKind::LoseMoney },
+            kind: if gain {
+                DialogueActionKind::GainMoney
+            } else {
+                DialogueActionKind::LoseMoney
+            },
             slot: -1,
             value: amount,
             once,
@@ -95,11 +117,23 @@ impl DialogueAction {
     }
 
     pub fn pass_time(name: String) -> Self {
-        Self { kind: DialogueActionKind::PassTime, slot: -1, value: LookAheadState::PASS_TIME_MINUTES, once: false, name }
+        Self {
+            kind: DialogueActionKind::PassTime,
+            slot: -1,
+            value: LookAheadState::PASS_TIME_MINUTES,
+            once: false,
+            name,
+        }
     }
 
     pub fn unmodelled(name: String) -> Self {
-        Self { kind: DialogueActionKind::Unmodelled, slot: -1, value: 0, once: false, name }
+        Self {
+            kind: DialogueActionKind::Unmodelled,
+            slot: -1,
+            value: 0,
+            once: false,
+            name,
+        }
     }
 
     /// An action the model recognises and deliberately does not apply.
@@ -111,7 +145,13 @@ impl DialogueAction {
             crate::core::modelling::for_action(&name).is_some(),
             "no decision covers {name}",
         );
-        Self { kind: DialogueActionKind::Declared, slot: -1, value: 0, once: false, name }
+        Self {
+            kind: DialogueActionKind::Declared,
+            slot: -1,
+            value: 0,
+            once: false,
+            name,
+        }
     }
 
     /// The decision that made this a stub, for an action that is one.
@@ -127,7 +167,10 @@ impl DialogueAction {
     /// Only the two that write one do. For every other kind `slot` is `-1`, which is a
     /// marker rather than an index - see the field.
     pub fn writes_slot(&self) -> bool {
-        matches!(self.kind, DialogueActionKind::Assign | DialogueActionKind::Increment)
+        matches!(
+            self.kind,
+            DialogueActionKind::Assign | DialogueActionKind::Increment
+        )
     }
 
     /// The same action against a renumbered symbol table, or `None` if its slot has gone.
@@ -156,11 +199,21 @@ impl DialogueAction {
         Some(self)
     }
 
-    pub fn kind(&self) -> DialogueActionKind { self.kind }
-    pub fn slot(&self) -> i32 { self.slot }
-    pub fn value(&self) -> i32 { self.value }
-    pub fn once(&self) -> bool { self.once }
-    pub fn name(&self) -> &str { &self.name }
+    pub fn kind(&self) -> DialogueActionKind {
+        self.kind
+    }
+    pub fn slot(&self) -> i32 {
+        self.slot
+    }
+    pub fn value(&self) -> i32 {
+        self.value
+    }
+    pub fn once(&self) -> bool {
+        self.once
+    }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
 
     /// Apply a node's actions to a state.
     pub fn apply(
@@ -185,7 +238,9 @@ impl DialogueAction {
 
         for action in actions {
             if action.once {
-                if already_fired { continue; }
+                if already_fired {
+                    continue;
+                }
                 fired_something_once = true;
             }
 
@@ -195,7 +250,9 @@ impl DialogueAction {
                 }
                 DialogueActionKind::Increment => {
                     let idx = action.slot as usize;
-                    let current = changes.iter().rev()
+                    let current = changes
+                        .iter()
+                        .rev()
                         .find(|(i, _)| *i == idx)
                         .map(|(_, v)| *v)
                         .unwrap_or_else(|| state.get(idx));
@@ -239,10 +296,31 @@ impl DialogueAction {
 impl fmt::Display for DialogueAction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.kind {
-            DialogueActionKind::Assign => write!(f, "{}: slot {} = {}", self.name, self.slot, self.value),
-            DialogueActionKind::Increment => write!(f, "{}: slot {} += {}{}", self.name, self.slot, self.value, if self.once { " (once)" } else { "" }),
-            DialogueActionKind::GainMoney => write!(f, "{}: money += {}{}", self.name, self.value, if self.once { " (once)" } else { "" }),
-            DialogueActionKind::LoseMoney => write!(f, "{}: money -= {}{}", self.name, self.value, if self.once { " (once)" } else { "" }),
+            DialogueActionKind::Assign => {
+                write!(f, "{}: slot {} = {}", self.name, self.slot, self.value)
+            }
+            DialogueActionKind::Increment => write!(
+                f,
+                "{}: slot {} += {}{}",
+                self.name,
+                self.slot,
+                self.value,
+                if self.once { " (once)" } else { "" }
+            ),
+            DialogueActionKind::GainMoney => write!(
+                f,
+                "{}: money += {}{}",
+                self.name,
+                self.value,
+                if self.once { " (once)" } else { "" }
+            ),
+            DialogueActionKind::LoseMoney => write!(
+                f,
+                "{}: money -= {}{}",
+                self.name,
+                self.value,
+                if self.once { " (once)" } else { "" }
+            ),
             DialogueActionKind::PassTime => write!(f, "{}: clock += {}m", self.name, self.value),
             DialogueActionKind::Unmodelled => write!(f, "{}: not modelled", self.name),
             DialogueActionKind::Declared => match self.decision() {

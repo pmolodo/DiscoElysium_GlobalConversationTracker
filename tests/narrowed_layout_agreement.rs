@@ -24,8 +24,8 @@
 use std::collections::HashSet;
 
 use lookahead_engine::bridge::{
-    answer_starts, entered_at_of, questions_for, LookAheadAnswer, LookAheadRequest, NodeRef,
-    SnapshotWorld, WireValue, WorldSnapshot, COUNTER_CAP,
+    COUNTER_CAP, LookAheadAnswer, LookAheadRequest, NodeRef, SnapshotWorld, WireValue,
+    WorldSnapshot, answer_starts, entered_at_of, questions_for,
 };
 use lookahead_engine::core::types::{DialogueNodeId, Novelty};
 use lookahead_engine::graph::graph::LookAheadGraph;
@@ -51,7 +51,9 @@ const STARTS: usize = 6;
 
 #[test]
 fn a_narrowed_layout_answers_what_the_whole_group_answers() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
 
     let mut compared = 0;
@@ -62,8 +64,12 @@ fn a_narrowed_layout_answers_what_the_whole_group_answers() {
     let mut unfinished = 0;
 
     for conversation in GROUPS {
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
-        let Ok(questions) = questions_for(&index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            continue;
+        };
+        let Ok(questions) = questions_for(&index, conversation) else {
+            continue;
+        };
 
         // STARTS FROM THE NAMED CONVERSATION ONLY, which is the shape the plugin sends and
         // the shape the narrowing is for. Starts scattered across the group would widen
@@ -176,7 +182,10 @@ fn a_narrowed_layout_answers_what_the_whole_group_answers() {
         );
     }
 
-    assert!(compared > 0, "nothing was compared, so this test proves nothing");
+    assert!(
+        compared > 0,
+        "nothing was compared, so this test proves nothing"
+    );
     assert!(
         narrowed_something,
         "no group's layout actually got smaller, so the comparison above never exercised \
@@ -233,7 +242,14 @@ fn answers_on_this_thread(
     };
 
     Some(answer_starts(
-        graph, &world, request, &novelty, &mut compiler, &seed, &shape, None,
+        graph,
+        &world,
+        request,
+        &novelty,
+        &mut compiler,
+        &seed,
+        &shape,
+        None,
     ))
 }
 

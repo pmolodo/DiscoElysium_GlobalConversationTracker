@@ -48,8 +48,8 @@
 //!   against RAM plus pagefile and then pay for it in thrashing.
 
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use lookahead_engine::symbolic::budget::DiagramBudget;
 
@@ -218,7 +218,9 @@ fn under_a_heap_cap<T>(body: impl FnOnce() -> T) -> (T, usize) {
 /// A poisoned lock is taken anyway: it means another test panicked, and its failure is the
 /// one worth reading - not a second failure here about the lock.
 fn alone() -> std::sync::MutexGuard<'static, ()> {
-    ARMED.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    ARMED
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// The probe reports a refusal rather than dying of one.
@@ -233,7 +235,10 @@ fn a_budget_the_allocator_refuses_comes_back_as_a_value() {
 
     let (supplied, refusals) = under_a_heap_cap(|| budget.can_be_supplied());
 
-    assert!(!supplied, "the allocator refused and can_be_supplied said yes anyway");
+    assert!(
+        !supplied,
+        "the allocator refused and can_be_supplied said yes anyway"
+    );
     assert!(
         refusals > 0,
         "nothing was refused, so this proved only that the code asked for nothing large",
@@ -262,12 +267,21 @@ fn a_manager_that_cannot_be_afforded_is_refused_rather_than_aborting() {
 
     let (manager, refusals) = under_a_heap_cap(|| budget.try_manager());
 
-    assert!(manager.is_none(), "a manager came back that the allocator would not pay for");
-    assert!(refusals > 0, "nothing was refused, so no manager was ever at risk");
+    assert!(
+        manager.is_none(),
+        "a manager came back that the allocator would not pay for"
+    );
+    assert!(
+        refusals > 0,
+        "nothing was refused, so no manager was ever at risk"
+    );
 
     // The process is still here to say so, which is the whole assertion.
     let afforded = budget.try_manager();
-    assert!(afforded.is_some(), "unarmed, the same budget builds a manager");
+    assert!(
+        afforded.is_some(),
+        "unarmed, the same budget builds a manager"
+    );
 }
 
 /// A small budget is still a budget: the guard does not refuse what the machine can do.

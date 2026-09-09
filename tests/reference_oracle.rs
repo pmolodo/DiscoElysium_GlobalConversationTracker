@@ -45,9 +45,9 @@ use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::known::{GroupShape, Known};
-use lookahead_engine::symbolic::novelty_search::{best_novelty, Budget as SearchBudget};
+use lookahead_engine::symbolic::novelty_search::{Budget as SearchBudget, best_novelty};
 use lookahead_engine::symbolic::portfolio;
-use lookahead_engine::symbolic::reachability::{seed_of, Reachability};
+use lookahead_engine::symbolic::reachability::{Reachability, seed_of};
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::world::world::ILookAheadWorld;
 
@@ -71,7 +71,10 @@ const TARGETS: usize = 40;
 /// Which conversations this process should check, one per process being the intended way.
 fn conversations(default: &[i32]) -> Vec<i32> {
     match lookahead_engine::core::env::var("CONVERSATION") {
-        Ok(named) => named.split(',').filter_map(|id| id.trim().parse().ok()).collect(),
+        Ok(named) => named
+            .split(',')
+            .filter_map(|id| id.trim().parse().ok())
+            .collect(),
         Err(_) => default.to_vec(),
     }
 }
@@ -143,7 +146,9 @@ fn group(
 
 #[test]
 fn the_forward_search_reaches_what_the_reference_walk_reaches() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
     let world = common::measurement_save();
 
@@ -155,7 +160,9 @@ fn the_forward_search_reaches_what_the_reference_walk_reaches() {
     let mut compared = 0;
 
     for conversation in conversations(&CHECKABLE) {
-        let Some((graph, start, walk)) = group(&index, conversation, &world) else { continue };
+        let Some((graph, start, walk)) = group(&index, conversation, &world) else {
+            continue;
+        };
 
         // THE PRODUCT'S OWN LAYOUT, money included where the group reads it. A comparison
         // against a layout nothing ships would check an engine nobody runs.
@@ -177,7 +184,12 @@ fn the_forward_search_reaches_what_the_reference_walk_reaches() {
             // encoding.
             let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
             let found = Reachability::explore(
-                &graph, start, &seed, &mut compiler, &world, COUNTER_CAP as u32,
+                &graph,
+                start,
+                &seed,
+                &mut compiler,
+                &world,
+                COUNTER_CAP as u32,
             );
             let entries: HashSet<DialogueNodeId> = found.entries().collect();
             (entries, found.stats().clone(), compiler.fallbacks())
@@ -225,7 +237,9 @@ fn the_forward_search_reaches_what_the_reference_walk_reaches() {
 
 #[test]
 fn the_backward_search_finds_what_the_reference_walk_reaches() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
     let world = common::measurement_save();
 
@@ -237,7 +251,9 @@ fn the_backward_search_finds_what_the_reference_walk_reaches() {
     let mut compared = 0;
 
     for conversation in conversations(&CHECKABLE) {
-        let Some((graph, start, walk)) = group(&index, conversation, &world) else { continue };
+        let Some((graph, start, walk)) = group(&index, conversation, &world) else {
+            continue;
+        };
 
         // THE PRODUCT'S OWN LAYOUT, money included where the group reads it. A comparison
         // against a layout nothing ships would check an engine nobody runs.
@@ -264,7 +280,12 @@ fn the_backward_search_finds_what_the_reference_walk_reaches() {
             // the only test that checks a backward answer against a walk rather than against
             // another symbolic search.
             let forward = Reachability::explore(
-                &graph, start, &seed, &mut compiler, &world, COUNTER_CAP as u32,
+                &graph,
+                start,
+                &seed,
+                &mut compiler,
+                &world,
+                COUNTER_CAP as u32,
             );
             let settled = forward.stats().reached_fixed_point;
             // PRUNING ON, because checking it is the point of asking twice. It is off by
@@ -301,8 +322,13 @@ fn the_backward_search_finds_what_the_reference_walk_reaches() {
                 // of a pass that stopped on a yes is the mistake this arrangement invites.
                 if settled {
                     let pruned = Backward::reaching_knowing(
-                        &graph, *target, &mut compiler, &world, COUNTER_CAP as u32,
-                        &BackwardBudget::default(), Some(&known),
+                        &graph,
+                        *target,
+                        &mut compiler,
+                        &world,
+                        COUNTER_CAP as u32,
+                        &BackwardBudget::default(),
+                        Some(&known),
                     );
                     let pruned_says =
                         pruned.stats().met_at.is_some() || pruned.reachable_from(start, &seed);
@@ -321,7 +347,13 @@ fn the_backward_search_finds_what_the_reference_walk_reaches() {
                 }
             }
 
-            (agreed, surplus, missed, diagram_nodes, began.elapsed().as_millis())
+            (
+                agreed,
+                surplus,
+                missed,
+                diagram_nodes,
+                began.elapsed().as_millis(),
+            )
         });
 
         println!(
@@ -370,7 +402,9 @@ fn the_backward_search_finds_what_the_reference_walk_reaches() {
 /// count starts climbing is worth seeing.
 #[test]
 fn the_driver_and_the_portfolio_find_what_the_reference_walk_finds() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
     let world = common::measurement_save();
 
@@ -383,7 +417,9 @@ fn the_driver_and_the_portfolio_find_what_the_reference_walk_finds() {
     let mut unwalkable_witnesses = 0;
 
     for conversation in conversations(&CHECKABLE) {
-        let Some((graph, start, walk)) = group(&index, conversation, &world) else { continue };
+        let Some((graph, start, walk)) = group(&index, conversation, &world) else {
+            continue;
+        };
 
         // The deepest few entries are the unseen ones: far from the start, so the answer
         // cannot be had by glancing at the first link.
@@ -393,8 +429,7 @@ fn the_driver_and_the_portfolio_find_what_the_reference_walk_finds() {
         by_depth.sort_by_key(|(depth, id)| {
             (std::cmp::Reverse(*depth), id.conversation_id, id.entry_id)
         });
-        let unseen: HashSet<DialogueNodeId> =
-            by_depth.iter().take(3).map(|(_, id)| *id).collect();
+        let unseen: HashSet<DialogueNodeId> = by_depth.iter().take(3).map(|(_, id)| *id).collect();
 
         let novelty = |id: DialogueNodeId| {
             if unseen.contains(&id) {
@@ -442,7 +477,9 @@ fn the_driver_and_the_portfolio_find_what_the_reference_walk_finds() {
                 &world,
                 COUNTER_CAP as u32,
                 &novelty,
-                graph.best_linked_class(start, &novelty).unwrap_or(Novelty::SeenThisGame),
+                graph
+                    .best_linked_class(start, &novelty)
+                    .unwrap_or(Novelty::SeenThisGame),
                 &portfolio::Budget::default(),
                 &GroupShape::of(&graph),
                 None,

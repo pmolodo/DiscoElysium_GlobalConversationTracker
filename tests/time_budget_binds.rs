@@ -38,7 +38,10 @@ use lookahead_engine::symbolic::portfolio;
 /// The dial's number is the wall, and the parts are inside it.
 #[test]
 fn the_dial_becomes_an_overall_deadline() {
-    let request = LookAheadRequest { time_budget_ms: 1000, ..Default::default() };
+    let request = LookAheadRequest {
+        time_budget_ms: 1000,
+        ..Default::default()
+    };
     let budget = request.search_budget();
 
     assert_eq!(
@@ -65,13 +68,22 @@ fn the_dial_becomes_an_overall_deadline() {
 /// allowed to be, and a candidate is handed the dial rather than a ration of its own.
 #[test]
 fn a_small_dial_squeezes_the_rations_it_is_smaller_than() {
-    let request = LookAheadRequest { time_budget_ms: 10, ..Default::default() };
+    let request = LookAheadRequest {
+        time_budget_ms: 10,
+        ..Default::default()
+    };
     let budget = request.search_budget();
 
     let ten = std::time::Duration::from_millis(10);
     assert_eq!(budget.overall, ten);
-    assert!(budget.forwards <= ten, "a 50ms slice cannot fit in a 10ms answer");
-    assert!(budget.each <= ten, "a candidate cannot outlast a 10ms answer");
+    assert!(
+        budget.forwards <= ten,
+        "a 50ms slice cannot fit in a 10ms answer"
+    );
+    assert!(
+        budget.each <= ten,
+        "a candidate cannot outlast a 10ms answer"
+    );
 }
 
 /// The default carries a wall too, so a request that names no budget is bounded.
@@ -94,7 +106,10 @@ fn the_default_budget_has_a_wall_covering_its_own_rations() {
 /// running a pass, which is a different failure from the one the setting provokes.
 #[test]
 fn the_starve_knob_stops_a_candidate_rather_than_the_attempt() {
-    let request = LookAheadRequest { state_budget: 3, ..Default::default() };
+    let request = LookAheadRequest {
+        state_budget: 3,
+        ..Default::default()
+    };
     let budget = request.search_budget();
 
     assert!(!budget.overall.is_zero(), "the attempt still gets a clock");
@@ -108,9 +123,16 @@ fn the_starve_knob_stops_a_candidate_rather_than_the_attempt() {
 #[test]
 fn an_unset_menu_dial_bounds_nothing() {
     let none = LookAheadRequest::default();
-    assert_eq!(none.menu_budget(), std::time::Duration::MAX, "zero is no menu wall");
+    assert_eq!(
+        none.menu_budget(),
+        std::time::Duration::MAX,
+        "zero is no menu wall"
+    );
 
-    let set = LookAheadRequest { menu_time_budget_ms: 3000, ..Default::default() };
+    let set = LookAheadRequest {
+        menu_time_budget_ms: 3000,
+        ..Default::default()
+    };
     assert_eq!(set.menu_budget(), std::time::Duration::from_secs(3));
 }
 
@@ -121,7 +143,10 @@ fn an_unset_menu_dial_bounds_nothing() {
 /// number, so the menu ends at its wall rather than one option's budget past it.
 #[test]
 fn what_is_left_of_the_menu_narrows_an_options_ration() {
-    let request = LookAheadRequest { time_budget_ms: 1000, ..Default::default() };
+    let request = LookAheadRequest {
+        time_budget_ms: 1000,
+        ..Default::default()
+    };
     let budget = request.search_budget();
 
     let nearly_spent = budget.within(std::time::Duration::from_millis(20));
@@ -135,7 +160,10 @@ fn what_is_left_of_the_menu_narrows_an_options_ration() {
     // number and nowhere else, so an ordinary menu runs exactly as it did before there was
     // one - which is what makes the default safe to ship.
     let roomy = budget.within(std::time::Duration::from_secs(30));
-    assert_eq!(roomy.overall, budget.overall, "a wall further out than the ration binds nothing");
+    assert_eq!(
+        roomy.overall, budget.overall,
+        "a wall further out than the ration binds nothing"
+    );
     assert_eq!(
         budget.within(std::time::Duration::MAX).overall,
         budget.overall,
@@ -150,11 +178,21 @@ fn what_is_left_of_the_menu_narrows_an_options_ration() {
 /// what this pins is the SHAPE the narrowing relies on - one number binds the rest.
 #[test]
 fn narrowing_a_budget_moves_the_wall_and_leaves_the_estimates_alone() {
-    let budget = LookAheadRequest { time_budget_ms: 1000, ..Default::default() }.search_budget();
+    let budget = LookAheadRequest {
+        time_budget_ms: 1000,
+        ..Default::default()
+    }
+    .search_budget();
     let narrowed = budget.within(std::time::Duration::from_millis(20));
 
-    assert_eq!(narrowed.forwards, budget.forwards, "the slice keeps its estimate");
-    assert_eq!(narrowed.backwards, budget.backwards, "and so does the backward driver");
+    assert_eq!(
+        narrowed.forwards, budget.forwards,
+        "the slice keeps its estimate"
+    );
+    assert_eq!(
+        narrowed.backwards, budget.backwards,
+        "and so does the backward driver"
+    );
     assert_eq!(narrowed.each, budget.each, "and so does a candidate");
     assert!(
         narrowed.overall < narrowed.each,

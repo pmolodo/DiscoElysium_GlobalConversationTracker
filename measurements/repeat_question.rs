@@ -118,7 +118,7 @@ use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
-use lookahead_engine::symbolic::reachability::{seed_of, Budget, Reachability};
+use lookahead_engine::symbolic::reachability::{Budget, Reachability, seed_of};
 use lookahead_engine::symbolic::vars::DataVars;
 
 #[path = "../tests/common/mod.rs"]
@@ -188,7 +188,11 @@ fn main() {
             let (diagram_took, manager_took, search_took) = isolated::on_its_own_thread(|| {
                 let symbols = graph.symbols().clone();
                 let world = SnapshotWorld::declaring(
-                    WorldSnapshot { day_minutes: 720, day_counter: 1, ..Default::default() },
+                    WorldSnapshot {
+                        day_minutes: 720,
+                        day_counter: 1,
+                        ..Default::default()
+                    },
                     None,
                 );
 
@@ -221,22 +225,30 @@ fn main() {
                     &mut compiler,
                     &world,
                     COUNTER_CAP as u32,
-                    &Budget { time: search, ..Default::default() },
+                    &Budget {
+                        time: search,
+                        ..Default::default()
+                    },
                 );
                 std::hint::black_box(found.stats().entries_reached);
 
                 (built, manager, searching.elapsed())
             });
 
-            let row = (graph_took, diagram_took, manager_took, search_took, graph.count());
+            let row = (
+                graph_took,
+                diagram_took,
+                manager_took,
+                search_took,
+                graph.count(),
+            );
             best = match best {
                 Some(had) if had.0 + had.1 <= row.0 + row.1 => Some(had),
                 _ => Some(row),
             };
         }
 
-        let Some((graph_took, diagram_took, manager_took, search_took, entries)) = best
-        else {
+        let Some((graph_took, diagram_took, manager_took, search_took, entries)) = best else {
             continue;
         };
         let setup = graph_took + diagram_took;

@@ -105,15 +105,23 @@ fn main() {
     // OUT_DIR is target/<profile>/build/<crate>-<hash>/out, so the library sits three
     // levels up. Derived rather than assumed from PROFILE, which does not name the
     // directory for a custom profile.
-    let Some(out) = std::env::var_os("OUT_DIR").map(PathBuf::from) else { return };
-    let Some(target) = out.ancestors().nth(3) else { return };
+    let Some(out) = std::env::var_os("OUT_DIR").map(PathBuf::from) else {
+        return;
+    };
+    let Some(target) = out.ancestors().nth(3) else {
+        return;
+    };
 
     let _ = std::fs::write(target.join("lookahead_engine.built.json"), stamp);
 }
 
 /// One git command's output, or None if it could not be run or failed.
 fn git(root: &Path, arguments: &[&str]) -> Option<String> {
-    let output = Command::new("git").args(arguments).current_dir(root).output().ok()?;
+    let output = Command::new("git")
+        .args(arguments)
+        .current_dir(root)
+        .output()
+        .ok()?;
     if !output.status.success() {
         return None;
     }

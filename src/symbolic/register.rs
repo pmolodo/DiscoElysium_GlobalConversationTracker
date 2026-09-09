@@ -32,8 +32,8 @@
 //! piece that is not a shift at all: every state at or above the ceiling collapses to the
 //! ceiling, which is an assignment.
 
-use oxidd::bdd::BDDFunction;
 use oxidd::Subst;
+use oxidd::bdd::BDDFunction;
 use oxidd::{BooleanFunction, BooleanFunctionQuant, FunctionSubst};
 
 /// One number, as a little-endian run of variables.
@@ -52,7 +52,11 @@ impl Register {
 
     /// The largest value the run can hold.
     pub fn ceiling(&self) -> u32 {
-        if self.bits >= 32 { u32::MAX } else { (1u32 << self.bits) - 1 }
+        if self.bits >= 32 {
+            u32::MAX
+        } else {
+            (1u32 << self.bits) - 1
+        }
     }
 
     /// The variable numbers, low bit first.
@@ -99,7 +103,12 @@ impl<'a> RegisterOps<'a> {
         var: impl Fn(u32) -> &'a BDDFunction,
     ) -> Self {
         let vars = register.vars().map(&var).collect();
-        Self { register, vars, top, bottom }
+        Self {
+            register,
+            vars,
+            top,
+            bottom,
+        }
     }
 
     pub fn register(&self) -> Register {
@@ -275,7 +284,11 @@ impl<'a> RegisterOps<'a> {
             let subtrahend = (amount >> bit) & 1 == 1;
 
             // difference = var XOR subtrahend XOR borrow
-            let without_borrow = if subtrahend { var.not().ok()? } else { (*var).clone() };
+            let without_borrow = if subtrahend {
+                var.not().ok()?
+            } else {
+                (*var).clone()
+            };
             difference.push(without_borrow.xor(&borrow).ok()?);
 
             // borrow out: the register's bit is clear and something has to be taken from
@@ -385,11 +398,7 @@ impl<'a> RegisterOps<'a> {
     /// ceiling - so the pre-image of the ceiling is a RANGE rather than a point. Getting
     /// that half wrong would make the backward search report an entry unreachable that the
     /// search walks to, which is the one error direction this file is not allowed.
-    pub fn pre_saturating_add(
-        &self,
-        states: &BDDFunction,
-        amount: u32,
-    ) -> Option<BDDFunction> {
+    pub fn pre_saturating_add(&self, states: &BDDFunction, amount: u32) -> Option<BDDFunction> {
         let ceiling = self.register.ceiling();
         if amount == 0 {
             return Some(states.clone());
@@ -424,11 +433,7 @@ impl<'a> RegisterOps<'a> {
     }
 
     /// The states from which `register := max(register - amount, 0)` lands in `states`.
-    pub fn pre_saturating_sub(
-        &self,
-        states: &BDDFunction,
-        amount: u32,
-    ) -> Option<BDDFunction> {
+    pub fn pre_saturating_sub(&self, states: &BDDFunction, amount: u32) -> Option<BDDFunction> {
         if amount == 0 {
             return Some(states.clone());
         }
@@ -480,8 +485,8 @@ impl<'a> RegisterOps<'a> {
 mod tests {
     use super::*;
 
-    use oxidd::bdd::new_manager;
     use oxidd::Function;
+    use oxidd::bdd::new_manager;
     use oxidd::{Manager, ManagerRef};
 
     const NODES: usize = 1 << 18;
@@ -511,7 +516,13 @@ mod tests {
             });
             let top = manager.with_manager_shared(BDDFunction::t);
             let bottom = manager.with_manager_shared(BDDFunction::f);
-            Self { _manager: manager, vars, register: Register::new(0, bits), top, bottom }
+            Self {
+                _manager: manager,
+                vars,
+                register: Register::new(0, bits),
+                top,
+                bottom,
+            }
         }
 
         fn ops(&self) -> RegisterOps<'_> {
@@ -596,7 +607,10 @@ mod tests {
         assert!(bench.values(&ops.compare("<", -1).unwrap()).is_empty());
         assert!(bench.values(&ops.compare("==", -1).unwrap()).is_empty());
         assert_eq!(bench.values(&ops.compare("~=", -1).unwrap()).len(), 16);
-        assert!(ops.compare("<=>", -1).is_none(), "an operator nobody knows must not answer");
+        assert!(
+            ops.compare("<=>", -1).is_none(),
+            "an operator nobody knows must not answer"
+        );
     }
 
     /// A shift moves every value, and moves it back.
@@ -809,9 +823,14 @@ mod tests {
             for target in 0..MODULUS {
                 let landed = bench.set(&[target]);
                 let came = ops.pre_wrapping_add(&landed, delta, MODULUS).expect("room");
-                let expected: Vec<u32> =
-                    (0..MODULUS).filter(|v| (v + delta) % MODULUS == target).collect();
-                assert_eq!(bench.values(&came), expected, "lands on {target} after +{delta}");
+                let expected: Vec<u32> = (0..MODULUS)
+                    .filter(|v| (v + delta) % MODULUS == target)
+                    .collect();
+                assert_eq!(
+                    bench.values(&came),
+                    expected,
+                    "lands on {target} after +{delta}"
+                );
             }
         }
     }
@@ -856,9 +875,18 @@ mod tests {
         let bench = Bench::within(WIDE, CRAMPED);
         let ops = bench.ops();
 
-        assert!(ops.equals(9_999_999).is_none(), "equals should report the full manager");
-        assert!(ops.at_least(9_999_999).is_none(), "at_least should report it too");
-        assert!(ops.at_most(9_999_999).is_none(), "and at_most, which is built on it");
+        assert!(
+            ops.equals(9_999_999).is_none(),
+            "equals should report the full manager"
+        );
+        assert!(
+            ops.at_least(9_999_999).is_none(),
+            "at_least should report it too"
+        );
+        assert!(
+            ops.at_most(9_999_999).is_none(),
+            "and at_most, which is built on it"
+        );
         assert!(ops.cube().is_none(), "and the cube over every variable");
     }
 }

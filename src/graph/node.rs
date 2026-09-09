@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-use std::fmt;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
-use crate::core::types::{DialogueNodeId, DialogueCheckKind};
-use crate::core::guard::Guard;
 use crate::core::action::DialogueAction;
+use crate::core::guard::Guard;
+use crate::core::types::{DialogueCheckKind, DialogueNodeId};
 
 /// One dialogue entry as the look-ahead needs it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,10 +18,10 @@ pub struct LookAheadNode {
     pub cost: i32,
     pub cost_once: bool,
     pub hidden_when_unaffordable: bool,
-    pub flag_slot: i32,          // -1 if none
-    pub failed_flag_slot: i32,   // -1 if none
+    pub flag_slot: i32,        // -1 if none
+    pub failed_flag_slot: i32, // -1 if none
     pub boolean_only: bool,
-    pub seen_slot: i32,          // -1 if none
+    pub seen_slot: i32, // -1 if none
     /// The slot recording that this entry's once-only effects have fired, or -1.
     ///
     /// Two different things share it, because they ask the same question - has this
@@ -32,7 +32,7 @@ pub struct LookAheadNode {
     /// [`LookAheadNode::new`], because interning a name mutates the symbol table and the
     /// graph is what owns it. Doing it there is what lets the table be FROZEN before a
     /// search starts: the search only ever reads slots, never creates them.
-    pub once_slot: i32,          // -1 if none
+    pub once_slot: i32, // -1 if none
 }
 
 impl LookAheadNode {
@@ -101,7 +101,11 @@ impl fmt::Display for LookAheadNode {
         } else {
             format!("{:?}", self.kind).to_lowercase()
         };
-        let price = if self.is_cost_option() { format!(", cost {}", self.cost) } else { String::new() };
+        let price = if self.is_cost_option() {
+            format!(", cost {}", self.cost)
+        } else {
+            String::new()
+        };
         write!(f, "{} {}{}", kind_str, self.id, price)
     }
 }

@@ -38,7 +38,7 @@
 use std::collections::HashSet;
 
 use lookahead_engine::bridge::{
-    questions_for, LookAheadRequest, NodeRef, NodeSet, WireValue, WorldSnapshot,
+    LookAheadRequest, NodeRef, NodeSet, WireValue, WorldSnapshot, questions_for,
 };
 use lookahead_engine::index::read_index;
 
@@ -56,7 +56,9 @@ const WORST_CASE_STATE: &str = "testing/scenarios/global-state-worst-case.json";
 
 #[test]
 fn a_request_is_measured_and_the_entry_sets_have_a_shape() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
     let questions = questions_for(&index, MEASURED).expect("the group builds");
 
@@ -81,7 +83,10 @@ fn a_request_is_measured_and_the_entry_sets_have_a_shape() {
     let cases: [(&str, Vec<NodeRef>); 5] = [
         ("nothing seen (a fresh save)", Vec::new()),
         ("everything seen (a completionist save)", entries.clone()),
-        ("seen elsewhere, as the suite stages it", seen_elsewhere.iter().copied().collect()),
+        (
+            "seen elsewhere, as the suite stages it",
+            seen_elsewhere.iter().copied().collect(),
+        ),
         ("one entry in ten, clustered", clustered(&entries, 10)),
         ("one entry in ten, scattered", scattered(&entries, 10)),
     ];
@@ -113,8 +118,7 @@ fn a_request_is_measured_and_the_entry_sets_have_a_shape() {
 
     // Positionally, which is how the plugin answers: it cached the questions when it first
     // met the group, so sending the names back would be sending back what the engine said.
-    world.variable_values =
-        vec![WireValue::Bool { value: false }; questions.variables.len()];
+    world.variable_values = vec![WireValue::Bool { value: false }; questions.variables.len()];
     world.query_values = vec![WireValue::Bool { value: true }; questions.queries.len()];
     world.checks_pass = questions.checks.iter().copied().collect();
     world.seen = entries.iter().copied().collect();
@@ -146,12 +150,21 @@ fn a_request_is_measured_and_the_entry_sets_have_a_shape() {
         .cloned()
         .zip(named.variable_values.drain(..))
         .collect();
-    named.queries =
-        questions.queries.iter().cloned().zip(named.query_values.drain(..)).collect();
-    let by_name = LookAheadRequest { world: named, ..request };
+    named.queries = questions
+        .queries
+        .iter()
+        .cloned()
+        .zip(named.query_values.drain(..))
+        .collect();
+    let by_name = LookAheadRequest {
+        world: named,
+        ..request
+    };
     println!(
         "the same request answering by name instead of by position: {} bytes",
-        serde_json::to_string(&by_name).expect("it serialises").len(),
+        serde_json::to_string(&by_name)
+            .expect("it serialises")
+            .len(),
     );
 
     // Not a threshold anybody tuned. It is well clear of what a request costs now and far
@@ -167,8 +180,12 @@ fn a_request_is_measured_and_the_entry_sets_have_a_shape() {
 /// The entries some other save has already shown, out of the staged global state.
 fn seen_elsewhere(entries: &[NodeRef]) -> Vec<NodeRef> {
     let path = common::repo_root().join(WORST_CASE_STATE);
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("the staged global state at {} would not read: {e}", path.display()));
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!(
+            "the staged global state at {} would not read: {e}",
+            path.display()
+        )
+    });
     let state: serde_json::Value =
         serde_json::from_str(&text).expect("the staged global state is JSON");
 
@@ -183,10 +200,13 @@ fn seen_elsewhere(entries: &[NodeRef]) -> Vec<NodeRef> {
         // against below. The file is now a twentieth of what it was - 423 KB to 22.5 KB on
         // this fixture - which does not change what this measures: the wire has always
         // carried runs, and this is the input to it.
-        for entry in common::fixtures::parse_runs(
-            runs.as_str().expect("entry ids are a run-encoded string"),
-        ) {
-            let node = NodeRef { conversation, entry };
+        for entry in
+            common::fixtures::parse_runs(runs.as_str().expect("entry ids are a run-encoded string"))
+        {
+            let node = NodeRef {
+                conversation,
+                entry,
+            };
             if group.contains(&node) {
                 found.push(node);
             }
@@ -240,7 +260,10 @@ fn as_bits(set: &HashSet<NodeRef>, entries: &[NodeRef]) -> String {
 fn by_conversation(set: &HashSet<NodeRef>) -> std::collections::BTreeMap<String, Vec<i32>> {
     let mut grouped: std::collections::BTreeMap<String, Vec<i32>> = Default::default();
     for node in set {
-        grouped.entry(node.conversation.to_string()).or_default().push(node.entry);
+        grouped
+            .entry(node.conversation.to_string())
+            .or_default()
+            .push(node.entry);
     }
     for ids in grouped.values_mut() {
         ids.sort_unstable();
@@ -251,8 +274,7 @@ fn by_conversation(set: &HashSet<NodeRef>) -> std::collections::BTreeMap<String,
 /// Base64, written out because measuring a shape needs its real length and this crate has
 /// no encoder. Unpadded, which is the shorter and the one a measurement should charge.
 fn base64(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {

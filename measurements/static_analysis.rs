@@ -35,7 +35,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 
-use lookahead_engine::index::{links_of, read_index, Index};
+use lookahead_engine::index::{Index, links_of, read_index};
 
 #[path = "../tests/common/mod.rs"]
 mod common;
@@ -188,7 +188,9 @@ fn write_answer(name: &str, body: &str) {
 }
 
 fn partition_the_database_into_conversation_groups() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
 
     let groups = partition(&index);
@@ -227,7 +229,9 @@ fn partition_the_database_into_conversation_groups() {
 }
 
 fn measure_link_reachability_from_every_entry() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
     let links = entry_links(&index);
 
@@ -272,7 +276,9 @@ fn measure_link_reachability_from_every_entry() {
 /// would LOAD - `index::discover_group`'s forward closure, which is what
 /// `build_group_graph` builds and therefore what the group-wide check scans.
 fn how_much_of_a_loaded_group_can_a_start_actually_reach() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
     let links = entry_links(&index);
 

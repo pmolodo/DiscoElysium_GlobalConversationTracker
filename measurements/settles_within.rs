@@ -141,7 +141,7 @@ use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
 use lookahead_engine::symbolic::live_slots::LiveSlots;
-use lookahead_engine::symbolic::reachability::{seed_of, Budget, Reachability};
+use lookahead_engine::symbolic::reachability::{Budget, Reachability, seed_of};
 use lookahead_engine::symbolic::vars::DataVars;
 
 #[path = "../tests/common/mod.rs"]
@@ -295,7 +295,10 @@ fn sweep(index: &lookahead_engine::index::Index) {
     // run out of memory part way through and lose the rows already printed. A run that has to
     // finish should ask for one budget at a time and keep the logs.
     let wanted: Vec<u64> = match lookahead_engine::core::env::var("SWEEP_MS") {
-        Ok(value) => value.split(',').filter_map(|ms| ms.trim().parse().ok()).collect(),
+        Ok(value) => value
+            .split(',')
+            .filter_map(|ms| ms.trim().parse().ok())
+            .collect(),
         Err(_) => SWEEP_MS.to_vec(),
     };
 
@@ -396,7 +399,11 @@ fn settles_forgetting(
     isolated::on_its_own_thread(|| {
         let symbols = graph.symbols().clone();
         let world = SnapshotWorld::declaring(
-            WorldSnapshot { day_minutes: 720, day_counter: 1, ..Default::default() },
+            WorldSnapshot {
+                day_minutes: 720,
+                day_counter: 1,
+                ..Default::default()
+            },
             None,
         );
         let layout = DataLayout::for_group(&graph, &world, COUNTER_CAP);
@@ -419,7 +426,11 @@ fn settles_forgetting(
             &mut compiler,
             &world,
             COUNTER_CAP as u32,
-            &Budget { time: forward, forget_dead, ..Default::default() },
+            &Budget {
+                time: forward,
+                forget_dead,
+                ..Default::default()
+            },
         );
 
         Some((found.stats().reached_fixed_point, began.elapsed(), entries))
@@ -427,5 +438,8 @@ fn settles_forgetting(
 }
 
 fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name).ok().and_then(|text| text.trim().parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name)
+        .ok()
+        .and_then(|text| text.trim().parse().ok())
+        .unwrap_or(fallback)
 }

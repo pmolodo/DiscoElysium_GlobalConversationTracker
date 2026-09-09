@@ -192,7 +192,11 @@ fn declared_calls_are_recorded_but_change_nothing() {
     );
 
     assert_eq!(actions.len(), 2);
-    assert!(actions.iter().all(|a| a.kind() == DialogueActionKind::Declared));
+    assert!(
+        actions
+            .iter()
+            .all(|a| a.kind() == DialogueActionKind::Declared)
+    );
     assert!(actions.iter().any(|a| a.name() == "ShowDialogueImage"));
     assert!(
         actions.iter().all(|a| a.decision().is_some()),
@@ -220,7 +224,9 @@ fn gaining_a_thought_sets_the_thought_slot() {
     assert_eq!(actions.len(), 1);
     assert_eq!(actions[0].kind(), DialogueActionKind::Assign);
 
-    let slot = symbols.find("thought:jamais_vu").expect("a thought slot is interned");
+    let slot = symbols
+        .find("thought:jamais_vu")
+        .expect("a thought slot is interned");
     let before = empty(&symbols, 0);
     assert!(!before.is_set(slot));
 
@@ -249,7 +255,9 @@ fn reputation_moves_by_its_own_amount_and_only_once() {
     assert_eq!(actions[0].value(), 2);
     assert!(actions[0].is_once(), "the game gates it on once()");
 
-    let slot = symbols.find("reputation.kim").expect("a reputation slot is interned");
+    let slot = symbols
+        .find("reputation.kim")
+        .expect("a reputation slot is interned");
     let once = symbols.once(DialogueNodeId::new(1, 0)) as i32;
     let before = empty(&symbols, 0);
 
@@ -299,7 +307,9 @@ fn reputation_grows_by_one_under_the_variable_the_guards_read() {
 
     assert_eq!(actions.len(), 1);
     assert_eq!(actions[0].kind(), DialogueActionKind::Increment);
-    let slot = symbols.find("reputation.apocalypse_cop").expect("interned under its real name");
+    let slot = symbols
+        .find("reputation.apocalypse_cop")
+        .expect("interned under its real name");
 
     let once_slot = symbols.once(DialogueNodeId::new(1, 0)) as i32;
     let before = LookAheadState::empty(symbols.count(), 0, 0);
@@ -325,7 +335,13 @@ fn reputation_lowers_and_stops_at_zero() {
     let after = DialogueAction::apply(&actions, &before, -1, &caps(), false);
     assert_eq!(after.get(slot), 1);
 
-    let floor = DialogueAction::apply(&actions, &LookAheadState::empty(symbols.count(), 0, 0), -1, &caps(), false);
+    let floor = DialogueAction::apply(
+        &actions,
+        &LookAheadState::empty(symbols.count(), 0, 0),
+        -1,
+        &caps(),
+        false,
+    );
     assert_eq!(floor.get(slot), 0);
 }
 
@@ -339,7 +355,11 @@ fn an_xp_award_sets_the_variable_it_records_itself_in() {
     );
 
     assert_eq!(actions.len(), 2);
-    assert!(actions.iter().all(|a| a.kind() == DialogueActionKind::Assign));
+    assert!(
+        actions
+            .iter()
+            .all(|a| a.kind() == DialogueActionKind::Assign)
+    );
 
     let sign = symbols.find("XP.butter_sign_i_did_this").unwrap();
     let tree = symbols.find("XP.tree_kicked").unwrap();
@@ -405,7 +425,9 @@ fn every_statement_after_the_first_is_read() {
         "every call should be modelled, got {actions:?}",
     );
 
-    let done = symbols.find("task:TASK.advanced_ballistics_analysis_done").unwrap();
+    let done = symbols
+        .find("task:TASK.advanced_ballistics_analysis_done")
+        .unwrap();
     let firearm = symbols.find("task:TASK.locate_the_firearm").unwrap();
     let belle = symbols.find("tc.belle_magrave").unwrap();
 

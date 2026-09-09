@@ -167,7 +167,11 @@ fn main() {
         // THE LAYOUT AND THE MANAGER, ONCE. The money is held across rounds precisely so
         // this stays valid - the money ceiling is the one world fact the layout reads.
         let held_money = SnapshotWorld::declaring(
-            WorldSnapshot { day_minutes: 720, day_counter: 1, ..Default::default() },
+            WorldSnapshot {
+                day_minutes: 720,
+                day_counter: 1,
+                ..Default::default()
+            },
             None,
         );
         let layout = DataLayout::for_group(&graph, &held_money, COUNTER_CAP);
@@ -219,13 +223,25 @@ fn main() {
             let mut found = 0;
             let began = Instant::now();
             for &start in &profile.starts {
-                let Some(hunting) = graph.best_linked_class(start, &novelty) else { continue };
+                let Some(hunting) = graph.best_linked_class(start, &novelty) else {
+                    continue;
+                };
                 if hunting <= Novelty::SeenThisGame {
                     continue;
                 }
                 let answer = portfolio::best_novelty(
-                    &graph, start, StartBranch::Either, &seed, &mut compiler, &world,
-                    COUNTER_CAP as u32, &novelty, hunting, &search, &shape, None,
+                    &graph,
+                    start,
+                    StartBranch::Either,
+                    &seed,
+                    &mut compiler,
+                    &world,
+                    COUNTER_CAP as u32,
+                    &novelty,
+                    hunting,
+                    &search,
+                    &shape,
+                    None,
                 );
                 if answer.best > Novelty::SeenThisGame {
                     found += 1;
@@ -244,13 +260,8 @@ fn main() {
             flush();
         }
 
-        println!(
-            "\nSURVIVED {rounds} requests on one manager, and the process is still here."
-        );
-        println!(
-            "answers found per round: {:?}",
-            answers_each_round,
-        );
+        println!("\nSURVIVED {rounds} requests on one manager, and the process is still here.");
+        println!("answers found per round: {:?}", answers_each_round,);
     });
 
     println!(
@@ -266,5 +277,8 @@ fn flush() {
 }
 
 fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name).ok().and_then(|text| text.trim().parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name)
+        .ok()
+        .and_then(|text| text.trim().parse().ok())
+        .unwrap_or(fallback)
 }

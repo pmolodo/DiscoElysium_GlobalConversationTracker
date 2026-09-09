@@ -137,8 +137,7 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
         return None;
     }
 
-    let text = std::fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     Some(
         serde_json::from_str(&text)
             .unwrap_or_else(|e| panic!("{} will not parse: {e}", path.display())),
@@ -151,10 +150,7 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
 /// `_changes`. Both are read the same way here, since the merge that follows does not care
 /// which it was - only the order does, and that is what [`chain`] fixes.
 fn changes(document: &serde_json::Value) -> Option<&serde_json::Map<String, serde_json::Value>> {
-    document
-        .get("_changes")
-        .unwrap_or(document)
-        .as_object()
+    document.get("_changes").unwrap_or(document).as_object()
 }
 
 /// Keys a part carries that are about the FILE rather than about the world.
@@ -198,7 +194,9 @@ pub fn variables_in_save(save: &str) -> HashMap<String, WireValue> {
     let mut variables: HashMap<String, WireValue> = HashMap::new();
 
     for folder in chain(save) {
-        let Some(document) = part(&folder, "Variable.json") else { continue };
+        let Some(document) = part(&folder, "Variable.json") else {
+            continue;
+        };
         let Some(entries) = changes(&document) else {
             panic!("{}'s variables are not a table", folder.display());
         };
@@ -233,7 +231,9 @@ fn wire(value: &serde_json::Value) -> Option<WireValue> {
         serde_json::Value::Number(number) => {
             number.as_f64().map(|value| WireValue::Number { value })
         }
-        serde_json::Value::String(value) => Some(WireValue::Text { value: value.clone() }),
+        serde_json::Value::String(value) => Some(WireValue::Text {
+            value: value.clone(),
+        }),
         _ => None,
     }
 }
@@ -271,20 +271,24 @@ struct Recorded {
 ///
 /// A conversation the state says nothing about contributes nothing, which is the same
 /// answer the mod's own state gives for it.
-pub fn recorded_elsewhere_in_group(
-    state_file: &str,
-    conversations: &[i32],
-) -> HashSet<(i32, i32)> {
+pub fn recorded_elsewhere_in_group(state_file: &str, conversations: &[i32]) -> HashSet<(i32, i32)> {
     let state = read_state(state_file);
     let mut recorded = HashSet::new();
 
     for conversation in conversations {
-        let Some(runs) = state.conversations.was_displayed.get(&conversation.to_string())
+        let Some(runs) = state
+            .conversations
+            .was_displayed
+            .get(&conversation.to_string())
         else {
             continue;
         };
 
-        recorded.extend(parse_runs(runs).into_iter().map(|entry| (*conversation, entry)));
+        recorded.extend(
+            parse_runs(runs)
+                .into_iter()
+                .map(|entry| (*conversation, entry)),
+        );
     }
 
     recorded
@@ -330,8 +334,12 @@ pub fn read_in_save_group(save: &str, conversations: &[i32]) -> HashSet<(i32, i3
     let mut displayed: HashSet<(i32, i32)> = HashSet::new();
 
     for folder in chain(save) {
-        let Some(document) = part(&folder, "Conversation.json") else { continue };
-        let Some(entries) = changes(&document) else { continue };
+        let Some(document) = part(&folder, "Conversation.json") else {
+            continue;
+        };
+        let Some(entries) = changes(&document) else {
+            continue;
+        };
 
         for conversation in conversations {
             let Some(runs) = entries
@@ -347,7 +355,11 @@ pub fn read_in_save_group(save: &str, conversations: &[i32]) -> HashSet<(i32, i3
             // diff means: a later save replacing the list replaces it, and says nothing
             // about the conversations it left alone.
             displayed.retain(|(had, _)| had != conversation);
-            displayed.extend(parse_runs(runs).into_iter().map(|entry| (*conversation, entry)));
+            displayed.extend(
+                parse_runs(runs)
+                    .into_iter()
+                    .map(|entry| (*conversation, entry)),
+            );
         }
     }
 
@@ -379,7 +391,11 @@ pub fn read_in_save_group(save: &str, conversations: &[i32]) -> HashSet<(i32, i3
 pub fn parse_runs(text: &str) -> HashSet<i32> {
     let mut entries = HashSet::new();
 
-    for piece in text.split(',').map(str::trim).filter(|piece| !piece.is_empty()) {
+    for piece in text
+        .split(',')
+        .map(str::trim)
+        .filter(|piece| !piece.is_empty())
+    {
         // Past the first character, so a leading minus reads as a sign.
         let split = piece
             .char_indices()

@@ -4,7 +4,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::core::guard_value::{GuardValue, GuardValueKind};
-use crate::core::types::{ternary_and, ternary_not, ternary_or, Ternary};
+use crate::core::types::{Ternary, ternary_and, ternary_not, ternary_or};
 
 /// Context for evaluating guards - provides variable values and world queries.
 pub trait IGuardContext: Send + Sync {
@@ -23,11 +23,19 @@ enum Node {
     Literal(GuardValue),
     Variable(String),
     /// `name(...)`, whose arguments are a run in [`Guard::arguments`].
-    Call { name: String, first: u32, count: u32 },
+    Call {
+        name: String,
+        first: u32,
+        count: u32,
+    },
     Not(NodeId),
     And(NodeId, NodeId),
     Or(NodeId, NodeId),
-    Comparison { operator: String, left: NodeId, right: NodeId },
+    Comparison {
+        operator: String,
+        left: NodeId,
+        right: NodeId,
+    },
 }
 
 /// A parsed guard expression, as a flat table.
@@ -161,11 +169,18 @@ impl Guard {
 
     pub fn comparison(operator: impl Into<String>, left: Self, right: Self) -> Self {
         let operator = operator.into();
-        Self::binary(left, right, move |a, b| Node::Comparison { operator, left: a, right: b })
+        Self::binary(left, right, move |a, b| Node::Comparison {
+            operator,
+            left: a,
+            right: b,
+        })
     }
 
     pub fn call(name: impl Into<String>, arguments: Vec<Self>) -> Self {
-        let mut built = Self { nodes: Vec::new(), arguments: Vec::new() };
+        let mut built = Self {
+            nodes: Vec::new(),
+            arguments: Vec::new(),
+        };
         let mut roots = Vec::with_capacity(arguments.len());
         for argument in arguments {
             roots.push(built.absorb(argument));
@@ -174,13 +189,20 @@ impl Guard {
         let first = built.arguments.len() as u32;
         let count = roots.len() as u32;
         built.arguments.extend(roots);
-        built.nodes.push(Node::Call { name: name.into(), first, count });
+        built.nodes.push(Node::Call {
+            name: name.into(),
+            first,
+            count,
+        });
         built
     }
 
     /// The whole guard, as the handle everything reads it through.
     pub fn as_ref(&self) -> GuardRef<'_> {
-        GuardRef { guard: self, node: self.root() }
+        GuardRef {
+            guard: self,
+            node: self.root(),
+        }
     }
 
     /// What the guard is, ready to match on.
@@ -203,7 +225,8 @@ impl Guard {
                 Node::Comparison { left, right, .. } => {
                     depths[*left as usize].max(depths[*right as usize])
                 }
-                Node::Call { first, count, .. } => self.run(*first, *count)
+                Node::Call { first, count, .. } => self
+                    .run(*first, *count)
                     .iter()
                     .map(|id| depths[*id as usize])
                     .max()
@@ -262,9 +285,11 @@ impl Guard {
                     values[*a as usize].as_condition(),
                     values[*b as usize].as_condition(),
                 )),
-                Node::Comparison { operator, left, right } => {
-                    compare(operator, &values[*left as usize], &values[*right as usize])
-                }
+                Node::Comparison {
+                    operator,
+                    left,
+                    right,
+                } => compare(operator, &values[*left as usize], &values[*right as usize]),
             };
             values.push(value);
         }
@@ -288,7 +313,10 @@ impl Guard {
     }
 
     fn leaf(node: Node) -> Self {
-        Self { nodes: vec![node], arguments: Vec::new() }
+        Self {
+            nodes: vec![node],
+            arguments: Vec::new(),
+        }
     }
 
     /// Two sub-guards under one operator, in the order that keeps the invariants.
@@ -308,20 +336,30 @@ impl Guard {
     fn absorb(&mut self, other: Self) -> NodeId {
         let shift = self.nodes.len() as NodeId;
         let arguments_shift = self.arguments.len() as u32;
-        self.arguments.extend(other.arguments.iter().map(|id| id + shift));
-        self.nodes.extend(other.nodes.into_iter().map(|node| match node {
-            Node::Literal(value) => Node::Literal(value),
-            Node::Variable(name) => Node::Variable(name),
-            Node::Call { name, first, count } => {
-                Node::Call { name, first: first + arguments_shift, count }
-            }
-            Node::Not(inner) => Node::Not(inner + shift),
-            Node::And(a, b) => Node::And(a + shift, b + shift),
-            Node::Or(a, b) => Node::Or(a + shift, b + shift),
-            Node::Comparison { operator, left, right } => {
-                Node::Comparison { operator, left: left + shift, right: right + shift }
-            }
-        }));
+        self.arguments
+            .extend(other.arguments.iter().map(|id| id + shift));
+        self.nodes
+            .extend(other.nodes.into_iter().map(|node| match node {
+                Node::Literal(value) => Node::Literal(value),
+                Node::Variable(name) => Node::Variable(name),
+                Node::Call { name, first, count } => Node::Call {
+                    name,
+                    first: first + arguments_shift,
+                    count,
+                },
+                Node::Not(inner) => Node::Not(inner + shift),
+                Node::And(a, b) => Node::And(a + shift, b + shift),
+                Node::Or(a, b) => Node::Or(a + shift, b + shift),
+                Node::Comparison {
+                    operator,
+                    left,
+                    right,
+                } => Node::Comparison {
+                    operator,
+                    left: left + shift,
+                    right: right + shift,
+                },
+            }));
 
         self.nodes.len() as NodeId - 1
     }
@@ -335,14 +373,19 @@ impl<'a> GuardRef<'a> {
             Node::Variable(name) => GuardExpression::Variable(name),
             Node::Call { name, first, count } => GuardExpression::Call(
                 name,
-                Arguments { guard: self.guard, ids: self.guard.run(*first, *count) },
+                Arguments {
+                    guard: self.guard,
+                    ids: self.guard.run(*first, *count),
+                },
             ),
             Node::Not(inner) => GuardExpression::Not(self.to(*inner)),
             Node::And(a, b) => GuardExpression::And(self.to(*a), self.to(*b)),
             Node::Or(a, b) => GuardExpression::Or(self.to(*a), self.to(*b)),
-            Node::Comparison { operator, left, right } => {
-                GuardExpression::Comparison(operator, self.to(*left), self.to(*right))
-            }
+            Node::Comparison {
+                operator,
+                left,
+                right,
+            } => GuardExpression::Comparison(operator, self.to(*left), self.to(*right)),
         }
     }
 
@@ -367,7 +410,10 @@ impl<'a> GuardRef<'a> {
     }
 
     fn to(self, node: NodeId) -> Self {
-        Self { guard: self.guard, node }
+        Self {
+            guard: self.guard,
+            node,
+        }
     }
 }
 
@@ -381,7 +427,10 @@ impl<'a> Arguments<'a> {
     }
 
     pub fn get(self, index: usize) -> Option<GuardRef<'a>> {
-        self.ids.get(index).map(|node| GuardRef { guard: self.guard, node: *node })
+        self.ids.get(index).map(|node| GuardRef {
+            guard: self.guard,
+            node: *node,
+        })
     }
 
     /// The single argument, where there is exactly one.
@@ -391,14 +440,19 @@ impl<'a> Arguments<'a> {
     /// answer.
     pub fn only(self) -> Option<GuardRef<'a>> {
         match self.ids {
-            [node] => Some(GuardRef { guard: self.guard, node: *node }),
+            [node] => Some(GuardRef {
+                guard: self.guard,
+                node: *node,
+            }),
             _ => None,
         }
     }
 
     pub fn iter(self) -> impl Iterator<Item = GuardRef<'a>> + 'a {
         let guard = self.guard;
-        self.ids.iter().map(move |node| GuardRef { guard, node: *node })
+        self.ids
+            .iter()
+            .map(move |node| GuardRef { guard, node: *node })
     }
 }
 
@@ -426,7 +480,11 @@ impl fmt::Display for Guard {
                 Node::Or(a, b) => {
                     format!("({} or {})", rendered[*a as usize], rendered[*b as usize])
                 }
-                Node::Comparison { operator, left, right } => format!(
+                Node::Comparison {
+                    operator,
+                    left,
+                    right,
+                } => format!(
                     "({} {operator} {})",
                     rendered[*left as usize], rendered[*right as usize]
                 ),
@@ -465,8 +523,12 @@ fn compare(operator: &str, left: &GuardValue, right: &GuardValue) -> GuardValue 
         "==" => GuardValue::from_boolean(left.equals(right)),
         "~=" => GuardValue::from_boolean(!left.equals(right)),
         ">=" | "<=" | ">" | "<" => {
-            let Some(a) = left.try_as_number() else { return GuardValue::unknown() };
-            let Some(b) = right.try_as_number() else { return GuardValue::unknown() };
+            let Some(a) = left.try_as_number() else {
+                return GuardValue::unknown();
+            };
+            let Some(b) = right.try_as_number() else {
+                return GuardValue::unknown();
+            };
             let holds = match operator {
                 ">=" => a >= b,
                 "<=" => a <= b,
@@ -564,13 +626,22 @@ mod tests {
                 Guard::literal(GuardValue::from_number(4.0)),
             ],
         );
-        let guard = Guard::and(Guard::not(Guard::variable("a")), Guard::or(truth(false), call));
+        let guard = Guard::and(
+            Guard::not(Guard::variable("a")),
+            Guard::or(truth(false), call),
+        );
 
         children_come_first(&guard);
 
-        let GuardExpression::And(_, right) = guard.expression() else { panic!("an and") };
-        let GuardExpression::Or(_, call) = right.expression() else { panic!("an or") };
-        let GuardExpression::Call(name, arguments) = call.expression() else { panic!("a call") };
+        let GuardExpression::And(_, right) = guard.expression() else {
+            panic!("an and")
+        };
+        let GuardExpression::Or(_, call) = right.expression() else {
+            panic!("an or")
+        };
+        let GuardExpression::Call(name, arguments) = call.expression() else {
+            panic!("a call")
+        };
         assert_eq!(name, "IsHour");
         assert_eq!(arguments.len(), 2);
 
@@ -586,9 +657,18 @@ mod tests {
 
     #[test]
     fn a_conjunction_is_the_ternary_and_of_its_sides() {
-        assert_eq!(Guard::and(truth(true), truth(true)).test(&Nothing), Ternary::True);
-        assert_eq!(Guard::and(truth(true), truth(false)).test(&Nothing), Ternary::False);
-        assert_eq!(Guard::or(truth(false), truth(true)).test(&Nothing), Ternary::True);
+        assert_eq!(
+            Guard::and(truth(true), truth(true)).test(&Nothing),
+            Ternary::True
+        );
+        assert_eq!(
+            Guard::and(truth(true), truth(false)).test(&Nothing),
+            Ternary::False
+        );
+        assert_eq!(
+            Guard::or(truth(false), truth(true)).test(&Nothing),
+            Ternary::True
+        );
         assert_eq!(Guard::not(truth(false)).test(&Nothing), Ternary::True);
     }
 
@@ -610,7 +690,9 @@ mod tests {
     #[test]
     fn a_subguard_renders_and_evaluates_as_it_did_nested() {
         let guard = Guard::and(Guard::not(Guard::variable("a")), truth(true));
-        let GuardExpression::And(left, _) = guard.expression() else { panic!("an and") };
+        let GuardExpression::And(left, _) = guard.expression() else {
+            panic!("an and")
+        };
 
         let alone = left.to_guard();
         children_come_first(&alone);

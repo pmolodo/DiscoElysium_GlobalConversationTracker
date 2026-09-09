@@ -122,11 +122,17 @@ fn numeric_comparison() {
 #[test]
 fn negated_numeric_comparison() {
     assert_eq!(
-        test(r#"(Variable["q.count"] < 4) == false"#, &with_number("q.count", 3.0)),
+        test(
+            r#"(Variable["q.count"] < 4) == false"#,
+            &with_number("q.count", 3.0)
+        ),
         Ternary::False
     );
     assert_eq!(
-        test(r#"(Variable["q.count"] < 4) == false"#, &with_number("q.count", 4.0)),
+        test(
+            r#"(Variable["q.count"] < 4) == false"#,
+            &with_number("q.count", 4.0)
+        ),
         Ternary::True
     );
 }
@@ -136,7 +142,10 @@ fn negated_numeric_comparison() {
 #[test]
 fn equality_does_not_coerce_across_types() {
     let world = with_number("q.count", 1.0);
-    assert_eq!(test(r#"Variable["q.count"] == true"#, &world), Ternary::False);
+    assert_eq!(
+        test(r#"Variable["q.count"] == true"#, &world),
+        Ternary::False
+    );
 }
 
 /// A real multi-clause guard, copied from conversation 451.
@@ -149,7 +158,10 @@ fn the_siileng_speakers_guard_parses_and_evaluates() {
     );
 
     let ready = TestWorld::new()
-        .set_variable("jam.siileng_bought_faln_sneakers", GuardValue::from_boolean(true))
+        .set_variable(
+            "jam.siileng_bought_faln_sneakers",
+            GuardValue::from_boolean(true),
+        )
         .set_variable(
             "jam.siileng_learned_when_you_can_buy_speakers",
             GuardValue::from_boolean(true),
@@ -158,7 +170,10 @@ fn the_siileng_speakers_guard_parses_and_evaluates() {
     assert_eq!(test(GUARD, &ready), Ternary::True);
 
     let no_sneakers = TestWorld::new()
-        .set_variable("jam.siileng_bought_faln_sneakers", GuardValue::from_boolean(false))
+        .set_variable(
+            "jam.siileng_bought_faln_sneakers",
+            GuardValue::from_boolean(false),
+        )
         .set_variable(
             "jam.siileng_learned_when_you_can_buy_speakers",
             GuardValue::from_boolean(true),
@@ -175,7 +190,10 @@ fn operator_precedence_and_binds_tighter_than_or() {
         .set_variable("b", GuardValue::from_boolean(false))
         .set_variable("c", GuardValue::from_boolean(true));
     assert_eq!(
-        test(r#"Variable["a"] and Variable["b"] or Variable["c"]"#, &world),
+        test(
+            r#"Variable["a"] and Variable["b"] or Variable["c"]"#,
+            &world
+        ),
         Ternary::True
     );
 }
@@ -195,7 +213,10 @@ fn garbage_is_an_error() {
 fn a_failed_parse_falls_back_to_always_true() {
     let fallback = parse_guard(r#"Variable["a"] $$ 3"#)
         .unwrap_or_else(|_| crate::core::guard::Guard::always_true());
-    assert_eq!(fallback.test(&WorldContext(&TestWorld::new())), Ternary::True);
+    assert_eq!(
+        fallback.test(&WorldContext(&TestWorld::new())),
+        Ternary::True
+    );
 }
 
 /// A negative number is a number, not an operator followed by one.
@@ -239,7 +260,6 @@ fn input_that_stops_mid_expression_is_refused_rather_than_crashing() {
     }
 }
 
-
 /// Nesting far past anything real is REFUSED, and refusing is not crashing.
 ///
 /// ## The failure this replaces
@@ -272,7 +292,10 @@ fn nesting_deeper_than_anything_real_is_refused_rather_than_fatal() {
     // is now the depth a reader sees: the limit is on the TREE, so `not (` is one level and
     // not the two recursion steps the old bound charged for it.
     let real = format!("{}Variable[\"x\"]{}", "not (".repeat(100), ")".repeat(100));
-    assert!(parse_guard(&real).is_ok(), "100 levels of not( should still parse");
+    assert!(
+        parse_guard(&real).is_ok(),
+        "100 levels of not( should still parse"
+    );
 
     // And past the limit, an ERROR - which is the whole point. The number is not asserted
     // here; what matters is that there is one and that it answers.
@@ -316,5 +339,8 @@ fn a_long_chain_is_as_bounded_as_a_deep_nest() {
 
     // And a chain of ordinary length is untouched: real guards are full of these.
     let short = "true and ".repeat(20) + "true";
-    assert!(parse_guard(&short).is_ok(), "a 20-long and-chain is ordinary content");
+    assert!(
+        parse_guard(&short).is_ok(),
+        "a 20-long and-chain is ordinary content"
+    );
 }

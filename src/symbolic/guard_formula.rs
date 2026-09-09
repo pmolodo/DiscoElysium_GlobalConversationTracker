@@ -30,8 +30,8 @@
 
 use std::collections::HashMap;
 
-use oxidd::bdd::BDDFunction;
 use oxidd::BooleanFunction;
+use oxidd::bdd::BDDFunction;
 
 use crate::core::guard::{Arguments, Guard, GuardExpression, GuardRef};
 use crate::core::guard_value::{GuardValue, GuardValueKind};
@@ -156,12 +156,18 @@ impl<'a> GuardCompiler<'a> {
     /// Creates a compiler over variables somebody else declared.
     pub fn new(vars: &'a DataVars<'a>) -> Self {
         Self {
-            vars, world: None,
-            constant_clock: false, clock_approximated: false,
-            fallbacks: 0, compiled: 0, reasons: HashMap::new(), subjects: Vec::new(),
+            vars,
+            world: None,
+            constant_clock: false,
+            clock_approximated: false,
+            fallbacks: 0,
+            compiled: 0,
+            reasons: HashMap::new(),
+            subjects: Vec::new(),
             out_of_memory: false,
             declared_constants: Vec::new(),
-            guards: HashMap::new(), guard_cache_hits: 0,
+            guards: HashMap::new(),
+            guard_cache_hits: 0,
         }
     }
 
@@ -306,7 +312,10 @@ impl<'a> GuardCompiler<'a> {
         self.fallbacks += 1;
         *self.reasons.entry(reason).or_default() += 1;
         self.subjects.push((reason, subject));
-        MayBe { may_be_true: self.top(), may_be_false: self.top() }
+        MayBe {
+            may_be_true: self.top(),
+            may_be_false: self.top(),
+        }
     }
 
     /// A guard nothing could be built for, because the manager has no room left.
@@ -346,7 +355,10 @@ impl<'a> GuardCompiler<'a> {
         };
 
         self.compiled += 1;
-        MayBe { may_be_true: holds, may_be_false: fails }
+        MayBe {
+            may_be_true: holds,
+            may_be_false: fails,
+        }
     }
 
     /// Compiles a guard into its two rails.
@@ -393,13 +405,18 @@ impl<'a> GuardCompiler<'a> {
                         let f = self.bottom();
                         self.decided(f)
                     }
-                    None => self.undecided("variable untracked and world cannot say", guard.to_string()),
+                    None => {
+                        self.undecided("variable untracked and world cannot say", guard.to_string())
+                    }
                 },
             },
 
             GuardExpression::Not(inner) => {
                 let inner = self.compile_node(inner);
-                MayBe { may_be_true: inner.may_be_false, may_be_false: inner.may_be_true }
+                MayBe {
+                    may_be_true: inner.may_be_false,
+                    may_be_false: inner.may_be_true,
+                }
             }
 
             GuardExpression::And(left, right) => {
@@ -408,8 +425,14 @@ impl<'a> GuardCompiler<'a> {
                 // Both may hold, so both rails must allow it; either failing is enough to
                 // fail the conjunction. BOTH OR NEITHER: a MayBe with one rail built and
                 // the other not is not a weaker answer, it is an inconsistent one.
-                match (a.may_be_true.and(&b.may_be_true), a.may_be_false.or(&b.may_be_false)) {
-                    (Ok(may_be_true), Ok(may_be_false)) => MayBe { may_be_true, may_be_false },
+                match (
+                    a.may_be_true.and(&b.may_be_true),
+                    a.may_be_false.or(&b.may_be_false),
+                ) {
+                    (Ok(may_be_true), Ok(may_be_false)) => MayBe {
+                        may_be_true,
+                        may_be_false,
+                    },
                     _ => self.no_room(guard.to_string()),
                 }
             }
@@ -417,8 +440,14 @@ impl<'a> GuardCompiler<'a> {
             GuardExpression::Or(left, right) => {
                 let a = self.compile_node(left);
                 let b = self.compile_node(right);
-                match (a.may_be_true.or(&b.may_be_true), a.may_be_false.and(&b.may_be_false)) {
-                    (Ok(may_be_true), Ok(may_be_false)) => MayBe { may_be_true, may_be_false },
+                match (
+                    a.may_be_true.or(&b.may_be_true),
+                    a.may_be_false.and(&b.may_be_false),
+                ) {
+                    (Ok(may_be_true), Ok(may_be_false)) => MayBe {
+                        may_be_true,
+                        may_be_false,
+                    },
                     _ => self.no_room(guard.to_string()),
                 }
             }
@@ -467,7 +496,8 @@ impl<'a> GuardCompiler<'a> {
                                     let f = if held { self.top() } else { self.bottom() };
                                     self.decided(f)
                                 }
-                                None => self.undecided("call: untracked and no world", guard.to_string()),
+                                None => self
+                                    .undecided("call: untracked and no world", guard.to_string()),
                             },
                         }
                     }
@@ -485,12 +515,13 @@ impl<'a> GuardCompiler<'a> {
             // runs to the end of the eighteenth hour" is exactly the kind of thing that
             // drifts, and this port has already had those boundaries wrong once.
             GuardExpression::Call(name, args)
-                if crate::core::clock::ClockTime::owns(name)
-                    && self.vars.clock_ops().is_some() =>
+                if crate::core::clock::ClockTime::owns(name) && self.vars.clock_ops().is_some() =>
             {
                 match self.clock_hours_formula(name, args) {
                     Some(holds) => self.decided(holds),
-                    None => self.undecided("call: clock, not a question of the hour", guard.to_string()),
+                    None => {
+                        self.undecided("call: clock, not a question of the hour", guard.to_string())
+                    }
                 }
             }
 
@@ -529,10 +560,8 @@ impl<'a> GuardCompiler<'a> {
                 // the model has decided to skip may write it, and where that is so the
                 // question is noted rather than passed over silently.
                 if crate::core::modelling::for_query(name).is_some() {
-                    self.declared_constants.push((
-                        Self::declared_name(name),
-                        guard.to_string(),
-                    ));
+                    self.declared_constants
+                        .push((Self::declared_name(name), guard.to_string()));
                 }
 
                 match self.constant_query(name, args) {
@@ -602,14 +631,12 @@ impl<'a> GuardCompiler<'a> {
             return compiled;
         }
 
-        let (Some(name), Some(literal)) = (Self::variable_of(left), Self::literal_of(right))
-        else {
+        let (Some(name), Some(literal)) = (Self::variable_of(left), Self::literal_of(right)) else {
             // Also try the other way round: a guard may be written `1 == Variable[..]`.
             // The operator has to turn with the operands - `3 <= x` is `x >= 3`, and
             // reading it as `x <= 3` would answer the opposite question everywhere the
             // two disagree.
-            if let (Some(name), Some(literal)) =
-                (Self::variable_of(right), Self::literal_of(left))
+            if let (Some(name), Some(literal)) = (Self::variable_of(right), Self::literal_of(left))
             {
                 return self.comparison(Self::mirrored(op), &name, literal);
             }
@@ -626,7 +653,10 @@ impl<'a> GuardCompiler<'a> {
                 );
             }
 
-            return self.undecided("comparison: neither side a known variable", format!("({left} {op} {right})"));
+            return self.undecided(
+                "comparison: neither side a known variable",
+                format!("({left} {op} {right})"),
+            );
         };
 
         self.comparison(op, &name, literal)
@@ -661,13 +691,18 @@ impl<'a> GuardCompiler<'a> {
         if truth {
             inner
         } else {
-            MayBe { may_be_true: inner.may_be_false, may_be_false: inner.may_be_true }
+            MayBe {
+                may_be_true: inner.may_be_false,
+                may_be_false: inner.may_be_true,
+            }
         }
     }
 
     /// The boolean a literal stands for, if it is a boolean one.
     fn boolean_of(expression: GuardRef<'_>) -> Option<bool> {
-        let GuardExpression::Literal(value) = expression.expression() else { return None };
+        let GuardExpression::Literal(value) = expression.expression() else {
+            return None;
+        };
         match value.kind() {
             GuardValueKind::Boolean => Some(value.boolean()),
             _ => None,
@@ -702,9 +737,7 @@ impl<'a> GuardCompiler<'a> {
                     let holds = if op == "~=" {
                         match equals.not() {
                             Ok(negated) => negated,
-                            Err(_) => {
-                                return self.no_room(Self::rendered(op, name, literal))
-                            }
+                            Err(_) => return self.no_room(Self::rendered(op, name, literal)),
                         }
                     } else {
                         equals
@@ -726,12 +759,18 @@ impl<'a> GuardCompiler<'a> {
         // mention of the same variable did not, which was an inconsistency in this
         // compiler rather than anything about the content.
         let Some(world) = self.world else {
-            return self.undecided("comparison: variable untracked and no world", Self::rendered(op, name, literal));
+            return self.undecided(
+                "comparison: variable untracked and no world",
+                Self::rendered(op, name, literal),
+            );
         };
 
         let actual = world.get_variable(name);
         if actual.kind() == GuardValueKind::Unknown {
-            return self.undecided("comparison: variable untracked and world cannot say", Self::rendered(op, name, literal));
+            return self.undecided(
+                "comparison: variable untracked and world cannot say",
+                Self::rendered(op, name, literal),
+            );
         }
 
         let holds = if equality {
@@ -741,14 +780,22 @@ impl<'a> GuardCompiler<'a> {
             // Ordering on values, the way `Guard::evaluate` does it: both sides
             // through `try_as_number`, and undecided where either will not convert.
             let (Some(a), Some(b)) = (actual.try_as_number(), literal.try_as_number()) else {
-                return self.undecided("comparison: ordering on a non-numeric value", Self::rendered(op, name, literal));
+                return self.undecided(
+                    "comparison: ordering on a non-numeric value",
+                    Self::rendered(op, name, literal),
+                );
             };
             match op {
                 ">=" => a >= b,
                 "<=" => a <= b,
                 ">" => a > b,
                 "<" => a < b,
-                _ => return self.undecided("comparison: unknown operator", Self::rendered(op, name, literal)),
+                _ => {
+                    return self.undecided(
+                        "comparison: unknown operator",
+                        Self::rendered(op, name, literal),
+                    );
+                }
             }
         };
 
@@ -805,7 +852,9 @@ impl<'a> GuardCompiler<'a> {
         constant: i64,
         delta: DeltaSlot,
     ) -> Rebase {
-        let Some(world) = self.world else { return Rebase::Unknown };
+        let Some(world) = self.world else {
+            return Rebase::Unknown;
+        };
 
         // WHAT `seed_state` WOULD HAVE PUT IN THE SLOT, read the same way it reads it: a
         // boolean is its truth, a number is itself, and anything else is nothing there.
@@ -877,15 +926,17 @@ impl<'a> GuardCompiler<'a> {
             Distances::All => self.top(),
             Distances::None => self.bottom(),
             Distances::AtLeast(bound) => self.vars.slot_ops(slot)?.compare(">=", bound)?,
-            Distances::Exactly(bound) => {
-                self.vars.slot_equals(slot, u32::try_from(bound).ok()?)?
-            }
+            Distances::Exactly(bound) => self.vars.slot_equals(slot, u32::try_from(bound).ok()?)?,
         };
         let near = if unmoved { self.top() } else { self.bottom() };
 
         let still = self.vars.slot_equals(slot, 0)?;
         let holds = still.ite(&near, &far).ok()?;
-        if negate { holds.not().ok() } else { Some(holds) }
+        if negate {
+            holds.not().ok()
+        } else {
+            Some(holds)
+        }
     }
 
     fn slot_ordered(&mut self, name: &str, op: &str, value: i32) -> Option<BDDFunction> {
@@ -961,11 +1012,7 @@ impl<'a> GuardCompiler<'a> {
     /// boundaries - afternoon running to the end of the eighteenth hour, dusk being the
     /// single hour of nineteen - are stated in exactly one place. This port has already had
     /// them wrong once by restating them.
-    fn clock_hours_formula(
-        &mut self,
-        name: &str,
-        args: Arguments<'_>,
-    ) -> Option<BDDFunction> {
+    fn clock_hours_formula(&mut self, name: &str, args: Arguments<'_>) -> Option<BDDFunction> {
         use crate::core::clock::ClockTime;
 
         let values = Self::literal_arguments(args)?;
@@ -1037,7 +1084,9 @@ impl<'a> GuardCompiler<'a> {
 
     /// The single text argument a query names its subject with, if that is its shape.
     fn text_argument(args: Arguments<'_>) -> Option<String> {
-        let GuardExpression::Literal(value) = args.only()?.expression() else { return None };
+        let GuardExpression::Literal(value) = args.only()?.expression() else {
+            return None;
+        };
         match value.kind() {
             GuardValueKind::Text => Some(value.text().to_string()),
             _ => None,
@@ -1124,7 +1173,11 @@ impl<'a> GuardCompiler<'a> {
             world.query(name, &values)
         };
 
-        if answer.kind() == GuardValueKind::Unknown { None } else { Some(answer) }
+        if answer.kind() == GuardValueKind::Unknown {
+            None
+        } else {
+            Some(answer)
+        }
     }
 
     /// A comparison one of whose sides is a query the search cannot change.
@@ -1152,9 +1205,7 @@ impl<'a> GuardCompiler<'a> {
                 // The operator turns with the operands: `2 <= DayCount()` is
                 // `DayCount() >= 2`, and reading it the other way answers the opposite
                 // question everywhere the two disagree.
-                (Some((name, args)), Some(literal)) => {
-                    (name, args, literal, Self::mirrored(op))
-                }
+                (Some((name, args)), Some(literal)) => (name, args, literal, Self::mirrored(op)),
                 _ => return None,
             },
         };
@@ -1247,15 +1298,14 @@ impl<'a> GuardCompiler<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::symbolic::budget::DiagramBudget;
     use crate::core::action::DialogueAction;
     use crate::core::guard::Guard;
     use crate::core::state::StateSymbols;
     use crate::core::types::{DialogueCheckKind, DialogueNodeId};
     use crate::graph::graph::LookAheadGraph;
     use crate::graph::node::LookAheadNode;
+    use crate::symbolic::budget::DiagramBudget;
     use crate::symbolic::data_layout::DataLayout;
-
 
     /// A graph whose symbol table holds `names`, with `counter` incremented so it is wide.
     /// A graph whose symbol table holds `names`, with `counter` incremented so it is wide.
@@ -1275,9 +1325,19 @@ mod tests {
         }
 
         let node = LookAheadNode::new(
-            DialogueNodeId::new(1, 0), false, DialogueCheckKind::None,
-            Guard::always_true(), actions, vec![DialogueNodeId::new(1, 0)],
-            0, false, false, -1, -1, false, -1,
+            DialogueNodeId::new(1, 0),
+            false,
+            DialogueCheckKind::None,
+            Guard::always_true(),
+            actions,
+            vec![DialogueNodeId::new(1, 0)],
+            0,
+            false,
+            false,
+            -1,
+            -1,
+            false,
+            -1,
         );
         let snapshot = symbols.clone();
         (LookAheadGraph::new(vec![node], symbols).unwrap(), snapshot)
@@ -1401,7 +1461,9 @@ mod tests {
 
         let (base, bits) = layout.money().expect("money is in this layout");
         let at = |value: u32| -> Vec<(u32, bool)> {
-            (0..bits as u32).map(|b| (base + b, (value >> b) & 1 == 1)).collect()
+            (0..bits as u32)
+                .map(|b| (base + b, (value >> b) & 1 == 1))
+                .collect()
         };
         assert!(compiled.may_be_true.eval(at(50).iter().copied()));
         assert!(!compiled.may_be_true.eval(at(49).iter().copied()));
@@ -1470,8 +1532,7 @@ mod tests {
         assert!(!compiled.may_be_true.eval(zero.iter().copied()));
 
         // Value 4 is the third bit alone.
-        let four: Vec<(u32, bool)> =
-            (0..bits as u32).map(|b| (base + b, b == 2)).collect();
+        let four: Vec<(u32, bool)> = (0..bits as u32).map(|b| (base + b, b == 2)).collect();
         assert!(compiled.may_be_true.eval(four.iter().copied()));
     }
 
@@ -1491,7 +1552,9 @@ mod tests {
         ));
 
         let assignment = |value: u32| -> Vec<(u32, bool)> {
-            (0..bits as u32).map(|b| (base + b, (value >> b) & 1 == 1)).collect()
+            (0..bits as u32)
+                .map(|b| (base + b, (value >> b) & 1 == 1))
+                .collect()
         };
         assert!(compiled.may_be_true.eval(assignment(3).iter().copied()));
         assert!(!compiled.may_be_true.eval(assignment(2).iter().copied()));
@@ -1547,8 +1610,9 @@ mod tests {
         let _ = compiler;
         (0..=ceiling)
             .filter(|value| {
-                let assignment: Vec<(u32, bool)> =
-                    (0..bits as u32).map(|b| (base + b, (value >> b) & 1 == 1)).collect();
+                let assignment: Vec<(u32, bool)> = (0..bits as u32)
+                    .map(|b| (base + b, (value >> b) & 1 == 1))
+                    .collect();
                 formula.eval(assignment.iter().copied())
             })
             .collect()
@@ -1619,8 +1683,7 @@ mod tests {
             .set_variable("untracked", GuardValue::from_number(5.0));
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
-        let mut compiler =
-            GuardCompiler::new(&vars).with_world(&world);
+        let mut compiler = GuardCompiler::new(&vars).with_world(&world);
         let holds = compiler.compile(&Guard::comparison(
             ">=".to_string(),
             Guard::variable("untracked".to_string()),
@@ -1671,9 +1734,7 @@ mod tests {
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
-        let compiled = compiler.compile(&Guard::not(
-            Guard::variable("a".to_string()),
-        ));
+        let compiled = compiler.compile(&Guard::not(Guard::variable("a".to_string())));
 
         assert!(compiled.may_be_true.eval([(base, false)]));
         assert!(!compiled.may_be_true.eval([(base, true)]));
@@ -1687,9 +1748,7 @@ mod tests {
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
-        let compiled = compiler.compile(&Guard::not(
-            Guard::call("IsKimHere".to_string(), vec![]),
-        ));
+        let compiled = compiler.compile(&Guard::not(Guard::call("IsKimHere".to_string(), vec![])));
 
         assert!(compiled.may_be_true.valid());
         assert!(compiled.may_be_false.valid());
@@ -1701,26 +1760,39 @@ mod tests {
         // GainItem is what interns an `item:` slot, so build the graph through the
         // action parser rather than by naming the slot directly.
         let mut symbols = StateSymbols::new();
-        let actions = crate::parser::action_parser::parse_actions(
-            r#"GainItem("shoes_faln")"#,
-            &mut symbols,
-        );
+        let actions =
+            crate::parser::action_parser::parse_actions(r#"GainItem("shoes_faln")"#, &mut symbols);
         let node = LookAheadNode::new(
-            DialogueNodeId::new(1, 0), false, DialogueCheckKind::None,
-            Guard::always_true(), actions, vec![], 0, false, false, -1, -1, false, -1,
+            DialogueNodeId::new(1, 0),
+            false,
+            DialogueCheckKind::None,
+            Guard::always_true(),
+            actions,
+            vec![],
+            0,
+            false,
+            false,
+            -1,
+            -1,
+            false,
+            -1,
         );
         let snapshot = symbols.clone();
         let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
         let layout = DataLayout::for_graph(&graph, 16, None, false);
 
-        let slot = snapshot.find("item:shoes_faln").expect("GainItem interns an item slot");
+        let slot = snapshot
+            .find("item:shoes_faln")
+            .expect("GainItem interns an item slot");
         let base = layout.slot(slot).unwrap().0;
 
         let vars = DataVars::new(&layout, &snapshot, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&Guard::call(
             "CheckItem".to_string(),
-            vec![Guard::literal(GuardValue::from_text("shoes_faln".to_string()))],
+            vec![Guard::literal(GuardValue::from_text(
+                "shoes_faln".to_string(),
+            ))],
         ));
 
         assert!(compiled.may_be_true.eval([(base, true)]));
@@ -1742,8 +1814,7 @@ mod tests {
         let world = crate::world::test_world::TestWorld::new().set_item("ledger", true);
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
-        let mut compiler =
-            GuardCompiler::new(&vars).with_world(&world);
+        let mut compiler = GuardCompiler::new(&vars).with_world(&world);
         let held = compiler.compile(&Guard::call(
             "CheckItem".to_string(),
             vec![Guard::literal(GuardValue::from_text("ledger".to_string()))],
@@ -1768,28 +1839,41 @@ mod tests {
     #[test]
     fn a_tracked_item_ignores_the_worlds_starting_inventory() {
         let mut symbols = StateSymbols::new();
-        let actions = crate::parser::action_parser::parse_actions(
-            r#"GainItem("shoes_faln")"#,
-            &mut symbols,
-        );
+        let actions =
+            crate::parser::action_parser::parse_actions(r#"GainItem("shoes_faln")"#, &mut symbols);
         let node = LookAheadNode::new(
-            DialogueNodeId::new(1, 0), false, DialogueCheckKind::None,
-            Guard::always_true(), actions, vec![], 0, false, false, -1, -1, false, -1,
+            DialogueNodeId::new(1, 0),
+            false,
+            DialogueCheckKind::None,
+            Guard::always_true(),
+            actions,
+            vec![],
+            0,
+            false,
+            false,
+            -1,
+            -1,
+            false,
+            -1,
         );
         let snapshot = symbols.clone();
         let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
         let layout = DataLayout::for_graph(&graph, 16, None, false);
-        let base = layout.slot(snapshot.find("item:shoes_faln").unwrap()).unwrap().0;
+        let base = layout
+            .slot(snapshot.find("item:shoes_faln").unwrap())
+            .unwrap()
+            .0;
 
         // The world says the player does NOT have them. The slot must still decide, so
         // that a path which buys them is seen.
         let world = crate::world::test_world::TestWorld::new().set_item("shoes_faln", false);
         let vars = DataVars::new(&layout, &snapshot, DiagramBudget::modest());
-        let mut compiler =
-            GuardCompiler::new(&vars).with_world(&world);
+        let mut compiler = GuardCompiler::new(&vars).with_world(&world);
         let compiled = compiler.compile(&Guard::call(
             "CheckItem".to_string(),
-            vec![Guard::literal(GuardValue::from_text("shoes_faln".to_string()))],
+            vec![Guard::literal(GuardValue::from_text(
+                "shoes_faln".to_string(),
+            ))],
         ));
 
         assert!(compiled.may_be_true.eval([(base, true)]));
@@ -1804,21 +1888,36 @@ mod tests {
             &mut symbols,
         );
         let node = LookAheadNode::new(
-            DialogueNodeId::new(1, 0), false, DialogueCheckKind::None,
-            Guard::always_true(), actions, vec![], 0, false, false, -1, -1, false, -1,
+            DialogueNodeId::new(1, 0),
+            false,
+            DialogueCheckKind::None,
+            Guard::always_true(),
+            actions,
+            vec![],
+            0,
+            false,
+            false,
+            -1,
+            -1,
+            false,
+            -1,
         );
         let snapshot = symbols.clone();
         let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
         let layout = DataLayout::for_graph(&graph, 16, None, false);
 
-        let slot = snapshot.find("task:TASK.find_ruby").expect("GainTask interns a task slot");
+        let slot = snapshot
+            .find("task:TASK.find_ruby")
+            .expect("GainTask interns a task slot");
         let base = layout.slot(slot).unwrap().0;
 
         let vars = DataVars::new(&layout, &snapshot, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
         let compiled = compiler.compile(&Guard::call(
             "IsTaskActive".to_string(),
-            vec![Guard::literal(GuardValue::from_text("TASK.find_ruby".to_string()))],
+            vec![Guard::literal(GuardValue::from_text(
+                "TASK.find_ruby".to_string(),
+            ))],
         ));
 
         assert!(compiled.may_be_true.eval([(base, true)]));
@@ -1840,8 +1939,19 @@ mod tests {
             &mut symbols,
         );
         let node = LookAheadNode::new(
-            DialogueNodeId::new(1, 0), false, DialogueCheckKind::None,
-            Guard::always_true(), actions, vec![], 0, false, false, -1, -1, false, -1,
+            DialogueNodeId::new(1, 0),
+            false,
+            DialogueCheckKind::None,
+            Guard::always_true(),
+            actions,
+            vec![],
+            0,
+            false,
+            false,
+            -1,
+            -1,
+            false,
+            -1,
         );
         let snapshot = symbols.clone();
         let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
@@ -1859,7 +1969,9 @@ mod tests {
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
         let compiled = compiler.compile(&Guard::call(
             "IsTHCPresent".to_string(),
-            vec![Guard::literal(GuardValue::from_text("jamais_vu".to_string()))],
+            vec![Guard::literal(GuardValue::from_text(
+                "jamais_vu".to_string(),
+            ))],
         ));
 
         assert!(compiled.may_be_true.eval([(base, true)]));
@@ -1913,8 +2025,7 @@ mod tests {
         let mut compiler = GuardCompiler::new(&vars)
             .with_world(&night)
             .with_constant_clock(false);
-        let compiled =
-            compiler.compile(&Guard::call("IsNight".to_string(), vec![]));
+        let compiled = compiler.compile(&Guard::call("IsNight".to_string(), vec![]));
 
         assert!(compiled.is_decided());
         assert_eq!(compiler.fallbacks(), 0);
@@ -1928,10 +2039,8 @@ mod tests {
         let night = crate::world::test_world::TestWorld::new().with_day_minutes(2 * 60);
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
-        let mut compiler =
-            GuardCompiler::new(&vars).with_world(&night);
-        let compiled =
-            compiler.compile(&Guard::call("IsNight".to_string(), vec![]));
+        let mut compiler = GuardCompiler::new(&vars).with_world(&night);
+        let compiled = compiler.compile(&Guard::call("IsNight".to_string(), vec![]));
 
         assert!(!compiled.is_decided());
         assert_eq!(compiler.fallbacks(), 1);
@@ -1966,9 +2075,19 @@ mod tests {
 
         let node = |actions| {
             LookAheadNode::new(
-                DialogueNodeId::new(1, 0), false, DialogueCheckKind::None,
-                Guard::always_true(), actions, vec![], 0, false, false, -1, -1,
-                false, -1,
+                DialogueNodeId::new(1, 0),
+                false,
+                DialogueCheckKind::None,
+                Guard::always_true(),
+                actions,
+                vec![],
+                0,
+                false,
+                false,
+                -1,
+                -1,
+                false,
+                -1,
             )
         };
 
@@ -2005,11 +2124,26 @@ mod tests {
         let mut symbols = StateSymbols::new();
         let gate = symbols.variable("gate");
         let counter = symbols.variable("counter");
-        let actions = vec![DialogueAction::increment(counter, 1, false, "s".to_string())];
+        let actions = vec![DialogueAction::increment(
+            counter,
+            1,
+            false,
+            "s".to_string(),
+        )];
         let node = LookAheadNode::new(
-            DialogueNodeId::new(1, 0), false, DialogueCheckKind::None,
-            Guard::always_true(), actions.clone(), vec![],
-            0, false, false, -1, -1, false, -1,
+            DialogueNodeId::new(1, 0),
+            false,
+            DialogueCheckKind::None,
+            Guard::always_true(),
+            actions.clone(),
+            vec![],
+            0,
+            false,
+            false,
+            -1,
+            -1,
+            false,
+            -1,
         );
         let snapshot = symbols.clone();
         let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
@@ -2034,7 +2168,10 @@ mod tests {
         let open = vars.slot_is_set(gate).unwrap();
         assert!(after.and(&open).expect("and").satisfiable());
         assert!(
-            !after.and(&open.not().expect("not")).expect("and").satisfiable(),
+            !after
+                .and(&open.not().expect("not"))
+                .expect("and")
+                .satisfiable(),
             "a state that failed the guard should not appear in the image",
         );
 

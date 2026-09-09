@@ -79,7 +79,11 @@ const COUNTER_CAP: i32 = 16;
 
 /// How many bits hold `max`, which is `DataLayout`'s own rule.
 fn bits_for(max: u32) -> u8 {
-    if max == 0 { 1 } else { (u32::BITS - max.leading_zeros()) as u8 }
+    if max == 0 {
+        1
+    } else {
+        (u32::BITS - max.leading_zeros()) as u8
+    }
 }
 
 fn gcd(a: u32, b: u32) -> u32 {
@@ -128,8 +132,10 @@ fn on_a_cycle(graph: &LookAheadGraph) -> HashSet<DialogueNodeId> {
                 on_stack.insert(id);
             }
 
-            let links: &[DialogueNodeId] =
-                graph.get(id).map(|node| node.links.as_slice()).unwrap_or(&[]);
+            let links: &[DialogueNodeId] = graph
+                .get(id)
+                .map(|node| node.links.as_slice())
+                .unwrap_or(&[]);
 
             // A SELF LINK IS A CYCLE OF ONE, and Tarjan puts it in a component by itself, so
             // it has to be caught here rather than by the size test below.
@@ -240,7 +246,9 @@ fn main() {
     let mut writer_wins = 0;
 
     for conversation in numbers("CONVERSATION", &GROUPS) {
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            continue;
+        };
         let start = DialogueNodeId::new(conversation, 0);
         if graph.get(start).is_none() {
             continue;
@@ -271,7 +279,11 @@ fn main() {
                         counter.signed |= action.value() < 0;
                     }
                     DialogueActionKind::Assign => {
-                        counters.entry(slot).or_default().assigned.push(action.value());
+                        counters
+                            .entry(slot)
+                            .or_default()
+                            .assigned
+                            .push(action.value());
                     }
                     _ => {}
                 }
@@ -318,7 +330,11 @@ fn main() {
                 .reduce(gcd)
                 .unwrap_or(1)
                 .max(1);
-            let range: u32 = counter.amounts.iter().map(|a| a.max(&0).unsigned_abs()).sum();
+            let range: u32 = counter
+                .amounts
+                .iter()
+                .map(|a| a.max(&0).unsigned_abs())
+                .sum();
 
             let writer_bits = bits_for(counter.amounts.len() as u32);
             let value_bits = bits_for(range / unit);
@@ -338,7 +354,11 @@ fn main() {
             // available" has to mean if it is never to cost a slot anything. A slot the
             // group ASSIGNS keeps what it has: an assign writes the number directly, so
             // neither delta encoding is legal there whatever its width would be.
-            let best = if delta_legal { today.min(best_new) } else { today };
+            let best = if delta_legal {
+                today.min(best_new)
+            } else {
+                today
+            };
             bits_today += today as u32;
             bits_best += best as u32;
             if delta_legal && writer_bits < value_bits && writer_bits < today {
@@ -438,7 +458,9 @@ fn money_report(index: &lookahead_engine::index::Index, world: &dyn ILookAheadWo
     let mut today_total = 0u32;
     let mut scaled_total = 0u32;
     for conversation in numbers("CONVERSATION", &GROUPS) {
-        let Ok((graph, _)) = build_group_graph(index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(index, conversation) else {
+            continue;
+        };
         let Some(ceiling) = DataLayout::money_ceiling(&graph, world.money()) else {
             println!("{conversation:>6}  {:>10}", "not read");
             continue;
@@ -489,7 +511,11 @@ fn money_report(index: &lookahead_engine::index::Index, world: &dyn ILookAheadWo
         let gained: u32 = amounts.iter().sum();
 
         let today = bits_for(ceiling);
-        let scaled = if looped { today } else { bits_for(gained / unit).min(today) };
+        let scaled = if looped {
+            today
+        } else {
+            bits_for(gained / unit).min(today)
+        };
         today_total += today as u32;
         scaled_total += scaled as u32;
 
@@ -516,7 +542,9 @@ fn numbers(name: &str, fallback: &[i32]) -> Vec<i32> {
             .map(str::trim)
             .filter(|piece| !piece.is_empty())
             .map(|piece| {
-                piece.parse().unwrap_or_else(|_| panic!("{name}={piece:?} is not a number"))
+                piece
+                    .parse()
+                    .unwrap_or_else(|_| panic!("{name}={piece:?} is not a number"))
             })
             .collect(),
         Err(_) => fallback.to_vec(),

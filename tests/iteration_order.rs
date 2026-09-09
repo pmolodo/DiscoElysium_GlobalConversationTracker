@@ -34,7 +34,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::graph::graph::LookAheadGraph;
-use lookahead_engine::index::{build_group_graph, read_index, Index};
+use lookahead_engine::index::{Index, build_group_graph, read_index};
 use lookahead_engine::symbolic::order::IterationOrder;
 
 mod common;
@@ -67,8 +67,10 @@ fn walk(
 /// The group's links, and the same links reversed.
 fn edges_of(
     graph: &LookAheadGraph,
-) -> (HashMap<DialogueNodeId, Vec<DialogueNodeId>>, HashMap<DialogueNodeId, Vec<DialogueNodeId>>)
-{
+) -> (
+    HashMap<DialogueNodeId, Vec<DialogueNodeId>>,
+    HashMap<DialogueNodeId, Vec<DialogueNodeId>>,
+) {
     let mut forward: HashMap<DialogueNodeId, Vec<DialogueNodeId>> = HashMap::new();
     let mut backward: HashMap<DialogueNodeId, Vec<DialogueNodeId>> = HashMap::new();
     for node in graph.nodes() {
@@ -93,12 +95,16 @@ fn groups(index: &Index) -> Vec<i32> {
 /// Every entry is ranked, and the component numbers run from zero without a gap.
 #[test]
 fn every_entry_is_ranked_and_the_components_are_numbered() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
 
     let mut checked = 0;
     for conversation in groups(&index) {
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            continue;
+        };
         if graph.count() == 0 {
             continue;
         }
@@ -135,7 +141,10 @@ fn every_entry_is_ranked_and_the_components_are_numbered() {
         checked += 1;
     }
 
-    assert!(checked > 100, "only {checked} groups were checked; the corpus did not load");
+    assert!(
+        checked > 100,
+        "only {checked} groups were checked; the corpus did not load"
+    );
 }
 
 /// THE GUARANTEE. A link that leaves a component always climbs in rank.
@@ -145,12 +154,16 @@ fn every_entry_is_ranked_and_the_components_are_numbered() {
 /// tie-break, which `symbolic::order` pins on its own.
 #[test]
 fn a_link_between_components_always_climbs() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
 
     let mut crossings = 0;
     for conversation in groups(&index) {
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            continue;
+        };
         let order = IterationOrder::of_from(&graph, DialogueNodeId::new(conversation, 0));
 
         for node in graph.nodes() {
@@ -174,7 +187,10 @@ fn a_link_between_components_always_climbs() {
         }
     }
 
-    assert!(crossings > 1000, "only {crossings} boundaries were crossed; too few to trust");
+    assert!(
+        crossings > 1000,
+        "only {crossings} boundaries were crossed; too few to trust"
+    );
 }
 
 /// A component is exactly the entries mutually reachable with any one of its members.
@@ -185,13 +201,17 @@ fn a_link_between_components_always_climbs() {
 /// components or split one would fail here and would pass every other check in this file.
 #[test]
 fn a_component_is_exactly_what_is_mutually_reachable() {
-    let Some(path) = common::conversation_index() else { return };
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
     let index = read_index(&path).expect("the index reads");
 
     let mut checked = 0;
     let mut cyclic = 0;
     for conversation in groups(&index) {
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            continue;
+        };
         if graph.count() == 0 || graph.count() > CROSS_CHECK_CEILING {
             continue;
         }
@@ -224,6 +244,12 @@ fn a_component_is_exactly_what_is_mutually_reachable() {
         checked += 1;
     }
 
-    assert!(checked > 50, "only {checked} groups were cross-checked; the corpus did not load");
-    assert!(cyclic > 0, "no group had a cycle at all, so nothing interesting was checked");
+    assert!(
+        checked > 50,
+        "only {checked} groups were cross-checked; the corpus did not load"
+    );
+    assert!(
+        cyclic > 0,
+        "no group had a cycle at all, so nothing interesting was checked"
+    );
 }

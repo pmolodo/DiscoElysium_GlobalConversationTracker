@@ -106,8 +106,7 @@ fn main() {
     );
     println!(
         "{:>5} {:>7} {:>6} {:>18} {:>18} {:>18}",
-        "conv", "entries", "whole", "per start (mean)", "per menu (mean)",
-        "per conversation"
+        "conv", "entries", "whole", "per start (mean)", "per menu (mean)", "per conversation"
     );
 
     for conversation in GROUPS {
@@ -129,7 +128,10 @@ fn main() {
         let mut per_start = Sampler::new();
         for id in ids.iter().step_by(step(ids.len(), STARTS_SAMPLED)) {
             let reached = reachable_from(&graph, [*id]);
-            per_start.add(vars_reading(&graph, &DataLayout::read_by_some(&graph, reached)));
+            per_start.add(vars_reading(
+                &graph,
+                &DataLayout::read_by_some(&graph, reached),
+            ));
         }
 
         // A WHOLE MENU AT ONCE, which is the shape the plugin sends: every option of one
@@ -147,7 +149,10 @@ fn main() {
         menus.sort_by_key(|(id, _)| (id.conversation_id, id.entry_id));
         for (_, menu) in menus.iter().step_by(step(menus.len(), MENUS_SAMPLED)) {
             let reached = reachable_from(&graph, menu.iter().copied());
-            per_menu.add(vars_reading(&graph, &DataLayout::read_by_some(&graph, reached)));
+            per_menu.add(vars_reading(
+                &graph,
+                &DataLayout::read_by_some(&graph, reached),
+            ));
         }
 
         // A WHOLE CONVERSATION AT ONCE - the middle ground, and the one that might be had
@@ -157,14 +162,18 @@ fn main() {
         // into a different conversation of the group rebuilds it, which is already when a
         // player pays for a scene change.
         let mut per_conversation = Sampler::new();
-        let mut conversations: Vec<i32> =
-            ids.iter().map(|id| id.conversation_id).collect();
+        let mut conversations: Vec<i32> = ids.iter().map(|id| id.conversation_id).collect();
         conversations.dedup();
         for member in conversations {
-            let entries = ids.iter().copied().filter(|id| id.conversation_id == member);
+            let entries = ids
+                .iter()
+                .copied()
+                .filter(|id| id.conversation_id == member);
             let reached = reachable_from(&graph, entries);
-            per_conversation
-                .add(vars_reading(&graph, &DataLayout::read_by_some(&graph, reached)));
+            per_conversation.add(vars_reading(
+                &graph,
+                &DataLayout::read_by_some(&graph, reached),
+            ));
         }
 
         println!(
@@ -244,7 +253,11 @@ struct Sampler {
 
 impl Sampler {
     fn new() -> Self {
-        Self { total: 0, count: 0, best: u32::MAX }
+        Self {
+            total: 0,
+            count: 0,
+            best: u32::MAX,
+        }
     }
 
     fn add(&mut self, vars: u32) {
@@ -260,7 +273,11 @@ impl Sampler {
         }
 
         let mean = self.total as f64 / self.count as f64;
-        let saved = if whole == 0 { 0.0 } else { 100.0 * (1.0 - mean / f64::from(whole)) };
+        let saved = if whole == 0 {
+            0.0
+        } else {
+            100.0 * (1.0 - mean / f64::from(whole))
+        };
         format!("{mean:.0} ({saved:.0}%), best {}", self.best)
     }
 }

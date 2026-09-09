@@ -96,7 +96,9 @@ impl IGuardContext for EmptyContext {
 
 #[test]
 fn every_guard_in_the_database_parses() {
-    let Some(corpus) = load(GUARD_CORPUS) else { return };
+    let Some(corpus) = load(GUARD_CORPUS) else {
+        return;
+    };
 
     let failures: Vec<String> = corpus
         .iter()
@@ -104,7 +106,11 @@ fn every_guard_in_the_database_parses() {
         .filter(|guard| parse_guard(guard).is_err())
         .collect();
 
-    println!("parsed {} of {} guards", corpus.len() - failures.len(), corpus.len());
+    println!(
+        "parsed {} of {} guards",
+        corpus.len() - failures.len(),
+        corpus.len()
+    );
     assert_eq!(sample(&failures), Vec::<String>::new());
 }
 
@@ -115,7 +121,9 @@ fn every_guard_in_the_database_parses() {
 /// a UI callback in the game, where a panic is not a test failure but a crash.
 #[test]
 fn every_guard_evaluates_without_panicking() {
-    let Some(corpus) = load(GUARD_CORPUS) else { return };
+    let Some(corpus) = load(GUARD_CORPUS) else {
+        return;
+    };
 
     let context = EmptyContext;
     let mut counts: HashMap<&'static str, usize> = HashMap::new();
@@ -144,7 +152,9 @@ fn every_guard_evaluates_without_panicking() {
 
 #[test]
 fn every_action_in_the_database_parses() {
-    let Some(corpus) = load(ACTION_CORPUS) else { return };
+    let Some(corpus) = load(ACTION_CORPUS) else {
+        return;
+    };
 
     let mut symbols = StateSymbols::new();
     let mut modelled = 0;
@@ -194,7 +204,9 @@ fn every_action_in_the_database_parses() {
 /// a state with negative money would mean the affordability check had been bypassed.
 #[test]
 fn no_action_drives_money_negative() {
-    let Some(corpus) = load(ACTION_CORPUS) else { return };
+    let Some(corpus) = load(ACTION_CORPUS) else {
+        return;
+    };
 
     let mut symbols = StateSymbols::new();
     let once = symbols.once(DialogueNodeId::new(0, 0)) as i32;

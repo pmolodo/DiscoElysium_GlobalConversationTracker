@@ -194,13 +194,18 @@ fn main() {
     println!("  build the world        {:>6.0} ms\n", ms(save));
 
     println!("per group, paid again by every row of a one-row-per-process run\n");
-    println!("{:>6}  {:>10}  {:>12}  {:>12}", "conv", "entries", "graph ms", "candidates ms");
+    println!(
+        "{:>6}  {:>10}  {:>12}  {:>12}",
+        "conv", "entries", "graph ms", "candidates ms"
+    );
 
     let groups = numbers("CONVERSATION", &GROUPS);
     let mut built: Vec<(i32, LookAheadGraph, DialogueNodeId)> = Vec::new();
     for conversation in groups {
         let began = Instant::now();
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            continue;
+        };
         let graph_ms = began.elapsed();
 
         let start = DialogueNodeId::new(conversation, 0);
@@ -274,7 +279,10 @@ fn ms(took: Duration) -> f64 {
 
 /// A number from the environment, or the default written down here.
 fn from_env(name: &str, fallback: usize) -> usize {
-    lookahead_engine::core::env::var(name).ok().and_then(|value| value.trim().parse().ok()).unwrap_or(fallback)
+    lookahead_engine::core::env::var(name)
+        .ok()
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or(fallback)
 }
 
 /// A comma-separated list from the environment, or the default written down here.
@@ -285,7 +293,9 @@ fn numbers(name: &str, fallback: &[i32]) -> Vec<i32> {
             .map(str::trim)
             .filter(|piece| !piece.is_empty())
             .map(|piece| {
-                piece.parse().unwrap_or_else(|_| panic!("{name}={piece:?} is not a number"))
+                piece
+                    .parse()
+                    .unwrap_or_else(|_| panic!("{name}={piece:?} is not a number"))
             })
             .collect(),
         Err(_) => fallback.to_vec(),

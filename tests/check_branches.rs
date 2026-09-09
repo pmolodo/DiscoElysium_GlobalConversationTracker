@@ -7,7 +7,7 @@
 //! two branches - and require an ordinary option in the same group to carry none, since it
 //! is the ABSENCE that tells the mod which options get a Pass/Fail line.
 
-use lookahead_engine::bridge::{answer, LookAheadRequest, NodeRef, WorldSnapshot};
+use lookahead_engine::bridge::{LookAheadRequest, NodeRef, WorldSnapshot, answer};
 use lookahead_engine::core::types::DialogueCheckKind;
 use lookahead_engine::index::{build_group_graph, read_index};
 
@@ -15,7 +15,11 @@ mod common;
 
 /// A world that decides nothing, so every check is open and both its branches are live.
 fn undecided() -> WorldSnapshot {
-    WorldSnapshot { day_minutes: 720, day_counter: 1, ..Default::default() }
+    WorldSnapshot {
+        day_minutes: 720,
+        day_counter: 1,
+        ..Default::default()
+    }
 }
 
 /// The index, or nothing when it has not been built.
@@ -42,7 +46,9 @@ fn a_group_with_a_roll() -> Option<(i32, NodeRef, NodeRef)> {
     let index = index()?;
 
     for conversation in conversations(&index) {
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            continue;
+        };
 
         let mut rolled = None;
         let mut plain = None;
@@ -91,18 +97,19 @@ fn a_rolled_check_comes_back_with_both_outcomes() {
     // so it is answered once per outcome, and the ordinary entry once.
     assert_eq!(response.answers.len(), 3);
 
-    let (pass, fail) = response
-        .outcomes(rolled)
-        .unwrap_or_else(|| panic!("{conversation}:{} is a roll and came back with one answer", rolled.entry));
+    let (pass, fail) = response.outcomes(rolled).unwrap_or_else(|| {
+        panic!(
+            "{conversation}:{} is a roll and came back with one answer",
+            rolled.entry
+        )
+    });
 
     // Each outcome is an answer in its own right, with its own cost figures - which the
     // combined answer this replaced could not carry and reported as zero.
     assert!((0..=2).contains(&pass.best), "{pass:?}");
     assert!((0..=2).contains(&fail.best), "{fail:?}");
 
-    let for_plain = response
-        .find(plain, None)
-        .expect("the plain entry");
+    let for_plain = response.find(plain, None).expect("the plain entry");
     assert!(
         response.outcomes(plain).is_none(),
         "an ordinary entry came back with outcomes, which would give it a Pass/Fail line",
@@ -124,13 +131,13 @@ fn every_rolled_check_in_the_corpus_answers() {
     let mut asked = 0usize;
 
     for conversation in conversations(&index).into_iter().take(40) {
-        let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+        let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+            continue;
+        };
 
         let rolls: Vec<NodeRef> = graph
             .nodes()
-            .filter(|node| {
-                matches!(node.kind, DialogueCheckKind::Red | DialogueCheckKind::White)
-            })
+            .filter(|node| matches!(node.kind, DialogueCheckKind::Red | DialogueCheckKind::White))
             .map(|node| NodeRef::from(node.id))
             .take(8)
             .collect();
@@ -147,11 +154,18 @@ fn every_rolled_check_in_the_corpus_answers() {
         };
 
         let response = answer(&index, None, &request);
-        assert!(response.error.is_none(), "{conversation}: {:?}", response.error);
+        assert!(
+            response.error.is_none(),
+            "{conversation}: {:?}",
+            response.error
+        );
 
         for reply in &response.answers {
             let branch = reply.branch.as_deref().unwrap_or_else(|| {
-                panic!("{conversation}:{} is a roll and named no outcome", reply.start.entry)
+                panic!(
+                    "{conversation}:{} is a roll and named no outcome",
+                    reply.start.entry
+                )
             });
 
             // An outcome cannot reach less than the entry it leads to: the destination is
@@ -164,7 +178,9 @@ fn every_rolled_check_in_the_corpus_answers() {
             assert!(
                 reply.best >= reply.destination,
                 "{conversation}:{} {branch} reaches {} but leads to {}",
-                reply.start.entry, reply.best, reply.destination,
+                reply.start.entry,
+                reply.best,
+                reply.destination,
             );
 
             asked += 1;
@@ -192,9 +208,13 @@ fn a_red_check_and_a_white_check_both_answer() {
 
     for kind in [DialogueCheckKind::Red, DialogueCheckKind::White] {
         for conversation in conversations(&index) {
-            let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
+            let Ok((graph, _)) = build_group_graph(&index, conversation) else {
+                continue;
+            };
 
-            let Some(roll) = graph.nodes().find(|node| node.kind == kind) else { continue };
+            let Some(roll) = graph.nodes().find(|node| node.kind == kind) else {
+                continue;
+            };
 
             let request = LookAheadRequest {
                 conversation,
@@ -204,9 +224,16 @@ fn a_red_check_and_a_white_check_both_answer() {
             };
 
             let response = answer(&index, None, &request);
-            assert!(response.error.is_none(), "{conversation}: {:?}", response.error);
+            assert!(
+                response.error.is_none(),
+                "{conversation}: {:?}",
+                response.error
+            );
 
-            let reply = response.answers.first().expect("one start, at least one answer");
+            let reply = response
+                .answers
+                .first()
+                .expect("one start, at least one answer");
             assert!(
                 response.outcomes(reply.start).is_some(),
                 "{conversation}:{} is a {kind:?} check and did not come back as two outcomes",
