@@ -68,8 +68,8 @@
 //! reading of a run from before that - including the framing of de-a1wb itself - rests on
 //! a column name that did not describe what ran. de-zovl is the correction.
 //!
-//! `tools/matrix-remaining.awk` and `measurements/README.md` carry this same table,
-//! because reading an old folder means translating it.
+//! `tools/measure-matrix.py`'s `RowWeights` and `measurements/README.md` carry this same
+//! table, because reading an old folder means translating it.
 //!
 //! ## What the backward column costs, and why that is the whole question
 //!
@@ -332,8 +332,13 @@
 //!
 //! THE HEADER FOLLOWS THE SELECTION - a run that names one engine prints that engine's
 //! columns and no others, so a narrowed run is never a wide row with holes in it. Ask for
-//! the header alone with `HEADER_ONLY=1`, which is how `tools/measure-matrix.sh` learns the
+//! the header alone with `HEADER_ONLY=1`, which is how `tools/measure-matrix.py` learns the
 //! column names rather than keeping its own copy of them.
+//!
+//! `CONSTANTS_ONLY=1` prints, in the same spirit, the numbers the driver has to do
+//! arithmetic with - the memory budget in megabytes, the bytes a diagram node costs, and the
+//! per-engine cap in seconds. They live in `src/symbolic/budget.rs` and the driver used to
+//! carry its own copies.
 //!
 //! ## Every group in the game, with `GROUPS_ONLY=1`
 //!
@@ -778,17 +783,20 @@ impl Engine {
             // `Partly` or `Gated` there - never `Forwards`, since no slice ran - and that is
             // a fact worth having in the column rather than one to be remembered.
             //
-            // `nodes` IS COMPARABLE ON AN ARM WITH NO SLICE AND INDICATIVE ON ONE WITH,
-            // and that distinction is de-12wr.3 rather than a caveat added for safety.
-            // Measured 2026-09-09, the same binary over the same twelve rows twice: the
+            // AN ARM THAT RUNS A FORWARD SLICE COMPARES ON ITS VERDICT AND NOTHING ELSE,
+            // and that is de-12wr.3 and de-12wr.1 rather than a caveat added for safety.
+            // Measured 2026-09-09, the same binary over the same rows several times: the
             // backward-only arm returns the same count to the node - 123,961 and 134,656 and
-            // 31,035 - and the `ingame` arm moves, 154,909 against 160,876 on one row. The
-            // difference is the FORWARD SLICE, which is given fifty milliseconds and does as
-            // much as fifty milliseconds of that machine buys. Its verdict, its `by` and its
-            // `asked` are settled either way; what varies is the work left in the manager
-            // behind the answer. So a `nodes` figure from a slice-bearing arm compares with
-            // another only to within that, and two folders differing there differ about the
-            // machine.
+            // 31,035 - and every one of the `ingame` arm's cost columns moves. `nodes`,
+            // 154,909 against 160,876 on one row; `by` and `asked`, which on conversation 28
+            // at deepest-5 read `Forwards asked=0` on three runs of four and `Backwards
+            // asked=1` on the fourth.
+            //
+            // THE SLICE'S FIFTY MILLISECONDS IS WHY. It does as much as fifty milliseconds of
+            // that machine buys, so on a row where it is close to answering, whether it gets
+            // there is a property of the machine. The VERDICT is unchanged either way - a row
+            // that flips to `Backwards` has the driver finish what the slice did not - which
+            // is what makes the verdict the column a refactor is checked on.
             //
             // IT USED TO MOVE ON EVERY ARM, for a reason that was not inherent and is gone:
             // `LookAheadGraph` yielded its entries in hash-map order, which is seeded per
@@ -1869,10 +1877,30 @@ fn main() {
         .chain(engines.iter().flat_map(|engine| engine.headers()))
         .collect();
 
-    // ASKED FOR ON ITS OWN by tools/measure-matrix.sh, which needs the column names before
-    // it has a row and should not keep a second copy of them to go stale.
+    // ASKED FOR ON ITS OWN by the driver, which needs the column names before it has a row
+    // and should not keep a second copy of them to go stale.
     if std::env::var("HEADER_ONLY").is_ok() {
         println!("{}", header.join("\t"));
+        return;
+    }
+
+    // THE NUMBERS THE DRIVER HAS TO DO ARITHMETIC WITH, printed rather than copied.
+    //
+    // The driver divides the memory budget between its workers and converts a group's
+    // `_nodes` column into megabytes to decide whether that group would fit a worker's
+    // share. Both need constants that live in `src/symbolic/budget.rs`, and until this they
+    // were transcribed into the shell - "the two numbers here that have to be kept in step
+    // with the Rust by hand", as the driver put it. A hand-kept copy of a constant is wrong
+    // silently, and this one is wrong in the direction that manufactures rows: too large a
+    // share and workers race for memory the machine does not have.
+    //
+    // ONE PAIR PER LINE, `name<tab>value`, so a reader with no parser gets the same answer
+    // as the driver. `memory_mb` follows ROW_MEMORY_MB where a run sets one, which is what
+    // makes the printed value the budget this run will actually use rather than the default.
+    if std::env::var("CONSTANTS_ONLY").is_ok() {
+        println!("memory_mb\t{}", memory() / (1024 * 1024));
+        println!("bytes_per_node\t{}", DiagramBudget::BYTES_PER_NODE);
+        println!("row_seconds\t{}", row_time().as_secs());
         return;
     }
 

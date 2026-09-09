@@ -146,20 +146,30 @@ MEASURED ON THE HEAVY GROUPS, and the gap is the point: on 631 the in-game colum
 `not-there` in 80 ms holding 176,276 nodes where the unlimited one takes 22.4 seconds and
 30.1 million. Both agree; they disagree wildly about what it costs to be sure.
 
-### `nodes` compares on a column with no forward slice, and is indicative on one with
+### A column with a forward slice compares on its VERDICT and on nothing else
 
-The verdicts, `by` and `asked` are settled facts about the search and compare between runs.
-`ms` and `setup` are clocks and nobody reads them as anything else. `nodes` sits between the
-two and looks like the first, so it is worth saying which it is.
+The verdict is a settled fact about the search and compares between runs. `ms` and `setup`
+are clocks and nobody reads them as anything else. Everything in between - `nodes`, `by`,
+`asked` - looks like the first and, on a column that runs a forward slice, behaves like the
+second.
 
-Measured 2026-09-09 (de-12wr.3): the same binary over the same twelve rows, twice. The
-backward-only columns return the same count to the node - 123,961 and 134,656 and 31,035 -
-and the `ingame` column moves, 154,909 against 160,876 on one row. The difference is the
-FORWARD SLICE. It is given fifty milliseconds and does as much as fifty milliseconds of that
-machine buys, so the work left behind the answer varies while the answer does not.
+Measured 2026-09-09 (de-12wr.3, de-12wr.1). The same binary, the same rows, several times:
 
-So two folders whose `ingame_nodes` differ differ about the machine, and two whose
-`bwd_nodes` differ differ about the search. Only the second is a finding.
+| column | backward-only arm | `ingame` arm |
+|---|---|---|
+| `verdict` | identical | identical |
+| `nodes` | identical to the node | 154,909 against 160,876 on one row |
+| `by`, `asked` | identical | `Forwards asked=0` on three runs of four, `Backwards asked=1` on the fourth |
+
+The difference is the FORWARD SLICE. It is given fifty milliseconds and does as much as fifty
+milliseconds of that machine buys - so on a row where the slice is close to answering, whether
+it gets there is a property of the machine. The ANSWER does not change: a row that flips to
+`Backwards` has the driver finish what the slice did not, and reports the same verdict.
+
+So two folders whose `ingame_by`, `ingame_asked` or `ingame_nodes` differ differ about the
+machine, and two whose `bwd_*` differ differ about the search. Only the second is a finding.
+**A driver change, an index change or a refactor is checked on verdicts**, which is what
+`tools/matrix-compare.py` reports first and why it reports it separately.
 
 It used to move on every column, for a reason that was not inherent: the group graph yielded
 its entries in hash-map order, seeded per process, so the backward work followed a different
@@ -179,8 +189,8 @@ on any column.
 | `fwd`, `bwd` and nothing else | older still. `fwd` is the state-at-a-time search and `bwd` is today's `fwd`; no backward search was measured at all |
 
 So a `fwd` column means opposite things at the two ends of that table, and the way to tell
-is what else is in the header. `tools/matrix-remaining.awk` decides it the same way when it
-reuses old rows as weights.
+is what else is in the header. `tools/measure-matrix.py`'s `RowWeights` decides it the same
+way when it reuses old rows as weights.
 
 Not every run holds all three. `ENGINES` narrows the selection and the header follows it,
 so a narrowed run is a narrower row rather than a wide one with holes; read the header
