@@ -664,12 +664,12 @@ impl<'a> Reachability<'a> {
         // diagram manager, or one stopped by `halt_on`, broke out of the loop above and then
         // reported that it had SETTLED.
         //
-        // THAT IS A SOUNDNESS BUG AND NOT A REPORTING ONE. `Known::with_forward` copies this
-        // into `forward_settled`, and a settled forward run is the one thing allowed to
-        // REFUSE a state: `Known::restricted` intersects a backward pass against it. Pruning
-        // against a set that merely stopped growing early removes states the search can
-        // genuinely reach, which is how a marker gets lost. It is latent today only because
-        // pruning is off by default. `Backward` has always got this right.
+        // SOUNDNESS RESTS ON THIS LINE, not reporting. `Known::with_forward` copies it into
+        // `forward_settled`, and a settled forward run is the one thing allowed to REFUSE a
+        // state: `Known::restricted` intersects a backward pass against it. Claiming a fixed
+        // point for a set that merely stopped growing early would remove states the search
+        // can genuinely reach, which is how a marker gets lost - and the shipped portfolio
+        // prunes, so there is no second net under it. `Backward` has always got this right.
         //
         // Caught on conversation 14, which reported a fixed point over 893 entries where a
         // run that admitted to being incomplete had reached 905 - and then panicked on the

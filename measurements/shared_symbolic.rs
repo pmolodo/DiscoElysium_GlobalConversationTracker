@@ -96,19 +96,23 @@
 //! The small backward differences in their rows are the meet and are noise beside a forward
 //! half that long.
 //!
-//! ## Why it is still off by default, which is now a different reason
+//! ## The shipped path prunes, and the argument against it did not survive the game
 //!
-//! Not stability - that is fixed. It is that THE SHIPPED PATH ALMOST NEVER HAS A SETTLED
-//! FORWARD RUN TO PRUNE WITH. `portfolio::best_novelty` gives its forward slice fifty
-//! milliseconds and halts it the moment it finds what it is hunting, and neither a halted
-//! nor a starved run may narrow anything. So turning the default on would change nothing in
-//! the game while adding a bound to trust.
+//! `portfolio::Budget::default` carries `pruning: true`. The case for leaving it off was
+//! that the slice almost never has a settled run to prune with - fifty milliseconds, halted
+//! the moment it finds what it is hunting, and neither a halted nor a starved run may
+//! narrow anything. That was read off the five heaviest groups.
 //!
-//! ONE CONCRETE THING THAT WOULD CHANGE THAT, and it is a small number: 28's forward run
-//! settles in about FIFTY-SEVEN milliseconds, just past the fifty it is allowed. A forward
-//! budget a little larger would settle it, and the settled run would then pay for itself
-//! twice over on that group - nineteen milliseconds of refusals down to two. Whether that
-//! holds anywhere else is a per-group question, which is de-a1wb's question.
+//! `measurements/settles_within.rs` asked the whole game instead: at those same fifty
+//! milliseconds 119 of 120 ordinary groups settle, and 25 of the 50 that span conversations.
+//! Most of the game had a settled run and nothing was using it. Pruning is also
+//! self-guarding - `Known` narrows nothing without `forward_settled` - so the groups the
+//! argument was made about are exactly the ones it still costs nothing on.
+//!
+//! WHAT A BIGGER SLICE WOULD BUY IS SEPARATE, and it is small: 28 settles in about
+//! FIFTY-SEVEN milliseconds, just past the fifty it is allowed. The same sweep prices the
+//! rest - twenty times the budget settles four more groups out of a hundred and seventy -
+//! and the budget is spent per START, so a menu pays for it two dozen times over.
 //!
 //! ## The three heaviest groups take the process down at this profile
 //!

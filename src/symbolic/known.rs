@@ -102,7 +102,8 @@ pub struct Known {
     arriving: RefCell<HashMap<DialogueNodeId, Arriving>>,
     /// Whether a settled forward run may narrow a backward pass at all.
     ///
-    /// Off by default; see [`Self::restricted`] for what that costs and why.
+    /// Off unless a caller asks. `portfolio::Budget::default` asks; see
+    /// [`Self::restricted`].
     narrow: bool,
     /// Whether the forward run settled. False for a partial one, and for no run at all.
     ///
@@ -343,21 +344,20 @@ impl Known {
     ///
     /// The identity where nothing is known, or where the forward run did not settle.
     ///
-    /// OFF UNLESS ASKED FOR, and the reason is a measurement rather than doubt about
-    /// whether it is right. Pruning is SOUND - tests/backward_oracle.rs asks every target
-    /// of every group it can check both ways twice, plain and pruned, with the explicit
-    /// search as referee, and the two have never differed. What it is not yet is stable:
-    /// turning it on overflows the stack on conversations 631 and then 28, which are the
-    /// groups the whole approach exists for.
+    /// OFF UNLESS ASKED FOR, and the shipped portfolio asks: `portfolio::Budget::default`
+    /// carries `pruning: true`. A caller that builds its own budget and leaves this alone
+    /// gets the identity, which is why the field is a request rather than a policy.
     ///
-    /// THAT IS ALMOST CERTAINLY NOT THE COST OF THE PRUNING. de-8hh2.13 found the cause of
-    /// these overflows and it is not recursion depth - something accumulates PER THREAD
-    /// inside the diagram manager, so identical searches die on the third round in one
-    /// thread and survive on a thread each. Extra diagram work moves the round it kills.
-    /// de-fpax is the fix, and de-fawk re-measures this on top of it.
+    /// SOUND, and checked rather than argued: tests/backward_oracle.rs asks every target of
+    /// every group it can check both ways twice, plain and pruned, with the explicit search
+    /// as referee, and the two have never differed.
     ///
-    /// Until then the default is what has been measured to work. Turn it on with
-    /// [`Self::pruning`] to check it or to measure it.
+    /// AND SELF-GUARDING, which is what makes asking for it cheap. Nothing is narrowed
+    /// without [`Self::forward_settled`], so a group whose forward run halted or ran out of
+    /// budget behaves exactly as it would with this off - no bound, no intersection, no
+    /// cost. `measurements/settles_within.rs` is why that is worth having: at the fifty
+    /// milliseconds the slice gets, 119 of 120 ordinary groups settle and 25 of the 50 that
+    /// span conversations do.
     pub fn restricted(&self, id: DialogueNodeId, states: BDDFunction) -> BDDFunction {
         if !self.narrow {
             return states;
