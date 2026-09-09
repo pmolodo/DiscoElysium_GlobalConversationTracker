@@ -140,7 +140,7 @@ fn branch_destinations(
     let mut compiler = GuardCompiler::new(&vars).with_world(world);
     let seed = seed_of(graph, world, &vars);
 
-    let from = Where::of(
+    let mut from = Where::of(
         graph, start, branch, &seed, &mut compiler, world, COUNTER_CAP as u32,
     );
     from.destinations(graph, &mut compiler, world, COUNTER_CAP as u32)

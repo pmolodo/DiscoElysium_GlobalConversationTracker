@@ -1293,7 +1293,7 @@ where
     // itself, or the entries the outcome opens. The baseline is their best class, and they
     // are also where the refusal walks from - one fact, used twice, so a walk can never be
     // measuring from somewhere the baseline did not come from.
-    let where_from = novelty_search::Where::of(
+    let mut where_from = novelty_search::Where::of(
         graph, id, branch, seed, compiler, world, COUNTER_CAP as u32,
     );
     let from: Vec<DialogueNodeId> = match branch {
@@ -1329,6 +1329,15 @@ where
         nodes_reached: asked,
         stopped_by: stopped.to_string(),
     };
+
+    // THE BASELINE COULD NOT BE BUILT. Entering the start to find where this outcome lands
+    // filled the manager, so `from` is empty for want of nodes rather than because the
+    // outcome opens nothing - and an empty baseline is not a low bar, it is no answer at
+    // all. "memory" rather than "no-ram": the manager was supplied and then filled, which
+    // is what `StoppedBy::Incomplete` crosses the wire as everywhere else.
+    if where_from.out_of_nodes() {
+        return answered(destination, false, None, 0, "memory");
+    }
 
     // NOTHING BETTER IS REACHABLE, so there is no search to run.
     //

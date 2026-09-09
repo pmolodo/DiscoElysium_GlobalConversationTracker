@@ -225,6 +225,14 @@ where
 pub struct Where {
     at: Vec<DialogueNodeId>,
     holding: BDDFunction,
+    /// Whether the manager filled while working out where this search begins.
+    ///
+    /// A caller that sees it MUST NOT read the rest: `holding` is then the empty set for
+    /// want of nodes rather than because the outcome opens nothing, and the two look
+    /// alike from here. Asking candidates from an empty position refuses every one of
+    /// them on no evidence and settles, which is a wrong answer where the honest one is
+    /// "the representation did not fit".
+    out_of_nodes: bool,
 }
 
 impl Where {
@@ -240,18 +248,31 @@ impl Where {
         counter_cap: u32,
     ) -> Self {
         if branch == StartBranch::Either {
-            return Self { at: vec![start], holding: seed.clone() };
+            return Self { at: vec![start], holding: seed.clone(), out_of_nodes: false };
         }
 
-        let holding = Reachability::entry_states(
+        let Some(holding) = Reachability::entry_states(
             graph, start, branch, seed, compiler, world, counter_cap,
-        );
+        ) else {
+            // NO ENTRIES, so nothing can be asked from here even by a caller that ignores
+            // the flag. The set is the seed only because the field needs one; it is not an
+            // answer, and `out_of_nodes` is what says so.
+            return Self { at: Vec::new(), holding: seed.clone(), out_of_nodes: true };
+        };
         let at = graph
             .get(start)
             .map(|node| node.links.clone())
             .unwrap_or_default();
 
-        Self { at, holding }
+        Self { at, holding, out_of_nodes: false }
+    }
+
+    /// Whether working out where this search begins ran the manager out of nodes.
+    ///
+    /// Nothing else here is worth reading once this is set - the position is empty for
+    /// want of nodes, not because the outcome opens nothing.
+    pub fn out_of_nodes(&self) -> bool {
+        self.out_of_nodes
     }
 
     /// The entries this search starts at, which are what candidates are measured from.
@@ -270,8 +291,13 @@ impl Where {
     /// over-approximation is right when the question is whether to spend a search; it is
     /// wrong for a baseline, where naming a destination nothing can reach would raise the
     /// bar a real search has to clear and cost a marker.
+    ///
+    /// RUNNING OUT OF NODES EMPTIES THE ANSWER AND SETS [`Self::out_of_nodes`], because a
+    /// short list here is not a smaller baseline - it is no baseline. A destination the
+    /// walk never reached for want of room would lower the bar a real search has to clear,
+    /// which is the same cost as naming one nothing can reach, in the other direction.
     pub fn destinations<'a>(
-        &self,
+        &mut self,
         graph: &LookAheadGraph,
         compiler: &mut GuardCompiler<'a>,
         world: &dyn ILookAheadWorld,
@@ -287,9 +313,12 @@ impl Where {
 
         while let Some((id, arriving)) = pending.pop_front() {
             let Some(node) = graph.get(id) else { continue };
-            let entered = Reachability::entry_states(
+            let Some(entered) = Reachability::entry_states(
                 graph, id, StartBranch::Either, &arriving, compiler, world, counter_cap,
-            );
+            ) else {
+                self.out_of_nodes = true;
+                return Vec::new();
+            };
             if !entered.satisfiable() {
                 continue;
             }
@@ -512,6 +541,17 @@ where
         met_at: None,
         elapsed: std::time::Duration::ZERO,
     };
+
+    // THE POSITION ITSELF COULD NOT BE BUILT. Entering the start to find what this outcome
+    // hands on filled the manager, so `from` holds the empty set for want of nodes. Asking
+    // candidates from there would refuse every one of them without evidence and settle, so
+    // the honest answer is the one the pass would give: nothing established, and the reason.
+    if from.out_of_nodes() {
+        answer.stopped_by = StoppedBy::Incomplete;
+        answer.out_of_nodes = true;
+        answer.elapsed = began.elapsed();
+        return answer;
+    }
 
     for target in ordered {
         // ALREADY ANSWERED BY THE RUN THIS ONE IS CONTINUING, so it is not asked again -

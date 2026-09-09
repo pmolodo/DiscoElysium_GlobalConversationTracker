@@ -443,6 +443,13 @@ impl<'a> Reachability<'a> {
     /// reachable", and a check's set unions both ways in - so asking it about the check
     /// answers about either roll. Asked instead about the check's children, with this, it
     /// answers about one. See `novelty_search::best_novelty`.
+    ///
+    /// `None` WHERE THE MANAGER FILLED, and the distinction is the whole point of
+    /// returning an option. Entering the start is diagram work like any other and can run
+    /// out of nodes; the empty set it then holds is indistinguishable from "this outcome
+    /// opens nothing", and a caller that read it as the latter would refuse every
+    /// candidate on no evidence and report a settled verdict. There is no stats channel
+    /// here to say it in, so the return type says it.
     #[allow(clippy::too_many_arguments)]
     pub fn entry_states(
         graph: &LookAheadGraph,
@@ -452,7 +459,7 @@ impl<'a> Reachability<'a> {
         compiler: &mut GuardCompiler<'a>,
         world: &dyn ILookAheadWorld,
         counter_cap: u32,
-    ) -> BDDFunction {
+    ) -> Option<BDDFunction> {
         let vars = compiler.vars();
         let mut image = ActionImage::new(vars, counter_cap);
         let mut this = Self {
@@ -461,9 +468,14 @@ impl<'a> Reachability<'a> {
             stats: ReachabilityStats::default(),
         };
 
-        match graph.get(start) {
+        let entered = match graph.get(start) {
             Some(node) => this.enter_branch(node, branch, seed, compiler, world, &mut image),
             None => vars.bottom(),
+        };
+
+        match this.stats.out_of_memory || image.out_of_memory() {
+            true => None,
+            false => Some(entered),
         }
     }
 
@@ -543,6 +555,15 @@ impl<'a> Reachability<'a> {
         // ways in this search is about.
         let Some(start_node) = graph.get(start) else { return this };
         let entered = this.enter_branch(start_node, branch, seed, compiler, world, &mut image);
+        // The start's own entry filled the manager, so what came back is the image of
+        // nothing in particular and there is nothing to explore from. That is the search's
+        // outcome, and `reached_fixed_point` stays false to say the answer is partial.
+        if this.stats.out_of_memory || image.out_of_memory() {
+            this.stats.out_of_memory = true;
+            this.stats.actions_ignored = image.ignored();
+            this.finish();
+            return this;
+        }
         if !entered.satisfiable() {
             return this;
         }
@@ -693,10 +714,12 @@ impl<'a> Reachability<'a> {
             for &child_id in &node.links {
                 let Some(child) = graph.get(child_id) else { continue };
                 let arriving = this.enter(child, &delta, compiler, world, &mut image);
-                // The image gave up for want of nodes, so what it just returned is the
+                // Entering gave up for want of nodes, so what it just returned is the
                 // image of nothing in particular and everything after it would be built
-                // on that. Stop here and say so.
-                if image.out_of_memory() {
+                // on that. Stop here and say so. Either half can be the one that ran out -
+                // the actions, through the image, or the guard and cost arithmetic in
+                // `enter` itself - and both report rather than unwrapping.
+                if image.out_of_memory() || this.stats.out_of_memory {
                     this.stats.out_of_memory = true;
                     break 'search;
                 }
@@ -782,6 +805,28 @@ impl<'a> Reachability<'a> {
         this
     }
 
+    /// Takes the result of a diagram operation, or records that there was no room.
+    ///
+    /// RUNNING OUT OF NODES IS AN ANSWER - the representation did not fit - so every step
+    /// of entering a node reports it, exactly as the widening in the search loop and
+    /// [`ActionImage`] already do. Entering is reached once per link per step, so it is a
+    /// likely place to be standing when the manager fills, and an unwrapped operation here
+    /// ABORTS THE PROCESS: not a panic a host can turn into a partial answer, and not a
+    /// row a measurement can keep.
+    ///
+    /// The empty set is returned only so the types stay simple. It is not a meaningful
+    /// answer, and a caller that sees [`ReachabilityStats::out_of_memory`] must stop
+    /// rather than read what came back.
+    fn or_no_room<E>(&mut self, attempt: Result<BDDFunction, E>) -> BDDFunction {
+        match attempt {
+            Ok(function) => function,
+            Err(_) => {
+                self.stats.out_of_memory = true;
+                self.vars.bottom()
+            }
+        }
+    }
+
     /// The data states that entering `node` from `states` can leave the search in.
     ///
     /// The one place a node is entered, which is the requirement rather than a nicety: a
@@ -820,7 +865,7 @@ impl<'a> Reachability<'a> {
 
         let allowed = {
             let (may_be_true, _) = self.guard_of(node, compiler);
-            states.and(&may_be_true).expect("and")
+            self.or_no_room(states.and(&may_be_true))
         };
         if !allowed.satisfiable() {
             return self.vars.bottom();
@@ -835,7 +880,7 @@ impl<'a> Reachability<'a> {
         match branch {
             StartBranch::Pass => success,
             StartBranch::Fail => failure,
-            StartBranch::Either => success.or(&failure).expect("or"),
+            StartBranch::Either => self.or_no_room(success.or(&failure)),
         }
     }
 
@@ -849,7 +894,7 @@ impl<'a> Reachability<'a> {
     ) -> BDDFunction {
         let allowed = {
             let (may_be_true, _) = self.guard_of(node, compiler);
-            states.and(&may_be_true).expect("and")
+            self.or_no_room(states.and(&may_be_true))
         };
         if !allowed.satisfiable() {
             return self.vars.bottom();
@@ -894,7 +939,7 @@ impl<'a> Reachability<'a> {
                 // branch in the engine that does not go through `charge`, so it must not
                 // go through it here either.
                 if passes != Ternary::True {
-                    result = result.or(&allowed).expect("or");
+                    result = self.or_no_room(result.or(&allowed));
                 }
 
                 result
@@ -913,7 +958,7 @@ impl<'a> Reachability<'a> {
         image: &mut ActionImage<'a>,
     ) -> BDDFunction {
         let (success, failure) = self.rolled_cases(node, states, image);
-        success.or(&failure).expect("or")
+        self.or_no_room(success.or(&failure))
     }
 
     /// The two ways a roll can go, kept apart.
@@ -932,10 +977,12 @@ impl<'a> Reachability<'a> {
         // kind can be retried once the roll has been recorded.
         let mut open = states.clone();
         if let Some(passed) = self.flag(node.flag_slot) {
-            open = open.and(&passed.not().expect("not")).expect("and");
+            let unpassed = self.or_no_room(passed.not());
+            open = self.or_no_room(open.and(&unpassed));
         }
         if let Some(failed) = self.flag(node.failed_flag_slot) {
-            open = open.and(&failed.not().expect("not")).expect("and");
+            let unfailed = self.or_no_room(failed.not());
+            open = self.or_no_room(open.and(&unfailed));
         }
 
         if !open.satisfiable() {
@@ -1006,8 +1053,9 @@ impl<'a> Reachability<'a> {
             return image.apply(&current, &node.actions, &already);
         }
 
-        let fresh = current.and(&already.not().expect("not")).expect("and");
-        let spent = current.and(&already).expect("and");
+        let unfired = self.or_no_room(already.not());
+        let fresh = self.or_no_room(current.and(&unfired));
+        let spent = self.or_no_room(current.and(&already));
 
         // Fresh: nothing has fired, so the one-time actions apply - and the flag goes up
         // afterwards, on the states that just used them.
@@ -1021,16 +1069,19 @@ impl<'a> Reachability<'a> {
         // the rest still apply. Passing the everywhere-true set says exactly that.
         if spent.satisfiable() {
             let acted = image.apply(&spent, &node.actions, &self.vars.top());
-            result = result.or(&acted).expect("or");
+            result = self.or_no_room(result.or(&acted));
         }
 
         result
     }
 
     /// The states in which this node has not been seen.
-    fn unseen(&self, node: &LookAheadNode, states: &BDDFunction) -> BDDFunction {
+    fn unseen(&mut self, node: &LookAheadNode, states: &BDDFunction) -> BDDFunction {
         match self.flag(node.seen_slot) {
-            Some(seen) => states.and(&seen.not().expect("not")).expect("and"),
+            Some(seen) => {
+                let not_seen = self.or_no_room(seen.not());
+                self.or_no_room(states.and(&not_seen))
+            }
             None => states.clone(),
         }
     }
@@ -1046,7 +1097,7 @@ impl<'a> Reachability<'a> {
     /// Nothing here can go below zero, because [`Self::affordable`] has already removed
     /// the states that could not pay.
     fn pay(
-        &self,
+        &mut self,
         node: &LookAheadNode,
         states: &BDDFunction,
         image: &mut ActionImage<'a>,
@@ -1058,18 +1109,22 @@ impl<'a> Reachability<'a> {
             return self.spend(states, price);
         };
 
-        let spent = states.and(&paid).expect("and");
-        let fresh = states.and(&paid.not().expect("not")).expect("and");
+        let spent = self.or_no_room(states.and(&paid));
+        let unpaid = self.or_no_room(paid.not());
+        let fresh = self.or_no_room(states.and(&unpaid));
         let fresh = self.spend(&fresh, price);
         let fresh = image.assign(&fresh, node.once_slot as usize, 1);
 
-        spent.or(&fresh).expect("or")
+        self.or_no_room(spent.or(&fresh))
     }
 
     /// `money := money - amount`, where the layout carries money and otherwise nothing.
-    fn spend(&self, states: &BDDFunction, amount: u32) -> BDDFunction {
+    fn spend(&mut self, states: &BDDFunction, amount: u32) -> BDDFunction {
         match self.vars.money_ops() {
-            Some(money) => money.saturating_sub(states, amount).expect("spending money"),
+            // Subtracting says "no room" with `None` where the diagram operations say it
+            // with `Err`, and the two mean the same thing: the manager filled part way
+            // through, so what came back is not the purse after paying.
+            Some(money) => self.or_no_room(money.saturating_sub(states, amount).ok_or(())),
             None => states.clone(),
         }
     }
@@ -1094,12 +1149,12 @@ impl<'a> Reachability<'a> {
             return states.clone();
         };
 
-        let enough = states.and(&money.at_least(node.cost.max(0) as u32)).expect("and");
+        let enough = self.or_no_room(states.and(&money.at_least(node.cost.max(0) as u32)));
 
         match self.already_paid(node) {
             Some(paid) => {
-                let free = states.and(&paid).expect("and");
-                enough.or(&free).expect("or")
+                let free = self.or_no_room(states.and(&paid));
+                self.or_no_room(enough.or(&free))
             }
             None => enough,
         }
@@ -1230,6 +1285,70 @@ mod branch_tests {
     #[test]
     fn either_reaches_both_halves() {
         assert_eq!(reached(&check(), StartBranch::Either), vec![0, 1, 2, 3]);
+    }
+
+    /// How much room the squeezed search below gets, in bytes.
+    ///
+    /// A WINDOW RATHER THAN A CEILING, and it is narrow: wide enough to lay the seed out,
+    /// since a run that cannot build one dies in `seed_of` and tests nothing here, and
+    /// narrow enough that pricing the purse does not fit. Measured at 8 KB the seed itself
+    /// cannot be built and at 64 KB the whole search completes.
+    ///
+    /// So a change to the layout, the register encoding or the manager can move this out
+    /// from under the test, and the symptom is either a panic in `seed_of` or an assertion
+    /// that the nodes did not run out. Re-tune it to the new window; the test is about
+    /// what a full manager DOES, not about this number.
+    const SQUEEZED: usize = 16 * 1024;
+
+    /// A purse wide enough that arithmetic over it does not fit in [`SQUEEZED`].
+    ///
+    /// THE ROOM IS TAKEN BY A REGISTER RATHER THAN BY A BIG GRAPH, because the two cost
+    /// differently to write down: a graph whose sets genuinely explode is a real
+    /// conversation, and a twenty-bit purse is one number. Affording a price and paying it
+    /// are a comparison and a shift across every bit of it, which is diagram work in
+    /// exactly the place this test is about.
+    const DEEP_PURSE: u32 = 1_000_000;
+
+    /// A manager that fills part way through entering a node REPORTS, rather than taking
+    /// the process with it.
+    ///
+    /// Entering opens with the guard conjunction, and everything under it is diagram work
+    /// too - the roll's two cases, the price, the seen flag, the actions - all of it
+    /// reached once per link per step. Unwrapped, running out of nodes there ABORTS: not a
+    /// panic a host can turn into a partial answer, and not a row a measurement can keep.
+    /// Reported, the search says what it reached and that it did not settle. de-rvxw.
+    #[test]
+    fn a_manager_that_fills_while_entering_is_reported_rather_than_fatal() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(Entry::new(1).cost(7).cost_once().links(&[2]))
+            .add(Entry::new(2).cost(11).links(&[3]))
+            .add(Entry::new(3))
+            .build();
+
+        let world = TestWorld::new().with_money(DEEP_PURSE as i32 / 2);
+        let symbols = graph.symbols().clone();
+        let layout = DataLayout::for_graph(&graph, CAP, Some(DEEP_PURSE), false);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::new(SQUEEZED));
+        let mut compiler = GuardCompiler::new(&vars).with_world(&world);
+        let seed = seed_of(&graph, &world, &vars);
+
+        let found = Reachability::explore_branch_within(
+            &graph,
+            node(0),
+            StartBranch::Either,
+            &seed,
+            &mut compiler,
+            &world,
+            CAP as u32,
+            &Budget::default(),
+        );
+
+        assert!(found.stats().out_of_memory, "the search should say the nodes ran out");
+        assert!(
+            !found.stats().reached_fixed_point,
+            "and an answer built on a manager that filled is not a settled one",
+        );
     }
 
     /// A start that does not roll has one way in, and `Fail` names a failure it has not got.
