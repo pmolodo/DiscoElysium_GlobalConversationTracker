@@ -177,6 +177,10 @@ name = "menu_wall"
 path = "measurements/menu_wall.rs"
 
 [[example]]
+name = "row_overhead"
+path = "measurements/row_overhead.rs"
+
+[[example]]
 name = "relaxed_settle"
 path = "measurements/relaxed_settle.rs"
 
