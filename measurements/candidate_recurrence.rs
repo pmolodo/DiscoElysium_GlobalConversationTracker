@@ -74,6 +74,30 @@
 //! player has read, which is worth knowing because it means no profile makes the reuse go
 //! away and none has to be argued about.
 //!
+//! ## AND THEN de-rn59.4 TOOK NEARLY ALL OF IT AWAY, which is the finding that decides it
+//!
+//! The figures above are candidate LISTS. Since the driver refuses a dominated candidate
+//! with no fixed point, what a search actually ASKS is a small fraction of its list, and a
+//! candidate that costs nothing is one there is nothing to remember about. The same menus,
+//! counting only what is asked:
+//!
+//! ```text
+//!   options    menus      asks  asks each     asked  each after
+//!         3      349    364301       2.97      8375        1.91
+//!         5      607   2268961       4.95     50649        3.05
+//!        10       42    384130       9.78      8793        5.39
+//!        31        7     80793      29.05      3993       11.06
+//! ```
+//!
+//! A THREE-OPTION MENU ASKS ABOUT 3.4 TARGETS IN TOTAL, of which 1.8 are distinct - so a
+//! memo would save about 1.6 fixed points a menu. On the three heavy groups whose slice does
+//! not settle, where a fixed point is expensive rather than cheap, it is 0.8.
+//!
+//! That is what a memo is worth now, and it is not worth a per-request object threaded
+//! through five signatures. The saving does grow with width - eleven fixed points a menu at
+//! five options - so this is a decision about menu width and not a permanent one. See
+//! de-a88z, which is closed on these numbers rather than on the idea being wrong.
+//!
 //! ## The adversarial menu says 100 per cent, and that number should not be quoted
 //!
 //! `deepest` reports every option asking about exactly the same ten entries, at every width.
@@ -98,6 +122,7 @@ use std::collections::{HashMap, HashSet};
 
 use lookahead_engine::core::types::{DialogueNodeId, Novelty};
 use lookahead_engine::index::{build_group_graph, read_index};
+use lookahead_engine::symbolic::dominators::Dominators;
 use lookahead_engine::symbolic::novelty_search::{candidates_from, Nearest};
 
 #[path = "../tests/common/mod.rs"]
@@ -180,12 +205,20 @@ fn links(index: &lookahead_engine::index::Index) {
          is worth per entry it holds.\n"
     );
     println!(
-        "{:>6}  {:>12}  {:>6}  {:>7}  {:>8}  {:>7}  {:>7}  {:>9}",
-        "conv", "profile", "menus", "options", "asks", "targets", "repeat", "asks each",
+        "The last two columns are the same question of what a search ACTUALLY ASKS now that\n\
+         de-rn59.4 refuses a dominated candidate for free: a candidate costing no fixed \
+         point\nis one there is nothing to remember about.\n"
+    );
+    println!(
+        "{:>6}  {:>12}  {:>6}  {:>7}  {:>8}  {:>7}  {:>9}  {:>8}  {:>9}",
+        "conv", "profile", "menus", "options", "asks", "targets", "asks each",
+        "asked", "each after",
     );
 
     let mut overall: HashMap<u32, Totals> = HashMap::new();
     let mut widths: HashMap<usize, Totals> = HashMap::new();
+    let mut overall_after: HashMap<u32, Totals> = HashMap::new();
+    let mut widths_after: HashMap<usize, Totals> = HashMap::new();
 
     for conversation in groups {
         let Ok((graph, _)) = build_group_graph(index, conversation) else { continue };
@@ -210,6 +243,7 @@ fn links(index: &lookahead_engine::index::Index) {
             };
 
             let mut group = Counted::default();
+            let mut group_after = Counted::default();
             let mut menus_counted = 0usize;
             for options in &menus {
                 let lists: Vec<Vec<DialogueNodeId>> = options
@@ -226,22 +260,34 @@ fn links(index: &lookahead_engine::index::Index) {
                 let counted = count(&lists, lists.len());
                 group.merge(&counted);
                 widths.entry(counted.options).or_default().add(&counted);
+
+                // AND THE SAME QUESTION OF WHAT IS LEFT AFTER DOMINANCE, which is the one
+                // that matters now that de-rn59.4 ships. Most of a candidate list is refused
+                // for free by something above it, and a candidate that costs no fixed point
+                // is one there is nothing to remember about.
+                let asked: Vec<Vec<DialogueNodeId>> =
+                    options.iter().zip(&lists).map(|(start, list)| minimal(&graph, *start, list)).collect();
+                let after = count(&asked, asked.len());
+                group_after.merge(&after);
+                widths_after.entry(after.options).or_default().add(&after);
             }
 
             if menus_counted == 0 {
                 continue;
             }
             overall.entry(percent).or_default().add(&group);
+            overall_after.entry(percent).or_default().add(&group_after);
             println!(
-                "{:>6}  {:>12}  {:>6}  {:>7}  {:>8}  {:>7}  {:>7}  {:>9.2}",
+                "{:>6}  {:>12}  {:>6}  {:>7}  {:>8}  {:>7}  {:>9.2}  {:>8}  {:>9.2}",
                 conversation,
                 format!("{percent}pc-seen"),
                 menus_counted,
                 group.options,
                 group.asks,
                 group.targets,
-                group.repeat,
                 group.asks_each(),
+                group_after.asks,
+                group_after.asks_each(),
             );
         }
         println!();
@@ -251,19 +297,21 @@ fn links(index: &lookahead_engine::index::Index) {
     seen.sort_unstable();
     println!("OVER EVERY GROUP, per profile:\n");
     println!(
-        "{:>12}  {:>8}  {:>8}  {:>8}  {:>7}  {:>9}",
-        "profile", "asks", "targets", "repeat", "share", "asks each",
+        "{:>12}  {:>8}  {:>8}  {:>9}  {:>8}  {:>8}  {:>10}",
+        "profile", "asks", "targets", "asks each", "asked", "targets", "each after",
     );
     for percent in &seen {
         let totals = &overall[percent];
+        let after = &overall_after[percent];
         println!(
-            "{:>12}  {:>8}  {:>8}  {:>8}  {:>6}  {:>9.2}",
+            "{:>12}  {:>8}  {:>8}  {:>9.2}  {:>8}  {:>8}  {:>10.2}",
             format!("{percent}pc-seen"),
             totals.asks,
             totals.targets,
-            totals.repeat,
-            share(totals.repeat, totals.asks),
             totals.asks_each(),
+            after.asks,
+            after.targets,
+            after.asks_each(),
         );
     }
 
@@ -271,28 +319,67 @@ fn links(index: &lookahead_engine::index::Index) {
     sizes.sort_unstable();
     println!("\nBY HOW WIDE THE MENU IS, since the reuse is between options:\n");
     println!(
-        "{:>7}  {:>7}  {:>8}  {:>8}  {:>9}",
-        "options", "menus", "asks", "targets", "asks each",
+        "{:>7}  {:>7}  {:>8}  {:>9}  {:>8}  {:>10}",
+        "options", "menus", "asks", "asks each", "asked", "each after",
     );
     for size in &sizes {
         let totals = &widths[size];
+        let after = widths_after.get(size);
         println!(
-            "{:>7}  {:>7}  {:>8}  {:>8}  {:>9.2}",
+            "{:>7}  {:>7}  {:>8}  {:>9.2}  {:>8}  {:>10.2}",
             size,
             totals.rows,
             totals.asks,
-            totals.targets,
             totals.asks_each(),
+            after.map(|a| a.asks).unwrap_or(0),
+            after.map(|a| a.asks_each()).unwrap_or(0.0),
         );
     }
 
     println!(
-        "\n`asks each` IS THE NUMBER THE DESIGN TURNS ON. It is how many options ask about \
-         the\naverage target, so it is what a memo is asked for per entry it holds. At one, \
-         nothing is\never looked up twice and there is nothing to build. It is a CEILING: a \
-         memo pays only\nwhere the first ask was a settled refusal, and this counts every \
-         repeated ask."
+        "\n`each after` IS THE NUMBER THE DESIGN TURNS ON, and `asks each` is what it was \
+         before\nde-rn59.4. Both say how many options ask about the average target, which is \
+         what a memo\nis asked for per entry it holds; at one, nothing is ever looked up \
+         twice and there is\nnothing to build. Read only the second: a candidate the \
+         dominance rule refuses for free\ncosts no fixed point, so there is nothing about it \
+         to remember."
     );
+    println!(
+        "\nBOTH ARE CEILINGS. A memo pays only where the first ask was a SETTLED REFUSAL, \
+         and this\ncounts every repeated ask - so a menu whose options find something early \
+         is counted at\nfull price here and would pay far less."
+    );
+}
+
+/// The candidates an option ACTUALLY asks about, once dominance has refused what it can.
+///
+/// The same rule `novelty_search::search` applies, from the same relation: walking the list
+/// in the driver's order, a candidate with a strict dominator EARLIER in it is answered by
+/// that dominator's refusal and never costs a fixed point.
+///
+/// ASSUMES EVERY ASK IS A REFUSAL, which is the all-refusals row - the population de-kqgq
+/// measured this to matter in. Where an option proves something early the driver stops, so
+/// this over-counts, in the same direction and for the same reason the whole measurement
+/// does.
+fn minimal(
+    graph: &lookahead_engine::graph::graph::LookAheadGraph,
+    start: DialogueNodeId,
+    ordered: &[DialogueNodeId],
+) -> Vec<DialogueNodeId> {
+    if ordered.len() < 2 {
+        return ordered.to_vec();
+    }
+    let doms = Dominators::of(graph, &[start]);
+    let mut refused: HashSet<DialogueNodeId> = HashSet::new();
+    let mut asked = Vec::new();
+    for &target in ordered {
+        if doms.above(target).any(|above| refused.contains(&above)) {
+            continue;
+        }
+        asked.push(target);
+        refused.insert(target);
+    }
+    asked
 }
 
 /// Menus, widest first: the nodes with the most links to entries a search could ask about.
