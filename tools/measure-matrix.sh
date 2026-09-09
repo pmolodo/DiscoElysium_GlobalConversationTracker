@@ -509,14 +509,24 @@ IN_PARALLEL=0
 # ONE ROW IS DONE.
 #
 # In the serial phase that is the progress line and its weighted estimate, exactly as
-# before. In the parallel phase it is a tally kept by the worker, because THE ESTIMATOR'S
-# PREMISE IS ONE ROW AT A TIME, TIMED: with four rows in flight, "row 0:00:02" is no
-# longer a duration anybody waited and a remaining-time weighted by past row costs is no
-# longer being divided by the right pace. The parallel phase reports by GROUP instead and
-# says so, rather than printing a number it cannot stand behind.
+# before. In the parallel phase there is no line to print - with four rows in flight, "row
+# 0:00:02" is not a duration anybody waited - so the worker keeps a tally and the DURATION
+# of each row it measured, and the parent reports by GROUP when it reaps one.
+#
+# THE DURATIONS ARE WHAT MAKE THE PARALLEL ESTIMATE WEIGHTED rather than flat. A row's cost
+# is known here and nowhere else: it finishes inside a forked worker, and what used to come
+# back was only how many rows there were. See `group_finished`.
+#
+# A SKIPPED ROW CONTRIBUTES NOTHING, on both sides of the ratio, for the reason `progress`
+# gives: it advances the run without costing it anything, and feeding it in as zero seconds
+# against its full weight drags the pace down. On a resumed whole-game run those are most of
+# the rows.
 row_finished() {
     if [ "$IN_PARALLEL" = 1 ]; then
         GROUP_ROWS=$(( GROUP_ROWS + 1 ))
+        if [ "${1:-}" != "skipped" ]; then
+            GROUP_DONE_SPEC="${GROUP_DONE_SPEC}${GROUP_DONE_SPEC:+;}${ROW_KEY}=$(( $(date +%s) - ROW_STARTED ))"
+        fi
     else
         progress "$@"
     fi
@@ -542,6 +552,10 @@ measure_group() {
     GROUP_NO_ROWS=0
     GROUP_SKIPPED=0
     GROUP_ROWS=0
+    # `key=seconds` for every row this group actually measured, which is what the parallel
+    # estimate calibrates its pace on. Empty in the serial phase, where `progress` keeps the
+    # same accounting in DONE_SPEC as the rows arrive.
+    GROUP_DONE_SPEC=""
 
     tsv="$LOGS/performance-matrix-$conversation.tsv"
 
@@ -552,6 +566,10 @@ measure_group() {
 
     for profile in "${PROFILES[@]}"; do
         log="$LOGS/matrix-$conversation-$profile.log"
+        # THE SAME SHAPE `matrix-remaining.awk` READS, and the same one ROW_KEYS holds for
+        # the serial phase. Built here rather than indexed out of that array because a
+        # worker has no idea where its rows sit in the run's list.
+        ROW_KEY="$conversation:$profile"
 
         # ALREADY ANSWERED, so not asked again. Counted as done for the progress line, since
         # what the run has left is what it has left however the rows got there.
@@ -902,6 +920,15 @@ if [ "${#parallel_groups[@]}" -gt 0 ]; then
     done
     GROUPS_MEASURED=0
 
+    # THE PARALLEL PHASE CALIBRATES ON ITS OWN ROWS, so it starts with none rather than with
+    # the serial phase's. See `group_finished` for why the two paces must not be mixed.
+    # LAST_ESTIMATE is cleared with them: it holds a serial figure, and reprinting that as a
+    # parallel one until the first reap would be the wrong number stated confidently.
+    PARALLEL_DONE_SPEC=""
+    declare -A PARALLEL_REAPED=()
+    LAST_ESTIMATE=""
+    LAST_ESTIMATE_AT=0
+
     # EACH WORKER GETS ITS SHARE OF THE ALLOWANCE, and this is a correctness fix rather
     # than tidiness. The manager PREALLOCATES about two thirds of the budget up front and
     # cannot grow past it (src/symbolic/budget.rs:280-286), so a 43-entry tail group
@@ -927,34 +954,100 @@ if [ "${#parallel_groups[@]}" -gt 0 ]; then
         "workers=$WORKERS budget_mb=$ROW_MEMORY_MB of=$FULL_BUDGET_MB groups=${#parallel_groups[@]} started=$(date '+%F %T')" \
         >> "$LOGS/parallel-phase.txt"
 
-    # WHERE THE RUN IS, once rows stop arriving one at a time. The estimate is flat and
-    # needs no scaling by the worker count: wall time per finished group already has the
-    # concurrency inside it.
+    # THE ROWS OF EVERY GROUP NOT YET REAPED, which is what the run still has to pay for.
     #
-    # PACED ON THE GROUPS THAT COST SOMETHING, on both sides of the ratio - elapsed over
-    # groups MEASURED, against the groups with work still to come. A group whose rows the
-    # folder already held is counted in the "group n/m" position, because it did advance
-    # the run, and left out of the pace, because it did not cost it anything.
+    # REBUILT RATHER THAN STRIPPED, which is the opposite of what the serial phase does and
+    # is forced: groups finish OUT OF ORDER when several run at once, so there is no prefix
+    # of the list to remove. Walking every remaining row is what `progress` warns is fine
+    # for sixty rows and not for fourteen thousand - so this is called only when an estimate
+    # is about to be recomputed, which ESTIMATE_EVERY already throttles to once a minute.
+    #
+    # A GROUP IN FLIGHT COUNTS AS ENTIRELY UNPAID, including the rows it has already
+    # finished, because their durations do not reach the parent until the worker is reaped.
+    # That reads slightly long and corrects itself at the next reap, which is the safe
+    # direction for a number somebody is deciding whether to wait for.
+    left_spec() {
+        local conversation profile spec=""
+        for conversation in "${parallel_groups[@]}"; do
+            [ -z "${PARALLEL_REAPED[$conversation]:-}" ] || continue
+            for profile in "${PROFILES[@]}"; do
+                [ -z "${ROW_DONE[$conversation:$profile]:-}" ] || continue
+                spec="${spec}${spec:+;}${conversation}:${profile}"
+            done
+        done
+        printf '%s' "$spec"
+    }
+
+    # WHERE THE RUN IS, once rows stop arriving one at a time.
+    #
+    # WEIGHTED BY WHAT EACH REMAINING ROW HAS COST BEFORE, the same way the serial phase's
+    # line is and through the same `tools/matrix-remaining.awk`. What made this hard, and
+    # what de-x8ms.2 left on the table, is that a parallel row's duration is known only
+    # inside the worker that ran it; the parent used to see a tally and a group's wall time
+    # and nothing else. `row_finished` now records each row's seconds and the worker hands
+    # them back, so there is a pace to calibrate on.
+    #
+    # DIVIDED BY THE WORKER COUNT, because the weights and the pace are both PER ROW and
+    # four workers do not make a row cheaper - they make four of them happen at once. The
+    # ratio is measured on parallel rows only, so it already carries the contention; the
+    # division is for the concurrency and nothing else.
+    #
+    # WHY THE SERIAL PHASE'S OWN ROWS ARE NOT USED to prime the pace, though they are right
+    # there in DONE_SPEC: they were measured one at a time on an uncontended machine at the
+    # full budget, and these run four at a time on a quarter of it. Two paces averaged is
+    # neither.
+    #
+    # THE RAGGED EDGE IS NOT CHASED. The last groups run with workers going idle, which is
+    # part of why the measured speed-up over ten groups was 3.0x rather than 4x. Over a
+    # thousand groups it does not matter; over ten it does, and small runs are not what this
+    # line is for.
+    #
+    # THE FLAT MEAN IS STILL THE FALLBACK and says so, exactly as `progress` does - elapsed
+    # over groups measured, against the groups with work still to come. It is what runs
+    # until the first worker is reaped, and what a run with no past TSVs to weigh against
+    # gets throughout.
+    #
+    # PACED ON THE GROUPS THAT COST SOMETHING, on both sides of the ratio. A group whose
+    # rows the folder already held is counted in the "group n/m" position, because it did
+    # advance the run, and left out of the pace, because it did not cost it anything.
     #
     # $1 is "skipped" for a group that measured nothing, mirroring `progress`.
     group_finished() {
         GROUPS_DONE=$(( GROUPS_DONE + 1 ))
         [ "${1:-}" = "skipped" ] || GROUPS_MEASURED=$(( GROUPS_MEASURED + 1 ))
 
-        local now elapsed left estimate note
+        local now elapsed left estimate note weighted spec
         now=$(date +%s)
         elapsed=$(( now - PARALLEL_STARTED ))
         left=$(( GROUPS_WITH_WORK - GROUPS_MEASURED ))
 
+        if [ "$left" -gt 0 ] && [ "${#PAST_TSVS[@]}" -gt 0 ] && [ -n "$PARALLEL_DONE_SPEC" ] \
+            && { [ -z "$LAST_ESTIMATE" ] || [ $(( now - LAST_ESTIMATE_AT )) -ge "$ESTIMATE_EVERY" ]; }
+        then
+            spec="$(left_spec)"
+            if [ -n "$spec" ]; then
+                weighted="$(awk -v engines="$ENGINE_NAMES" -v done="$PARALLEL_DONE_SPEC" \
+                    -v left="$spec" -f "$ROOT/tools/matrix-remaining.awk" \
+                    "${PAST_TSVS[@]}" 2>/dev/null)"
+                # WHOLE SECONDS EITHER WAY. The awk prints a row-wise total and the division
+                # is the only place the worker count enters.
+                [ -n "$weighted" ] && LAST_ESTIMATE=$(( weighted / WORKERS ))
+                LAST_ESTIMATE_AT=$now
+            fi
+        fi
+
         # NO PACE UNTIL SOMETHING HAS BEEN MEASURED, which is a real state rather than an
         # edge case: a resume can skip hundreds of groups before it reaches one that needs
         # running, and an estimate of zero would read as "nearly done".
-        if [ "$GROUPS_MEASURED" -gt 0 ] && [ "$left" -gt 0 ]; then
-            estimate="$(clock $(( elapsed * left / GROUPS_MEASURED )))"
-            note=""
-        elif [ "$left" -le 0 ]; then
+        if [ "$left" -le 0 ]; then
             estimate="$(clock 0)"
             note=""
+        elif [ -n "$LAST_ESTIMATE" ]; then
+            estimate="$(clock "$LAST_ESTIMATE")"
+            note=""
+        elif [ "$GROUPS_MEASURED" -gt 0 ]; then
+            estimate="$(clock $(( elapsed * left / GROUPS_MEASURED )))"
+            note=" (flat)"
         else
             estimate="?"
             note=" (nothing measured yet)"
@@ -990,13 +1083,17 @@ if [ "${#parallel_groups[@]}" -gt 0 ]; then
         # died writes no stat file - leaving the previous group's numbers in place to be
         # read as this one's.
         local outcome=""
-        GROUP_NOT_MEASURED=0 GROUP_NO_ROWS=0 GROUP_SKIPPED=0 GROUP_ROWS=0
+        GROUP_NOT_MEASURED=0 GROUP_NO_ROWS=0 GROUP_SKIPPED=0 GROUP_ROWS=0 GROUP_DONE_SPEC=""
+        # REAPED BEFORE ITS ROWS ARE FOLDED IN, so `left_spec` stops counting this group's
+        # rows as still to come at the same moment they start counting as done.
+        PARALLEL_REAPED[$group]=1
         if [ -e "$WORK/$group.stat" ]; then
             # shellcheck disable=SC1090
             . "$WORK/$group.stat"
             not_measured=$(( not_measured + GROUP_NOT_MEASURED ))
             no_rows=$(( no_rows + GROUP_NO_ROWS ))
             SKIPPED_ROWS=$(( SKIPPED_ROWS + GROUP_SKIPPED ))
+            PARALLEL_DONE_SPEC="${PARALLEL_DONE_SPEC}${PARALLEL_DONE_SPEC:+${GROUP_DONE_SPEC:+;}}${GROUP_DONE_SPEC}"
             # EVERY ROW ALREADY THERE means the group cost this run nothing, so it must not
             # calibrate the pace. GROUP_ROWS counts every row the group had, skipped ones
             # included, which is why the comparison is against it rather than a zero test.
@@ -1020,8 +1117,15 @@ if [ "${#parallel_groups[@]}" -gt 0 ]; then
             # GROUP_ROWS COMES BACK TOO, since de-x8ms.2: the parent cannot tell a group it
             # measured from one the resume skipped entirely without knowing how many rows
             # the group had at all, and that is what decides whether it enters the pace.
-            printf 'GROUP_NOT_MEASURED=%d\nGROUP_NO_ROWS=%d\nGROUP_SKIPPED=%d\nGROUP_ROWS=%d\n' \
+            #
+            # AND GROUP_DONE_SPEC SINCE de-x8ms.7, which is what makes the estimate weighted
+            # rather than flat: it is the only place a parallel row's DURATION exists, since
+            # the row finished inside this fork. Single-quoted because it holds semicolons,
+            # and it can hold nothing else that a shell would look at - the parts are a
+            # conversation, a profile name, digits and the three separators.
+            printf 'GROUP_NOT_MEASURED=%d\nGROUP_NO_ROWS=%d\nGROUP_SKIPPED=%d\nGROUP_ROWS=%d\nGROUP_DONE_SPEC=%s\n' \
                 "$GROUP_NOT_MEASURED" "$GROUP_NO_ROWS" "$GROUP_SKIPPED" "$GROUP_ROWS" \
+                "'$GROUP_DONE_SPEC'" \
                 > "$WORK/$conversation.stat"
         ) &
         WORKER_OF[$!]="$conversation"
