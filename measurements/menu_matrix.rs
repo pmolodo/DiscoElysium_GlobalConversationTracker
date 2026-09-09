@@ -48,6 +48,54 @@
 //! `nodes` is what the manager holds when the menu ends, which is the number a parallel
 //! split has to clear a group against.
 //!
+//! ## What it said, 2026-09-09: the whole game, and two menus that are slow
+//!
+//! 395 menus of eight options, at the player's own 256 MB and the shipped budget, one group
+//! per process on a quiet machine. 126 of the 521 measurable groups have no menu at all -
+//! no start of theirs has anything worth hunting beyond it.
+//!
+//! ```text
+//!   median 14 ms   p90 48   p99 345   max 3084
+//!   total 16.2 s over 395 menus, mean 41 ms
+//!
+//!   over   250 ms:   5 of 395  (1.3%)
+//!   over   500 ms:   3 of 395  (0.8%)
+//!   over  1000 ms:   2 of 395  (0.5%)
+//! ```
+//!
+//! 2,970 options and 5,377 candidates asked, and EVERY OPTION SETTLED: none was answered at
+//! the start without searching, and none came back a bound. So no menu here is a menu whose
+//! budget bound, and every millisecond below is work actually done.
+//!
+//! ### The two menus over a second, which is what this measurement is for
+//!
+//! ```text
+//!     conv  entries  options  menu ms  setup  asked        nodes
+//!      761     3975        8     3084     33     26    1,198,484
+//!      368     4724        8     2277     26     56      224,750
+//!       14     3594        8      819     27     48       98,158
+//! ```
+//!
+//! `LookAheadTimeBudgetMs` BOUNDS ONE OPTION AND A REQUEST IS A WHOLE MENU. Every option in
+//! those rows finished inside its own budget - that is what a `partly` of zero says - so
+//! nothing here is the wall failing to hold. Eight options that each behave are still eight
+//! options, and on 761 they add to three seconds.
+//!
+//! That is the question `measurements/menu_wall.rs` asks, and this is the first whole-game
+//! answer to it: TWO GROUPS, NAMED, out of 395. A per-option reading cannot produce that
+//! list - 761's worst option is well inside its budget - which is the whole reason this
+//! measurement exists beside the option matrix rather than instead of it.
+//!
+//! 761 is also the only row anywhere near the manager, at 1.2 million diagram nodes on the
+//! player's 256 MB.
+//!
+//! ### What a menu costs is mostly not setup
+//!
+//! 5.6 of the 16.2 seconds, so about a third - and on the slow rows far less, 33 ms of
+//! 3,084. That is the opposite way round from the option matrix, where setup is eighty-nine
+//! per cent of the time, and the difference is the point: a menu amortises one setup over
+//! eight options where a matrix row pays it for one.
+//!
 //! ## How to run it
 //!
 //! One group per process, because a manager that runs out of nodes takes the process with

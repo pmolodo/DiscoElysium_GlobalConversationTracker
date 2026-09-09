@@ -161,6 +161,60 @@
 //! a refusal is paid for once per candidate - is untouched at `cands` of one. The deepest
 //! profiles at higher counts are what reach it.
 //!
+//! ## The whole game, 2026-09-09: every profile is instant on every group
+//!
+//! The first whole-game baseline of the search as it stands. 2,605 rows over 521 groups,
+//! both columns, one row per process on a quiet machine at `DEGCT_WORKERS=1`. 2,334 rows
+//! measured; the other 271 are `deepest-unreach` rows on groups whose census found nothing
+//! unreachable, which is a skip rather than a failure. NO CRASHES AND NO UNSUPPLIED BUDGETS.
+//!
+//! ```text
+//!   ingame                rows   under 1s   median    p90    p99    max
+//!   deepest-10             521    100.00%       11     19     50    354
+//!   deepest-5              521    100.00%       11     17     46    354
+//!   deepest-unreach-5      521    100.00%       11     16     46    376
+//!   deepest-unreach-1      521    100.00%       11     15     45     88
+//!   deepest-1              521    100.00%       11     15     44     79
+//! ```
+//!
+//! THE WORST SINGLE OPTION IN THE GAME IS 376 ms against the player's 1000, the median is
+//! 11, and every row answered `Backwards` - not one hit its budget and had to report a
+//! bound. The whole run is 8 minutes 25 seconds.
+//!
+//! ## The two columns now agree about everything, which is a finding about the budget
+//!
+//! Every one of the 2,334 paired rows returns the SAME VERDICT in both columns, and the
+//! search time is level on 2,172 of them - nolimit is faster on 82 and slower on 80, which
+//! is noise either way. So the player's budget changes no answer anywhere in the game.
+//!
+//! AND THE nolimit COLUMN'S EXTRA COST IS ITS MANAGER, not its search. It spends 996
+//! seconds against the in-game column's 33, and 992 of those 996 are building a
+//! six-gigabyte manager per group. The searching is 4.2 seconds against 3.7.
+//!
+//! ```text
+//!   column     total     of it setup    searching
+//!   ingame      33.2 s        29.5 s       3.7 s
+//!   nolimit    996.5 s       992.3 s       4.2 s
+//! ```
+//!
+//! WHAT THAT MEANS FOR THE COLUMN. `nolimit` exists to say where this method stops when
+//! nothing stops it, and the answer over the whole game is that nothing stops it: no row
+//! reaches its wall, in either column. Until a change makes a row slow again, running it
+//! buys a re-measurement of `DataVars::try_new` at six gigabytes. That is why the default
+//! grid is the in-game column alone - see [`DEFAULT_ENGINES`].
+//!
+//! ## SETUP IS THE COST NOW, and a row is the wrong place to read that
+//!
+//! Eighty-nine per cent of the in-game column's time is building the layout, the manager,
+//! the compiled guards and the seed. The searching is under four seconds for the whole game.
+//!
+//! READ IT AGAINST A MENU BEFORE ACTING ON IT. A matrix row pays one setup for one option;
+//! `bridge::answer_within` pays one for a whole menu, so the same setup is a third of
+//! `measurements/menu_matrix.rs`'s time and about three per cent of what
+//! `measurements/repeat_question.rs` measures a menu at. A design that moved setup out of
+//! the request on the strength of this table would be optimising a ratio the product does
+//! not have.
+//!
 //! ## Running it
 //!
 //! One conversation per process, because a diagram manager that runs out of nodes takes the
