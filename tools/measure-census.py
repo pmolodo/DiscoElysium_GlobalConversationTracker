@@ -256,10 +256,13 @@ class Census:
                 f"{conversation}{TAB}CRASHED{TAB}{TAB}{TAB}{TAB}{int(took * 1000)}{TAB}\n",
                 encoding="utf-8",
             )
-            return f"CRASHED after {took:.0f}s (exit {status}) - {log}", took
+            return f"CRASHED exit {status}, see {log}", took
 
         self.row_file(conversation).write_text(rows[-1] + "\n", encoding="utf-8")
-        return f"{took:.0f}s", took
+        # NOTHING TO SAY ABOUT A GROUP THAT WORKED. The duration is printed by the caller, in
+        # its own fixed-width column, so that 521 of these lines can be read down rather than
+        # across. de-12wr.7.
+        return "", took
 
     def assemble(self, order):
         """census.tsv, from the per-group row files, in the enumeration's order.
@@ -318,11 +321,19 @@ def measure(named):
     if census.done:
         print(f"resuming in {out}: {census.done} group(s) already done")
 
+    # EVERY COLUMN THE SAME WIDTH ON EVERY LINE, because a whole-game census is 521 of these
+    # and the only reason to print a per-group duration is to compare one against the next.
+    # The count is padded to the width of the total, the conversation to the widest id the run
+    # will meet, and the duration to a fixed field - so the elapsed and estimate columns stay
+    # in one place instead of walking left and right down the log. de-12wr.7.
+    count_width = len(str(census.total))
+    id_width = max((len(str(g)) for g in groups), default=4)
+
     def reap(conversation, result):
-        verdict, seconds = result
+        note, seconds = result
         census.done += 1
         census.measured += 1
-        if verdict.startswith("CRASHED"):
+        if note.startswith("CRASHED"):
             census.crashed += 1
         elapsed = time.monotonic() - census.started
         left = len(todo) - census.measured
@@ -336,9 +347,14 @@ def measure(named):
         # de-12wr.5. The matrix driver's line carries one in the same place, and two drivers
         # whose progress lines read differently cost a reader every time they switch logs.
         percent = census.done * 100 // max(1, census.total)
+        # THE NOTE IS LAST AND IS USUALLY EMPTY, so a crash lengthens its own line and no
+        # other. Putting it in a column of its own would pad 520 lines to fit the one that
+        # names a log path.
         print(
-            f"[{census.done}/{census.total} {percent:>3}%] {conversation} {verdict}  "
-            f"elapsed {clock(elapsed)}  est. left ~{clock(estimate)}",
+            f"[{census.done:>{count_width}}/{census.total} {percent:>3}%] "
+            f"{conversation:>{id_width}}  {seconds:>8.2f}s  "
+            f"elapsed {clock(elapsed)}  est. left ~{clock(estimate)}"
+            f"{'  ' + note if note else ''}",
             flush=True,
         )
         # ASSEMBLED AS IT GOES, not only at the end, so a run that is killed still leaves a
