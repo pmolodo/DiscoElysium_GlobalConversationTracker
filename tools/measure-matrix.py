@@ -839,8 +839,15 @@ class Run:
             # THE SAME GROUPS THE ROWS WILL ASK ABOUT, named rather than `all`. A whole-game
             # census over 1,422 groups to serve a run of six is hours spent on rows nobody
             # asked for.
+            # THE PYTHON DIRECTLY, NOT THE .sh THAT WRAPS IT. Windows cannot execute a shell
+            # script as a program - CreateProcess answers WinError 193, "%1 is not a valid
+            # Win32 application" - and the shell driver got away with naming the .sh only
+            # because it was bash calling bash. This is the one call site that changed
+            # meaning when the drivers became Python, and it fails at exactly the moment it
+            # matters: a whole-game run that has just spent its enumeration and needs a
+            # census before its first row.
             subprocess.run(
-                [str(ROOT / "tools" / "measure-census.sh")] + [str(c) for c in self.conversations],
+                [sys.executable, str(ROOT / "tools" / "measure-census.py")] + [str(c) for c in self.conversations],
                 env={**os.environ, "CENSUS_OUT": str(self.logs / "census")},
                 check=False,
             )
