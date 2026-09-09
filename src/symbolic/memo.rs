@@ -16,11 +16,18 @@
 //!
 //! ## Why it is worth having
 //!
-//! `measurements/cacheable_asks.rs`, 2026-09-09, over nine groups and 360 menus: of the
-//! 3361 asks that reached the backward driver at all, every one settled without meeting,
-//! and 2305 of them - 68.6 per cent - were repeats of an ask an earlier menu of the same
-//! walk had already paid for. At 22.4 ms a pass that is 51.5 of the 75.2 seconds those
-//! walks spent on fixed points.
+//! `measurements/cacheable_asks.rs`, 2026-09-09, over nine groups and 360 menus: 5,615 of
+//! the 9,559 asks that reached the backward driver - 58.7 per cent - were repeats of an ask
+//! an earlier menu of the same walk had already paid for, AND ended in a verdict worth
+//! keeping. At 19.3 ms a pass that is 108 of the 154 seconds those walks spent on fixed
+//! points.
+//!
+//! TWO FIFTHS OF THE PASSES MEET and are therefore not kept, which is where the rest of
+//! them go. That is the search working: an option from which something novel is reachable
+//! meets what the search holds at its start and stops having proved it, and such a pass is
+//! a proof for one seed rather than a fixed point. The share varies widely by group - every
+//! pass cacheable on conversation 14's late walk, a tenth of them on 640's - so a design
+//! that assumed the average would be wrong about most groups in both directions.
 //!
 //! ## What must NOT be kept, which is the whole of the soundness argument
 //!

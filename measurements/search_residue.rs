@@ -132,10 +132,10 @@ fn main() {
         eprintln!("no entry 0 in conversation {CONVERSATION}; skipping.");
         return;
     }
-    // THE ENTRY FURTHEST FROM THE START, so a search is as big as the group allows: what is
-    // being measured is what a large search leaves behind, and a small one leaves little
-    // whatever the arrangement.
-    let target = common::furthest_from(&graph, start);
+    // THE ENTRY THE MOST OTHERS CAN REACH, so a search is as big as the group allows: what
+    // is being measured is what a large search leaves behind, and a small one leaves little
+    // whatever the arrangement. See common::heaviest_target for why depth is the wrong proxy.
+    let target = common::heaviest_target(&graph, start);
 
     // Everything the searches share, allocated before the baseline so it is not counted as
     // residue: what is being measured is what a SEARCH leaves, not what the graph costs.

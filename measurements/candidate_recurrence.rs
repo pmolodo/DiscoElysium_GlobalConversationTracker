@@ -138,12 +138,16 @@
 //! invalidation rule is worth designing, and says nothing about which of the three shapes
 //! there could work.
 //!
-//! AND TWO THIRDS OF THESE ASKS NEVER REACH THE BACKWARD DRIVER, 2026-09-09. An option whose
-//! start already carries what is hunted runs no pass, so its candidates cost nothing and there is
-//! nothing about them to remember - the same subtraction dominance makes, one stage later.
-//! `cacheable_asks` runs the very asks this arm counts and puts it at 3361 of 9882. Of those
-//! that do reach the driver, all 3361 settled without meeting and 68.6 per cent were repeats,
-//! so the share above survives the subtraction: read against passes actually spent rather
+//! ALMOST ALL OF THESE ASKS REACH THE BACKWARD DRIVER, 2026-09-09. An option whose start
+//! already carries what is hunted runs no pass, so its candidates cost nothing and there is
+//! nothing about them to remember - the same subtraction dominance makes, one stage later -
+//! but it is a small subtraction: `cacheable_asks` runs the very asks this arm counts and
+//! puts it at 9,559 of 9,882.
+//!
+//! WHAT DOES THIN THE POPULATION IS METTING, one stage later still. Two fifths of the passes
+//! that run stop early having proved the target reachable, and such a pass is a proof for
+//! one seed rather than a fixed point anyone may keep - so 58.7 per cent of the asks spent
+//! are ones a memo would answer. Read the share above against passes actually spent rather
 //! than against this table.
 //!
 //! ## How to run it

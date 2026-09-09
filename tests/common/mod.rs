@@ -485,41 +485,56 @@ pub fn measurement_save() -> SaveWorld {
         .with_counter("pier.joyce_lorry_reporting_counter")
 }
 
-/// The entry furthest from `start` by links alone, ties broken by id.
+/// The entry the MOST OTHER ENTRIES can reach, ties broken by id.
 ///
-/// WHAT A MEASUREMENT ASKS ABOUT WHEN IT WANTS THE BIGGEST SEARCH THERE IS. A backward
-/// pass's fixed point spans everything that can reach its target, so the deepest entry is
-/// the one whose pass touches most of the group.
+/// WHAT A MEASUREMENT ASKS ABOUT WHEN IT WANTS THE BIGGEST SEARCH THERE IS, and the
+/// definition matters more than it looks. A backward pass visits exactly the entries that
+/// can reach its target - `Backward::can_reach` bounds the fixed point by them - so what
+/// makes a pass big is how many ancestors the target has, and nothing else.
 ///
-/// Guards ignored, which can only over-state a distance and never name an entry the links
-/// do not reach. Ties are broken by id so that a row is the same search every time: a
+/// DEPTH IS THE WRONG PROXY FOR THAT, which is worth stating because it is the obvious one
+/// and it is backwards. The entry furthest from the start sits at the end of a thin tail
+/// and typically has FEWER ancestors than a hub half way in; measured on conversation 14, a
+/// pass to the deepest entry settled holding 32 diagram nodes, which is a measurement of
+/// nothing. Counting ancestors asks the question directly.
+///
+/// Guards ignored, so it is a structural count rather than a reachable one - which is what
+/// a workload wants: an entry a guard happens to shut is still one the pass has to walk the
+/// graph to refuse. Ties are broken by id so that a row is the same search every time: a
 /// measurement that picked a different target per run would report a different number per
 /// run, and a real change would look like noise.
-pub fn furthest_from(
+pub fn heaviest_target(
     graph: &lookahead_engine::graph::graph::LookAheadGraph,
     start: DialogueNodeId,
 ) -> DialogueNodeId {
-    use std::collections::{HashMap, VecDeque};
+    use std::collections::{HashMap, HashSet, VecDeque};
 
-    let mut depth: HashMap<DialogueNodeId, usize> = HashMap::new();
-    let mut queue: VecDeque<DialogueNodeId> = VecDeque::new();
-    depth.insert(start, 0);
-    queue.push_back(start);
-
-    while let Some(id) = queue.pop_front() {
-        let here = depth[&id];
-        let Some(node) = graph.get(id) else { continue };
+    // Every entry's incoming links, which is the direction ancestors are counted along.
+    let mut parents: HashMap<DialogueNodeId, Vec<DialogueNodeId>> = HashMap::new();
+    for node in graph.nodes() {
         for &child in &node.links {
-            if graph.get(child).is_some() && !depth.contains_key(&child) {
-                depth.insert(child, here + 1);
-                queue.push_back(child);
+            if graph.get(child).is_some() {
+                parents.entry(child).or_default().push(node.id);
             }
         }
     }
 
-    depth
-        .into_iter()
-        .max_by_key(|(id, at)| (*at, id.conversation_id, id.entry_id))
-        .map(|(id, _)| id)
+    let ancestors = |target: DialogueNodeId| -> usize {
+        let mut seen: HashSet<DialogueNodeId> = HashSet::from([target]);
+        let mut queue: VecDeque<DialogueNodeId> = VecDeque::from([target]);
+        while let Some(id) = queue.pop_front() {
+            for &parent in parents.get(&id).into_iter().flatten() {
+                if seen.insert(parent) {
+                    queue.push_back(parent);
+                }
+            }
+        }
+        seen.len()
+    };
+
+    graph
+        .nodes()
+        .map(|node| node.id)
+        .max_by_key(|id| (ancestors(*id), id.conversation_id, id.entry_id))
         .unwrap_or(start)
 }

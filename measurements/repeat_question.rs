@@ -38,32 +38,23 @@
 //! each is timed - the fastest is reported, since what is wanted is what the work costs
 //! rather than what the machine was doing at the time.
 //!
-//! ## What it said, 2026-09-07, at the player's 256 MB
-//!
-//! ```text
-//!   conv  entries  graph ms  diagram ms
-//!     28     2186         4          16
-//!    368     4724         8          18
-//!     14     3594         8          17
-//!    631     4514         9          18
-//!    362     1860         3          15
-//! ```
-//!
-//! ## And the diagram side splits again, which is what de-2wtl actually turns on
-//!
-//! A later run, 2026-09-07, with the manager timed apart from the compiler:
+//! ## What it said, 2026-09-09, at the player's 256 MB
 //!
 //! ```text
 //!   conv  entries  graph ms  diagram ms  of it mgr
-//!     28     2186         5          10          9
-//!    368     4724         8          14          9
-//!     14     3594         7          13          9
-//!    631     4514         8          14         10
-//!    362     1860         3          11          9
+//!     28     2186         4          15         13
+//!    368     4724         7          20         16
+//!     14     3594         7          19         15
+//!    631     4514         9          21         16
+//!    362     1860         3          14         13
 //! ```
 //!
-//! THE MANAGER IS NEARLY ALL OF IT - nine or ten milliseconds of ten to fourteen - and the
-//! compiler and seed are the remaining one to five.
+//! Two runs on one machine, each the fastest of three; the columns above move by a
+//! millisecond between them and by no more.
+//!
+//! THE MANAGER IS NEARLY ALL OF THE DIAGRAM SIDE - thirteen to sixteen milliseconds of
+//! fourteen to twenty-one - and the compiler and seed are the remaining two to five. That
+//! split is what de-2wtl actually turns on.
 //!
 //! THAT IS THE OPPOSITE WAY ROUND FROM WHAT INVALIDATES. `DataLayout::for_group` reads the
 //! world through `money()` alone - the money ceiling - so the layout, and the manager sized
@@ -75,17 +66,18 @@
 //!
 //! So a workspace keyed on the WORLD SNAPSHOT, which is what de-2wtl's design assumed,
 //! would be thrown away almost every menu and buy nothing. A workspace that keeps the
-//! MANAGER and rebuilds the compiler and seed per request keeps the nine or ten and pays
-//! the one to five, and its invalidation rule is the money ceiling rather than everything.
+//! MANAGER and rebuilds the compiler and seed per request keeps the thirteen to sixteen and
+//! pays the two to five, and its invalidation rule is the money ceiling rather than
+//! everything.
 //!
-//! EIGHTEEN TO TWENTY-SEVEN MILLISECONDS, all in, on the five heaviest groups in the game.
-//! That is the whole of what an owner outliving the query would stop paying.
+//! SEVENTEEN TO THIRTY MILLISECONDS, all in, on the five heaviest groups in the game. That
+//! is the whole of what an owner outliving the query would stop paying.
 //!
 //! AND THE GRAPH IS THE CHEAP HALF, which is the opposite of what de-2wtl assumed. That
 //! issue's case rests on `build_group_graph` parsing the guards and actions of every entry
 //! in the group - "4,514 of them for conversation 631's, once per response menu" - and the
 //! number is real but the cost is not: 631's whole group parses in NINE MILLISECONDS. The
-//! diagram side is the larger half at fifteen to eighteen, and it is the half that is
+//! diagram side is the larger half at fourteen to twenty-one, and it is the half that is
 //! hardest to share, since it belongs to one thread and one world snapshot.
 //!
 //! ### What that is against a real menu
@@ -184,7 +176,7 @@ fn main() {
                 eprintln!("no entry 0 in conversation {conversation}; skipping.");
                 break;
             }
-            let target = common::furthest_from(&graph, start);
+            let target = common::heaviest_target(&graph, start);
 
             // ONE THREAD, ONE MANAGER, as everything that builds one must - de-fpax.
             let (diagram_took, manager_took, search_took) = isolated::on_its_own_thread(|| {

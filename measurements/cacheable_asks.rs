@@ -49,28 +49,62 @@
 //! an ask a memo could serve either, and it is part of the same subtraction the dominance
 //! rule started.
 //!
-//! ## What it said, and what wants asking again
+//! ## What it said, 2026-09-09: the memo is worth MORE than it looked, and for a reason
 //!
-//! EVERY PASS THAT RAN WAS CACHEABLE, over nine groups and twenty menus each at
-//! ninety-five and fifty per cent seen: not one pass of 3,361 met, and not one failed to
-//! settle. de-znov.2 named the plausible failure - that the asks which recur are the ones
-//! that meet early, the cheap ones, while the ones that cost never settle - and it did not
-//! happen. 2,305 of those passes were repeats an earlier menu had already paid for, at
-//! 22.4 ms each, which is 51.5 seconds of the 75.2 the walks spent.
+//! Nine groups, twenty menus each, at ninety-five and fifty per cent seen:
 //!
-//! THOSE NUMBERS WERE TAKEN OVER A LARGER POPULATION THAN THIS NOW ASKS ABOUT, when an
-//! option could be answered by a second search running ahead of the driver. Two thirds of
-//! the ceiling never reached the driver for that reason, and now they do. So the SHAPE of
-//! the finding stands - a pass that runs is one a memo could hold - and every figure in it
-//! wants re-taking. See de-0jsf.3.
+//! ```text
+//!   asks in the ceiling                    9882
+//!   of those, repeats                      8276  83.7%
+//!   asks that reached the driver           9559  96.7%
+//!   passes that settled                    5498  57.5%
+//!   passes that met                        4061  42.5%
+//!   cacheable - settled, did not meet      5498  57.5%
+//!   repeats a memo would answer            5615  67.8%
+//!   passes a memo would replace            5615  58.7%
+//!
+//!   one cacheable pass, ms                 19.3
+//!   every pass, ms                       153736
+//! ```
+//!
+//! 5,615 repeat asks at 19.3 ms is 108 SECONDS OF THE 154 these walks spend on passes. That
+//! is the number de-znov.3 is worth, and it is the ceiling multiplied by the share of asks
+//! that end in a verdict worth keeping, which is what de-znov.2 came for.
+//!
+//! ALMOST EVERYTHING NOW REACHES THE DRIVER - 9,559 of 9,882, against a third of that when
+//! an option could be answered by a second search running ahead of it. What is left out is
+//! the handful of options whose START already carries the class being hunted, and they are
+//! concentrated in the fifty-per-cent walks where plenty is unread.
+//!
+//! ## Two fifths of the passes MEET, and that is the interesting half
+//!
+//! Not one pass met when a second search answered the easy options first. Now 4,061 of
+//! 9,559 do. The reason is structural rather than a regression: the options that used to be
+//! answered early are exactly the ones from which something novel is REACHABLE, so their
+//! passes meet what the search holds at its start and stop having proved it. A met pass is
+//! a proof for one seed and not a fixed point anyone may keep - see `symbolic::memo` - so
+//! it is not cacheable, and the cacheable share falls from everything to 57.5 per cent.
+//!
+//! THE SHARE FELL AND THE COUNT ROSE, which is the reading that matters: 5,498 cacheable
+//! passes against 3,361, because the population it is a share OF nearly tripled. de-znov.2's
+//! plausible failure - that the asks which recur are the cheap ones that meet early, while
+//! the ones that cost never settle - is now half true and does not close the issue: a memo
+//! still answers 67.8 per cent of the repeats.
+//!
+//! AND THE SPREAD PER GROUP IS WIDE, which no total shows. Read `of ran` in the per-walk
+//! table: conversation 14 at ninety-five per cent seen has every one of its 953 passes
+//! cacheable and 90.8 per cent of its asks answerable from a memo, while 640 at the same
+//! profile is at 9.2 per cent and 631 at fifty per cent is at 7.6. A design that assumed
+//! the average would be wrong about most groups in both directions.
 //!
 //! ## WHAT IT COSTS IS MEMORY, WHICH IS THE HALF TO WORRY ABOUT
 //!
-//! Conversation 14's walk left 4.9 million diagram nodes in the manager, and at
+//! Conversation 14's walk left 5.5 million diagram nodes in the manager, and at
 //! `DiagramBudget::BYTES_PER_NODE` that is most of the player's 256 MB, for a store holding
 //! one walk's guards and passes. A memo keeps a subset of that ALIVE across requests where
 //! today it is dropped with the query, so de-znov.3's design question is not whether the
-//! verdicts are worth keeping - they are - but how many may be kept at once.
+//! verdicts are worth keeping - they are, and by more than before - but how many may be
+//! kept at once.
 //!
 //! ## How to run it
 //!

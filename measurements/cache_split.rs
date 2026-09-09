@@ -44,84 +44,58 @@
 //! has already built one is what makes the third search overflow the stack (de-fpax), and
 //! this builds one per split per conversation per repeat.
 //!
-//! ## What it said, 2026-09-07, at 512 MB and a 60-second cap
+//! ## What it said, 2026-09-09: THE SPLIT DOES NOT MOVE ONE PASS AT ALL
 //!
-//! THESE ROWS WERE TAKEN OVER A DIFFERENT WORKLOAD - a fixed point over the whole group from
-//! its start, rather than the per-target pass this now runs - so they are evidence for the
-//! shape of the curve rather than a baseline to compare a fresh run against. The sweep wants
-//! re-taking; see de-0jsf.3.
+//! 512 MB, a 60-second cap, best of three, at the heaviest target in each group:
 //!
 //! ```text
-//!   conv  entries  split         nodes       cache  built  search   verdict   held nodes
-//!     28     2186   1/64      15,339,168     239,674    2ms    54ms   settled      227,036
-//!     28     2186   1/16      14,913,080     932,067    6ms    64ms   settled      227,036
-//!     28     2186    1/8      14,510,024   1,813,753   12ms    67ms   settled      227,036
-//!     28     2186    1/4      13,421,772   3,355,443   20ms    55ms   settled      227,036
-//!     28     2186    1/2      11,930,464   5,965,232   39ms    57ms   settled      227,036
-//!    368     4724   1/64      15,339,168     239,674    6ms  6805ms   settled    4,955,128
-//!    368     4724   1/16      14,913,080     932,067    9ms  4682ms   settled    4,955,128
-//!    368     4724    1/8      14,510,024   1,813,753   15ms  4625ms   settled    4,955,128
-//!    368     4724    1/4      13,421,772   3,355,443   25ms  4493ms   settled    4,955,128
-//!    368     4724    1/2      11,930,464   5,965,232   43ms  4709ms   settled    4,955,128
-//!     14     3594   1/64      15,339,168     239,674    5ms    cap    gave-up   34,258,351
-//!     14     3594   1/16      14,913,080     932,067    9ms    cap    gave-up   38,320,857
-//!     14     3594    1/8      14,510,024   1,813,753   15ms    cap    gave-up   41,498,710
-//!     14     3594    1/4      13,421,772   3,355,443   24ms    cap    gave-up   42,419,612
-//!     14     3594    1/2      11,930,464   5,965,232   43ms    cap    gave-up   41,484,448
-//!    631     4514   1/64      15,339,168     239,674    7ms 17682ms   NO-ROOM    9,507,000
-//!    631     4514   1/16      14,913,080     932,067   10ms    cap    gave-up   22,770,543
-//!    631     4514    1/8      14,510,024   1,813,753   15ms    cap    gave-up   27,254,207
-//!    631     4514    1/4      13,421,772   3,355,443   25ms    cap    gave-up   28,824,872
-//!    631     4514    1/2      11,930,464   5,965,232   44ms    cap    gave-up   28,531,927
+//!   conv  entries  split      built ms  search ms   verdict   held nodes
+//!     28     2186   1/64             3          2   settled           46
+//!     28     2186    1/2            62          2   settled           46
+//!    368     4724   1/64             5         54   settled      104,924
+//!    368     4724   1/16            10         57   settled      104,924
+//!    368     4724    1/8            21         57   settled      104,924
+//!    368     4724    1/4            34         54   settled      104,924
+//!    368     4724    1/2            62         55   settled      104,924
+//!     14     3594   1/64             5         86   settled       18,601
+//!     14     3594    1/2            66         97   settled       18,601
+//!    631     4514   1/64             6          5   settled          379
+//!    631     4514    1/2            64          5   settled          379
 //! ```
 //!
-//! HOW TO READ THE TWO KINDS OF ROW. A group that SETTLES is read on search time. A group
-//! that does not is capped at sixty seconds whatever the split, so its time says nothing
-//! and the column that matters is HELD NODES - how far the same search got in the same
-//! time. More is better there.
+//! EVERY ROW SETTLES AND THE SEARCH COLUMN IS FLAT. Conversation 368 is 54 to 57 ms across a
+//! twenty-fold change in cache size, and the differences are smaller than the run-to-run
+//! noise. There is no no-room anywhere and no row reaches the cap.
 //!
-//! ### A QUARTER IS RIGHT, and this is the first thing behind it
+//! ## The workload is three orders of magnitude too small, and that is the finding
 //!
-//! Every group with a signal peaks at 1/4 and is flat or worse either side:
+//! One backward pass to the heaviest target in the group holds 105,000 diagram nodes at
+//! worst. A cache sized at a sixty-fourth of the store is 239,674 entries - more than twice
+//! the whole working set - so at every split on this sweep the cache is larger than the
+//! problem, nothing is ever evicted, and there is nothing for the split to trade.
 //!
-//! - 368 settles fastest at 1/4 (4493 ms), and the curve is already flat by 1/16 (4682) -
-//!   but 1/64 costs half as long again (6805).
-//! - 14 gets furthest at 1/4 (42.4M nodes) and 631 gets furthest at 1/4 (28.8M).
-//! - Going wider to 1/2 buys nothing anywhere: 368 gets slower, 14 and 631 get less far,
-//!   and construction doubles (25 ms to 44 ms).
-//! - 28 is flat across the whole sweep, because it settles in fifty milliseconds and there
-//!   is nothing for a cache to save.
+//! WHAT THIS MEASURES NOW, therefore, is that A SINGLE PASS IS CACHE-INSENSITIVE, which is
+//! worth knowing and is not what the file was written to ask. The only column that moves is
+//! `built ms`, three to sixty-six milliseconds, because a wider cache costs more to
+//! allocate - so on a workload this size a wide split is pure loss.
 //!
-//! So the convention was well placed, and the reason to keep it is now a measurement rather
-//! than the absence of one.
+//! ## Where the question actually lives now
 //!
-//! ### THE ISSUE EXPECTED THE OPPOSITE FAILURE FROM THE ONE THAT HAPPENED
+//! `measurements/cache_split_menu.rs`, which sweeps the same split over a WHOLE MENU at the
+//! player's own 256 MB. A menu is a dozen searches against one manager, so its working set
+//! is the one that can outgrow a cache, and it is also the thing a player waits for. That
+//! file is where the case for the shipped quarter rests: no split is best everywhere - a
+//! sixty-fourth is bad on 1030, a half is bad on 362 - and a quarter is within noise of the
+//! best on every group and worst on none, which is what a default should be.
 //!
-//! de-1e8l predicted that a split too GENEROUS would starve the node store and turn a found
-//! into a no-room. The only no-room in the table is at 1/64 - the STINGIEST cache, and the
-//! row that bought the MOST nodes of any. 631 ran out of room at 17.7 seconds holding 9.5M
-//! where every wider cache survived the full minute and got to 22-28M.
+//! ## Whether this file still earns its place
 //!
-//! That is worth understanding rather than filing as a curiosity: an apply cache is what
-//! stops a subproblem being recomputed, and a recomputation ALLOCATES NODES. Starve the
-//! cache and the same intermediate diagrams are built again and again, each time out of the
-//! store the small cache was supposed to be protecting. So the two are not simply traded off
-//! against each other at the bottom end - a cache too small costs time AND room.
+//! It answers a narrower question than it used to and should be read as answering that one:
+//! how a single fixed point behaves when the cache cannot bind. Anyone changing the split
+//! should read the menu sweep instead, and anyone who makes a single pass much larger -
+//! a wider layout, a group the size of several - should come back here first to see whether
+//! the cache has started to bind again.
 //!
-//! It also means the shape of this curve is not symmetric, and the safe direction to be
-//! wrong in is WIDE. Too wide costs construction time and some nodes, and degrades
-//! smoothly; too narrow can end a search outright.
-//!
-//! ### WHAT WAS NOT MEASURED
-//!
-//! THE PLAYER'S END. Every row here is at 512 MB, where the budget binds on the heavy
-//! groups. At the shipped default of 256 MB the whole manager is half this and a quarter of
-//! not-much may behave differently - `BUDGET_MB` is there to ask, and nobody has.
-//!
-//! And these are single searches over a group. What a MENU costs is several of them against
-//! one manager, where the cache is warm for the second option onwards - which is the
-//! arrangement `bridge::answer` actually uses, and a cache that pays for itself across
-//! options may want to be wider than one measured on a single search.
 
 use std::time::{Duration, Instant};
 
@@ -153,9 +127,10 @@ const SPLITS: [usize; 5] = [64, 16, 8, 4, 2];
 /// The total allowance every row is held to, in megabytes. `BUDGET_MB` moves it.
 ///
 /// THE GROUP-SIZED 512 rather than a measurement's six gigabytes, because the trade is only
-/// visible where the budget BINDS. At six gigabytes the heavy groups have room to spare at
-/// every split, so every row would finish and the curve would be flat for a reason that has
-/// nothing to do with the cache.
+/// visible where the budget BINDS - and as of 2026-09-09 it does not bind here even at this,
+/// since one pass's working set is a fraction of the narrowest cache on the sweep. Raising
+/// it would make the curve flatter still; what would make it bind is a larger WORKLOAD, which
+/// is `cache_split_menu`.
 const BUDGET_MB: usize = 512;
 
 /// How long one search may run before it is a gave-up.
@@ -240,11 +215,11 @@ fn main() {
             continue;
         }
 
-        // THE ENTRY FURTHEST FROM THE START, because a backward pass's fixed point spans
-        // everything that can reach its target - so the deepest entry is the one that makes
-        // the search big enough for a cache to matter. Guards ignored, which can only
-        // over-state the distance and never pick an entry nothing reaches.
-        let target = common::furthest_from(&graph, start);
+        // THE ENTRY THE MOST OTHERS CAN REACH, because that is exactly what a backward pass
+        // visits: its fixed point spans the target's ancestors and nothing else, so the entry
+        // with the most of them is the one that makes a search big enough for a cache to
+        // matter. See common::heaviest_target for why depth is the wrong proxy.
+        let target = common::heaviest_target(&graph, start);
 
         let symbols = graph.symbols().clone();
         let layout = DataLayout::for_graph(&graph, COUNTER_CAP, None, false)

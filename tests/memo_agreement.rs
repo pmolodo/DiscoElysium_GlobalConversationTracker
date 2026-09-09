@@ -274,7 +274,7 @@ fn budgets() -> [answer::Budget; 1] {
 ///
 /// What is left to remember is the refusals, and refusals are what a nearly-read
 /// conversation is made of. That is the same regime `cacheable_asks` measured the memo to be
-/// worth 68.6 per cent of its passes in, and it is what a player deep in a conversation they
+/// worth 58.7 per cent of its passes in, and it is what a player deep in a conversation they
 /// have mostly exhausted actually has.
 fn snapshot(entries: &[NodeRef], round: usize) -> WorldSnapshot {
     let mut world = WorldSnapshot {
