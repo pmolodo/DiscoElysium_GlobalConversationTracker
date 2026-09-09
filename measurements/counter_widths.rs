@@ -100,6 +100,14 @@ fn main() {
     let mut groups_with_counters = 0;
     let mut slots_seen = 0;
     let mut slots_a_new_encoding_could_narrow = 0;
+    // THE WHOLE POINT OF TAKING A MINIMUM: bits today against bits under a rule that picks
+    // the narrowest legal encoding per slot, INCLUDING the one that already ships. A rule
+    // shaped that way cannot cost a slot anything, so the only question is what it buys.
+    let mut bits_today = 0u32;
+    let mut bits_best = 0u32;
+    // Whether the writer encoding ever wins outright, which decides whether it is worth
+    // being one of the candidates at all.
+    let mut writer_wins = 0;
 
     for conversation in numbers("CONVERSATION", &GROUPS) {
         let Ok((graph, _)) = build_group_graph(&index, conversation) else { continue };
@@ -185,6 +193,17 @@ fn main() {
                 slots_a_new_encoding_could_narrow += 1;
             }
 
+            // THE MINIMUM INCLUDING TODAY'S, which is what "the most compact encoding
+            // available" has to mean if it is never to cost a slot anything. A slot the
+            // group ASSIGNS keeps what it has: an assign writes the number directly, so
+            // neither delta encoding is legal there whatever its width would be.
+            let best = if assigned > 0 { today } else { today.min(best_new) };
+            bits_today += today as u32;
+            bits_best += best as u32;
+            if assigned == 0 && writer_bits < value_bits && writer_bits < today {
+                writer_wins += 1;
+            }
+
             let name = symbols.name_of(*slot).unwrap_or("?");
             let shown: Vec<String> = distinct.iter().take(4).map(|a| a.to_string()).collect();
             println!(
@@ -206,10 +225,20 @@ fn main() {
     println!(
         "{groups_with_counters} group(s) have a counter at all; {slots_seen} counter slot(s) \
          in total,\nof which {slots_a_new_encoding_could_narrow} could be narrowed by one of \
-         the two new encodings.\n\
-         \n\
-         A COUNT OF ZERO THERE IS THE WHOLE ANSWER: the shipped threshold encoding already \
-         takes\nevery slot the other two could, and de-12wr.4 is a change with nothing to buy."
+         the two new encodings."
+    );
+    println!(
+        "\nTAKING THE NARROWEST OF THE THREE, per slot, including the one that ships:\n\
+         \x20 {bits_today} bits today -> {bits_best} bits, a saving of {} across every counter \
+         in the six\n  heaviest groups. A rule shaped as a minimum cannot cost a slot \
+         anything, so this is\n  the whole of what the standardisation is worth.",
+        bits_today - bits_best,
+    );
+    println!(
+        "\nTHE WRITER ENCODING WINS OUTRIGHT ON {writer_wins} SLOT(S). Where that is zero it \
+         need not be\n  one of the candidates at all: every amount here is an integer with a \
+         GCD of 1, so the\n  value encoding is never wider than the writer one, and dropping \
+         it removes a code path\n  without changing a single width."
     );
 }
 
