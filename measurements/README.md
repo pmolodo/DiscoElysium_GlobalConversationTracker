@@ -110,6 +110,7 @@ shape of the comparison, and it makes the question "against what?" impossible to
 | `unseen` | how many entries that leaves unread |
 | `fwd_verdict` | `found`, `not-there`, `gave-up`, plus `no-room` when the diagram filled its budget and `no-ram` when the machine did |
 | `fwd_ms`, `fwd_nodes`, `fwd_setsum` | what it cost: manager nodes held, and the per-entry sets summed |
+| `*_setup` | how much of that engine's `ms` went on building the layout, the manager, the compiled guards and the seed rather than on searching. `ms` still carries the whole of it, so the search is the difference |
 | `bwd_verdict` | as `fwd`, except that there is no `no-ram`: its manager is allocated up front, so a machine that cannot supply the budget gives `NOT-MEASURED` before anything runs |
 | `bwd_ms`, `bwd_nodes` | what it cost |
 | `bwd_asked`, `bwd_cands` | candidates asked about, out of candidates waiting - one fixed point was paid per candidate asked |
@@ -144,7 +145,8 @@ MEASURED ON THE HEAVY GROUPS, and the gap is the point: on 631 the in-game colum
 
 | the columns say | what they were |
 |---|---|
-| `fwd`, `bwd`, `ingame`, `nolimit` | today's, all symbolic |
+| `fwd`, `bwd`, `ingame`, `nolimit`, with a `_setup` beside each `_ms` | today's, all symbolic |
+| the same four without any `_setup` | before de-x8ms.1. The `_ms` column means the same thing it does now - the whole of what the engine took - so those rows read straight across; what is missing is how much of it was not searching, which on a floor row is nearly all of it |
 | `fwd`, `bwd`, `fwdbwd` | one portfolio column instead of two, at neither the player's settings nor a real no-limit. `fwdbwd` reads closest to today's `nolimit` in its clock and to neither in its memory - it ran two seconds on a six-gigabyte manager. Do not read it as `ingame` (de-xegj) |
 | `explicit`, `symfwd`, `symbwd` | older names. `symfwd` is today's `fwd` and `symbwd` today's `bwd`; `explicit` measured a state-at-a-time search, which nothing measures now |
 | `fwd`, `bwd` and nothing else | older still. `fwd` is the state-at-a-time search and `bwd` is today's `fwd`; no backward search was measured at all |

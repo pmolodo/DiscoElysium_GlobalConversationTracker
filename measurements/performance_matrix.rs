@@ -686,11 +686,15 @@ impl Engine {
     /// built from these and `tools/measure-matrix.sh` asks the test for it.
     fn columns(self) -> &'static [&'static str] {
         match self {
+            // `setup` is how much of `ms` was building the layout, the manager, the compiled
+            // guards and the seed rather than searching - see [`Cells::of`], and note that
+            // `ms` still carries the whole of it.
+            //
             // Two sizes because neither bounds the other; see `symbolic_forward`.
-            Engine::Forward => &["verdict", "ms", "nodes", "setsum"],
+            Engine::Forward => &["verdict", "ms", "setup", "nodes", "setsum"],
             // `asked` against `cands` is the whole trade this column exists to price: one
             // fixed point per candidate asked about, against one pass over all of them.
-            Engine::Backward => &["verdict", "ms", "nodes", "asked", "cands"],
+            Engine::Backward => &["verdict", "ms", "setup", "nodes", "asked", "cands"],
             // `by` is which half answered - the forward slice, the backward driver, or
             // neither completely - which is the whole question the switching method asks.
             //
@@ -710,7 +714,7 @@ impl Engine {
             Engine::InGame
             | Engine::NoLimit
             | Engine::BackwardInGame
-            | Engine::BackwardNoLimit => &["verdict", "ms", "nodes", "by", "asked"],
+            | Engine::BackwardNoLimit => &["verdict", "ms", "setup", "nodes", "by", "asked"],
         }
     }
 
@@ -1156,8 +1160,22 @@ fn unreachable_for(
 struct Cells(Vec<String>);
 
 impl Cells {
-    fn of(verdict: &str, millis: u128, sizes: &[usize]) -> Self {
-        let mut cells = vec![verdict.to_string(), millis.to_string()];
+    /// `millis` is the WHOLE of what the engine took and `setup` is how much of it was not
+    /// searching, so the search is the difference.
+    ///
+    /// KEPT THAT WAY ROUND ON PURPOSE. Narrowing `ms` to the search alone would have been
+    /// the tidier definition and would silently change what every recorded folder's `ms`
+    /// column means against every new one - the columns have moved three times already and
+    /// each move cost a paragraph in measurements/README.md explaining how to read an older
+    /// run. This adds a column and redefines none.
+    ///
+    /// It answers two live confusions at once (de-x8ms.1). A floor row reads about three
+    /// hundred milliseconds per engine while doing no searching at all, which looked like
+    /// the cost of a search that never happened; and 16/deepest-1 recorded 647,709 ms
+    /// against a 600,000 ms cap, which looked like an overrun and was a cap plus its setup.
+    fn of(verdict: &str, millis: u128, setup: u128, sizes: &[usize]) -> Self {
+        let mut cells =
+            vec![verdict.to_string(), millis.to_string(), setup.to_string()];
         cells.extend(sizes.iter().map(|size| size.to_string()));
         Self(cells)
     }
@@ -1287,6 +1305,8 @@ fn forward_backward(
         .with_world(world)
         .with_constant_clock(DataLayout::group_passes_time(graph));
     let seed = seed_of(graph, world, &vars);
+    // See the same reading in `symbolic_forward`: everything above is profile-independent.
+    let setup = began.elapsed().as_millis();
 
     let novelty = |id: DialogueNodeId| {
         if unseen.contains(&id) { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
@@ -1317,6 +1337,9 @@ fn forward_backward(
         return Cells(vec![
             NOT_WORTH_HUNTING.to_string(),
             began.elapsed().as_millis().to_string(),
+            // A GATED ROW IS ALL SETUP, and saying so is the point of the column: what it
+            // spent went on building an apparatus the gate then declined to use.
+            setup.to_string(),
             // Nothing was built, nothing answered, nothing asked. `by` says which half
             // answered and the honest value is neither.
             "0".to_string(),
@@ -1364,6 +1387,7 @@ fn forward_backward(
     Cells(vec![
         verdict.to_string(),
         began.elapsed().as_millis().to_string(),
+        setup.to_string(),
         vars.node_count().to_string(),
         format!("{:?}", answer.by),
         answer.targets_asked.to_string(),
@@ -1395,6 +1419,11 @@ fn symbolic_forward(
         .with_constant_clock(DataLayout::group_passes_time(graph));
 
     let seed = seed_of(graph, world, &vars);
+    // EVERYTHING ABOVE IS SETUP, and none of it depends on the profile - see de-x8ms.1,
+    // which would build it once per group instead of once per row. Read off here so a
+    // before and after of that change can be compared on the search rather than on a total
+    // that moved for two reasons at once.
+    let setup = began.elapsed().as_millis();
     let quarry: HashSet<DialogueNodeId> = unseen.clone();
     let allowance = memory();
     let every = progress_every();
@@ -1482,6 +1511,7 @@ fn symbolic_forward(
     Cells::of(
         verdict,
         began.elapsed().as_millis(),
+        setup,
         &[vars.node_count(), stats.diagram_nodes],
     )
 }
@@ -1514,6 +1544,8 @@ fn symbolic_backward(
         .with_constant_clock(DataLayout::group_passes_time(graph));
 
     let seed = seed_of(graph, world, &vars);
+    // See the same reading in `symbolic_forward`: everything above is profile-independent.
+    let setup = began.elapsed().as_millis();
     let novelty = |id: DialogueNodeId| {
         if unseen.contains(&id) { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
     };
@@ -1589,6 +1621,7 @@ fn symbolic_backward(
     Cells::of(
         verdict,
         began.elapsed().as_millis(),
+        setup,
         &[vars.node_count(), answer.targets_asked, answer.candidates],
     )
 }
