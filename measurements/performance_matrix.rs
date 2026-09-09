@@ -1369,14 +1369,43 @@ fn search_budget_for(engine: Engine) -> portfolio::Budget {
     }
 }
 
-fn forward_backward(
+/// The switching method, over EVERY profile of one group, on one manager.
+///
+/// ## Why the loop is inside here rather than outside
+///
+/// de-x8ms.1. Nothing above the profile loop depends on the profile - the layout, the manager,
+/// the compiled guards and the seed are functions of the graph, the world and the symbols -
+/// and building them is most of what a row costs. Measured on the whole-game run of
+/// 2026-09-09: setup was 76.9 per cent of the `ingame` column's time and 89.9 per cent of
+/// `bwd-ingame`'s, and building it once per group instead of once per row removes 64.4 per
+/// cent of all the engine time in the run.
+///
+/// IT COULD NOT SIMPLY BE HOISTED OUT, which is what made this a task rather than an edit.
+/// Each engine runs on `isolated::on_its_own_thread` because what overflows a stack is
+/// BUILDING A SECOND MANAGER ON A THREAD THAT HAS ALREADY BUILT ONE (de-fpax, de-w0rw), so
+/// the setup cannot cross the thread boundary to be shared, and rebuilding it per profile on
+/// one long-lived thread is the very thing that overflows. Inverting the loops keeps the
+/// invariant - ONE MANAGER PER THREAD - and pays for it once per engine per group.
+///
+/// ## What that changes about the measurement, and how a row says so
+///
+/// The profiles after the first answer on a WARM manager: the compiled guards and the apply
+/// cache the first profile paid for are still there. That is a different measurement from one
+/// profile per manager, and quite possibly a better model of the mod - a game session is one
+/// process for hours - but a folder must not hold both without saying which.
+///
+/// IT SAYS SO IN THE `setup` COLUMN, which is self-describing rather than a flag somewhere
+/// else: the first profile of a group reports the setup it paid, and every profile after it
+/// reports ZERO, because that is what each of them actually spent. Summing the column over a
+/// folder gives the true total either way.
+fn forward_backward_all(
     graph: &LookAheadGraph,
     start: DialogueNodeId,
     world: &dyn lookahead_engine::world::world::ILookAheadWorld,
     symbols: &StateSymbols,
-    unseen: &HashSet<DialogueNodeId>,
+    work: &[HashSet<DialogueNodeId>],
     engine: Engine,
-) -> Cells {
+) -> Vec<Cells> {
     let began = std::time::Instant::now();
 
     // THE MANAGER DIFFERS BETWEEN THE TWO, and by far more than the clocks do. A player gets
@@ -1393,14 +1422,53 @@ fn forward_backward(
 
     let layout = DataLayout::for_group(graph, world, COUNTER_CAP);
     let Some(vars) = DataVars::try_new(&layout, symbols, manager) else {
-        return Cells::absent(NOT_MEASURED, engine);
+        return work.iter().map(|_| Cells::absent(NOT_MEASURED, engine)).collect();
     };
     let mut compiler = GuardCompiler::new(&vars)
         .with_world(world)
         .with_constant_clock(DataLayout::group_passes_time(graph));
     let seed = seed_of(graph, world, &vars).expect("room for a seed");
-    // See the same reading in `symbolic_forward`: everything above is profile-independent.
-    let setup = began.elapsed().as_millis();
+    // See the same reading in `symbolic_forward_all`: everything above is profile-independent,
+    // which is the whole reason this function takes a list.
+    let shared_setup = began.elapsed().as_millis();
+
+    work.iter()
+        .enumerate()
+        .map(|(index, unseen)| {
+            forward_backward_one(
+                graph,
+                start,
+                world,
+                &vars,
+                &mut compiler,
+                &seed,
+                unseen,
+                engine,
+                // THE FIRST PROFILE CARRIES THE SETUP AND THE REST CARRY NONE, because that
+                // is what each of them spent. See the note above.
+                if index == 0 { shared_setup } else { 0 },
+            )
+        })
+        .collect()
+}
+
+/// One profile of one group, against a manager and a compiler the caller built.
+#[allow(clippy::too_many_arguments)]
+fn forward_backward_one(
+    graph: &LookAheadGraph,
+    start: DialogueNodeId,
+    world: &dyn lookahead_engine::world::world::ILookAheadWorld,
+    vars: &DataVars,
+    compiler: &mut GuardCompiler,
+    seed: &oxidd::bdd::BDDFunction,
+    unseen: &HashSet<DialogueNodeId>,
+    engine: Engine,
+    setup: u128,
+) -> Cells {
+    // THIS ROW'S OWN CLOCK, which starts after the shared setup and so measures the search.
+    // The first row of a group adds the setup back on, below, so that summing the column over
+    // a folder still gives what the run cost.
+    let began = std::time::Instant::now();
 
     let novelty = |id: DialogueNodeId| {
         if unseen.contains(&id) { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
@@ -1430,7 +1498,7 @@ fn forward_backward(
         // that read as a failure would invite somebody to fix it.
         return Cells(vec![
             NOT_WORTH_HUNTING.to_string(),
-            began.elapsed().as_millis().to_string(),
+            (setup + began.elapsed().as_millis()).to_string(),
             // A GATED ROW IS ALL SETUP, and saying so is the point of the column: what it
             // spent went on building an apparatus the gate then declined to use.
             setup.to_string(),
@@ -1446,8 +1514,8 @@ fn forward_backward(
         graph,
         start,
         StartBranch::Either,
-        &seed,
-        &mut compiler,
+        seed,
+        compiler,
         world,
         COUNTER_CAP as u32,
         &novelty,
@@ -1481,7 +1549,7 @@ fn forward_backward(
     // in front of it actually costs.
     Cells(vec![
         verdict.to_string(),
-        began.elapsed().as_millis().to_string(),
+        (setup + began.elapsed().as_millis()).to_string(),
         setup.to_string(),
         vars.node_count().to_string(),
         format!("{:?}", answer.by),
@@ -1489,13 +1557,18 @@ fn forward_backward(
     ])
 }
 
-fn symbolic_forward(
+/// The symbolic forward search, over EVERY profile of one group, on one manager.
+///
+/// The loop is inside for the reason `forward_backward_all` gives at length: nothing above it
+/// depends on the profile, building it is most of what a row costs, and it cannot be hoisted
+/// across the thread boundary that keeps one manager per thread. de-x8ms.1.
+fn symbolic_forward_all(
     graph: &LookAheadGraph,
     start: DialogueNodeId,
     world: &dyn lookahead_engine::world::world::ILookAheadWorld,
     symbols: &StateSymbols,
-    unseen: &HashSet<DialogueNodeId>,
-) -> Cells {
+    work: &[HashSet<DialogueNodeId>],
+) -> Vec<Cells> {
     let began = std::time::Instant::now();
 
     let layout = DataLayout::for_group(graph, world, COUNTER_CAP);
@@ -1507,18 +1580,48 @@ fn symbolic_forward(
     // machine could not supply the budget, which is not a finding about the search - the
     // row is NOT MEASURED and wants running again with the memory free.
     let Some(vars) = DataVars::try_new(&layout, symbols, budget()) else {
-        return Cells::absent(NOT_MEASURED, Engine::Forward);
+        return work.iter().map(|_| Cells::absent(NOT_MEASURED, Engine::Forward)).collect();
     };
     let mut compiler = GuardCompiler::new(&vars)
         .with_world(world)
         .with_constant_clock(DataLayout::group_passes_time(graph));
 
     let seed = seed_of(graph, world, &vars).expect("room for a seed");
-    // EVERYTHING ABOVE IS SETUP, and none of it depends on the profile - see de-x8ms.1,
-    // which would build it once per group instead of once per row. Read off here so a
-    // before and after of that change can be compared on the search rather than on a total
-    // that moved for two reasons at once.
-    let setup = began.elapsed().as_millis();
+    // EVERYTHING ABOVE IS SETUP, and none of it depends on the profile - which is what
+    // de-x8ms.1 built this shape for. Read off here so a before and after can be compared on
+    // the search rather than on a total that moved for two reasons at once.
+    let shared_setup = began.elapsed().as_millis();
+
+    work.iter()
+        .enumerate()
+        .map(|(index, unseen)| {
+            symbolic_forward_one(
+                graph,
+                start,
+                world,
+                &vars,
+                &mut compiler,
+                &seed,
+                unseen,
+                if index == 0 { shared_setup } else { 0 },
+            )
+        })
+        .collect()
+}
+
+/// One profile of the symbolic forward search, against a manager the caller built.
+#[allow(clippy::too_many_arguments)]
+fn symbolic_forward_one(
+    graph: &LookAheadGraph,
+    start: DialogueNodeId,
+    world: &dyn lookahead_engine::world::world::ILookAheadWorld,
+    vars: &DataVars,
+    compiler: &mut GuardCompiler,
+    seed: &oxidd::bdd::BDDFunction,
+    unseen: &HashSet<DialogueNodeId>,
+    setup: u128,
+) -> Cells {
+    let began = std::time::Instant::now();
     let quarry: HashSet<DialogueNodeId> = unseen.clone();
     let allowance = memory();
     let every = progress_every();
@@ -1571,7 +1674,7 @@ fn symbolic_forward(
     };
 
     let found = Reachability::explore_within(
-        graph, start, &seed, &mut compiler, world, COUNTER_CAP as u32, &sym_budget,
+        graph, start, seed, compiler, world, COUNTER_CAP as u32, &sym_budget,
     );
     let stats = found.stats();
 
@@ -1609,7 +1712,7 @@ fn symbolic_forward(
     // second.
     Cells::of(
         verdict,
-        began.elapsed().as_millis(),
+        setup + began.elapsed().as_millis(),
         setup,
         &[vars.node_count(), stats.diagram_nodes],
     )
@@ -1625,26 +1728,59 @@ fn symbolic_forward(
 ///
 /// ITS OWN MANAGER, from the same allowance and the same trimmed layout as the symbolic
 /// forward column, so the two symbolic columns differ in direction and in nothing else.
-fn symbolic_backward(
+/// The backward search over EVERY profile of one group, on one manager. See
+/// `forward_backward_all` for why the loop is inside. de-x8ms.1.
+fn symbolic_backward_all(
     graph: &LookAheadGraph,
     start: DialogueNodeId,
     world: &dyn lookahead_engine::world::world::ILookAheadWorld,
     symbols: &StateSymbols,
-    unseen: &HashSet<DialogueNodeId>,
-) -> Cells {
+    work: &[HashSet<DialogueNodeId>],
+) -> Vec<Cells> {
     let began = std::time::Instant::now();
 
     let layout = DataLayout::for_group(graph, world, COUNTER_CAP);
     let Some(vars) = DataVars::try_new(&layout, symbols, budget()) else {
-        return Cells::absent(NOT_MEASURED, Engine::Backward);
+        return work.iter().map(|_| Cells::absent(NOT_MEASURED, Engine::Backward)).collect();
     };
     let mut compiler = GuardCompiler::new(&vars)
         .with_world(world)
         .with_constant_clock(DataLayout::group_passes_time(graph));
 
     let seed = seed_of(graph, world, &vars).expect("room for a seed");
-    // See the same reading in `symbolic_forward`: everything above is profile-independent.
-    let setup = began.elapsed().as_millis();
+    // See the same reading in `symbolic_forward_all`: everything above is profile-independent.
+    let shared_setup = began.elapsed().as_millis();
+
+    work.iter()
+        .enumerate()
+        .map(|(index, unseen)| {
+            symbolic_backward_one(
+                graph,
+                start,
+                world,
+                &vars,
+                &mut compiler,
+                &seed,
+                unseen,
+                if index == 0 { shared_setup } else { 0 },
+            )
+        })
+        .collect()
+}
+
+/// One profile of the backward search, against a manager the caller built.
+#[allow(clippy::too_many_arguments)]
+fn symbolic_backward_one(
+    graph: &LookAheadGraph,
+    start: DialogueNodeId,
+    world: &dyn lookahead_engine::world::world::ILookAheadWorld,
+    vars: &DataVars,
+    compiler: &mut GuardCompiler,
+    seed: &oxidd::bdd::BDDFunction,
+    unseen: &HashSet<DialogueNodeId>,
+    setup: u128,
+) -> Cells {
+    let began = std::time::Instant::now();
     let novelty = |id: DialogueNodeId| {
         if unseen.contains(&id) { Novelty::UnseenAnyGame } else { Novelty::SeenThisGame }
     };
@@ -1664,8 +1800,8 @@ fn symbolic_backward(
         graph,
         start,
         StartBranch::Either,
-        &seed,
-        &mut compiler,
+        seed,
+        compiler,
         world,
         COUNTER_CAP as u32,
         &novelty,
@@ -1720,7 +1856,7 @@ fn symbolic_backward(
     // for this engine, and a row that asked about one of hundreds is its best.
     Cells::of(
         verdict,
-        began.elapsed().as_millis(),
+        setup + began.elapsed().as_millis(),
         setup,
         &[vars.node_count(), answer.targets_asked, answer.candidates],
     )
@@ -2000,6 +2136,16 @@ fn main() {
         };
         let symbols = graph.symbols().clone();
 
+        // EVERY PROFILE'S QUARRY, RESOLVED BEFORE ANY ENGINE STARTS, which is what lets the
+        // engines loop over the profiles instead of the other way round. de-x8ms.1: the setup
+        // an engine builds is profile-independent and is most of what a row costs, so the
+        // profiles have to be known before the manager is built rather than discovered one at
+        // a time inside it.
+        //
+        // THE SKIPPED PROFILES ARE PRINTED HERE AND LEFT OUT OF THE LIST, exactly as they
+        // were when this was one loop: a skipped row is still a row, with the rule that
+        // skipped it in its verdict columns, and it costs no engine anything.
+        let mut work: Vec<(Profile, HashSet<DialogueNodeId>)> = Vec::new();
         for profile in profiles() {
             // BUILT BEFORE ANYTHING IS SPENT, because for an unreachable profile this is
             // also where the run learns there is no question to ask in this group.
@@ -2083,40 +2229,64 @@ fn main() {
                 continue;
             }
 
-            // EACH ENGINE ON A THREAD OF ITS OWN, which is the one thing this file was not
-            // doing and six other measurements were - de-w0rw. The 6 GB run of 2026-09-06
-            // lost five of sixty rows to `thread 'main' has overflowed its stack`, and the
-            // thread it names is the process's own.
-            //
-            // WHAT MAKES IT THE FIX rather than a bigger stack, measured on de-fpax: what
-            // accumulates is BUILDING A SECOND MANAGER ON A THREAD THAT HAS ALREADY BUILT
-            // ONE, and the third overflows - which is why the deaths were always a third
-            // row. A run here builds a manager per engine per profile per conversation, all
-            // on one thread; a thread per engine means one manager per thread, which is the
-            // arrangement that did not fail in twenty runs where the main thread failed in
-            // eight of twenty. A half-gigabyte stack only moved the rate.
-            //
-            // THE HELPER'S CONSTRAINT IS ALREADY MET: each of these builds its layout, its
-            // manager, its compiled guards and its seed itself, and hands back `Cells` -
-            // strings - so nothing borrowed from a manager crosses the boundary.
-            let measured: Vec<String> = engines
-                .iter()
-                .flat_map(|engine| {
-                    isolated::on_its_own_thread(|| match engine {
-                        Engine::Forward => {
-                            symbolic_forward(&graph, start, &world, &symbols, &unseen).0
-                        }
-                        Engine::Backward => {
-                            symbolic_backward(&graph, start, &world, &symbols, &unseen).0
-                        }
-                        Engine::InGame
-                        | Engine::NoLimit
-                        | Engine::BackwardInGame
-                        | Engine::BackwardNoLimit => {
-                            forward_backward(&graph, start, &world, &symbols, &unseen, *engine).0
-                        }
-                    })
+            work.push((profile, unseen));
+        }
+
+        if work.is_empty() {
+            continue;
+        }
+
+        // EACH ENGINE ON A THREAD OF ITS OWN, which is the one thing this file was not
+        // doing and six other measurements were - de-w0rw. The 6 GB run of 2026-09-06
+        // lost five of sixty rows to `thread 'main' has overflowed its stack`, and the
+        // thread it names is the process's own.
+        //
+        // WHAT MAKES IT THE FIX rather than a bigger stack, measured on de-fpax: what
+        // accumulates is BUILDING A SECOND MANAGER ON A THREAD THAT HAS ALREADY BUILT
+        // ONE, and the third overflows - which is why the deaths were always a third
+        // row. A thread per engine means ONE MANAGER PER THREAD, which is the arrangement
+        // that did not fail in twenty runs where the main thread failed in eight of twenty.
+        // A half-gigabyte stack only moved the rate.
+        //
+        // AND NOW EVERY PROFILE OF THE GROUP RUNS ON THAT ONE THREAD AND THAT ONE MANAGER -
+        // de-x8ms.1. The invariant is unchanged, because what overflows is building a second
+        // manager rather than running a second search; what changes is that the setup is
+        // built once per engine per group instead of once per engine per row, which the
+        // whole-game run of 2026-09-09 measured at 64.4 per cent of all its engine time.
+        //
+        // THE HELPER'S CONSTRAINT IS STILL MET: each of these builds its layout, its
+        // manager, its compiled guards and its seed itself, and hands back `Cells` -
+        // strings - so nothing borrowed from a manager crosses the boundary.
+        let quarries: Vec<HashSet<DialogueNodeId>> =
+            work.iter().map(|(_, unseen)| unseen.clone()).collect();
+        let per_engine: Vec<Vec<Cells>> = engines
+            .iter()
+            .map(|engine| {
+                isolated::on_its_own_thread(|| match engine {
+                    Engine::Forward => {
+                        symbolic_forward_all(&graph, start, &world, &symbols, &quarries)
+                    }
+                    Engine::Backward => {
+                        symbolic_backward_all(&graph, start, &world, &symbols, &quarries)
+                    }
+                    Engine::InGame
+                    | Engine::NoLimit
+                    | Engine::BackwardInGame
+                    | Engine::BackwardNoLimit => {
+                        forward_backward_all(&graph, start, &world, &symbols, &quarries, *engine)
+                    }
                 })
+            })
+            .collect();
+
+        // TRANSPOSED BACK INTO ROWS, because the engines answered profile-major and a row is
+        // one profile across every engine. The order within each engine's answers is the
+        // order of `work`, which is the order the profiles are printed in - so the row a
+        // reader sees is assembled from the same index in every column.
+        for (index, (profile, unseen)) in work.iter().enumerate() {
+            let measured: Vec<String> = per_engine
+                .iter()
+                .flat_map(|answers| answers[index].0.clone())
                 .collect();
 
             // A `found` ON AN UNREACHABLE PROFILE IS IMPOSSIBLE, so it is reported rather
@@ -2129,17 +2299,17 @@ fn main() {
             // taken under the same world the row is being measured under. A census from one
             // scenario read into a run of another would build every profile from the wrong
             // entries, and this is the only place that would show.
-            if matches!(profile, Profile::DeepestUnreachable(_)) {
-                if measured.iter().any(|cell| cell == "found") {
-                    eprintln!(
-                        "CONTRADICTION: {conversation} {} came back 'found', which cannot \
-                         happen - every entry in this set was proved unreachable by the \
-                         census. Either the census is wrong or the search is. The likeliest \
-                         cause is a CENSUS_FILE taken under a different world from the one \
-                         this row was measured under; nothing checks that.",
-                        profile.label(),
-                    );
-                }
+            if matches!(profile, Profile::DeepestUnreachable(_))
+                && measured.iter().any(|cell| cell == "found")
+            {
+                eprintln!(
+                    "CONTRADICTION: {conversation} {} came back 'found', which cannot \
+                     happen - every entry in this set was proved unreachable by the \
+                     census. Either the census is wrong or the search is. The likeliest \
+                     cause is a CENSUS_FILE taken under a different world from the one \
+                     this row was measured under; nothing checks that.",
+                    profile.label(),
+                );
             }
 
             println!(
