@@ -48,7 +48,9 @@ Two of them take an argument, and it selects a stage rather than a setting. `lay
 takes `groups` (the default), which counts the slot classes per group, or `slots`, which
 lists one group's slots so the classifier behind the counts can be read rather than trusted.
 `dominance_share` takes `rows` (the default), `menu`, `all` for the whole game, or `verify`,
-which re-derives its dominator relation by deleting entries and comparing.
+which re-derives its dominator relation by deleting entries and comparing. `candidate_recurrence`
+takes `links` (the default), where a menu's options are one node's own links, or `deepest`,
+where they come from the adversarial profile - and the two disagree on purpose.
 
 ## Where a run's results are
 
