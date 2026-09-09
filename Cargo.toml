@@ -76,6 +76,10 @@ path = "measurements/guard_stack.rs"
 name = "manager_memory"
 path = "measurements/manager_memory.rs"
 
+[[example]]
+name = "menu_matrix"
+path = "measurements/menu_matrix.rs"
+
 # Two arms of one question behind one `main`, picked by argument, because the arm that
 # fails takes the process with it - see the note there.
 [[example]]

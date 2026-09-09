@@ -208,8 +208,8 @@ def folders_newest_first():
     return sorted(folders, key=lambda p: p.stat().st_mtime, reverse=True)
 
 
-def build_measurement(quiet=False):
-    """Builds the measurement once and returns the binary, or stops the run.
+def build_measurement(example, quiet=False):
+    """Builds `example` once and returns its binary, or stops the run.
 
     BUILT ONCE, UP FRONT, and then called DIRECTLY rather than through `cargo run`. Letting
     each row build would put a compile inside the timing of whichever row happened to run
@@ -223,14 +223,14 @@ def build_measurement(quiet=False):
     folder as hundreds of findings.
     """
     if not quiet:
-        print("building...")
+        print(f"building {example}...")
     subprocess.run(
         [
             "cargo",
             "build",
             "--release",
             "--example",
-            "performance_matrix",
+            example,
             "--manifest-path",
             str(ROOT / "Cargo.toml"),
         ],
@@ -239,7 +239,7 @@ def build_measurement(quiet=False):
     )
 
     target = Path(env("CARGO_TARGET_DIR", foreign=True) or (ROOT / "target"))
-    binary = target / "release" / "examples" / "performance_matrix"
+    binary = target / "release" / "examples" / example
     if not os.access(binary, os.X_OK):
         binary = binary.with_suffix(".exe")
     if not os.access(binary, os.X_OK):

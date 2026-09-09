@@ -147,7 +147,7 @@ class Census:
         self.groups_dir = out / "groups"
         self.groups_dir.mkdir(parents=True, exist_ok=True)
         self.rows = out / "census.tsv"
-        self.binary = build_measurement()
+        self.binary = build_measurement("performance_matrix")
         self.started = time.monotonic()
         self.done = 0
         self.measured = 0
