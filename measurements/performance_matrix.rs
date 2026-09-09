@@ -777,6 +777,24 @@ impl Engine {
             // read as one comparison rather than two tables. `by` can only say `Backwards`,
             // `Partly` or `Gated` there - never `Forwards`, since no slice ran - and that is
             // a fact worth having in the column rather than one to be remembered.
+            //
+            // `nodes` IS COMPARABLE ON AN ARM WITH NO SLICE AND INDICATIVE ON ONE WITH,
+            // and that distinction is de-12wr.3 rather than a caveat added for safety.
+            // Measured 2026-09-09, the same binary over the same twelve rows twice: the
+            // backward-only arm returns the same count to the node - 123,961 and 134,656 and
+            // 31,035 - and the `ingame` arm moves, 154,909 against 160,876 on one row. The
+            // difference is the FORWARD SLICE, which is given fifty milliseconds and does as
+            // much as fifty milliseconds of that machine buys. Its verdict, its `by` and its
+            // `asked` are settled either way; what varies is the work left in the manager
+            // behind the answer. So a `nodes` figure from a slice-bearing arm compares with
+            // another only to within that, and two folders differing there differ about the
+            // machine.
+            //
+            // IT USED TO MOVE ON EVERY ARM, for a reason that was not inherent and is gone:
+            // `LookAheadGraph` yielded its entries in hash-map order, which is seeded per
+            // process, so the backward work followed a different order in every run - three
+            // processes gave 126,106, 126,588 and 126,148 on one row, and one of them
+            // overflowed a stack the others did not. `graph.nodes()` is ordered now.
             Engine::InGame
             | Engine::NoLimit
             | Engine::BackwardInGame

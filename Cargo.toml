@@ -181,6 +181,10 @@ name = "row_overhead"
 path = "measurements/row_overhead.rs"
 
 [[example]]
+name = "nodes_repeat"
+path = "measurements/nodes_repeat.rs"
+
+[[example]]
 name = "relaxed_settle"
 path = "measurements/relaxed_settle.rs"
 

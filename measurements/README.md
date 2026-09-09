@@ -146,6 +146,28 @@ MEASURED ON THE HEAVY GROUPS, and the gap is the point: on 631 the in-game colum
 `not-there` in 80 ms holding 176,276 nodes where the unlimited one takes 22.4 seconds and
 30.1 million. Both agree; they disagree wildly about what it costs to be sure.
 
+### `nodes` compares on a column with no forward slice, and is indicative on one with
+
+The verdicts, `by` and `asked` are settled facts about the search and compare between runs.
+`ms` and `setup` are clocks and nobody reads them as anything else. `nodes` sits between the
+two and looks like the first, so it is worth saying which it is.
+
+Measured 2026-09-09 (de-12wr.3): the same binary over the same twelve rows, twice. The
+backward-only columns return the same count to the node - 123,961 and 134,656 and 31,035 -
+and the `ingame` column moves, 154,909 against 160,876 on one row. The difference is the
+FORWARD SLICE. It is given fifty milliseconds and does as much as fifty milliseconds of that
+machine buys, so the work left behind the answer varies while the answer does not.
+
+So two folders whose `ingame_nodes` differ differ about the machine, and two whose
+`bwd_nodes` differ differ about the search. Only the second is a finding.
+
+It used to move on every column, for a reason that was not inherent: the group graph yielded
+its entries in hash-map order, seeded per process, so the backward work followed a different
+order in every run - 126,106, 126,588 and 126,148 on one row across three processes, one of
+which overflowed a stack the others did not. `LookAheadGraph::nodes()` is ordered now, and
+**a run from before that change cannot have its `nodes` column compared with one after it**,
+on any column.
+
 **READING AN OLDER RUN, and the names have moved three times.**
 
 | the columns say | what they were |

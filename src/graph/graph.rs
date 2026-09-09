@@ -11,6 +11,28 @@ use crate::graph::node::LookAheadNode;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LookAheadGraph {
     nodes: HashMap<DialogueNodeId, LookAheadNode>,
+    /// The order [`Self::nodes`] yields entries in: by conversation, then by entry.
+    ///
+    /// ## Why a graph carries a list of its own keys
+    ///
+    /// BECAUSE A HASH MAP'S ORDER IS A FACT ABOUT THE PROCESS, and several things built by
+    /// sweeping this graph inherit it - the layout's threshold narrowing, the SCC
+    /// decomposition, the order guards are compiled and therefore the order diagram nodes
+    /// are created. None of that changes an ANSWER, and measuring says so: three processes
+    /// asked the same question of conversation 1030 returned the same verdict, the same
+    /// `by` and the same `asked` every time. What moved was the work done to get there -
+    /// 126,106, 126,588 and 126,148 diagram nodes - and, once, how deep the recursion went:
+    /// the same code overflowed the main thread's stack in one process and not the next.
+    ///
+    /// So the cost of leaving it was a search whose cost is not reproducible, a `nodes`
+    /// column that cannot be compared between runs, and a stack depth that varies for no
+    /// reason anybody can see. See de-12wr.3 and `measurements/nodes_repeat.rs`, which is
+    /// the experiment.
+    ///
+    /// A SORTED KEY LIST RATHER THAN A `BTreeMap`, because `get` is the hot operation here
+    /// and iteration is not: the sweeps above happen once per group, and lookups happen
+    /// per link followed. This keeps both at what they were.
+    order: Vec<DialogueNodeId>,
     symbols: StateSymbols,
 }
 
@@ -34,7 +56,13 @@ impl LookAheadGraph {
             }
             map.insert(node.id, node);
         }
-        Ok(Self { nodes: map, symbols })
+
+        // SORTED ONCE, HERE, so every sweep of the graph sees the same order in every
+        // process. See the field for what a hash map's order was costing.
+        let mut order: Vec<DialogueNodeId> = map.keys().copied().collect();
+        order.sort_unstable_by_key(|id| (id.conversation_id, id.entry_id));
+
+        Ok(Self { nodes: map, order, symbols })
     }
 
     pub fn symbols(&self) -> &StateSymbols {
@@ -45,8 +73,13 @@ impl LookAheadGraph {
         self.nodes.len()
     }
 
+    /// Every entry, by conversation and then by entry id.
+    ///
+    /// THE ORDER IS PART OF THE CONTRACT, not an accident of the storage - see
+    /// [`Self::order`]. A caller that sweeps this to build something the search then follows
+    /// can rely on two processes building the same thing.
     pub fn nodes(&self) -> impl Iterator<Item = &LookAheadNode> {
-        self.nodes.values()
+        self.order.iter().filter_map(|id| self.nodes.get(id))
     }
 
     pub fn get(&self, id: DialogueNodeId) -> Option<&LookAheadNode> {
@@ -277,5 +310,58 @@ mod best_linked_class_tests {
             .build();
 
         assert_eq!(graph.best_linked_class(node(0), classes(&[2], &[])), None);
+    }
+}
+
+#[cfg(test)]
+mod iteration_order_tests {
+    use super::*;
+    use crate::test_graph::{Entry, GraphBuilder};
+
+    /// Entries come back by conversation and then by entry id, whatever order they arrived.
+    ///
+    /// ## What this is protecting
+    ///
+    /// A search whose COST depends on the process it runs in. `nodes()` used to hand back a
+    /// `HashMap`'s values, and the standard hasher is seeded per process - so the layout's
+    /// threshold narrowing, the SCC decomposition and the order guards were compiled all
+    /// followed a different order in every run. de-12wr.3 measured what that was worth:
+    /// three processes asked the same question of conversation 1030 and all three answered
+    /// it identically, having built 126,106, 126,588 and 126,148 diagram nodes to do it -
+    /// and one of the three overflowed a stack the other two did not.
+    ///
+    /// The answers were never wrong, which is exactly why this needs a test rather than
+    /// being noticed: nothing failed, the matrix's `nodes` column simply could not be
+    /// compared between runs and nobody could say why.
+    #[test]
+    fn entries_come_back_in_a_stable_order() {
+        let shuffled = GraphBuilder::new()
+            .add(Entry::new(7))
+            .add(Entry::new(1))
+            .add(Entry::new(30))
+            .add(Entry::new(2))
+            .add(Entry::new(4))
+            .build();
+
+        let order: Vec<i32> = shuffled.nodes().map(|node| node.id.entry_id).collect();
+        assert_eq!(order, vec![1, 2, 4, 7, 30], "entries should come back by id");
+
+        // NUMERIC, NOT LEXICOGRAPHIC, which is what the 30 is there to catch: sorted as text
+        // it lands between 2 and 4, and a run ordered that way would be perfectly stable and
+        // perfectly confusing to read against an id.
+        assert_eq!(shuffled.nodes().count(), shuffled.count());
+    }
+
+    /// The same entries in a different arrival order build the same iteration order.
+    #[test]
+    fn the_order_does_not_depend_on_how_the_graph_was_built() {
+        let forwards =
+            GraphBuilder::new().add(Entry::new(1)).add(Entry::new(2)).add(Entry::new(3)).build();
+        let backwards =
+            GraphBuilder::new().add(Entry::new(3)).add(Entry::new(2)).add(Entry::new(1)).build();
+
+        let one: Vec<DialogueNodeId> = forwards.nodes().map(|node| node.id).collect();
+        let other: Vec<DialogueNodeId> = backwards.nodes().map(|node| node.id).collect();
+        assert_eq!(one, other);
     }
 }
