@@ -29,11 +29,34 @@ namespace GlobalConversationTracker.LookAhead.Tests
         {
             LookAheadRequest request = Request();
             request.TimeBudgetMs = 250;
+            request.MenuTimeBudgetMs = 3000;
             request.MemoryBudgetMb = 64;
 
             JsonElement sent = Sent(request);
             Assert.Equal(250, sent.GetProperty("time_budget_ms").GetInt32());
+            Assert.Equal(3000, sent.GetProperty("menu_time_budget_ms").GetInt32());
             Assert.Equal(64, sent.GetProperty("memory_budget_mb").GetInt32());
+        }
+
+        /// <summary>
+        /// The menu wall is its own number, not the per-option one repeated.
+        /// </summary>
+        /// <remarks>
+        /// The mistake worth ruling out is the two fields being written from one value,
+        /// which would read as working: a menu whose wall happened to equal its per-option
+        /// budget would still draw, just with every option after the first left unanswered.
+        /// So they are set to different numbers and required to arrive apart.
+        /// </remarks>
+        [Fact]
+        public void TheMenuWallIsNotThePerOptionBudget()
+        {
+            LookAheadRequest request = Request();
+            request.TimeBudgetMs = 1000;
+            request.MenuTimeBudgetMs = 3000;
+
+            JsonElement sent = Sent(request);
+            Assert.Equal(1000, sent.GetProperty("time_budget_ms").GetInt32());
+            Assert.Equal(3000, sent.GetProperty("menu_time_budget_ms").GetInt32());
         }
 
         /// <summary>
@@ -51,6 +74,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
             JsonElement sent = Sent(Request());
 
             Assert.Equal(0, sent.GetProperty("time_budget_ms").GetInt32());
+            Assert.Equal(0, sent.GetProperty("menu_time_budget_ms").GetInt32());
             Assert.Equal(0, sent.GetProperty("memory_budget_mb").GetInt32());
         }
 
@@ -65,10 +89,12 @@ namespace GlobalConversationTracker.LookAhead.Tests
         {
             LookAheadRequest request = Request();
             request.TimeBudgetMs = -1;
+            request.MenuTimeBudgetMs = -1;
             request.MemoryBudgetMb = -1;
 
             JsonElement sent = Sent(request);
             Assert.Equal(0, sent.GetProperty("time_budget_ms").GetInt32());
+            Assert.Equal(0, sent.GetProperty("menu_time_budget_ms").GetInt32());
             Assert.Equal(0, sent.GetProperty("memory_budget_mb").GetInt32());
         }
     }

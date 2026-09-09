@@ -143,6 +143,7 @@ namespace GlobalConversationTracker
         /// <summary>Test-only, set by the probe and by no configuration setting.</summary>
         private static int _stateBudget;
         private static int _timeBudgetMs;
+        private static int _menuTimeBudgetMs;
         private static int _memoryBudgetMb;
         private static bool _enabled = true;
         private static IGlobalStateLog? _log;
@@ -352,6 +353,10 @@ namespace GlobalConversationTracker
         /// <param name="timeBudgetMs">
         /// The longest one option's crawl may run for, in milliseconds; 0 for no limit.
         /// </param>
+        /// <param name="menuTimeBudgetMs">
+        /// The longest the whole menu may run for, in milliseconds; 0 for no limit. Bounds
+        /// the SUM the per-option budget above only bounds a term of - see de-dt75.3.
+        /// </param>
         /// <param name="memoryBudgetMb">
         /// The most memory one option's crawl may hold, in megabytes; 0 for the engine's
         /// own default. The limit that normally decides - see de-e23q.
@@ -373,6 +378,7 @@ namespace GlobalConversationTracker
             bool markUncertain,
             int stateBudget,
             int timeBudgetMs,
+            int menuTimeBudgetMs,
             int memoryBudgetMb,
             bool enabled,
             LookAheadDiagnosticsWriter? diagnostics = null)
@@ -400,7 +406,9 @@ namespace GlobalConversationTracker
             _unseenThisGameHtml = Validate(unseenThisGameHtml, nameof(unseenThisGameHtml));
             _uncertainHtml = Validate(uncertainHtml, nameof(uncertainHtml));
             _markUncertain = markUncertain;
-            Configure(enabled, stateBudget, timeBudgetMs, memoryBudgetMb, diagnostics);
+            Configure(
+                enabled, stateBudget, timeBudgetMs, menuTimeBudgetMs, memoryBudgetMb,
+                diagnostics);
 
             // Started now and finished elsewhere, so that neither the main menu nor the
             // first conversation waits for a process launch and a fifteen-megabyte parse.
@@ -446,6 +454,12 @@ namespace GlobalConversationTracker
         /// <param name="enabled">Whether to mark options at all.</param>
         /// <param name="stateBudget">The search-state budget, or 0 for none.</param>
         /// <param name="timeBudgetMs">The time budget in milliseconds, or 0 for none.</param>
+        /// <param name="menuTimeBudgetMs">
+        /// The whole menu's time budget in milliseconds, or 0 for none. NAMED BY EVERY
+        /// CALLER for the reason the recovery limit below is replaced every time: a suite
+        /// left with the last one's wall is measuring a policy it never asked for, and a
+        /// wall is exactly the kind of thing that changes WHICH options give up.
+        /// </param>
         /// <param name="memoryBudgetMb">
         /// The memory budget in megabytes, or 0 for the engine's own default.
         /// </param>
@@ -468,6 +482,7 @@ namespace GlobalConversationTracker
             bool enabled,
             int stateBudget,
             int timeBudgetMs,
+            int menuTimeBudgetMs,
             int memoryBudgetMb,
             LookAheadDiagnosticsWriter? diagnostics,
             int recoveryLimit = -1)
@@ -477,6 +492,7 @@ namespace GlobalConversationTracker
             _enabled = enabled;
             _stateBudget = stateBudget;
             _timeBudgetMs = timeBudgetMs;
+            _menuTimeBudgetMs = menuTimeBudgetMs;
             _memoryBudgetMb = memoryBudgetMb;
             _diagnostics = diagnostics != null && diagnostics.Enabled ? diagnostics : null;
 
@@ -611,6 +627,7 @@ namespace GlobalConversationTracker
                 // three options, because the engine never heard about it.
                 request.StateBudget = _stateBudget;
                 request.TimeBudgetMs = _timeBudgetMs;
+                request.MenuTimeBudgetMs = _menuTimeBudgetMs;
                 request.MemoryBudgetMb = _memoryBudgetMb;
 
                 foreach (DialogueNodeId start in starts)

@@ -76,6 +76,28 @@ namespace GlobalConversationTracker.Engine
         public int TimeBudgetMs { get; set; }
 
         /// <summary>
+        /// The longest the WHOLE MENU may run for, in milliseconds; 0 for no limit.
+        /// </summary>
+        /// <remarks>
+        /// <para>ONE OPTION'S BUDGET DOES NOT BOUND A MENU. <see cref="TimeBudgetMs"/> bounds
+        /// one option and this request is a whole menu, so what the player waits for is the
+        /// sum - and a rolled check is two searches rather than one, so a wide menu's worst
+        /// case is the per-option dial times twice its option count. Until de-dt75.3 nothing
+        /// bounded that sum, and the only thing further out was the host's read deadline,
+        /// which is not a budget: crossing it kills the engine mid-conversation.</para>
+        ///
+        /// <para>WHAT AN OPTION THE WALL STOPS COMES BACK AS. An ordinary gave-up answer, so
+        /// the mod marks it uncertain rather than leaving it out - the same marker an option
+        /// whose own budget ran out gets, and the same meaning: a search ran and did not
+        /// finish. The options that lose are the ones at the BOTTOM of the menu, since the
+        /// engine answers the starts in the order they are sent.</para>
+        ///
+        /// <para>Zero means no limit, like <see cref="TimeBudgetMs"/>'s zero and unlike
+        /// <see cref="MemoryBudgetMb"/>'s.</para>
+        /// </remarks>
+        public int MenuTimeBudgetMs { get; set; }
+
+        /// <summary>
         /// The most memory one option's search may hold, in MEGABYTES; 0 for the default.
         /// </summary>
         /// <remarks>
@@ -125,6 +147,7 @@ namespace GlobalConversationTracker.Engine
 
                 writer.WriteNumber("state_budget", Math.Max(0, StateBudget));
                 writer.WriteNumber("time_budget_ms", Math.Max(0, TimeBudgetMs));
+                writer.WriteNumber("menu_time_budget_ms", Math.Max(0, MenuTimeBudgetMs));
                 writer.WriteNumber("memory_budget_mb", Math.Max(0, MemoryBudgetMb));
 
                 writer.WritePropertyName("world");

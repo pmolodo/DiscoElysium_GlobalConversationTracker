@@ -623,10 +623,13 @@ namespace GlobalConversationTracker.TestProbe
 
             bool enabled = BoolMember(root, "enabled")
                 ?? throw new ArgumentException("No enabled setting was given.");
-            // Absent means no limit for both, so an older harness that does not send
-            // them keeps working and gets the behaviour it had.
+            // Absent means no limit for all three, so a harness that does not send one gets
+            // the behaviour it would have got without it. The menu wall in particular: a
+            // suite starves a crawl through the memory budget, and a wall around the whole
+            // menu changes WHICH options give up rather than making one give up sooner.
             int stateBudget = NumberMember(root, "stateBudget") ?? 0;
             int timeBudgetMs = NumberMember(root, "timeBudgetMs") ?? 0;
+            int menuTimeBudgetMs = NumberMember(root, "menuTimeBudgetMs") ?? 0;
             // Absent means the engine's own default rather than no limit, which is what
             // zero means for this one - see de-e23q. A suite that does not mention a memory
             // budget gets the shipped behaviour, which is what not mentioning it means.
@@ -652,8 +655,8 @@ namespace GlobalConversationTracker.TestProbe
                 "PrepareLookAheadSuite",
                 new object[]
                 {
-                    sourcePath, enabled, stateBudget, timeBudgetMs, memoryBudgetMb,
-                    logBudgetExceeded, keepStatistics, recoveryLimit,
+                    sourcePath, enabled, stateBudget, timeBudgetMs, menuTimeBudgetMs,
+                    memoryBudgetMb, logBudgetExceeded, keepStatistics, recoveryLimit,
                 });
             ProbeLog.Write(
                 "look-ahead-suite-prepared",
@@ -661,6 +664,7 @@ namespace GlobalConversationTracker.TestProbe
                 "enabled", enabled,
                 "stateBudget", stateBudget,
                 "timeBudgetMs", timeBudgetMs,
+                "menuTimeBudgetMs", menuTimeBudgetMs,
                 "memoryBudgetMb", memoryBudgetMb,
                 "logBudgetExceeded", logBudgetExceeded,
                 "keepStatistics", keepStatistics,

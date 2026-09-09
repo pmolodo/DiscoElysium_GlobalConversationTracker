@@ -22,6 +22,14 @@ use lookahead_engine::index::{build_group_graph, read_index};
 
 mod common;
 
+// THE MEASUREMENTS' ADVERSARIAL PROFILE, borrowed rather than restated. A menu whose starts
+// have nothing better beyond them is refused by `bridge::class_worth_hunting` before a
+// diagram is touched, so it answers in no time at all and a wall put around it binds
+// nothing - which reads exactly like a wall that works. That module's own header records
+// the same trap catching `menu_residue`, and it is the only thing here that avoids it.
+#[path = "../measurements/menu_profile.rs"]
+mod menu_profile;
+
 /// Small enough to search exhaustively, so the comparison is about the crossing rather
 /// than about a budget running out at different moments.
 const CHECKABLE: [i32; 3] = [1123, 484, 1066];
@@ -165,6 +173,7 @@ fn an_answer_survives_the_crossing() {
             unseen_this_game: Default::default(),
             state_budget: 0,
             time_budget_ms: 0,
+            menu_time_budget_ms: 0,
             memory_budget_mb: 0,
             world: snapshot.clone(),
         };
@@ -203,4 +212,72 @@ fn an_answer_survives_the_crossing() {
     }
 
     assert!(compared > 0, "nothing was compared");
+}
+
+/// A menu that runs out of its wall still comes back as a whole menu.
+///
+/// ## What is being protected
+///
+/// de-dt75.3 put a wall around the whole request, and the failure it could produce is a
+/// half-drawn menu: options the wall stopped left out of the response entirely, so the mod
+/// has nothing to look up for them. Every start must still be answered - as "did not finish"
+/// where the wall ran out, which is a thing the mod already draws - because a missing answer
+/// and a gave-up answer mean opposite things to a player. See `bridge::answer_starts`.
+///
+/// ## Why one millisecond rather than a realistic figure
+///
+/// This is not a timing test. A wall of 1 ms cannot answer a group of this size on any
+/// machine, so what the number buys is a wall that certainly binds, and the assertions are
+/// about the SHAPE of what comes back rather than about how long anything took.
+#[test]
+fn a_menu_that_runs_out_of_its_wall_still_answers_every_option() {
+    let Some(path) = common::conversation_index() else { return };
+    let index = read_index(&path).expect("the index reads");
+
+    let conversation = RICH[0];
+    let (graph, _) = build_group_graph(&index, conversation).expect("the group builds");
+    let root = DialogueNodeId::new(conversation, 0);
+    let profile = menu_profile::MenuProfile::of(&graph, root, 10, 24)
+        .expect("the group is big enough to draw an adversarial menu from");
+
+    let starts: Vec<NodeRef> = profile.starts.iter().map(|id| NodeRef::from(*id)).collect();
+    assert!(starts.len() > 1, "the group is too small to run out of anything");
+
+    let request = LookAheadRequest {
+        conversation,
+        starts: starts.clone(),
+        unseen_any_game: profile.unseen.iter().map(|id| NodeRef::from(*id)).collect(),
+        unseen_this_game: Default::default(),
+        state_budget: 0,
+        time_budget_ms: 1000,
+        menu_time_budget_ms: 1,
+        memory_budget_mb: 0,
+        world: WorldSnapshot {
+            money: 500,
+            day_minutes: 12 * 60,
+            day_counter: 1,
+            ..Default::default()
+        },
+    };
+
+    let response = answer(&index, None, &request);
+    assert!(response.error.is_none(), "{:?}", response.error);
+
+    for start in &starts {
+        assert!(
+            response.answers.iter().any(|answered| answered.start == *start),
+            "conversation {conversation}: {start:?} was left out of the menu entirely",
+        );
+    }
+
+    // THE WALL ACTUALLY BOUND, which is what makes the assertion above worth making. An
+    // answer the wall refused before it began is the only one that reports no elapsed time
+    // at all, so that is what tells it apart from an option whose own search ran out.
+    let walled = response
+        .answers
+        .iter()
+        .filter(|answered| answered.stopped_by == "time" && answered.elapsed_ms == 0)
+        .count();
+    println!("{conversation}: {walled} of {} answers refused by the menu wall", starts.len());
+    assert!(walled > 0, "a wall of one millisecond stopped nothing, so nothing was tested");
 }

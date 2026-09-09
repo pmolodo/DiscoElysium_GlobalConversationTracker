@@ -93,6 +93,12 @@ namespace GlobalConversationTracker
         /// <param name="timeBudgetMs">
         /// The longest one option's crawl may run for, in milliseconds; 0 for no limit.
         /// </param>
+        /// <param name="menuTimeBudgetMs">
+        /// The longest the whole menu may run for, in milliseconds; 0 for no limit, which is
+        /// what a suite that says nothing about it asks for. A suite starves a crawl through
+        /// the memory budget, and a wall around the whole menu would change which options
+        /// gave up rather than making any single one give up sooner.
+        /// </param>
         /// <param name="memoryBudgetMb">
         /// The memory budget in megabytes, or 0 for the engine's own default.
         /// </param>
@@ -117,6 +123,7 @@ namespace GlobalConversationTracker
             bool enabled,
             int stateBudget,
             int timeBudgetMs,
+            int menuTimeBudgetMs,
             int memoryBudgetMb,
             bool logBudgetExceeded,
             bool keepStatistics,
@@ -132,6 +139,7 @@ namespace GlobalConversationTracker
                 enabled,
                 stateBudget,
                 timeBudgetMs,
+                menuTimeBudgetMs,
                 memoryBudgetMb,
                 new LookAheadDiagnosticsWriter(
                     store.DirectoryPath,
@@ -384,12 +392,40 @@ namespace GlobalConversationTracker
                 1000,
                 "The longest one option's look-ahead may run for, in milliseconds, before giving "
                 + "up and showing no asterisk. 0 means no time limit. Applies as well as "
-                + "LookAheadMemoryBudgetMb, whichever is reached first; a menu draws one of these "
-                + "per option, so a menu's worst case is this times the number of options. The "
-                + "default is well above anything measured - the worst crawl over the largest "
-                + "conversations in the game took about three quarters of a second, and almost "
-                + "every crawl is a small fraction of that - so it is a backstop for a slow "
-                + "machine rather than a limit that normally decides anything.");
+                + "LookAheadMemoryBudgetMb, whichever is reached first. A menu draws one of these "
+                + "per option, and a skill check draws two, so LookAheadMenuTimeBudgetMs bounds "
+                + "what the menu as a whole costs; lower that one to make a slow menu appear "
+                + "sooner, and this one to give any single option less. The default is well above "
+                + "anything measured - the worst crawl over the largest conversations in the game "
+                + "took about three quarters of a second, and almost every crawl is a small "
+                + "fraction of that - so it is a backstop for a slow machine rather than a limit "
+                + "that normally decides anything.");
+
+            // THE WALL AROUND THE WHOLE MENU, which the per-option dial above cannot be: a
+            // menu is the sum of its options and a check counts twice, so twelve options at
+            // the shipped thousand milliseconds arrives at a worst case near twenty-four
+            // seconds - under a host read deadline of thirty whose answer to being crossed
+            // is to kill the engine. de-dt75.3.
+            //
+            // THREE SECONDS BECAUSE THE MEASUREMENT SAYS SO, not as a round number.
+            // measurements/menu_wall.rs asks the six heaviest groups a deliberately
+            // adversarial menu - twenty-four starts, every one of them with unread text
+            // beyond it, and a cold engine - and the worst of them, conversation 368, came
+            // back in 2.05 seconds. So this sits above the worst menu anyone has measured
+            // and an order of magnitude below the deadline that kills, which is the gap it
+            // exists to hold open.
+            var lookAheadMenuTimeBudget = Config.Bind(
+                PerformanceSection,
+                "LookAheadMenuTimeBudgetMs",
+                3000,
+                "The longest a whole response menu's look-ahead may run for, in milliseconds, "
+                + "counting every option together. 0 means no limit. Options are searched in the "
+                + "order they are drawn, so when this runs out it is the ones at the BOTTOM of "
+                + "the menu that go unanswered - they are marked with MarkUncertainLookAhead, "
+                + "meaning the search did not finish rather than that nothing is reachable. The "
+                + "default is above the slowest menu measured in the game and well below the "
+                + "point where the engine would be given up on, so lower it only if a menu ever "
+                + "takes longer to appear than you are willing to wait.");
 
             // Both off by default and both write into the SaveGames folder, beside the
             // global state. Diagnostics for deciding whether the budget is set right.
@@ -510,6 +546,7 @@ namespace GlobalConversationTracker
                     // any more, and only a test ever sets one.
                     0,
                     lookAheadTimeBudget.Value,
+                    lookAheadMenuTimeBudget.Value,
                     lookAheadMemoryBudget.Value,
                     markLookAhead.Value,
                     new LookAheadDiagnosticsWriter(

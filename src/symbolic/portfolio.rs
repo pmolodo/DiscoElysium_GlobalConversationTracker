@@ -191,6 +191,32 @@ pub struct Budget {
     pub forget_dead: Option<Arc<LiveSlots>>,
 }
 
+impl Budget {
+    /// The same rations, held to `left` as well as to whatever they already said.
+    ///
+    /// ONLY [`Self::overall`] MOVES, and that is enough rather than an oversight: every
+    /// other clock here is already narrowed against it where it is spent. The slice takes
+    /// `forwards.min(overall)`, and the backward driver takes
+    /// `backwards.min(overall - elapsed)` and narrows each candidate again to what is left
+    /// of that. So one number binds them all, and narrowing the rest as well would restate
+    /// the same limit in three places for a reader to keep in step.
+    ///
+    /// `Duration::MAX` is the identity, which is what a caller with no wall of its own
+    /// passes.
+    pub fn within(&self, left: Duration) -> Self {
+        Self {
+            forwards: self.forwards,
+            overall: self.overall.min(left),
+            slice_memory: self.slice_memory,
+            slice_steps: self.slice_steps,
+            backwards: self.backwards,
+            each: self.each,
+            pruning: self.pruning,
+            forget_dead: self.forget_dead.clone(),
+        }
+    }
+}
+
 impl Default for Budget {
     fn default() -> Self {
         // A CANDIDATE GETS THE WHOLE BACKWARD ATTEMPT, so the wall is the only clock that

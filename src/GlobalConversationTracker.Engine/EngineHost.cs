@@ -75,8 +75,21 @@ namespace GlobalConversationTracker.Engine
         /// the request, which the engine enforces itself and reports as having stopped it;
         /// this is the answer to a child that will never answer at all, and it should be
         /// comfortably longer than anything legitimate so that it never fires on a slow
-        /// one. Thirty seconds is far past the largest budget a player can set and far
-        /// short of a session spent waiting.</para>
+        /// one.</para>
+        ///
+        /// <para>THE NUMBER IT HAS TO STAY ABOVE IS <c>LookAheadMenuTimeBudgetMs</c>, which
+        /// is what bounds a whole answer where the per-option budget bounds a term of it.
+        /// The wall ships at three seconds and the slowest menu measured is two, so this
+        /// sits an order of magnitude out - which is the gap it exists to hold, because the
+        /// two limits are different in kind. Crossing the wall costs the options at the
+        /// bottom of a menu their markers; crossing this KILLS THE ENGINE. See de-dt75.3 and
+        /// <c>measurements/menu_wall.rs</c>.</para>
+        ///
+        /// <para>DELIBERATELY NOT A CONFIGURATION SETTING, unlike the budgets it stands
+        /// behind. It is a liveness check rather than a preference: there is no value of it
+        /// a player would want that the menu wall does not express better, and one set below
+        /// the wall would turn a slow menu into a dead engine. A player who wants menus to
+        /// appear sooner lowers the wall.</para>
         ///
         /// <para>Settable so a test can prove the deadline fires without waiting thirty
         /// seconds for it.</para>

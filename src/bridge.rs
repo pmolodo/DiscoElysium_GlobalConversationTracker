@@ -607,6 +607,33 @@ pub struct LookAheadRequest {
     #[serde(default)]
     pub time_budget_ms: u64,
 
+    /// The longest the WHOLE MENU may run for in milliseconds; zero for no limit.
+    ///
+    /// ## Why one option's budget is not enough
+    ///
+    /// [`Self::time_budget_ms`] bounds one option and a request is a whole menu, so what a
+    /// player waits for is the SUM - and until de-dt75.3 nothing bounded the sum. The
+    /// per-option setting's own help text said as much: "a menu draws one of these per
+    /// option, so a menu's worst case is this times the number of options". A rolled check
+    /// is two searches rather than one, so the worst case is twice the option count times
+    /// the dial: about twenty seconds for a wide menu at the shipped thousand milliseconds.
+    ///
+    /// THE THING THAT WAS WAITING ON IT IS A RESPONSE MENU BEING DRAWN, and the host's read
+    /// deadline - thirty seconds, and not a budget: crossing it KILLS the engine - was the
+    /// only thing further out. The margin between a slow menu and a dead engine was about
+    /// one option.
+    ///
+    /// ## What it does to an option it cannot afford
+    ///
+    /// Nothing established, reported as an ordinary gave-up answer - so the mod draws the
+    /// UNCERTAIN marker, the same one an option whose own budget ran out gets, and for the
+    /// same reason: a search ran against it and did not finish, which is not the same claim
+    /// as "there is nothing down there". See de-pvq for why that distinction is drawn at all
+    /// and [`answer_starts`] for the arithmetic and for the ordering consequence, which is
+    /// real and is stated there rather than hidden.
+    #[serde(default)]
+    pub menu_time_budget_ms: u64,
+
     /// The most memory one option's search may hold, in MEGABYTES; zero for the default.
     ///
     /// MEGABYTES ON THE WIRE AND BYTES IN THE ENGINE, deliberately. This number is set by a
@@ -718,6 +745,21 @@ impl LookAheadRequest {
         }
     }
 
+    /// The longest the whole menu may take, or `Duration::MAX` where no limit was asked for.
+    ///
+    /// `Duration::MAX` RATHER THAN AN `Option`, because it is the identity of the one thing
+    /// this is ever used for - `min` against a per-option ration - so the no-limit case and
+    /// the ordinary one take the same line. An option would put a match at every use of it
+    /// to say "and otherwise, do nothing".
+    ///
+    /// See [`LookAheadRequest::menu_time_budget_ms`] for what the limit is FOR, and
+    /// [`answer_starts`] for how it is spent.
+    pub fn menu_budget(&self) -> std::time::Duration {
+        if self.menu_time_budget_ms == 0 {
+            return std::time::Duration::MAX;
+        }
+        std::time::Duration::from_millis(self.menu_time_budget_ms)
+    }
 }
 
 /// What one option scored.
@@ -1183,6 +1225,21 @@ where
 ///
 /// The caller owns the diagram side, so it also owns the de-fpax invariant: this must run
 /// on the thread that built `compiler`'s manager.
+///
+/// ## The menu's wall, and what it costs the options at the bottom
+///
+/// [`LookAheadRequest::menu_time_budget_ms`] bounds the LOOP, where
+/// [`LookAheadRequest::time_budget_ms`] bounds one turn of it. The arithmetic is de-cluo's,
+/// one level up: each option's ration is narrowed to what is left of the menu, so the parts
+/// are spent out of the whole rather than added to it, and the last option to get any time
+/// ends AT the wall rather than one option's budget past it.
+///
+/// THE OPTIONS THAT LOSE ARE THE ONES AT THE BOTTOM OF THE MENU, because `starts` arrives in
+/// the order the menu draws and this walks it in order. That is worth saying rather than
+/// hiding: under a wall that binds, the player gets a menu whose first options are answered
+/// and whose last ones say "did not finish". Answering some of them well beats answering all
+/// of them not at all, which is the alternative - the host's read deadline is not a budget,
+/// and crossing it kills the engine mid-conversation.
 #[allow(clippy::too_many_arguments)]
 pub fn answer_starts<'a, F>(
     graph: &LookAheadGraph,
@@ -1198,9 +1255,23 @@ where
     F: Fn(DialogueNodeId) -> Novelty,
 {
     let budget = request.search_budget();
+    let menu = request.menu_budget();
+    let began = std::time::Instant::now();
     let mut answers = Vec::with_capacity(request.starts.len());
 
     for start in &request.starts {
+        // THE WALL IS TESTED PER OPTION, NOT PER OUTCOME, so a rolled check is never
+        // answered by half a pair. `crate::bridge::BranchLine`'s reader takes the absence of
+        // one outcome to mean the option is not a roll, and an outcome invented to fill the
+        // gap would have to name a destination it never worked out - which the Pass / Fail
+        // line paints as the option's seen colour, stating something false about the game.
+        // One branchless answer says only "did not finish", which is true.
+        let left = menu.saturating_sub(began.elapsed());
+        if left.is_zero() {
+            answers.push(unanswered(*start, "time"));
+            continue;
+        }
+
         let id = DialogueNodeId::from(*start);
         if graph.get(id).is_none() {
             // Not an error for the request as a whole: a menu can offer an option the
@@ -1225,8 +1296,12 @@ where
         };
 
         for branch in branches {
+            // NARROWED AGAIN FOR THE SECOND OUTCOME, since the first has just spent some of
+            // the menu. A pair sharing one ration could take twice what was left, which is
+            // the one place a wall tested per option could be overrun by a whole option.
+            let ration = budget.within(menu.saturating_sub(began.elapsed()));
             answers.push(scored(
-                graph, id, *start, world, novelty, *branch, seed, compiler, &budget, shape,
+                graph, id, *start, world, novelty, *branch, seed, compiler, &ration, shape,
                 memo,
             ));
         }
@@ -2092,6 +2167,7 @@ mod tests {
             unseen_this_game: NodeSet::default(),
             state_budget: 0,
             time_budget_ms: 0,
+            menu_time_budget_ms: 0,
             memory_budget_mb: 0,
             world,
         };
@@ -2127,6 +2203,7 @@ mod tests {
             unseen_this_game: NodeSet::default(),
             state_budget: 0,
             time_budget_ms: 0,
+            menu_time_budget_ms: 0,
             memory_budget_mb: 64,
             world: WorldSnapshot::default(),
         };
@@ -2149,6 +2226,7 @@ mod tests {
             unseen_this_game: NodeSet::default(),
             state_budget: 0,
             time_budget_ms: 0,
+            menu_time_budget_ms: 0,
             memory_budget_mb: 0,
             world: WorldSnapshot::default(),
         };
@@ -2174,6 +2252,7 @@ mod tests {
             unseen_this_game: NodeSet::default(),
             state_budget: 0,
             time_budget_ms: 250,
+            menu_time_budget_ms: 0,
             memory_budget_mb: 0,
             world: WorldSnapshot::default(),
         };
@@ -2199,6 +2278,7 @@ mod tests {
             unseen_this_game: NodeSet::default(),
             state_budget: 0,
             time_budget_ms: 0,
+            menu_time_budget_ms: 0,
             memory_budget_mb: 0,
             world: WorldSnapshot::default(),
         };

@@ -173,6 +173,10 @@ name = "workspace_menus"
 path = "measurements/workspace_menus.rs"
 
 [[example]]
+name = "menu_wall"
+path = "measurements/menu_wall.rs"
+
+[[example]]
 name = "relaxed_settle"
 path = "measurements/relaxed_settle.rs"
 

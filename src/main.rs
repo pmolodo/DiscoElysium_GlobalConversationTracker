@@ -32,9 +32,19 @@ struct Args {
     #[arg(long, default_value = "0")]
     memory_budget_mb: usize,
 
-    /// Time budget in milliseconds
+    /// Time budget in milliseconds, per option
     #[arg(long, default_value = "1000")]
     time_budget_ms: u64,
+
+    /// Time budget in milliseconds for the whole request, or 0 for no such limit
+    ///
+    /// ZERO WHERE THE PLUGIN SHIPS THREE SECONDS, and the difference is what the two are
+    /// asked. The plugin asks about a menu - a dozen options a player is waiting on - and
+    /// three seconds is what it will make them wait. This asks about every entry in a
+    /// conversation at once, thousands of them in one request, so the same wall would answer
+    /// the first few and give up on the rest. Set it to reproduce a menu's wall deliberately.
+    #[arg(long, default_value = "0")]
+    menu_time_budget_ms: u64,
 
     /// Collect trace of hottest nodes
     #[arg(long)]
@@ -210,6 +220,7 @@ fn main() -> anyhow::Result<()> {
                 .collect(),
             memory_budget_mb: args.memory_budget_mb,
             time_budget_ms: args.time_budget_ms,
+            menu_time_budget_ms: args.menu_time_budget_ms,
             world: WorldSnapshot {
                 day_minutes: args.day_minutes,
                 day_counter: args.day_counter,
@@ -282,6 +293,7 @@ fn main() -> anyhow::Result<()> {
             unseen_this_game: Default::default(),
             state_budget: 0,
             time_budget_ms: args.time_budget_ms,
+            menu_time_budget_ms: args.menu_time_budget_ms,
             memory_budget_mb: args.memory_budget_mb,
             world: WorldSnapshot::default(),
         },

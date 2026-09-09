@@ -200,6 +200,12 @@ namespace GlobalConversationTracker.Automation
         /// <param name="timeBudgetMs">
         /// The longest one option's crawl may run for, in milliseconds; 0 for no limit.
         /// </param>
+        /// <param name="menuTimeBudgetMs">
+        /// The longest the whole menu may run for, in milliseconds; 0 for no limit, which is
+        /// what every suite asks for. A wall around the menu changes WHICH options give up
+        /// rather than making any one of them give up sooner, so it is the wrong instrument
+        /// for a suite that wants a crawl starved - see de-dt75.3.
+        /// </param>
         /// <param name="memoryBudgetMb">
         /// The most memory one option's crawl may hold, in megabytes; 0 for the engine's
         /// own default. What a suite that wants a crawl to give up sets, now that the
@@ -220,6 +226,7 @@ namespace GlobalConversationTracker.Automation
             bool enabled,
             int stateBudget,
             int timeBudgetMs,
+            int menuTimeBudgetMs,
             int memoryBudgetMb,
             bool logBudgetExceeded,
             bool keepStatistics,
@@ -237,6 +244,7 @@ namespace GlobalConversationTracker.Automation
                 "enabled", enabled,
                 "stateBudget", stateBudget,
                 "timeBudgetMs", timeBudgetMs,
+                "menuTimeBudgetMs", menuTimeBudgetMs,
                 "memoryBudgetMb", memoryBudgetMb,
                 "logBudgetExceeded", logBudgetExceeded,
                 "keepStatistics", keepStatistics,

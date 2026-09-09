@@ -664,6 +664,8 @@ namespace GlobalConversationTracker.Harness
                 // no player setting corresponds to it.
                 Setting(suite, LookAheadSuites.TestStateBudgetSetting, 0),
                 Setting(suite, "LookAheadTimeBudgetMs", LookAheadSuites.TestTimeBudgetMs),
+                Setting(
+                    suite, "LookAheadMenuTimeBudgetMs", LookAheadSuites.TestMenuTimeBudgetMs),
                 Setting(suite, "LookAheadMemoryBudgetMb", LookAheadSuites.TestMemoryBudgetMb),
                 Setting(suite, "LogLookAheadBudgetExceeded", false),
                 Setting(suite, "KeepLookAheadStates", false),

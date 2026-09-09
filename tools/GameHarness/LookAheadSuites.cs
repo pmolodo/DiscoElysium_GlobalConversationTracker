@@ -32,6 +32,21 @@ namespace GlobalConversationTracker.Harness
         public const int TestTimeBudgetMs = 30_000;
 
         /// <summary>
+        /// The whole-menu time budget every suite runs with, in milliseconds.
+        /// </summary>
+        /// <remarks>
+        /// NONE, and for the reason <see cref="TestTimeBudgetMs"/> is put out of reach
+        /// rather than switched off - only more so. A wall around the menu does not make an
+        /// option give up sooner, it decides which options are searched AT ALL, and it
+        /// decides that from how long the machine took over the options before them. A suite
+        /// running under one would mark a different set of options on a busy machine than on
+        /// an idle one, which is a suite that flips on load. The shipped default is three
+        /// seconds and the worst menu measured is two, so what a suite would be testing is
+        /// the gap between those two numbers on whatever hardware it ran on.
+        /// </remarks>
+        public const int TestMenuTimeBudgetMs = 0;
+
+        /// <summary>
         /// The look-ahead memory budget every suite runs with, in megabytes.
         /// </summary>
         /// <remarks>
