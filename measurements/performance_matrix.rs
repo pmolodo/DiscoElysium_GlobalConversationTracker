@@ -1,87 +1,45 @@
 // SPDX-License-Identifier: MIT
-//! Six engines, six conversations, five profiles: the whole grid. Plus seven more profiles
-//! held back for being too easy, and a census of the game two of the five depend on.
+//! Two allowances, six conversations, five profiles: the whole grid. Plus seven more
+//! profiles held back for being too easy, and a census of the game two of the five depend on.
 //!
-//! A DEFAULT RUN MEASURES TWO OF THE SIX: `ingame`, the switching method the game runs at a
-//! player's own settings, and `bwd-ingame`, the same method with its forward slice off. The
-//! pair is what says whether the slice earns its place, and one column alone cannot. The
-//! other four are evidence for the tuning and cost several times what those two do, so they
-//! are asked for rather than assumed - `DEGCT_ENGINES=all` for the grid, or any of the names for
-//! one column. See [`engines`] for the measured argument.
+//! A DEFAULT RUN MEASURES ONE OF THE TWO: `ingame`, the search the game runs at a player's
+//! own settings, which is the column every tuning decision is read off. `nolimit` is the
+//! same search with the limits taken off, and costs up to two minutes a row against the
+//! other's one second, so it is asked for rather than assumed - `DEGCT_ENGINES=all` for
+//! both, or either name for one column. See [`engines`].
 //!
 //! The measurements this repository already has each ask one question well. This asks the
-//! same question of every combination, because the thing that is actually wanted - a rule
-//! for choosing WHICH SEARCH per option (de-a1wb) - cannot be drawn from a handful of
-//! points. It needs a surface.
+//! same question of every combination, because what is wanted is a surface rather than a
+//! handful of points: how the cost moves with the group, with how much of it the player has
+//! read, and with what the search is allowed to spend.
 //!
-//! ## The three engines, and what each one actually is
+//! ## The two columns, and what each one is
 //!
-//! DIRECTION IS WHAT TELLS THEM APART. All three carry data states the same way - one
-//! decision diagram per entry - so the name says which way each one runs and nothing else:
+//! ONE SEARCH, TWO ALLOWANCES. Both run `answer::best_novelty` over the backward driver -
+//! ONE CANDIDATE AT A TIME, best novelty class first, stopping at the first candidate proved
+//! reachable - so the name says what the column may spend and nothing else:
 //!
-//! | column | what runs | direction |
-//! |---|---|---|
-//! | `fwd` | `Reachability::explore_within` | forwards, from the start |
-//! | `bwd` | `novelty_search::best_novelty` over `Backward` | backwards, from a target |
-//! | `fwdbwd` | `portfolio::best_novelty` | a forward slice, then the backward driver |
+//! | column | allowance |
+//! |---|---|
+//! | `ingame` | the player's own settings, through [`in_game_request`] |
+//! | `nolimit` | a two-minute wall and a measurement's manager |
 //!
-//! AND THE PORTFOLIO IS FOUR COLUMNS, not one: `ingame` and `nolimit` are the method at the
-//! player's settings and with the limits off, and `bwd-ingame` and `bwd-nolimit` are those
-//! two with the forward slice turned off. The pairs exist to price the slice, which no
-//! reading of `bwd` against `fwdbwd` can do - those two differ in their rations as much as
-//! in their method. See [`Engine::BackwardInGame`].
+//! ASKING ABOUT ONE HAND-PICKED TARGET WOULD MEASURE A QUESTION NOBODY ASKS. The candidate
+//! ordering is what makes the short circuit sound, and the per-candidate cost when the
+//! answer is no is the cost a player actually waits for.
 //!
-//! THESE ARE THE NAMES `DEGCT_ENGINES=` TAKES, and [`Engine::label`] is where they live. The
-//! recorded results further down were measured under older names and each says so; the
-//! table under "The names have moved twice" translates them.
+//! THESE ARE THE NAMES `DEGCT_ENGINES=` TAKES, and [`Engine::label`] is where they live.
 //!
-//! FORWARD walks `node.links` from the start exactly as the game's own search does; what
-//! differs is that one decision diagram per entry holds every data state reached there at
-//! once.
+//! ## What the search costs, and why that is the whole question
 //!
-//! BACKWARD is the only column that reverses the direction. It computes
-//! pre-images from a target, and it is driven the way the portfolio would drive it: ONE
-//! CANDIDATE AT A TIME, best novelty class first, stopping at the first candidate proved
-//! reachable. Asking it about one hand-picked target instead would measure a question
-//! nobody asks - the short circuit and the per-candidate cost ARE the approach.
+//! When the answer is NO it pays one fixed point PER CANDIDATE. So the cost of a row should
+//! fall out of two numbers it already has - how many candidates were waiting, and what one
+//! pass cost - and a row where it does not is the interesting one.
 //!
-//! FORWARD-BACKWARD is WHAT THE GAME ACTUALLY RUNS, since the bridge was rewired - so it
-//! is the column that says what a player waits for, and the other two are what it is made
-//! of.
-//!
-//! ## The names have moved twice, and `fwd` does not mean today what it meant first
-//!
-//! Kept because the mislabelling outlived several conclusions drawn from it, and because a
-//! folder of old rows can only be read by knowing which era named its columns:
-//!
-//! ```text
-//!   oldest    fwd, bwd                   `fwd` was the state-at-a-time search and `bwd`
-//!                                        was the SYMBOLIC FORWARD one. Neither was backward.
-//!   middle    explicit, symfwd, symbwd   the same two named honestly, plus the first
-//!                                        genuine backward column.
-//!   current   fwd, bwd, fwdbwd           the state-at-a-time search is gone; what is left
-//!                                        differs only in direction, so it is named for that.
-//! ```
-//!
-//! So the oldest table measured EXPLICIT against SYMBOLIC, both going forwards, and the
-//! genuine backward engine had never been run by it at all. Any forward-versus-backward
-//! reading of a run from before that - including the framing of de-a1wb itself - rests on
-//! a column name that did not describe what ran. de-zovl is the correction.
-//!
-//! `tools/measure-matrix.py`'s `RowWeights` and `measurements/README.md` carry this same
-//! table, because reading an old folder means translating it.
-//!
-//! ## What the backward column costs, and why that is the whole question
-//!
-//! When the answer is NO it pays one fixed point PER CANDIDATE, where the search pays one
-//! walk for all of them. So the rule the portfolio needs should fall out of two numbers a
-//! row already has - how many candidates were waiting, and what one pass cost:
-//!
-//! - FEW CANDIDATES favours backward, and it prunes itself: a variable enters a backward
-//!   formula only if a guard on some path to the target reads it, and a write erases its
-//!   slot, which is the cone-of-influence reduction a forward search needs a separate
-//!   analysis to get.
-//! - MANY UNREACHABLE CANDIDATES favours forward, because one search refuses all of them.
+//! IT PRUNES ITSELF, which is why one pass is cheaper than its shape suggests: a variable
+//! enters a backward formula only if a guard on some path to the target reads it, and a
+//! write erases its slot. That is the cone-of-influence reduction, got for nothing rather
+//! than from a separate analysis.
 //!
 //! ## The grid
 //!
@@ -186,115 +144,10 @@
 //! which states reach it; with nothing unseen there is no target, so the row has no meaning
 //! on that side and cannot be compared across engines - which is what this file is for.
 //!
-//! ## What the whole grid said at 256 MB, 2026-09-04
-//!
-//! SUPERSEDED TWICE OVER, AND KEPT AS HISTORY.
-//!
-//! THE COLUMNS ARE NOT WHAT THEY SAY. This run predates de-zovl, so its "forward" is the
-//! explicit search and its "backward" is the SYMBOLIC FORWARD search - the two columns
-//! renamed above. Nothing below is a measurement of a backward search, and the headings
-//! are left as `explicit` and `symfwd` to stop it being read as one.
-//!
-//! AND THE ALLOWANCE WAS THE PLUGIN'S. Both engines were held to 256 MB and 60
-//! seconds, and de-e33h is the finding that this measures the ration rather than the
-//! algorithm: most heavy rows end in gave-up or no-room having been stopped by the
-//! ceiling. The measurement now runs at the shared six-gigabyte budget above, with a cap
-//! that is meant not to fire. Every number below is from the old setting and should be
-//! read as what a 256 MB ration does, not as what these searches cost.
-//!
-//! The adversarial rows - everything read, or all but the one, five or ten structurally
-//! deepest entries - behave identically within a conversation, so one line stands for all
-//! four:
-//!
-//! ```text
-//!   conv  entries   explicit                   symfwd
-//!    368     4724   gave-up   400ms  170,870   gave-up   64s   7.5M nodes
-//!    631     4514   gave-up   370ms  112,506   gave-up   65s   7.4M nodes
-//!     14     3594   gave-up   390ms  133,089   NO ROOM   55s   8.4M nodes (the budget)
-//!    362     1860   gave-up   660ms  377,017   gave-up   62s   2.1M nodes
-//!     28     2186   gave-up   490ms  222,400   FOUND     50ms  180K nodes
-//!   1030     1476   not-there   0ms      410   not-there  6ms  6.2K nodes
-//! ```
-//!
-//! And every random profile, on every conversation, at every percentage:
-//!
-//! ```text
-//!   explicit: found, 0ms, 2-100 states      symfwd: found, 5-15ms, 30-55K nodes
-//! ```
-//!
-//! ### The explicit search wins almost everywhere, and it is not close
-//!
-//! On the profiles a real save actually has - any of the random percentages - the search
-//! answers in under a millisecond and the symbolic forward search takes five to fifteen.
-//! Not a disaster in either case, but there is no argument for the diagram there: it is
-//! slower on every single row.
-//!
-//! On the adversarial profiles the search gives up in about four hundred milliseconds and
-//! the symbolic one spends A MINUTE to give up as well. Five of the six conversations end
-//! that way.
-//!
-//! ### Conversation 28 is the exception, and the whole case
-//!
-//! It ANSWERS where the search cannot: 50 milliseconds against 490 spent giving up. That is
-//! what a symbolic search is for, and it is one conversation in six. Anything that decides
-//! between engines per option (de-a1wb) has to find the 28-shaped groups cheaply, because
-//! guessing wrong costs a minute.
-//!
-//! ### The verdicts changed once the two were really given the same room
-//!
-//! Worth recording because it was nearly missed. The manager PREALLOCATES its node capacity
-//! and refuses to grow past it, and that capacity was a hand-picked 2^22 - about 134 MB,
-//! half the search's allowance. On that setting 631 and 14 both read NO ROOM.
-//!
-//! Derive the capacity from the budget instead and they separate: 631 runs out of TIME at
-//! 6.4 million nodes, and only 14 genuinely fails to fit, stopping at exactly the 8,388,608
-//! nodes the budget allows. One of those is a search that is too slow and the other is a
-//! representation that does not fit, and the earlier setting reported both as the second.
-//!
-//! ### The adversarial rows are all the same row
-//!
-//! Within a conversation, deepest-1, -5 and -10 cost the explicit search exactly the same
-//! number of states - 170,870 on 368, three times over, and the same as the all-seen row did
-//! before it was removed. The deepest entries by edge analysis are the ones the guards shut,
-//! so seeding them changes nothing the search can find and it explores the whole space
-//! regardless. That is the correct worst case and it is what these rows are for; it is not a
-//! falloff curve, and measuring one needs a different seeding entirely - see the note above
-//! on why nothing measures it today.
-//!
-//! ## All three engines on one row, at one budget, 2026-09-05
-//!
-//! Conversation 14, its one structurally deepest entry unseen, six gigabytes and a
-//! ten-minute cap EACH. The comparison de-rfva asked for, and the first one on this file
-//! that is like for like.
-//!
-//! MIDDLE-ERA NAMES BELOW: `symfwd` is today's `fwd` and `symbwd` today's `bwd`, and
-//! `explicit` is the state-at-a-time search, which no column measures any more.
-//!
-//! ```text
-//!   engine    verdict         ms       states / nodes
-//!   explicit  gave-up     20,101       5,862,108 states
-//!   symfwd    gave-up    668,613      89,921,612 nodes (229,729,460 summed over the sets)
-//!   symbwd    NOT-THERE      634          28,468 nodes, 1 candidate of 1
-//! ```
-//!
-//! THE BACKWARD SEARCH IS THE ONLY ONE THAT ANSWERS, and it answers in two thirds of a
-//! second. The search spends twenty seconds and six gigabytes to give up; the symbolic
-//! forward search spends ELEVEN MINUTES and ninety million nodes to give up. Neither
-//! failure is the ration talking - both were given the whole measurement budget, which is
-//! what de-e33h asked for and what the 256 MB history above could not say.
-//!
-//! And `not-there` here is settled, not exhausted: the one candidate was asked about and
-//! its fixed point completed. The engine's approximations run the safe way, so a state
-//! missing from a completed backward set genuinely cannot reach the target.
-//!
-//! WHAT IT DOES NOT SAY is anything about a long candidate list. One candidate is the
-//! shape backward is best at, and the crossover this file exists to find lives in the
-//! percentage profiles, where a refusal has to be paid for once per candidate.
-//!
-//! ## The first row the backward column has been run on, 2026-09-05
+//! ## The row that made the case for this search, 2026-09-05
 //!
 //! Conversation 14 with its one structurally deepest entry unseen - so ONE CANDIDATE - at
-//! the measurement budget, the backward column alone:
+//! the measurement budget:
 //!
 //! ```text
 //!   conv  entries  profile    unseen  verdict         ms   nodes  asked  cands
@@ -309,12 +162,10 @@
 //! the backward sets are over-approximations, so a state missing from one genuinely cannot
 //! reach the target.
 //!
-//! That is the row both forward searches fail. At the old 256 MB setting the search gave up
-//! in 390ms having explored 133,089 states, and the symbolic forward search read NO ROOM
-//! at 8.4 million nodes after 55 seconds; this settles it in under half a second on 28
-//! thousand. It is one row against a run at a different allowance, so it is a shape rather
-//! than a comparison - and the crossover this column is really for, a long candidate list
-//! none of which is reachable, is untouched at `cands` of one.
+//! WHAT IT DOES NOT SAY is anything about a long candidate list. One candidate is the shape
+//! this is best at, and the expensive case - a long list none of which is reachable, where
+//! a refusal is paid for once per candidate - is untouched at `cands` of one. That is what
+//! the percentage profiles are for.
 //!
 //! ## Running it
 //!
@@ -378,7 +229,7 @@ use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
 use lookahead_engine::symbolic::known::GroupShape;
 
-use lookahead_engine::symbolic::portfolio;
+use lookahead_engine::symbolic::answer;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::world::world::ILookAheadWorld;
@@ -503,7 +354,7 @@ fn row_time() -> std::time::Duration {
 /// run. A gap or a quiet `gave-up` here would read as a finding about the search.
 const NOT_MEASURED: &str = "NOT-MEASURED";
 
-/// The `fwdbwd` verdict for a row the GAME would not have searched at all.
+/// The verdict for a row the GAME would not have searched at all.
 ///
 /// de-qh27. `scored` computes a baseline and refuses when nothing link-reachable beats it,
 /// returning a complete answer having run nothing; this column exists to be that method, so
@@ -641,19 +492,14 @@ fn known_profiles() -> impl Iterator<Item = Profile> {
 /// ONE METHOD, TWO ALLOWANCES, which is the whole of the distinction now: both columns run
 /// the same search over the same graph, and they differ in what they are allowed to spend.
 /// So the names say the allowance rather than the algorithm.
-///
-/// READING AN OLD RUN: a folder may carry columns this no longer produces - `fwd`, `bwd`,
-/// `bwd-ingame`, `bwd-nolimit`, or the older `symfwd`/`symbwd` - from when a row held
-/// several methods rather than one. The two below kept their names, so a comparison across
-/// such a folder still pairs on them. See measurements/README.md.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Engine {
-    /// `portfolio::best_novelty` AT THE PLAYER'S OWN SETTINGS: what somebody waits for.
+    /// `answer::best_novelty` AT THE PLAYER'S OWN SETTINGS: what somebody waits for.
     ///
     /// de-xegj split this from the column below, because one column cannot answer both of
     /// the questions asked of it - "what does a player wait for" and "where does this method
     /// actually stop" - and the single column answered neither. It ran at
-    /// `portfolio::Budget::default()` on a six-gigabyte manager: a player gets 1000 ms and
+    /// `answer::Budget::default()` on a six-gigabyte manager: a player gets 1000 ms and
     /// 256 MB, and two seconds is neither the shipped default nor a meaningful no-limit.
     ///
     /// ITS BUDGETS ARE ASKED OF THE PRODUCT, not restated here - see [`in_game_request`].
@@ -708,7 +554,7 @@ impl Engine {
         // parallel split clears a group against.
         //
         // `by` is whether the search settled, stopped part way, or answered at the start
-        // without searching at all - see `portfolio::Answered`.
+        // without searching at all - see `answer::Answered`.
         //
         // BOTH COLUMNS REPORT THE SAME SIX, so the two can be read against each other
         // directly: the same row, the same question, one held to the player's settings and
@@ -730,29 +576,15 @@ impl Engine {
 
 /// Which engines this run measures.
 ///
-/// THE SHIPPED METHOD AND ITS CONTROLLED ARM BY DEFAULT - see [`DEFAULT_ENGINES`]. `fwd`,
-/// `bwd` and the two unlimited columns are evidence for the tuning rather than products in
-/// their own right, and they are expensive out of all proportion to how often the evidence
-/// is wanted. `DEGCT_ENGINES=all` measures the six, and naming any of them works as it always did.
+/// THE SHIPPED SETTINGS BY DEFAULT - see [`DEFAULT_ENGINES`]. `nolimit` answers a different
+/// question, where this method stops when nothing stops it, and it is expensive out of all
+/// proportion to how often that is wanted: a two-minute wall a row may actually reach,
+/// against the in-game column's one second. `DEGCT_ENGINES=all` measures both, and naming
+/// either works.
 ///
-/// WHAT IT SAVES, measured over the two whole-game datasets rather than asserted. Engine time
-/// by column on the ten-profile grid (measurements/logs/whole-game, 5,210 measured rows) was
-/// fwd 2.06 h / 63.9%, bwd 0.73 h / 22.7%, fwdbwd 0.43 h / 13.4%. On the deepest-unreachable
-/// sweep it was starker still - fwd 99.6% - because that profile has no yes to stumble onto
-/// and the forward search has to exhaust. So a default run drops to about an eighth of its
-/// engine time on the grid and to a five-hundredth on the unreachable profiles.
-///
-/// WHAT IT COSTS, and it is worth saying rather than discovering: the fwd and bwd columns
-/// become a HISTORICAL BASELINE. measurements/logs/whole-game holds them for every group and
-/// profile in the game, which is what makes this reasonable now - but that ages the moment
-/// either engine changes, and whoever changes one and wants to know what they did to it has
-/// to ask for them deliberately, in hours rather than minutes.
-///
-/// The selection was here before this became the default, because a third column triples what
-/// a full run costs and because a question is often about one engine - "what does the backward
-/// search do with the one case both forward searches cannot answer" is a single row of a
-/// single column, and spending an hour on the other thirty-two to get it is how a measurement
-/// stops being run at all.
+/// WHY A SELECTION AT ALL, rather than always measuring everything: a question is usually
+/// about one column, and spending hours on the other to get it is how a measurement stops
+/// being run.
 ///
 /// A narrowed run is a NARROWER ROW, not a wide one with holes in it: the header follows
 /// the selection, so nothing has to be told apart from a result later.
@@ -783,14 +615,11 @@ fn engines() -> Vec<Engine> {
 
     // A misspelling would otherwise measure nothing and say nothing about why.
     //
-    // THE ALTERNATIVES ARE ASKED OF THE ENGINES rather than written out here, because a
-    // written copy went stale and the message spent an era offering `explicit, symfwd,
-    // symbwd` - the MIDDLE era's spelling - which meant it refused `symfwd` in the very
-    // sentence that named it, and sent the reader on to two more names that were also
-    // gone. A refusal that misdirects costs more than no refusal at all.
-    // `all` IS OFFERED HERE TOO, because it is now a name a caller can pass and a refusal
-    // that lists only the engines would send a reader looking for the grid to spell out
-    // three of them - the same misdirection the note above is about, in a new place.
+    // THE ALTERNATIVES ARE ASKED OF THE ENGINES rather than written out here. A hand-written
+    // copy of the names goes stale, and a refusal that offers names nothing answers to
+    // misdirects worse than no refusal at all. `all` is offered alongside them, since it is
+    // a name a caller can pass and a reader looking for the grid should not have to spell
+    // the columns out.
     for name in &wanted {
         assert!(
             ALL_ENGINES.iter().any(|engine| engine.label() == *name),
@@ -1206,11 +1035,11 @@ impl Cells {
 /// The search the game runs.
 ///
 /// ONE CANDIDATE AT A TIME, best novelty class first, stopping at the first candidate proved
-/// reachable - which is `novelty_search` driven by `portfolio::best_novelty`, and is what
+/// reachable - which is `novelty_search` driven by `answer::best_novelty`, and is what
 /// `bridge::answer_within` calls. The two columns differ in what they are allowed to spend
 /// and in nothing else.
 ///
-/// The budget is the portfolio's own - the one the bridge hands it, scaled by nothing here
+/// The budget is the search's own - the one the bridge hands it, scaled by nothing here
 /// - because what this column is for is what a player waits for. A row measured under a
 /// measurement-sized budget would answer a question nobody asks.
 /// A request carrying the PLUGIN'S OWN DEFAULTS, so the in-game column asks the product for
@@ -1236,20 +1065,20 @@ fn in_game_request() -> lookahead_engine::bridge::LookAheadRequest {
     }
 }
 
-/// What each portfolio column is allowed.
+/// What each column is allowed.
 ///
 /// THE BACKWARD-ONLY ARMS ARE THEIR PAIR WITH ONE FIELD CHANGED, and are written that way
 /// rather than spelled out, so that a change to either budget reaches its control
 /// automatically. A second copy of the rations is exactly how the in-game column drifted
 /// from the game (de-xegj), and a control that drifts from what it controls for measures
 /// nothing at all.
-fn search_budget_for(engine: Engine) -> portfolio::Budget {
+fn search_budget_for(engine: Engine) -> answer::Budget {
     match engine {
         Engine::InGame => in_game_request().search_budget(),
         // NO LIMIT, WALLED. The wall is the contract and the rations under it are estimates
         // aimed at landing inside it; an implementer may tune them, and 120 seconds is what
         // the column promises.
-        Engine::NoLimit => portfolio::Budget {
+        Engine::NoLimit => answer::Budget {
             overall: std::time::Duration::from_secs(120),
             backwards: std::time::Duration::from_secs(100),
             each: std::time::Duration::from_secs(10),
@@ -1264,9 +1093,8 @@ fn search_budget_for(engine: Engine) -> portfolio::Budget {
 /// de-x8ms.1. Nothing above the profile loop depends on the profile - the layout, the manager,
 /// the compiled guards and the seed are functions of the graph, the world and the symbols -
 /// and building them is most of what a row costs. Measured on the whole-game run of
-/// 2026-09-09: setup was 76.9 per cent of the `ingame` column's time and 89.9 per cent of
-/// `bwd-ingame`'s, and building it once per group instead of once per row removes 64.4 per
-/// cent of all the engine time in the run.
+/// 2026-09-09: setup was 76.9 per cent of the `ingame` column's time, and building it once
+/// per group instead of once per row removed 64.4 per cent of all the engine time in the run.
 ///
 /// IT COULD NOT SIMPLY BE HOISTED OUT, which is what made this a task rather than an edit.
 /// Each engine runs on `isolated::on_its_own_thread` because what overflows a stack is
@@ -1371,7 +1199,7 @@ fn search_one(
     //
     // src/bridge.rs `scored` computes a baseline and refuses to search when nothing
     // link-reachable beats it, returning a COMPLETE answer of "none" having run nothing.
-    // This used to skip that and call the portfolio unconditionally, which recorded backward
+    // This used to skip that and search unconditionally, which recorded backward
     // work the game never pays for in the column that claims to be the game's method.
     //
     // THE SHARED PREDICATE, NOT A SECOND COPY - a second copy is how this drifted the first
@@ -1403,7 +1231,7 @@ fn search_one(
         ]);
     };
 
-    let answer = portfolio::best_novelty(
+    let answer = answer::best_novelty(
         graph,
         start,
         StartBranch::Either,
@@ -1423,23 +1251,17 @@ fn search_one(
 
     let verdict = match answer.by {
         _ if answer.best > Novelty::SeenThisGame => "found",
-        portfolio::Answered::Partly => "gave-up",
+        answer::Answered::Partly => "gave-up",
         _ => "not-there",
     };
 
-    // THE SAME `node_count` THE OTHER TWO REPORT - what the manager holds, which is memory
-    // in use and therefore what the budget and the parallel split both watch.
+    // WHAT THE MANAGER HOLDS, which is memory in use and therefore what the budget and the
+    // parallel split both watch.
     //
-    // READ AT THE END OF THE ROW, not tracked as a high-water mark, which is what fwd and
-    // bwd do too. For a single search those are near enough the same thing; for a portfolio
-    // that runs a forward slice and then a backward driver over ONE manager they are also
-    // near enough, because nodes are not reclaimed eagerly between the halves. It would
-    // stop being true if the halves ever got managers of their own.
-    //
-    // EXPECT IT TO BE SMALLER THAN THE fwd COLUMN for the same group, and that is the point
-    // rather than a discrepancy: fwdbwd stops as soon as either half can answer, so it
-    // genuinely holds less. A split decided on this number is deciding against what the run
-    // in front of it actually costs.
+    // READ AT THE END OF THE ROW rather than tracked as a high-water mark. For one search
+    // over one manager those are near enough the same thing, because nodes are not
+    // reclaimed eagerly; it would stop being true if a row ever ran two searches with
+    // managers of their own.
     Cells(vec![
         verdict.to_string(),
         (setup + began.elapsed().as_millis()).to_string(),
@@ -1803,10 +1625,8 @@ fn main() {
             // take the memory between the answer here and the allocation there, and the
             // allocation aborts rather than failing.
             //
-            // EVERY ENGINE HERE WANTS ONE, since the explicit search went: it was the only
-            // column that allocated no manager, and the check used to be skipped for a run
-            // of it alone. Now a machine that cannot supply the budget has nothing to
-            // measure at all, which is what NOT-MEASURED says.
+            // BOTH COLUMNS WANT ONE, so a machine that cannot supply the budget has
+            // nothing to measure at all - which is what NOT-MEASURED says.
             if !budget().can_be_supplied() {
                 eprintln!(
                     "NOT MEASURED: {conversation} {} - this machine could not supply the \

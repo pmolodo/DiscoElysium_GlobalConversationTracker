@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 //! Reachability asked backwards: from which states does ONE entry become reachable?
 //!
-//! [`super::reachability`] computes what a start can reach and reads the answer off it.
-//! The question the look-ahead actually asks is smaller - `LookAheadResult::best` is a
-//! maximum over the novelty of entries a start can reach, and the plugin displays that
-//! and nothing else - so the reachable set is a means, and an expensive one.
+//! The obvious way to answer a look-ahead is to work out everything a start can reach and
+//! read the answer off it. The question actually asked is smaller - `LookAheadResult::best`
+//! is a maximum over the novelty of entries a start can reach, and the plugin displays that
+//! and nothing else - so the whole reachable set is a means, and an expensive one.
 //!
-//! Run the same fixed point in reverse and the question becomes: for each entry, from
-//! which data states does the target become reachable onward? Compute that once and every
-//! option in the group is answered by testing its seed against the result.
+//! Run the fixed point the other way and the question becomes: for each entry, from which
+//! data states does the target become reachable onward? Compute that once and every option
+//! in the group is answered by testing its seed against the result.
 //!
 //! ## Why backwards is cheap here in particular
 //!
@@ -20,13 +20,13 @@
 //! [`ActionImage::pre_assign`] selects and then quantifies away, so a slot assigned on the
 //! way to the target and not read again leaves nothing behind. Forward, the same
 //! assignment constrains that slot in every set downstream. So the cone-of-influence
-//! reduction that a forward search needs a separate analysis for is just what the
+//! reduction that a search going the other way needs a separate analysis for is just what the
 //! pre-image does.
 //!
 //! THE PRE-IMAGE IS A COFACTOR. Every action assigns or increments a CONSTANT rather than
 //! a function of another slot, so going backwards needs no relation over primed and
-//! unprimed variables, exactly as going forwards needs none. This is the twin of the
-//! property the forward module is built on.
+//! unprimed variables, exactly as going forwards needs none. See
+//! [`super::reachability`], whose entry step rests on the same property.
 //!
 //! ## Not everything flips: transformations do, conditions do not
 //!
@@ -60,10 +60,10 @@
 //! ## What it is allowed to get wrong
 //!
 //! The same one-directional approximation as everything else symbolic here: guards come
-//! from `may_be_true`, so a state may be included that the real search could not reach the
-//! target from. What must never happen is the reverse - a state excluded that can. A
-//! backward NO against a forward YES is a bug in the pre-image, not an approximation, and
-//! `tests/backward_oracle.rs` exists to catch it.
+//! from `may_be_true`, so a state may be included that a real path could not reach the
+//! target from. What must never happen is the reverse - a state excluded that can. A NO
+//! against a path the reference walk actually takes is a bug in the pre-image rather than
+//! an approximation, and `tests/reference_oracle.rs` exists to catch it.
 //!
 //! ## What it does not do, and what does it instead
 //!
@@ -72,7 +72,7 @@
 //! thing that turns this into an answer to the question the look-ahead actually asks.
 //! Nothing else should call this in a loop of its own.
 //!
-//! Money is read the way the forward pass reads it: where the layout carries a balance, a
+//! Money is read the way the entry step reads it: where the layout carries a balance, a
 //! price is a constraint on the way in and a subtraction on the way through, and both are
 //! undone here in the reverse of the order they happen. Where it does not, every price is
 //! affordable and the approximation is inherited unchanged.
@@ -88,7 +88,7 @@ use crate::graph::node::LookAheadNode;
 use crate::symbolic::action_image::ActionImage;
 use crate::symbolic::guard_formula::GuardCompiler;
 use crate::symbolic::known::Known;
-use crate::symbolic::order::{Direction, IterationOrder, Worklist};
+use crate::symbolic::order::{IterationOrder, Worklist};
 use crate::symbolic::vars::DataVars;
 use crate::world::world::ILookAheadWorld;
 
@@ -113,9 +113,9 @@ pub struct BackwardStats {
     pub actions_ignored: usize,
     /// The entry where this pass MET what an earlier search already knew.
     ///
-    /// A proof that the target is reachable, and the pass stopped on it: a state that a
-    /// forward run can hold arriving at this entry is one this pass has shown reaches the
-    /// target. See [`crate::symbolic::known::Known`].
+    /// A proof that the target is reachable, and the pass stopped on it: a state the search
+    /// holds arriving at this entry is one this pass has shown reaches the target. See
+    /// [`crate::symbolic::known::Known`].
     ///
     /// The fixed point is NOT complete when this is set - it stopped early, on purpose -
     /// so `reached_fixed_point` is false and the sets are a lower bound. That is the right
@@ -132,7 +132,7 @@ pub struct Budget {
     ///
     /// A measurement pass runs for minutes on the heavy groups, and one fixed point over
     /// one target is a single call that returns when it is finished - so without this the
-    /// only thing a watcher sees is the row ending. The forward searches both grew the
+    /// only thing a watcher sees is the row ending. Every long-running search grew the
     /// same hook for the same reason.
     pub report_gap: std::time::Duration,
     /// Steps, entries known to reach the target, entries still queued, manager nodes.
@@ -289,7 +289,7 @@ impl<'a> Backward<'a> {
                 &owned_order
             }
         };
-        let mut queue = Worklist::new(order, Direction::Backward);
+        let mut queue = Worklist::new(order);
         let mut ran_out = false;
 
         // The target's own set: enter it in any state at all and the target has been
@@ -313,7 +313,7 @@ impl<'a> Backward<'a> {
             }
         }
 
-        // What travels is the DELTA, the way the forward pass propagates only the delta
+        // What travels is the DELTA, the way a fixed point propagates only the delta
         // and for the same reason: `pre_enter` distributes over union - the guard is a
         // conjunction, every pre-image is a select-and-forget, and each branch unions its
         // cases - so the pre-image of the whole set is the pre-image of what has already
@@ -545,7 +545,7 @@ impl<'a> Backward<'a> {
 
         // Failure: both kinds recorded it where there was a flag to record it with, a
         // white check without one left the state alone, and anything else has no failing
-        // branch at all. The same three cases as the forward pass, undone - see
+        // branch at all. The same three cases as the entry step, undone - see
         // `Reachability::rolled`, which this has to mirror exactly or the two engines
         // answer different questions.
         let failing = if node.failed_flag_slot >= 0 {
@@ -586,7 +586,7 @@ impl<'a> Backward<'a> {
 
         // The once slot says whether a one-time effect has already fired, and it is read
         // at the moment the actions apply - which is AFTER the two assignments below, so
-        // it is undone first and read against the same state the forward pass reads it
+        // it is undone first and read against the same state the entry step reads it
         // against.
         let already = match self.flag(node.once_slot) {
             Some(flag) => flag,
@@ -674,7 +674,7 @@ impl<'a> Backward<'a> {
         }
     }
 
-    /// Which states could afford this node, exactly as the forward pass decides it.
+    /// Which states could afford this node, exactly as the entry step decides it.
     ///
     /// A backward pass that read a price differently from the forward one would answer a
     /// different question, and the two are checked against each other and against the
@@ -761,10 +761,9 @@ impl<'a> Backward<'a> {
 
     /// This node's compiled guard.
     ///
-    /// Not cached the way the forward pass caches it, and for a reason worth stating: a
-    /// backward pass visits an entry once per widening of its own set, which is far fewer
-    /// times than a forward pass visits one in a cycle. If a measurement shows otherwise
-    /// this should grow the same map.
+    /// Not cached per pass, and for a reason worth stating: a backward pass visits an entry
+    /// once per widening of its own set, which is few enough times that a map of its own
+    /// would cost more than it saved. If a measurement shows otherwise this should grow one.
     /// Whether this entry's set has met something an earlier search already established.
     ///
     /// Asked of the WHOLE set rather than of the delta that just arrived: the meet is a
@@ -777,11 +776,10 @@ impl<'a> Backward<'a> {
     /// This node's compiled guard, from the compiler's cache when it has one.
     ///
     /// THIS USED TO COMPILE ON EVERY VISIT. A pass revisits an entry each time its set
-    /// grows, and the guard does not change between visits - the forward search had
-    /// noticed and kept a map, this had not. `compile_for` is that map, moved into the
-    /// compiler so that it also outlives a single pass: `novelty_search` asks about one
-    /// candidate after another over the same compiler, so the second candidate's pass
-    /// inherits every guard the first one compiled.
+    /// grows, and the guard does not change between visits. `compile_for` is the map that
+    /// stops it, and it lives in the COMPILER so that it also outlives a single pass:
+    /// `novelty_search` asks about one candidate after another over the same compiler, so
+    /// the second candidate's pass inherits every guard the first one compiled.
     fn guard_of(
         &mut self,
         node: &LookAheadNode,
@@ -837,7 +835,8 @@ impl<'a> Backward<'a> {
     /// anything forwards: a search that begins by entering `node` holding the seed reaches
     /// the target exactly when the seed meets this set. An "after entering" set would
     /// need the seed pushed through that first entry by some other means, and the only
-    /// thing that could do it is the forward search this exists to avoid.
+    /// thing that could do it is a walk forwards from the start, which is the work this
+    /// exists to avoid.
     pub fn states_at(&self, node: DialogueNodeId) -> Option<&BDDFunction> {
         self.sets.get(&node)
     }

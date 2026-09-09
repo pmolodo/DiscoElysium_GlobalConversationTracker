@@ -39,6 +39,7 @@ use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
 use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::oracle::{self, Walk};
+use lookahead_engine::symbolic::answer;
 use lookahead_engine::symbolic::backward::{Backward, Budget as BackwardBudget, SettledPass};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
@@ -46,7 +47,6 @@ use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::known::{GroupShape, Known};
 use lookahead_engine::symbolic::novelty_search::{Budget as SearchBudget, best_novelty};
-use lookahead_engine::symbolic::portfolio;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::world::world::ILookAheadWorld;
@@ -271,7 +271,7 @@ fn the_backward_search_finds_what_the_reference_walk_reaches() {
     assert!(compared > 0, "no conversation could be checked both ways");
 }
 
-/// The whole driver and the portfolio against the walk, on real conversations.
+/// The driver and the shipped call above it against the walk, on real conversations.
 ///
 /// The tests above check reachability one entry at a time, which is the part that can be
 /// wrong quietly. This checks the answer the bridge actually asks for.
@@ -290,7 +290,7 @@ fn the_backward_search_finds_what_the_reference_walk_reaches() {
 /// walk cannot reach is a known-shaped imprecision rather than a fault - but a run where the
 /// count starts climbing is worth seeing.
 #[test]
-fn the_driver_and_the_portfolio_find_what_the_reference_walk_finds() {
+fn the_driver_and_the_shipped_call_find_what_the_reference_walk_finds() {
     let Some(path) = common::conversation_index() else {
         return;
     };
@@ -299,7 +299,7 @@ fn the_driver_and_the_portfolio_find_what_the_reference_walk_finds() {
 
     println!(
         "{:>6} {:>8} {:>10} {:>10} {:>10} {:>8} {:>7}",
-        "conv", "entries", "walked", "driver", "portfolio", "witness", "ms"
+        "conv", "entries", "walked", "driver", "shipped", "witness", "ms"
     );
 
     let mut compared = 0;
@@ -356,8 +356,8 @@ fn the_driver_and_the_portfolio_find_what_the_reference_walk_finds() {
                 None,
             );
 
-            // And the portfolio, which is what the bridge actually runs.
-            let answer = portfolio::best_novelty(
+            // And the call above it, which is what the bridge actually runs.
+            let answer = answer::best_novelty(
                 &graph,
                 start,
                 StartBranch::Either,
@@ -369,7 +369,7 @@ fn the_driver_and_the_portfolio_find_what_the_reference_walk_finds() {
                 graph
                     .best_linked_class(start, &novelty)
                     .unwrap_or(Novelty::SeenThisGame),
-                &portfolio::Budget::default(),
+                &answer::Budget::default(),
                 &GroupShape::of(&graph),
                 None,
             );
@@ -404,7 +404,7 @@ fn the_driver_and_the_portfolio_find_what_the_reference_walk_finds() {
         );
         assert!(
             answer.best >= expected,
-            "conversation {conversation}: the portfolio said {:?} where the walk found \
+            "conversation {conversation}: the shipped call said {:?} where the walk found \
              {expected:?}, so there IS a case a state-at-a-time search answers and the two \
              symbolic halves do not",
             answer.best,

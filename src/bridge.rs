@@ -50,13 +50,13 @@ use crate::core::types::StartBranch;
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, Novelty, Ternary};
 use crate::graph::graph::LookAheadGraph;
 use crate::index::{Index, VariableTable, build_group_graph};
+use crate::symbolic::answer;
 use crate::symbolic::budget::DiagramBudget;
 use crate::symbolic::data_layout::DataLayout;
 use crate::symbolic::guard_formula::GuardCompiler;
 use crate::symbolic::isolated;
 use crate::symbolic::known::GroupShape;
 use crate::symbolic::novelty_search;
-use crate::symbolic::portfolio;
 use crate::symbolic::reachability::seed_of;
 use crate::symbolic::vars::DataVars;
 use crate::world::world::ILookAheadWorld;
@@ -700,14 +700,14 @@ impl LookAheadRequest {
     /// THE PLAYER SETS ONE NUMBER and it means the whole answer, so the backward driver
     /// gets it and so does a candidate - a candidate allowed longer than the whole search
     /// would make the outer limit decorative, and one allowed less only makes the search
-    /// give up sooner, which is what [`portfolio::Budget::each`] is about.
+    /// give up sooner, which is what [`answer::Budget::each`] is about.
     ///
     /// PUBLIC SO THE WALL CAN BE ASSERTED, since de-cluo. What the dial produces is a claim
     /// made to the player - "the longest one option's look-ahead may run for" - and
     /// tests/time_budget_binds.rs pins its SHAPE rather than timing a real search, because a
     /// timing test on a busy machine fails for reasons that are nobody's fault.
-    pub fn search_budget(&self) -> portfolio::Budget {
-        let default = portfolio::Budget::default();
+    pub fn search_budget(&self) -> answer::Budget {
+        let default = answer::Budget::default();
 
         // THE STATE BUDGET IS THE KNOB THAT STARVES A SEARCH, and that is all it ever was:
         // a test-only setting, not on the wire for players, whose whole job is to make a
@@ -718,7 +718,7 @@ impl LookAheadRequest {
         // candidate, which is what a search that cannot establish anything looks like from
         // here. Any value above zero means the same thing, and means nothing else.
         if self.state_budget > 0 {
-            return portfolio::Budget {
+            return answer::Budget {
                 // THE ATTEMPT KEEPS A CLOCK. A wall of zero would stop the loop before its
                 // first candidate, so the search would give up without ever running a pass -
                 // a different failure from the one this setting exists to provoke.
@@ -733,7 +733,7 @@ impl LookAheadRequest {
         }
 
         let whole = std::time::Duration::from_millis(self.time_budget_ms);
-        portfolio::Budget {
+        answer::Budget {
             // THE PLAYER'S NUMBER IS THE WALL, which is what they were told it was. de-cluo:
             // it used to be the backward ration alone, with a candidate allowed to overrun it
             // by a whole `each` - so a dial set to 1000 could return at about 1300. The
@@ -1033,7 +1033,7 @@ fn collect(
     }
 }
 
-/// Answers one request, from the symbolic portfolio.
+/// Answers one request, from the symbolic search.
 ///
 /// THE CROSSING IS TRUSTED, which is why the answer can be built here rather than checked
 /// against something simpler: `tests/bridge_contract.rs` puts one world through JSON and
@@ -1382,7 +1382,7 @@ fn scored<'a, F>(
     branch: StartBranch,
     seed: &BDDFunction,
     compiler: &mut GuardCompiler<'a>,
-    budget: &portfolio::Budget,
+    budget: &answer::Budget,
     shape: &GroupShape,
     memo: Option<&crate::symbolic::memo::Memo>,
 ) -> LookAheadAnswer
@@ -1452,7 +1452,7 @@ where
         return answered(destination, true, None, 0, "none");
     };
 
-    let found = portfolio::best_novelty(
+    let found = answer::best_novelty(
         graph,
         id,
         branch,
@@ -1469,7 +1469,7 @@ where
 
     answered(
         found.best,
-        found.by != portfolio::Answered::Partly,
+        found.by != answer::Answered::Partly,
         found.witness,
         found.targets_asked,
         stopped_name(found.stopped_by),
@@ -1518,12 +1518,12 @@ fn stopped_name(stopped: novelty_search::StoppedBy) -> &'static str {
 /// ONE ANSWER RATHER THAN A YES OR NO. A yes would have to be followed by the same walk
 /// again inside the search, to decide which class to hunt - the same question twice per
 /// start, and once per outcome of every rolled check. The walk names the class, so the
-/// refusal and the target are one fact: `None` is the refusal, and anything else is what
-/// the forward slice is sent after.
+/// refusal and the target are one fact: `None` is the refusal, and anything else is the
+/// class the search is sent hunting.
 ///
 /// NOTHING OUTRANKS THE TOP RUNG. Text no save has read is as novel as anything gets, so
-/// there is nothing for a search to find and the answer is settled without walking at all -
-/// forward or backward, since this is decided before any strategy is chosen.
+/// there is nothing for a search to find and the answer is settled without walking at all,
+/// this being decided before a search is begun.
 ///
 /// AND NOTHING IS REACHABLE THAT WOULD BEAT IT. That walk is a few thousand pointer-follows
 /// against a search that is thousands of diagram operations, and it stops early whenever it
@@ -1536,10 +1536,10 @@ fn stopped_name(stopped: novelty_search::StoppedBy) -> &'static str {
 ///
 /// PUBLIC SO THE MEASUREMENT CAN ASK THE SAME QUESTION, since de-qh27.
 ///
-/// The `fwdbwd` column of the performance matrix is the one that claims to be what the game
-/// runs, and it was calling `portfolio::best_novelty` unconditionally where the game refuses
-/// to search at all. A second copy of this predicate is exactly how that drifted, so it is
-/// exported rather than reimplemented.
+/// The performance matrix claims to measure what the game runs, and it was calling
+/// `answer::best_novelty` unconditionally where the game refuses to search at all. A
+/// second copy of this predicate is exactly how that drifted, so it is exported rather than
+/// reimplemented.
 pub fn class_worth_hunting<F>(
     graph: &LookAheadGraph,
     starts: &[DialogueNodeId],
@@ -1598,7 +1598,7 @@ mod branch_wire_tests {
             branch,
             &seed,
             &mut compiler,
-            &portfolio::Budget::default(),
+            &answer::Budget::default(),
             &GroupShape::of(graph),
             None,
         )
@@ -1699,7 +1699,7 @@ mod branch_wire_tests {
     ///
     /// Same graph, same baseline, two novelty functions that differ only in the class the
     /// reachable entry carries. A walk that stopped at the first entry beating the baseline
-    /// would answer both the same way and name neither class - see `symbolic::portfolio`
+    /// would answer both the same way and name neither class - see `symbolic::answer`
     /// for what the class is for.
     #[test]
     fn the_refusal_is_decided_by_the_best_class_reachable() {
@@ -1724,7 +1724,7 @@ mod branch_wire_tests {
         assert_eq!(
             class_worth_hunting(&graph, &[node(0)], Novelty::UnseenThisGame, one_top_rung),
             Some(Novelty::UnseenAnyGame),
-            "and the class it names is what the forward slice is sent after",
+            "and the class it names is what the search is sent hunting",
         );
     }
 
@@ -2479,12 +2479,9 @@ mod tests {
         // No number of the player's, so every part of the search keeps its own pacing.
         assert_eq!(
             request.search_budget().backwards,
-            portfolio::Budget::default().backwards
+            answer::Budget::default().backwards
         );
-        assert_eq!(
-            request.search_budget().each,
-            portfolio::Budget::default().each
-        );
+        assert_eq!(request.search_budget().each, answer::Budget::default().each);
     }
 
     /// A value's wire form is what the other side has to write, so it is pinned here.

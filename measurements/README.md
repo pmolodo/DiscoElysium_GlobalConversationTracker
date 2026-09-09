@@ -113,92 +113,56 @@ shape of the comparison, and it makes the question "against what?" impossible to
 | `conv`, `entries` | the conversation group and its size |
 | `profile` | how much of the group the profile has read (see `measurements/performance_matrix.rs`) |
 | `unseen` | how many entries that leaves unread |
-| `fwd_verdict` | `found`, `not-there`, `gave-up`, plus `no-room` when the diagram filled its budget and `no-ram` when the machine did |
-| `fwd_ms`, `fwd_nodes`, `fwd_setsum` | what it cost: manager nodes held, and the per-entry sets summed |
-| `*_setup` | how much of that engine's `ms` went on building the layout, the manager, the compiled guards and the seed rather than on searching. `ms` still carries the whole of it, so the search is the difference |
-| `bwd_verdict` | as `fwd`, except that there is no `no-ram`: its manager is allocated up front, so a machine that cannot supply the budget gives `NOT-MEASURED` before anything runs |
-| `bwd_ms`, `bwd_nodes` | what it cost |
-| `bwd_asked`, `bwd_cands` | candidates asked about, out of candidates waiting - one fixed point was paid per candidate asked |
-| `ingame_verdict` | the same, for the switching method the game runs, at the settings a player actually has |
-| `nolimit_verdict` | the same method with its limits off, walled at two minutes |
-| `ingame_ms`, `ingame_by`, `ingame_asked` | what it cost, and which half answered - `Forwards` where the slice halted, `Backwards` where the driver settled, `Partly` where it did not and the answer is a lower bound, `Gated` where the game would not have searched at all |
-| `nolimit_*` | the same four, for the unlimited column |
+| `ingame_verdict` | `found`, `not-there`, `gave-up`, plus `no-room` when the diagram filled its budget - the search the game runs, at the settings a player actually has |
+| `nolimit_verdict` | the same search with its limits off, walled at two minutes |
+| `*_ms` | what the column took, all in |
+| `*_setup` | how much of that `ms` went on building the layout, the manager, the compiled guards and the seed rather than on searching. `ms` still carries the whole of it, so the search is the difference |
+| `*_nodes` | manager nodes held at the end of the row |
+| `*_by` | how it was answered - `Backwards` where the driver settled, `AtTheStart` where the start already carried what was hunted, `Partly` where the driver did not settle and the answer is a lower bound, `Gated` where the game would not have searched at all |
+| `*_asked` | candidates asked about; one fixed point was paid per candidate |
 | any column `CRASHED` | that row took its process down; its log says how |
 | any column `NOT-MEASURED` | the row never ran; see below |
 
-### The columns are two searches and the method that switches between them
+### The two columns are one search under two allowances
 
-`fwd` walks links from the start, a decision diagram per entry. `bwd` computes pre-images
-from a target, one candidate at a time, stopping at the first candidate proved reachable.
-`ingame` is what the game actually runs: a forward slice hunting the best class anything
-reachable carries, and where that does not answer, the backward driver told what the slice
-found. The first two are its halves measured alone, which is what makes it readable.
+Both run the same thing: pre-images from a target, one candidate at a time, stopping at the
+first candidate proved reachable. What differs is what they may spend.
 
-`nolimit` is the same method with the limits taken off. The two exist separately because one
-column cannot answer both of the questions asked of it - "what does a player wait for" and
-"where does this method actually stop" - and a single column answered neither, running at a
-two-second clock on a six-gigabyte manager where a player gets one second and 256 MB
-(de-xegj). `ingame` asks the product for its budgets rather than restating them; `nolimit`
-states its own, which is the one place that is right, because it is deliberately not the
-product's configuration.
+`ingame` asks the product for its budgets rather than restating them, so it is what a player
+waits for. `nolimit` states its own - a two-minute wall on a measurement's manager - and is
+deliberately not the product's configuration. The two exist separately because one column
+cannot answer both of the questions asked of it, "what does a player wait for" and "where
+does this search actually stop", and a single column answered neither (de-xegj).
 
 MEASURED ON THE HEAVY GROUPS, and the gap is the point: on 631 the in-game column proves
 `not-there` in 80 ms holding 176,276 nodes where the unlimited one takes 22.4 seconds and
 30.1 million. Both agree; they disagree wildly about what it costs to be sure.
 
-### A column with a forward slice compares on its VERDICT and on nothing else
+### A row compares on its VERDICT
 
 The verdict is a settled fact about the search and compares between runs. `ms` and `setup`
-are clocks and nobody reads them as anything else. Everything in between - `nodes`, `by`,
-`asked` - looks like the first and, on a column that runs a forward slice, behaves like the
-second.
+are clocks and nobody reads them as anything else. `nodes` looks like the first and behaves
+like the second whenever anything about the machine moves.
 
-Measured 2026-09-09 (de-12wr.3, de-12wr.1). The same binary, the same rows, several times:
-
-| column | backward-only arm | `ingame` arm |
-|---|---|---|
-| `verdict` | identical | identical |
-| `nodes` | identical to the node | 154,909 against 160,876 on one row |
-| `by`, `asked` | identical | `Forwards asked=0` on three runs of four, `Backwards asked=1` on the fourth |
-
-The difference is the FORWARD SLICE. It is given fifty milliseconds and does as much as fifty
-milliseconds of that machine buys - so on a row where the slice is close to answering, whether
-it gets there is a property of the machine. The ANSWER does not change: a row that flips to
-`Backwards` has the driver finish what the slice did not, and reports the same verdict.
-
-So two folders whose `ingame_by`, `ingame_asked` or `ingame_nodes` differ differ about the
-machine, and two whose `bwd_*` differ differ about the search. Only the second is a finding.
 **A driver change, an index change or a refactor is checked on verdicts**, which is what
 `tools/matrix-compare.py` reports first and why it reports it separately.
 
-It used to move on every column, for a reason that was not inherent: the group graph yielded
-its entries in hash-map order, seeded per process, so the backward work followed a different
-order in every run - 126,106, 126,588 and 126,148 on one row across three processes, one of
-which overflowed a stack the others did not. `LookAheadGraph::nodes()` is ordered now, and
-**a run from before that change cannot have its `nodes` column compared with one after it**,
-on any column.
+`nodes` used to move between runs of the same binary, for a reason that was not inherent:
+the group graph yielded its entries in hash-map order, seeded per process, so the search
+followed a different order in every run - 126,106, 126,588 and 126,148 on one row across
+three processes, one of which overflowed a stack the others did not. `LookAheadGraph::nodes()`
+is ordered now, and **a run from before that change cannot have its `nodes` column compared
+with one after it**.
 
-**READING AN OLDER RUN, and the names have moved three times.**
-
-| the columns say | what they were |
-|---|---|
-| `fwd`, `bwd`, `ingame`, `nolimit`, with a `_setup` beside each `_ms` | today's, all symbolic |
-| the same four without any `_setup` | before de-x8ms.1. The `_ms` column means the same thing it does now - the whole of what the engine took - so those rows read straight across; what is missing is how much of it was not searching, which on a floor row is nearly all of it |
-| `fwd`, `bwd`, `fwdbwd` | one portfolio column instead of two, at neither the player's settings nor a real no-limit. `fwdbwd` reads closest to today's `nolimit` in its clock and to neither in its memory - it ran two seconds on a six-gigabyte manager. Do not read it as `ingame` (de-xegj) |
-| `explicit`, `symfwd`, `symbwd` | older names. `symfwd` is today's `fwd` and `symbwd` today's `bwd`; `explicit` measured a state-at-a-time search, which nothing measures now |
-| `fwd`, `bwd` and nothing else | older still. `fwd` is the state-at-a-time search and `bwd` is today's `fwd`; no backward search was measured at all |
-
-So a `fwd` column means opposite things at the two ends of that table, and the way to tell
-is what else is in the header. `tools/measure-matrix.py`'s `RowWeights` decides it the same
-way when it reuses old rows as weights.
-
-Not every run holds all three. `ENGINES` narrows the selection and the header follows it,
+Not every run holds both columns. `ENGINES` narrows the selection and the header follows it,
 so a narrowed run is a narrower row rather than a wide one with holes; read the header
-rather than assuming the columns.
+rather than assuming the columns. A recorded folder may also carry columns nothing produces
+now, from when a row held several search methods rather than one; a comparison pairs on the
+names above and finds nothing to pair the rest with.
 
-Every engine in a run gets the same allowance, which is the only way the verdicts mean
-anything against each other: the shared measurement budget in `DiagramBudget::measurement()`,
-plus a time cap that is meant not to be what stops a row. See de-e23q and de-z5sp.
+Both columns in a run get the same allowance where they are meant to, which is the only way
+verdicts mean anything against each other: see `DiagramBudget::measurement()`, de-e23q and
+de-z5sp.
 
 ### `no-room`, `CRASHED`, `NO-ROWS`, `not-worth-hunting` and `NOT-MEASURED` differ
 
@@ -216,9 +180,9 @@ things, so the run keeps them apart.
   "no dialogue here". SINCE de-cziy IT IS NOT WRITTEN ANY MORE - such groups are skipped
   and counted, and naming one on the command line stops the run - but folders recorded
   before that hold these rows and are read as they always were.
-- `not-worth-hunting` appears in the portfolio columns only, and is a result about the
-  QUESTION rather than the search: nothing link-reachable outranks where the option already
-  lands, so the game refuses to search and answers completely without doing any work. The
+- `not-worth-hunting` is a result about the QUESTION rather than the search: nothing
+  link-reachable outranks where the option already lands, so the game refuses to search and
+  answers completely without doing any work. The
   column exists to be what the game runs, so it has to refuse where the game refuses
   (de-qh27). Do not read it as `not-there`: that one means a search ran and found nothing,
   and telling the two apart is the whole reason it has its own word.

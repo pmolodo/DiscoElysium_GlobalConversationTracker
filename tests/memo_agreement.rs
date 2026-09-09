@@ -37,13 +37,13 @@ use std::collections::HashSet;
 use lookahead_engine::bridge::{COUNTER_CAP, NodeRef, SnapshotWorld, WorldSnapshot};
 use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
 use lookahead_engine::index::{build_group_graph, read_index};
+use lookahead_engine::symbolic::answer;
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
 use lookahead_engine::symbolic::known::GroupShape;
 use lookahead_engine::symbolic::memo::{self, Memo};
-use lookahead_engine::symbolic::portfolio;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 
@@ -185,7 +185,7 @@ fn one_group(
                 }
 
                 for budget in budgets() {
-                    let remembering = portfolio::best_novelty(
+                    let remembering = answer::best_novelty(
                         graph,
                         start,
                         StartBranch::Either,
@@ -199,7 +199,7 @@ fn one_group(
                         &shape,
                         Some(&memo),
                     );
-                    let fresh = portfolio::best_novelty(
+                    let fresh = answer::best_novelty(
                         graph,
                         start,
                         StartBranch::Either,
@@ -236,23 +236,9 @@ fn one_group(
     })
 }
 
-/// The two searches every start is asked under, and why it takes two.
+/// The budget every start is asked under.
 ///
-/// THE SHIPPED ONE ANSWERS THESE GROUPS FORWARDS. They were chosen for being small enough to
-/// check exhaustively, and on a group that small the forward slice halts on something novel
-/// before the backward driver is ever reached - which is the ordinary case rather than a
-/// quirk: `measurements/cacheable_asks.rs` puts two thirds of a menu's asks in exactly that
-/// position. A memo has nothing to do there, so a test that ran only this would compare a
-/// hundred answers and exercise nothing.
-///
-/// THE SECOND TURNS THE SLICE OFF, which is what the matrix calls `bwd-ingame` and is a
-/// shipped arrangement rather than one invented here. Every candidate then costs a backward
-/// pass, which is the machinery this test is about.
-///
-/// Both are compared, because agreement on the shipped default is the claim and agreement on
-/// the arm that fires is the evidence.
-///
-/// ## Neither is held to the player's clock, and it has to be that way
+/// ## It is not held to the player's clock, and it has to be that way
 ///
 /// A memo keeps a pass only if it SETTLED, so at the shipped two seconds whether anything is
 /// kept depends on how busy the machine is - and this test failed exactly that way, passing
@@ -261,9 +247,9 @@ fn one_group(
 /// finishes inside a player's second, so the wall is set where the machine cannot reach it.
 /// `tests/time_budget_binds.rs` is where the clock itself is pinned, and it pins the SHAPE
 /// rather than timing a real search for the same reason.
-fn budgets() -> [portfolio::Budget; 1] {
+fn budgets() -> [answer::Budget; 1] {
     let unhurried = std::time::Duration::from_secs(60);
-    [portfolio::Budget {
+    [answer::Budget {
         overall: unhurried,
         backwards: unhurried,
         each: unhurried,
@@ -278,13 +264,12 @@ fn budgets() -> [portfolio::Budget; 1] {
 /// ## Why almost everything is read, which took a failing test to establish
 ///
 /// A memo can only keep a pass that SETTLED WITHOUT MEETING, and on a world with plenty left
-/// unread there are no such passes to keep. Two things get in the way, both of them the
+/// unread there are few such passes to keep. Two things get in the way, both of them the
 /// search working correctly:
 ///
-/// - the forward slice halts on the first novel entry it reaches and the backward driver
-///   never runs, which is where two thirds of a menu's asks end up
-///   (`measurements/cacheable_asks.rs`);
-/// - and where it does run, a near unread entry is REACHABLE, so the pass meets and stops
+/// - the start may already carry the class being hunted, in which case the driver answers
+///   without a pass at all;
+/// - and where a pass does run, a near unread entry is REACHABLE, so it meets and stops
 ///   early - a proof for this seed, and not a fixed point anyone may keep.
 ///
 /// What is left to remember is the refusals, and refusals are what a nearly-read

@@ -13,7 +13,7 @@
 //!
 //! This keeps the expensive half alive between requests. de-2wtl.
 //!
-//! WHAT IT IS WORTH THROUGH THE SHIPPED CALL, rather than through the portfolio underneath:
+//! WHAT IT IS WORTH THROUGH THE SHIPPED CALL, rather than through the search underneath:
 //! `measurements/workspace_menus.rs` drives [`crate::service::Service::look_ahead`] twelve
 //! times over one group and finds a served request costs 53 to 60 milliseconds where an
 //! unserved one costs 116 to 126 - about a halving, on every menu after the first in a
@@ -57,8 +57,8 @@
 //!   starting value is the seed's business.
 //!
 //! So between two menus in one conversation, usually only the seed has changed. That is
-//! what makes de-bnjy.11 possible - a forward run settled with the seen-slots left free
-//! over-approximates every world that differs only in what has been read.
+//! what makes a memo worth having: a settled pass's sets are a function of the graph, the
+//! guards and the target, and none of those knows what has been read.
 //!
 //! THAT ASYMMETRY IS THE WHOLE DESIGN. de-2wtl originally proposed a workspace "valid for
 //! ONE world snapshot", which would have been thrown away almost every menu and bought
@@ -435,9 +435,9 @@ fn own(
 /// How many diagram nodes the memo may hold, out of what the manager was given.
 ///
 /// A QUARTER, and the reasoning is what the other three are for rather than a measurement of
-/// this one. The manager also holds the compiled guards, the seed, the forward slices and
-/// the pass being run right now, and every one of those is needed for the search a memo
-/// exists to make faster - so a memo allowed the whole store would starve what it serves.
+/// this one. The manager also holds the compiled guards, the seed and the pass being run
+/// right now, and every one of those is needed for the search a memo exists to make faster -
+/// so a memo allowed the whole store would starve what it serves.
 ///
 /// IT IS COUNTED IN A CURRENCY THAT OVERSTATES, which is the safe direction: a kept pass is
 /// priced at `BackwardStats::diagram_nodes`, which counts sharing inside one pass and not

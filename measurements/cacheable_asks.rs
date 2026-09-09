@@ -34,7 +34,7 @@
 //!
 //! ## What is faithful here and what is not
 //!
-//! FAITHFUL: the shipped budget (`portfolio::Budget::default`), the player's 256 MB, the
+//! FAITHFUL: the shipped budget (`answer::Budget::default`), the player's 256 MB, the
 //! shipped layout, and the dominance rule that refuses most of a candidate list for free.
 //!
 //! NOT: the driver stops at its first proof, and this asks about every candidate of every
@@ -90,13 +90,13 @@ use lookahead_engine::bridge::{SnapshotWorld, WorldSnapshot};
 use lookahead_engine::core::types::{DialogueNodeId, Novelty};
 use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
+use lookahead_engine::symbolic::answer;
 use lookahead_engine::symbolic::backward::{Backward, Budget as BackwardBudget};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
 use lookahead_engine::symbolic::known::GroupShape;
-use lookahead_engine::symbolic::portfolio;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 
@@ -149,7 +149,7 @@ fn main() {
     let menus_wanted = from_env("MENUS", MENUS);
     let each = Duration::from_millis(from_env(
         "EACH_MS",
-        portfolio::Budget::default().each.as_millis() as usize,
+        answer::Budget::default().each.as_millis() as usize,
     ) as u64);
 
     println!(
@@ -446,7 +446,8 @@ fn arm(
 /// The options that ask about anything, in the order the menu puts them.
 ///
 /// Here rather than on [`Menu`] because only an arm that RUNS the asks groups them by
-/// option: a slice is per start, so the passes have to be taken a start at a time. An arm
+/// option: what is hunted is decided per start, so the passes have to be taken a start at
+/// a time. An arm
 /// that only counts asks reads the pairs straight.
 fn options(menu: &Menu) -> Vec<DialogueNodeId> {
     let mut found = Vec::new();

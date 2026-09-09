@@ -87,12 +87,12 @@ use std::time::Instant;
 use lookahead_engine::bridge::{NodeRef, SnapshotWorld, WorldSnapshot};
 use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
 use lookahead_engine::index::{build_group_graph, read_index};
+use lookahead_engine::symbolic::answer;
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
 use lookahead_engine::symbolic::known::GroupShape;
-use lookahead_engine::symbolic::portfolio;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 
@@ -180,7 +180,7 @@ fn main() {
             return;
         };
         let shape = GroupShape::of(&graph);
-        let search = portfolio::Budget::default();
+        let search = answer::Budget::default();
 
         // Entries that will be marked seen, one more per round, in a fixed order so two
         // runs vary the world the same way.
@@ -229,7 +229,7 @@ fn main() {
                 if hunting <= Novelty::SeenThisGame {
                     continue;
                 }
-                let answer = portfolio::best_novelty(
+                let answer = answer::best_novelty(
                     &graph,
                     start,
                     StartBranch::Either,

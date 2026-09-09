@@ -8,9 +8,9 @@ dropped - a group that has rows in one folder and none in the other is a finding
 run, not a gap in the comparison.
 
 COLUMNS ARE MATCHED BY NAME, from each file's own header. The matrix's columns have moved
-several times - `fwdbwd` split into `ingame` and `nolimit`, and every engine later grew a
-`_setup` - so reading them by position across two runs compares unrelated numbers and
-produces a plausible table.
+several times, so reading them by position across two runs compares unrelated numbers and
+produces a plausible table. A column one folder has and the other does not simply goes
+unpaired.
 
 AND EVERY TOTAL IS REPORTED THREE WAYS - everything, the hardest few groups and the easiest
 hundred. A whole-game total is very nearly the sum of the heaviest few groups, so a change

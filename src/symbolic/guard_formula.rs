@@ -134,7 +134,7 @@ pub struct GuardCompiler<'a> {
     /// ## Why the compiler holds it rather than the search
     ///
     /// A fixed point revisits an entry every time its set grows, and the guard it tests
-    /// there is the same guard every time. The forward search had worked this out and kept
+    /// there is the same guard every time. A search that did not keep them worked out
     /// a map of its own; the backward search had not, and recompiled on every visit.
     ///
     /// Keeping it HERE fixes that and does something the per-search map could not: a

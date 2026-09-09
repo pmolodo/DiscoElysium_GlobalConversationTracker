@@ -2,17 +2,11 @@
 //! Does the time dial mean what the player is told it means?
 //!
 //! `LookAheadTimeBudgetMs` is documented as "the longest one option's look-ahead may run
-//! for" (src/GlobalConversationTracker.Plugin/Plugin.cs), and until de-cluo it was not. Every
-//! ration in the portfolio was an estimate and none of them was a wall:
-//!
-//! 1. THE FORWARD SLICE WAS OUTSIDE THE CLOCK. `portfolio::best_novelty` runs the slice and
-//!    only then enters the backward driver, whose clock starts there - so the slice's fifty
-//!    milliseconds were spent before the player's number began counting.
-//! 2. A CANDIDATE COULD OVERRUN IT. The driver tested `began.elapsed() >= budget.time` at the
-//!    top of its loop and then allowed the candidate a whole `each`, so one beginning a
-//!    millisecond under the limit returned a quarter of a second past it.
-//!
-//! At the shipped default of 1000 the true worst case was about 50 + 1000 + 250 = 1300 ms.
+//! for" (src/GlobalConversationTracker.Plugin/Plugin.cs), and until de-cluo it was not: every
+//! ration was an estimate and none of them was a wall. Work done before the driver's own
+//! clock started was spent outside the player's number entirely, and a candidate beginning a
+//! millisecond under the limit was still allowed a whole `each`, so it returned a quarter of
+//! a second past it. At the shipped default of 1000 the true worst case was about 1300 ms.
 //!
 //! ## Why this is a test about ARITHMETIC rather than about wall time
 //!
@@ -33,7 +27,7 @@
 //! to what is left of the menu, rather than a stopwatch on a real menu.
 
 use lookahead_engine::bridge::LookAheadRequest;
-use lookahead_engine::symbolic::portfolio;
+use lookahead_engine::symbolic::answer;
 
 /// The dial's number is the wall, and the parts are inside it.
 #[test]
@@ -90,7 +84,7 @@ fn a_small_dial_squeezes_the_rations_it_is_smaller_than() {
 /// The default carries a wall too, so a request that names no budget is bounded.
 #[test]
 fn the_default_budget_has_a_wall_covering_its_own_rations() {
-    let default = portfolio::Budget::default();
+    let default = answer::Budget::default();
 
     assert!(
         default.overall >= default.backwards,

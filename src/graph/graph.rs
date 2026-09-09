@@ -102,11 +102,11 @@ impl LookAheadGraph {
     ///
     /// TWO CALLERS, ONE WALK, and they want the same fact for opposite reasons.
     /// `bridge::class_worth_hunting` asks whether anything outranks a baseline, and refuses to
-    /// search when nothing does. `symbolic::portfolio` asks which class to hunt, because a
-    /// forward pass that halts on the best class PRESENT has found the best there is, while
-    /// one halting on the first entry that merely beats "seen" may have walked past a
-    /// better one - and it was two different walks, answering these two questions
-    /// differently, that made that gap possible.
+    /// search when nothing does. `symbolic::answer` asks which class to hunt, because a
+    /// search that stops at the best class PRESENT has found the best there is, while one
+    /// stopping at the first entry that merely beats "seen" may have walked past a better
+    /// one - and it was two different walks, answering these two questions differently,
+    /// that made that gap possible.
     ///
     /// THE START IS A RESULT LIKE ANY OTHER, and is scored before a single link is walked.
     /// It reads as a wasted comparison for an ordinary option, where the baseline IS the

@@ -8,9 +8,9 @@
 //! the request, where a second kind of setup is paid once per START:
 //!
 //! - `IterationOrder::of(graph)`, a Tarjan pass over the whole group, built inside
-//!   `Reachability::explore_branch_within` - which is what `portfolio::forwards_for` calls.
+//!   `Reachability::explore_branch_within` - which is what `answer::forwards_for` calls.
 //! - `IterationOrder::of_from(graph, start)`, the same Tarjan again plus a distance walk,
-//!   inside `Known::of_from` in `portfolio::best_novelty`.
+//!   inside `Known::of_from` in `answer::best_novelty`.
 //! - The parent map in `Known::of`, every node's incoming edges, identical for every start
 //!   in the group.
 //!
@@ -59,7 +59,7 @@
 //! ## What it prices, and what it does not
 //!
 //! ONLY THE GRAPH-ONLY WORK. `Where::of` is called three times per start - by
-//! `bridge::scored`, by `portfolio::best_novelty` and by `novelty_search::best_novelty` -
+//! `bridge::scored`, by `answer::best_novelty` and by `novelty_search::best_novelty` -
 //! and is the same waste in the same place, but it needs a compiled world to run and so
 //! belongs with the diagram side rather than here. The columns above are a LOWER BOUND on
 //! what a menu spends rebuilding what it already had.
@@ -119,7 +119,7 @@ fn main() {
         let mut best: Option<(Duration, Duration, Duration, Duration)> = None;
         for _ in 0..repeats {
             // ALONE: what one start pays when it works everything out for itself. The
-            // forward slice's own order, plus `Known::of_from` for the backward half.
+            // order the search takes its entries in, through `Known::of_from`.
             let timing = Instant::now();
             let order = IterationOrder::of(&graph);
             let alone_order = timing.elapsed();

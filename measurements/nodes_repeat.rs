@@ -40,11 +40,11 @@ use std::collections::HashSet;
 
 use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
 use lookahead_engine::index::{build_group_graph, read_index};
+use lookahead_engine::symbolic::answer::best_novelty;
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::known::GroupShape;
-use lookahead_engine::symbolic::portfolio::best_novelty;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 

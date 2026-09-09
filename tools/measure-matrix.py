@@ -17,8 +17,8 @@ Usage:
 Examples:
     tools/measure-matrix.py                 # the six heavy conversations, every profile
     tools/measure-matrix.py 368 631         # just these two
-    DEGCT_ENGINES=bwd tools/measure-matrix.py 14  # one engine, one group
-    DEGCT_PROFILES=deepest-1 DEGCT_ENGINES=bwd tools/measure-matrix.py 14   # one row
+    DEGCT_ENGINES=nolimit tools/measure-matrix.py 14  # one column, one group
+    DEGCT_PROFILES=deepest-1 DEGCT_ENGINES=nolimit tools/measure-matrix.py 14   # one row
     DEGCT_PROFILES=95pc-seen,50pc-seen tools/measure-matrix.py 14     # a held-back profile
     tools/measure-matrix.py all             # EVERY group in the game, resumably
 
@@ -79,13 +79,12 @@ NOT-MEASURED row therefore leaves both lines in the file, in the order they happ
 THE LAST ROW PER (conv, profile), which is what the resume itself does.
 
 ENGINES and PROFILES each take a comma or space separated list and narrow the grid the same
-way the conversation arguments do. The engines are fwd (the symbolic forward search), bwd
-(the backward one), ingame and nolimit (the switching method the game runs, at the player's
-own settings and with the limits off - de-xegj split what was one fwdbwd column, because one
-column cannot say both what a player waits for and where the method actually stops). `all`
-measures every one of them.
+way the conversation arguments do. The engines are ingame and nolimit - the search the game
+runs, at the player's own settings and with the limits off, because one column cannot say
+both what a player waits for and where the search actually stops (de-xegj). `all` measures
+both.
 
-Older folders hold a single `fwdbwd` column instead; read the header, which is what
+A recorded folder may carry columns nothing produces now; read the header, which is what
 `RowWeights` and `group_cost` both do.
 
 STOPPING IT MID-RUN NEEDS MORE THAN KILLING THE SHELL. Every row is a fresh measurement
@@ -264,36 +263,19 @@ class RowWeights:
 
         header = lines[0].split(TAB)
 
-        # WHICH ERA THIS FILE IS FROM, decided before anything is renamed, because `fwd` has
-        # meant two different searches and only the company it keeps says which.
-        #
-        #   oldest      fwd, bwd                 - fwd is a state-at-a-time search, bwd is
-        #                                          the symbolic forward one.
-        #   middle      explicit, symfwd, symbwd - symfwd is today's fwd, symbwd today's bwd.
-        #   current     fwd, bwd, fwdbwd         - direction is what tells them apart.
-        era_current = "fwdbwd_ms" in header
-        era_middle = "explicit_ms" in header
-
         conv_column = header.index("conv") if "conv" in header else None
         profile_column = header.index("profile") if "profile" in header else None
         if conv_column is None or profile_column is None:
             return
 
+        # TAKEN AS THE HEADER SPELLS THEM. A column this no longer produces keys a weight
+        # nothing asks for, which costs a dictionary entry and misleads nobody; renaming one
+        # onto a column that ships would put a measurement of something else under its name.
         column_engine = {}
         for index, name in enumerate(header):
             if not name.endswith("_ms"):
                 continue
-            engine = name[: -len("_ms")]
-            if era_middle:
-                # de-zovl's names for the two that survive.
-                engine = {"symfwd": "fwd", "symbwd": "bwd"}.get(engine, engine)
-            elif not era_current:
-                # The oldest runs. `bwd` was the symbolic forward search and is a usable
-                # weight for today's `fwd`. Its `fwd` was a state-at-a-time search that
-                # nothing measures now, so it keeps a name nothing asks about rather than
-                # poisoning the column that bears that name today.
-                engine = {"bwd": "fwd", "fwd": "explicit"}.get(engine, engine)
-            column_engine[index] = engine
+            column_engine[index] = name[: -len("_ms")]
 
         for line in lines[1:]:
             cells = line.split(TAB)

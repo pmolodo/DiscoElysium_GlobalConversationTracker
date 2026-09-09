@@ -31,10 +31,11 @@
 //! condensation DAG. A topological order of the reversed condensation is therefore the
 //! reverse of a topological order of the original.
 //!
-//! So there is one rank per entry, and the direction is a matter of which end a search
-//! reads it from: a forward pass pops the SMALLEST rank, a backward pass the LARGEST. That
-//! is what lets this sit in [`crate::symbolic::known::Known`] beside the parent map and be
-//! computed once for a group rather than once per candidate.
+//! So there is one rank per entry, and which end of it a search reads from is a property of
+//! that search rather than of the rank: a pass travelling links backwards pops the LARGEST,
+//! and one travelling them forwards would pop the smallest. That is what lets this sit in
+//! [`crate::symbolic::known::Known`] beside the parent map and be computed once for a group
+//! rather than once per candidate.
 //!
 //! ## It cannot change an answer
 //!
@@ -43,8 +44,8 @@
 //! change is a run that STOPS EARLY - which entry a budget-limited pass got to, or which
 //! entry a meet landed on - and those were never promised to be any particular entry. It
 //! changes those FOR THE BETTER, which is most of what it turned out to be worth: on
-//! conversations 368 and 631 the forward search spends its memory budget unfinished under a
-//! plain queue and settles under this. See `tests/iteration_order.rs`.
+//! conversations 368 and 631 a search spends its memory budget unfinished under a plain
+//! queue and settles under this. See `tests/iteration_order.rs`.
 //!
 //! ## There is no unordered path
 //!
@@ -128,8 +129,8 @@ impl IterationOrder {
 
         // TARJAN CLOSES A COMPONENT ONLY ONCE EVERYTHING IT CAN REACH IS CLOSED, so the
         // list it leaves is a reverse topological order of the condensation - sinks first.
-        // Walking it backwards puts the sources first, which is what a forward pass wants
-        // and, read from the other end, what a backward pass wants.
+        // Walking it backwards puts the sources first, so a rank rises along a link - which
+        // is what lets a pass travelling links backwards take the highest first.
         let mut component_of = HashMap::with_capacity(walk.index.len());
         let mut largest = 0;
         for (number, component) in walk.components.iter().rev().enumerate() {
@@ -176,7 +177,7 @@ impl IterationOrder {
 
         // The start is walked FROM without being recorded as arrived at, matching
         // `novelty_search::link_distances`: it gets a distance only if a link leads back to
-        // it, and otherwise stays at zero, which is where a forward pass wants it anyway.
+        // it, and otherwise stays at zero, which is the lowest rank its component allows.
         let mut queue = VecDeque::from([(start, 0u32)]);
         while let Some((id, here)) = queue.pop_front() {
             let Some(node) = graph.get(id) else { continue };
@@ -242,15 +243,6 @@ impl IterationOrder {
     }
 }
 
-/// Which end of the rank a search reads from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Direction {
-    /// Along links, from the start. Takes the lowest rank first.
-    Forward,
-    /// Along links reversed, from a target. Takes the highest rank first.
-    Backward,
-}
-
 /// One entry waiting to be taken, and where it sits in the order.
 ///
 /// `Ord` puts the next entry to pop LAST, because [`BinaryHeap`] is a max-heap: highest
@@ -284,18 +276,21 @@ impl PartialOrd for Queued {
 /// a cycle has no first entry, so there is nothing for the rank to say about its members
 /// and they come back first-in-first-out. That is the only place the old queue behaviour
 /// survives, and it survives because it is the right answer there.
+///
+/// HIGHEST RANK FIRST, which is what a pass travelling links BACKWARDS wants: the rank
+/// rises along a link, so the highest is the furthest from the start, and far from the
+/// start stands in for near the target. A pass travelling links forwards would want the
+/// other end, and would have to say so; there is no such pass, so there is no such setting.
 pub struct Worklist<'a> {
     order: &'a IterationOrder,
-    direction: Direction,
     queue: BinaryHeap<Queued>,
     pushed: u64,
 }
 
 impl<'a> Worklist<'a> {
-    pub fn new(order: &'a IterationOrder, direction: Direction) -> Self {
+    pub fn new(order: &'a IterationOrder) -> Self {
         Self {
             order,
-            direction,
             queue: BinaryHeap::new(),
             pushed: 0,
         }
@@ -303,21 +298,13 @@ impl<'a> Worklist<'a> {
 
     /// Queues `id`, which may already be waiting.
     ///
-    /// A DUPLICATE IS NOT WORTH SUPPRESSING HERE. Both searches keep what is pending for an
-    /// entry in a separate map and take it all on the first pop, so a second pop of the
+    /// A DUPLICATE IS NOT WORTH SUPPRESSING HERE. A search keeps what is pending for an
+    /// entry in a separate map and takes it all on the first pop, so a second pop of the
     /// same entry finds nothing and costs one heap operation - where suppressing it would
     /// cost a membership set kept in step with the heap on every push and pop.
     pub fn push(&mut self, id: DialogueNodeId) {
-        let rank = self.order.rank_of(id);
         self.queue.push(Queued {
-            // WHICH END THIS SEARCH READS FROM. A forward pass wants the entry nearest its
-            // source first, so it takes the lowest rank; a backward pass keyed on the START
-            // wants the furthest, because far from the start stands in for near the target.
-            //
-            priority: match self.direction {
-                Direction::Forward => u64::MAX - rank,
-                Direction::Backward => rank,
-            },
+            priority: self.order.rank_of(id),
             seq: self.pushed,
             id,
         });
@@ -546,29 +533,17 @@ mod tests {
             .build();
         let order = IterationOrder::of(&graph);
 
-        let mut backward = Worklist::new(&order, Direction::Backward);
+        let mut queue = Worklist::new(&order);
         for id in [node(0), node(1), node(3)] {
-            backward.push(id);
+            queue.push(id);
         }
         assert_eq!(
-            backward.pop(),
+            queue.pop(),
             Some(node(3)),
             "a backward pass starts at the join"
         );
-        assert_eq!(backward.pop(), Some(node(1)));
-        assert_eq!(backward.pop(), Some(node(0)));
-
-        let mut forward = Worklist::new(&order, Direction::Forward);
-        for id in [node(3), node(1), node(0)] {
-            forward.push(id);
-        }
-        assert_eq!(
-            forward.pop(),
-            Some(node(0)),
-            "a forward pass starts at the start"
-        );
-        assert_eq!(forward.pop(), Some(node(1)));
-        assert_eq!(forward.pop(), Some(node(3)));
+        assert_eq!(queue.pop(), Some(node(1)));
+        assert_eq!(queue.pop(), Some(node(0)));
     }
 
     /// Entries the order does not separate keep the order they were pushed in.
@@ -622,7 +597,7 @@ mod tests {
         );
 
         let pushed = [node(2), node(1)];
-        let mut queue = Worklist::new(&order, Direction::Forward);
+        let mut queue = Worklist::new(&order);
         for id in pushed {
             queue.push(id);
         }
@@ -655,13 +630,13 @@ mod tests {
         );
     }
 
-    /// The same entry queued twice is popped twice; both searches rely on it.
+    /// The same entry queued twice is popped twice, which the search relies on.
     #[test]
     fn a_duplicate_is_kept_rather_than_merged() {
         let graph = GraphBuilder::new().add(Entry::new(0)).build();
         let order = IterationOrder::of(&graph);
 
-        let mut queue = Worklist::new(&order, Direction::Forward);
+        let mut queue = Worklist::new(&order);
         queue.push(node(0));
         queue.push(node(0));
 

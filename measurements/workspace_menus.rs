@@ -5,7 +5,7 @@
 //!
 //! That one established the MECHANISM - that a manager survives forty worlds without
 //! growing, and that a cold one costs ninety-eight milliseconds where a warm one costs
-//! fifty-three - by driving the portfolio directly. This drives `Service::look_ahead`, which
+//! fifty-three - by driving the search directly. This drives `Service::look_ahead`, which
 //! is what the engine host calls when the plugin sends a request, so what it reports is what
 //! a player's menu costs.
 //!

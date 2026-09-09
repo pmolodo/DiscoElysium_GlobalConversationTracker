@@ -90,7 +90,7 @@
 //! ```
 //!
 //! A THREE-OPTION MENU ASKS ABOUT 3.4 TARGETS IN TOTAL, of which 1.8 are distinct - so a
-//! memo would save about 1.6 fixed points a menu. On the three heavy groups whose slice does
+//! memo would save about 1.6 fixed points a menu. On the three heavy groups whose search does
 //! not settle, where a fixed point is expensive rather than cheap, it is 0.8.
 //!
 //! That is what a memo is worth now, and it is not worth a per-request object threaded
@@ -139,7 +139,7 @@
 //! there could work.
 //!
 //! AND TWO THIRDS OF THESE ASKS NEVER REACH THE BACKWARD DRIVER, 2026-09-09. An option whose
-//! forward slice answers outright runs no pass, so its candidates cost nothing and there is
+//! start already carries what is hunted runs no pass, so its candidates cost nothing and there is
 //! nothing about them to remember - the same subtraction dominance makes, one stage later.
 //! `cacheable_asks` runs the very asks this arm counts and puts it at 3361 of 9882. Of those
 //! that do reach the driver, all 3361 settled without meeting and 68.6 per cent were repeats,
@@ -257,7 +257,7 @@ const WALK_MENUS: usize = 40;
 /// would work. Near one says close de-znov unbuilt.
 ///
 /// AND IT COUNTS ASKS THAT NEVER REACH THE BACKWARD DRIVER, which `cacheable_asks` measures
-/// and this cannot: an option whose forward slice answers outright runs no pass, so there is
+/// and this cannot: an option whose start already carries what is hunted runs no pass, so there is
 /// nothing to remember about its candidates. That is the largest subtraction from this
 /// number after dominance.
 fn walk(index: &lookahead_engine::index::Index) {

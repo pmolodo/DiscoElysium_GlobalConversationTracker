@@ -26,10 +26,10 @@
 //!
 //! ## What it costs when the answer is no
 //!
-//! One fixed point per candidate, against one search for all of them. That is the trade the
-//! whole approach rests on and the reason [`Budget`] exists: a group with a long candidate
-//! list, every one of them unreachable, is where a forward pass should win, and
-//! de-sze.14.4 is where that crossover gets measured rather than assumed.
+//! One fixed point per candidate. That is what [`Budget`] exists for: a group with a long
+//! candidate list, every one of them unreachable, has to pay for every refusal separately,
+//! and it is the shape where this costs most. `measurements/performance_matrix.rs`'s
+//! percentage profiles are where that is measured rather than assumed.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 

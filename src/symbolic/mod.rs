@@ -21,6 +21,7 @@
 //! clock - is a starting guess and is meant to be varied.
 
 pub mod action_image;
+pub mod answer;
 pub mod backward;
 pub mod budget;
 pub mod data_layout;
@@ -31,7 +32,6 @@ pub mod known;
 pub mod memo;
 pub mod novelty_search;
 pub mod order;
-pub mod portfolio;
 pub mod reachability;
 pub mod register;
 pub mod vars;

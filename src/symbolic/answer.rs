@@ -56,16 +56,16 @@ pub enum Answered {
     AtTheStart,
     /// The backward driver settled within its budget, so the answer is exact.
     Backwards,
-    /// The backward driver did not settle, so [`PortfolioAnswer::best`] is a LOWER BOUND.
+    /// The backward driver did not settle, so [`Answer::best`] is a LOWER BOUND.
     ///
     /// The classes it refused it refused completely, but a candidate it never reached
     /// might have carried a better one. Nothing runs after this - see the module note.
     Partly,
 }
 
-/// What the portfolio found.
+/// What the search found.
 #[derive(Debug, Clone)]
-pub struct PortfolioAnswer {
+pub struct Answer {
     pub best: Novelty,
     pub by: Answered,
     /// The entry that proved it, when the backward search is what proved it.
@@ -183,7 +183,7 @@ pub fn best_novelty<'a, F>(
     budget: &Budget,
     shape: &GroupShape,
     memo: Option<&crate::symbolic::memo::Memo>,
-) -> PortfolioAnswer
+) -> Answer
 where
     F: Fn(DialogueNodeId) -> Novelty,
 {
@@ -198,7 +198,7 @@ where
     // of a rolled check, whose baseline is where that outcome LANDS: a check no save has
     // displayed, opening something this save has read, outranks its own outcome.
     if hunting > Novelty::SeenThisGame && novelty(start) == hunting {
-        return PortfolioAnswer {
+        return Answer {
             best: hunting,
             by: Answered::AtTheStart,
             witness: Some(start),
@@ -215,9 +215,9 @@ where
     //
     // PASSED IN RATHER THAN WORKED OUT HERE, because the caller has already walked the
     // links to decide whether to search at all - `bridge::class_worth_hunting` - and the
-    // answer to "is anything better than the baseline reachable" and "which class should
-    // the slice hunt" is the same walk over the same graph. Doing it here would be doing it
-    // twice per start, once per outcome of every rolled check.
+    // answer to "is anything better than the baseline reachable" and "which class should be
+    // hunted" is the same walk over the same graph. Doing it here would be doing it twice
+    // per start, once per outcome of every rolled check.
     //
     // WHERE THE SEARCH BEGINS, and for one outcome of a rolled start that is its
     // destinations holding what entering by that outcome left - never the check itself,
@@ -244,10 +244,10 @@ where
         world,
         counter_cap,
         &novelty,
-        // WHAT IS LEFT OF THE WALL, not the whole backward ration. The slice above has
-        // already been spent out of it, and the driver narrows each candidate to what
-        // remains of THIS in turn - so the three rations compose into one deadline rather
-        // than adding up.
+        // WHAT IS LEFT OF THE WALL, not the whole backward ration. Whatever has already
+        // gone on deciding what to hunt is spent out of it, and the driver narrows each
+        // candidate to what remains of THIS in turn - so the rations compose into one
+        // deadline rather than adding up.
         &novelty_search::Budget {
             time: budget
                 .backwards
@@ -272,7 +272,7 @@ where
     // clock has established a lower bound and nothing else here improves on it - see the
     // module note. The caller is told which it is, and an unsettled answer is read as the
     // bound it is rather than as a claim that nothing is there.
-    PortfolioAnswer {
+    Answer {
         best: backwards.best,
         by: if backwards.stopped_by == StoppedBy::Nothing {
             Answered::Backwards
@@ -303,12 +303,7 @@ mod tests {
 
     const CAP: i32 = 16;
 
-    fn run<F>(
-        graph: &LookAheadGraph,
-        world: &TestWorld,
-        novelty: F,
-        budget: &Budget,
-    ) -> PortfolioAnswer
+    fn run<F>(graph: &LookAheadGraph, world: &TestWorld, novelty: F, budget: &Budget) -> Answer
     where
         F: Fn(DialogueNodeId) -> Novelty,
     {
@@ -341,13 +336,13 @@ mod tests {
         )
     }
 
-    /// The whole portfolio, asked about ONE OUTCOME of a rolled start.
+    /// The whole search, asked about ONE OUTCOME of a rolled start.
     fn run_branch<F>(
         graph: &LookAheadGraph,
         world: &TestWorld,
         branch: StartBranch,
         novelty: F,
-    ) -> PortfolioAnswer
+    ) -> Answer
     where
         F: Fn(DialogueNodeId) -> Novelty,
     {
@@ -384,12 +379,11 @@ mod tests {
         )
     }
 
-    /// BOTH HALVES OF THE PORTFOLIO ANSWER ABOUT ONE OUTCOME, and only that one.
+    /// AN ANSWER IS ABOUT ONE OUTCOME, and only that one.
     ///
     /// 0 is a white check; 2 lies past what passing opens and no save has read it. Failing
-    /// must not find it - and the forward slice, the backward driver and the meet between
-    /// them are three separate ways it could, so this asks the whole thing rather than a
-    /// half of it.
+    /// must not find it - and the driver and the meet at the start are two separate ways it
+    /// could, so this asks through the front door rather than of one piece.
     #[test]
     fn an_outcome_is_answered_from_its_own_half_of_the_check() {
         let graph = GraphBuilder::new()
@@ -491,7 +485,7 @@ mod tests {
         assert_ne!(answer.witness, Some(node(0)));
     }
 
-    /// THE SLICE HUNTS THE BEST CLASS REACHABLE, not the first entry that beats "seen".
+    /// THE SEARCH HUNTS THE BEST CLASS REACHABLE, not the first entry that beats "seen".
     ///
     /// 1 is unseen HERE and sits between the start and 2, which is unseen ANYWHERE. A pass
     /// halting on anything above the floor stops at 1 and reports unseen-here as the best
@@ -517,11 +511,11 @@ mod tests {
         assert_eq!(answer.witness, None);
     }
 
-    /// The same, with the forward slice starved, so the backward driver is what answers.
+    /// The same fixture, with the driver starved, so the answer comes back a lower bound.
     ///
-    /// STARVED RATHER THAN REMOVED, because the two paths have to keep agreeing: this is
-    /// the fixture above with the first half switched off, and both must reach the same
-    /// verdict and name the same witness.
+    /// STARVED RATHER THAN GIVEN A HARDER QUESTION, because what is under test is the
+    /// REPORTING: the same fixture and the same witness, answered exactly where the budget
+    /// allows and as a bound where it does not.
     #[test]
     fn a_settled_backward_answer_is_taken_as_it_stands() {
         let graph = GraphBuilder::new()
@@ -552,8 +546,6 @@ mod tests {
             .add(Entry::new(2))
             .build();
 
-        // THE FORWARD SLICE IS STARVED TOO, or it would answer this fixture outright and
-        // the unsettled path - which is what this test is about - would never be reached.
         let starved = Budget {
             backwards: Duration::ZERO,
             each: Duration::ZERO,
@@ -588,8 +580,8 @@ mod tests {
             .build();
         let world = TestWorld::new().set_variable("shut", GuardValue::from_boolean(false));
 
-        // Nothing is reachable, so the slice halts on nothing and the backward driver
-        // refuses every candidate - completely, which is what makes this an answer.
+        // Nothing is reachable, so the driver refuses every candidate - completely, which
+        // is what makes this an answer rather than a bound.
         let answer = run(&graph, &world, unseen(&[2]), &Budget::default());
         assert_eq!(answer.best, Novelty::SeenThisGame);
         assert_eq!(answer.by, Answered::Backwards);

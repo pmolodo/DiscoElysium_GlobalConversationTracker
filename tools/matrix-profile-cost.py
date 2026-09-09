@@ -9,8 +9,7 @@ anything measurable is a tenth of every whole-game run spent confirming that it 
 not.
 
 COLUMNS ARE MATCHED BY NAME, from each file's own header, because the matrix's columns have
-moved several times - `fwdbwd` split into `ingame` and `nolimit`, and every engine later
-grew a `_setup`. Reading them by position across two runs compares unrelated numbers and
+moved several times. Reading them by position across two runs compares unrelated numbers and
 produces a plausible table.
 """
 

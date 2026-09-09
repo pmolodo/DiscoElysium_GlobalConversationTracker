@@ -142,7 +142,7 @@ pub enum LookAheadLimit {
 /// what lets the mod draw a check's two halves apart - see de-8hh2.6.
 ///
 /// HERE RATHER THAN BESIDE ONE SEARCH, because more than one thing asks the question: the
-/// forward pass, the backward driver and the refusal walk in front of them all take it.
+/// entry step, the backward driver and the refusal walk in front of them all take it.
 /// It names the ROLL rather than an index into anything a particular search builds.
 ///
 /// A start that does not roll leaves exactly one way in, and that way is its `Pass`; its
