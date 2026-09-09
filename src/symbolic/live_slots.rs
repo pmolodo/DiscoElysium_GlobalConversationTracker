@@ -223,7 +223,7 @@ fn kills_of(node: &LookAheadNode) -> HashSet<usize> {
 mod tests {
     use super::*;
     use crate::core::action::DialogueAction;
-    use crate::core::guard::GuardExpression;
+    use crate::core::guard::Guard;
 
     /// A chain of entries, each linking to the next, over a shared symbol table.
     fn chain(built: Vec<LookAheadNode>) -> LookAheadGraph {
@@ -234,7 +234,7 @@ mod tests {
         LookAheadGraph::new(built, symbols).unwrap()
     }
 
-    fn node(entry: i32, guard: GuardExpression, actions: Vec<DialogueAction>, links: Vec<i32>)
+    fn node(entry: i32, guard: Guard, actions: Vec<DialogueAction>, links: Vec<i32>)
         -> LookAheadNode
     {
         LookAheadNode::new(
@@ -261,8 +261,8 @@ mod tests {
     #[test]
     fn a_slot_nothing_onward_reads_is_dead() {
         let graph = chain(vec![
-            node(0, GuardExpression::always_true(), vec![], vec![1]),
-            node(1, GuardExpression::Variable("a".into()), vec![], vec![]),
+            node(0, Guard::always_true(), vec![], vec![1]),
+            node(1, Guard::variable("a"), vec![], vec![]),
         ]);
         let live = LiveSlots::of(&graph);
 
@@ -275,9 +275,9 @@ mod tests {
     #[test]
     fn a_read_travels_back_along_the_chain() {
         let graph = chain(vec![
-            node(0, GuardExpression::always_true(), vec![], vec![1]),
-            node(1, GuardExpression::always_true(), vec![], vec![2]),
-            node(2, GuardExpression::Variable("b".into()), vec![], vec![]),
+            node(0, Guard::always_true(), vec![], vec![1]),
+            node(1, Guard::always_true(), vec![], vec![2]),
+            node(2, Guard::variable("b"), vec![], vec![]),
         ]);
         let live = LiveSlots::of(&graph);
 
@@ -289,9 +289,9 @@ mod tests {
     #[test]
     fn an_assignment_stops_the_read_travelling_further_back() {
         let graph = chain(vec![
-            node(0, GuardExpression::always_true(), vec![], vec![1]),
-            node(1, GuardExpression::always_true(), vec![assign("b", 1)], vec![2]),
-            node(2, GuardExpression::Variable("b".into()), vec![], vec![]),
+            node(0, Guard::always_true(), vec![], vec![1]),
+            node(1, Guard::always_true(), vec![assign("b", 1)], vec![2]),
+            node(2, Guard::variable("b"), vec![], vec![]),
         ]);
         let live = LiveSlots::of(&graph);
 
@@ -304,8 +304,8 @@ mod tests {
     #[test]
     fn a_once_increment_keeps_its_slot_live_rather_than_killing_it() {
         let graph = chain(vec![
-            node(0, GuardExpression::always_true(), vec![], vec![1]),
-            node(1, GuardExpression::always_true(), vec![once_increment("b")], vec![]),
+            node(0, Guard::always_true(), vec![], vec![1]),
+            node(1, Guard::always_true(), vec![once_increment("b")], vec![]),
         ]);
         let live = LiveSlots::of(&graph);
 
@@ -320,8 +320,8 @@ mod tests {
     #[test]
     fn an_increment_reads_rather_than_kills() {
         let graph = chain(vec![
-            node(0, GuardExpression::always_true(), vec![], vec![1]),
-            node(1, GuardExpression::always_true(), vec![increment("c")], vec![]),
+            node(0, Guard::always_true(), vec![], vec![1]),
+            node(1, Guard::always_true(), vec![increment("c")], vec![]),
         ]);
         let live = LiveSlots::of(&graph);
 
@@ -331,8 +331,8 @@ mod tests {
     #[test]
     fn a_loop_settles_rather_than_iterating_for_ever() {
         let graph = chain(vec![
-            node(0, GuardExpression::always_true(), vec![], vec![1]),
-            node(1, GuardExpression::Variable("a".into()), vec![], vec![0]),
+            node(0, Guard::always_true(), vec![], vec![1]),
+            node(1, Guard::variable("a"), vec![], vec![0]),
         ]);
         let live = LiveSlots::of(&graph);
 
@@ -344,8 +344,8 @@ mod tests {
     #[test]
     fn dead_out_names_what_the_layout_carries_and_nothing_onward_reads() {
         let graph = chain(vec![
-            node(0, GuardExpression::always_true(), vec![assign("a", 1)], vec![1]),
-            node(1, GuardExpression::Variable("a".into()), vec![assign("b", 1)], vec![]),
+            node(0, Guard::always_true(), vec![assign("a", 1)], vec![1]),
+            node(1, Guard::variable("a"), vec![assign("b", 1)], vec![]),
         ]);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let live = LiveSlots::of(&graph);

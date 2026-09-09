@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 use std::fmt;
-use crate::core::guard::GuardExpression;
+use crate::core::guard::Guard;
 use crate::core::guard_value::GuardValue;
 
 #[derive(Debug, Clone)]
@@ -24,10 +24,10 @@ impl fmt::Display for GuardParseError {
 impl std::error::Error for GuardParseError {}
 
 /// Parse a guard expression from Lua-like syntax.
-pub fn parse_guard(text: &str) -> Result<GuardExpression, GuardParseError> {
+pub fn parse_guard(text: &str) -> Result<Guard, GuardParseError> {
     let stripped = strip_comments(text);
     if stripped.trim().is_empty() {
-        return Ok(GuardExpression::always_true());
+        return Ok(Guard::always_true());
     }
     let mut parser = Parser::new(&stripped, text)?;
     let expr = parser.parse()?;
@@ -35,7 +35,7 @@ pub fn parse_guard(text: &str) -> Result<GuardExpression, GuardParseError> {
     Ok(expr)
 }
 
-pub fn try_parse_guard(text: &str) -> Result<GuardExpression, GuardParseError> {
+pub fn try_parse_guard(text: &str) -> Result<Guard, GuardParseError> {
     parse_guard(text)
 }
 
@@ -110,14 +110,17 @@ struct Token {
 
 /// How deep a guard's expression tree may go before it is refused.
 ///
-/// ## Why there is still a limit, when the parser itself no longer recurses
+/// ## Why there is still a limit, when nothing about a guard recurses any more
 ///
 /// The parser below is ITERATIVE (de-bnjy.4): nesting costs entries in a `Vec` and nothing
 /// on the stack, so no guard, however deep, can overflow while being read. What it produces
-/// is still a tree of `Box`es, and everything that consumes one walks it by recursion -
-/// [`GuardExpression::evaluate`], its `Display`, and the `Drop` that frees it. So the stack
-/// risk moved from parsing to using, and a bound is still what keeps "this string is not a
-/// guard" an error rather than an abort. An overflow is not a panic: the guard page is hit,
+/// is a FLAT TABLE (de-eyk8.2), so freeing one is a deallocation rather than a walk, and
+/// evaluating or rendering one is a sweep in index order rather than a descent.
+///
+/// One consumer still descends by choice: `GuardCompiler::compile` is demand-driven,
+/// because a comparison answers from its operands' SHAPE without compiling either, and a
+/// bottom-up sweep would build a decision diagram for every operand it never looks at. That
+/// recursion is what this limit bounds. An overflow is not a panic: the guard page is hit,
 /// Rust prints, the process ABORTS, and nothing can catch it. Inside the game that is the
 /// player's session.
 ///
@@ -154,7 +157,7 @@ const MAX_DEPTH: usize = 256;
 /// binding power arrives, so a chain of ten thousand `and`s never has more than one entry
 /// waiting while the tree under it grows ten thousand deep.
 struct Operand {
-    node: GuardExpression,
+    node: Guard,
     depth: usize,
 }
 
@@ -190,7 +193,7 @@ enum FrameKind {
     /// `( ... )`, whose value is simply what is inside it.
     Group,
     /// `name( ... )`, gathering arguments until the closing parenthesis.
-    Call { name: String, args: Vec<GuardExpression>, deepest: usize },
+    Call { name: String, args: Vec<Guard>, deepest: usize },
 }
 
 /// One open bracket, and where the work inside it starts.
@@ -244,7 +247,7 @@ impl Parser {
     /// Where the recursive version had five functions calling each other - expression,
     /// conjunction, comparison, unary, primary - there is one loop and three `Vec`s. A value
     /// is wanted, or an operator is wanted; each says whether the other is wanted next.
-    fn parse(&mut self) -> Result<GuardExpression, GuardParseError> {
+    fn parse(&mut self) -> Result<Guard, GuardParseError> {
         loop {
             if self.read_value()? {
                 continue;
@@ -311,35 +314,35 @@ impl Parser {
             let number = raw.parse::<f64>().map_err(|_| {
                 GuardParseError::new(format!("bad number '-{raw}'"), self.source.clone())
             })?;
-            self.push_leaf(GuardExpression::Literal(GuardValue::from_number(-number)))?;
+            self.push_leaf(Guard::literal(GuardValue::from_number(-number)))?;
             return Ok(false);
         }
 
         let leaf = match self.peek() {
-            TokenKind::Variable => GuardExpression::Variable(self.take().value),
+            TokenKind::Variable => Guard::variable(self.take().value),
             TokenKind::True => {
                 self.take();
-                GuardExpression::Literal(GuardValue::from_boolean(true))
+                Guard::literal(GuardValue::from_boolean(true))
             }
             TokenKind::False => {
                 self.take();
-                GuardExpression::Literal(GuardValue::from_boolean(false))
+                Guard::literal(GuardValue::from_boolean(false))
             }
             TokenKind::Nil => {
                 self.take();
-                GuardExpression::Literal(GuardValue::unknown())
+                Guard::literal(GuardValue::unknown())
             }
             TokenKind::Number => {
                 let raw = self.take().value;
                 let number = raw.parse::<f64>().map_err(|_| {
                     GuardParseError::new(format!("bad number '{raw}'"), self.source.clone())
                 })?;
-                GuardExpression::Literal(GuardValue::from_number(number))
+                Guard::literal(GuardValue::from_number(number))
             }
-            TokenKind::Text => GuardExpression::Literal(GuardValue::from_text(self.take().value)),
+            TokenKind::Text => Guard::literal(GuardValue::from_text(self.take().value)),
             // A name with no argument list. Still a call, as it always was: the world is
             // what decides whether it answers.
-            TokenKind::Name => GuardExpression::Call(self.take().value, Vec::new()),
+            TokenKind::Name => Guard::call(self.take().value, Vec::new()),
             _ => {
                 return Err(GuardParseError::new("unexpected token".into(), self.source.clone()))
             }
@@ -421,7 +424,7 @@ impl Parser {
         }
         match self.frames.pop().map(|frame| frame.kind) {
             Some(FrameKind::Call { name, args, deepest }) => {
-                self.push_operand(GuardExpression::Call(name, args), deepest + 1)
+                self.push_operand(Guard::call(name, args), deepest + 1)
             }
             _ => Err(self.confused()),
         }
@@ -476,26 +479,26 @@ impl Parser {
         let right = self.pop_operand()?;
         if let Pending::Not = op {
             let depth = right.depth;
-            return self.push_operand(GuardExpression::Not(Box::new(right.node)), depth + 1);
+            return self.push_operand(Guard::not(right.node), depth + 1);
         }
 
         let left = self.pop_operand()?;
         let depth = left.depth.max(right.depth);
-        let (left, right) = (Box::new(left.node), Box::new(right.node));
+        let (left, right) = (left.node, right.node);
         let node = match op {
-            Pending::And => GuardExpression::And(left, right),
-            Pending::Or => GuardExpression::Or(left, right),
-            Pending::Compare(name) => GuardExpression::Comparison(name, left, right),
+            Pending::And => Guard::and(left, right),
+            Pending::Or => Guard::or(left, right),
+            Pending::Compare(name) => Guard::comparison(name, left, right),
             Pending::Not => return Err(self.confused()),
         };
         self.push_operand(node, depth + 1)
     }
 
-    fn push_leaf(&mut self, node: GuardExpression) -> Result<(), GuardParseError> {
+    fn push_leaf(&mut self, node: Guard) -> Result<(), GuardParseError> {
         self.push_operand(node, 1)
     }
 
-    fn push_operand(&mut self, node: GuardExpression, depth: usize) -> Result<(), GuardParseError> {
+    fn push_operand(&mut self, node: Guard, depth: usize) -> Result<(), GuardParseError> {
         if depth > MAX_DEPTH {
             return Err(GuardParseError::new(
                 format!("nested more than {MAX_DEPTH} deep"),

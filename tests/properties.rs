@@ -25,7 +25,7 @@
 use std::collections::HashSet;
 
 use lookahead_engine::core::action::DialogueAction;
-use lookahead_engine::core::guard::GuardExpression;
+use lookahead_engine::core::guard::Guard;
 use lookahead_engine::core::guard_value::GuardValue;
 use lookahead_engine::core::state::StateSymbols;
 use lookahead_engine::core::types::{DialogueCheckKind, DialogueNodeId};
@@ -95,23 +95,23 @@ fn comparison_operator() -> impl Strategy<Value = String> {
 }
 
 /// A guard, up to `depth` levels of nesting.
-fn guard(depth: u32) -> impl Strategy<Value = GuardExpression> {
+fn guard(depth: u32) -> impl Strategy<Value = Guard> {
     let leaf = prop_oneof![
-        literal().prop_map(GuardExpression::Literal),
-        variable_name().prop_map(GuardExpression::Variable),
+        literal().prop_map(Guard::literal),
+        variable_name().prop_map(Guard::variable),
     ];
 
     leaf.prop_recursive(depth, 64, 3, |inner| {
         prop_oneof![
-            inner.clone().prop_map(|e| GuardExpression::Not(Box::new(e))),
+            inner.clone().prop_map(Guard::not),
             (inner.clone(), inner.clone())
-                .prop_map(|(l, r)| GuardExpression::And(Box::new(l), Box::new(r))),
+                .prop_map(|(l, r)| Guard::and(l, r)),
             (inner.clone(), inner.clone())
-                .prop_map(|(l, r)| GuardExpression::Or(Box::new(l), Box::new(r))),
+                .prop_map(|(l, r)| Guard::or(l, r)),
             (comparison_operator(), inner.clone(), inner.clone())
-                .prop_map(|(op, l, r)| GuardExpression::Comparison(op, Box::new(l), Box::new(r))),
+                .prop_map(|(op, l, r)| Guard::comparison(op, l, r)),
             (call_name(), prop::collection::vec(inner, 0..3))
-                .prop_map(|(name, args)| GuardExpression::Call(name, args)),
+                .prop_map(|(name, args)| Guard::call(name, args)),
         ]
     })
 }
@@ -220,7 +220,7 @@ fn graph_of(writes: &[Written]) -> (LookAheadGraph, StateSymbols) {
         DialogueNodeId::new(1, 0),
         false,
         DialogueCheckKind::None,
-        GuardExpression::always_true(),
+        Guard::always_true(),
         actions,
         vec![],
         0,

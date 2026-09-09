@@ -19,7 +19,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use lookahead_engine::core::guard::GuardExpression;
+use lookahead_engine::core::guard::{Guard, GuardExpression, GuardRef};
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
@@ -37,54 +37,34 @@ fn index_path() -> Option<PathBuf> {
 }
 
 /// Counts the world queries a guard makes, by name.
-fn calls_of(guard: &GuardExpression, counts: &mut HashMap<String, usize>) {
-    match guard {
-        GuardExpression::Call(name, args) => {
-            *counts.entry(name.clone()).or_default() += 1;
-            for arg in args {
-                calls_of(arg, counts);
-            }
+fn calls_of(guard: &Guard, counts: &mut HashMap<String, usize>) {
+    for node in guard.nodes() {
+        if let GuardExpression::Call(name, _) = node.expression() {
+            *counts.entry(name.to_string()).or_default() += 1;
         }
-        GuardExpression::Not(inner) => calls_of(inner, counts),
-        GuardExpression::And(a, b)
-        | GuardExpression::Or(a, b)
-        | GuardExpression::Comparison(_, a, b) => {
-            calls_of(a, counts);
-            calls_of(b, counts);
-        }
-        GuardExpression::Literal(_) | GuardExpression::Variable(_) => {}
     }
 }
 
 /// Collects the variable names a guard mentions.
-fn variables_of(guard: &GuardExpression, names: &mut Vec<String>) {
-    match guard {
-        GuardExpression::Variable(name) => names.push(name.clone()),
-        GuardExpression::Not(inner) => variables_of(inner, names),
-        GuardExpression::And(a, b) | GuardExpression::Or(a, b) => {
-            variables_of(a, names);
-            variables_of(b, names);
+fn variables_of(guard: &Guard, names: &mut Vec<String>) {
+    for node in guard.nodes() {
+        if let GuardExpression::Variable(name) = node.expression() {
+            names.push(name.to_string());
         }
-        GuardExpression::Comparison(_, a, b) => {
-            variables_of(a, names);
-            variables_of(b, names);
-        }
-        GuardExpression::Call(_, args) => {
-            for arg in args {
-                variables_of(arg, names);
-            }
-        }
-        GuardExpression::Literal(_) => {}
     }
 }
 
 /// Counts the leaves of a guard by the kind the compiler will treat them as.
-fn tally(guard: &GuardExpression, counts: &mut HashMap<&'static str, usize>) {
-    let key = match guard {
+///
+/// DESCENDS RATHER THAN SWEEPS, which is the difference between counting leaves and
+/// counting nodes: a comparison is a leaf here whatever is under it, so a sweep would count
+/// its operands as well and report a different corpus.
+fn tally(guard: GuardRef<'_>, counts: &mut HashMap<&'static str, usize>) {
+    let key = match guard.expression() {
         GuardExpression::Literal(_) => "literal",
         GuardExpression::Variable(_) => "variable",
         GuardExpression::Call(_, _) => "call (world query)",
-        GuardExpression::Comparison(op, _, _) => match op.as_str() {
+        GuardExpression::Comparison(op, _, _) => match op {
             "==" | "~=" => "comparison (equality)",
             _ => "comparison (ordering)",
         },
@@ -136,12 +116,12 @@ fn how_much_of_the_guard_corpus_compiles() {
         for node in graph.nodes() {
             // An always-true guard is not evidence either way: most entries have none,
             // and counting them would flatter the result.
-            if matches!(&node.guard, GuardExpression::Literal(_)) {
+            if matches!(node.guard.expression(), GuardExpression::Literal(_)) {
                 continue;
             }
 
             guards += 1;
-            tally(&node.guard, &mut shapes);
+            tally(node.guard.as_ref(), &mut shapes);
             variables_of(&node.guard, &mut mentioned);
             calls_of(&node.guard, &mut calls);
             let _ = compiler.compile(&node.guard);

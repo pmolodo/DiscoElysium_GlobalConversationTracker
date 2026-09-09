@@ -194,7 +194,7 @@ fn garbage_is_an_error() {
 #[test]
 fn a_failed_parse_falls_back_to_always_true() {
     let fallback = parse_guard(r#"Variable["a"] $$ 3"#)
-        .unwrap_or_else(|_| crate::core::guard::GuardExpression::always_true());
+        .unwrap_or_else(|_| crate::core::guard::Guard::always_true());
     assert_eq!(fallback.test(&WorldContext(&TestWorld::new())), Ternary::True);
 }
 

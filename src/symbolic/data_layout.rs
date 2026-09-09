@@ -25,7 +25,7 @@
 use crate::core::action::DialogueActionKind;
 use std::collections::{HashMap, HashSet};
 
-use crate::core::guard::GuardExpression;
+use crate::core::guard::{Guard, GuardExpression, GuardRef};
 use crate::core::state::{
     StateSymbols, ITEM_PREFIX, ONCE_PREFIX, SEEN_PREFIX, TASK_PREFIX, THOUGHT_PREFIX,
 };
@@ -185,55 +185,50 @@ impl DataLayout {
     /// compared in a shape this cannot read.
     ///
     /// See [`Self::narrow_to_thresholds`] for why the second is not merely an omission.
+    /// A SWEEP RATHER THAN A WALK, because every node is looked at wherever it sits. The
+    /// structure is wanted one node at a time - which side of a comparison names a slot,
+    /// and what a call was handed - and never between nodes, so nothing here descends.
     fn read_comparisons(
-        guard: &GuardExpression,
+        guard: &Guard,
         symbols: &StateSymbols,
         highest: &mut HashMap<usize, u32>,
         unreadable: &mut HashSet<usize>,
     ) {
-        match guard {
-            GuardExpression::Comparison(_, a, b) => {
-                for (side, other) in [(a.as_ref(), b.as_ref()), (b.as_ref(), a.as_ref())] {
-                    let Some(slot) = Self::slot_named(side, symbols) else { continue };
-                    let GuardExpression::Literal(value) = other else {
-                        unreadable.insert(slot);
-                        continue;
-                    };
-                    let number = value.number();
-                    if !number.is_finite() || number < 0.0 {
-                        unreadable.insert(slot);
-                        continue;
+        for node in guard.nodes() {
+            match node.expression() {
+                GuardExpression::Comparison(_, a, b) => {
+                    for (side, other) in [(a, b), (b, a)] {
+                        let Some(slot) = Self::slot_named(side, symbols) else { continue };
+                        let GuardExpression::Literal(value) = other.expression() else {
+                            unreadable.insert(slot);
+                            continue;
+                        };
+                        let number = value.number();
+                        if !number.is_finite() || number < 0.0 {
+                            unreadable.insert(slot);
+                            continue;
+                        }
+                        let seen = highest.entry(slot).or_insert(0);
+                        *seen = (*seen).max(number as u32);
                     }
-                    let seen = highest.entry(slot).or_insert(0);
-                    *seen = (*seen).max(number as u32);
                 }
-                Self::read_comparisons(a, symbols, highest, unreadable);
-                Self::read_comparisons(b, symbols, highest, unreadable);
-            }
-            GuardExpression::Not(inner) => {
-                Self::read_comparisons(inner, symbols, highest, unreadable)
-            }
-            GuardExpression::And(a, b) | GuardExpression::Or(a, b) => {
-                Self::read_comparisons(a, symbols, highest, unreadable);
-                Self::read_comparisons(b, symbols, highest, unreadable);
-            }
-            GuardExpression::Call(_, args) => {
                 // A SLOT HANDED TO A QUERY is not something this can reason about at all.
-                for arg in args {
-                    if let Some(slot) = Self::slot_named(arg, symbols) {
-                        unreadable.insert(slot);
+                GuardExpression::Call(_, arguments) => {
+                    for argument in arguments.iter() {
+                        if let Some(slot) = Self::slot_named(argument, symbols) {
+                            unreadable.insert(slot);
+                        }
                     }
-                    Self::read_comparisons(arg, symbols, highest, unreadable);
                 }
+                _ => {}
             }
-            GuardExpression::Variable(_) | GuardExpression::Literal(_) => {}
         }
     }
 
     /// The slot a guard expression names, if it simply names one.
-    fn slot_named(guard: &GuardExpression, symbols: &StateSymbols) -> Option<usize> {
-        let GuardExpression::Variable(name) = guard else { return None };
-        (0..symbols.count()).find(|slot| symbols.name_of(*slot) == Some(name.as_str()))
+    fn slot_named(guard: GuardRef<'_>, symbols: &StateSymbols) -> Option<usize> {
+        let GuardExpression::Variable(name) = guard.expression() else { return None };
+        (0..symbols.count()).find(|slot| symbols.name_of(*slot) == Some(name))
     }
 
     /// The layout a search over a whole group gets, which is what the product runs.
@@ -511,19 +506,10 @@ impl DataLayout {
     }
 
     /// Whether a guard asks what the player is carrying.
-    fn guard_reads_money(guard: &GuardExpression) -> bool {
-        match guard {
-            GuardExpression::Call(name, args) => {
-                name == MONEY_QUERY || args.iter().any(Self::guard_reads_money)
-            }
-            GuardExpression::Not(inner) => Self::guard_reads_money(inner),
-            GuardExpression::And(a, b)
-            | GuardExpression::Or(a, b)
-            | GuardExpression::Comparison(_, a, b) => {
-                Self::guard_reads_money(a) || Self::guard_reads_money(b)
-            }
-            GuardExpression::Variable(_) | GuardExpression::Literal(_) => false,
-        }
+    fn guard_reads_money(guard: &Guard) -> bool {
+        guard
+            .nodes()
+            .any(|node| matches!(node.expression(), GuardExpression::Call(name, _) if name == MONEY_QUERY))
     }
 
     /// The variable run for the clock, if it is tracked.
@@ -590,41 +576,33 @@ impl DataLayout {
 
     /// The names one guard reads, including the subjects of the queries answered from
     /// search state.
-    fn read_by_guard(guard: &GuardExpression, names: &mut HashSet<String>) {
-        match guard {
-            GuardExpression::Variable(name) => {
-                names.insert(name.clone());
-            }
-            GuardExpression::Not(inner) => Self::read_by_guard(inner, names),
-            GuardExpression::And(a, b)
-            | GuardExpression::Or(a, b)
-            | GuardExpression::Comparison(_, a, b) => {
-                Self::read_by_guard(a, names);
-                Self::read_by_guard(b, names);
-            }
-            GuardExpression::Call(function, args) => {
-                // The two queries `BoundContext::query` answers from a slot. Their subject
-                // is a literal string, and the slot it corresponds to carries a prefix.
-                let prefix = match function.as_str() {
-                    "CheckItem" => Some(ITEM_PREFIX),
-                    "IsTaskActive" => Some(TASK_PREFIX),
-                    "IsTHCPresent" => Some(THOUGHT_PREFIX),
-                    // FlagSet(name) is Variable[name] written another way.
-                    "FlagSet" => Some(""),
-                    _ => None,
-                };
+    fn read_by_guard(guard: &Guard, names: &mut HashSet<String>) {
+        for node in guard.nodes() {
+            match node.expression() {
+                GuardExpression::Variable(name) => {
+                    names.insert(name.to_string());
+                }
+                GuardExpression::Call(function, arguments) => {
+                    // The two queries `BoundContext::query` answers from a slot. Their
+                    // subject is a literal string, and the slot it corresponds to carries a
+                    // prefix.
+                    let prefix = match function {
+                        "CheckItem" => Some(ITEM_PREFIX),
+                        "IsTaskActive" => Some(TASK_PREFIX),
+                        "IsTHCPresent" => Some(THOUGHT_PREFIX),
+                        // FlagSet(name) is Variable[name] written another way.
+                        "FlagSet" => Some(""),
+                        _ => None,
+                    };
 
-                if let Some(prefix) = prefix {
-                    if let [GuardExpression::Literal(value)] = &args[..] {
+                    let Some(prefix) = prefix else { continue };
+                    let Some(only) = arguments.only() else { continue };
+                    if let GuardExpression::Literal(value) = only.expression() {
                         names.insert(format!("{prefix}{}", value.text()));
                     }
                 }
-
-                for arg in args {
-                    Self::read_by_guard(arg, names);
-                }
+                _ => {}
             }
-            GuardExpression::Literal(_) => {}
         }
     }
 
@@ -665,7 +643,7 @@ impl DataLayout {
 mod tests {
     use super::*;
     use crate::core::action::DialogueAction;
-    use crate::core::guard::GuardExpression;
+    use crate::core::guard::Guard;
     use crate::core::state::StateSymbols;
     use crate::core::types::{DialogueCheckKind, DialogueNodeId};
     use crate::graph::node::LookAheadNode;
@@ -675,7 +653,7 @@ mod tests {
             DialogueNodeId::new(1, 0),
             false,
             DialogueCheckKind::None,
-            GuardExpression::always_true(),
+            Guard::always_true(),
             actions,
             vec![],
             0,

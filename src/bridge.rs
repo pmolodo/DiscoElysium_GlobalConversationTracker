@@ -44,7 +44,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::guard::GuardExpression;
+use crate::core::guard::{Guard, GuardExpression};
 use crate::core::guard_value::{GuardValue, GuardValueKind};
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, Novelty, Ternary};
 use crate::core::types::StartBranch;
@@ -918,74 +918,65 @@ fn sorted(names: HashSet<String>) -> Vec<String> {
 /// `BoundContext::query` intercepts exactly these - and the plugin needs to supply the
 /// STARTING value for each, not an answer to the call.
 fn collect(
-    guard: &GuardExpression,
+    guard: &Guard,
     variables: &mut HashSet<String>,
     queries: &mut HashSet<String>,
     items: &mut HashSet<String>,
     tasks: &mut HashSet<String>,
     thoughts: &mut HashSet<String>,
 ) {
-    match guard {
-        GuardExpression::Variable(name) => {
-            variables.insert(name.clone());
-        }
-        GuardExpression::Not(inner) => {
-            collect(inner, variables, queries, items, tasks, thoughts);
-        }
-        GuardExpression::And(a, b)
-        | GuardExpression::Or(a, b)
-        | GuardExpression::Comparison(_, a, b) => {
-            collect(a, variables, queries, items, tasks, thoughts);
-            collect(b, variables, queries, items, tasks, thoughts);
-        }
-        GuardExpression::Call(name, args) => {
-            let subject = match &args[..] {
-                [GuardExpression::Literal(value)]
-                    if value.kind() == GuardValueKind::Text =>
-                {
-                    Some(value.text().to_string())
-                }
-                _ => None,
-            };
+    // A SWEEP RATHER THAN A WALK. Every node contributes wherever it sits, so this needs
+    // the shape of one node at a time and never the shape between two.
+    for node in guard.nodes() {
+        match node.expression() {
+            GuardExpression::Variable(name) => {
+                variables.insert(name.to_string());
+            }
+            GuardExpression::Call(name, args) => {
+                let subject = args.only().and_then(|only| match only.expression() {
+                    GuardExpression::Literal(value)
+                        if value.kind() == GuardValueKind::Text =>
+                    {
+                        Some(value.text().to_string())
+                    }
+                    _ => None,
+                });
 
-            match (name.as_str(), subject) {
-                ("CheckItem", Some(subject)) => {
-                    items.insert(subject);
-                }
-                ("IsTaskActive", Some(subject)) => {
-                    tasks.insert(subject);
-                }
-                ("IsTHCPresent", Some(subject)) => {
-                    thoughts.insert(subject);
-                }
-                // `FlagSet(name)` is `Variable[name]` written another way, and the engine
-                // answers it from the same place.
-                ("FlagSet", Some(subject)) => {
-                    variables.insert(subject);
-                }
-                _ => {
-                    // Only literal arguments can be answered ahead of time. A computed
-                    // argument would have to be evaluated per state, which is exactly what
-                    // a snapshot cannot do - so it is left out, reads Unknown, and the
-                    // guard turns permissive.
-                    let values: Option<Vec<GuardValue>> = args
-                        .iter()
-                        .map(|arg| match arg {
-                            GuardExpression::Literal(value) => Some(value.clone()),
-                            _ => None,
-                        })
-                        .collect();
-                    if let Some(values) = values {
-                        queries.insert(query_key(name, &values));
+                match (name, subject) {
+                    ("CheckItem", Some(subject)) => {
+                        items.insert(subject);
+                    }
+                    ("IsTaskActive", Some(subject)) => {
+                        tasks.insert(subject);
+                    }
+                    ("IsTHCPresent", Some(subject)) => {
+                        thoughts.insert(subject);
+                    }
+                    // `FlagSet(name)` is `Variable[name]` written another way, and the
+                    // engine answers it from the same place.
+                    ("FlagSet", Some(subject)) => {
+                        variables.insert(subject);
+                    }
+                    _ => {
+                        // Only literal arguments can be answered ahead of time. A computed
+                        // argument would have to be evaluated per state, which is exactly
+                        // what a snapshot cannot do - so it is left out, reads Unknown, and
+                        // the guard turns permissive.
+                        let values: Option<Vec<GuardValue>> = args
+                            .iter()
+                            .map(|arg| match arg.expression() {
+                                GuardExpression::Literal(value) => Some(value.clone()),
+                                _ => None,
+                            })
+                            .collect();
+                        if let Some(values) = values {
+                            queries.insert(query_key(name, &values));
+                        }
                     }
                 }
             }
-
-            for arg in args {
-                collect(arg, variables, queries, items, tasks, thoughts);
-            }
+            _ => {}
         }
-        GuardExpression::Literal(_) => {}
     }
 }
 
@@ -2233,7 +2224,7 @@ mod tests {
             DialogueNodeId::new(1, 0),
             false,
             DialogueCheckKind::None,
-            GuardExpression::always_true(),
+            Guard::always_true(),
             Vec::new(),
             Vec::new(),
             0,

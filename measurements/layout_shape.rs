@@ -164,61 +164,59 @@ fn compared_constants(
 
 /// The slot a guard expression names, if it simply names one.
 fn slot_named(
-    guard: &lookahead_engine::core::guard::GuardExpression,
+    guard: lookahead_engine::core::guard::GuardRef<'_>,
     symbols: &lookahead_engine::core::state::StateSymbols,
 ) -> Option<usize> {
     use lookahead_engine::core::guard::GuardExpression as G;
-    let G::Variable(name) = guard else { return None };
-    (0..symbols.count()).find(|slot| symbols.name_of(*slot) == Some(name.as_str()))
+    let G::Variable(name) = guard.expression() else { return None };
+    (0..symbols.count()).find(|slot| symbols.name_of(*slot) == Some(name))
 }
 
-/// The recursion behind [`compared_constants`].
+/// The sweep behind [`compared_constants`].
+///
+/// A loop rather than a walk, mirroring `DataLayout::read_comparisons`, which is the thing
+/// this measures: every node contributes wherever it sits, so the shape between two nodes
+/// never comes into it.
 fn walk_comparisons(
-    guard: &lookahead_engine::core::guard::GuardExpression,
+    guard: &lookahead_engine::core::guard::Guard,
     symbols: &lookahead_engine::core::state::StateSymbols,
     seen: &mut HashMap<usize, (u32, u32)>,
     unreadable: &mut HashSet<usize>,
 ) {
     use lookahead_engine::core::guard::GuardExpression as G;
 
-    match guard {
-        G::Comparison(_, a, b) => {
-            for (side, other) in [(a.as_ref(), b.as_ref()), (b.as_ref(), a.as_ref())] {
-                let Some(slot) = slot_named(side, symbols) else { continue };
-                // The slot IS one side of this comparison. Whether it can be narrowed turns
-                // on whether the other side is a constant this can read.
-                let G::Literal(value) = other else {
-                    unreadable.insert(slot);
-                    continue;
-                };
-                let number = value.number();
-                if !number.is_finite() || number < 0.0 {
-                    unreadable.insert(slot);
-                    continue;
+    for node in guard.nodes() {
+        match node.expression() {
+            G::Comparison(_, a, b) => {
+                for (side, other) in [(a, b), (b, a)] {
+                    let Some(slot) = slot_named(side, symbols) else { continue };
+                    // The slot IS one side of this comparison. Whether it can be narrowed
+                    // turns on whether the other side is a constant this can read.
+                    let G::Literal(value) = other.expression() else {
+                        unreadable.insert(slot);
+                        continue;
+                    };
+                    let number = value.number();
+                    if !number.is_finite() || number < 0.0 {
+                        unreadable.insert(slot);
+                        continue;
+                    }
+                    let number = number as u32;
+                    let range = seen.entry(slot).or_insert((number, number));
+                    range.0 = range.0.min(number);
+                    range.1 = range.1.max(number);
                 }
-                let number = number as u32;
-                let range = seen.entry(slot).or_insert((number, number));
-                range.0 = range.0.min(number);
-                range.1 = range.1.max(number);
             }
-            walk_comparisons(a, symbols, seen, unreadable);
-            walk_comparisons(b, symbols, seen, unreadable);
-        }
-        G::Not(inner) => walk_comparisons(inner, symbols, seen, unreadable),
-        G::And(a, b) | G::Or(a, b) => {
-            walk_comparisons(a, symbols, seen, unreadable);
-            walk_comparisons(b, symbols, seen, unreadable);
-        }
-        G::Call(_, args) => {
             // A SLOT HANDED TO A QUERY is not a comparison this can reason about at all.
-            for arg in args {
-                if let Some(slot) = slot_named(arg, symbols) {
-                    unreadable.insert(slot);
+            G::Call(_, args) => {
+                for argument in args.iter() {
+                    if let Some(slot) = slot_named(argument, symbols) {
+                        unreadable.insert(slot);
+                    }
                 }
-                walk_comparisons(arg, symbols, seen, unreadable);
             }
+            _ => {}
         }
-        G::Variable(_) | G::Literal(_) => {}
     }
 }
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-//! How deep a guard's tree can be before something that walks it overflows the stack.
+//! How deep a guard can be before the one thing that still walks it recursively overflows.
 //!
 //! ## Why this is worth measuring rather than guessing
 //!
@@ -14,30 +14,42 @@
 //! generous. This code runs inside the game, on whatever thread the dialogue system calls
 //! it from.
 //!
-//! ## What changed, and why this file no longer measures the parser
+//! ## What is left to overflow, which is one thing rather than five
 //!
-//! It used to. The parser was recursive descent, so it was the shallowest thing in the
-//! chain: it overflowed a megabyte at about 260 re-entries, five stack frames per level of
-//! nesting. It is iterative now (de-bnjy.4) - nesting costs entries in a `Vec` and nothing
-//! on the stack - so parsing is no longer what fails first, or at all.
+//! It used to be five. The parser was recursive descent and gave out at about 260
+//! re-entries; it is iterative now (de-bnjy.4). What it returned was a tree of `Box`es, and
+//! `evaluate`, `Display` and the derived `Drop` all walked that; a guard is a flat table now
+//! (de-eyk8.2), so building, freeing, evaluating and rendering one are sweeps in index order
+//! that cannot overflow at any depth.
 //!
-//! THE RISK DID NOT GO AWAY, IT MOVED. What the parser returns is a tree of `Box`es, and
-//! everything that consumes one recurses over it: `evaluate`, `Display`, and the `Drop` that
-//! frees it. So the number that matters now is theirs, and it is the number `MAX_DEPTH` in
-//! src/parser/guard_parser.rs is chosen against.
+//! `GuardCompiler::compile_node` still descends, and by choice: a comparison answers from
+//! its operands' SHAPE without compiling either, so a bottom-up sweep would build a decision
+//! diagram for every operand a comparison never looks at. Demand-driven is the cheaper walk,
+//! and its depth is what `MAX_DEPTH` in src/parser/guard_parser.rs is chosen against.
 //!
 //! ## How
 //!
-//! Build a tree of a known depth - directly, in a loop, because the parser refuses anything
-//! past its own limit and this has to go well past it - then USE it the way the engine does
-//! and let it fall out of scope. On threads of known stack size, walking up until one dies.
+//! Two phases, because the two halves now answer differently.
 //!
-//! Run it deliberately: `cargo run --release --example guard_stack`. A thread
-//! that overflows takes the process with it, which is why every step prints before it tries:
-//! the last line printed is the answer.
+//! FIRST, the flat consumers, at a depth two orders past the old cliff. Building, using and
+//! freeing a 40,000-level guard on a one-megabyte stack either survives or it does not, and
+//! it is one line of output rather than a walk.
+//!
+//! SECOND, the compiler, walking up until a thread dies. Every step prints before it tries,
+//! because an overflow takes the process with it: the last line printed is the answer.
+//!
+//! Run it deliberately: `cargo run --release --example guard_stack`.
 
-use lookahead_engine::core::guard::{GuardExpression, IGuardContext};
+use lookahead_engine::core::guard::{Guard, IGuardContext};
 use lookahead_engine::core::guard_value::GuardValue;
+use lookahead_engine::core::state::StateSymbols;
+use lookahead_engine::core::types::{DialogueCheckKind, DialogueNodeId};
+use lookahead_engine::graph::graph::LookAheadGraph;
+use lookahead_engine::graph::node::LookAheadNode;
+use lookahead_engine::symbolic::budget::DiagramBudget;
+use lookahead_engine::symbolic::data_layout::DataLayout;
+use lookahead_engine::symbolic::guard_formula::GuardCompiler;
+use lookahead_engine::symbolic::vars::DataVars;
 
 /// A world that has heard of nothing, so evaluation walks the whole tree.
 ///
@@ -55,54 +67,103 @@ impl IGuardContext for Nothing {
     }
 }
 
-/// A tree `depth` levels deep, built without recursing.
-fn nested(depth: usize) -> GuardExpression {
-    let mut node = GuardExpression::Variable("x".into());
+/// A megabyte: the default main-thread stack on Windows, and the smallest place this code
+/// could plausibly run.
+const STACK: usize = 1024 * 1024;
+
+/// Far enough past the old cliff of 2,875 levels that surviving it means something.
+const WELL_PAST: usize = 40_000;
+
+/// A guard `depth` levels deep, built without recursing.
+fn nested(depth: usize) -> Guard {
+    let mut node = Guard::variable("x");
     for _ in 1..depth {
-        node = GuardExpression::Not(Box::new(node));
+        node = Guard::not(node);
     }
     node
 }
 
-/// Whether building, using and freeing a tree that deep survives on a `stack`-byte thread.
+/// Whether building, using and freeing a guard that deep survives on a `STACK`-byte thread.
 ///
-/// All three consumers in one pass, because an overflow ends the process and there is no
-/// second run to try the next one in. The answer wanted is the shallowest depth at which ANY
-/// of them fails, which is what one walk finds.
-fn survives_here(depth: usize, stack: usize) -> bool {
+/// All three in one pass, because an overflow ends the process and there is no second run to
+/// try the next one in.
+fn flat_consumers_survive(depth: usize) -> bool {
+    on_a_small_thread(move || {
+        let guard = nested(depth);
+        let _ = guard.evaluate(&Nothing);
+        let _ = guard.to_string();
+        drop(guard);
+    })
+}
+
+/// Whether compiling a guard that deep survives on a `STACK`-byte thread.
+///
+/// The manager is built INSIDE, which is the one-manager-per-thread invariant
+/// `symbolic::isolated` records - each of these threads sees exactly one.
+fn compiling_survives(depth: usize) -> bool {
+    on_a_small_thread(move || {
+        let symbols = StateSymbols::new();
+        let node = LookAheadNode::new(
+            DialogueNodeId::new(1, 0),
+            false,
+            DialogueCheckKind::None,
+            Guard::always_true(),
+            vec![],
+            vec![],
+            0,
+            false,
+            false,
+            -1,
+            -1,
+            false,
+            -1,
+        );
+        let graph = LookAheadGraph::new(vec![node], symbols).expect("a one-entry graph");
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+        let vars = DataVars::new(&layout, graph.symbols(), DiagramBudget::modest());
+        let mut compiler = GuardCompiler::new(&vars);
+
+        let guard = nested(depth);
+        let _ = compiler.compile(&guard);
+    })
+}
+
+/// Runs `work` on a thread with the smallest stack worth worrying about.
+fn on_a_small_thread(work: impl FnOnce() + Send + 'static) -> bool {
     std::thread::Builder::new()
-        .stack_size(stack)
-        .spawn(move || {
-            let tree = nested(depth);
-            let _ = tree.evaluate(&Nothing);
-            let _ = tree.to_string();
-            drop(tree);
-        })
+        .stack_size(STACK)
+        .spawn(work)
         .expect("a thread")
         .join()
         .is_ok()
 }
 
-/// How deep is safe, on the stack size worth knowing about.
 fn main() {
-    // A megabyte is the default main-thread stack on Windows, which is the smallest place
-    // this code could plausibly run.
-    let stack = 1024 * 1024;
+    println!("on a {} KB stack:\n", STACK / 1024);
+
+    // THE FLAT HALF, and one line is the whole of it. A sweep in index order costs the same
+    // stack at any depth, so there is nothing to walk up towards.
+    println!("  building, evaluating, rendering and freeing {WELL_PAST} levels...");
+    println!(
+        "  {}",
+        match flat_consumers_survive(WELL_PAST) {
+            true => "survived - the flat consumers do not overflow at any depth",
+            false => "DIED, which means something about a guard recurses again",
+        }
+    );
 
     // EVERYTHING A READER NEEDS IS PRINTED BEFORE THE WALK, because nothing after it runs.
-    // These two lines used to be a closing summary, which could never appear: the walk ends
-    // by taking the process down, so `deepest`, the bytes-a-level arithmetic and this note
-    // were all dead code that nonetheless implied the run finishes normally - two
-    // contradictory accounts of how to read the output, one of them false (de-wy8q).
-    println!("walking up on a {} KB stack:", stack / 1024);
-    println!("THE LAST 'trying N' LINE IS THE ANSWER: the process dies at that depth.");
-    println!("  last recorded: 2,875 levels here, about 365 bytes a level");
+    // A closing summary could never appear: the walk ends by taking the process down, so
+    // `deepest` and its arithmetic would be dead code that nonetheless implied the run
+    // finishes normally - two contradictory accounts of the output, one false (de-wy8q).
+    println!("\n  walking up on GuardCompiler::compile_node, the one walk that still descends:");
+    println!("  THE LAST 'trying N' LINE IS THE ANSWER: the process dies at that depth.");
     println!("  the deepest guard in the shipped database is 11 levels, of 26,210");
     println!("  MAX_DEPTH in src/parser/guard_parser.rs is 256, between those two\n");
 
     for depth in (25..40_000).step_by(25) {
         println!("  trying {depth}...");
-        if !survives_here(depth, stack) {
+        if !compiling_survives(depth) {
             // NOT THE OVERFLOW, which never reaches here - a stack overflow on Windows is
             // STATUS_STACK_OVERFLOW rather than a panic, so the guard-page handler aborts
             // the process and `join` never returns at all. This catches an ordinary panic

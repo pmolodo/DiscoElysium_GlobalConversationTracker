@@ -33,7 +33,7 @@ use std::collections::HashMap;
 use oxidd::bdd::BDDFunction;
 use oxidd::BooleanFunction;
 
-use crate::core::guard::GuardExpression;
+use crate::core::guard::{Arguments, Guard, GuardExpression, GuardRef};
 use crate::core::guard_value::{GuardValue, GuardValueKind};
 use crate::core::state::{ITEM_PREFIX, TASK_PREFIX, THOUGHT_PREFIX};
 use crate::core::types::{DialogueNodeId, Ternary};
@@ -138,13 +138,13 @@ impl<'a> GuardCompiler<'a> {
     /// makes `compiled()` and `fallbacks()` counts of distinct entries rather than of
     /// visits, which is the number anybody reading them wanted anyway - a fallback counted
     /// once per revisit says how hot the loop was, not how much the compiler cannot read.
-    pub fn compile_for(&mut self, id: DialogueNodeId, guard: &GuardExpression) -> MayBe {
+    pub fn compile_for(&mut self, id: DialogueNodeId, guard: &Guard) -> MayBe {
         if let Some(compiled) = self.guards.get(&id) {
             self.guard_cache_hits += 1;
             return compiled.clone();
         }
 
-        let compiled = self.compile(guard);
+        let compiled = self.compile_node(guard.as_ref());
         self.guards.insert(id, compiled.clone());
         compiled
     }
@@ -279,8 +279,24 @@ impl<'a> GuardCompiler<'a> {
     }
 
     /// Compiles a guard into its two rails.
-    pub fn compile(&mut self, guard: &GuardExpression) -> MayBe {
-        match guard {
+    pub fn compile(&mut self, guard: &Guard) -> MayBe {
+        self.compile_node(guard.as_ref())
+    }
+
+    /// One node of a guard, and everything under it.
+    ///
+    /// DEMAND-DRIVEN, WHICH IS WHY IT DESCENDS. A guard is a flat table whose children
+    /// always sit earlier than their parents, so a single forward sweep would compile the
+    /// whole of it - and that is the wrong walk here, because a comparison answers from its
+    /// operands' SHAPE and compiles neither. `MoneyAmount() >= 50` becomes one comparison
+    /// over the purse's bits; a sweep would first build a decision diagram for the call and
+    /// for the literal, and then throw both away.
+    ///
+    /// So the descent is a choice about what work to avoid rather than something the data
+    /// forces, and what bounds it is `guard_parser::MAX_DEPTH` against a shipped database
+    /// whose deepest guard is eleven levels. See [`Guard`] for what stopped recursing.
+    fn compile_node(&mut self, guard: GuardRef<'_>) -> MayBe {
+        match guard.expression() {
             GuardExpression::Literal(value) => match value.as_condition() {
                 Ternary::True => {
                     let t = self.top();
@@ -311,13 +327,13 @@ impl<'a> GuardCompiler<'a> {
             },
 
             GuardExpression::Not(inner) => {
-                let inner = self.compile(inner);
+                let inner = self.compile_node(inner);
                 MayBe { may_be_true: inner.may_be_false, may_be_false: inner.may_be_true }
             }
 
             GuardExpression::And(left, right) => {
-                let a = self.compile(left);
-                let b = self.compile(right);
+                let a = self.compile_node(left);
+                let b = self.compile_node(right);
                 MayBe {
                     // Both may hold, so both rails must allow it.
                     may_be_true: a.may_be_true.and(&b.may_be_true).expect("and"),
@@ -327,8 +343,8 @@ impl<'a> GuardCompiler<'a> {
             }
 
             GuardExpression::Or(left, right) => {
-                let a = self.compile(left);
-                let b = self.compile(right);
+                let a = self.compile_node(left);
+                let b = self.compile_node(right);
                 MayBe {
                     may_be_true: a.may_be_true.or(&b.may_be_true).expect("or"),
                     may_be_false: a.may_be_false.and(&b.may_be_false).expect("and"),
@@ -461,7 +477,7 @@ impl<'a> GuardCompiler<'a> {
             }
 
             GuardExpression::Call(name, _) => {
-                let reason: &'static str = match name.as_str() {
+                let reason: &'static str = match name {
                     "CheckItem" => "call: CheckItem",
                     "IsTaskActive" => "call: IsTaskActive",
                     "IsTHCPresent" => "call: IsTHCPresent",
@@ -481,12 +497,7 @@ impl<'a> GuardCompiler<'a> {
     /// bits compared against a constant's, which is the arithmetic that makes decision
     /// diagrams blow up and is deliberately not attempted until something measures
     /// whether it is needed.
-    fn compare(
-        &mut self,
-        op: &str,
-        left: &GuardExpression,
-        right: &GuardExpression,
-    ) -> MayBe {
+    fn compare<'g>(&mut self, op: &str, left: GuardRef<'g>, right: GuardRef<'g>) -> MayBe {
         // `expr == false` is negation and `expr == true` is a no-op, and BOTH are
         // everywhere: 5,994 of the 13,059 distinct guards in the database end in
         // `== false` and another 1,582 in `== true`, because that is how the condition
@@ -553,7 +564,7 @@ impl<'a> GuardCompiler<'a> {
     ///
     /// Rebuilt from the parts rather than carried down, because by the time a comparison
     /// is being decided the expression it came from has been taken apart. It renders the
-    /// way [`GuardExpression`] does, so a reported gap can be found in the database by
+    /// way a guard does, so a reported gap can be found in the database by
     /// searching for it.
     fn rendered(op: &str, name: &str, literal: &GuardValue) -> String {
         format!("(Variable[\"{name}\"] {op} {literal})")
@@ -573,8 +584,8 @@ impl<'a> GuardCompiler<'a> {
 
     /// `expression == truth`, compiled by compiling the expression and, when comparing
     /// against false, swapping its rails.
-    fn against_boolean(&mut self, expression: &GuardExpression, truth: bool) -> MayBe {
-        let inner = self.compile(expression);
+    fn against_boolean(&mut self, expression: GuardRef<'_>, truth: bool) -> MayBe {
+        let inner = self.compile_node(expression);
         if truth {
             inner
         } else {
@@ -583,8 +594,8 @@ impl<'a> GuardCompiler<'a> {
     }
 
     /// The boolean a literal stands for, if it is a boolean one.
-    fn boolean_of(expression: &GuardExpression) -> Option<bool> {
-        let GuardExpression::Literal(value) = expression else { return None };
+    fn boolean_of(expression: GuardRef<'_>) -> Option<bool> {
+        let GuardExpression::Literal(value) = expression.expression() else { return None };
         match value.kind() {
             GuardValueKind::Boolean => Some(value.boolean()),
             _ => None,
@@ -633,7 +644,7 @@ impl<'a> GuardCompiler<'a> {
             let same = actual.equals(literal);
             same != (op == "~=")
         } else {
-            // Ordering on values, the way `GuardExpression::evaluate` does it: both sides
+            // Ordering on values, the way `Guard::evaluate` does it: both sides
             // through `try_as_number`, and undecided where either will not convert.
             let (Some(a), Some(b)) = (actual.try_as_number(), literal.try_as_number()) else {
                 return self.undecided("comparison: ordering on a non-numeric value", Self::rendered(op, name, literal));
@@ -673,11 +684,11 @@ impl<'a> GuardCompiler<'a> {
     ///
     /// Returns `None` when this is not such a comparison at all, so the caller carries on
     /// to the variable path rather than treating it as a failure.
-    fn register_comparison(
+    fn register_comparison<'g>(
         &mut self,
         op: &str,
-        left: &GuardExpression,
-        right: &GuardExpression,
+        left: GuardRef<'g>,
+        right: GuardRef<'g>,
     ) -> Option<MayBe> {
         // Either way round, and the operator turns with the operands: `50 <= MoneyAmount()`
         // is `MoneyAmount() >= 50`, and reading it the other way answers the opposite
@@ -740,20 +751,11 @@ impl<'a> GuardCompiler<'a> {
     fn clock_hours_formula(
         &mut self,
         name: &str,
-        args: &[GuardExpression],
+        args: Arguments<'_>,
     ) -> Option<BDDFunction> {
         use crate::core::clock::ClockTime;
 
-        // Only literal arguments; anything computed would have to be evaluated per state.
-        let values: Option<Vec<GuardValue>> = args
-            .iter()
-            .map(|arg| match arg {
-                GuardExpression::Literal(value) => Some(value.clone()),
-                _ => None,
-            })
-            .collect();
-        let values = values?;
-
+        let values = Self::literal_arguments(args)?;
         let ops = self.vars.clock_ops()?;
         let mut holds = self.bottom();
         let mut answered = false;
@@ -780,24 +782,24 @@ impl<'a> GuardCompiler<'a> {
     }
 
     /// The name a zero-argument call carries, if the expression is one.
-    fn call_of(expression: &GuardExpression) -> Option<String> {
-        match expression {
-            GuardExpression::Call(name, args) if args.is_empty() => Some(name.clone()),
+    fn call_of(expression: GuardRef<'_>) -> Option<String> {
+        match expression.expression() {
+            GuardExpression::Call(name, args) if args.is_empty() => Some(name.to_string()),
             _ => None,
         }
     }
 
     /// The name a `Variable` node carries, if the expression is one.
-    fn variable_of(expression: &GuardExpression) -> Option<String> {
-        match expression {
-            GuardExpression::Variable(name) => Some(name.clone()),
+    fn variable_of(expression: GuardRef<'_>) -> Option<String> {
+        match expression.expression() {
+            GuardExpression::Variable(name) => Some(name.to_string()),
             _ => None,
         }
     }
 
     /// The value a literal expression carries, if it is a literal.
-    fn literal_of(expression: &GuardExpression) -> Option<&GuardValue> {
-        match expression {
+    fn literal_of<'g>(expression: GuardRef<'g>) -> Option<&'g GuardValue> {
+        match expression.expression() {
             GuardExpression::Literal(value) => Some(value),
             _ => None,
         }
@@ -821,8 +823,8 @@ impl<'a> GuardCompiler<'a> {
     }
 
     /// The single text argument a query names its subject with, if that is its shape.
-    fn text_argument(args: &[GuardExpression]) -> Option<String> {
-        let [GuardExpression::Literal(value)] = args else { return None };
+    fn text_argument(args: Arguments<'_>) -> Option<String> {
+        let GuardExpression::Literal(value) = args.only()?.expression() else { return None };
         match value.kind() {
             GuardValueKind::Text => Some(value.text().to_string()),
             _ => None,
@@ -860,13 +862,9 @@ impl<'a> GuardCompiler<'a> {
     /// Answered by `ClockTime` against the world's `day_minutes` and `day_counter`, which
     /// is exactly what the engine does for a search that has not moved the clock - not
     /// through `world.query`, which knows nothing about hours.
-    fn clock_answer(&self, name: &str, args: &[GuardExpression]) -> Option<bool> {
+    fn clock_answer(&self, name: &str, args: Arguments<'_>) -> Option<bool> {
         let world = self.world?;
-        let mut values = Vec::with_capacity(args.len());
-        for arg in args {
-            let GuardExpression::Literal(value) = arg else { return None };
-            values.push(value.clone());
-        }
+        let values = Self::literal_arguments(args)?;
 
         let answer = crate::core::clock::ClockTime::answer(
             name,
@@ -885,7 +883,7 @@ impl<'a> GuardCompiler<'a> {
     ///
     /// Only literal arguments: a query whose argument is itself computed would have to be
     /// evaluated per state, which is the thing being avoided.
-    fn constant_query(&self, name: &str, args: &[GuardExpression]) -> Option<bool> {
+    fn constant_query(&self, name: &str, args: Arguments<'_>) -> Option<bool> {
         match self.constant_value(name, args)?.as_condition() {
             Ternary::True => Some(true),
             Ternary::False => Some(false),
@@ -898,13 +896,8 @@ impl<'a> GuardCompiler<'a> {
     /// Split out from [`Self::constant_query`] because a comparison needs the NUMBER:
     /// `DayCount() >= 2` cannot be answered from whether `DayCount()` is truthy. Both go
     /// through here so the two can never disagree about what the query says.
-    fn constant_value(&self, name: &str, args: &[GuardExpression]) -> Option<GuardValue> {
-        let mut values = Vec::with_capacity(args.len());
-        for arg in args {
-            let GuardExpression::Literal(value) = arg else { return None };
-            values.push(value.clone());
-        }
-
+    fn constant_value(&self, name: &str, args: Arguments<'_>) -> Option<GuardValue> {
+        let values = Self::literal_arguments(args)?;
         let world = self.world?;
 
         // The day, which the search cannot move and the world need not be asked about -
@@ -934,11 +927,11 @@ impl<'a> GuardCompiler<'a> {
     /// world. `MoneyAmount` IS intercepted, so it is excluded here by
     /// [`Self::search_can_change`], and answering it from the world's starting balance
     /// would close a branch a richer path opens.
-    fn constant_comparison(
+    fn constant_comparison<'g>(
         &mut self,
         op: &str,
-        left: &GuardExpression,
-        right: &GuardExpression,
+        left: GuardRef<'g>,
+        right: GuardRef<'g>,
     ) -> Option<MayBe> {
         let (name, args, literal, op) = match (Self::query_of(left), Self::literal_of(right)) {
             (Some((name, args)), Some(literal)) => (name, args, literal, op),
@@ -963,7 +956,7 @@ impl<'a> GuardCompiler<'a> {
         let holds = if op == "==" || op == "~=" {
             actual.equals(literal) != (op == "~=")
         } else {
-            // Ordering the way `GuardExpression::evaluate` does it: both sides through
+            // Ordering the way `Guard::evaluate` does it: both sides through
             // `try_as_number`, and undecided where either will not convert.
             let (Some(a), Some(b)) = (actual.try_as_number(), literal.try_as_number()) else {
                 return Some(
@@ -984,16 +977,29 @@ impl<'a> GuardCompiler<'a> {
     }
 
     /// The name and arguments of a call, if the expression is one.
-    fn query_of(expression: &GuardExpression) -> Option<(String, &[GuardExpression])> {
-        match expression {
-            GuardExpression::Call(name, args) => Some((name.clone(), args.as_slice())),
+    fn query_of(expression: GuardRef<'_>) -> Option<(String, Arguments<'_>)> {
+        match expression.expression() {
+            GuardExpression::Call(name, args) => Some((name.to_string(), args)),
             _ => None,
         }
     }
 
+    /// Every argument as a literal value, or `None` if any of them is computed.
+    ///
+    /// A query whose argument is not a literal would have to be evaluated per state,
+    /// which is the thing being avoided - so one such argument settles the whole call.
+    fn literal_arguments(args: Arguments<'_>) -> Option<Vec<GuardValue>> {
+        args.iter()
+            .map(|argument| match argument.expression() {
+                GuardExpression::Literal(value) => Some(value.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// Whether an expression is a call to `MoneyAmount`.
-    fn names_money(expression: &GuardExpression) -> bool {
-        matches!(expression, GuardExpression::Call(name, _) if name == MONEY_QUERY)
+    fn names_money(expression: GuardRef<'_>) -> bool {
+        matches!(expression.expression(), GuardExpression::Call(name, _) if name == MONEY_QUERY)
     }
 
     /// What the world says an untracked variable is, as a condition.
@@ -1030,7 +1036,7 @@ mod tests {
     use super::*;
     use crate::symbolic::budget::DiagramBudget;
     use crate::core::action::DialogueAction;
-    use crate::core::guard::GuardExpression;
+    use crate::core::guard::Guard;
     use crate::core::state::StateSymbols;
     use crate::core::types::{DialogueCheckKind, DialogueNodeId};
     use crate::graph::graph::LookAheadGraph;
@@ -1051,22 +1057,22 @@ mod tests {
 
         let node = LookAheadNode::new(
             DialogueNodeId::new(1, 0), false, DialogueCheckKind::None,
-            GuardExpression::always_true(), actions, vec![], 0, false, false, -1, -1, false, -1,
+            Guard::always_true(), actions, vec![], 0, false, false, -1, -1, false, -1,
         );
         let snapshot = symbols.clone();
         (LookAheadGraph::new(vec![node], symbols).unwrap(), snapshot)
     }
 
-    fn boolean(value: bool) -> GuardExpression {
-        GuardExpression::Literal(GuardValue::from_boolean(value))
+    fn boolean(value: bool) -> Guard {
+        Guard::literal(GuardValue::from_boolean(value))
     }
 
-    fn number(value: f64) -> GuardExpression {
-        GuardExpression::Literal(GuardValue::from_number(value))
+    fn number(value: f64) -> Guard {
+        Guard::literal(GuardValue::from_number(value))
     }
 
-    fn call(name: &str, args: Vec<GuardExpression>) -> GuardExpression {
-        GuardExpression::Call(name.to_string(), args)
+    fn call(name: &str, args: Vec<Guard>) -> Guard {
+        Guard::call(name.to_string(), args)
     }
 
     /// `DayCount() >= 2` is decided by the world's day, not given up on.
@@ -1083,19 +1089,19 @@ mod tests {
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
 
         // Day one, so the branch is shut.
-        let compiled = compiler.compile(&GuardExpression::Comparison(
+        let compiled = compiler.compile(&Guard::comparison(
             ">=".to_string(),
-            Box::new(call("DayCount", vec![])),
-            Box::new(number(2.0)),
+            call("DayCount", vec![]),
+            number(2.0),
         ));
         assert!(!compiled.may_be_true.satisfiable());
         assert_eq!(compiler.fallbacks(), 0);
 
         // And open where the day satisfies it.
-        let compiled = compiler.compile(&GuardExpression::Comparison(
+        let compiled = compiler.compile(&Guard::comparison(
             ">=".to_string(),
-            Box::new(call("DayCount", vec![])),
-            Box::new(number(1.0)),
+            call("DayCount", vec![]),
+            number(1.0),
         ));
         assert!(compiled.may_be_true.satisfiable());
         assert_eq!(compiler.fallbacks(), 0);
@@ -1113,10 +1119,10 @@ mod tests {
         // `2 <= DayCount()` is `DayCount() >= 2`, which is false on day one. Read without
         // turning the operator it would be `DayCount() <= 2`, which is true - the opposite
         // answer.
-        let compiled = compiler.compile(&GuardExpression::Comparison(
+        let compiled = compiler.compile(&Guard::comparison(
             "<=".to_string(),
-            Box::new(number(2.0)),
-            Box::new(call("DayCount", vec![])),
+            number(2.0),
+            call("DayCount", vec![]),
         ));
         assert!(!compiled.may_be_true.satisfiable());
         assert_eq!(compiler.fallbacks(), 0);
@@ -1135,10 +1141,10 @@ mod tests {
         let world = crate::world::test_world::TestWorld::new();
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
 
-        let compiled = compiler.compile(&GuardExpression::Comparison(
+        let compiled = compiler.compile(&Guard::comparison(
             ">=".to_string(),
-            Box::new(call("MoneyAmount", vec![])),
-            Box::new(number(50.0)),
+            call("MoneyAmount", vec![]),
+            number(50.0),
         ));
 
         // Permissive: both outcomes stay open, which is what an undecided guard means.
@@ -1161,10 +1167,10 @@ mod tests {
         let world = crate::world::test_world::TestWorld::new();
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
 
-        let compiled = compiler.compile(&GuardExpression::Comparison(
+        let compiled = compiler.compile(&Guard::comparison(
             ">=".to_string(),
-            Box::new(call("MoneyAmount", vec![])),
-            Box::new(number(50.0)),
+            call("MoneyAmount", vec![]),
+            number(50.0),
         ));
 
         assert_eq!(compiler.fallbacks(), 0);
@@ -1202,7 +1208,7 @@ mod tests {
         let mut compiler = GuardCompiler::new(&vars);
 
         // A world query the compiler cannot read.
-        let compiled = compiler.compile(&GuardExpression::Call("IsKimHere".to_string(), vec![]));
+        let compiled = compiler.compile(&Guard::call("IsKimHere".to_string(), vec![]));
 
         // Permissive in BOTH directions: the search may take the branch and may not.
         assert!(compiled.may_be_true.valid());
@@ -1221,7 +1227,7 @@ mod tests {
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
-        let compiled = compiler.compile(&GuardExpression::Variable("met_kim".to_string()));
+        let compiled = compiler.compile(&Guard::variable("met_kim".to_string()));
 
         assert!(compiled.may_be_true.eval([(base, true)]));
         assert!(!compiled.may_be_true.eval([(base, false)]));
@@ -1238,7 +1244,7 @@ mod tests {
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
-        let compiled = compiler.compile(&GuardExpression::Variable("counter".to_string()));
+        let compiled = compiler.compile(&Guard::variable("counter".to_string()));
 
         let zero: Vec<(u32, bool)> = (0..bits as u32).map(|b| (base + b, false)).collect();
         assert!(!compiled.may_be_true.eval(zero.iter().copied()));
@@ -1258,10 +1264,10 @@ mod tests {
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
-        let compiled = compiler.compile(&GuardExpression::Comparison(
+        let compiled = compiler.compile(&Guard::comparison(
             "==".to_string(),
-            Box::new(GuardExpression::Variable("counter".to_string())),
-            Box::new(number(3.0)),
+            Guard::variable("counter".to_string()),
+            number(3.0),
         ));
 
         let assignment = |value: u32| -> Vec<(u32, bool)> {
@@ -1281,10 +1287,10 @@ mod tests {
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
-        let compiled = compiler.compile(&GuardExpression::Comparison(
+        let compiled = compiler.compile(&Guard::comparison(
             "~=".to_string(),
-            Box::new(GuardExpression::Variable("a".to_string())),
-            Box::new(boolean(true)),
+            Guard::variable("a".to_string()),
+            boolean(true),
         ));
 
         assert!(compiled.may_be_true.eval([(base, false)]));
@@ -1299,10 +1305,10 @@ mod tests {
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
-        let compiled = compiler.compile(&GuardExpression::Comparison(
+        let compiled = compiler.compile(&Guard::comparison(
             "==".to_string(),
-            Box::new(boolean(true)),
-            Box::new(GuardExpression::Variable("a".to_string())),
+            boolean(true),
+            Guard::variable("a".to_string()),
         ));
 
         assert!(compiled.may_be_true.eval([(base, true)]));
@@ -1340,10 +1346,10 @@ mod tests {
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
-        let compiled = compiler.compile(&GuardExpression::Comparison(
+        let compiled = compiler.compile(&Guard::comparison(
             ">=".to_string(),
-            Box::new(GuardExpression::Variable("counter".to_string())),
-            Box::new(number(3.0)),
+            Guard::variable("counter".to_string()),
+            number(3.0),
         ));
 
         assert!(compiled.is_decided());
@@ -1371,10 +1377,10 @@ mod tests {
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
-        let compiled = compiler.compile(&GuardExpression::Comparison(
+        let compiled = compiler.compile(&Guard::comparison(
             "<=".to_string(),
-            Box::new(number(3.0)),
-            Box::new(GuardExpression::Variable("counter".to_string())),
+            number(3.0),
+            Guard::variable("counter".to_string()),
         ));
 
         assert_eq!(
@@ -1395,15 +1401,15 @@ mod tests {
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler =
             GuardCompiler::new(&vars).with_world(&world);
-        let holds = compiler.compile(&GuardExpression::Comparison(
+        let holds = compiler.compile(&Guard::comparison(
             ">=".to_string(),
-            Box::new(GuardExpression::Variable("untracked".to_string())),
-            Box::new(number(3.0)),
+            Guard::variable("untracked".to_string()),
+            number(3.0),
         ));
-        let fails = compiler.compile(&GuardExpression::Comparison(
+        let fails = compiler.compile(&Guard::comparison(
             ">=".to_string(),
-            Box::new(GuardExpression::Variable("untracked".to_string())),
-            Box::new(number(9.0)),
+            Guard::variable("untracked".to_string()),
+            number(9.0),
         ));
 
         assert_eq!(compiler.fallbacks(), 0);
@@ -1424,9 +1430,9 @@ mod tests {
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
-        let compiled = compiler.compile(&GuardExpression::And(
-            Box::new(GuardExpression::Variable("a".to_string())),
-            Box::new(GuardExpression::Call("IsKimHere".to_string(), vec![])),
+        let compiled = compiler.compile(&Guard::and(
+            Guard::variable("a".to_string()),
+            Guard::call("IsKimHere".to_string(), vec![]),
         ));
 
         // Where a holds, the conjunction may hold - the query is not read as false.
@@ -1445,9 +1451,9 @@ mod tests {
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
-        let compiled = compiler.compile(&GuardExpression::Not(Box::new(
-            GuardExpression::Variable("a".to_string()),
-        )));
+        let compiled = compiler.compile(&Guard::not(
+            Guard::variable("a".to_string()),
+        ));
 
         assert!(compiled.may_be_true.eval([(base, false)]));
         assert!(!compiled.may_be_true.eval([(base, true)]));
@@ -1461,9 +1467,9 @@ mod tests {
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
-        let compiled = compiler.compile(&GuardExpression::Not(Box::new(
-            GuardExpression::Call("IsKimHere".to_string(), vec![]),
-        )));
+        let compiled = compiler.compile(&Guard::not(
+            Guard::call("IsKimHere".to_string(), vec![]),
+        ));
 
         assert!(compiled.may_be_true.valid());
         assert!(compiled.may_be_false.valid());
@@ -1481,7 +1487,7 @@ mod tests {
         );
         let node = LookAheadNode::new(
             DialogueNodeId::new(1, 0), false, DialogueCheckKind::None,
-            GuardExpression::always_true(), actions, vec![], 0, false, false, -1, -1, false, -1,
+            Guard::always_true(), actions, vec![], 0, false, false, -1, -1, false, -1,
         );
         let snapshot = symbols.clone();
         let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
@@ -1492,9 +1498,9 @@ mod tests {
 
         let vars = DataVars::new(&layout, &snapshot, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
-        let compiled = compiler.compile(&GuardExpression::Call(
+        let compiled = compiler.compile(&Guard::call(
             "CheckItem".to_string(),
-            vec![GuardExpression::Literal(GuardValue::from_text("shoes_faln".to_string()))],
+            vec![Guard::literal(GuardValue::from_text("shoes_faln".to_string()))],
         ));
 
         assert!(compiled.may_be_true.eval([(base, true)]));
@@ -1518,13 +1524,13 @@ mod tests {
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler =
             GuardCompiler::new(&vars).with_world(&world);
-        let held = compiler.compile(&GuardExpression::Call(
+        let held = compiler.compile(&Guard::call(
             "CheckItem".to_string(),
-            vec![GuardExpression::Literal(GuardValue::from_text("ledger".to_string()))],
+            vec![Guard::literal(GuardValue::from_text("ledger".to_string()))],
         ));
-        let absent = compiler.compile(&GuardExpression::Call(
+        let absent = compiler.compile(&Guard::call(
             "CheckItem".to_string(),
-            vec![GuardExpression::Literal(GuardValue::from_text("nothing".to_string()))],
+            vec![Guard::literal(GuardValue::from_text("nothing".to_string()))],
         ));
 
         assert!(held.may_be_true.valid());
@@ -1548,7 +1554,7 @@ mod tests {
         );
         let node = LookAheadNode::new(
             DialogueNodeId::new(1, 0), false, DialogueCheckKind::None,
-            GuardExpression::always_true(), actions, vec![], 0, false, false, -1, -1, false, -1,
+            Guard::always_true(), actions, vec![], 0, false, false, -1, -1, false, -1,
         );
         let snapshot = symbols.clone();
         let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
@@ -1561,9 +1567,9 @@ mod tests {
         let vars = DataVars::new(&layout, &snapshot, DiagramBudget::modest());
         let mut compiler =
             GuardCompiler::new(&vars).with_world(&world);
-        let compiled = compiler.compile(&GuardExpression::Call(
+        let compiled = compiler.compile(&Guard::call(
             "CheckItem".to_string(),
-            vec![GuardExpression::Literal(GuardValue::from_text("shoes_faln".to_string()))],
+            vec![Guard::literal(GuardValue::from_text("shoes_faln".to_string()))],
         ));
 
         assert!(compiled.may_be_true.eval([(base, true)]));
@@ -1579,7 +1585,7 @@ mod tests {
         );
         let node = LookAheadNode::new(
             DialogueNodeId::new(1, 0), false, DialogueCheckKind::None,
-            GuardExpression::always_true(), actions, vec![], 0, false, false, -1, -1, false, -1,
+            Guard::always_true(), actions, vec![], 0, false, false, -1, -1, false, -1,
         );
         let snapshot = symbols.clone();
         let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
@@ -1590,9 +1596,9 @@ mod tests {
 
         let vars = DataVars::new(&layout, &snapshot, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
-        let compiled = compiler.compile(&GuardExpression::Call(
+        let compiled = compiler.compile(&Guard::call(
             "IsTaskActive".to_string(),
-            vec![GuardExpression::Literal(GuardValue::from_text("TASK.find_ruby".to_string()))],
+            vec![Guard::literal(GuardValue::from_text("TASK.find_ruby".to_string()))],
         ));
 
         assert!(compiled.may_be_true.eval([(base, true)]));
@@ -1615,7 +1621,7 @@ mod tests {
         );
         let node = LookAheadNode::new(
             DialogueNodeId::new(1, 0), false, DialogueCheckKind::None,
-            GuardExpression::always_true(), actions, vec![], 0, false, false, -1, -1, false, -1,
+            Guard::always_true(), actions, vec![], 0, false, false, -1, -1, false, -1,
         );
         let snapshot = symbols.clone();
         let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
@@ -1631,9 +1637,9 @@ mod tests {
         let world = crate::world::test_world::TestWorld::new().set_thought("jamais_vu", false);
         let vars = DataVars::new(&layout, &snapshot, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
-        let compiled = compiler.compile(&GuardExpression::Call(
+        let compiled = compiler.compile(&Guard::call(
             "IsTHCPresent".to_string(),
-            vec![GuardExpression::Literal(GuardValue::from_text("jamais_vu".to_string()))],
+            vec![Guard::literal(GuardValue::from_text("jamais_vu".to_string()))],
         ));
 
         assert!(compiled.may_be_true.eval([(base, true)]));
@@ -1656,15 +1662,15 @@ mod tests {
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(&world);
-        let present = compiler.compile(&GuardExpression::Call(
+        let present = compiler.compile(&Guard::call(
             "IsTHCPresent".to_string(),
-            vec![GuardExpression::Literal(GuardValue::from_text(
+            vec![Guard::literal(GuardValue::from_text(
                 "guillaume_le_million".to_string(),
             ))],
         ));
-        let internalised = compiler.compile(&GuardExpression::Call(
+        let internalised = compiler.compile(&Guard::call(
             "IsTHCFixed".to_string(),
-            vec![GuardExpression::Literal(GuardValue::from_text(
+            vec![Guard::literal(GuardValue::from_text(
                 "guillaume_le_million".to_string(),
             ))],
         ));
@@ -1688,7 +1694,7 @@ mod tests {
             .with_world(&night)
             .with_constant_clock(false);
         let compiled =
-            compiler.compile(&GuardExpression::Call("IsNight".to_string(), vec![]));
+            compiler.compile(&Guard::call("IsNight".to_string(), vec![]));
 
         assert!(compiled.is_decided());
         assert_eq!(compiler.fallbacks(), 0);
@@ -1705,7 +1711,7 @@ mod tests {
         let mut compiler =
             GuardCompiler::new(&vars).with_world(&night);
         let compiled =
-            compiler.compile(&GuardExpression::Call("IsNight".to_string(), vec![]));
+            compiler.compile(&Guard::call("IsNight".to_string(), vec![]));
 
         assert!(!compiled.is_decided());
         assert_eq!(compiler.fallbacks(), 1);
@@ -1741,7 +1747,7 @@ mod tests {
         let node = |actions| {
             LookAheadNode::new(
                 DialogueNodeId::new(1, 0), false, DialogueCheckKind::None,
-                GuardExpression::always_true(), actions, vec![], 0, false, false, -1, -1,
+                Guard::always_true(), actions, vec![], 0, false, false, -1, -1,
                 false, -1,
             )
         };
@@ -1760,7 +1766,7 @@ mod tests {
 
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars);
-        let compiled = compiler.compile(&GuardExpression::Variable("never_heard_of_it".to_string()));
+        let compiled = compiler.compile(&Guard::variable("never_heard_of_it".to_string()));
 
         assert!(!compiled.is_decided());
         assert_eq!(compiler.fallbacks(), 1);
@@ -1782,7 +1788,7 @@ mod tests {
         let actions = vec![DialogueAction::increment(counter, 1, false, "s".to_string())];
         let node = LookAheadNode::new(
             DialogueNodeId::new(1, 0), false, DialogueCheckKind::None,
-            GuardExpression::always_true(), actions.clone(), vec![],
+            Guard::always_true(), actions.clone(), vec![],
             0, false, false, -1, -1, false, -1,
         );
         let snapshot = symbols.clone();
@@ -1792,7 +1798,7 @@ mod tests {
 
         // The guard: the gate must be open.
         let mut compiler = GuardCompiler::new(&vars);
-        let guard = compiler.compile(&GuardExpression::Variable("gate".to_string()));
+        let guard = compiler.compile(&Guard::variable("gate".to_string()));
         assert!(guard.is_decided());
 
         // Every state where the counter is zero, gate either way.

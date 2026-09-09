@@ -243,7 +243,7 @@ pub struct SaveWorld {
     /// A guard like `Variable["jam.jammystery_lorrymans_questioned"] >= 3` compares a
     /// counter, and in the game these exist as numbers initialised to zero; answering
     /// boolean false makes the comparison undecidable, because `try_as_number` gives
-    /// nothing for a boolean and `GuardExpression::evaluate` gives up in exactly the same
+    /// nothing for a boolean and `Guard::evaluate` gives up in exactly the same
     /// way. The engine and the compiler agree - they are both just being told the wrong
     /// thing.
     ///

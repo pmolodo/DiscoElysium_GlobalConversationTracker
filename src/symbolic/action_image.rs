@@ -572,7 +572,7 @@ mod tests {
         let node = crate::graph::node::LookAheadNode::new(
             crate::core::types::DialogueNodeId::new(1, 0), false,
             crate::core::types::DialogueCheckKind::None,
-            crate::core::guard::GuardExpression::always_true(), actions.clone(), vec![],
+            crate::core::guard::Guard::always_true(), actions.clone(), vec![],
             0, false, false, -1, -1, false, -1,
         );
         let snapshot = symbols.clone();

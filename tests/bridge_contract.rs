@@ -84,44 +84,41 @@ fn the_engine_names_questions_the_snapshot_can_answer() {
 /// key that does not match shows up as an unanswered question rather than as a passing
 /// test.
 fn answered_queries(
-    guard: &lookahead_engine::core::guard::GuardExpression,
+    guard: &lookahead_engine::core::guard::Guard,
     world: &SnapshotWorld,
 ) -> usize {
     use lookahead_engine::core::guard::GuardExpression as G;
     use lookahead_engine::core::guard_value::{GuardValue, GuardValueKind};
     use lookahead_engine::world::world::ILookAheadWorld;
 
-    match guard {
-        G::Not(inner) => answered_queries(inner, world),
-        G::And(a, b) | G::Or(a, b) | G::Comparison(_, a, b) => {
-            answered_queries(a, world) + answered_queries(b, world)
+    let mut answered = 0;
+    for node in guard.nodes() {
+        let G::Call(name, args) = node.expression() else { continue };
+        // The subject-taking three are answered from items/tasks/thoughts instead, and
+        // a flag is a variable, so none of those is a query key.
+        if matches!(name, "CheckItem" | "IsTaskActive" | "IsTHCPresent" | "FlagSet") {
+            continue;
         }
-        G::Call(name, args) => {
-            // The subject-taking three are answered from items/tasks/thoughts instead, and
-            // a flag is a variable, so none of those is a query key.
-            if matches!(name.as_str(), "CheckItem" | "IsTaskActive" | "IsTHCPresent" | "FlagSet") {
-                return 0;
-            }
 
-            let values: Option<Vec<GuardValue>> = args
-                .iter()
-                .map(|arg| match arg {
-                    G::Literal(value) => Some(value.clone()),
-                    _ => None,
-                })
-                .collect();
+        let values: Option<Vec<GuardValue>> = args
+            .iter()
+            .map(|arg| match arg.expression() {
+                G::Literal(value) => Some(value.clone()),
+                _ => None,
+            })
+            .collect();
 
-            let Some(values) = values else { return 0 };
-            let answer = world.query(name, &values);
-            assert_ne!(
-                answer.kind(),
-                GuardValueKind::Unknown,
-                "'{name}' was answered under a key the engine does not look up",
-            );
-            1
-        }
-        G::Literal(_) | G::Variable(_) => 0,
+        let Some(values) = values else { continue };
+        let answer = world.query(name, &values);
+        assert_ne!(
+            answer.kind(),
+            GuardValueKind::Unknown,
+            "'{name}' was answered under a key the engine does not look up",
+        );
+        answered += 1;
     }
+
+    answered
 }
 
 /// The same world, once through JSON and once in the engine's hands, must score the same.

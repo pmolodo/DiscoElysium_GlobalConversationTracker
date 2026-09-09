@@ -156,7 +156,7 @@ fn what_is_still_unmodelled_in_the_subject_conversation() {
 
     for node in graph.nodes() {
         // An always-true guard is not evidence either way, and most entries have one.
-        if !matches!(&node.guard, GuardExpression::Literal(_)) {
+        if !matches!(node.guard.expression(), GuardExpression::Literal(_)) {
             entries_with_a_guard += 1;
             let _ = compiler.compile(&node.guard);
         }

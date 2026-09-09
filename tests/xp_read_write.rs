@@ -14,7 +14,7 @@
 use std::collections::HashSet;
 
 use lookahead_engine::core::action::DialogueActionKind;
-use lookahead_engine::core::guard::GuardExpression;
+use lookahead_engine::core::guard::{Guard, GuardExpression};
 use lookahead_engine::index::{build_group_graph, discover_group, read_index};
 
 mod common;
@@ -26,24 +26,11 @@ const XP_PREFIX: &str = "XP.";
 const GROUPS: [i32; 6] = [368, 631, 14, 28, 1030, 361];
 
 /// Every variable name a guard mentions.
-fn variables_of(guard: &GuardExpression, out: &mut HashSet<String>) {
-    match guard {
-        GuardExpression::Variable(name) => {
-            out.insert(name.clone());
+fn variables_of(guard: &Guard, out: &mut HashSet<String>) {
+    for node in guard.nodes() {
+        if let GuardExpression::Variable(name) = node.expression() {
+            out.insert(name.to_string());
         }
-        GuardExpression::Not(inner) => variables_of(inner, out),
-        GuardExpression::And(a, b)
-        | GuardExpression::Or(a, b)
-        | GuardExpression::Comparison(_, a, b) => {
-            variables_of(a, out);
-            variables_of(b, out);
-        }
-        GuardExpression::Call(_, args) => {
-            for arg in args {
-                variables_of(arg, out);
-            }
-        }
-        GuardExpression::Literal(_) => {}
     }
 }
 

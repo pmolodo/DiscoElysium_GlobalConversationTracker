@@ -3,7 +3,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::core::types::{DialogueNodeId, DialogueCheckKind};
-use crate::core::guard::GuardExpression;
+use crate::core::guard::Guard;
 use crate::core::action::DialogueAction;
 
 /// One dialogue entry as the look-ahead needs it.
@@ -12,7 +12,7 @@ pub struct LookAheadNode {
     pub id: DialogueNodeId,
     pub is_group: bool,
     pub kind: DialogueCheckKind,
-    pub guard: GuardExpression,
+    pub guard: Guard,
     pub actions: Vec<DialogueAction>,
     pub links: Vec<DialogueNodeId>,
     pub cost: i32,
@@ -40,7 +40,7 @@ impl LookAheadNode {
         id: DialogueNodeId,
         is_group: bool,
         kind: DialogueCheckKind,
-        guard: GuardExpression,
+        guard: Guard,
         actions: Vec<DialogueAction>,
         links: Vec<DialogueNodeId>,
         cost: i32,

@@ -17,7 +17,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::core::action::DialogueActionKind;
-use crate::core::guard::GuardExpression;
+use crate::core::guard::Guard;
 use crate::core::state::{StateSymbols, ONCE_PREFIX, SEEN_PREFIX};
 use crate::core::types::{DialogueCheckKind, DialogueNodeId};
 use crate::graph::graph::LookAheadGraph;
@@ -379,7 +379,7 @@ pub fn build_group_graph(
             let node_id = DialogueNodeId::new(conversation_id, entry.id);
 
             let guard =
-                parse_guard(&entry.guard).unwrap_or_else(|_| GuardExpression::always_true());
+                parse_guard(&entry.guard).unwrap_or_else(|_| Guard::always_true());
             let actions = parse_actions(&entry.script, &mut symbols);
 
             let kind = determine_kind(&entry.fields);
