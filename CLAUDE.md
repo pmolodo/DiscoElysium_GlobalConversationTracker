@@ -43,6 +43,35 @@ rather than one pointing at the other because the Git rule below overrides a bui
 default, and an override that goes missing because a pointer was not followed is worse
 than two copies to keep aligned.
 
+## Environment variables: name every one of ours `DEGCT_`
+
+**Every environment variable this project defines is prefixed `DEGCT_`.** All languages, all
+scripts - Rust, Python, bash, PowerShell.
+
+**A throwaway script in a session scratchpad uses `DEGCTT_` instead** - the same rule with a
+second `T` for temporary. Temp scripts are where the convention is most tempting to skip and
+where the bug is hardest to see: nobody reviews them, nothing tests them, and they are deleted
+before anyone asks what went wrong. The separate prefix also keeps them visibly apart from the
+committed drivers, so a stray value exported by a scratch script can never be mistaken for a
+setting one of the real ones reads.
+
+Variables we merely READ from the world keep their own names: `PATH`, `CARGO_TARGET_DIR`,
+`NUMBER_OF_PROCESSORS`. The rule is about names we invent.
+
+**Why, and it is not hypothetical - it has cost time three times.** `GROUPS` is a bash
+built-in array holding the user's numeric group ids. Assigning to it looks like it works, and
+`set -x` will even show the assignment with the right value; every later `"$GROUPS"` then
+expands to `${GROUPS[0]}`, a gid. In this repository that is a number the measurement takes
+for a conversation id, so a run refuses with "conversation 197609: no group builds from it"
+and nothing points at the variable.
+
+The shell owns a long list of short generic names - `GROUPS`, `IFS`, `HOME`, `LINES`,
+`COLUMNS`, `SECONDS`, `RANDOM`, `PWD`, `REPLY`, `PIPESTATUS`, `UID`, `HOSTNAME` - and they are
+drawn from exactly the vocabulary a measurement wants. A prefix takes the whole class of
+collision off the table rather than dodging them one at a time.
+
+See de-12wr.9 for the rename of the names that predate this rule.
+
 ## Git
 
 ### Top-level agent
