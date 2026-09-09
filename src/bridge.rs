@@ -647,10 +647,11 @@ impl LookAheadRequest {
     /// How long each half of the search may take.
     ///
     /// THE PLAYER SETS ONE NUMBER and it means the whole answer, so the backward driver
-    /// gets it and the per-candidate cap is kept under it - a candidate allowed longer than
-    /// the whole search would make the outer limit decorative. The forward slice keeps its
-    /// own 50ms: it is sized to be worth the sets it leaves behind, not to finish, and it
-    /// is spent before the clock the player set starts mattering.
+    /// gets it and so does a candidate - a candidate allowed longer than the whole search
+    /// would make the outer limit decorative, and one allowed less only makes the search
+    /// give up sooner, which is what [`portfolio::Budget::each`] is about. The forward
+    /// slice keeps its own 50ms: it is sized to be worth the sets it leaves behind, not to
+    /// finish, and it is spent before the clock the player set starts mattering.
     /// PUBLIC SO THE WALL CAN BE ASSERTED, since de-cluo. What the dial produces is a claim
     /// made to the player - "the longest one option's look-ahead may run for" - and
     /// tests/time_budget_binds.rs pins its SHAPE rather than timing a real search, because a
@@ -708,7 +709,10 @@ impl LookAheadRequest {
             slice_memory: self.diagram_budget().memory(),
             slice_steps: default.slice_steps,
             backwards: whole,
-            each: default.each.min(whole),
+            // THE DIAL, NOT A SLIVER OF IT. A candidate is held to the wall and to nothing
+            // narrower, so a player who raises the number gives it to the pass that needs
+            // it. The driver still narrows this to the time left when the pass begins.
+            each: whole,
             pruning: default.pruning,
             forget_dead: default.forget_dead.clone(),
         }

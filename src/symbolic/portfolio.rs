@@ -144,8 +144,23 @@ pub struct Budget {
     pub backwards: Duration,
     /// One candidate's fixed point.
     ///
-    /// The one that matters. A group whose sets explode does so on its first candidate, so
-    /// a per-candidate limit catches it without waiting for the whole attempt to time out.
+    /// A CEILING FOR CALLERS THAT WANT ONE rather than a ration the search imposes on
+    /// itself: by default it is the whole backward attempt, so a candidate may spend
+    /// whatever the wall has left. The driver narrows it to the time actually remaining
+    /// before every pass, so [`Self::overall`] binds a candidate whether this does or not.
+    ///
+    /// SETTING IT BELOW THE ATTEMPT BUYS A FASTER GIVE-UP AND NOTHING ELSE. The obvious
+    /// reading is that it protects the candidates after a heavy one - a group whose sets
+    /// explode does so on its first, and a cap would cut that one off and leave the rest
+    /// their time. The driver does not work that way: an unsettled pass ends the whole
+    /// attempt at [`best_novelty`]'s `StoppedBy::Incomplete`, because the answer is
+    /// already a lower bound that no later candidate improves. So a cap decides how long
+    /// the search takes to give up, not how many candidates it reaches.
+    ///
+    /// Two callers still want one. [`crate::bridge::LookAheadRequest::state_budget`] sets
+    /// it to zero, which is how a test provokes a search that can establish nothing; and
+    /// the measurement columns state their own, since a column is only readable against a
+    /// ration it names.
     pub each: Duration,
     /// Whether a SETTLED forward run may narrow the backward passes told about it.
     ///
@@ -178,10 +193,12 @@ pub struct Budget {
 
 impl Default for Budget {
     fn default() -> Self {
-        // Chosen from the medians rather than invented: 631, 28 and 14 answer in 7ms, 1ms
-        // and 100ms, while 368 and 1030 want 247ms and 121ms and have tails in the tens of
-        // seconds. A quarter-second per candidate keeps the first three and cuts the other
-        // two off early enough to be worth falling back from.
+        // A CANDIDATE GETS THE WHOLE BACKWARD ATTEMPT, so the wall is the only clock that
+        // stops one. See [`Budget::each`] for why a smaller ration is not the protection it
+        // looks like: the attempt ends at the first pass that fails to settle either way,
+        // so cutting that pass short shortens the search without buying anything for the
+        // candidates behind it.
+        let backwards = Duration::from_secs(2);
         Self {
             // FIFTY MILLISECONDS, and the shape of the measurement rather than a guess.
             // A forward pass that is going to answer at all answers in under one on every
@@ -198,8 +215,8 @@ impl Default for Budget {
             // default changes nothing while making the numbers visible.
             slice_memory: crate::symbolic::budget::DiagramBudget::DEFAULT_MEMORY_BUDGET,
             slice_steps: 2_000_000,
-            backwards: Duration::from_secs(2),
-            each: Duration::from_millis(250),
+            backwards,
+            each: backwards,
             // ON. `measurements/settles_within.rs` is why: at the fifty milliseconds above,
             // 119 of 120 ordinary groups settle and 25 of the 50 that span conversations
             // do, so most of the game has a settled run to narrow with and nothing was
@@ -424,7 +441,8 @@ where
             each: crate::symbolic::backward::Budget {
                 steps: usize::MAX,
                 time: budget.each,
-                // Nothing watches a pass that is over in a quarter of a second.
+                // Nothing watches a pass bounded by a player's wall. The hook exists for
+                // measurement passes that run for minutes, which these cannot.
                 ..Default::default()
             },
         },

@@ -686,10 +686,11 @@ enum Engine {
     /// under it are estimates aimed at landing inside it.
     ///
     /// BUILT DIRECTLY RATHER THAN THROUGH THE PRODUCT, and that is the one place restating
-    /// rations is right: `search_budget` deliberately holds a candidate to 250 ms and the
-    /// slice to 50 whatever the dial says, so a two-minute clock built through it would
-    /// spend the extra time in quarter-second slivers. This is deliberately not the
-    /// product's configuration.
+    /// rations is right: `search_budget` holds the slice to 50 ms whatever the dial says,
+    /// and hands a candidate the whole wall, so a two-minute clock built through it would
+    /// be two minutes on one candidate behind a slice sized for a player's second. This
+    /// column wants its own three numbers, and is deliberately not the product's
+    /// configuration.
     NoLimit,
     /// [`Engine::InGame`] WITH THE FORWARD SLICE TURNED OFF: the same method, backwards only.
     ///

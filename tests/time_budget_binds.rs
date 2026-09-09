@@ -52,8 +52,8 @@ fn the_dial_becomes_an_overall_deadline() {
 
 /// A dial smaller than the shipped rations squeezes them rather than being ignored.
 ///
-/// The interesting direction: at 10 ms the defaults - a 50 ms slice and a 250 ms candidate -
-/// are each larger than the whole answer is allowed to be.
+/// The interesting direction: at 10 ms the 50 ms slice is larger than the whole answer is
+/// allowed to be, and a candidate is handed the dial rather than a ration of its own.
 #[test]
 fn a_small_dial_squeezes_the_rations_it_is_smaller_than() {
     let request = LookAheadRequest { time_budget_ms: 10, ..Default::default() };
@@ -62,7 +62,7 @@ fn a_small_dial_squeezes_the_rations_it_is_smaller_than() {
     let ten = std::time::Duration::from_millis(10);
     assert_eq!(budget.overall, ten);
     assert!(budget.forwards <= ten, "a 50ms slice cannot fit in a 10ms answer");
-    assert!(budget.each <= ten, "a 250ms candidate cannot fit in a 10ms answer");
+    assert!(budget.each <= ten, "a candidate cannot outlast a 10ms answer");
 }
 
 /// The default carries a wall too, so a request that names no budget is bounded.

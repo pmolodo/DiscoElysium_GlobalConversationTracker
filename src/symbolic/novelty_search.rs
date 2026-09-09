@@ -553,11 +553,10 @@ where
 
         // THE CANDIDATE MAY NOT OUTLIVE THE ATTEMPT. de-cluo.
         //
-        // The check above tests the clock and then used to hand the candidate a full
-        // `each`, so a pass beginning a millisecond under `budget.time` returned `each`
-        // past it - a quarter of a second at the shipped ration, on top of a limit the
-        // player was told was the whole of it. Every ration here was an estimate and none
-        // of them was a wall.
+        // The check above only tests that the clock has not already run out. Handing the
+        // candidate a full `each` on top of that would let a pass beginning a millisecond
+        // under `budget.time` return a whole `each` past it - and since the shipped `each`
+        // IS the player's number, that would be double what they were promised.
         //
         // `backward::Budget.time` IS CHECKED INSIDE THE FIXED POINT rather than only
         // between passes, so narrowing it to what is left is what turns the wall from
