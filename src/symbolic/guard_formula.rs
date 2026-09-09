@@ -82,6 +82,14 @@ pub struct GuardCompiler<'a> {
     clock_approximated: bool,
     fallbacks: usize,
     compiled: usize,
+    /// Whether a diagram operation could not complete for want of nodes.
+    ///
+    /// SEPARATE FROM THE FALLBACK COUNT, which it also lands in. An undecided guard reads
+    /// the same whether the language could not express it or the manager could not hold
+    /// it, and those want opposite responses: the first is content the model should learn,
+    /// the second is a budget at its limit. Nothing could tell them apart before, because
+    /// running out of room here did not produce a fallback at all - it aborted the process.
+    out_of_memory: bool,
     reasons: HashMap<&'static str, usize>,
     subjects: Vec<(&'static str, String)>,
     /// Queries answered as constants that a DECLARED decision writes.
@@ -123,6 +131,7 @@ impl<'a> GuardCompiler<'a> {
             vars, world: None,
             constant_clock: false, clock_approximated: false,
             fallbacks: 0, compiled: 0, reasons: HashMap::new(), subjects: Vec::new(),
+            out_of_memory: false,
             declared_constants: Vec::new(),
             guards: HashMap::new(), guard_cache_hits: 0,
         }
@@ -272,9 +281,43 @@ impl<'a> GuardCompiler<'a> {
         MayBe { may_be_true: self.top(), may_be_false: self.top() }
     }
 
+    /// A guard nothing could be built for, because the manager has no room left.
+    ///
+    /// THE PERMISSIVE ANSWER, like every other fallback here: an undecided guard lets every
+    /// branch through, which is the direction both searches are allowed to be wrong in, so
+    /// a compile that runs out of nodes still produces a SOUND answer rather than a wrong
+    /// one. That is why this records and carries on where the searches stop - see
+    /// [`Self::out_of_memory`] for what it costs to be unable to tell it from a gap in the
+    /// model.
+    ///
+    /// RUNNING OUT OF NODES IS A RESULT, not a fault. The player's manager is a budget, and
+    /// an unwrapped operation here ABORTS THE PROCESS - not a panic a host can turn into a
+    /// partial answer, and not a row a measurement can keep. The searches and the register
+    /// already report it; this was the last layer that did not.
+    fn no_room(&mut self, subject: String) -> MayBe {
+        self.out_of_memory = true;
+        self.undecided("no room to build the formula", subject)
+    }
+
+    /// Whether a guard could not be compiled for want of diagram nodes.
+    ///
+    /// A caller that sees this has an answer built partly from undecided guards it did not
+    /// ask for. The answer is still sound - see [`Self::no_room`] - but it is coarser than
+    /// the content warrants, and a measurement reporting a fallback rate should say so
+    /// rather than record it as a property of the guards.
+    pub fn out_of_memory(&self) -> bool {
+        self.out_of_memory
+    }
+
     fn decided(&mut self, holds: BDDFunction) -> MayBe {
+        // THE OTHER RAIL IS DIAGRAM WORK TOO. `may_be_false` is the negation of what was
+        // just built, so a manager with room for one and not the other leaves this with
+        // half an answer, which is no answer.
+        let Ok(fails) = holds.not() else {
+            return self.no_room("negating a compiled guard".to_string());
+        };
+
         self.compiled += 1;
-        let fails = holds.not().expect("negation");
         MayBe { may_be_true: holds, may_be_false: fails }
     }
 
@@ -334,20 +377,21 @@ impl<'a> GuardCompiler<'a> {
             GuardExpression::And(left, right) => {
                 let a = self.compile_node(left);
                 let b = self.compile_node(right);
-                MayBe {
-                    // Both may hold, so both rails must allow it.
-                    may_be_true: a.may_be_true.and(&b.may_be_true).expect("and"),
-                    // Either failing is enough to fail the conjunction.
-                    may_be_false: a.may_be_false.or(&b.may_be_false).expect("or"),
+                // Both may hold, so both rails must allow it; either failing is enough to
+                // fail the conjunction. BOTH OR NEITHER: a MayBe with one rail built and
+                // the other not is not a weaker answer, it is an inconsistent one.
+                match (a.may_be_true.and(&b.may_be_true), a.may_be_false.or(&b.may_be_false)) {
+                    (Ok(may_be_true), Ok(may_be_false)) => MayBe { may_be_true, may_be_false },
+                    _ => self.no_room(guard.to_string()),
                 }
             }
 
             GuardExpression::Or(left, right) => {
                 let a = self.compile_node(left);
                 let b = self.compile_node(right);
-                MayBe {
-                    may_be_true: a.may_be_true.or(&b.may_be_true).expect("or"),
-                    may_be_false: a.may_be_false.and(&b.may_be_false).expect("and"),
+                match (a.may_be_true.or(&b.may_be_true), a.may_be_false.and(&b.may_be_false)) {
+                    (Ok(may_be_true), Ok(may_be_false)) => MayBe { may_be_true, may_be_false },
+                    _ => self.no_room(guard.to_string()),
                 }
             }
 
@@ -611,7 +655,12 @@ impl<'a> GuardCompiler<'a> {
             if equality {
                 if let Some(equals) = self.slot_equals(name, value) {
                     let holds = if op == "~=" {
-                        equals.not().expect("negation")
+                        match equals.not() {
+                            Ok(negated) => negated,
+                            Err(_) => {
+                                return self.no_room(Self::rendered(op, name, literal))
+                            }
+                        }
                     } else {
                         equals
                     };
@@ -1822,5 +1871,56 @@ mod tests {
         assert!(after.and(&moved).expect("and").satisfiable());
         let still = vars.slot_equals(counter, 0).unwrap();
         assert!(!after.and(&still).expect("and").satisfiable());
+    }
+
+    /// How much room the squeezed compile below gets, in bytes.
+    ///
+    /// A WINDOW RATHER THAN A CEILING, like the one in `reachability`: wide enough to lay
+    /// the variables out, since a compiler with no variables tests nothing here, and narrow
+    /// enough that conjoining them does not fit. A layout or encoding change can move it out
+    /// from under this test, and the symptom is the assertion below rather than a crash.
+    const SQUEEZED: usize = 4 * 1024;
+
+    /// How many slots the chain conjoins. Enough that the conjunction is real work.
+    const CHAINED: usize = 40;
+
+    /// A manager that fills while a guard is being COMPILED reports it, rather than
+    /// aborting.
+    ///
+    /// The last layer of the same defect de-rvxw and de-nyv2 removed from the searches and
+    /// the register. Every diagram operation here went through expect, so a guard compiled
+    /// against a full manager took the process with it - and this is the layer reached most
+    /// often, once per entry per search.
+    ///
+    /// THE ANSWER IS STILL SOUND, which is why this asserts on both halves. An undecided
+    /// guard lets every branch through, so a compile that ran out of room over-approximates
+    /// exactly as one the language cannot express does; what the flag adds is being able to
+    /// tell those apart. de-iqcc.
+    #[test]
+    fn a_manager_that_fills_while_compiling_is_reported_rather_than_fatal() {
+        let names: Vec<String> = (0..CHAINED).map(|i| format!("v{i}")).collect();
+        let borrowed: Vec<&str> = names.iter().map(|n| n.as_str()).collect();
+        let (graph, symbols) = fixture(&borrowed, Some("v0"));
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::new(SQUEEZED));
+        let mut compiler = GuardCompiler::new(&vars);
+
+        // A conjunction of every slot, which is the shape that has to build a diagram node
+        // per term and so the one that runs out first.
+        let mut guard = Guard::variable(borrowed[0]);
+        for name in &borrowed[1..] {
+            guard = Guard::and(guard, Guard::variable(*name));
+        }
+
+        let compiled = compiler.compile(&guard);
+
+        assert!(
+            compiler.out_of_memory(),
+            "a compile that could not finish should say the nodes ran out",
+        );
+        assert!(
+            compiled.may_be_true.satisfiable(),
+            "and the answer it falls back to is the permissive one, not the empty set",
+        );
     }
 }
