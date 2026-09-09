@@ -221,11 +221,10 @@ verdict_row() {
     done
 }
 
-# THE CAP EACH ENGINE GETS, which the run needs a copy of to say anything about how long
-# it has left. The measurement's own default is ten minutes (DEFAULT_ROW_SECONDS in
-# measurements/performance_matrix.rs); this passes whatever is set through unchanged, and
-# EACH ENGINE gets it separately, so a row's worst case is this times the number of
-# engines measured, plus the build and the index read.
+# THE CAP EACH ENGINE GETS, so that a row which will never finish still ends. The
+# measurement's own default is ten minutes (DEFAULT_ROW_SECONDS in
+# measurements/performance_matrix.rs) and this passes whatever is set through unchanged.
+# EACH ENGINE gets it separately, so a row of four columns can spend four of them.
 ROW_SECONDS="${ROW_SECONDS:-600}"
 export ROW_SECONDS
 
@@ -249,12 +248,16 @@ clock() {
 
 # WHERE THE RUN IS, after every row.
 #
-# Two numbers rather than one, because they bracket an honest answer and neither does it
-# alone. The estimate is WEIGHTED BY WHAT EACH REMAINING ROW HAS COST BEFORE, taken from
-# past runs under measurements/logs and scaled by the pace this run is actually going at -
-# see tools/matrix-remaining.awk. The worst case is every remaining row spending every
-# engine's cap in full, which is the number that says whether this can possibly finish
-# overnight.
+# ONE ESTIMATE, AND IT IS CALIBRATED: weighted by what each remaining row has cost before,
+# taken from past runs under measurements/logs and scaled by the pace this run is actually
+# going at - see tools/matrix-remaining.awk. That is the number a person plans around, and
+# a second one beside it is only worth printing if it is nearly right in some direction.
+#
+# A BOUND FROM THE CAP IS NOT. Every remaining row spending every engine's ten minutes puts
+# a hundred-conversation run at 166 hours where it finishes in ten minutes, because almost
+# no row takes seconds - four orders of magnitude, and always the same way. Worse, it reads
+# last and so is what the eye keeps. Whether a run can finish overnight is a question the
+# weighted estimate answers better.
 #
 # THE FLAT MEAN IS STILL THE FALLBACK, and says so when it is used. It reads LONG early on,
 # because each conversation's heavy profiles run first, and that is the whole reason the
@@ -317,12 +320,11 @@ progress() {
         note=" (flat)"
     fi
 
-    printf '    %d/%d (%d%%)  row %s  elapsed %s  est. left ~%s%s  worst case %s\n' \
+    printf '    %d/%d (%d%%)  row %s  elapsed %s  est. left ~%s%s\n' \
         "$DONE_ROWS" "$TOTAL_ROWS" $(( DONE_ROWS * 100 / TOTAL_ROWS )) \
         "$(clock $(( now - ROW_STARTED )))" \
         "$(clock "$elapsed")" \
-        "$(clock "$estimate")" "$note" \
-        "$(clock $(( left * ENGINE_COUNT * ROW_SECONDS )))"
+        "$(clock "$estimate")" "$note"
 }
 
 # Built once, up front. Letting each row build would put a compile inside the timing of
@@ -364,10 +366,9 @@ fi
 
 IFS="$TAB" read -r -a HEADER_FIELDS <<< "$HEADER"
 
-# WHICH engines a row measures, and how many, counted from the header rather than from a
-# second reading of ENGINES: one verdict column each, whatever the selection was.
+# WHICH engines a row measures, counted from the header rather than from a second reading
+# of ENGINES: one verdict column each, whatever the selection was.
 ENGINE_NAMES=$(printf '%s' "$HEADER" | tr '\t' '\n' | sed -n 's/_verdict$//p' | paste -sd, -)
-ENGINE_COUNT=$(printf '%s' "$HEADER" | tr '\t' '\n' | grep -c '_verdict$')
 
 # WHETHER ANY ENGINE REPORTS WHAT IT HELD. The `_nodes` columns are the manager's own node
 # count, which is memory in use in the currency the budget is spent in - and they are the
