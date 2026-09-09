@@ -40,7 +40,26 @@ function mean(key,    n) {
 # proxy for an unmeasured profile than a profile is for an unmeasured conversation, so
 # (engine, conversation) is tried before (engine, profile).
 function weight(conv, profile,    i, engine, key, sum) {
-    sum = 0
+    # WHAT A ROW COSTS BEFORE ITS ENGINES START, and it is most of what a row costs.
+    #
+    # Every row is a fresh process that reads the index, builds the graph and lays out the
+    # variables, and none of that is in any `_ms` column - those time the engines only. On
+    # the whole-game run of 2026-09-09 the engines averaged 42 ms of a row that cost about
+    # 1.4 seconds of wall clock, so weighting a row by its engine time alone weights it by
+    # three per cent of itself.
+    #
+    # THAT IS WHY THE ESTIMATE READ LOW, and it read low in the way this predicts: groups
+    # arrive heaviest-first, so the rows already done are the ones whose engine time is a
+    # real share of their cost and the rows still to come are dominated by this constant.
+    # Calibrating on the first and extrapolating to the second under-reads, and worsens as
+    # the run goes on. Measured before this term: est/actual flat at 0.42 over a hundred
+    # groups.
+    #
+    # A CONSTANT RATHER THAN A MEASUREMENT, because nothing records it: the caller times a
+    # row in whole seconds, which quantises a 1.4-second row to 1 or 2, and the row's own
+    # process cannot see what spawning it cost. ROW_OVERHEAD=n moves it, and 0 restores
+    # weighting by engine time alone.
+    sum = (row_overhead == "" ? 1.4 : row_overhead)
     for (i = 1; i <= engine_count; i++) {
         engine = engines_wanted[i]
         key = engine SUBSEP conv SUBSEP profile

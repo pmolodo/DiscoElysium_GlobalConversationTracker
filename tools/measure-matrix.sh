@@ -268,13 +268,45 @@ clock() {
 # its full weight drags the ratio down and the estimate with it - and on a resumed
 # whole-game run the skipped rows are most of them.
 #
-# HOW OFTEN THE WEIGHTED ESTIMATE IS RECOMPUTED. Once a minute at most, because it re-reads
-# every past TSV and is handed a spec naming every row still to come: at fourteen thousand
-# rows that is real time, spent to refine a number nobody reads more than once a minute
-# anyway. Between refreshes the last figure is reprinted.
-ESTIMATE_EVERY=60
+# HOW OFTEN THE WEIGHTED ESTIMATE IS RECOMPUTED. Every thirty seconds at most, because it
+# re-reads every past TSV and is handed a spec naming every row still to come: at fourteen
+# thousand rows that is real time. Between refreshes the last figure is reprinted.
+#
+# THIRTY RATHER THAN SIXTY, because sixty was chosen against the serial phase and reads
+# badly in the parallel one. A group finishes every second or two there, so a minute's
+# throttle printed the same figure 33 to 50 times running - and since the reprint is the
+# STORED number rather than that number minus the time since, it does not even count down
+# while it waits. de-npvt has the rest of that: the decay, and the divisor that makes the
+# figure read half the truth.
+#
+# OVERRIDABLE, because a run short enough to check the estimate on is too short to see six
+# refreshes of it at thirty seconds apiece.
+ESTIMATE_EVERY="${ESTIMATE_EVERY:-30}"
+
+# WHAT A ROW COSTS BEFORE ITS ENGINES START, in seconds, for the weighting. Empty leaves the
+# awk's own default. See `weight` in tools/matrix-remaining.awk for why a row's `_ms`
+# columns are three per cent of what the row costs, and what weighting by them alone did to
+# the estimate.
+ROW_OVERHEAD="${ROW_OVERHEAD:-}"
 LAST_ESTIMATE=""
 LAST_ESTIMATE_AT=0
+
+# The seconds a `key=seconds; ...` spec accounts for, summed.
+#
+# An entry with no `=` is a key nothing was recorded against, which happens for a row that
+# was skipped rather than measured. It contributes nothing rather than being read as a
+# number, because `${entry#*=}` on a key without one hands back the key.
+spec_seconds() {
+    local spec="${1:-}" total=0 entry
+    local IFS=';'
+    for entry in $spec; do
+        case "$entry" in
+            *=*) total=$(( total + ${entry#*=} )) ;;
+        esac
+    done
+
+    echo "$total"
+}
 
 progress() {
     DONE_ROWS=$(( DONE_ROWS + 1 ))
@@ -302,10 +334,21 @@ progress() {
         && { [ -z "$LAST_ESTIMATE" ] || [ $(( now - LAST_ESTIMATE_AT )) -ge "$ESTIMATE_EVERY" ]; }
     then
         LAST_ESTIMATE="$(awk -v engines="$ENGINE_NAMES" -v done="$DONE_SPEC" -v left="$LEFT_SPEC" \
+            -v row_overhead="$ROW_OVERHEAD" \
             -f "$ROOT/tools/matrix-remaining.awk" "${PAST_TSVS[@]}" 2>/dev/null)"
         LAST_ESTIMATE_AT=$now
     fi
-    estimate="$LAST_ESTIMATE"
+    # COUNTED DOWN SINCE IT WAS TAKEN. The figure is recomputed on a timer, so between
+    # refreshes it is a number from up to `ESTIMATE_EVERY` seconds ago - and reprinting it
+    # unchanged made it read as frozen, then JUMP UP when the refresh replaced a figure that
+    # had quietly gone stale. Subtracting the age costs nothing and is what a reader expects
+    # a countdown to do. Floored at zero, because an estimate that ran out is late rather
+    # than negative.
+    estimate=""
+    if [ -n "$LAST_ESTIMATE" ]; then
+        estimate=$(( LAST_ESTIMATE - (now - LAST_ESTIMATE_AT) ))
+        [ "$estimate" -lt 0 ] && estimate=0
+    fi
 
     # THE FLAT MEAN OVER WHAT THIS RUN ACTUALLY SPENT, not over its elapsed time: a resumed
     # run's elapsed clock includes rows it skipped in no time at all, and dividing that by
@@ -380,10 +423,34 @@ REPORTS_NODES=$(printf '%s' "$HEADER" | tr '\t' '\n' | grep -c '_nodes$')
 # WHAT PAST RUNS COST, for the weighted estimate. This run's own folder is excluded: its
 # rows are the ones being calibrated, and letting them weigh themselves would drag every
 # ratio towards one as the run went on.
+#
+# THE LAST THREE RUNS, NOT EVERY RUN EVER KEPT. Every folder under measurements/logs used to
+# feed this, which is 4,020 TSVs and grows with each run - so each run made the next one's
+# estimate slower, and the estimate is recomputed on a timer. Two whole-game folders of
+# 1,422 files each were most of that weight and were measured before several changes to what
+# a row costs, so the bulk was also the stale part.
+#
+# NEWEST FIRST BY MODIFICATION TIME rather than by name, because not every folder is
+# date-stamped and a resumed run is genuinely more recent than its name says. A folder with
+# no matrix TSVs in it does not count as one of the three.
+#
+# PAST_RUNS=n moves it; a larger number buys a broader weight base and costs a slower
+# recompute, and 0 turns the weighting off in favour of the flat mean.
+PAST_RUNS="${PAST_RUNS:-3}"
 PAST_TSVS=()
-while IFS= read -r tsv; do
-    [ -n "$tsv" ] && PAST_TSVS+=("$tsv")
-done < <(find "$OUT/logs" -name 'performance-matrix-*.tsv' -not -path "$LOGS/*" 2>/dev/null)
+past_kept=0
+while IFS= read -r folder; do
+    [ "$past_kept" -ge "$PAST_RUNS" ] && break
+    folder="${folder%/}"
+    [ "$folder" = "$LOGS" ] && continue
+    past_in_folder=()
+    while IFS= read -r tsv; do
+        [ -n "$tsv" ] && past_in_folder+=("$tsv")
+    done < <(find "$folder" -maxdepth 1 -name 'performance-matrix-*.tsv' 2>/dev/null)
+    [ "${#past_in_folder[@]}" -eq 0 ] && continue
+    PAST_TSVS+=("${past_in_folder[@]}")
+    past_kept=$(( past_kept + 1 ))
+done < <(ls -dt "$OUT"/logs/*/ 2>/dev/null)
 
 # WHICH CONVERSATIONS, resolved here rather than at the top because `all` has to ask the
 # measurement, and the measurement has only just been built.
@@ -1017,6 +1084,10 @@ if [ "${#parallel_groups[@]}" -gt 0 ]; then
     # LAST_ESTIMATE is cleared with them: it holds a serial figure, and reprinting that as a
     # parallel one until the first reap would be the wrong number stated confidently.
     PARALLEL_DONE_SPEC=""
+    # THE SAME SECONDS AS `PARALLEL_DONE_SPEC`, SUMMED, so the achieved concurrency can be
+    # read without re-parsing a string that grows to thousands of entries on a timer. Kept
+    # as a running total for that reason: each group adds at most its own handful of rows.
+    PARALLEL_ROW_SECONDS=0
     declare -A PARALLEL_REAPED=()
     LAST_ESTIMATE=""
     LAST_ESTIMATE_AT=0
@@ -1052,7 +1123,7 @@ if [ "${#parallel_groups[@]}" -gt 0 ]; then
     # is forced: groups finish OUT OF ORDER when several run at once, so there is no prefix
     # of the list to remove. Walking every remaining row is what `progress` warns is fine
     # for sixty rows and not for fourteen thousand - so this is called only when an estimate
-    # is about to be recomputed, which ESTIMATE_EVERY already throttles to once a minute.
+    # is about to be recomputed, which is what ESTIMATE_EVERY throttles.
     #
     # A GROUP IN FLIGHT COUNTS AS ENTIRELY UNPAID, including the rows it has already
     # finished, because their durations do not reach the parent until the worker is reaped.
@@ -1119,11 +1190,39 @@ if [ "${#parallel_groups[@]}" -gt 0 ]; then
             spec="$(left_spec)"
             if [ -n "$spec" ]; then
                 weighted="$(awk -v engines="$ENGINE_NAMES" -v done="$PARALLEL_DONE_SPEC" \
-                    -v left="$spec" -f "$ROOT/tools/matrix-remaining.awk" \
+                    -v left="$spec" -v row_overhead="$ROW_OVERHEAD" \
+                    -f "$ROOT/tools/matrix-remaining.awk" \
                     "${PAST_TSVS[@]}" 2>/dev/null)"
-                # WHOLE SECONDS EITHER WAY. The awk prints a row-wise total and the division
-                # is the only place the worker count enters.
-                [ -n "$weighted" ] && LAST_ESTIMATE=$(( weighted / WORKERS ))
+                # WHOLE SECONDS EITHER WAY. The awk prints a total in ROW-SECONDS, and this
+                # is the only place it becomes wall seconds.
+                #
+                # DIVIDED BY THE CONCURRENCY THIS RUN IS ACTUALLY ACHIEVING, not by WORKERS.
+                # Dividing by WORKERS says every worker will be busy every second of what is
+                # left, and none of them is: `reap` waits for one worker at a time, groups
+                # differ by orders of magnitude in what they cost so slots sit empty, and the
+                # run DRAINS at the end with fewer groups left than workers to give them to.
+                # Measured on the whole-game run of 2026-09-09 that made the figure read
+                # between a half and four fifths of the truth, worsening from 0.67 at the
+                # start to 0.50 at the end - the drain, arriving on schedule.
+                #
+                # The parent already holds both numbers the real figure needs: the wall time
+                # since the phase began, and the row-seconds folded in from the groups it has
+                # reaped. Their ratio IS the speed-up, contention and idle slots included, so
+                # `weighted * elapsed / row_seconds` is the same arithmetic with a measured
+                # divisor instead of an assumed one.
+                #
+                # IT READS HIGH EARLY, DELIBERATELY. The clock starts before the first group
+                # is reaped, so the first few readings divide by a concurrency that has not
+                # had time to happen. Over-reading is the safe direction for a number
+                # somebody is deciding whether to wait for, and it corrects itself within a
+                # group or two. WORKERS is the fallback until anything has been folded in.
+                if [ -n "$weighted" ]; then
+                    if [ "$PARALLEL_ROW_SECONDS" -gt 0 ] && [ "$elapsed" -gt 0 ]; then
+                        LAST_ESTIMATE=$(( weighted * elapsed / PARALLEL_ROW_SECONDS ))
+                    else
+                        LAST_ESTIMATE=$(( weighted / WORKERS ))
+                    fi
+                fi
                 LAST_ESTIMATE_AT=$now
             fi
         fi
@@ -1135,7 +1234,11 @@ if [ "${#parallel_groups[@]}" -gt 0 ]; then
             estimate="$(clock 0)"
             note=""
         elif [ -n "$LAST_ESTIMATE" ]; then
-            estimate="$(clock "$LAST_ESTIMATE")"
+            # COUNTED DOWN SINCE IT WAS TAKEN, as in `progress` and for the same reason: the
+            # figure is on a timer, and reprinting it unchanged is what made it read frozen.
+            local remaining=$(( LAST_ESTIMATE - (now - LAST_ESTIMATE_AT) ))
+            [ "$remaining" -lt 0 ] && remaining=0
+            estimate="$(clock "$remaining")"
             note=""
         elif [ "$GROUPS_MEASURED" -gt 0 ]; then
             estimate="$(clock $(( elapsed * left / GROUPS_MEASURED )))"
@@ -1186,6 +1289,7 @@ if [ "${#parallel_groups[@]}" -gt 0 ]; then
             no_rows=$(( no_rows + GROUP_NO_ROWS ))
             SKIPPED_ROWS=$(( SKIPPED_ROWS + GROUP_SKIPPED ))
             PARALLEL_DONE_SPEC="${PARALLEL_DONE_SPEC}${PARALLEL_DONE_SPEC:+${GROUP_DONE_SPEC:+;}}${GROUP_DONE_SPEC}"
+            PARALLEL_ROW_SECONDS=$(( PARALLEL_ROW_SECONDS + $(spec_seconds "$GROUP_DONE_SPEC") ))
             # EVERY ROW ALREADY THERE means the group cost this run nothing, so it must not
             # calibrate the pace. GROUP_ROWS counts every row the group had, skipped ones
             # included, which is why the comparison is against it rather than a zero test.
