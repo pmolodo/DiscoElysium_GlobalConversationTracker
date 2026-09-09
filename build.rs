@@ -72,10 +72,27 @@ const SOURCES: &[&str] = &[
 ];
 
 fn main() {
-    // No rerun-if-changed: the default is to rerun when anything in the package changes,
-    // which is exactly when the stamp could go out of date. Naming files here would mean
-    // remembering to add each new one, and a forgotten one is a stale stamp - the failure
-    // this whole file exists to prevent.
+    // RE-RUN FOR THE PATHS THE STAMP IS BUILT FROM, which is [`SOURCES`] and therefore
+    // cannot fall behind it: a path added there is a path emitted here, and a path left
+    // out of there was already outside the hash. Saying nothing at all makes Cargo re-run
+    // this whenever ANY file in the package changes, which recompiles the library for an
+    // edit to a measurement or a test - work that cannot alter the answer, since the hash
+    // is taken over these paths and no others.
+    //
+    // A DIRECTORY IS ONE LINE and Cargo walks it, so `src` covers a module added tomorrow
+    // without anyone remembering. That is the direction this must not be able to go wrong
+    // in, the same reasoning as the exclusion below being a pattern.
+    //
+    // THE EXCLUSION HAS NO EQUIVALENT HERE, and it is worth saying rather than finding
+    // out: `rerun-if-changed` takes a path, not a git pathspec, so naming `src` re-runs
+    // this on a C# edit too. That is a build of one library rather than the whole package,
+    // and it only ever costs time - the stamp it recomputes is the same one.
+    for source in SOURCES {
+        if source.starts_with(':') {
+            continue;
+        }
+        println!("cargo::rerun-if-changed={source}");
+    }
 
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let stamp = format!(
