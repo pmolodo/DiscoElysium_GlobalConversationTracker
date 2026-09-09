@@ -172,11 +172,12 @@ else
     )
 fi
 
-# WHICH ENGINES EACH ROW MEASURES, passed through to it. Unset means `ingame` alone since
-# de-8xcd and de-xegj - the method the game runs, at the settings a player actually has,
-# and the one being tuned - because fwd and bwd cost
-# several times what it does and are evidence rather than products. `ENGINES=all` measures
-# the three, which is what the grid is for; naming one or two asks a question about a single
+# WHICH ENGINES EACH ROW MEASURES, passed through to it. Unset means `ingame` and
+# `bwd-ingame` - the switching method the game runs at a player's own settings, and the same
+# method with its forward slice off, which is the controlled arm that says what the slice is
+# worth. The other four cost
+# several times what those do and are evidence rather than products. `ENGINES=all` measures
+# the six, which is what the grid is for; naming one or two asks a question about a single
 # engine without paying for the others.
 #
 #   ENGINES=bwd tools/measure-matrix.sh 14

@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT
-//! Three engines, six conversations, five profiles: the whole grid. Plus seven more profiles
+//! Six engines, six conversations, five profiles: the whole grid. Plus seven more profiles
 //! held back for being too easy, and a census of the game two of the five depend on.
 //!
-//! A DEFAULT RUN MEASURES ONE OF THE THREE. `fwdbwd` is the engine the game runs and the one
-//! being tuned; the other two are evidence for that tuning and cost several times what it
-//! does, so they are asked for rather than assumed - `ENGINES=all` for the grid, or any of
-//! the names for one column. See [`engines`] for the measured argument. Everything below
-//! that describes "three columns" is describing the grid you get when you ask for it.
+//! A DEFAULT RUN MEASURES TWO OF THE SIX: `ingame`, the switching method the game runs at a
+//! player's own settings, and `bwd-ingame`, the same method with its forward slice off. The
+//! pair is what says whether the slice earns its place, and one column alone cannot. The
+//! other four are evidence for the tuning and cost several times what those two do, so they
+//! are asked for rather than assumed - `ENGINES=all` for the grid, or any of the names for
+//! one column. See [`engines`] for the measured argument.
 //!
 //! The measurements this repository already has each ask one question well. This asks the
 //! same question of every combination, because the thing that is actually wanted - a rule
@@ -717,8 +718,18 @@ const ALL_ENGINES: [Engine; 6] = [
     Engine::BackwardNoLimit,
 ];
 
-/// What a run measures when it does not say. See [`engines`] for why it is this one.
-const DEFAULT_ENGINES: [Engine; 1] = [Engine::InGame];
+/// What a run measures when it does not say: the shipped method and its controlled arm.
+///
+/// [`Engine::InGame`] is the forward slice followed by the backward driver, at the settings
+/// a player actually has - the method being tuned, and the one whose number is what a player
+/// waits for. [`Engine::BackwardInGame`] is THE SAME THING WITH THE SLICE OFF, differing in
+/// one field, so the pair says what the slice is worth on a row rather than in aggregate. A
+/// default run that measured only the first could say what the method costs and never what
+/// any part of it buys.
+///
+/// The other four are evidence rather than products and cost several times what these two
+/// do; `ENGINES=all` measures the lot. See [`engines`].
+const DEFAULT_ENGINES: [Engine; 2] = [Engine::InGame, Engine::BackwardInGame];
 
 /// What to pass for the whole grid, since naming one engine no longer implies the rest.
 const ALL: &str = "all";
@@ -779,11 +790,10 @@ impl Engine {
 
 /// Which engines this run measures.
 ///
-/// FWDBWD ALONE BY DEFAULT, since de-8xcd. It is the engine the game actually runs, and it
-/// is the one being tuned; fwd and bwd are evidence for that tuning rather than products in
+/// THE SHIPPED METHOD AND ITS CONTROLLED ARM BY DEFAULT - see [`DEFAULT_ENGINES`]. `fwd`,
+/// `bwd` and the two unlimited columns are evidence for the tuning rather than products in
 /// their own right, and they are expensive out of all proportion to how often the evidence
-/// is wanted. `ENGINES=all` measures the three, and naming any of them works as it always
-/// did.
+/// is wanted. `ENGINES=all` measures the six, and naming any of them works as it always did.
 ///
 /// WHAT IT SAVES, measured over the two whole-game datasets rather than asserted. Engine time
 /// by column on the ten-profile grid (measurements/logs/whole-game, 5,210 measured rows) was
