@@ -12,6 +12,26 @@ pub trait IGuardContext: Send + Sync {
 }
 
 /// A parsed guard expression.
+///
+/// ## THE ONLY RECURSIVE TYPE THIS CRATE DEFINES
+///
+/// Swept for rather than assumed: `tools/recursive-types.py` builds the type-reference graph
+/// out of rustdoc's own JSON and looks for cycles, and this self-loop is the only one it
+/// finds among a hundred type definitions (de-rn59.2). Re-run it rather than trusting this
+/// sentence - a list of recursive types is exactly the thing that goes stale silently.
+///
+/// WHAT THAT COSTS, and it is bounded at both ends by measurement rather than by argument.
+/// The deepest guard in the shipped database is ELEVEN levels of 26,210, the parser refuses
+/// anything past 256 (`guard_parser::MAX_DEPTH`), and what walks the result overflows a
+/// one-megabyte stack at about 2,875 levels in a release build
+/// (`measurements/guard_stack.rs`). So real content sits two orders of magnitude below the
+/// limit, and the limit an order below the cliff.
+///
+/// WHAT WALKS IT RECURSIVELY, which is the hazard rather than the type itself: `evaluate`
+/// below, `Display::fmt` below, `GuardCompiler::compile`, `DataLayout`'s three readers, and
+/// the derived Drop glue - which recurses while FREEING one, at a point where no error can
+/// be returned. Flattening the parser (de-fpax) did not remove that; it moved it here.
+/// de-eyk8.2 proposes a flattened form and de-eyk8.3 a parser with no depth limit.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum GuardExpression {
     Literal(GuardValue),
