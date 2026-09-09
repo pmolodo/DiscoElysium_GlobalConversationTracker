@@ -11,21 +11,25 @@ COLUMNS ARE MATCHED BY NAME, from each file's own header. The matrix's columns h
 several times - `fwdbwd` split into `ingame` and `nolimit`, and every engine later grew a
 `_setup` - so reading them by position across two runs compares unrelated numbers and
 produces a plausible table.
+
+AND EVERY TOTAL IS REPORTED THREE WAYS - everything, the hardest few groups and the easiest
+hundred. A whole-game total is very nearly the sum of the heaviest few groups, so a change
+that helps them and hurts five hundred small ones reads as a win and one that helps five
+hundred small ones reads as nothing. See `matrix_common`, which also says why the split is
+ranked by the census rather than by the run being read.
 """
 
 import argparse
-import glob
-import os
 import sys
 import traceback
+
+import matrix_common
+
+from matrix_common import NOT_A_MEASUREMENT
 
 ###############################################################################
 # Core functions
 ###############################################################################
-
-# A row that never ran is not a measurement, and pairing one with a real row would report a
-# speed-up or a slow-down that never happened.
-NOT_A_MEASUREMENT = {"NOT-MEASURED", "CRASHED", "?", ""}
 
 # What counts as a change worth printing rather than noise. A matrix row is a wall clock on
 # one machine, so small movements are the machine, not the code.
@@ -33,8 +37,12 @@ NOISE = 0.10
 
 
 def compare(before, after, engine="ingame", noise=NOISE):
-    old = read(before, engine)
-    new = read(after, engine)
+    old = matrix_common.rows_of(before, engine)
+    new = matrix_common.rows_of(after, engine)
+    # THE BEFORE RUN'S CENSUS, so the buckets are the baseline's opinion of which groups are
+    # hard. Either arm's would do - the driver reuses one across a comparison - and picking
+    # the baseline's makes it the same one however many arms are read against it.
+    census = matrix_common.census_of(before) or matrix_common.census_of(after)
 
     print(f"before  {before}")
     print(f"after   {after}")
@@ -53,27 +61,10 @@ def compare(before, after, engine="ingame", noise=NOISE):
     for column in ("ms", "nodes", "asked"):
         movement(old, new, shared, column, noise)
 
-
-def read(folder, engine):
-    """Every (conv, profile) -> {column: value} the folder holds for one engine."""
-    rows = {}
-    for path in sorted(glob.glob(os.path.join(folder, "performance-matrix-*.tsv"))):
-        with open(path) as handle:
-            header = handle.readline().rstrip("\n").split("\t")
-            if f"{engine}_verdict" not in header or "profile" not in header:
-                continue
-            mine = {
-                name[len(engine) + 1 :]: index for index, name in enumerate(header) if name.startswith(f"{engine}_")
-            }
-            at_conv, at_profile = header.index("conv"), header.index("profile")
-            for line in handle:
-                cells = line.rstrip("\n").split("\t")
-                if len(cells) < len(header):
-                    continue
-                # THE LAST ROW PER KEY WINS: the files are appended to, so a retried row
-                # sits after the one it replaces. The same rule the resume reads by.
-                rows[(cells[at_conv], cells[at_profile])] = {name: cells[index] for name, index in mine.items()}
-    return rows
+    # LAST, AND READ FIRST. The per-row distribution above says what moved; this says whether
+    # what moved was the handful of groups a total is made of or the five hundred it is not.
+    for column in ("ms", "nodes"):
+        matrix_common.report(old, new, shared, column, census, noise)
 
 
 def verdict_changes(old, new, shared):

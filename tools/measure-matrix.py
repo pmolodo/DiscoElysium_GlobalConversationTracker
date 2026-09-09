@@ -770,6 +770,27 @@ class Run:
 
     # -- the census -------------------------------------------------------
 
+    def _keep_census(self):
+        """Copies a census supplied from elsewhere into this run's own folder.
+
+        SO THE FOLDER IS SELF-DESCRIBING. A run told to reuse a census reads it from wherever
+        it was named and leaves nothing behind, so the folder cannot afterwards say which
+        groups it measured or which of them are the hard ones - and tools/matrix_common.py
+        ranks its profiles off exactly that. Copying it costs a few hundred kilobytes and
+        makes a folder readable on its own, months later, without the run's command line.
+
+        A folder that already holds one is left alone: that census IS this run's.
+        """
+        if not self.census_file:
+            return
+        source = Path(self.census_file)
+        target = self.logs / "census" / "census.tsv"
+        if not source.exists() or target.exists():
+            return
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        print(f"copied the census into this run's folder: {target}")
+
     def arrange_census(self):
         """A census, if the grid needs one and there is none.
 
@@ -796,6 +817,7 @@ class Run:
         if not needs or self.census_file:
             if self.census_file:
                 self.child_env[qualified("CENSUS_FILE")] = self.census_file
+                self._keep_census()
             return
 
         self.census_file = str(self.logs / "census" / "census.tsv")

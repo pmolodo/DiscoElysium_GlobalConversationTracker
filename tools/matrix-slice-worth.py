@@ -33,37 +33,14 @@ rather than a number to trust alone. What is solid is `by`: how often the slice 
 import argparse
 import sys
 
-from pathlib import Path
+import matrix_common
 
-TAB = "\t"
+from matrix_common import rows_of
 
 # The pair that differs in one field. `ingame` runs the slice; `bwd-ingame` is the same method
 # with `portfolio::Budget::forwards` at zero.
 WITH_SLICE = "ingame"
 WITHOUT_SLICE = "bwd-ingame"
-
-
-def rows_of(folder):
-    """Every row in the folder, as dicts keyed by column name.
-
-    THE LAST ROW PER (conv, profile) WINS, which is the rule the whole matrix reads by: the
-    files are appended to, so a retried row sits after the one it replaces.
-    """
-    latest = {}
-    for path in sorted(Path(folder).glob("performance-matrix-*.tsv")):
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-        if not lines:
-            continue
-        header = lines[0].replace("\r", "").split(TAB)
-        for line in lines[1:]:
-            cells = line.replace("\r", "").split(TAB)
-            if len(cells) != len(header):
-                continue
-            row = dict(zip(header, cells))
-            if "conv" not in row or "profile" not in row:
-                continue
-            latest[(row["conv"], row["profile"])] = row
-    return latest
 
 
 def main(argv=None):
@@ -182,6 +159,19 @@ def main(argv=None):
     print(f"{'':>24}{'rows':>7}{'with':>10}{'without':>10}{'difference':>12}")
     for which, (count, with_ms, without_ms) in buckets.items():
         print(f"{which:>24}{count:>7}{with_ms:>10}{without_ms:>10}{without_ms - with_ms:>12}")
+
+    # AND THE THREE PROFILES, since a whole-game total is nearly the sum of the heaviest few
+    # groups and the slice's cost is a fixed charge per option - which is diluted on a heavy
+    # group and is the whole of the cost on a light one. de-12wr.10.
+    matrix_common.report(
+        matrix_common.rows_of(args.folder, WITH_SLICE),
+        matrix_common.rows_of(args.folder, WITHOUT_SLICE),
+        sorted(rows),
+        "ms",
+        matrix_common.census_of(args.folder),
+    )
+    print("  'before' is WITH the slice and 'after' is WITHOUT it, so a negative change is")
+    print("  what turning it off saves.")
     return 0
 
 
