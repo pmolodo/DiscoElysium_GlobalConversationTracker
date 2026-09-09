@@ -572,6 +572,12 @@ class Run:
         self.estimate_every = env_int("ESTIMATE_EVERY", 30)
 
         self.in_parallel = False
+        # ONE PROCESS FOR THE WHOLE GROUP, off for the serial heavy prefix and on for the
+        # tail. See `measure_group_at_once` for the trade; PER_GROUP=0 keeps a run on one
+        # process per row throughout, which is what a folder that has to be comparable with an
+        # older one asks for.
+        self.per_group = False
+        self.per_group_allowed = env_int("PER_GROUP", 1) != 0
         # The parallel phase calibrates on its own rows; see `_group_finished`.
         self.parallel_done_spec = []
         self.parallel_row_seconds = 0.0
@@ -947,13 +953,20 @@ class Run:
         return TAB.join(cells)
 
     def measure_group(self, conversation, wanted=None, redo=False, in_repair=False):
-        """One group, start to finish: one process per row.
+        """One group, start to finish: one process per row, or one for the whole group.
 
         IT COUNTS ITS OWN OUTCOMES and hands them back, because in the parallel phase it runs
         in a thread and the parent folds them in when the group is reaped. In the shell this
         was a fork and a sourced stat file; here it is a return value, which is one fewer
         thing to be lost when a worker dies.
+
+        WHICH OF THE TWO IT DOES is `self.per_group`, set by the phase: the serial heavy
+        prefix keeps one process per row, and the tail runs the group at once. See
+        `measure_group_at_once` for why the split is that way round.
         """
+        if self.per_group and not in_repair:
+            return self.measure_group_at_once(conversation, wanted, redo)
+
         wanted = list(wanted) if wanted else list(self.profiles)
         tally = {
             "not_measured": 0,
@@ -1112,6 +1125,139 @@ class Run:
             tally["output"] = ""
         return tally
 
+    def measure_group_at_once(self, conversation, wanted=None, redo=False):
+        """The whole group in ONE process, which is de-12wr.6.
+
+        ## What it saves, and why only on the tail
+
+        A row's floor - process start and loading the executable at 70 ms, the index read at
+        135, the world at 10, the group graph at 3 to 10, the candidate walk at about 1 - is
+        about 220 ms, and one process per row pays it per row. Paying it per GROUP saves four
+        fifths of it on the default five-profile grid, roughly 880 ms a group, which over the
+        1,372-group tail is twenty to forty-five minutes. `measurements/row_overhead.rs` is
+        where those figures come from.
+
+        ON THE TAIL AND NOT THE HEAVY PREFIX, because the trade reverses. A heavy row takes
+        minutes, so 220 ms is a rounding error against it and the protection given up is
+        expensive: one process per row is what makes a crash cost ONE row, and conversation
+        28's deepest entries really do overflow the stack inside a recursive diagram
+        operation. On the tail the rows ARE the floor and a crash costs four cheap rows.
+
+        ## The crash detection has to change with it
+
+        A row is CRASHED when the process did not print a line for it, and with one process
+        per row that is "no line at all". With five rows in one process it has to be per
+        EXPECTED row: the profiles asked for, minus the ones a line came back for. That is
+        what makes a group whose third profile takes the process down still record two
+        results and three crashes rather than one crash.
+
+        ONE LOG FOR THE GROUP, `matrix-<conv>.log`, because there is one process. `contradicted`
+        reads it as well as the per-row logs for that reason.
+        """
+        wanted = list(wanted) if wanted else list(self.profiles)
+        tally = {"not_measured": 0, "no_rows": 0, "skipped": 0, "rows": 0, "done_spec": []}
+        out = []
+
+        tsv = self.logs / f"performance-matrix-{conversation}.tsv"
+        if not tsv.exists():
+            common.write_lf(tsv, self.header + "\n")
+        out.append(f"=== {conversation} -> {tsv}")
+
+        asking = []
+        for profile in wanted:
+            if not redo and self.row_done.get((str(conversation), profile)):
+                out.append(f"  {'':8}  {profile:<18} already measured")
+                tally["skipped"] += 1
+                tally["rows"] += 1
+            else:
+                asking.append(profile)
+
+        if not asking:
+            tally["output"] = "\n".join(out)
+            return tally
+
+        log = self.logs / f"matrix-{conversation}.log"
+        clock_at = time.strftime("%H:%M:%S")
+        out.append(f"  {clock_at}  {len(asking)} profile(s) in one process ...")
+
+        began = time.monotonic()
+        status = self._run_rows(conversation, asking, log)
+        took = time.monotonic() - began
+
+        text = log.read_text(encoding="utf-8", errors="replace")
+
+        if status == 2:
+            out.append(f"  {clock_at}  REFUSED")
+            out.extend("  " + line for line in text.splitlines())
+            print("\n".join(out))
+            refuse("nothing was measured; fix the selection and run again")
+
+        # A ROW LINE PER PROFILE, attributed by the profile column rather than by order: the
+        # measurement prints them in ITS order, which is the grid's, and a run that named its
+        # profiles in another order would otherwise misfile every one of them.
+        rows = {}
+        for line in text.splitlines():
+            cells = line.split(TAB)
+            if len(cells) > 2 and cells[0] == str(conversation) and cells[2] in asking:
+                rows[cells[2]] = line
+
+        # AN EVEN SHARE OF THE PROCESS'S WALL TIME, since a row inside a shared process has no
+        # clock of its own. It is only used to calibrate the pace, where what matters is that
+        # the total is right rather than the split - and the alternative, attributing the whole
+        # of it to each row, would say the group cost five times what it did.
+        each = took / max(1, len(asking))
+
+        for profile in asking:
+            row = rows.get(profile)
+            if row is None:
+                # THE PROFILES WITH NO LINE ARE THE CRASHED ONES. With one process per row this
+                # was "the process printed nothing"; with several rows in a process it is
+                # per expected row, which is the whole of what this mode had to get right.
+                with self.lock:
+                    with common.open_lf(tsv, "a") as handle:
+                        handle.write(self.verdict_row(conversation, profile, "CRASHED") + "\n")
+                out.append(f"  {clock_at}  {profile:<18} CRASHED (see {log})")
+            else:
+                with self.lock:
+                    with common.open_lf(tsv, "a") as handle:
+                        handle.write(row + "\n")
+                if "NOT-MEASURED" in row:
+                    out.append(f"  {clock_at}  {profile:<18} NOT MEASURED - no memory for the budget")
+                    tally["not_measured"] += 1
+                else:
+                    out.append(f"  {clock_at}  {profile:<18} ok")
+                    self.weights.observe(each, row_engine_seconds(row, self.header_fields))
+            tally["rows"] += 1
+            tally["done_spec"].append((str(conversation), profile, each))
+
+        tally["output"] = "\n".join(out)
+        return tally
+
+    def _run_rows(self, conversation, profiles, log):
+        """One process for several profiles of one group, tee'd to the group's log."""
+        env = dict(self.child_env)
+        env["CONVERSATION"] = str(conversation)
+        env["PROFILE"] = ",".join(profiles)
+        env["NO_HEADER"] = "1"
+
+        with common.open_lf(log, "w") as handle:
+            process = subprocess.Popen(
+                [str(self.measurement)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                errors="replace",
+                env=env,
+                bufsize=1,
+            )
+            assert process.stdout is not None
+            for line in process.stdout:
+                handle.write(line)
+                handle.flush()
+                if line.startswith("  ~"):
+                    print(line.rstrip("\n"), flush=True)
+            return process.wait()
+
     def _run_row(self, conversation, profile, log):
         """One row, in its own process, tee'd to its log and watched on stdout.
 
@@ -1249,10 +1395,16 @@ class Run:
         unreachable, so finding one means the census and the search disagree. `CONTRADICTION:`
         is the interface between the two halves - whichever end changes the word changes both.
         """
-        for profile in self.profiles:
-            if not profile.startswith("deepest-unreach-"):
-                continue
-            log = self.logs / f"matrix-{conversation}-{profile}.log"
+        # BOTH SHAPES OF LOG, because both shapes of run write one. One process per row gives
+        # `matrix-<conv>-<profile>.log`; one process per group gives `matrix-<conv>.log`, and
+        # a folder can hold both when the phases split a run between them.
+        logs = [self.logs / f"matrix-{conversation}.log"]
+        logs.extend(
+            self.logs / f"matrix-{conversation}-{profile}.log"
+            for profile in self.profiles
+            if profile.startswith("deepest-unreach-")
+        )
+        for log in logs:
             try:
                 text = log.read_text(encoding="utf-8", errors="replace")
             except OSError:
@@ -1503,6 +1655,11 @@ def parallel_phase(run, groups, workers, worker_mb):
     from concurrent.futures import ThreadPoolExecutor
 
     run.in_parallel = True
+    # AND ONE PROCESS PER GROUP FROM HERE ON, which is the same judgement the phase itself
+    # rests on: these are the groups the settle logic cleared as cheap, so the per-row floor
+    # is most of what they cost and a crash costs a handful of cheap rows. The heavy prefix
+    # behind us keeps one process per row, where the trade runs the other way. de-12wr.6.
+    run.per_group = run.per_group_allowed
     started = time.monotonic()
 
     # HOW MANY OF THESE GROUPS WILL COST ANYTHING, counted once and up front.
