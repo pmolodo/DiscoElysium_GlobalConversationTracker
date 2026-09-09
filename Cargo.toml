@@ -136,6 +136,12 @@ path = "measurements/settles_within.rs"
 name = "prune_on_menus"
 path = "measurements/prune_on_menus.rs"
 
+# Structure alone - no diagrams, no guards, no world - so `all` sweeps the whole game in
+# seconds where a search-bearing measurement takes days.
+[[example]]
+name = "dominance_share"
+path = "measurements/dominance_share.rs"
+
 [[example]]
 name = "cache_split_menu"
 path = "measurements/cache_split_menu.rs"

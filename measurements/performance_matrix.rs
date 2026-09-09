@@ -347,7 +347,7 @@
 //! file and read by something else later - which is what de-raed asks for when it says the
 //! logs should be kept for analysis.
 
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use lookahead_engine::core::state::StateSymbols;
 use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
@@ -384,6 +384,13 @@ mod common;
 #[path = "symbolic_answers.rs"]
 #[allow(dead_code)]
 mod symbolic_answers;
+
+// The structural half of what a row is measured under: the depths, the entries a profile may
+// name, and the draw a percentage makes over them. Shared because a conversation and a
+// profile name have to mean ONE set of unseen entries wherever the pair is written down.
+#[path = "seen_profile.rs"]
+mod seen_profile;
+use seen_profile::{candidates, percent_unseen};
 
 /// The six heaviest groups, 362 included.
 const HEAVIEST: [i32; 6] = [362, 368, 631, 14, 28, 1030];
@@ -968,81 +975,6 @@ fn profiles() -> Vec<Profile> {
     }
 }
 
-/// Which entries are reachable from `start` by following links alone, and how far.
-///
-/// Guards ignored entirely, which is what de-raed means by "determined by edge analysis
-/// alone". It is the loosest notion of reachable there is, and that is why it is the right
-/// one for choosing a question: an entry missing from it is unreachable for certain, so
-/// seeding it would make a row meaningless.
-fn structurally_reachable(
-    graph: &LookAheadGraph,
-    start: DialogueNodeId,
-) -> HashMap<DialogueNodeId, usize> {
-    let mut depth = HashMap::new();
-    let mut queue = VecDeque::new();
-    depth.insert(start, 0usize);
-    queue.push_back(start);
-
-    while let Some(id) = queue.pop_front() {
-        let here = depth[&id];
-        let Some(node) = graph.get(id) else { continue };
-        for &child in &node.links {
-            if graph.get(child).is_some() && !depth.contains_key(&child) {
-                depth.insert(child, here + 1);
-                queue.push_back(child);
-            }
-        }
-    }
-
-    depth
-}
-
-/// The entries a profile can be built from: reachable, not the start, and not groups.
-///
-/// GROUPS ARE EXCLUDED because the game never writes a group's SimStatus, so every group in
-/// the database reads as never displayed and the search refuses to score one. Seeding a group
-/// as unseen would add an entry that cannot end a search, which would quietly make a row
-/// harder than it claims to be.
-///
-/// Returned deepest first, ties broken by id, so a run repeats exactly.
-fn candidates(graph: &LookAheadGraph, start: DialogueNodeId) -> Vec<DialogueNodeId> {
-    let depths = structurally_reachable(graph, start);
-    let mut all: Vec<(DialogueNodeId, usize)> = depths
-        .into_iter()
-        .filter(|(id, _)| *id != start)
-        .filter(|(id, _)| graph.get(*id).is_some_and(|node| !node.is_group))
-        .collect();
-
-    all.sort_unstable_by_key(|(id, depth)| {
-        (std::cmp::Reverse(*depth), id.conversation_id, id.entry_id)
-    });
-    all.into_iter().map(|(id, _)| id).collect()
-}
-
-/// A small deterministic generator, so a row is the same row on every machine.
-///
-/// Written out rather than taken from a crate: what is wanted is repeatability across runs
-/// and platforms, and a named algorithm with the arithmetic in view gives that without a
-/// dependency whose version could change the draw underneath a recorded measurement.
-/// This is xorshift64*, which is more than good enough for choosing which entries to mark.
-struct Rng(u64);
-
-impl Rng {
-    fn new(seed: u64) -> Self {
-        // Zero is a fixed point of xorshift, so it can never be the state.
-        Self(seed.wrapping_mul(2685821657736338717).max(1))
-    }
-
-    fn next(&mut self) -> u64 {
-        let mut x = self.0;
-        x ^= x >> 12;
-        x ^= x << 25;
-        x ^= x >> 27;
-        self.0 = x;
-        x.wrapping_mul(2685821657736338717)
-    }
-}
-
 /// The entries a profile leaves unseen.
 /// A census read back: which entries a group's own census proved unreachable, deepest first.
 ///
@@ -1168,22 +1100,7 @@ fn unseen_for(
         // Built by `unreachable_for`, which needs the census this does not have. Reaching
         // here would mean the row loop stopped asking it first.
         Profile::DeepestUnreachable(_) => unreachable!("an unreachable profile reads the census"),
-        Profile::PercentSeen(percent) => {
-            // The seed IS the percentage, as de-raed asks: reproducible, and different for
-            // every row so two rows are not accidentally the same draw.
-            let mut rng = Rng::new(percent as u64);
-            let mut shuffled = candidates.to_vec();
-
-            // Fisher-Yates, so every subset of the right size is equally likely. Taking the
-            // first n of a sorted list after a partial shuffle would not be.
-            for i in (1..shuffled.len()).rev() {
-                let j = (rng.next() % (i as u64 + 1)) as usize;
-                shuffled.swap(i, j);
-            }
-
-            let seen = (shuffled.len() * percent as usize) / 100;
-            shuffled.into_iter().skip(seen).collect()
-        }
+        Profile::PercentSeen(percent) => percent_unseen(candidates, percent),
     }
 }
 

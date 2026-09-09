@@ -44,9 +44,11 @@ log to read afterwards:
     RUN_LOG_DIR=measurements/logs CONVERSATION=14 \
       tools/run-logged.sh cargo slots -- cargo run --release --example layout_shape -- slots
 
-`layout_shape` is the one that takes an argument: `groups` (the default) counts the slot
-classes per group, `slots` lists one group's slots so the classifier behind the counts can
-be read rather than trusted.
+Two of them take an argument, and it selects a stage rather than a setting. `layout_shape`
+takes `groups` (the default), which counts the slot classes per group, or `slots`, which
+lists one group's slots so the classifier behind the counts can be read rather than trusted.
+`dominance_share` takes `rows` (the default), `menu`, `all` for the whole game, or `verify`,
+which re-derives its dominator relation by deleting entries and comparing.
 
 ## Where a run's results are
 
