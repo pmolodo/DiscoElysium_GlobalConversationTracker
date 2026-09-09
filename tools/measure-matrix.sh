@@ -812,10 +812,25 @@ measure_group() {
 #
 # So the run watches two metrics per group and switches when both say the tail has arrived.
 #
-# 1. THE TIME HAS BOTTOMED OUT. Groups arrive heaviest-first, so the cost falls and then
-#    flattens; what "flat" means is measured against the run's own cheapest group so far,
-#    not against a number of seconds. A group counts as settled when its recorded search
-#    time is within SETTLE_FACTOR of that floor.
+# 1. THE TIME HAS BOTTOMED OUT, or is simply small. Groups arrive heaviest-first, so the
+#    cost falls and then flattens, and a group counts as settled when its recorded search
+#    time is within SETTLE_FACTOR of the run's own cheapest group so far - OR under
+#    SETTLE_MS outright.
+#
+#    TWO ARMS BECAUSE THE TWO REGIMES ARE NOT ALIKE. Under ENGINES=all a group can cost
+#    minutes, no group would pass an absolute two and a half seconds, and the relative arm
+#    is the only one that can say anything; a number of seconds picked off one machine
+#    would be in the wrong place the moment the search or the machine moved. The default
+#    grid has the opposite shape: both its engines are walled by the player's own time
+#    budget, so every row returns in about two seconds whatever the group and the floor
+#    falls to about 120 ms - at which point twice the floor is 240 ms and a group costing
+#    741 ms resets the count for being three times a number that is itself nothing. The
+#    run of 2026-09-08 measured 74 of its 100 groups one at a time on that reasoning, with
+#    cores idle throughout.
+#
+#    So the absolute arm is a floor under the relative one rather than a replacement for
+#    it, and each regime is served by the arm that can speak in it. SETTLE_MS=0 turns the
+#    absolute arm off.
 #
 # 2. WHAT IT HELD FITS THE CAP A WORKER WILL GET, comfortably. Each parallel worker is
 #    allowed FULL_BUDGET_MB/WORKERS, so the question is not "did this fit six gigabytes"
@@ -834,11 +849,16 @@ measure_group() {
 # WHY RECORDED SEARCH TIME AND NOT THE CLOCK: see tools/matrix-group-cost.awk. A resume
 # skips most of its rows, and a stopwatch cannot tell "cheap" from "already done".
 #
-# SETTLE_GROUPS=n, SETTLE_FACTOR=n and MEMORY_HEADROOM=n move the rule; SERIAL_GROUPS=n
-# replaces it with the old fixed count, which is how a run that has to be comparable with
-# an existing folder asks for one. WORKERS=1 never switches at all.
+# SETTLE_GROUPS=n, SETTLE_FACTOR=n, SETTLE_MS=n and MEMORY_HEADROOM=n move the rule;
+# SERIAL_GROUPS=n replaces it with a fixed count, which is how a run that has to be
+# comparable with an existing folder asks for one. WORKERS=1 never switches at all.
 SETTLE_GROUPS="${SETTLE_GROUPS:-10}"
 SETTLE_FACTOR="${SETTLE_FACTOR:-2}"
+
+# CHEAP OUTRIGHT, whatever the floor is. 2500 clears every group of the default grid's
+# hundred largest, the heaviest of which is 761 at 2390 ms, and clears nothing at all
+# under ENGINES=all - which is what makes it safe to have both arms on at once.
+SETTLE_MS="${SETTLE_MS:-2500}"
 MEMORY_HEADROOM="${MEMORY_HEADROOM:-2}"
 SERIAL_GROUPS="${SERIAL_GROUPS:-}"
 WORKERS="${WORKERS:-$(nproc 2>/dev/null || printenv NUMBER_OF_PROCESSORS || echo 1)}"
@@ -873,8 +893,13 @@ elif [ "$REPORTS_NODES" -eq 0 ]; then
     echo "would fit a worker's share of the budget: every group one at a time. Name"
     echo "SERIAL_GROUPS=n to split anyway."
 else
-    echo "one group at a time until the cost bottoms out: $SETTLE_GROUPS in a row within"\
-" ${SETTLE_FACTOR}x the cheapest group so far, each holding at most $FITS_NODES nodes"
+    if [ "$SETTLE_MS" -gt 0 ]; then
+        cheap_says="within ${SETTLE_FACTOR}x the cheapest group so far or under ${SETTLE_MS}ms"
+    else
+        cheap_says="within ${SETTLE_FACTOR}x the cheapest group so far"
+    fi
+    echo "one group at a time until the cost bottoms out: $SETTLE_GROUPS in a row"\
+" $cheap_says, each holding at most $FITS_NODES nodes"
     echo "  (1/${MEMORY_HEADROOM} of the $WORKER_NODES a worker's ${WORKER_MB} MB share of the ${FULL_BUDGET_MB} MB budget buys)"
 fi
 
@@ -926,8 +951,15 @@ for conversation in "${CONVERSATIONS[@]}"; do
         floor_ms="$group_ms"
     fi
 
-    if [ "$group_ms" -le $(( floor_ms * SETTLE_FACTOR )) ] \
-        && [ "$group_nodes" -le "$FITS_NODES" ]
+    # CHEAP EITHER WAY ROUND - near the run's own floor, or small enough that the floor
+    # does not matter. The memory test is unchanged and still has to pass: time alone has
+    # never been what makes the switch safe, since a heavy group handed a divided budget
+    # and a contended clock produces a row that looks like a finding and is an artefact.
+    cheap=0
+    [ "$group_ms" -le $(( floor_ms * SETTLE_FACTOR )) ] && cheap=1
+    [ "$SETTLE_MS" -gt 0 ] && [ "$group_ms" -le "$SETTLE_MS" ] && cheap=1
+
+    if [ "$cheap" -eq 1 ] && [ "$group_nodes" -le "$FITS_NODES" ]
     then
         settled=$(( settled + 1 ))
         [ "$group_ms" -gt "$window_max_ms" ] && window_max_ms="$group_ms"
