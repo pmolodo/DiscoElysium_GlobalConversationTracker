@@ -19,7 +19,18 @@
 #   tools/measure-matrix.sh 368 631         # just these two
 #   ENGINES=bwd tools/measure-matrix.sh 14    # one engine, one group
 #   PROFILES=deepest-1 ENGINES=bwd tools/measure-matrix.sh 14   # one row
+#   PROFILES=95pc-seen,50pc-seen tools/measure-matrix.sh 14     # a held-back profile
 #   tools/measure-matrix.sh all             # EVERY group in the game, resumably
+#
+# THE DEFAULT GRID IS FIVE DEEP PROFILES - deepest-1, -5, -10, deepest-unreach-1 and -5. The
+# seven percentage-seen profiles that used to be in it were measured to be too easy to be
+# worth a run's time and are held back, nameable by PROFILES=. See PROFILES and TOO_EASY in
+# measurements/performance_matrix.rs for the table.
+#
+# A GRID WITH AN UNREACHABLE PROFILE NEEDS A CENSUS, and this takes one into the run's own
+# folder if CENSUS_FILE names none and the folder holds none - see the block that does it,
+# below, for why it is taken there and why nothing tries to decide that an existing one is
+# out of date.
 #
 # `all` asks the measurement itself which groups exist - GROUPS_ONLY=1, one canonical start
 # per distinct closure, heaviest first - rather than reading a list kept here, which could
@@ -147,17 +158,17 @@ no_rows=0
 if [ -n "${PROFILES:-}" ]; then
     IFS=', ' read -r -a PROFILES <<< "$PROFILES"
 else
+    # THE DEEP PROFILES, AND ONLY THOSE. The seven percentage-seen ones were measured to be
+    # too easy to be worth a run's time - about a fifth of a second whatever the group, and
+    # one single answer between all seven on 92.5 per cent of them - and are held back. They
+    # are still runnable by name: PROFILES=95pc-seen,50pc-seen. See PROFILES and TOO_EASY in
+    # measurements/performance_matrix.rs for the table this came from.
     PROFILES=(
         deepest-1
         deepest-5
         deepest-10
-        95pc-seen
-        90pc-seen
-        75pc-seen
-        50pc-seen
-        25pc-seen
-        10pc-seen
-        5pc-seen
+        deepest-unreach-1
+        deepest-unreach-5
     )
 fi
 
@@ -421,6 +432,53 @@ if [ ${#CONVERSATIONS[@]} -eq 1 ] && [ "${CONVERSATIONS[0]}" = "all" ]; then
 elif [ ${#CONVERSATIONS[@]} -eq 0 ]; then
     CONVERSATIONS=(362 368 631 14 28 1030)
 fi
+
+# A CENSUS, IF THE GRID NEEDS ONE AND THERE IS NONE.
+#
+# The unreachable profiles read a census to know which entries no path can reach. They are
+# in the default grid now, so the ordinary command has to be able to produce one - otherwise
+# a plain `tools/measure-matrix.sh` on a fresh clone stops before its first row, which is
+# exactly the objection that kept those profiles out of the grid.
+#
+# INTO THE RUN'S OWN FOLDER, beside the rows drawn from it. That is the same rule the TSVs
+# follow and for the same reason: a census is an artefact a row depends on, and one kept
+# somewhere else is one nobody can find when the row is read a month later. It also makes
+# the resume work without a second thing to remember - the folder is re-used, so the census
+# already in it is not taken again.
+#
+# BEFORE THE FIRST ROW, so its cost lands nowhere near a row's clock. That is the whole
+# reason the census is a separate artefact rather than something a row works out; see
+# `Census::of` in the measurement, which refuses to classify on the spot.
+#
+# ONLY WHEN THERE IS NOTHING TO READ. A named CENSUS_FILE is used exactly as given and
+# NOTHING HERE CHECKS WHETHER IT IS CURRENT - not its age, not which groups it covers, not
+# the world it was taken under. Deciding a census is stale needs a rule for what stale
+# means, and a wrong rule silently re-takes a census somebody deliberately supplied, or
+# silently keeps one it should not. The measurement already shouts when a census and a
+# search contradict each other, which is the check that can actually be made.
+NEEDS_CENSUS=no
+for name in "${PROFILES[@]}"; do
+    case "$name" in deepest-unreach-*) NEEDS_CENSUS=yes ;; esac
+done
+
+if [ "$NEEDS_CENSUS" = yes ] && [ -z "${CENSUS_FILE:-}" ]; then
+    CENSUS_FILE="$LOGS/census/census.tsv"
+    if [ -e "$CENSUS_FILE" ]; then
+        echo "using the census this folder already holds: $CENSUS_FILE"
+    else
+        echo "taking a census first - the grid has an unreachable profile and none was named"
+        # THE SAME GROUPS THE ROWS WILL ASK ABOUT, named rather than `all`. A whole-game
+        # census over 1,422 groups to serve a run of six is hours spent on rows nobody
+        # asked for.
+        CENSUS_OUT="$LOGS/census" "$ROOT/tools/measure-census.sh" "${CONVERSATIONS[@]}"
+        if [ ! -e "$CENSUS_FILE" ]; then
+            echo "the census produced no $CENSUS_FILE - stopping rather than measuring" >&2
+            echo "rows against a census that is not there." >&2
+            exit 1
+        fi
+    fi
+fi
+[ -n "${CENSUS_FILE:-}" ] && export CENSUS_FILE
 
 # WHAT THIS FOLDER ALREADY HOLDS, which is the whole of the resume.
 #

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-//! Three engines, six conversations, ten profiles: the whole grid. Plus two more profiles
-//! that are deliberately outside it, and a census of the game that makes them possible.
+//! Three engines, six conversations, five profiles: the whole grid. Plus seven more profiles
+//! held back for being too easy, and a census of the game two of the five depend on.
 //!
 //! A DEFAULT RUN MEASURES ONE OF THE THREE. `fwdbwd` is the engine the game runs and the one
 //! being tuned; the other two are evidence for that tuning and cost several times what it
@@ -84,16 +84,21 @@
 //!
 //! ## The grid
 //!
-//! Six conversations - the five heaviest plus 362, the largest in the game - against ten
+//! Six conversations - the five heaviest plus 362, the largest in the game - against five
 //! profiles describing how much of the group the player has read:
 //!
-//! - the deepest 1, 5 and 10 entries unseen, which are the deliberately hard cases;
-//! - 95, 90, 75, 50, 25, 10 and 5 per cent seen, drawn at random, which are the shapes a
-//!   real save actually has.
+//! - the deepest 1, 5 and 10 entries unseen;
+//! - the deepest 1 and 5 entries NO PATH CAN REACH.
 //!
-//! ## And two profiles that are NOT in that grid: `deepest-unreach-1` and `-5`
+//! ALL FIVE ARE DEEP PROFILES, and the seven percentage-seen ones that used to sit beside
+//! them are held back now. See [`PROFILES`] and [`TOO_EASY`] for the measurement that split
+//! them: the deep profiles reach twenty-two to fifty-four seconds on the `nolimit` column
+//! while the percentage ones top out at 1.1, and the seven of them give one single answer
+//! on 92.5 per cent of groups. They are still runnable by name.
 //!
-//! The ten above measure the direction the search stops early in. A deep entry that IS
+//! ## The two that need a census: `deepest-unreach-1` and `-5`
+//!
+//! The unseen profiles measure the direction the search stops early in. A deep entry that IS
 //! reachable is proved the moment the backward pass meets the seed, and that is usually
 //! instant - so "deepest-N" is the adversarial SHAPE without the adversarial COST. The
 //! expensive question is an entry no path can reach, because a no has to be proved, which
@@ -111,9 +116,17 @@
 //!   PROFILES=deepest-unreach-1,deepest-unreach-5 tools/measure-matrix.sh all
 //! ```
 //!
-//! They are held out of the default grid on purpose: they cannot run without a census, and
-//! adding a profile to the grid would make the whole-game run this repository already has
-//! not comparable with the next one. de-thlz.2.
+//! THE SCRIPT TAKES ONE WHEN THE GRID NEEDS IT AND NOTHING NAMED ONE, into the run's own
+//! folder, before the first row - so the two commands above collapse into the ordinary one
+//! and the census still lands beside the rows drawn from it. It is taken only when
+//! `CENSUS_FILE` is unset and the folder holds no census yet; a named file is used exactly
+//! as given, and NOTHING CHECKS WHETHER IT IS CURRENT. A census taken under a different
+//! world from the one being measured is a real way to get wrong rows, and the run says so
+//! when it sees the contradiction - see the note on `found` below - but it cannot see it in
+//! advance and does not pretend to.
+//!
+//! Running the binary by hand with an unreachable profile and no `CENSUS_FILE` is still
+//! refused outright rather than classified on the spot: see [`Census::of`].
 //!
 //! TWO ROWS ARE SKIPPED RATHER THAN RUN, and the TSV says which rule skipped them. A group
 //! with no unreachable entries poses no such question at all; a group with exactly one
@@ -560,11 +573,69 @@ impl Profile {
     }
 }
 
-const PROFILES: [Profile; 10] = [
-
+/// The default grid: the deep profiles, and only the deep profiles.
+///
+/// A PROFILE EARNS ITS PLACE HERE BY BEING EXPENSIVE, because this is a performance matrix
+/// and a row that is instant whatever the search does costs a run its time and tells it
+/// nothing. Measured over the 200 largest groups, 2026-09-08
+/// (`measurements/logs/2026-09-08_slice-price`, `tools/matrix-profile-cost.py`), on the
+/// `nolimit` column - the one that CAN be slow:
+///
+/// ```text
+///   profile             under 1s   median    p90      p99      max
+///   deepest-unreach-5      93.5%      144    372    24197    36455
+///   deepest-10             96.0%      164    312    22802    53641
+///   deepest-5              96.0%      164    311    22423    36628
+///   deepest-unreach-1      93.5%      150    391    22373    24553
+///   deepest-1              96.0%      155    331    21932    22636
+///   25pc-seen              99.5%      173    298      489     1127
+///   75pc-seen             100.0%      178    299      429      437
+///   ... the other five percentage profiles, all within that band
+/// ```
+///
+/// The five deep profiles reach twenty-two to fifty-four SECONDS; the seven percentage ones
+/// top out at 1.1, and six of the seven never pass half a second. That is a fiftyfold gap in
+/// the ninety-ninth percentile and it is the whole reason for the split below.
+///
+/// READ ON `nolimit`, NOT `ingame`, AND THAT IS NOT A DETAIL. The in-game column is walled by
+/// the player's own `LookAheadTimeBudgetMs`, so no row of it can be slow - every profile is
+/// under a second there, and asking which profiles are expensive in that column deletes the
+/// entire grid. A column bounded by construction cannot say what work costs.
+const PROFILES: [Profile; 5] = [
     Profile::DeepestUnseen(1),
     Profile::DeepestUnseen(5),
     Profile::DeepestUnseen(10),
+    // IN THE DEFAULT GRID, and they were held out of it because they cannot run without a
+    // census to read. `tools/measure-matrix.sh` now TAKES one into the run's own folder when
+    // a grid needs it and none was named, so the objection is answered rather than
+    // outstanding. Running the binary by hand without a census is still refused outright -
+    // see `Census::of`, which will not classify on the spot.
+    Profile::DeepestUnreachable(1),
+    Profile::DeepestUnreachable(5),
+];
+
+/// The percentage-seen profiles: runnable by name, and NOT part of the default grid.
+///
+/// KEPT OUT OF [`PROFILES`] because they are too easy to be worth a whole-game run's time.
+/// The table above is the measurement; what it says is that these seven answer in about a
+/// fifth of a second whatever the group, so seven tenths of every run was spent confirming
+/// that the typical case is still typical.
+///
+/// THEY ARE ALSO REDUNDANT WITH EACH OTHER, which is the second reason and the one that
+/// says why the answer is none of them rather than one of them. Over the same 200 groups all
+/// seven give a single answer on 185 of them - 92.5 per cent - while the five deep profiles
+/// agree with each other on 33 per cent. Seven readings of one question is not seven
+/// questions.
+///
+/// They remain a sweep of their own, and nothing about a run that names them has changed:
+///
+///     PROFILES=95pc-seen,50pc-seen,5pc-seen tools/measure-matrix.sh all
+///
+/// A RUN WITH THIS GRID DOES NOT COMPARE ROW FOR ROW WITH ONE TAKEN BEFORE THE SPLIT. The
+/// rows that survive compare exactly as they always did - a profile's definition has not
+/// moved - but "a whole-game run" now means five profiles over 1,422 groups rather than ten,
+/// and a summary that divides by the row count will not agree with an older one.
+const TOO_EASY: [Profile; 7] = [
     Profile::PercentSeen(95),
     Profile::PercentSeen(90),
     Profile::PercentSeen(75),
@@ -574,26 +645,9 @@ const PROFILES: [Profile; 10] = [
     Profile::PercentSeen(5),
 ];
 
-/// The unreachable profiles: runnable by name, and NOT part of the default grid.
-///
-/// KEPT OUT OF [`PROFILES`] ON PURPOSE. Two reasons, and the second is the one that matters.
-/// They cannot run without a census to read, so a default run would fail on a machine that
-/// had not taken one; and adding a profile to the default grid changes what "a whole-game
-/// run" means, which would make the run this repository already has - ten profiles over
-/// 1,422 groups - not comparable with the next one. They are a sweep of their own:
-///
-///     CENSUS_FILE=measurements/logs/<census>/census.tsv \
-///       PROFILES=deepest-unreach-1,deepest-unreach-5 tools/measure-matrix.sh all
-///
-/// TEN IS DELIBERATELY ABSENT, where the seen profiles have deepest-10. de-thlz.2 asks for
-/// 1 and 5 and nothing else, and a profile nobody asked for is hours of run time answering
-/// a question nobody put.
-const UNREACHABLE: [Profile; 2] =
-    [Profile::DeepestUnreachable(1), Profile::DeepestUnreachable(5)];
-
 /// Every profile a run can name, which is the default grid plus the ones held back from it.
 fn known_profiles() -> impl Iterator<Item = Profile> {
-    PROFILES.into_iter().chain(UNREACHABLE)
+    PROFILES.into_iter().chain(TOO_EASY)
 }
 
 /// The three searches a row can hold, named for what they actually do.
