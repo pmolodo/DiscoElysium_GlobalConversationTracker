@@ -1311,9 +1311,23 @@ fn search_budget_for(engine: Engine) -> portfolio::Budget {
         //
         // STEPS ARE RELEASED TOO, which is the point: raising the clock alone would leave
         // the slice stopped by its step allowance rather than by the time it was given.
+        //
+        // EXCEPT THE SLICE'S CLOCK, which is doubled rather than released, and that is the
+        // one ration here where more time is known to buy nothing. A slice earns its place
+        // by ANSWERING outright, which it does in under a millisecond or not at all, or by
+        // SETTLING, so that its sets may narrow the backward passes - and
+        // `measurements/settles_within.rs` swept exactly that: twenty times the shipped
+        // fifty milliseconds settles four more groups out of a hundred and seventy, and the
+        // groups it does not settle at fifty do not settle in a second either. Twenty
+        // seconds is spent, not used.
+        //
+        // AND SPENDING IT IS NOT FREE, which is what a whole-game run of this column
+        // measured: against the same method with the slice off, twenty seconds bought no
+        // extra settled row at all - 2,238 against 2,238 - for 2.8x the time and 33x the
+        // peak nodes, the manager still holding what a slice built and abandoned.
         _ => portfolio::Budget {
             overall: std::time::Duration::from_secs(120),
-            forwards: std::time::Duration::from_secs(20),
+            forwards: std::time::Duration::from_millis(100),
             backwards: std::time::Duration::from_secs(100),
             each: std::time::Duration::from_secs(10),
             // The slice is held to the same allowance the manager gets, rather than the
