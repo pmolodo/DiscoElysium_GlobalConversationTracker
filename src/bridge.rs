@@ -663,16 +663,15 @@ impl LookAheadRequest {
         // search give up on demand so the mod's uncertain marker can be checked. See
         // `Self::state_budget` and `tests/branch_shapes.rs`.
         //
-        // It is spent on the rations this engine has: at most that many candidates, and no
-        // time to finish one, which is what a search that cannot establish anything looks
-        // like from here. The number means "how little", and nothing else.
+        // It is spent on the one ration that can produce that: no time to finish a
+        // candidate, which is what a search that cannot establish anything looks like from
+        // here. Any value above zero means the same thing, and means nothing else.
         if self.state_budget > 0 {
             return portfolio::Budget {
                 forwards: std::time::Duration::ZERO,
-                // THE SAME WALL THE ATTEMPT ALREADY HAD, so this knob keeps meaning what it
-                // meant: the candidates are what runs out, not the clock. Setting it to zero
-                // would stop the loop before its first candidate and the search would give
-                // up for a different reason than the one this setting exists to provoke.
+                // THE ATTEMPT KEEPS A CLOCK. A wall of zero would stop the loop before its
+                // first candidate, so the search would give up without ever running a pass -
+                // a different failure from the one this setting exists to provoke.
                 overall: default.backwards,
                 // The slice gets no time here at all, so these bound nothing; the manager's
                 // allowance is still the honest number to name.
@@ -680,7 +679,6 @@ impl LookAheadRequest {
                 slice_steps: default.slice_steps,
                 backwards: default.backwards,
                 each: std::time::Duration::ZERO,
-                targets: self.state_budget,
                 // Nothing to prune with: the forward slice gets no time at all here, so
                 // there is no settled run and `Known` would refuse to narrow anyway.
                 pruning: default.pruning,
@@ -709,7 +707,6 @@ impl LookAheadRequest {
             slice_steps: default.slice_steps,
             backwards: whole,
             each: default.each.min(whole),
-            targets: default.targets,
             pruning: default.pruning,
         }
     }
@@ -1362,8 +1359,9 @@ where
 fn stopped_name(stopped: novelty_search::StoppedBy) -> &'static str {
     match stopped {
         novelty_search::StoppedBy::Nothing => "none",
-        // The candidate budget: the search ran out of things it was allowed to ask about,
-        // which is this engine's "states" - a ceiling on how much work one answer may cost.
+        // A CENSUS HAVING WHAT IT CAME FOR, which is the only thing that sets this and is
+        // not something the bridge ever runs. The arm is here because the match is total,
+        // and "states" is the wire's nearest word for a caller's appetite running out.
         novelty_search::StoppedBy::Targets => "states",
         novelty_search::StoppedBy::Time => "time",
         // A pass that could not finish, which is either its own clock or the diagram

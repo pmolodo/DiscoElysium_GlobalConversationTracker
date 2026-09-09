@@ -503,12 +503,11 @@ pub fn classify(
                     None => undecided.push(target),
                 }
 
-                // ENOUGH IS COUNTED IN FINDINGS, NOT IN QUESTIONS, and that is the whole
-                // reason the cap is expressed here rather than as the search's own
-                // `targets` ration. A group where nothing is unreachable is a group this
-                // walks to the end, correctly, having found nothing; a ration on questions
-                // would have stopped it after ten and reported the same nothing as though
-                // it were an answer. de-nd9o.
+                // ENOUGH IS COUNTED IN FINDINGS, NOT IN QUESTIONS, which is why the cap
+                // belongs to the caller. A group where nothing is unreachable is a group
+                // this walks to the end, correctly, having found nothing; a ration on
+                // questions would have stopped it after ten and reported the same nothing
+                // as though it were an answer. de-nd9o.
                 //
                 // A RESUMED RUN COUNTS WHAT THE RUN BEFORE IT FOUND, since the journal's
                 // verdicts are already in this list - so a group continued twice still
@@ -528,16 +527,16 @@ pub fn classify(
                 COUNTER_CAP as u32,
                 &novelty,
                 &SearchBudget {
-                    // THE WHOLE GROUP'S ALLOWANCE NOW, where it used to be one candidate's.
-                    // Every candidate is asked about in this single call, so a per-candidate
-                    // cap here would end the census rather than one question.
-                    targets: usize::MAX,
+                    // THE WHOLE GROUP'S ALLOWANCE, not one candidate's: every candidate is
+                    // asked about in this single call, and what bounds one of them is
+                    // `each` below.
                     time: std::time::Duration::MAX,
                     each: BackwardBudget {
                         steps: usize::MAX,
                         time: CLASSIFY_CAP,
                         ..Default::default()
                     },
+                    ..Default::default()
                 },
                 Some(&known),
                 &mut census,
@@ -644,13 +643,13 @@ fn answer(
                     COUNTER_CAP as u32,
                     &novelty,
                     &SearchBudget {
-                        targets: usize::MAX,
                         time: cap,
                         each: BackwardBudget {
                             steps: usize::MAX,
                             time: cap,
                             ..Default::default()
                         },
+                        ..Default::default()
                     },
                     known.as_ref(),
                 );

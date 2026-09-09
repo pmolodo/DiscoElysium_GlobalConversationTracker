@@ -77,18 +77,17 @@ fn the_default_budget_has_a_wall_covering_its_own_rations() {
     );
 }
 
-/// The starve knob keeps meaning "run out of candidates", not "run out of clock".
+/// The starve knob stops a candidate finishing, rather than stopping the attempt.
 ///
 /// `state_budget` is test-only and exists so an in-game suite can watch a search give up.
-/// It works by allowing no time per candidate while leaving the attempt itself running, and
-/// a wall of zero here would stop the loop before its first candidate - giving up for a
-/// different reason than the one the setting provokes.
+/// It works by allowing no time per candidate while leaving the attempt itself running: a
+/// wall of zero would stop the loop before its first candidate, giving up without ever
+/// running a pass, which is a different failure from the one the setting provokes.
 #[test]
-fn the_starve_knob_still_runs_out_of_candidates_rather_than_clock() {
+fn the_starve_knob_stops_a_candidate_rather_than_the_attempt() {
     let request = LookAheadRequest { state_budget: 3, ..Default::default() };
     let budget = request.search_budget();
 
     assert!(!budget.overall.is_zero(), "the attempt still gets a clock");
     assert!(budget.each.is_zero(), "but no candidate may finish");
-    assert_eq!(budget.targets, 3);
 }

@@ -145,8 +145,6 @@ pub struct Budget {
     /// The one that matters. A group whose sets explode does so on its first candidate, so
     /// a per-candidate limit catches it without waiting for the whole attempt to time out.
     pub each: Duration,
-    /// The most candidates to ask about.
-    pub targets: usize,
     /// Whether a SETTLED forward run may narrow the backward passes told about it.
     ///
     /// ON, and self-guarding: [`Known`] narrows nothing without `forward_settled`, so a
@@ -184,7 +182,6 @@ impl Default for Budget {
             slice_steps: 2_000_000,
             backwards: Duration::from_secs(2),
             each: Duration::from_millis(250),
-            targets: 64,
             // ON. `measurements/settles_within.rs` is why: at the fifty milliseconds above,
             // 119 of 120 ordinary groups settle and 25 of the 50 that span conversations
             // do, so most of the game has a settled run to narrow with and nothing was
@@ -400,7 +397,6 @@ where
         // remains of THIS in turn - so the three rations compose into one deadline rather
         // than adding up.
         &novelty_search::Budget {
-            targets: budget.targets,
             time: budget.backwards.min(budget.overall.saturating_sub(began.elapsed())),
             each: crate::symbolic::backward::Budget {
                 steps: usize::MAX,
@@ -610,7 +606,6 @@ mod tests {
             forwards: Duration::ZERO,
             backwards: Duration::ZERO,
             each: Duration::ZERO,
-            targets: 64,
             ..Budget::default()
         };
         let answer = run(&graph, &TestWorld::new(), classes(&[], &[]), &starved);
@@ -717,7 +712,6 @@ mod tests {
             forwards: Duration::ZERO,
             backwards: Duration::ZERO,
             each: Duration::ZERO,
-            targets: 64,
             ..Budget::default()
         };
         let answer = run(&graph, &TestWorld::new(), unseen(&[2]), &starved);

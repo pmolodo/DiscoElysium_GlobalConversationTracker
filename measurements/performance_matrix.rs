@@ -24,6 +24,12 @@
 //! | `bwd` | `novelty_search::best_novelty` over `Backward` | backwards, from a target |
 //! | `fwdbwd` | `portfolio::best_novelty` | a forward slice, then the backward driver |
 //!
+//! AND THE PORTFOLIO IS FOUR COLUMNS, not one: `ingame` and `nolimit` are the method at the
+//! player's settings and with the limits off, and `bwd-ingame` and `bwd-nolimit` are those
+//! two with the forward slice turned off. The pairs exist to price the slice, which no
+//! reading of `bwd` against `fwdbwd` can do - those two differ in their rations as much as
+//! in their method. See [`Engine::BackwardInGame`].
+//!
 //! THESE ARE THE NAMES `ENGINES=` TAKES, and [`Engine::label`] is where they live. The
 //! recorded results further down were measured under older names and each says so; the
 //! table under "The names have moved twice" translates them.
@@ -618,15 +624,37 @@ enum Engine {
     /// under it are estimates aimed at landing inside it.
     ///
     /// BUILT DIRECTLY RATHER THAN THROUGH THE PRODUCT, and that is the one place restating
-    /// rations is right: `search_budget` deliberately caps a candidate at 250 ms and the
-    /// candidate count at 64 whatever the dial says, so a two-minute clock built through it
-    /// would have a real ceiling of about 64 x 250 ms. This is deliberately not the
+    /// rations is right: `search_budget` deliberately holds a candidate to 250 ms and the
+    /// slice to 50 whatever the dial says, so a two-minute clock built through it would
+    /// spend the extra time in quarter-second slivers. This is deliberately not the
     /// product's configuration.
     NoLimit,
+    /// [`Engine::InGame`] WITH THE FORWARD SLICE TURNED OFF: the same method, backwards only.
+    ///
+    /// THE CONTROLLED ARM, and the reason it is not [`Engine::Backward`]. That column runs
+    /// `novelty_search::best_novelty` directly at the measurement's own allowance - a
+    /// ten-minute wall, unlimited candidates, six gigabytes - so reading it against a
+    /// portfolio column held to a player's second prices the RATION and not the slice. These
+    /// two run the same driver over the same manager with the same candidate ordering, the
+    /// same compiled guards and the same gate, and differ in one field.
+    ///
+    /// A ZERO FORWARD BUDGET IS A REAL BACKWARD RUN, not a starved forward one:
+    /// `portfolio::Budget::forwards` is documented as skippable at zero, and `Known` narrows
+    /// nothing without a settled forward run, so the pruning the other arm gets is absent
+    /// here rather than merely small.
+    BackwardInGame,
+    /// [`Engine::NoLimit`] with the forward slice turned off. See [`Engine::BackwardInGame`].
+    BackwardNoLimit,
 }
 
-const ALL_ENGINES: [Engine; 4] =
-    [Engine::Forward, Engine::Backward, Engine::InGame, Engine::NoLimit];
+const ALL_ENGINES: [Engine; 6] = [
+    Engine::Forward,
+    Engine::Backward,
+    Engine::InGame,
+    Engine::NoLimit,
+    Engine::BackwardInGame,
+    Engine::BackwardNoLimit,
+];
 
 /// What a run measures when it does not say. See [`engines`] for why it is this one.
 const DEFAULT_ENGINES: [Engine; 1] = [Engine::InGame];
@@ -642,6 +670,8 @@ impl Engine {
             Engine::Backward => "bwd",
             Engine::InGame => "ingame",
             Engine::NoLimit => "nolimit",
+            Engine::BackwardInGame => "bwd-ingame",
+            Engine::BackwardNoLimit => "bwd-nolimit",
         }
     }
 
@@ -666,7 +696,14 @@ impl Engine {
             // BOTH PORTFOLIO COLUMNS REPORT THE SAME THINGS, so the two can be read against
             // each other directly: the same row, the same question, one held to the player's
             // settings and one not.
-            Engine::InGame | Engine::NoLimit => &["verdict", "ms", "nodes", "by", "asked"],
+            // THE BACKWARD-ONLY ARMS REPORT THE SAME FIVE, which is what lets the pair be
+            // read as one comparison rather than two tables. `by` can only say `Backwards`,
+            // `Partly` or `Gated` there - never `Forwards`, since no slice ran - and that is
+            // a fact worth having in the column rather than one to be remembered.
+            Engine::InGame
+            | Engine::NoLimit
+            | Engine::BackwardInGame
+            | Engine::BackwardNoLimit => &["verdict", "ms", "nodes", "by", "asked"],
         }
     }
 
@@ -1251,22 +1288,34 @@ fn in_game_request() -> lookahead_engine::bridge::LookAheadRequest {
 }
 
 /// What each portfolio column is allowed.
+///
+/// THE BACKWARD-ONLY ARMS ARE THEIR PAIR WITH ONE FIELD CHANGED, and are written that way
+/// rather than spelled out, so that a change to either budget reaches its control
+/// automatically. A second copy of the rations is exactly how the in-game column drifted
+/// from the game (de-xegj), and a control that drifts from what it controls for measures
+/// nothing at all.
 fn search_budget_for(engine: Engine) -> portfolio::Budget {
     match engine {
+        Engine::BackwardInGame => portfolio::Budget {
+            forwards: std::time::Duration::ZERO,
+            ..search_budget_for(Engine::InGame)
+        },
+        Engine::BackwardNoLimit => portfolio::Budget {
+            forwards: std::time::Duration::ZERO,
+            ..search_budget_for(Engine::NoLimit)
+        },
         Engine::InGame => in_game_request().search_budget(),
         // NO LIMIT, WALLED. The wall is the contract and the rations under it are estimates
         // aimed at landing inside it; an implementer may tune them, and 120 seconds is what
         // the column promises.
         //
-        // TARGETS AND STEPS ARE RELEASED TOO, which is the point: raising the clock alone
-        // would achieve nothing, since 64 candidates at 250 ms is a real ceiling of about
-        // sixteen seconds however long the outer clock is.
+        // STEPS ARE RELEASED TOO, which is the point: raising the clock alone would leave
+        // the slice stopped by its step allowance rather than by the time it was given.
         _ => portfolio::Budget {
             overall: std::time::Duration::from_secs(120),
             forwards: std::time::Duration::from_secs(20),
             backwards: std::time::Duration::from_secs(100),
             each: std::time::Duration::from_secs(10),
-            targets: usize::MAX,
             // The slice is held to the same allowance the manager gets, rather than the
             // 256 MB it would otherwise inherit by default - which would quietly cap this
             // column at the very number it exists to exceed.
@@ -1293,7 +1342,9 @@ fn forward_backward(
     // to hide `no-room` rows a player would actually hit, which is the in-game column's most
     // useful output rather than a regression.
     let manager = match engine {
-        Engine::InGame => in_game_request().diagram_budget(),
+        // The backward-only arm of each pair takes its pair's manager, for the reason
+        // `search_budget_for` takes its pair's rations: the slice is the only variable.
+        Engine::InGame | Engine::BackwardInGame => in_game_request().diagram_budget(),
         _ => budget(),
     };
 
@@ -1557,11 +1608,6 @@ fn symbolic_backward(
         COUNTER_CAP as u32,
         &novelty,
         &SearchBudget {
-            // NO CANDIDATE CAP, unlike the portfolio's 64. A cap is a product decision
-            // about how long a response menu may take, and a row measured under one says
-            // where the cap was rather than what the search costs. The row's clock is what
-            // stops this, the same as it stops the other two columns.
-            targets: usize::MAX,
             time: row_time(),
             each: lookahead_engine::symbolic::backward::Budget {
                 steps: usize::MAX,
@@ -1585,6 +1631,7 @@ fn symbolic_backward(
                     }) as std::rc::Rc<dyn Fn(usize, usize, usize, usize)>
                 }),
             },
+            ..Default::default()
         },
         Some(&known),
     );
@@ -1966,7 +2013,10 @@ fn main() {
                         Engine::Backward => {
                             symbolic_backward(&graph, start, &world, &symbols, &unseen).0
                         }
-                        Engine::InGame | Engine::NoLimit => {
+                        Engine::InGame
+                        | Engine::NoLimit
+                        | Engine::BackwardInGame
+                        | Engine::BackwardNoLimit => {
                             forward_backward(&graph, start, &world, &symbols, &unseen, *engine).0
                         }
                     })

@@ -100,9 +100,9 @@ const UNSEEN: usize = 10;
 ///
 /// ZERO IS WHAT A PLAYER GETS: the plugin's own default, and the value that leaves
 /// `portfolio::Budget::default` in place - fifty milliseconds forwards, two seconds
-/// backwards, a quarter second per candidate, sixty-four candidates. Raising it raises only
-/// the BACKWARDS pass; `each` and `targets` are capped by the default whatever is asked for,
-/// so the product path cannot be made to do arbitrary work by turning this up.
+/// backwards, a quarter second per candidate. Raising it raises only the BACKWARDS pass;
+/// `each` is capped by the default whatever is asked for, so the product path cannot be
+/// made to do arbitrary work by turning this up.
 const TIME_BUDGET_MS: u64 = 0;
 
 /// How many starts to ask about, which is a generous menu rather than a typical one.

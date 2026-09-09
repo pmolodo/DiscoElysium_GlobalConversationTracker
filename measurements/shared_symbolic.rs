@@ -244,7 +244,6 @@ struct Run {
 
 fn search_budget() -> SearchBudget {
     SearchBudget {
-        targets: usize::MAX,
         time: std::time::Duration::from_secs(120),
         each: lookahead_engine::symbolic::backward::Budget {
             steps: usize::MAX,

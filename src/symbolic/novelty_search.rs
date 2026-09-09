@@ -52,8 +52,6 @@ const CLASSES: [Novelty; 2] = [Novelty::UnseenAnyGame, Novelty::UnseenThisGame];
 
 /// When to stop asking.
 pub struct Budget {
-    /// The most candidates to ask about before giving up.
-    pub targets: usize,
     /// How long to keep asking.
     pub time: std::time::Duration,
     /// The budget each individual backward pass runs under.
@@ -63,7 +61,6 @@ pub struct Budget {
 impl Default for Budget {
     fn default() -> Self {
         Self {
-            targets: 64,
             time: std::time::Duration::from_secs(5),
             each: crate::symbolic::backward::Budget::default(),
         }
@@ -75,14 +72,12 @@ impl Default for Budget {
 pub enum StoppedBy {
     /// Every candidate was asked about, so the answer is final.
     Nothing,
-    /// An allowance on candidates ran out, so the answer is a lower bound.
+    /// A census had all the findings it came for, so the answer is a lower bound.
     ///
-    /// TWO ALLOWANCES WEAR THIS, and they count different things. [`Budget::targets`] is a
-    /// ceiling on candidates ASKED ABOUT - how much work one answer may cost. A census's cap
-    /// is a ceiling on candidates PROVED UNREACHABLE - how many it came for; see
-    /// [`Classify::verdict`]. Both are the caller's appetite running out rather than the
-    /// search failing, and both leave the same caveat behind: what was refused was refused
-    /// completely, and an unasked candidate might have carried a better class.
+    /// The cap counts candidates PROVED UNREACHABLE rather than candidates asked about -
+    /// see [`Classify::verdict`]. It is the caller's appetite running out rather than the
+    /// search failing, and it leaves a caveat behind: an unasked candidate might have
+    /// carried a better class.
     Targets,
     /// The time budget ran out.
     Time,
@@ -439,12 +434,12 @@ pub struct Classify<'a> {
     /// Told about each candidate this run settles, and what it settled - and asked, in
     /// return, whether to go on.
     ///
-    /// THE CENSUS'S OWN CAP LIVES IN THAT ANSWER, and it has to, because it counts something
-    /// this loop does not. [`Budget::targets`] is a ceiling on candidates ASKED ABOUT; a
-    /// census wants ten candidates PROVED UNREACHABLE and does not care how many questions
-    /// that takes. Those come apart hardest exactly where it matters: in a group where
-    /// everything is reachable, a ceiling of ten questions stops after ten having found
-    /// nothing, and a ceiling of ten findings correctly walks the whole group.
+    /// THE CENSUS'S OWN CAP LIVES IN THAT ANSWER, and it has to, because it counts
+    /// FINDINGS where anything this loop could count would be QUESTIONS. A census wants ten
+    /// candidates proved unreachable and does not care how many it had to ask about. The two
+    /// come apart hardest exactly where it matters: in a group where everything is
+    /// reachable, a ceiling of ten questions stops after ten having found nothing, and a
+    /// ceiling of ten findings correctly walks the whole group.
     ///
     /// So the count belongs to the caller, which is the only thing that knows what it is
     /// counting, and the loop asks rather than deciding. Answering [`Wants::Enough`] stops
@@ -510,10 +505,6 @@ where
             continue;
         }
 
-        if answer.targets_asked >= budget.targets {
-            answer.stopped_by = StoppedBy::Targets;
-            break;
-        }
         if began.elapsed() >= budget.time {
             answer.stopped_by = StoppedBy::Time;
             break;
