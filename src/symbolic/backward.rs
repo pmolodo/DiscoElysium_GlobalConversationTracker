@@ -89,6 +89,7 @@ use crate::symbolic::action_image::ActionImage;
 use crate::symbolic::guard_formula::GuardCompiler;
 use crate::symbolic::known::Known;
 use crate::symbolic::order::{IterationOrder, Worklist};
+use crate::symbolic::reachability::never_displays;
 use crate::symbolic::vars::DataVars;
 use crate::world::world::ILookAheadWorld;
 
@@ -295,8 +296,17 @@ impl<'a> Backward<'a> {
         // The target's own set: enter it in any state at all and the target has been
         // reached, so there is nothing to ask about what happens afterwards. Everything
         // else is derived from this one set by walking links backwards.
+        //
+        // EXCEPT WHERE ENTERING IT IS NOT READING IT. A passive check the sheet fails is
+        // entered by every state that gets there and displays to none of them, so the set
+        // below would be the whole space for a line the player can never read. No seed
+        // means no frontier, the pass settles having established nothing, and the refusal
+        // is a real one rather than an unfinished search - see `never_displays`.
         let mut frontier: HashMap<DialogueNodeId, BDDFunction> = HashMap::new();
-        if let Some(node) = graph.get(target) {
+        if let Some(node) = graph
+            .get(target)
+            .filter(|node| !never_displays(node, world))
+        {
             let arriving = this.pre_enter(node, &vars.top(), compiler, world, &mut image);
             if let Some(fresh) = this.widen(target, &arriving) {
                 // The target itself can be the meeting point, and where the search begins

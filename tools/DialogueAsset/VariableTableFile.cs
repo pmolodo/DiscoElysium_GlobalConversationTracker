@@ -56,55 +56,10 @@ namespace GlobalConversationTracker.DialogueAsset
                     string.Format(
                         CultureInfo.InvariantCulture,
                         "{{\"name\":{0},\"type\":{1},\"initial\":{2}}}",
-                        Quote(variable.Name),
-                        Quote(variable.Type),
-                        Quote(variable.InitialValue)));
+                        JsonText.Quote(variable.Name),
+                        JsonText.Quote(variable.Type),
+                        JsonText.Quote(variable.InitialValue)));
             }
-        }
-
-        /// <summary>
-        /// A JSON string literal.
-        /// </summary>
-        /// <remarks>
-        /// Written by hand rather than through a serializer, because this assembly has no
-        /// package references and is not about to grow one for three fields. The escapes
-        /// are the complete set JSON requires for the characters these values can hold:
-        /// the backslash first so unescaping is unambiguous, then the quote, then the
-        /// control characters. A variable name is an identifier and an initial value is a
-        /// number or True/False, so none of this is expected to fire - it is here so that
-        /// a database which surprises us produces valid JSON rather than a broken line.
-        /// </remarks>
-        private static string Quote(string value)
-        {
-            var text = new StringBuilder(value.Length + 2);
-            text.Append('"');
-            foreach (char character in value)
-            {
-                switch (character)
-                {
-                    case '\\': text.Append("\\\\"); break;
-                    case '"': text.Append("\\\""); break;
-                    case '\n': text.Append("\\n"); break;
-                    case '\r': text.Append("\\r"); break;
-                    case '\t': text.Append("\\t"); break;
-                    default:
-                        if (character < ' ')
-                        {
-                            text.Append(
-                                string.Format(
-                                    CultureInfo.InvariantCulture, "\\u{0:x4}", (int)character));
-                        }
-                        else
-                        {
-                            text.Append(character);
-                        }
-
-                        break;
-                }
-            }
-
-            text.Append('"');
-            return text.ToString();
         }
     }
 }

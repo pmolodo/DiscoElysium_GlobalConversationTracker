@@ -15,8 +15,11 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
-use lookahead_engine::bridge::WireValue;
+use lookahead_engine::bridge::{NodeRef, NodeSet, WireValue};
+use lookahead_engine::core::passive_check;
+use lookahead_engine::core::types::Ternary;
 use serde::Deserialize;
 
 use super::repo_root;
@@ -425,4 +428,388 @@ pub fn parse_runs(text: &str) -> HashSet<i32> {
     }
 
     entries
+}
+
+/// Every passive skill check in these conversations, decided by the save's own sheet.
+///
+/// ## Why a fixture computes this at all
+///
+/// The engine does not decide a check and never will: what the plugin sends is the OUTCOME
+/// of each one, worked out from the live character sheet, and the engine's business is
+/// what follows from it. An offline executor that wants to mean what an in-game run means
+/// has to arrive at the same outcomes, and the only honest place to get them is the save
+/// the run would load. Declaring them beside the expectation is the copy that drifts.
+///
+/// ## How a check is decided
+///
+/// The same three numbers the game uses. The entry's `DifficultyPass` is an index into the
+/// difficulty table and the value there is the threshold; the skill is whichever one the
+/// entry's SPEAKER is; and the comparison is
+/// [`lookahead_engine::core::passive_check::outcome`], which is the plugin's own
+/// arithmetic and is called here rather than repeated. An `Antipassive` entry is the line
+/// that shows when you are not sharp enough, and the same call inverts for it.
+///
+/// ## What it does not model
+///
+/// A thought can shift a passive check's threshold or force one through regardless of the
+/// numbers, and neither is derivable from the sheet: the effects live in the thought
+/// definitions rather than in the save. Skill modifiers a thought CAUSES are counted, since
+/// those are in the sheet like any other. See de-2jlj.
+pub fn checks_in_save(save: &str, conversations: &[i32]) -> Option<Checks> {
+    let skills = skills_in_save(save);
+    let speakers = actor_names()?;
+    let index = super::conversation_index()?;
+
+    let mut found = Checks::default();
+    for conversation in read_conversations(&index, conversations) {
+        for entry in &conversation.entries {
+            let Some(difficulty) = entry.fields.get(PASSIVE_FIELD) else {
+                continue;
+            };
+
+            let node = NodeRef {
+                conversation: conversation.id,
+                entry: entry.id,
+            };
+            let threshold = threshold_of(difficulty, node);
+
+            // NOT A SKILL ACTOR, so the game logs an error and the plugin answers Unknown.
+            // In neither set is what silence means on the wire, so leaving it out says the
+            // same thing here.
+            let Some(actor) = entry.fields.get(ACTOR_FIELD) else {
+                continue;
+            };
+            let Some(name) = speakers.get(actor) else {
+                continue;
+            };
+            let Some(skill) = skill_of_actor(name) else {
+                continue;
+            };
+
+            let value = skills.get(skill).copied().unwrap_or_else(|| {
+                panic!("{save}'s character sheet has no {skill}, which {node:?} tests")
+            });
+            let antipassive = entry.fields.contains_key(ANTIPASSIVE_FIELD);
+
+            match passive_check::outcome(value, threshold, antipassive) {
+                Ternary::True => found.pass.insert(node),
+                _ => found.fail.insert(node),
+            };
+        }
+    }
+
+    Some(found)
+}
+
+/// What a save's character sheet makes of a group's passive checks.
+///
+/// Two sets rather than one map, because that is the shape the wire has and the reason is
+/// the same: an entry in neither is one nothing is known about, which is a third answer
+/// that a pair of booleans cannot carry.
+#[derive(Debug, Default)]
+pub struct Checks {
+    /// Entries whose check fires, so the line is one the player can be shown.
+    pub pass: NodeSet,
+    /// Entries whose check does not, so the line is one they never will be.
+    pub fail: NodeSet,
+}
+
+/// The field whose presence makes an entry a passive check.
+const PASSIVE_FIELD: &str = "DifficultyPass";
+
+/// The field marking a check that fires when it FAILS rather than when it passes.
+const ANTIPASSIVE_FIELD: &str = "Antipassive";
+
+/// The field naming the entry's speaker.
+const ACTOR_FIELD: &str = "Actor";
+
+/// What each difficulty id is worth, from the game's own table.
+///
+/// `ArticyBridge.ArticyDifficultyIdToDifficulty` indexed by the id, resolved through the
+/// `Difficulty` enum - so id 2 is AVERAGE, which is 10, and a skill of 4 clears it once the
+/// flat bonus is added. Out of order past the eighth because the enum grew a second row of
+/// odd numbers between the original even ones.
+const DIFFICULTY: [i32; 15] = [6, 8, 10, 12, 14, 16, 18, 20, 7, 9, 11, 13, 15, 17, 19];
+
+/// The threshold an entry's difficulty id stands for.
+///
+/// # Panics
+///
+/// If the id is not one the table holds. The game logs an error and carries on with a
+/// nonsense number; a fixture that did the same would decide checks wrongly and quietly.
+fn threshold_of(difficulty: &str, node: NodeRef) -> i32 {
+    let id: usize = difficulty.trim().parse().unwrap_or_else(|_| {
+        panic!("{node:?} has difficulty '{difficulty}', which is not a number")
+    });
+
+    *DIFFICULTY
+        .get(id)
+        .unwrap_or_else(|| panic!("{node:?} has difficulty id {id}, which no table row holds"))
+}
+
+/// Which skill an actor IS, by the name the database gives it.
+///
+/// The game asks this of the actor's Articy id through a table keyed by it; the names are
+/// the same table in the form the extractor can write, and they are the game's own
+/// `Skill.actorSkillNames`. `None` for every actor that is a person rather than a skill.
+///
+/// THE SUB-SKILLS COLLAPSE, because the character sheet has no separate entry for them:
+/// `CharacterSheet.GetSkill` answers all four Perceptions with the one Perception and
+/// Convalescence with Endurance, so a check spoken by Perception (Sight) is decided by the
+/// Perception the sheet holds.
+fn skill_of_actor(name: &str) -> Option<&'static str> {
+    const SKILLS: [(&str, &str); 29] = [
+        ("Logic", "LOGIC"),
+        ("Encyclopedia", "ENCYCLOPEDIA"),
+        ("Rhetoric", "RHETORIC"),
+        ("Drama", "DRAMA"),
+        ("Conceptualization", "CONCEPTUALIZATION"),
+        ("Visual Calculus", "VISUAL_CALCULUS"),
+        ("Volition", "VOLITION"),
+        ("Inland Empire", "INLAND_EMPIRE"),
+        ("Empathy", "EMPATHY"),
+        ("Authority", "AUTHORITY"),
+        ("Suggestion", "SUGGESTION"),
+        ("Esprit de Corps", "ESPRIT_DE_CORPS"),
+        ("Physical Instrument", "PHYSICAL_INSTRUMENT"),
+        ("Electrochemistry", "ELECTROCHEMISTRY"),
+        ("Endurance", "ENDURANCE"),
+        ("Convalescence", "ENDURANCE"),
+        ("Half Light", "HALF_LIGHT"),
+        ("Pain Threshold", "PAIN_THRESHOLD"),
+        ("Shivers", "SHIVERS"),
+        ("Hand/Eye Coordination", "HE_COORDINATION"),
+        ("Perception", "PERCEPTION"),
+        ("Perception (Hearing)", "PERCEPTION"),
+        ("Perception (Sight)", "PERCEPTION"),
+        ("Perception (Smell)", "PERCEPTION"),
+        ("Perception (Taste)", "PERCEPTION"),
+        ("Reaction Speed", "REACTION"),
+        ("Savoir Faire", "SAVOIR_FAIRE"),
+        ("Interfacing", "INTERFACING"),
+        ("Composure", "COMPOSURE"),
+    ];
+
+    SKILLS
+        .iter()
+        .find(|(actor, _)| *actor == name)
+        .map(|(_, skill)| *skill)
+}
+
+/// Every actor's name, by the id an entry's `Actor` field carries.
+///
+/// Read once and shared, like the index beside it: every scenario in a run asks about the
+/// same 424 actors.
+fn actor_names() -> Option<&'static HashMap<String, String>> {
+    static NAMES: OnceLock<Option<HashMap<String, String>>> = OnceLock::new();
+
+    NAMES
+        .get_or_init(|| {
+            let path = super::actors()?;
+            let text = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+
+            let mut names = HashMap::new();
+            for line in text.lines().filter(|line| !line.trim().is_empty()) {
+                let actor: IndexedActor = serde_json::from_str(line).unwrap_or_else(|e| {
+                    panic!("{} has a line that will not parse: {e}", path.display())
+                });
+                names.insert(actor.id.to_string(), actor.name);
+            }
+
+            Some(names)
+        })
+        .as_ref()
+}
+
+/// One line of the actor table.
+#[derive(Debug, Deserialize)]
+struct IndexedActor {
+    id: i32,
+    name: String,
+}
+
+/// One conversation of the index, with only what deciding a check needs.
+#[derive(Debug, Deserialize)]
+struct IndexedConversation {
+    id: i32,
+    entries: Vec<IndexedEntry>,
+}
+
+/// One entry of it.
+#[derive(Debug, Deserialize)]
+struct IndexedEntry {
+    id: i32,
+    #[serde(default)]
+    fields: HashMap<String, String>,
+}
+
+/// The named conversations, read out of the FULL index.
+///
+/// The shipped one will not do: it keeps the difficulty, since the engine has to know an
+/// entry is a check at all, and drops the speaker and the inversion, since the engine never
+/// decides one. Both of those are what deciding one needs.
+///
+/// Line by line, matching on the id the writer puts first, so a fifty megabyte file is not
+/// parsed to answer about one conversation. That the id comes first is this repository's
+/// own doing - see `ConversationIndexFile` - and the assertion below is what says so if it
+/// ever stops being true.
+///
+/// # Panics
+///
+/// If a conversation is not in the index.
+fn read_conversations(index: &Path, wanted: &[i32]) -> Vec<IndexedConversation> {
+    static TEXT: OnceLock<String> = OnceLock::new();
+    let text = TEXT.get_or_init(|| {
+        std::fs::read_to_string(index).unwrap_or_else(|e| panic!("{}: {e}", index.display()))
+    });
+
+    let mut found = Vec::new();
+    for conversation in wanted {
+        let opening = format!("{{\"id\":{conversation},");
+        let line = text
+            .lines()
+            .find(|line| line.starts_with(&opening))
+            .unwrap_or_else(|| {
+                panic!(
+                    "conversation {conversation} is not in {}, or its lines no longer open \
+                     with their id",
+                    index.display(),
+                )
+            });
+
+        found.push(
+            serde_json::from_str(line)
+                .unwrap_or_else(|e| panic!("conversation {conversation} will not parse: {e}")),
+        );
+    }
+
+    found
+}
+
+/// The value of every skill on a save's character sheet, by the name the sheet gives it.
+///
+/// ## Built from the parts rather than read off the total
+///
+/// A skill's value is its ability plus every modifier currently on it - a thought that
+/// takes a point off Logic, a piece of clothing that adds one, damage - and the sheet
+/// carries the total as well as the parts. This adds the parts up and then checks the
+/// answer against the total, because the two disagreeing means the sheet is not what this
+/// reader thinks it is, and a check decided from a misread sheet is worse than no check.
+///
+/// The ability is added rather than taken from the CALCULATED_ABILITY modifier, whose
+/// recorded amount is zero: it is a note of WHERE the base comes from, filled in from the
+/// ability when the game recalculates.
+///
+/// A skill is a world constant here. Nothing in a dialogue raises one mid-conversation, so
+/// what the save holds is what every entry in the crawl is measured against.
+///
+/// # Panics
+///
+/// If the chain will not resolve, the sheet is missing, or the parts do not add up.
+pub fn skills_in_save(save: &str) -> HashMap<String, i32> {
+    /// The ability each `abilityType` names, as the sheet spells the ability's own key.
+    const ABILITIES: [(&str, &str); 4] = [
+        ("INT", "intellect"),
+        ("PSY", "psyche"),
+        ("FYS", "fysique"),
+        ("MOT", "motorics"),
+    ];
+    /// The modifier that stands for the ability, and is counted by adding the ability.
+    const CALCULATED_ABILITY: &str = "CALCULATED_ABILITY";
+
+    let sheet = character_sheet(save);
+    let causes = &sheet["SkillModifierCauseMap"];
+
+    let mut values = HashMap::new();
+    for (key, skill) in sheet.as_object().expect("the sheet is an object") {
+        let Some(name) = skill.get("skillType").and_then(|name| name.as_str()) else {
+            continue;
+        };
+
+        let ability_type = skill["abilityType"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{save}'s {key} names no ability"));
+        let ability_key = ABILITIES
+            .iter()
+            .find(|(named, _)| *named == ability_type)
+            .map(|(_, key)| *key)
+            .unwrap_or_else(|| panic!("{save}'s {key} names ability '{ability_type}'"));
+
+        let mut value = whole(&sheet[ability_key]["value"], save, ability_key);
+        for modifier in causes[name].as_array().into_iter().flatten() {
+            if modifier["type"].as_str() == Some(CALCULATED_ABILITY) {
+                continue;
+            }
+
+            value += whole(&modifier["amount"], save, name);
+        }
+
+        let total = whole(&skill["value"], save, key);
+        assert_eq!(
+            value, total,
+            "{save}'s {key} is recorded as {total} and its ability and modifiers make {value}",
+        );
+
+        values.insert(name.to_string(), value);
+    }
+
+    values
+}
+
+/// One number off the sheet.
+fn whole(value: &serde_json::Value, save: &str, what: &str) -> i32 {
+    value
+        .as_i64()
+        .unwrap_or_else(|| panic!("{save}'s {what} holds {value}, which is not a whole number"))
+        as i32
+}
+
+/// A save's character sheet, with the bases it rests on merged in.
+fn character_sheet(save: &str) -> serde_json::Value {
+    /// The archive member the sheet lives in, by the suffix the manifest names it with.
+    const SECOND_BLOB: &str = ".2nd.ntwtf.json";
+
+    let mut document = serde_json::Value::Null;
+    for folder in chain(save) {
+        let Some(member) = member(&folder, SECOND_BLOB) else {
+            continue;
+        };
+
+        // A base writes the blob out whole and a diff writes only what it changes, the same
+        // arrangement the Lua parts use - and the same reading: overlay them in order.
+        let changes = member.get("_changes").unwrap_or(&member).clone();
+        overlay(&mut document, &changes);
+    }
+
+    let sheet = document.get("characterSheet").cloned();
+    sheet.unwrap_or_else(|| panic!("{save}'s chain carries no character sheet"))
+}
+
+/// One of a save folder's top-level members, by the suffix it is named with.
+fn member(folder: &Path, suffix: &str) -> Option<serde_json::Value> {
+    let stem = folder.file_stem()?.to_str()?;
+    read_json(&folder.join(format!("{stem}{suffix}")))
+}
+
+/// Applies `from` over `into`, key by key, all the way down.
+///
+/// Two objects merge; anything else replaces, which is what a diff over a list or a number
+/// means. Recursive rather than a top-level merge because a diff carries only the leaves it
+/// changed - one skill's value, not the skill - so a shallow merge would drop the rest of
+/// whatever it touched.
+fn overlay(into: &mut serde_json::Value, from: &serde_json::Value) {
+    match (into.as_object_mut(), from.as_object()) {
+        (Some(target), Some(source)) => {
+            for (key, value) in source {
+                match target.get_mut(key) {
+                    Some(existing) => overlay(existing, value),
+                    None => {
+                        target.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+        }
+        _ => *into = from.clone(),
+    }
 }

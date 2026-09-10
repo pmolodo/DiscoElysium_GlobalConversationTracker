@@ -212,6 +212,18 @@ const VARIABLES_COMMAND: [&str; 5] = [
     "variables",
 ];
 
+/// What to run to rebuild the actor table.
+const ACTORS_COMMAND: [&str; 5] = ["run", "--project", "tools/DialogueExtract", "--", "actors"];
+
+/// The database's actor table, regenerated if absent.
+///
+/// Who speaks a line, by the id its `Actor` field carries. What wants it is a passive
+/// check: which skill one tests is decided by its speaker, and the id on its own says
+/// nothing.
+pub fn actors() -> Option<PathBuf> {
+    derived("actors.jsonl", &ACTORS_COMMAND, "actors.jsonl")
+}
+
 /// The database's variable table, read once and shared.
 ///
 /// Once, because every world built in a run wants the same 10,645 entries and reading

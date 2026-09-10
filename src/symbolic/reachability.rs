@@ -47,6 +47,21 @@ use crate::symbolic::guard_formula::GuardCompiler;
 use crate::symbolic::vars::DataVars;
 use crate::world::world::ILookAheadWorld;
 
+/// Whether the world has already decided this node's line can never be shown.
+///
+/// A passive check is a comparison rather than a roll, so a character sheet that fails one
+/// fails it for the whole search: the state walks through the node UNCHARGED and the line
+/// is never displayed. Both directions model that pass-through already, and for a node on
+/// the way past it is all that is needed.
+///
+/// This is the question to ask where the node is the thing being MEASURED rather than a
+/// step towards something else, because that is where entered and displayed stop meaning
+/// the same. A search hunting an unread line, and a baseline naming where an outcome
+/// lands, are both about what the player would read.
+pub fn never_displays(node: &LookAheadNode, world: &dyn ILookAheadWorld) -> bool {
+    node.kind == DialogueCheckKind::Passive && world.check_passes(node.id) == Ternary::False
+}
+
 /// The single data state a search starts in, as a set of one.
 ///
 /// Mirrors nothing: it ENCODES [`crate::core::state::seed_state`]'s answer, so every search

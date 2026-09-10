@@ -73,6 +73,10 @@ Two things about its contents are deliberate:
       declares each of its 10,645 variables to be. Deployed as
       `GlobalConversationTracker.Variables.jsonl`; without it the look-ahead cannot tell a
       counter from a flag, and an ordering comparison over one becomes undecidable.
+    - `actors` - `.game_reference_copies\derived\actors.jsonl`, every actor's id and name.
+      Which skill a passive check tests is decided by its speaker, and an entry names one
+      only by id, so this is what lets an offline reader decide a check the way the plugin
+      does.
     - `worst-case-state` - `testing\scenarios\global-state-worst-case.json`, derived from
       the conversation index rather than directly from the `.asset`.
   - `NtwtfDecode` - dumps the Lua tables inside a `{save}.ntwtf` save (zip, folder or

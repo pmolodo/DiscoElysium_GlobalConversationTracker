@@ -43,7 +43,7 @@ use crate::symbolic::dominators::Dominators;
 use crate::symbolic::guard_formula::GuardCompiler;
 use crate::symbolic::known::Known;
 use crate::symbolic::memo::Memo;
-use crate::symbolic::reachability::Reachability;
+use crate::symbolic::reachability::{Reachability, never_displays};
 use crate::world::world::ILookAheadWorld;
 
 /// Every novelty class better than "seen", best first.
@@ -342,7 +342,11 @@ impl Where {
                 continue;
             }
 
-            if !node.is_group {
+            // A CHECK THIS SHEET FAILS IS WALKED THROUGH, exactly as a group is. The
+            // outcome does not LAND on a line the player will never read, and naming one
+            // here would raise the bar a real search has to clear - the same cost as
+            // naming a destination nothing can reach.
+            if !node.is_group && !never_displays(node, world) {
                 if !found.contains(&id) {
                     found.push(id);
                 }

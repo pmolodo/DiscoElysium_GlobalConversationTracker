@@ -14,6 +14,7 @@ namespace GlobalConversationTracker.DialogueExtract
         private const string ConversationIndexCommand = "conversation-index";
         private const string CorpusCommand = "corpus";
         private const string VariablesCommand = "variables";
+        private const string ActorsCommand = "actors";
         private const string ShippedIndexCommand = "shipped-index";
         private const string WorstCaseStateCommand = "worst-case-state";
         private const int ExitFailure = 1;
@@ -37,6 +38,9 @@ namespace GlobalConversationTracker.DialogueExtract
               variables           The database's variable table - name, declared type and
                                   initial value, one JSON object per line - so a world can
                                   tell a counter from a flag.
+              actors              The database's actor table - id and name, one JSON object
+                                  per line - so an entry's Actor field can be read as the
+                                  skill a passive check tests.
               shipped-index       The index as the mod ships it: the same records with
                                   everything no crawl reads removed. Reads the index that
                                   conversation-index wrote.
@@ -45,8 +49,8 @@ namespace GlobalConversationTracker.DialogueExtract
                                   conversation in the index recorded as WasDisplayed.
 
             Options:
-              --asset PATH    articy-ids, conversation-index, corpus: the database .asset.
-                              Default:
+              --asset PATH    Every command but shipped-index and worst-case-state: the
+                              database .asset. Default:
                               .game_reference_copies/AssetRipperExport/ExportedProject/Assets/Dialogue Databases/Disco Elysium.asset
               --index PATH    worst-case-state: the index conversation-index wrote. Default:
                               .game_reference_copies/derived/conversation_index.jsonl
@@ -54,8 +58,8 @@ namespace GlobalConversationTracker.DialogueExtract
                               articy-ids          articy_ids_final_cut.json
                               conversation-index  .game_reference_copies/derived/conversation_index.jsonl
                               worst-case-state    testing/scenarios/global-state-worst-case.json
-              --out-dir PATH  corpus: the directory to write the two files into. Default:
-                              .game_reference_copies/derived
+              --out-dir PATH  corpus, variables, actors: the directory to write into.
+                              Default: .game_reference_copies/derived
               -h, --help      Show this message.
             """;
 
@@ -118,6 +122,8 @@ namespace GlobalConversationTracker.DialogueExtract
                     return Corpus(ParseOptions(args, command));
                 case VariablesCommand:
                     return Variables(ParseOptions(args, command));
+                case ActorsCommand:
+                    return Actors(ParseOptions(args, command));
                 case ShippedIndexCommand:
                     return TrimmedIndex(ParseOptions(args, command));
                 case WorstCaseStateCommand:
@@ -204,6 +210,29 @@ namespace GlobalConversationTracker.DialogueExtract
             Console.WriteLine(
                 $"wrote {variables.Count} variables ({numbers} numbers, "
                 + $"{variables.Count - numbers} other) to {outPath}");
+            return 0;
+        }
+
+        /// <summary>Writes the database's actor table, so an id can be read as a name.</summary>
+        /// <remarks>
+        /// What a passive check tests is decided by the ACTOR speaking it - 424 is
+        /// Perception (Sight) - and the id is all an entry carries. The game resolves it
+        /// through the actor's Articy id; the name is the same answer, and it is the list
+        /// the game's own <c>Skill.actorSkillNames</c> is written in, so a reader can map
+        /// one to a skill without the database in hand.
+        /// </remarks>
+        private static int Actors(Dictionary<string, string> options)
+        {
+            string asset = Option(options, "--asset", DefaultAsset);
+            string outDir = Option(options, "--out-dir", DefaultDerived);
+            RejectUnknownOptions(options);
+            Directory.CreateDirectory(outDir);
+
+            IReadOnlyList<DialogueActor> actors = ActorTableExtractor.Extract(asset);
+            string outPath = Path.Combine(outDir, ActorTableFile.FileName);
+            ActorTableFile.Write(outPath, actors);
+
+            Console.WriteLine($"wrote {actors.Count} actors to {outPath}");
             return 0;
         }
 

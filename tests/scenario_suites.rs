@@ -153,6 +153,15 @@ fn stage(
     let recorded = fixtures::recorded_elsewhere_in_group(&suite.state, &group);
     let read_here = fixtures::read_in_save_group(&scenario.save, &group);
 
+    // THE CHECKS, FROM THE SAVE'S OWN SHEET. The plugin decides each passive check against
+    // the live character sheet and sends the outcomes; a world that answered nothing about
+    // them would carry both branches of every one, which draws markers the game does not.
+    // The caller has already established that the tables this reads are there, so nothing
+    // here is a reason to answer "the group does not build", which is what a None from this
+    // function means to it.
+    let checks = fixtures::checks_in_save(&scenario.save, &group)
+        .expect("the actor table and the full index are both present");
+
     let mut staged = Staged {
         graph,
         recorded,
@@ -170,6 +179,8 @@ fn stage(
                 // stops the search before it builds a state, so the option draws nothing
                 // where the game draws a marker.
                 variables: fixtures::variables_in_save(&scenario.save),
+                checks_pass: checks.pass,
+                checks_fail: checks.fail,
                 ..Default::default()
             },
             ..Default::default()
@@ -202,6 +213,15 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
         eprintln!("no shipped index; skipping.");
         return;
     };
+    // ASKED FOR HERE rather than where it is read. Staging a scenario decides its passive
+    // checks against the save's character sheet, and which skill each one tests is a
+    // question only the actor table answers. Without it every check would be undecided and
+    // every scenario would be staged into a more permissive world than the run it stands
+    // for - a green suite that tested something easier.
+    if common::actors().is_none() {
+        eprintln!("no actor table; skipping.");
+        return;
+    }
     let index = read_index(&path).expect("the shipped index reads");
 
     let table = suites::table();
@@ -336,6 +356,15 @@ fn every_offline_claim_holds_over_the_whole_group() {
         eprintln!("no shipped index; skipping.");
         return;
     };
+    // ASKED FOR HERE rather than where it is read. Staging a scenario decides its passive
+    // checks against the save's character sheet, and which skill each one tests is a
+    // question only the actor table answers. Without it every check would be undecided and
+    // every scenario would be staged into a more permissive world than the run it stands
+    // for - a green suite that tested something easier.
+    if common::actors().is_none() {
+        eprintln!("no actor table; skipping.");
+        return;
+    }
     let index = read_index(&path).expect("the shipped index reads");
 
     let table = suites::table();
