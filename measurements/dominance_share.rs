@@ -109,7 +109,7 @@
 //! ## How to run it
 //!
 //! ```text
-//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo dominance-share -- \
+//! tools/run-logged.sh cargo dominance-share -- \
 //!   cargo run --release --example dominance_share
 //! ```
 //!

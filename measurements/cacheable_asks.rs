@@ -109,7 +109,7 @@
 //! ## How to run it
 //!
 //! ```text
-//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo cacheable-asks -- \
+//! tools/run-logged.sh cargo cacheable-asks -- \
 //!   cargo run --release --example cacheable_asks
 //! ```
 //!

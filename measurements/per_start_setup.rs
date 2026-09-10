@@ -23,7 +23,7 @@
 //! ## How to run it
 //!
 //! ```text
-//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo per-start-setup -- \
+//! tools/run-logged.sh cargo per-start-setup -- \
 //!   cargo run --release --example per_start_setup
 //! ```
 //!

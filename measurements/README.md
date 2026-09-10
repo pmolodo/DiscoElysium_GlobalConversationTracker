@@ -41,7 +41,7 @@ log to read afterwards:
 
     tools/run-logged.sh cargo answers -- cargo run --release --example symbolic_answers
 
-    DEGCT_RUN_LOG_DIR=measurements/logs DEGCT_CONVERSATION=14 \
+    DEGCT_CONVERSATION=14 \
       tools/run-logged.sh cargo slots -- cargo run --release --example layout_shape -- slots
 
 Several take an argument, and it selects a stage rather than a setting. `layout_shape`

@@ -153,9 +153,9 @@
 //! ## How to run it
 //!
 //! ```text
-//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo candidate-recurrence -- \
+//! tools/run-logged.sh cargo candidate-recurrence -- \
 //!   cargo run --release --example candidate_recurrence
-//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo recurrence-walk -- \
+//! tools/run-logged.sh cargo recurrence-walk -- \
 //!   cargo run --release --example candidate_recurrence walk
 //! ```
 //!

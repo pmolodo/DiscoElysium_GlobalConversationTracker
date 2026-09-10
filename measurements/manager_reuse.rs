@@ -77,7 +77,7 @@
 //! ## How to run it
 //!
 //! ```text
-//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo manager-reuse -- \
+//! tools/run-logged.sh cargo manager-reuse -- \
 //!   cargo run --release --example manager_reuse
 //! ```
 

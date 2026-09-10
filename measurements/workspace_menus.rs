@@ -73,7 +73,7 @@
 //! ## How to run it
 //!
 //! ```text
-//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo workspace-menus -- \
+//! tools/run-logged.sh cargo workspace-menus -- \
 //!   cargo run --release --example workspace_menus
 //! ```
 //!

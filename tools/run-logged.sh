@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run a command and keep its whole output in testing/logs, under the run-log name.
+# Run a command and keep its whole output in measurements/logs, under the run-log name.
 #
 # GameHarness logs itself - see tools/GameAutomation/RunLog.cs - so this is for the runs
 # that are not ours to modify: cargo, dotnet test, and the measurement scripts.
@@ -9,9 +9,11 @@
 #   tools/run-logged.sh --name-only <tool> <verb>     # print the path, run nothing
 #   tools/run-logged.sh --folder-only <tool> <verb>   # ditto, as a directory
 #
-# RUN_LOG_DIR overrides where logs are written; it defaults to testing/logs.
+# RUN_LOG_DIR overrides where logs are written; it defaults to measurements/logs, which is
+# where the slow runs that most want a log already put theirs.
 #
 # Examples:
+#   tools/run-logged.sh cargo shared-symbolic -- cargo run --release --example shared_symbolic
 #   tools/run-logged.sh cargo corpus -- cargo test --test corpus
 #   tools/run-logged.sh dotnet unit -- dotnet test
 #   DISCO_ELYSIUM_GCT_INGAME_TESTS=1 \
@@ -35,12 +37,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # for the rule and docs/environment.md for the list.
 . "$ROOT/tools/degct-env.sh"
 
-# testing/logs unless a caller says otherwise. The measurement scripts point this at
-# measurements/logs, so that a measurement's raw output stays beside the rows it produced.
-DEGCT_LOG_DIR="$(degct_env RUN_LOG_DIR "$ROOT/testing/logs")"
+# measurements/logs unless a caller says otherwise, so that a measurement's raw output
+# stays beside the rows it produced without every incantation having to say so.
+DEGCT_LOG_DIR="$(degct_env RUN_LOG_DIR "$ROOT/measurements/logs")"
 
 usage() {
-    sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
     exit 2
 }
 

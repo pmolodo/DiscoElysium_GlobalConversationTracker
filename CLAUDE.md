@@ -12,15 +12,14 @@ Genuinely instant things - `ls`, `git status`, reading a file - do not need it.
 
 ```sh
 tools/run-logged.sh cargo full-suite -- cargo test --release
-DEGCT_RUN_LOG_DIR=measurements/logs \
-  DEGCT_CONVERSATION=631 tools/run-logged.sh cargo shared-symbolic -- \
+DEGCT_CONVERSATION=631 tools/run-logged.sh cargo shared-symbolic -- \
   cargo run --release --example shared_symbolic
 ```
 
-It tees the whole output to `testing/logs/<date>_<time>_<revision>_<tool>_<verb>.txt`
-(`RUN_LOG_DIR` moves that; the measurement scripts point it at `measurements/logs`) and
-passes the command's own exit status straight through, so it drops in wherever the bare
-command stood. `--name-only` prints the path without running anything.
+It tees the whole output to `measurements/logs/<date>_<time>_<revision>_<tool>_<verb>.txt`
+(`RUN_LOG_DIR` moves that) and passes the command's own exit status straight through, so it
+drops in wherever the bare command stood. `--name-only` prints the path without running
+anything.
 
 **Never pipe such a command into `grep`, `tail`, `head`, `sort` or anything else as the
 only thing that receives its output.** A filter keeps the few lines it matched and throws

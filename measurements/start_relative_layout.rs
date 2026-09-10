@@ -61,7 +61,7 @@
 //! ## How to run it
 //!
 //! ```text
-//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo start-relative -- \
+//! tools/run-logged.sh cargo start-relative -- \
 //!   cargo run --release --example start_relative_layout
 //! ```
 //!

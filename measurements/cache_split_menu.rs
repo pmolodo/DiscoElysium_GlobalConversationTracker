@@ -80,7 +80,7 @@
 //! ## How to run it
 //!
 //! ```text
-//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo cache-split-menu -- \
+//! tools/run-logged.sh cargo cache-split-menu -- \
 //!   cargo run --release --example cache_split_menu
 //! ```
 //!

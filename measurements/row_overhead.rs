@@ -40,7 +40,7 @@
 //! ## How to run it
 //!
 //! ```text
-//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo row-overhead -- \
+//! tools/run-logged.sh cargo row-overhead -- \
 //!   cargo run --release --example row_overhead
 //! ```
 //!

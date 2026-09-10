@@ -28,7 +28,7 @@
 //! ## How to run it
 //!
 //! ```text
-//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo nodes-repeat -- \
+//! tools/run-logged.sh cargo nodes-repeat -- \
 //!   cargo run --release --example nodes_repeat
 //! ```
 //!

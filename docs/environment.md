@@ -91,7 +91,7 @@ variable is added or removed.
 | `DEGCT_ROW_MEMORY_MB` | `measurements/performance_matrix.rs`, `tools/measure-matrix.py` |
 | `DEGCT_ROW_OVERHEAD` | `tools/measure-matrix.py` |
 | `DEGCT_ROW_SECONDS` | `measurements/cache_split.rs`, `measurements/performance_matrix.rs`, `tools/degct-env.sh`, `tools/measure-matrix.py` |
-| `DEGCT_RUN_LOG_DIR` | `AGENTS.md`, `CLAUDE.md`, `measurements/README.md`, `measurements/cache_split.rs`, `measurements/cache_split_menu.rs`, `measurements/cacheable_asks.rs`, `measurements/candidate_recurrence.rs`, `measurements/dead_quantify.rs`, `measurements/dominance_share.rs`, `measurements/group_census.rs`, `measurements/manager_reuse.rs`, `measurements/menu_wall.rs`, `measurements/nodes_repeat.rs`, `measurements/per_start_setup.rs`, `measurements/prune_on_menus.rs`, `measurements/relaxed_settle.rs`, `measurements/repeat_question.rs`, `measurements/row_overhead.rs`, `measurements/settles_within.rs`, `measurements/start_relative_layout.rs`, `measurements/workspace_menus.rs`, `tools/measure-symbolic.sh`, `tools/run-logged.sh` |
+| `DEGCT_RUN_LOG_DIR` | `AGENTS.md`, `CLAUDE.md`, `DEVELOPING.md`, `tools/measure-symbolic.sh`, `tools/run-logged.sh` |
 | `DEGCT_RUN_NAME` | `tools/measure-symbolic.sh` |
 | `DEGCT_SEARCHES` | `measurements/search_residue.rs`, `tools/measure-residue-arms.sh` |
 | `DEGCT_SEARCH_MS` | `measurements/repeat_question.rs` |

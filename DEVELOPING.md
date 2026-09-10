@@ -363,13 +363,18 @@ its log can still be matched back to it by `md5` and `bytes`.
 
 ## Run logs
 
-Every run keeps its whole output in `testing/logs`, under a name that says when it ran,
-what it ran against, and what it was:
+Every run keeps its whole output under a name that says when it ran, what it ran against,
+and what it was:
 
 ```
-testing/logs/2026-09-04_07,44,32_1e08319064b7bd9d115f26c3abf35145d3fb7d8e_GameHarness_look-ahead.txt
-             ^ date      ^ time  ^ the commit it ran against              ^ tool    ^ verb
+measurements/logs/2026-09-04_07,44,32_1e08319064b7bd9d115f26c3abf35145d3fb7d8e_cargo_full-suite.txt
+                  ^ date      ^ time  ^ the commit it ran against              ^ tool ^ verb
 ```
+
+The wrapper writes to `measurements/logs`, so that a measurement's raw output sits beside
+the rows it produced and nothing has to say so at the call site; `RUN_LOG_DIR` moves it.
+GameHarness keeps its own logs under `testing/logs`, which is a separate mechanism and
+reads no environment variable of ours.
 
 The time is `HH,MM,SS` - commas because a file name cannot hold a colon - so a day's runs
 sort into the order they happened.

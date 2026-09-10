@@ -34,7 +34,7 @@
 //! ## How to run it
 //!
 //! ```text
-//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo menu-wall -- \
+//! tools/run-logged.sh cargo menu-wall -- \
 //!   cargo run --release --example menu_wall
 //! ```
 //!

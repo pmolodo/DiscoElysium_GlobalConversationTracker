@@ -32,7 +32,7 @@
 //! ## How to run it
 //!
 //! ```text
-//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo cache-split -- \
+//! tools/run-logged.sh cargo cache-split -- \
 //!   cargo run --release --example cache_split
 //! ```
 //!

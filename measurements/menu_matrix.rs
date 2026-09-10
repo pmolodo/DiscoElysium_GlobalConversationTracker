@@ -102,7 +102,7 @@
 //! it and a crash on one group should not cost the rest:
 //!
 //! ```text
-//! DEGCT_RUN_LOG_DIR=measurements/logs DEGCT_CONVERSATION=631 \
+//! DEGCT_CONVERSATION=631 \
 //!   tools/run-logged.sh cargo menu-matrix -- cargo run --release --example menu_matrix
 //! ```
 //!

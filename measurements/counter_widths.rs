@@ -53,7 +53,7 @@
 //! ## How to run it
 //!
 //! ```text
-//! DEGCT_RUN_LOG_DIR=measurements/logs tools/run-logged.sh cargo counter-widths -- \
+//! tools/run-logged.sh cargo counter-widths -- \
 //!   cargo run --release --example counter_widths
 //! ```
 //!
