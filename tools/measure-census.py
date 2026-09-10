@@ -131,6 +131,7 @@ from measurement_common import (  # noqa: E402
     progress_line,
     qualified,
     refuse,
+    run_folder,
     run_groups,
     write_lf,
 )
@@ -286,7 +287,7 @@ class Census:
 
 
 def measure(named):
-    out = Path(env("CENSUS_OUT") or (ROOT / "measurements" / "logs" / f"{time.strftime('%Y-%m-%d_%H,%M,%S')}_census"))
+    out = Path(env("CENSUS_OUT") or run_folder("census", "CENSUS_OUT"))
     if not out.is_absolute():
         out = ROOT / out
 
