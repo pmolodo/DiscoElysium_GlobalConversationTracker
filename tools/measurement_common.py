@@ -26,6 +26,7 @@ sharing a coincidence.
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 
@@ -206,6 +207,83 @@ def folders_newest_first():
     except OSError:
         return []
     return sorted(folders, key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def bash(hint=""):
+    """A bash that shares this process's idea of what a drive letter means.
+
+    NOT THE BARE NAME. Handing `bash` to CreateProcess searches System32 before PATH, and on
+    a machine with WSL installed that is WSL's launcher - a different machine's shell. It
+    runs, so nothing looks wrong, but it calls this drive `/mnt/d`: a Windows path handed to
+    it comes back "No such file or directory" and a path it prints back is one this process
+    cannot open.
+
+    PATH first, then wherever git lives, since Git for Windows ships the bash that goes with
+    it and this repository needs git anyway. On anything but Windows the first answer is the
+    only one.
+    """
+    system_root = Path(os.environ.get("SystemRoot", r"C:\Windows")).resolve()
+
+    def usable(candidate):
+        if candidate is None:
+            return None
+        path = Path(candidate)
+        if not path.is_file():
+            return None
+        try:
+            path.resolve().relative_to(system_root)
+        except ValueError:
+            return str(path)
+        return None
+
+    found = usable(shutil.which("bash"))
+    if found:
+        return found
+
+    git = shutil.which("git")
+    if git:
+        for folder in Path(git).resolve().parents:
+            for relative in ("usr/bin/bash.exe", "bin/bash.exe"):
+                found = usable(folder / relative)
+                if found:
+                    return found
+
+    refuse("no bash to run tools/run-logged.sh with - install Git for Windows" + hint, code=1)
+
+
+def run_folder(verb, out_variable):
+    """One folder for this run, named the way every run log in this repository is named.
+
+    ASKED OF tools/run-logged.sh RATHER THAN BUILT HERE. The format lives in that script and
+    in RunLog.cs, held to each other by RunLogTests; a third copy in Python is one nothing
+    holds to the other two, and it would drift the first time the name gains a field.
+
+    THROUGH bash, NOT AS A PROGRAM. Windows cannot execute a shell script directly -
+    CreateProcess answers WinError 193, "%1 is not a valid Win32 application" - and this is
+    the one call a driver makes to the wrapper, so it stopped a run before its first row on
+    the very path a person takes who sets nothing.
+
+    UNDER measurements/logs WHATEVER RUN_LOG_DIR SAYS. This is a folder of rows rather than a
+    transcript, and rows belong beside the other measurements; a run that scattered them
+    wherever a variable happened to point would be one nobody could find afterwards.
+
+    `out_variable` is the driver's own OUT name, said in the refusal when there is no bash to
+    ask - naming the folder is how a run gets one without the wrapper.
+    """
+    folder = subprocess.run(
+        [
+            bash(f", or name the run's folder with {qualified(out_variable)}"),
+            str(ROOT / "tools" / "run-logged.sh"),
+            "--folder-only",
+            "measure",
+            verb,
+        ],
+        capture_output=True,
+        text=True,
+        env=env_for_child(RUN_LOG_DIR=str(OUT / "logs")),
+        check=True,
+    ).stdout.strip()
+    return Path(folder)
 
 
 def build_measurement(example, quiet=False):

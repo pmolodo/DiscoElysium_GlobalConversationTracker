@@ -172,52 +172,6 @@ def refuse(message, code=2):
     raise SystemExit(code)
 
 
-def bash():
-    """A bash that shares this process's idea of what a drive letter means.
-
-    NOT THE BARE NAME. Handing `bash` to CreateProcess searches System32 before PATH, and on
-    a machine with WSL installed that is WSL's launcher - a different machine's shell. It
-    runs, so nothing looks wrong, but it calls this drive `/mnt/d`: a Windows path handed to
-    it comes back "No such file or directory" and a path it prints back is one this process
-    cannot open.
-
-    PATH first, then wherever git lives, since Git for Windows ships the bash that goes with
-    it and this repository needs git anyway. On anything but Windows the first answer is the
-    only one.
-    """
-    system_root = Path(os.environ.get("SystemRoot", r"C:\Windows")).resolve()
-
-    def usable(candidate):
-        if candidate is None:
-            return None
-        path = Path(candidate)
-        if not path.is_file():
-            return None
-        try:
-            path.resolve().relative_to(system_root)
-        except ValueError:
-            return str(path)
-        return None
-
-    found = usable(shutil.which("bash"))
-    if found:
-        return found
-
-    git = shutil.which("git")
-    if git:
-        for folder in Path(git).resolve().parents:
-            for relative in ("usr/bin/bash.exe", "bin/bash.exe"):
-                found = usable(folder / relative)
-                if found:
-                    return found
-
-    refuse(
-        "no bash to run tools/run-logged.sh with - install Git for Windows, or name the\nrun's folder with"
-        " DEGCT_MATRIX_OUT so the wrapper is not needed",
-        code=1,
-    )
-
-
 def clock(seconds):
     """h:mm:ss. A run of this length is watched rather than read afterwards."""
     seconds = max(0, int(seconds))
@@ -638,23 +592,7 @@ class Run:
             path = Path(named)
             return path if path.is_absolute() else ROOT / path
 
-        # THROUGH bash, NOT AS A PROGRAM. Windows cannot execute a shell script directly -
-        # CreateProcess answers WinError 193, "%1 is not a valid Win32 application" - and this
-        # is the one call that reaches for the wrapper, so a run that named no folder stopped
-        # before its first row on the very path a person takes who sets nothing. See `bash`
-        # for why the shell is looked up rather than named.
-        #
-        # THE NAME IS ASKED FOR RATHER THAN BUILT HERE. The format lives in run-logged.sh and
-        # in RunLog.cs, held to each other by RunLogTests, and a third copy in Python is one
-        # nothing holds to the other two.
-        folder = subprocess.run(
-            [bash(), str(ROOT / "tools" / "run-logged.sh"), "--folder-only", "measure", "matrix"],
-            capture_output=True,
-            text=True,
-            env=env_for_child(RUN_LOG_DIR=str(OUT / "logs")),
-            check=True,
-        ).stdout.strip()
-        return Path(folder)
+        return common.run_folder("matrix", "MATRIX_OUT")
 
     def _build(self):
         """Built once, up front, and then called DIRECTLY rather than through `cargo run`.

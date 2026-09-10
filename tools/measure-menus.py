@@ -50,7 +50,6 @@ WHAT COUNTS AS DONE:
 import argparse
 import sys
 
-from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -227,10 +226,7 @@ def main(argv=None):
     # NAMED, OR A FOLDER OF ITS OWN. A run told where to write resumes what is there; one
     # that is not gets a fresh folder and resumes nothing, which is the safe default - a
     # resume into a folder taken against different settings would mix two measurements.
-    out = env("MENUS_OUT")
-    if not out:
-        stamp = datetime.now().strftime("%Y-%m-%d_%H,%M,%S")
-        out = common.OUT / "logs" / f"{stamp}_menus"
+    out = env("MENUS_OUT") or common.run_folder("menus", "MENUS_OUT")
 
     workers = env_int("WORKERS", default_workers())
     try:
