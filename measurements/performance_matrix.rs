@@ -69,7 +69,7 @@
 //! ```text
 //! DEGCT_CENSUS_OUT=measurements/logs/2026-09-08_census tools/measure-census.sh all
 //! DEGCT_CENSUS_FILE=measurements/logs/2026-09-08_census/census.tsv \
-//!   DEGCT_PROFILES=deepest-unreach-1,deepest-unreach-5 tools/measure-matrix.sh all
+//!   DEGCT_PROFILES=deepest-unreach-1,deepest-unreach-5 tools/measure-matrix.py all
 //! ```
 //!
 //! THE SCRIPT TAKES ONE WHEN THE GRID NEEDS IT AND NOTHING NAMED ONE, into the run's own
@@ -381,7 +381,7 @@ fn row_time() -> std::time::Duration {
 ///
 /// It used to be off unless `PROGRESS_SECONDS` was set, on the reasoning that "the lines go
 /// into the row's log, and a run that is not being watched does not want them". Two things
-/// undid that. `tools/measure-matrix.sh` FILTERS - the row log gets everything and the run
+/// undid that. `tools/measure-matrix.py` FILTERS - the row log gets everything and the run
 /// log gets only the lines carrying [`PROGRESS`] - so an unwatched run pays a few
 /// lines in a per-row file nobody opens. And the runs got longer: a whole-game sweep is
 /// hours and thousands of rows, where "is it still going" is asked constantly and was
@@ -492,7 +492,7 @@ const PROFILES: [Profile; 5] = [
     Profile::DeepestUnseen(5),
     Profile::DeepestUnseen(10),
     // IN THE DEFAULT GRID, and they were held out of it because they cannot run without a
-    // census to read. `tools/measure-matrix.sh` now TAKES one into the run's own folder when
+    // census to read. `tools/measure-matrix.py` now TAKES one into the run's own folder when
     // a grid needs it and none was named, so the objection is answered rather than
     // outstanding. Running the binary by hand without a census is still refused outright -
     // see `Census::of`, which will not classify on the spot.
@@ -571,7 +571,7 @@ impl Engine {
     }
 
     /// The columns it fills, in order. THE ONE PLACE THE COLUMN NAMES LIVE: the header is
-    /// built from these and `tools/measure-matrix.sh` asks the test for it.
+    /// built from these and `tools/measure-matrix.py` asks the test for it.
     fn columns(self) -> &'static [&'static str] {
         // `setup` is how much of `ms` was building the layout, the manager, the compiled
         // guards and the seed rather than searching - see [`Cells::of`], and note that `ms`
@@ -721,7 +721,7 @@ fn group_starts(index: &lookahead_engine::index::Index) -> Vec<(i32, usize, usiz
 /// A group that yields no rows used to be discovered one row at a time, by a process that
 /// built the graph, found nothing, said so on stderr and exited. Over the whole game that
 /// is 901 groups of 1,422 and 9,010 processes that measure nothing - see
-/// [`NoRows::message`] for what the line says and `tools/measure-matrix.sh` for what now
+/// [`NoRows::message`] for what the line says and `tools/measure-matrix.py` for what now
 /// asks the question once per group instead of once per row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NoRows {
@@ -803,7 +803,7 @@ fn conversations(default: &[i32]) -> Vec<i32> {
 ///
 /// Both selections used to DROP what they did not recognise - an unparseable id fell out of
 /// a `filter_map`, an unknown label out of a `filter` - so a typo produced an empty
-/// selection, no rows, and a silent exit 0. `tools/measure-matrix.sh` decides a row crashed
+/// selection, no rows, and a silent exit 0. `tools/measure-matrix.py` decides a row crashed
 /// by the absence of a row line, so every row of a mistyped run came back CRASHED.
 ///
 /// That is a FOURTH outcome landing in the most alarming of the three the matrix exists to
@@ -828,7 +828,7 @@ fn refuse(why: &str) -> ! {
 
 /// Which profiles this process should measure, by label.
 ///
-/// ONE ROW PER PROCESS is the intended way to run this, driven by `tools/measure-matrix.sh`.
+/// ONE ROW PER PROCESS is the intended way to run this, driven by `tools/measure-matrix.py`.
 /// A row can take the whole process down - measured: conversation 28 with its five deepest
 /// entries unseen overflows the stack inside a recursive diagram operation - and with every
 /// row in one process the first crash destroys every row after it. The 28 run reported two
@@ -1506,7 +1506,7 @@ fn main() {
                     Ok((_, _, reachable)) => reachable.len(),
                     Err(why) => {
                         // ON STDERR, so the counts stay a clean TSV and the reason is still
-                        // recorded. `tools/measure-matrix.sh` keeps this stream as its
+                        // recorded. `tools/measure-matrix.py` keeps this stream as its
                         // groups.log; the wording is the one the row logs have always used.
                         eprintln!("{}", why.message(start));
                         0
@@ -1525,7 +1525,7 @@ fn main() {
         // FOURTH of 1,422 and is one of the cheapest groups in the game. Group 275 sorted
         // ahead of 498 groups that have rows while having none at all.
         //
-        // WHY IT MATTERS MORE THAN TIDINESS: tools/measure-matrix.sh runs groups one at a
+        // WHY IT MATTERS MORE THAN TIDINESS: tools/measure-matrix.py runs groups one at a
         // time until the cost bottoms out, then goes parallel, and it decides that from the
         // cost of the groups as they finish. A trivial group sorted near the front is noise
         // in that signal - and noise this ordering was introducing, rather than anything

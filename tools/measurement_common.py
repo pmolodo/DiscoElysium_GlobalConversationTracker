@@ -10,12 +10,10 @@ is the part that must not drift, because getting it wrong is a run that DIES rat
 that is wrong. Two files each with their own reap loop and their own division is two things to
 keep in step.
 
-The shell versions had exactly that problem and it was the reason de-42lg was filed against
-the census rather than solved inside it: `tools/measure-matrix.sh` grew a whole parallel
-implementation for de-thlz.4 and `tools/measure-census.sh` had none, so parallelising the
-census meant either copying that implementation or extracting it. This is the extraction, done
-once the matrix driver was Python (de-12wr.1) and the extraction was a module rather than a
-sourced shell file.
+The alternative is a driver that reaps its own workers and divides its own budget, and a
+second driver that copies both. de-42lg was filed against the census for exactly that reason:
+one driver had a parallel implementation and the other had none, so parallelising the second
+meant copying the first. A module is what makes copying unnecessary.
 
 ## What is NOT here
 

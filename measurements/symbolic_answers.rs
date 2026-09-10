@@ -71,7 +71,7 @@ pub const CLASSIFY_CAP: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// The prefix every progress line carries.
 ///
-/// It must NOT start with a conversation number: `tools/measure-matrix.sh` picks the row out
+/// It must NOT start with a conversation number: `tools/measure-matrix.py` picks the row out
 /// of the log with `grep -E "^$conversation\b"` and `tools/measure-census.sh` does the same,
 /// so a progress line that matched would be recorded as the row and the real one thrown
 /// away.

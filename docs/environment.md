@@ -72,7 +72,7 @@ variable is added or removed.
 | `DEGCT_HEADER_ONLY` | `measurements/performance_matrix.rs` |
 | `DEGCT_LOG_DIR` | `tools/measure-symbolic.sh`, `tools/run-logged.sh` |
 | `DEGCT_LONE` | `measurements/settles_within.rs` |
-| `DEGCT_MATRIX_OUT` | `measurements/README.md`, `tools/degct-env.sh`, `tools/measure-matrix.py`, `tools/measure-matrix.sh`, `tools/measurement_common.py` |
+| `DEGCT_MATRIX_OUT` | `measurements/README.md`, `tools/degct-env.sh`, `tools/measure-matrix.py`, `tools/measurement_common.py` |
 | `DEGCT_MEASUREMENT` | `tools/measure-symbolic.sh` |
 | `DEGCT_MEMORY_BUDGET_MB` | `measurements/menu_residue.rs` |
 | `DEGCT_MEMORY_HEADROOM` | `tools/measure-matrix.py` |

@@ -198,8 +198,8 @@ reserves the same bytes fallibly first.
 
 ## Regenerating
 
-    tools/measure-matrix.sh              # the six heavy conversations
-    tools/measure-matrix.sh 368 631      # just these
+    tools/measure-matrix.py              # the six heavy conversations
+    tools/measure-matrix.py 368 631      # just these
 
 One row per process, because a row can take the process down with it - see the script.
 Expect the better part of an hour for the whole set: the heavy groups spend the full time
@@ -207,7 +207,7 @@ cap on several rows.
 
 ### The whole game, resumably
 
-    DEGCT_MATRIX_OUT=measurements/logs/whole-game tools/measure-matrix.sh all
+    DEGCT_MATRIX_OUT=measurements/logs/whole-game tools/measure-matrix.py all
 
 `all` asks the measurement which groups exist - `DEGCT_GROUPS_ONLY=1`, one canonical start per
 distinct closure, heaviest first - so nothing decides what is in the run except the index.

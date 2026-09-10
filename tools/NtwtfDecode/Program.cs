@@ -281,7 +281,7 @@ int Run(string[] argv)
 /// third of two hundred and fifty-four would lose the other two hundred and fifty-one and
 /// say less than a list of which ones were bad. The exit status is still non-zero, so
 /// nothing downstream mistakes a partial run for a whole one - the same bargain
-/// tools/measure-matrix.sh makes, for the same reason.</para>
+/// tools/measure-matrix.py makes, for the same reason.</para>
 /// </remarks>
 static int ConvertEach(string folder, string output, int? indent, bool sparse, string? baseline)
 {

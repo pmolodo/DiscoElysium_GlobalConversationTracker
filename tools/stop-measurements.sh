@@ -11,7 +11,7 @@
 # hold target/release/examples/performance_matrix.exe open, and the next build fails with
 # LNK1104 from a run nobody thinks is still going.
 #
-# tools/measure-matrix.sh has documented the incantation for a while and it works. This is
+# tools/measure-matrix.py has documented the incantation for a while and it works. This is
 # the same thing as a command rather than a five-line quoted PowerShell block, because the
 # block has to be retyped correctly at the moment something is already going wrong, and its
 # escaping is exactly what gets mistyped then. It also covers measure-census.sh, which the
