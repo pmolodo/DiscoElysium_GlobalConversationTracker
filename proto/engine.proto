@@ -1,0 +1,342 @@
+// SPDX-License-Identifier: MIT
+//
+// What crosses the pipe between the plugin and the engine, written down ONCE.
+//
+// Both sides generate from this file at build time - prost for Rust, protoc for C# - so a
+// field added on one side cannot be missed on the other, and a field renamed cannot
+// quietly stop being read. The shape used to be written twice, as Rust types with serde
+// derives and as C# classes that wrote the same members by hand, and nothing checked that
+// the two agreed.
+//
+// THE FRAME IS NOT DESCRIBED HERE and is unchanged: a four-byte little-endian length, then
+// that many bytes of an encoded message, both directions. See src/host.rs for why it is
+// length-prefixed rather than line-delimited and why the length is bounded.
+
+syntax = "proto3";
+
+package gct.engine.v1;
+
+option csharp_namespace = "GlobalConversationTracker.Engine.Wire";
+
+// ---------------------------------------------------------------------------
+// The pieces both directions are built from
+// ---------------------------------------------------------------------------
+
+// One entry, in the conversation it belongs to.
+//
+// The wire's identity for a dialogue node: a dictionary key, a set member, and what a
+// start and a witness are named by. It carries nothing else on purpose - which outcome of
+// a rolled check an answer is about lives on the ANSWER, because only starts have one.
+message NodeRef {
+  int32 conversation = 1;
+  int32 entry = 2;
+}
+
+// A stretch of consecutive entry ids, inclusive at both ends.
+//
+// A single entry is a run whose ends are equal, rather than a second representation to
+// tell apart.
+message NodeRun {
+  int32 first = 1;
+  int32 last = 2;
+}
+
+// Every entry a set holds in one conversation.
+message ConversationRuns {
+  int32 conversation = 1;
+  repeated NodeRun runs = 2;
+}
+
+// A set of entries, run-encoded.
+//
+// RUN-ENCODED RATHER THAN LISTED, because these sets are most of a request: "every entry,
+// because any of them may have been seen" is the whole group, and the ids in a group are
+// dense. A whole group costs about 146 bytes this way.
+//
+// STRUCTURED RATHER THAN TEXT, which is the difference from what the JSON wire carried. A
+// run list crossed as the string "0-40,42,50-99" under a conversation id that was itself a
+// string, so both ends had a parser for a format that existed only because the wire could
+// not hold the shape. A run list that is silently half-read is a world that answers "not
+// seen" for entries the player has read, with the marker then wrong and nothing to say so;
+// there is now nothing to half-read.
+message NodeSet {
+  repeated ConversationRuns conversations = 1;
+}
+
+// One answer to something the world was asked.
+//
+// AN UNSET VALUE IS "NOT KNOWABLE", which is the permissive answer and the default for
+// anything unanswered. It is spelled as absence rather than as a fourth case, so a
+// default-constructed value already means what silence means and there is no way to
+// construct one that means neither.
+message WireValue {
+  oneof value {
+    bool boolean = 1;
+    double number = 2;
+    string text = 3;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// What the plugin sends
+// ---------------------------------------------------------------------------
+
+// The player's situation, as the plugin sees it, for one look-ahead.
+message WorldSnapshot {
+  int32 money = 1;
+  int32 day_minutes = 2;
+  int32 day_counter = 3;
+  bool clock_locked = 4;
+
+  // Dialogue variables, by name.
+  //
+  // For a caller that wants to say what it means: a fixture, a test, a tool. The plugin
+  // sends variable_values instead, and where both name the same variable this one wins,
+  // because naming it is the more specific statement.
+  map<string, WireValue> variables = 5;
+
+  // The same answers, in the order Questions.variables listed the names.
+  //
+  // The names are CONSTANT for a group and the plugin already holds them, so sending them
+  // back with every response menu is sending back what the engine itself said. A
+  // positional list of the wrong LENGTH is refused outright, where a bitmap of the right
+  // length would simply mean something else.
+  repeated WireValue variable_values = 6;
+
+  // World queries, by the key the questions gave them.
+  map<string, WireValue> queries = 7;
+  // The same answers, in the order Questions.queries listed the keys.
+  repeated WireValue query_values = 8;
+
+  repeated string items = 9;
+  repeated string tasks = 10;
+  repeated string thoughts = 11;
+
+  // Entries whose skill check the plugin says PASSES.
+  //
+  // Two sets rather than one list of outcomes, because the third outcome is "not known",
+  // and an entry in neither set already means that.
+  NodeSet checks_pass = 12;
+  // Entries whose skill check the plugin says FAILS.
+  NodeSet checks_fail = 13;
+  // Entries the player has already been shown.
+  NodeSet seen = 14;
+}
+
+// What the plugin asks for one response menu.
+message LookAheadRequest {
+  // Any conversation in the group; the engine loads the whole group from it.
+  int32 conversation = 1;
+  // The option entries to score. One answer comes back per start.
+  repeated NodeRef starts = 2;
+  // Entries the player has never seen in any game.
+  NodeSet unseen_any_game = 3;
+  // Entries unseen this game but seen in a previous one.
+  NodeSet unseen_this_game = 4;
+
+  // The most search states one option may hold, or zero for no such limit.
+  //
+  // A TEST-ONLY KNOB and the only budget here that is not a player's: no configuration
+  // setting writes it. It survives because it is the only limit that can stop a search
+  // before its first expansion, which the in-game suites need in order to check that
+  // giving up is distinguishable from finding nothing.
+  uint64 state_budget = 5;
+
+  // The longest one option may run for, in milliseconds; zero for no limit.
+  uint64 time_budget_ms = 6;
+  // The longest the WHOLE MENU may run for, in milliseconds; zero for no limit.
+  //
+  // What a player waits for is the sum over the options, and a rolled check is two
+  // searches rather than one, so the per-option budget alone does not bound it.
+  uint64 menu_time_budget_ms = 7;
+  // The most memory one option's search may hold, in MEGABYTES; zero for the default.
+  //
+  // Megabytes here and bytes in the engine, deliberately: this is set by a player in a
+  // configuration file, and 256 is a figure a person can hold in their head.
+  uint64 memory_budget_mb = 8;
+
+  WorldSnapshot world = 9;
+}
+
+// ---------------------------------------------------------------------------
+// What comes back from one look-ahead
+// ---------------------------------------------------------------------------
+
+// How new something is: seen, unseen this game, or unseen in any game.
+enum Novelty {
+  NOVELTY_SEEN = 0;
+  NOVELTY_UNSEEN_THIS_GAME = 1;
+  NOVELTY_UNSEEN_ANY_GAME = 2;
+}
+
+// Which outcome of a rolled check an answer is about.
+//
+// UNSET IS AN ORDINARY OPTION, and that is how the mod decides whether to draw the Pass /
+// Fail line: a check has two outcomes worth telling apart, an ordinary option has one.
+enum Branch {
+  BRANCH_NONE = 0;
+  BRANCH_PASS = 1;
+  BRANCH_FAIL = 2;
+}
+
+// What stopped a search.
+//
+// More than "it did not finish" says, and the difference is what a player tuning the
+// budgets needs: a search that ran out of STATES wants a bigger budget, and one that ran
+// out of TIME on the same states wants a longer clock.
+enum StoppedBy {
+  STOPPED_BY_NONE = 0;
+  STOPPED_BY_STATES = 1;
+  STOPPED_BY_TIME = 2;
+}
+
+// One start's answer.
+message LookAheadAnswer {
+  NodeRef start = 1;
+  // Which outcome of a rolled check this is, or BRANCH_NONE for an ordinary option.
+  Branch branch = 2;
+
+  // The best novelty already known about this start, before any search.
+  //
+  // For an ordinary option it is the option's own novelty; for an outcome it is the best
+  // among the entries that outcome leads to directly. Either way it is the baseline a
+  // search has to beat to be worth running, and what the mod colours the word by.
+  Novelty destination = 3;
+  // The best novelty anything reachable carries.
+  Novelty best = 4;
+  // The entry that proved it, where something did.
+  optional NodeRef witness = 5;
+  // Whether the search settled. False means best is a lower bound.
+  bool complete = 6;
+
+  uint64 elapsed_ms = 7;
+  // How many states were enumerated.
+  //
+  // The plugin's diagnostics are about what an ANSWER COSTS, and a time alone cannot say
+  // whether a menu was slow because the search was large or because the machine was busy.
+  uint64 states_explored = 8;
+  // How many entries it reached.
+  uint64 nodes_reached = 9;
+  StoppedBy stopped_by = 10;
+}
+
+// What comes back for a whole menu.
+message LookAheadResponse {
+  repeated LookAheadAnswer answers = 1;
+  // Set when the whole request failed; answers is then empty.
+  //
+  // NOT A STATUS. A look-ahead the engine could not serve is a successful response whose
+  // body says so, which is what lets the caller parse one thing.
+  optional string error = 2;
+}
+
+// Every question a search over one group can ask.
+//
+// The plugin asks once per group and caches the answer, because none of it can change
+// while the game is running.
+message Questions {
+  // The conversations the group covers, so the plugin knows what it committed to.
+  repeated int32 conversations = 1;
+  // Dialogue variables read by some guard.
+  repeated string variables = 2;
+  // World queries, by the key their answers must come back under.
+  repeated string queries = 3;
+  repeated string items = 4;
+  repeated string tasks = 5;
+  repeated string thoughts = 6;
+  // Entries carrying a skill check, whose outcome the world decides.
+  repeated NodeRef checks = 7;
+  // Every entry, because any of them may have been seen.
+  repeated NodeRef entries = 8;
+}
+
+// ---------------------------------------------------------------------------
+// The envelope
+// ---------------------------------------------------------------------------
+
+// This build's version, which the caller checks against the one it was built with.
+message VersionRequest {}
+
+// Open the engine over an index, and optionally a variable table.
+//
+// A serving process holds ONE engine, so there is no handle in the protocol: the process
+// IS the handle, and closing it is closing the process.
+message OpenRequest {
+  string index = 1;
+  optional string variables = 2;
+}
+
+// How many conversations the open index holds.
+message ConversationCountRequest {}
+// How many variables the deployed table declares; zero if none was read.
+message VariableCountRequest {}
+// How many entries one conversation holds.
+message EntryCountRequest {
+  int32 conversation = 1;
+}
+// What the index says one conversation's content reduced to.
+message ConversationHashRequest {
+  int32 conversation = 1;
+}
+// What version the open index says it is; zero where it has no header.
+message IndexFormatRequest {}
+// Every question a search over one conversation's group can ask.
+message QuestionsRequest {
+  int32 conversation = 1;
+}
+
+// What the caller asked for.
+//
+// A oneof, so a request this build does not know is a field it does not recognise rather
+// than something it acts on by accident.
+message Request {
+  oneof kind {
+    VersionRequest version = 1;
+    OpenRequest open = 2;
+    ConversationCountRequest conversation_count = 3;
+    VariableCountRequest variable_count = 4;
+    EntryCountRequest entry_count = 5;
+    ConversationHashRequest conversation_hash = 6;
+    IndexFormatRequest index_format = 7;
+    QuestionsRequest questions = 8;
+    LookAheadRequest look_ahead = 9;
+  }
+}
+
+// What a call reports. Zero is success; everything else is a reason.
+//
+// THE NUMBERS ARE THE ONES A C ABI CARRIED. They kept them when the transport changed and
+// they keep them again here: the .NET side matches by number, the in-game harness has logs
+// full of them, and renumbering a set of codes buys nothing but a chance to get one wrong.
+enum Status {
+  STATUS_OK = 0;
+  // A pointer argument was null, or a handle was not one this library handed out.
+  STATUS_BAD_HANDLE = -1;
+  // A string argument was not valid UTF-8, or a path could not be read.
+  STATUS_BAD_ARGUMENT = -2;
+  // The index could not be read.
+  STATUS_INDEX_UNREADABLE = -3;
+  // Something panicked. The engine is still standing; the call did nothing.
+  STATUS_PANIC = -4;
+  // No such conversation in the index.
+  STATUS_NO_SUCH_CONVERSATION = -5;
+  // An answer could not be encoded. Should not happen; reported anyway.
+  STATUS_SERIALISE_FAILED = -6;
+}
+
+// What came back.
+//
+// The payload members are populated by the calls that have one and absent otherwise,
+// rather than being a oneof: the caller reads one member per call, and a union would make
+// it read a discriminant first to learn what it already knew from what it asked.
+message Response {
+  Status status = 1;
+  // The answer to a call that returns a count or a format.
+  optional int32 value = 2;
+  // The answer to a call that returns text.
+  optional string text = 3;
+  // The answer to a questions call.
+  optional Questions questions = 4;
+  // The answer to a look-ahead call.
+  optional LookAheadResponse look_ahead = 5;
+}

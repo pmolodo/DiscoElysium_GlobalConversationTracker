@@ -69,6 +69,10 @@ const SOURCES: &[&str] = &[
     "build.rs",
     "src",
     ":(exclude)src/GlobalConversationTracker.*",
+    // The wire's schema, which this build generates types from. A change to it changes
+    // what the engine says and understands, so a stamp that left it out would call an
+    // engine current while it spoke the previous shape.
+    "proto",
 ];
 
 fn main() {
@@ -94,6 +98,8 @@ fn main() {
         println!("cargo::rerun-if-changed={source}");
     }
 
+    generate_wire();
+
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let stamp = format!(
         "{{\n  \"commit\": \"{}\",\n  \"tree\": \"{}\",\n  \"profile\": \"{}\"\n}}\n",
@@ -113,6 +119,36 @@ fn main() {
     };
 
     let _ = std::fs::write(target.join("lookahead_engine.built.json"), stamp);
+}
+
+/// The path of the wire schema, relative to the package root.
+const SCHEMA: &str = "proto/engine.proto";
+
+/// Generates the wire's Rust types from [`SCHEMA`].
+///
+/// ## Why this fails the build rather than warning
+///
+/// The generated module IS the wire. A build that carried on without it would either not
+/// compile, which says nothing useful, or compile against a stale copy from a previous run,
+/// which is the failure this whole change exists to make impossible: two descriptions of
+/// one shape, agreeing only because nobody touched them.
+///
+/// ## Why the file descriptor set is not written out
+///
+/// prost can emit one, and reflection is what it is for. Nothing here reflects: both ends
+/// are generated from this schema at build time and know every message by name at compile
+/// time. A descriptor set would be a second artefact to keep in step for no reader.
+fn generate_wire() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let schema = root.join(SCHEMA);
+    let includes = [root.join("proto")];
+
+    let files = protox::compile([&schema], includes)
+        .unwrap_or_else(|error| panic!("{SCHEMA} does not compile: {error}"));
+
+    prost_build::Config::new()
+        .compile_fds(files)
+        .unwrap_or_else(|error| panic!("{SCHEMA} produced no Rust types: {error}"));
 }
 
 /// One git command's output, or None if it could not be run or failed.

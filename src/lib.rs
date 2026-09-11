@@ -10,6 +10,9 @@ pub mod world;
 /// The file formats this repository defines, read and written in one place.
 pub mod formats;
 
+/// The types that cross the pipe, generated from `proto/engine.proto`.
+pub mod wire;
+
 /// What crosses between the plugin and this engine, and what it means.
 pub mod bridge;
 
