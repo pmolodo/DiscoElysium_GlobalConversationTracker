@@ -174,8 +174,12 @@ namespace GlobalConversationTracker.Automation.Tests
             foreach (LookAheadSuite suite in LookAheadSuites.All)
             {
                 string path = Path.Combine(ScenarioRoot, suite.GlobalStateFile);
+
+                // THROUGH WHAT THE RUN STAGES THROUGH, so a fixture written as a diff of
+                // another is checked as the state the game would be handed rather than
+                // refused as the diff it is written as.
                 GlobalStateLoadResult result = GlobalStateJson.Deserialize(
-                    File.ReadAllBytes(path), path);
+                    GlobalStateFixture.Resolve(ScenarioRoot, suite.GlobalStateFile), path);
 
                 Assert.True(
                     result.Outcome == GlobalStateLoadOutcome.Loaded,

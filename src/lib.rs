@@ -7,6 +7,9 @@ pub mod parser;
 pub mod symbolic;
 pub mod world;
 
+/// The file formats this repository defines, read and written in one place.
+pub mod formats;
+
 /// What crosses between the plugin and this engine, and what it means.
 pub mod bridge;
 

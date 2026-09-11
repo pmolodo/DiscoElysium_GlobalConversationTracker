@@ -327,15 +327,13 @@ namespace GlobalConversationTracker.Harness
             var stateFiles = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (LookAheadSuite suite in suites)
             {
-                string source = Path.Combine(scenarioRoot, suite.GlobalStateFile);
-                if (!File.Exists(source))
-                {
-                    throw new FileNotFoundException(
-                        $"Suite '{suite.Name}' names a global state at {source}.", source);
-                }
+                // RESOLVED RATHER THAN COPIED, because a fixture may be written as a diff of
+                // another one. What lands in the profile is a whole state either way, which
+                // is the only shape the mod reads - see GlobalStateFixture.
+                string state = GlobalStateFixture.Resolve(scenarioRoot, suite.GlobalStateFile);
 
                 string fileName = $"gct-look-ahead-{suite.Name}.json";
-                File.Copy(source, Path.Combine(saveGames, fileName), overwrite: true);
+                File.WriteAllText(Path.Combine(saveGames, fileName), state);
                 stateFiles[suite.Name] = fileName;
             }
 

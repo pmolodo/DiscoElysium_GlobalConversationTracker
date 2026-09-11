@@ -297,16 +297,23 @@ pub fn recorded_elsewhere_in_group(state_file: &str, conversations: &[i32]) -> H
     recorded
 }
 
-/// A staged global state file, read as the mod reads it.
+/// A staged global state fixture, resolved to what the mod would be handed.
+///
+/// RESOLVED, because a fixture may be written as a DIFF OF ANOTHER ONE rather than as a
+/// whole state - the arrangement the saves have had from the start, and for the same
+/// reason: the fixture that prompted it differed from the one beside it by one orb and two
+/// entries, in 29 KB of otherwise identical bytes. `lookahead_engine::formats` is the one
+/// definition of that, and the in-game run stages through the same code by way of the
+/// engine host's `resolve` verb, so neither executor has a reader of its own to drift.
 ///
 /// # Panics
 ///
-/// If it is missing or is not a global state.
+/// If it is missing, will not resolve, or is not a global state.
 fn read_state(state_file: &str) -> GlobalState {
     let path = scenarios().join(state_file);
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("{} does not read: {e}", path.display()));
-    serde_json::from_str(&text)
+    let document = lookahead_engine::formats::resolve::document(&path)
+        .unwrap_or_else(|fault| panic!("{fault}"));
+    serde_json::from_value(document)
         .unwrap_or_else(|e| panic!("{} is not a global state: {e}", path.display()))
 }
 
