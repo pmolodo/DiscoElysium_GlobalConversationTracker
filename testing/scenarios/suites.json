@@ -11,7 +11,7 @@
 
   "_executor_specific": "What only one side can run goes under a key naming the executor, offline or inGame, rather than in a scenario's own fields - a definition that reads as shared and is not is worse than two honest declarations. Two standing cases. inGame: the artefact and log checks, which read files the game wrote over a whole launch, are C# predicates, and are named here and resolved there. offline: a claim about EVERY entry in a group rather than about the options a menu happened to compose, which no in-game run can make because a menu is all it can see.",
 
-  "_what_is_not_here": "switched-off, and only that. What it stages is a MOD SETTING - MarkLookAhead=false - and there is no such thing to stage without a mod: the offline engine has no switch to turn off, so from the same fixture it answers what the money suite answers, three options marked. A row claiming every option is unmarked would be a definition only one side could execute. It stays declared in LookAheadSuites, honestly, and the remarks there say the same.",
+  "_what_is_not_here": "switched-off, and only that. What it stages is a MOD SETTING - MarkLookAhead=false - and there is no such thing to stage without a mod: the offline engine has no switch to turn off, so from the same fixture it answers what the money suite answers, one option marked. A row claiming every option is unmarked would be a definition only one side could execute. It stays declared in LookAheadSuites, honestly, and the remarks there say the same.",
 
   "suites": [
     {
@@ -131,7 +131,7 @@
     {
       "suite": "budget",
       "what": "a crawl that runs out of budget shows nothing and says where",
-      "why": "The same save and the same global state as the money suite's first scenario, which marks three options - with one setting changed. That makes it a clean discriminator: if the markers still appear the budget is not being honoured, and if they vanish for any other reason the money suite would have caught it. A budget of one is exhausted before the search dequeues anything, so the best stays at seen-this-game and no option can beat its own novelty. That is the feature's deliberate failure mode - it costs a marker rather than a slow menu - and what it has to be distinguishable from is FINDING NOTHING, which is the whole point of the grey marker and of de-pvq.",
+      "why": "The same save and the same global state as the money suite's first scenario, which marks one option - with one setting changed. That makes it a clean discriminator: if the markers still appear the budget is not being honoured, and if they vanish for any other reason the money suite would have caught it. A budget of one is exhausted before the search dequeues anything, so the best stays at seen-this-game and no option can beat its own novelty. That is the feature's deliberate failure mode - it costs a marker rather than a slow menu - and what it has to be distinguishable from is FINDING NOTHING, which is the whole point of the grey marker and of de-pvq.",
       "state": "global-conversation-state.json",
       "stateBudget": 1,
       "settings": { "LogLookAheadBudgetExceeded": "true" },
@@ -149,7 +149,7 @@
         {
           "save": "afford-both",
           "conversation": 451,
-          "what": "the balance that marks three options, with a budget of one",
+          "what": "the balance that marks one option, with a budget of one",
           "money": 5100,
           "advances": 1,
           "options": [

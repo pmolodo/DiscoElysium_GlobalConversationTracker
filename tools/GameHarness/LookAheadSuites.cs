@@ -17,6 +17,17 @@ namespace GlobalConversationTracker.Harness
     /// </remarks>
     public static class LookAheadSuites
     {
+        /// <summary>The suites the definition file carries, read once.</summary>
+        /// <remarks>
+        /// FIRST IN THE CLASS, and that is load-bearing rather than tidy. Static field
+        /// initialisers run in the order they are written, and the suites declared below read
+        /// their expectations out of this table - so declaring it after them leaves it null
+        /// while they are being built, which fails as a type initializer throwing a null
+        /// reference from somewhere with no obvious connection to ordering.
+        /// </remarks>
+        private static readonly Lazy<IReadOnlyDictionary<string, LookAheadSuite>> _defined =
+            new Lazy<IReadOnlyDictionary<string, LookAheadSuite>>(BuildDefined);
+
         /// <summary>
         /// The look-ahead time budget every suite runs with, in milliseconds.
         /// </summary>
@@ -166,28 +177,39 @@ namespace GlobalConversationTracker.Harness
         /// "after" that says the markers came back. Three copies of it would be three
         /// chances for one to drift.
         ///
-        /// ONE MARKER IS ENOUGH FOR THAT, and only one is drawn here. The two inspect options
-        /// reach the speakers by coming back to the stall, where buying is still on offer;
-        /// the purchase beside them goes straight on. A marking that recommended all three
-        /// would be telling the player that browsing is a way forward, which is the thing it
-        /// exists to stop saying. See de-0jsf.17.
+        /// READ FROM THE SHARED TABLE, not written here. This menu is the same fact the money
+        /// suite states, and the whole reason the scenarios live in
+        /// <c>testing/scenarios/suites.json</c> is that both executors read one copy of it.
+        /// Writing it out again because the SUITE around it has to be declared in C# is how
+        /// the two came apart: the marking changed, the table was corrected, the offline run
+        /// went green, and six in-game checks still failed against a stale copy.
+        ///
+        /// What cannot be shared is the staging - killing a process, restarting it, turning a
+        /// mod setting off - because the offline executor has none of those. That is a reason
+        /// to declare the SUITE here and not a reason to restate its expectations.
         /// </remarks>
-        private static readonly OptionExpectation[] MarkedSiilengMenu =
+        private static IReadOnlyList<OptionExpectation> MarkedSiilengMenu =>
+            ExpectationsFrom("money", "afford-both");
+
+        /// <summary>One scenario's option expectations, out of the shared table.</summary>
+        /// <remarks>
+        /// Loud on a miss rather than quietly empty: a scenario that has been renamed would
+        /// otherwise turn every expectation into no expectation, and a suite that checks
+        /// nothing passes.
+        /// </remarks>
+        private static IReadOnlyList<OptionExpectation> ExpectationsFrom(string suite, string save)
         {
-            new OptionExpectation(
-                BuySneakersEntry, Marker.Orange, "buying the sneakers leads on to the speakers"),
-            new OptionExpectation(
-                InspectSneakersEntry,
-                Marker.None,
-                "looking at them only reaches the speakers by returning to the stall, and the "
-                    + "option beside it does not"),
-            new OptionExpectation(
-                InspectSpeakersEntry,
-                Marker.None,
-                "and so does looking at the other: both send the player round the loop the "
-                    + "purchase goes straight through"),
-            new OptionExpectation(LeaveEntry, Marker.None, "leaving reaches nothing at all"),
-        };
+            LookAheadScenario? scenario = FromDefinition(suite)
+                .Scenarios.FirstOrDefault(one => one.SaveName == save);
+            if (scenario is null)
+            {
+                throw new InvalidDataException(
+                    $"suite '{suite}' in {ScenarioTable.FileName} has no scenario for save "
+                    + $"'{save}', which a harness-declared suite is built out of.");
+            }
+
+            return scenario.Options;
+        }
 
         /// <summary>The option that leaves, reaching nothing.</summary>
         public const int LeaveEntry = 85;
@@ -575,7 +597,7 @@ namespace GlobalConversationTracker.Harness
         /// <para>THE ONE SUITE STILL DECLARED HERE, and the only one that should be. What
         /// it stages is a MOD SETTING, and there is no such thing to stage without a mod:
         /// the offline engine has no switch to turn off, so from the same fixture it
-        /// answers exactly what the money suite's first scenario answers - three options
+        /// answers exactly what the money suite's first scenario answers - one option
         /// marked. A row saying every option is unmarked would therefore be a definition
         /// only one side could execute, which is worse than an honest declaration because
         /// it reads as shared. Everything the two executors can BOTH run is in
@@ -590,7 +612,7 @@ namespace GlobalConversationTracker.Harness
                 new LookAheadScenario(
                     "afford-both",
                     SiilengConversation,
-                    "the balance that marks three options, with the feature switched off",
+                    "the balance that marks one option, with the feature switched off",
                     AllUnmarked("look-ahead marking is disabled"),
                     money: 5100,
                     advances: SiilengAdvances,
@@ -654,7 +676,7 @@ namespace GlobalConversationTracker.Harness
         /// <para>THE FAILURE THE WHOLE OUT-OF-PROCESS ARRANGEMENT EXISTS TO SURVIVE, and a
         /// running game is the only place it can be provoked for real - de-bnjy.1.2.4. Two
         /// scenarios over the same save and the same conversation: the first with an engine,
-        /// which marks three options, and the second after it has been killed, which marks
+        /// which marks one option, and the second after it has been killed, which marks
         /// none.</para>
         ///
         /// <para>THE PAIR IS THE POINT. Either half alone proves nothing. Markers before a
@@ -666,7 +688,7 @@ namespace GlobalConversationTracker.Harness
         /// <para>DECLARED HERE RATHER THAN IN <c>testing/scenarios/suites.json</c>, for the
         /// reason <see cref="SwitchedOff"/> is: what it stages is the DEATH OF A PROCESS,
         /// and the offline executor has no process to kill. From the same fixture it would
-        /// answer what the money suite answers, three options marked, so a row claiming
+        /// answer what the money suite answers, one option marked, so a row claiming
         /// none are would be a definition only one side could execute.</para>
         ///
         /// <para>The log expectations carry the other half of the promise. The warning is
@@ -684,7 +706,7 @@ namespace GlobalConversationTracker.Harness
                 new LookAheadScenario(
                     "afford-both",
                     SiilengConversation,
-                    "with an engine, the balance that marks three options",
+                    "with an engine, the balance that marks one option",
                     MarkedSiilengMenu,
                     money: 5100,
                     advances: SiilengAdvances,
@@ -762,7 +784,7 @@ namespace GlobalConversationTracker.Harness
         ///
         /// <para>THE THREE SCENARIOS ARE ONE ARGUMENT, in order:</para>
         ///
-        /// <para>1. With an engine, the balance that marks three options - the same opening
+        /// <para>1. With an engine, the balance that marks one option - the same opening
         /// as the death suite, so that what follows is a CHANGE from something known rather
         /// than a claim on its own.</para>
         ///
@@ -793,7 +815,7 @@ namespace GlobalConversationTracker.Harness
                 new LookAheadScenario(
                     "afford-both",
                     SiilengConversation,
-                    "with an engine, the balance that marks three options",
+                    "with an engine, the balance that marks one option",
                     MarkedSiilengMenu,
                     money: 5100,
                     advances: SiilengAdvances,
@@ -1288,9 +1310,6 @@ namespace GlobalConversationTracker.Harness
 
             return suite;
         }
-
-        private static readonly Lazy<IReadOnlyDictionary<string, LookAheadSuite>> _defined =
-            new Lazy<IReadOnlyDictionary<string, LookAheadSuite>>(BuildDefined);
 
         /// <summary>
         /// The suites the definition file carries, minus the ones it says are switched off.
