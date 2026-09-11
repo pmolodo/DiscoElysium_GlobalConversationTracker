@@ -582,7 +582,30 @@ mod tests {
     use crate::test_graph::{Entry, GraphBuilder, node};
     use crate::world::test_world::TestWorld;
 
+    /// Which of the three markings to run.
+    ///
+    /// AN ENUM RATHER THAN A FUNCTION POINTER. The three differ only in which one is called,
+    /// but `novelty` is a closure and writing the pointer type for it is more machinery than
+    /// the thing it parameterises.
+    #[derive(Clone, Copy)]
+    enum Which {
+        Exact,
+        Onward,
+        Hybrid,
+    }
+
     fn mark(graph: &LookAheadGraph, options: &[i32], unread: &[i32]) -> MenuAnswer {
+        let answer = marking(graph, options, unread, Which::Exact);
+        assert!(answer.marks.iter().all(|mark| mark.complete));
+        answer
+    }
+
+    fn marking(
+        graph: &LookAheadGraph,
+        options: &[i32],
+        unread: &[i32],
+        which: Which,
+    ) -> MenuAnswer {
         let world = TestWorld::new();
         let layout = DataLayout::for_graph(graph, 16, None, false);
         let vars = DataVars::new(&layout, graph.symbols(), DiagramBudget::modest());
@@ -611,21 +634,99 @@ mod tests {
                 Novelty::SeenThisGame
             }
         };
-        let answer = mark_menu(
+        let budget = Budget {
+            wall: Duration::from_secs(10),
+            each: Duration::from_secs(10),
+        };
+        let shape = GroupShape::of(graph);
+        let run = match which {
+            Which::Exact => mark_menu,
+            Which::Onward => mark_onward,
+            Which::Hybrid => mark_menu_hybrid,
+        };
+        run(
             graph,
             &mut compiler,
             &world,
             16,
             &novelty,
             &contestants,
-            &Budget {
-                wall: Duration::from_secs(10),
-                each: Duration::from_secs(10),
-            },
-            &GroupShape::of(graph),
+            &budget,
+            &shape,
+        )
+    }
+
+    /// A menu whose every route to the unread line goes back through the menu.
+    ///
+    /// Option 2 links straight at the unread entry, but its guard is only opened by option 1,
+    /// which goes nowhere itself. So no option reaches it ALONE - cutting the siblings cuts
+    /// the thing that opens the way - and the menu as a whole does reach it, by taking 1 and
+    /// then 2. That is the shape the fallback exists for.
+    fn every_route_loops_back() -> LookAheadGraph {
+        GraphBuilder::new()
+            .add(Entry::new(0).links(&[1, 2, 3]))
+            .add(
+                Entry::new(1)
+                    .player()
+                    .script("SetVariableValue(\"open\", true)")
+                    .links(&[0]),
+            )
+            .add(Entry::new(2).player().links(&[4]))
+            .add(Entry::new(3).player())
+            .add(Entry::new(4).guard("Variable[\"open\"] == true"))
+            .build()
+    }
+
+    #[test]
+    fn the_cheap_question_finds_nothing_where_every_route_loops_back() {
+        let graph = every_route_loops_back();
+        let onward = marking(&graph, &[1, 2, 3], &[4], Which::Onward);
+
+        // THE FIXTURE HAS TO REACH THE FALLBACK, or the test below is quietly checking the
+        // cheap question twice.
+        assert_eq!(onward.rounds, 0, "no option may lead onward here");
+        assert!(onward.marks.iter().all(|mark| mark.round.is_none()));
+    }
+
+    #[test]
+    fn the_exact_marking_is_taken_whole_where_the_cheap_one_finds_nothing() {
+        let graph = every_route_loops_back();
+        let exact = marking(&graph, &[1, 2, 3], &[4], Which::Exact);
+        let hybrid = marking(&graph, &[1, 2, 3], &[4], Which::Hybrid);
+
+        assert_eq!(exact.rounds, hybrid.rounds);
+        let exactly: Vec<_> = exact.marks.iter().map(|mark| mark.distance).collect();
+        let hybridly: Vec<_> = hybrid.marks.iter().map(|mark| mark.distance).collect();
+        assert_eq!(
+            exactly, hybridly,
+            "the fallback must not edit what it falls back to"
         );
-        assert!(answer.marks.iter().all(|mark| mark.complete));
-        answer
+        assert!(
+            hybrid.rounds > 0,
+            "the exact marking finds what the cheap one could not"
+        );
+    }
+
+    #[test]
+    fn the_exact_marking_is_not_consulted_where_an_option_leads_onward() {
+        // 1 walks straight at unread content with nothing in the way, so the cheap question
+        // answers and the expensive one is never asked. Without this a hybrid that always
+        // fell back would pass the test above.
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1, 2]))
+            .add(Entry::new(1).player().links(&[3]))
+            .add(Entry::new(2).player().links(&[0]))
+            .add(Entry::new(3))
+            .build();
+        let onward = marking(&graph, &[1, 2], &[3], Which::Onward);
+        let hybrid = marking(&graph, &[1, 2], &[3], Which::Hybrid);
+
+        assert!(onward.rounds > 0, "option 1 leads onward");
+        assert_eq!(
+            hybrid.passes, onward.passes,
+            "the fallback must not have run"
+        );
+        assert_eq!(hybrid.marks[0].round, onward.marks[0].round);
     }
 
     #[test]
