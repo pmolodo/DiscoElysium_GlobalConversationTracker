@@ -174,3 +174,7 @@ path = "measurements/nodes_repeat.rs"
 [[example]]
 name = "start_relative_layout"
 path = "measurements/start_relative_layout.rs"
+
+[[example]]
+name = "bound_slack"
+path = "measurements/bound_slack.rs"
