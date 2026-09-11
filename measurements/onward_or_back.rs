@@ -148,11 +148,25 @@
 //! orders the survivors, and costs no diagram work whatsoever. Between them that is a
 //! complete marking without a layered pass anywhere in it.
 //!
-//! WHAT WOULD UNDERMINE IT is the profile. These runs mark the ten DEEPEST entries unread,
-//! which clusters the targets, so every option's route shares one long tail and the options
-//! differ only near the front - exactly where a structural walk is accurate. A real save's
-//! unread lines are scattered, and whether the slack stays constant then is NOT measured
-//! here.
+//! THE OBVIOUS OBJECTION IS THE PROFILE, and `DEGCT_SCATTER=1` answers it. The runs above
+//! mark the ten DEEPEST entries unread, which clusters the targets: every option's route
+//! shares one long tail and the options differ only near the front, which is exactly where a
+//! structural walk is accurate. A real save's unread lines are spread through the group.
+//!
+//! Spreading them makes the bound BETTER, not worse:
+//!
+//! ```text
+//!   conv   own distances          bounds          slack
+//!    640    1  2  1  1  2  3  1 -    1 2 1 1 2 3 1 2    0 everywhere
+//!    631    4  6  6  6  2  5  - 6    3 5 5 5 2 4 4 5    0 or 1
+//! ```
+//!
+//! On 640 the bound IS the distance. On 631 it is short by one on six options and exact on
+//! the seventh, and the ordering it gives is the true ordering with nothing out of place.
+//! Scattered targets sit nearer, so there is less room between an option and its content for
+//! a guard to add a detour the structural walk cannot see.
+//!
+//! So the ordering holds under both profiles, and the clustered one is the harder of the two.
 //!
 //! ## How to run it
 //!
@@ -248,9 +262,31 @@ fn ask(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budget:
         .with_constant_clock(DataLayout::group_passes_time(graph));
     let seed = seed_of(graph, &world, &vars).expect("room for a seed");
     let shape = GroupShape::of(graph);
-    let novelty = profile.novelty();
-
     let options: HashSet<_> = profile.starts.iter().copied().collect();
+
+    // SCATTERED RATHER THAN CLUSTERED, on request. The profile marks the structurally
+    // DEEPEST entries unread, which puts every target in one place: each option's route then
+    // shares a long tail and the options differ only near their own end, which is exactly
+    // where a structural walk is accurate. A real save's unread lines are spread through the
+    // group, and whether the bound's slack survives that is the question de-0jsf.18 turns on.
+    let unseen: HashSet<_> = if lookahead_engine::core::env::is_set("SCATTER") {
+        let mut all: Vec<_> = graph
+            .nodes()
+            .filter(|n| !n.is_group && !options.contains(&n.id))
+            .map(|n| n.id)
+            .collect();
+        all.sort_by_key(|id| (id.conversation_id, id.entry_id));
+        let wanted = profile.unseen.len().max(1);
+        let stride = (all.len() / wanted).max(1);
+        all.into_iter().step_by(stride).take(wanted).collect()
+    } else {
+        profile.unseen.iter().copied().collect()
+    };
+    let novelty = move |id: DialogueNodeId| match unseen.contains(&id) {
+        true => Novelty::UnseenAnyGame,
+        false => Novelty::SeenThisGame,
+    };
+
     let targets: Vec<_> = graph
         .nodes()
         .filter(|n| {
