@@ -42,7 +42,6 @@ use crate::symbolic::backward::{Backward, SettledPass};
 use crate::symbolic::dominators::Dominators;
 use crate::symbolic::guard_formula::GuardCompiler;
 use crate::symbolic::known::Known;
-use crate::symbolic::memo::Memo;
 use crate::symbolic::reachability::{Reachability, never_displays};
 use crate::world::world::ILookAheadWorld;
 
@@ -456,7 +455,6 @@ pub fn best_novelty<'a, F>(
     novelty: F,
     budget: &Budget,
     known: Option<&Known>,
-    memo: Option<&Memo>,
 ) -> NoveltyAnswer
 where
     F: Fn(DialogueNodeId) -> Novelty,
@@ -472,7 +470,6 @@ where
         novelty,
         budget,
         known,
-        memo,
         None,
     )
 }
@@ -519,7 +516,6 @@ pub fn classify_candidates<'a, 'c, F>(
     novelty: F,
     budget: &Budget,
     known: Option<&Known>,
-    memo: Option<&Memo>,
     census: &mut Classify<'c>,
 ) -> NoveltyAnswer
 where
@@ -536,7 +532,6 @@ where
         novelty,
         budget,
         known,
-        memo,
         Some(census),
     )
 }
@@ -608,7 +603,6 @@ fn search<'a, 'c, F>(
     novelty: F,
     budget: &Budget,
     known: Option<&Known>,
-    memo: Option<&Memo>,
     mut every: Option<&mut Classify<'c>>,
 ) -> NoveltyAnswer
 where
@@ -697,17 +691,7 @@ where
             }
         }
 
-        // A PASS AN EARLIER REQUEST ALREADY PAID FOR, if one is held about this target.
-        // See [`crate::symbolic::memo`]: what it keeps is the SETS, which do not know what
-        // has been seen, and the verdict is read off them against this request's seed
-        // below - the same line that reads a pass which has just run.
-        let remembered = memo.and_then(|memo| memo.recall(target));
-
-        // BEFORE THE CLOCK WHERE ONE IS HELD, for the reason the dominance check above is:
-        // a candidate that costs nothing must not be able to end the search by exhausting a
-        // ration it never spends. A miss still has to pay for a fixed point, so it is still
-        // gated.
-        if remembered.is_none() && began.elapsed() >= budget.time {
+        if began.elapsed() >= budget.time {
             answer.stopped_by = StoppedBy::Time;
             break;
         }
@@ -724,47 +708,16 @@ where
         // `backward::Budget.time` IS CHECKED INSIDE THE FIXED POINT rather than only
         // between passes, so narrowing it to what is left is what turns the wall from
         // advisory into binding. No new checking machinery is needed, only the arithmetic.
-        let ran = match remembered {
-            Some(_) => None,
-            None => {
-                let left = budget.time.saturating_sub(began.elapsed());
-                let mut each = budget.each.clone();
-                each.time = each.time.min(left);
-                let backward = Backward::reaching_knowing(
-                    graph,
-                    target,
-                    compiler,
-                    world,
-                    counter_cap,
-                    &each,
-                    known,
-                );
-                // OFFERED RATHER THAN STORED. The memo takes it only if it settled, did not
-                // meet and did not run out of room - see its module note, where each of
-                // those is a way the sets could be a subset of the answer.
-                if let Some(memo) = memo {
-                    memo.remember(target, &backward);
-                }
-                Some(backward)
-            }
+        let ran = {
+            let left = budget.time.saturating_sub(began.elapsed());
+            let mut each = budget.each.clone();
+            each.time = each.time.min(left);
+            Backward::reaching_knowing(graph, target, compiler, world, counter_cap, &each, known)
         };
 
-        // WHICHEVER OF THE TWO THERE IS, read as one thing. A kept pass holds the same sets
-        // a fresh one does; only who paid for them differs.
-        let pass: &dyn SettledPass = match (remembered.as_deref(), ran.as_ref()) {
-            (Some(kept), _) => kept,
-            (None, Some(backward)) => backward,
-            // One of the two arms above produced a pass, so this cannot happen. Refusing is
-            // the safe reading of it if it ever did: nothing established about this target.
-            (None, None) => continue,
-        };
-        // A REMEMBERED PASS SETTLED AND DID NOT MEET, which is what the memo checked before
-        // keeping it, so both of these read as the answer for a hit rather than as
-        // assumptions about one.
-        let met = ran.as_ref().and_then(|backward| backward.stats().met_at);
-        let settled = ran
-            .as_ref()
-            .is_none_or(|backward| backward.stats().reached_fixed_point);
+        let pass: &dyn SettledPass = &ran;
+        let met = ran.stats().met_at;
+        let settled = ran.stats().reached_fixed_point;
 
         // TWO WAYS TO PROVE IT, and the cheap one is asked first. A meet is a proof that
         // stopped the pass early - a state an earlier search can hold at some entry is one
@@ -798,9 +751,7 @@ where
             // remaining answer for the sake of one it could not give.
             if every.is_none() {
                 answer.stopped_by = StoppedBy::Incomplete;
-                answer.out_of_nodes = ran
-                    .as_ref()
-                    .is_some_and(|backward| backward.stats().out_of_memory);
+                answer.out_of_nodes = ran.stats().out_of_memory;
                 break;
             }
             None
@@ -925,7 +876,6 @@ mod tests {
             novelty,
             &Budget::default(),
             None,
-            None,
         )
     }
 
@@ -955,7 +905,6 @@ mod tests {
             CAP as u32,
             novelty,
             &Budget::default(),
-            None,
             None,
         )
     }
@@ -1241,7 +1190,6 @@ mod tests {
                     ..Default::default()
                 },
             },
-            None,
             None,
         );
 

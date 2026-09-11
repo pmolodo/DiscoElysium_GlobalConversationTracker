@@ -182,7 +182,6 @@ pub fn best_novelty<'a, F>(
     hunting: Novelty,
     budget: &Budget,
     shape: &GroupShape,
-    memo: Option<&crate::symbolic::memo::Memo>,
 ) -> Answer
 where
     F: Fn(DialogueNodeId) -> Novelty,
@@ -265,7 +264,6 @@ where
         // there to be one. The driver decides per candidate whether a kept pass answers it
         // and whether a fresh one is worth keeping; nothing here does, because the two
         // decisions are about a target and this call is about a start.
-        memo,
     );
 
     // SETTLED OR NOT, THIS IS THE ANSWER. A backward driver that ran out of candidates or
@@ -332,7 +330,6 @@ mod tests {
             hunting,
             budget,
             &GroupShape::of(graph),
-            None,
         )
     }
 
@@ -375,7 +372,6 @@ mod tests {
             hunting,
             &Budget::default(),
             &GroupShape::of(graph),
-            None,
         )
     }
 

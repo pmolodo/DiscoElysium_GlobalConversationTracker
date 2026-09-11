@@ -26,24 +26,14 @@
 //! `DataLayout::for_group` reads the world through `money()` alone - the money ceiling - so
 //! the layout, and the manager sized from it, survives everything else the world does.
 //!
-//! AND SETTLED BACKWARD PASSES, on a key of their own - [`crate::symbolic::memo`], de-znov.3.
-//! They are the one thing here kept across requests without being built once: a request adds
-//! to them and a world the guards read differently empties them, and neither of those touches
-//! the manager. The two invalidations are deliberately separate, because a changed variable
-//! is a reason to forget a verdict and not a reason to throw away a nine-millisecond manager.
-//!
-//! It roughly halves a served request again. `workspace_menus`, 2026-09-09, the same binary
-//! with the memo passed and withheld, twelve requests of eight starts over conversation 28:
-//!
-//! ```text
-//!   with a memo     first 72 ms, the other 11 averaged 18
-//!   without one     first 88 ms, the other 11 averaged 38
-//! ```
-//!
-//! READ THOSE TWO AGAINST EACH OTHER AND NOT AGAINST THE 53 TO 60 ABOVE, which was measured
-//! on a different day against a path that has changed since. A pair taken minutes apart on
-//! one machine says what one part is worth; a figure quoted across two months says what
-//! everything did.
+//! NOTHING ELSE IS KEPT ACROSS REQUESTS. Settled backward passes used to be, on a key of
+//! their own - de-znov.3 - and they halved a served request: twelve requests of eight starts
+//! over conversation 28 went from an average of 38 ms to 18. That memo was retired in
+//! de-0jsf.24 after the marking changed shape underneath it. It held one exhaustive pass per
+//! target, and the marking that replaced the per-option search stops its passes at the first
+//! MEET - which is the optimisation - so every pass worth caching was one the memo refused to
+//! keep. It had been unreachable for some time before anyone noticed, because a marking that
+//! silently redoes work still draws the right markers.
 //!
 //! REBUILT PER REQUEST, inside the thread, at one to five milliseconds: the
 //! [`GuardCompiler`] and the seed. They depend on the world in two different ways, and the
@@ -100,7 +90,6 @@ use crate::symbolic::data_layout::DataLayout;
 use crate::symbolic::guard_formula::GuardCompiler;
 use crate::symbolic::isolated;
 use crate::symbolic::known::GroupShape;
-use crate::symbolic::memo::{self, Memo};
 use crate::symbolic::reachability::seed_of;
 use crate::symbolic::vars::DataVars;
 use crate::world::world::ILookAheadWorld;
@@ -336,12 +325,6 @@ fn own(
     // ONCE, like everything else here: the questions a group can ask depend on the graph
     // and on nothing a request carries.
     let questions = crate::bridge::questions_of(&graph, group);
-    // THE ONE THING HERE THAT OUTLIVES A REQUEST WITHOUT BEING BUILT ONCE. Settled backward
-    // passes, kept in the manager above and thrown away when the world the guards read
-    // moves - see [`crate::symbolic::memo`], and de-znov.3. It starts empty and keyed on a
-    // world no request can carry, so the first request re-keys it and nothing has to
-    // special-case the first.
-    let mut memo = Memo::new(memo::NO_WORLD, memo_cap(budget));
     if ready.send(true).is_err() {
         return;
     }
@@ -371,11 +354,6 @@ fn own(
             let _ = job_answers.send(Err(reason));
             continue;
         }
-        // AFTER `resolve` AND BEFORE THE SNAPSHOT MOVES. Resolving puts the positional
-        // answers back onto their names, and two requests that spelled the same world two
-        // ways must key alike or the memo is emptied every time the plugin changes which
-        // form it sends.
-        let key = memo::key_of(&snapshot);
         let world = SnapshotWorld::declaring(snapshot, declared.clone());
 
         // PER REQUEST, because these are what the world is baked into. One to five
@@ -406,15 +384,6 @@ fn own(
             }
         };
 
-        // FORGETTING IS NOT RESPAWNING. A world the guards read differently empties the
-        // memo and leaves the manager, the graph and the compiled guards where they are;
-        // only `serves` decides whether the thread itself is still the right one. The two
-        // are different sizes of event and confusing them would throw a nine-millisecond
-        // manager away over a variable.
-        if !memo.keyed_on(key) {
-            memo.re_key(key);
-        }
-
         let answers = answer_starts(
             &graph,
             &world,
@@ -429,31 +398,6 @@ fn own(
         // and the next one is already waiting.
         let _ = job_answers.send(Ok(answers));
     }
-}
-
-/// How many diagram nodes the memo may hold, out of what the manager was given.
-///
-/// A QUARTER, and the reasoning is what the other three are for rather than a measurement of
-/// this one. The manager also holds the compiled guards, the seed and the pass being run
-/// right now, and every one of those is needed for the search a memo exists to make faster -
-/// so a memo allowed the whole store would starve what it serves.
-///
-/// IT IS COUNTED IN A CURRENCY THAT OVERSTATES, which is the safe direction: a kept pass is
-/// priced at `BackwardStats::diagram_nodes`, which counts sharing inside one pass and not
-/// between them, and the passes of one group share heavily. So the memo evicts sooner than
-/// it strictly must rather than later.
-///
-/// `measurements/cacheable_asks.rs` puts an average pass at about thirty thousand nodes, so
-/// at the player's 256 MB this is room for something like fifty of them before anything is
-/// evicted - against the twenty menus that measurement walked.
-///
-/// AND THE OTHER THREE QUARTERS ARE NOT SHORT, which de-dt75.2 measured rather than assumed.
-/// A forty-menu session through [`crate::service::Service::look_ahead`] leaves the manager
-/// holding 2,464 nodes on conversation 28, 93,833 on 14 and 1,198,484 on 761 - the heaviest
-/// group in the game and the only one above two per cent of the store. Nowhere near the cap,
-/// and flat: the store is filled by the first request and the next thirty-nine add 0.2%.
-fn memo_cap(budget: DiagramBudget) -> usize {
-    budget.nodes() / 4
 }
 
 /// The money ceiling a world produces for a graph, which is the whole of the key's

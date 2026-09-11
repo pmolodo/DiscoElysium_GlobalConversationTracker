@@ -164,7 +164,6 @@ fn main() {
                         Novelty::UnseenAnyGame,
                         &budget,
                         &shape,
-                        None,
                     );
                     let took = began.elapsed();
                     (

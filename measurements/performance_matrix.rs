@@ -1271,7 +1271,6 @@ fn search_one(
         // row of this matrix has always paid, and holding that constant is what lets a row
         // measured today be read against one measured before de-bnjy.10.
         &GroupShape::of(graph),
-        None,
     );
 
     let verdict = match answer.by {

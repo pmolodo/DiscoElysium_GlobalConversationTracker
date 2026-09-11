@@ -265,7 +265,6 @@ where
                 hunting,
                 &search,
                 &shape,
-                None,
             );
             if answer.best > Novelty::SeenThisGame {
                 found += 1;

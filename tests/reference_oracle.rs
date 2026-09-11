@@ -353,7 +353,6 @@ fn the_driver_and_the_shipped_call_find_what_the_reference_walk_finds() {
                 &novelty,
                 &SearchBudget::default(),
                 None,
-                None,
             );
 
             // And the call above it, which is what the bridge actually runs.
@@ -371,7 +370,6 @@ fn the_driver_and_the_shipped_call_find_what_the_reference_walk_finds() {
                     .unwrap_or(Novelty::SeenThisGame),
                 &answer::Budget::default(),
                 &GroupShape::of(&graph),
-                None,
             );
 
             (driver.best, answer, began.elapsed().as_millis())
