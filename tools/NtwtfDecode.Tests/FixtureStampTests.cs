@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 using System.Text.Json;
 using GlobalConversationTracker.Core;
+using GlobalConversationTracker.Persistence;
 using Xunit;
 
 namespace NtwtfDecode.Tests;
@@ -35,6 +36,7 @@ public class FixtureStampTests
         [ExpandedSave.DiffFormat] = ExpandedSave.FormatVersion,
         [FixtureFormats.ScenarioSuites] = FixtureFormats.FormatVersion,
         [FixtureFormats.BranchShapes] = FixtureFormats.FormatVersion,
+        [GlobalStateJson.FormatName] = GlobalStateJson.FormatVersion,
     };
 
     [Fact]

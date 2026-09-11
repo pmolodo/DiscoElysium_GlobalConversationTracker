@@ -15,8 +15,13 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use super::header::is_stamped;
+use super::header::FORMAT_KEY;
 use super::json_diff;
+
+/// Whether a document says it is a diff, as opposed to whatever it is a diff of.
+fn names_a_diff(document: &Value) -> bool {
+    document.get(FORMAT_KEY).and_then(Value::as_str) == Some(json_diff::FORMAT.format)
+}
 
 /// Why a document could not be resolved to a whole one.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -86,10 +91,11 @@ fn resolve(
         why: why.to_string(),
     })?;
 
-    // A DOCUMENT THAT NAMES NO FORMAT IS A WHOLE ONE. Only a diff carries a header today,
-    // and de-xz48.5 is where the documents that carry none gain one - at which point this
-    // asks whether the header names a DIFF rather than whether there is a header at all.
-    if !is_stamped(&document) {
+    // A DIFF IS WHAT NAMES ITSELF ONE. Every document carries a header now, so what tells a
+    // diff from the thing it is a diff of is the format it names rather than whether it
+    // names anything - which is what this asked until the state file gained a header of its
+    // own and every fixture suddenly looked like a diff of something.
+    if !names_a_diff(&document) {
         return Ok(document);
     }
 

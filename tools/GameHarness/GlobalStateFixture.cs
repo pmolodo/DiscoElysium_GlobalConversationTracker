@@ -5,6 +5,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using GlobalConversationTracker.Automation;
+using GlobalConversationTracker.Core;
 
 namespace GlobalConversationTracker.Harness
 {
@@ -28,6 +29,13 @@ namespace GlobalConversationTracker.Harness
     /// </remarks>
     public static class GlobalStateFixture
     {
+        /// <summary>What a fixture written as a change to another one says it is.</summary>
+        /// <remarks>
+        /// The engine's own json-diff, named here because the harness only ever asks
+        /// whether a file is one before handing it to the engine that reads it.
+        /// </remarks>
+        private const string DiffFormat = "json-diff";
+
         /// <summary>The verb on the engine host that resolves one.</summary>
         private const string ResolveVerb = "resolve";
 
@@ -58,9 +66,14 @@ namespace GlobalConversationTracker.Harness
             return IsDiff(path) ? Resolved(path) : File.ReadAllText(path);
         }
 
-        /// <summary>Whether a fixture is a diff, which is what names a format at all.</summary>
+        /// <summary>Whether a fixture is a diff of another one.</summary>
+        /// <remarks>
+        /// BY THE FORMAT IT NAMES, not by whether it names one. Every document carries a
+        /// header now, including a whole state, so what tells the two apart is what the
+        /// header says.
+        /// </remarks>
         /// <param name="path">The fixture.</param>
-        /// <returns>True where it carries a format name.</returns>
+        /// <returns>True where it says it is a diff.</returns>
         /// <exception cref="InvalidDataException">It is not JSON.</exception>
         private static bool IsDiff(string path)
         {
@@ -68,7 +81,9 @@ namespace GlobalConversationTracker.Harness
             {
                 using JsonDocument document = JsonDocument.Parse(File.ReadAllText(path));
                 return document.RootElement.ValueKind == JsonValueKind.Object
-                    && document.RootElement.TryGetProperty("_format", out _);
+                    && document.RootElement.TryGetProperty(
+                        FormatStamp.FormatPropertyName, out JsonElement named)
+                    && named.GetString() == DiffFormat;
             }
             catch (JsonException malformed)
             {

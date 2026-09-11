@@ -13,7 +13,7 @@ namespace GlobalConversationTracker.DialogueAsset.Tests
             string json = WorstCaseGlobalState.ToJson(
                 WorstCaseGlobalState.Build(new[] { Conversation(10, 0), Conversation(9, 0) }));
 
-            Assert.Equal("{\"version\":4,\"conversations\":{\"WasDisplayed\":{\"9\":\"0\",\"10\":\"0\"}}}", json);
+            Assert.Equal("{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{\"WasDisplayed\":{\"9\":\"0\",\"10\":\"0\"}}}", json);
         }
 
         [Fact]
@@ -54,7 +54,7 @@ namespace GlobalConversationTracker.DialogueAsset.Tests
                 WorstCaseGlobalState.Write(path, new[] { Conversation(1, 0) });
 
                 Assert.Equal(
-                    "{\"version\":4,\"conversations\":{\"WasDisplayed\":{\"1\":\"0\"}}}\n",
+                    "{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{\"WasDisplayed\":{\"1\":\"0\"}}}\n",
                     File.ReadAllText(path));
                 Assert.NotEqual(0xEF, File.ReadAllBytes(path)[0]);
             }

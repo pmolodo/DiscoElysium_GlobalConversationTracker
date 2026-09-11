@@ -49,8 +49,12 @@ namespace GlobalConversationTracker.DialogueAsset
         /// Version 4 run-encodes the entry ids, and it is where this file earns the change
         /// most: recording every entry of every conversation in the game, it went from
         /// 423 KB to 22.5 KB - a state made of whole conversations is nothing but runs.
+        /// Version 5 adds the header every document here carries.
         /// </remarks>
-        public const int FormatVersion = 4;
+        public const int FormatVersion = 5;
+
+        /// <summary>What the document calls itself, as the reader expects to find it.</summary>
+        public const string FormatName = "global-state";
 
         /// <summary>What the game calls an entry the player has been shown.</summary>
         /// <remarks>
@@ -112,7 +116,8 @@ namespace GlobalConversationTracker.DialogueAsset
         public static string ToJson(SortedDictionary<int, List<int>> displayed)
         {
             var json = new StringBuilder();
-            json.Append("{\"version\":").Append(FormatVersion.ToString(CultureInfo.InvariantCulture));
+            json.Append("{\"_format\":\"").Append(FormatName).Append("\",\"_formatVersion\":")
+                .Append(FormatVersion.ToString(CultureInfo.InvariantCulture));
             json.Append(",\"conversations\":{\"").Append(DisplayedStatus).Append("\":{");
             bool firstConversation = true;
             foreach (KeyValuePair<int, List<int>> conversation in displayed)

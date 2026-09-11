@@ -109,9 +109,11 @@ public static class Formats
                     + "converts is a JSON object.");
             }
 
-            // THE GLOBAL STATE FIRST, and on TWO properties rather than one. A bare
-            // `version` is a plausible thing for some other file to carry, so requiring
-            // `conversations` beside it is what stops this claiming a file it cannot read.
+            // THE GLOBAL STATE AS IT WAS BEFORE IT NAMED ITSELF, and on TWO properties
+            // rather than one: a bare version is a plausible thing for some other file to
+            // carry, so requiring the conversations beside it is what stops this claiming a
+            // file it cannot read. From version 5 the file says what it is like everything
+            // else does, and is recognised by the header branch below.
             if (root.TryGetProperty(GlobalStateVersion, out JsonElement version)
                 && root.TryGetProperty(GlobalStateConversations, out _))
             {
@@ -130,6 +132,12 @@ public static class Formats
                 && format.ValueKind == JsonValueKind.String)
             {
                 string name = format.GetString() ?? string.Empty;
+                if (name == GlobalStateJson.FormatName)
+                {
+                    return new Detected(
+                        GlobalState, StampOf(root), GlobalStateJson.FormatVersion);
+                }
+
                 if (!LuaSideVersions.TryGetValue(name, out int current))
                 {
                     throw new InvalidDataException(
@@ -139,16 +147,7 @@ public static class Formats
                         + ".");
                 }
 
-                // ABSENT MEANS VERSION 1, everywhere, because every format was stamped
-                // while its shape was unchanged - so the files written before the stamp
-                // are version 1 in fact and not by convention.
-                int stamped = root.TryGetProperty(FormatStamp.VersionPropertyName, out JsonElement v)
-                    && v.ValueKind == JsonValueKind.Number
-                    && v.TryGetInt32(out int read)
-                        ? read
-                        : Unstamped;
-
-                return new Detected(name, stamped, current);
+                return new Detected(name, StampOf(root), current);
             }
         }
 
@@ -186,4 +185,17 @@ public static class Formats
             + $"conversion from it. Every version of {what.Name} this repository has "
             + $"written is version {what.Current}.");
     }
+
+    /// <summary>The version a document records, or what a document without one is.</summary>
+    /// <remarks>
+    /// ABSENT MEANS VERSION 1, everywhere, because every format was stamped while its shape
+    /// was unchanged - so a file written before the stamp is version 1 in fact rather than
+    /// by convention. This tool is the only thing that may assume it; see Unstamped.
+    /// </remarks>
+    private static int StampOf(JsonElement root) =>
+        root.TryGetProperty(FormatStamp.VersionPropertyName, out JsonElement stamped)
+            && stamped.ValueKind == JsonValueKind.Number
+            && stamped.TryGetInt32(out int read)
+                ? read
+                : Unstamped;
 }

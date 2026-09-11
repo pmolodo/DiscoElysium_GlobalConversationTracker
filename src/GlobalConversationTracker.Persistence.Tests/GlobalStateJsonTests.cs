@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using GlobalConversationTracker.Core;
 using Xunit;
 
 namespace GlobalConversationTracker.Persistence.Tests
@@ -43,7 +44,7 @@ namespace GlobalConversationTracker.Persistence.Tests
             // Grouped by status, then conversation, then a plain array of entry IDs, so
             // a status string is written once per conversation instead of once per entry.
             Assert.Equal(
-                "{\"version\":4,\"conversations\":{\"WasOffered\":{\"3\":\"18\"},"
+                "{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{\"WasOffered\":{\"3\":\"18\"},"
                 + "\"WasDisplayed\":{\"3\":\"17\"}},\"orbs\":[]}",
                 GlobalStateJson.Serialize(state));
         }
@@ -52,7 +53,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         public void Serialize_EmptyState_WritesAnEmptyConversationMap()
         {
             Assert.Equal(
-                "{\"version\":4,\"conversations\":{},\"orbs\":[]}",
+                "{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{},\"orbs\":[]}",
                 GlobalStateJson.Serialize(new GlobalConversationState()));
         }
 
@@ -78,7 +79,7 @@ namespace GlobalConversationTracker.Persistence.Tests
 
             Assert.DoesNotContain(SimStatusNames.Untouched, json, StringComparison.Ordinal);
             Assert.Equal(
-                "{\"version\":4,\"conversations\":{\"WasOffered\":{\"1\":\"2\"}},\"orbs\":[]}", json);
+                "{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{\"WasOffered\":{\"1\":\"2\"}},\"orbs\":[]}", json);
         }
 
         [Fact]
@@ -110,7 +111,7 @@ namespace GlobalConversationTracker.Persistence.Tests
             string json = GlobalStateJson.Serialize(state);
 
             Assert.Equal(
-                "{\"version\":4,\"conversations\":{\"WasOffered\":{\"2\":\"9,100\",\"10\":\"1\"}},"
+                "{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{\"WasOffered\":{\"2\":\"9,100\",\"10\":\"1\"}},"
                 + "\"orbs\":[]}",
                 json);
         }
@@ -213,17 +214,13 @@ namespace GlobalConversationTracker.Persistence.Tests
         [InlineData("   ")]
         [InlineData("not json at all")]
         [InlineData("{")]
-        [InlineData("{\"version\":4,\"conversations\":{\"3\":{\"17\":\"WasDis")]
-        [InlineData("{\"version\":4,\"conversations\":{}} trailing garbage")]
+        [InlineData("{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{\"3\":{\"17\":\"WasDis")]
+        [InlineData("{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{}} trailing garbage")]
         [InlineData("[]")]
         [InlineData("\"a string\"")]
         [InlineData("null")]
-        [InlineData("{\"conversations\":{}}")]
-        [InlineData("{\"version\":\"1\",\"conversations\":{}}")]
-        [InlineData("{\"version\":1.5,\"conversations\":{}}")]
-        [InlineData("{\"version\":4}")]
-        [InlineData("{\"version\":4,\"conversations\":[]}")]
-        [InlineData("{\"version\":4,\"conversations\":null}")]
+        [InlineData("{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":[]}")]
+        [InlineData("{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":null}")]
         public void Deserialize_StructurallyBrokenFile_IsCorrupt(string json)
         {
             GlobalStateLoadResult result = Parse(json);
@@ -232,6 +229,29 @@ namespace GlobalConversationTracker.Persistence.Tests
             Assert.Null(result.State);
             Assert.False(string.IsNullOrEmpty(result.ErrorMessage));
             Assert.Throws<InvalidOperationException>(() => result.RequireState());
+        }
+
+        /// <remarks>
+        /// NOT CORRUPT, and the difference decides what a caller may do about it. A file
+        /// that does not name this format is one this build cannot read - an older one, or
+        /// something else entirely - and it is full of real history either way, so the
+        /// caller must stop and convert rather than overwrite it from a backup. Damage
+        /// INSIDE a file that does name itself is the corrupt case above.
+        /// </remarks>
+        [Theory]
+        [InlineData("{\"conversations\":{}}")]
+        [InlineData("{\"version\":4}")]
+        [InlineData("{\"version\":4,\"conversations\":{}}")]
+        [InlineData("{\"_format\":\"json-diff\",\"_formatVersion\":1,\"conversations\":{}}")]
+        public void Deserialize_FileThatDoesNotNameThisFormat_IsUnsupportedRatherThanCorrupt(
+            string json)
+        {
+            GlobalStateLoadResult result = Parse(json);
+
+            Assert.Equal(GlobalStateLoadOutcome.UnsupportedVersion, result.Outcome);
+            Assert.Null(result.State);
+            Assert.Contains(
+                FormatStamp.Converter, result.ErrorMessage!, StringComparison.Ordinal);
         }
 
         [Fact]
@@ -255,7 +275,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         }
 
         // -------------------------------------------------------------------
-        // Versions: newer is refused, older is read
+        // Versions: anything but the current one is refused
         // -------------------------------------------------------------------
 
         [Theory]
@@ -264,7 +284,8 @@ namespace GlobalConversationTracker.Persistence.Tests
         public void Deserialize_NewerFormatVersion_IsUnsupportedVersion(int version)
         {
             GlobalStateLoadResult result = Parse(
-                $"{{\"version\":{version},\"conversations\":{{\"1\":{{\"2\":\"WasOffered\"}}}}}}");
+                $"{{\"_format\":\"global-state\",\"_formatVersion\":{version},"
+                + "\"conversations\":{\"WasOffered\":{\"1\":\"2\"}}}");
 
             Assert.Equal(GlobalStateLoadOutcome.UnsupportedVersion, result.Outcome);
             Assert.Null(result.State);
@@ -287,9 +308,12 @@ namespace GlobalConversationTracker.Persistence.Tests
             GlobalStateLoadResult result = Parse(
                 $"{{\"version\":{version},\"conversations\":{{\"1\":{{\"2\":\"WasOffered\"}}}}}}");
 
+            // It does not even say what format it is: naming one is what version 5 added,
+            // so every older file is refused for that before its version is looked at.
             Assert.Equal(GlobalStateLoadOutcome.UnsupportedVersion, result.Outcome);
             Assert.Null(result.State);
-            Assert.Contains(version.ToString(), result.ErrorMessage!, StringComparison.Ordinal);
+            Assert.Contains(
+                FormatStamp.Converter, result.ErrorMessage!, StringComparison.Ordinal);
         }
 
         // -------------------------------------------------------------------
@@ -300,7 +324,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         public void Deserialize_GroupedFormat_ReadsEveryStatusGroup()
         {
             GlobalStateLoadResult result = Parse(
-                "{\"version\":4,\"conversations\":{\"WasDisplayed\":{\"3\":\"17,19\",\"8\":\"1\"},"
+                "{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{\"WasDisplayed\":{\"3\":\"17,19\",\"8\":\"1\"},"
                 + "\"WasOffered\":{\"3\":\"18\"}},\"orbs\":[]}");
 
             Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
@@ -348,7 +372,7 @@ namespace GlobalConversationTracker.Persistence.Tests
             // few blocks, and repeating the same fact would push every other complaint
             // out of the warning budget.
             GlobalStateLoadResult result = Parse(
-                "{\"version\":4,\"conversations\":{\"WasChewed\":{\"3\":\"17-19\"},"
+                "{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{\"WasChewed\":{\"3\":\"17-19\"},"
                 + "\"WasOffered\":{\"3\":\"20\"}}}");
 
             Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
@@ -363,7 +387,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         public void Deserialize_GroupedFormat_SkipsMalformedRowsAndKeepsTheRest()
         {
             GlobalStateLoadResult result = Parse(
-                "{\"version\":4,\"conversations\":{\"WasOffered\":{"
+                "{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{\"WasOffered\":{"
                 + "\"not-a-number\":\"1-2\","
                 + "\"4\":{\"5\":\"WasOffered\"},"
                 + "\"6\":\"7,eight,9\","
@@ -397,7 +421,7 @@ namespace GlobalConversationTracker.Persistence.Tests
             // The same guarantee the per-entry reader gives: every row goes through
             // TryMerge, so a file cannot pull a status back down.
             GlobalStateLoadResult result = Parse(
-                "{\"version\":4,\"conversations\":{\"WasDisplayed\":{\"3\":\"17\"},"
+                "{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{\"WasDisplayed\":{\"3\":\"17\"},"
                 + "\"WasOffered\":{\"3\":\"17\"}}}");
 
             Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
@@ -417,7 +441,7 @@ namespace GlobalConversationTracker.Persistence.Tests
             state.MergeOrb("COAST ORB / drawbridge");
 
             Assert.Equal(
-                "{\"version\":4,\"conversations\":{},\"orbs\":["
+                "{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{},\"orbs\":["
                 + "\"COAST ORB / drawbridge\",\"COAST ORB / floatice\",\"PLAZA ORB / seagull\"]}",
                 GlobalStateJson.Serialize(state));
         }
@@ -443,7 +467,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         public void Deserialize_OrbsNotAnArray_SkipsThemAndLoadsTheRest()
         {
             GlobalStateLoadResult result = Parse(
-                "{\"version\":4,\"conversations\":{\"WasOffered\":{\"1\":\"2\"}},\"orbs\":\"nope\"}");
+                "{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{\"WasOffered\":{\"1\":\"2\"}},\"orbs\":\"nope\"}");
 
             Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
             Assert.Equal(1, result.SkippedRowCount);
@@ -459,7 +483,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         public void Deserialize_BadOrbElement_SkipsThatElementOnly(string element)
         {
             GlobalStateLoadResult result = Parse(
-                "{\"version\":4,\"conversations\":{},\"orbs\":[\"COAST ORB / seagull\","
+                "{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{},\"orbs\":[\"COAST ORB / seagull\","
                 + element + "]}");
 
             Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
@@ -472,7 +496,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         public void Deserialize_DuplicateOrbs_AreCountedOnce()
         {
             GlobalStateLoadResult result = Parse(
-                "{\"version\":4,\"conversations\":{},\"orbs\":["
+                "{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{},\"orbs\":["
                 + "\"COAST ORB / seagull\",\"COAST ORB / seagull\"]}");
 
             Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
@@ -488,7 +512,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         public void Deserialize_NonIntegerConversationKey_SkipsTheWholeConversation()
         {
             GlobalStateLoadResult result = Parse(
-                "{\"version\":4,\"conversations\":{\"WasOffered\":{\"oops\":\"1,2\",\"5\":\"6\"}}}");
+                "{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{\"WasOffered\":{\"oops\":\"1,2\",\"5\":\"6\"}}}");
 
             Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
             Assert.Equal(2, result.SkippedRowCount);
@@ -502,7 +526,7 @@ namespace GlobalConversationTracker.Persistence.Tests
             // A hand-written file may spell Untouched out. It is a known status, so it is
             // not a skipped row, but it must not create an entry.
             GlobalStateLoadResult result = Parse(
-                "{\"version\":4,\"conversations\":{\"Untouched\":{\"1\":\"2\"}}}");
+                "{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{\"Untouched\":{\"1\":\"2\"}}}");
 
             Assert.Equal(GlobalStateLoadOutcome.Loaded, result.Outcome);
             Assert.Equal(0, result.SkippedRowCount);
@@ -512,7 +536,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         [Fact]
         public void Deserialize_WarningsAreCappedButTheCountIsNot()
         {
-            var json = new StringBuilder("{\"version\":4,\"conversations\":{\"WasOffered\":{");
+            var json = new StringBuilder("{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{\"WasOffered\":{");
             const int badRowCount = GlobalStateJson.MaxWarnings + 15;
             for (int i = 0; i < badRowCount; i++)
             {
@@ -541,7 +565,7 @@ namespace GlobalConversationTracker.Persistence.Tests
             // Loading goes through Merge rather than assignment, so both rows land and
             // neither pulls the other down.
             GlobalStateLoadResult result = Parse(
-                "{\"version\":4,\"conversations\":{\"WasDisplayed\":{\"1\":\"2\"},"
+                "{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{\"WasDisplayed\":{\"1\":\"2\"},"
                 + "\"WasOffered\":{\"1\":\"3\"}}}");
 
             GlobalConversationState state = result.RequireState();
@@ -571,7 +595,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         {
             IReadOnlyList<GlobalStateLoadResult> results = new[]
             {
-                Parse("{\"version\":4,\"conversations\":{}}"),
+                Parse("{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{}}"),
                 Parse("garbage"),
                 Parse("{\"version\":7,\"conversations\":{}}"),
             };

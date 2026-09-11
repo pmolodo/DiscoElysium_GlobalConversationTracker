@@ -22,13 +22,14 @@ public class FormatDetectionTests
     [Fact]
     public void AGlobalStateIsRecognisedByItsVersionAndConversations()
     {
+        // The shape before the file named itself, which is what the converter is handed.
         Detected what = Detect(
             "{\"version\":4,\"conversations\":{},\"orbs\":[]}");
 
         Assert.Equal(Formats.GlobalState, what.Name);
         Assert.Equal(4, what.Version);
         Assert.Equal(GlobalStateJson.FormatVersion, what.Current);
-        Assert.True(what.IsCurrent);
+        Assert.False(what.IsCurrent);
     }
 
     [Fact]

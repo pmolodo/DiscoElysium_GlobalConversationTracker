@@ -27,7 +27,7 @@ namespace FormatConvert.Tests
             string converted = Convert(legacy);
 
             Assert.Equal(
-                "{\"version\":4,\"conversations\":{\"WasOffered\":{\"2\":\"9\"},"
+                "{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{\"WasOffered\":{\"2\":\"9\"},"
                 + "\"WasDisplayed\":{\"10\":\"5\"}},\"orbs\":[]}",
                 converted);
         }
@@ -42,7 +42,7 @@ namespace FormatConvert.Tests
             string converted = Convert(legacy);
 
             Assert.Equal(
-                "{\"version\":4,\"conversations\":{\"WasOffered\":{\"3\":\"18\"},"
+                "{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{\"WasOffered\":{\"3\":\"18\"},"
                 + "\"WasDisplayed\":{\"3\":\"17\"}},\"orbs\":[\"Church\",\"Whirling-In-Rags\"]}",
                 converted);
         }
@@ -63,7 +63,7 @@ namespace FormatConvert.Tests
             // The consecutive run collapses and the gap survives, which is the whole of
             // what version 4 changed.
             Assert.Equal(
-                "{\"version\":4,\"conversations\":{\"WasOffered\":{\"2\":\"9\"},"
+                "{\"_format\":\"global-state\",\"_formatVersion\":5,\"conversations\":{\"WasOffered\":{\"2\":\"9\"},"
                 + "\"WasDisplayed\":{\"10\":\"5-7,9\"}},\"orbs\":[\"Church\"]}",
                 converted);
         }
@@ -87,19 +87,31 @@ namespace FormatConvert.Tests
         }
 
         [Fact]
-        public void ConvertLegacy_Version4Array_IsCorruptRatherThanTreatedAsVersion3()
+        public void ConvertLegacy_Version4Array_IsRefusedRatherThanTreatedAsVersion3()
         {
             // The shape is decided by the VERSION, not by looking at the value. A version 4
             // file carrying an array is a damaged version 4 file, and sniffing the value
-            // would quietly accept it as an old one.
+            // would quietly accept it as an old one and convert whatever it found.
             const string wrong =
                 "{\"version\":4,\"conversations\":{\"WasDisplayed\":{\"10\":[5,6]}},\"orbs\":[]}";
 
             InvalidDataException error = Assert.Throws<InvalidDataException>(() => Convert(wrong));
 
-            // Refused for being current rather than for its shape, since the converter has
-            // nothing to convert a current file into.
-            Assert.Contains("version 4", error.Message, StringComparison.Ordinal);
+            Assert.Contains("run-encoded string", error.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void ConvertLegacy_Version4_IsBroughtForwardToTheHeaderedShape()
+        {
+            // The one version 5 added is the header itself: the file says which format it is
+            // in as well as which version of it, and what follows is untouched.
+            const string four =
+                "{\"version\":4,\"conversations\":{\"WasDisplayed\":{\"10\":\"5-6\"}},\"orbs\":[]}";
+
+            Assert.Equal(
+                "{\"_format\":\"global-state\",\"_formatVersion\":5,"
+                + "\"conversations\":{\"WasDisplayed\":{\"10\":\"5-6\"}},\"orbs\":[]}",
+                Convert(four));
         }
 
         [Fact]
@@ -127,7 +139,7 @@ namespace FormatConvert.Tests
 
         [Theory]
         [InlineData(0)]
-        [InlineData(4)]
+        [InlineData(5)]
         [InlineData(99)]
         public void ConvertLegacy_UnsupportedVersion_Throws(int version)
         {

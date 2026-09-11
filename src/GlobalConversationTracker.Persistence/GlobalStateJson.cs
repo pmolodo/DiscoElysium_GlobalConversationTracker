@@ -15,9 +15,9 @@ namespace GlobalConversationTracker.Persistence
     /// bytes-to-state conversion with no file IO.
     /// </summary>
     /// <remarks>
-    /// <para>Shape (format version 4):</para>
+    /// <para>Shape (format version 5):</para>
     /// <code>
-    /// {"version":4,"conversations":{"WasDisplayed":{"3":"17,19"},"WasOffered":{"3":"18"}},"orbs":[]}
+    /// {"_format":"global-state","_formatVersion":5,"conversations":{"WasDisplayed":{"3":"17,19"},"WasOffered":{"3":"18"}},"orbs":[]}
     /// </code>
     /// <para>Grouped by status, then by conversation, then the entry IDs as a RUN-ENCODED
     /// STRING - <c>"3,5,7-25"</c> - written by <see cref="SparseOrder"/>, which is the one
@@ -60,14 +60,22 @@ namespace GlobalConversationTracker.Persistence
         /// The format version this build writes, and the oldest it will load.
         /// </summary>
         /// <remarks>
-        /// Version 2 added <see cref="OrbsPropertyName"/>. A version 1 file is a version
-        /// 2 file with no orbs. Version 3 regrouped
-        /// <see cref="ConversationsPropertyName"/> by status, which is a different shape
-        /// rather than another optional property, so it has a reader of its own. Version 4
-        /// keeps that grouping and run-encodes each conversation's entry IDs, so the value
-        /// is a string where 3 wrote an array.
+        /// Five versions, of which this reads one. The others are described where they are
+        /// read - tools/FormatConvert - and what the latest changed is the HEADER: the file
+        /// says which format it is in as well as which version of it, as every other
+        /// document here does.
         /// </remarks>
-        public const int FormatVersion = 4;
+        public const int FormatVersion = 5;
+
+        /// <summary>What this document calls itself, in the header every file here carries.</summary>
+        /// <remarks>
+        /// VERSION 5 IS THE HEADER, and nothing else. The shape of what follows is what
+        /// version 4 wrote; what changed is that the file now says WHICH FORMAT it is in
+        /// rather than only which version, like every other document this repository
+        /// writes. A player's file goes through tools/FormatConvert once, and the mod says
+        /// so rather than guessing.
+        /// </remarks>
+        public const string FormatName = "global-state";
 
         /// <summary>
         /// The oldest version <see cref="Deserialize(byte[], string)"/> accepts.
@@ -82,9 +90,6 @@ namespace GlobalConversationTracker.Persistence
         /// thing that reads one and the remedy every refusal names.
         /// </remarks>
         public const int MinimumReadableFormatVersion = FormatVersion;
-
-        /// <summary>Name of the root version property.</summary>
-        public const string VersionPropertyName = "version";
 
         /// <summary>Name of the root conversation-map property.</summary>
         public const string ConversationsPropertyName = "conversations";
@@ -114,7 +119,8 @@ namespace GlobalConversationTracker.Persistence
             using (var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions { Indented = false }))
             {
                 writer.WriteStartObject();
-                writer.WriteNumber(VersionPropertyName, FormatVersion);
+                writer.WriteString(FormatStamp.FormatPropertyName, FormatName);
+                writer.WriteNumber(FormatStamp.VersionPropertyName, FormatVersion);
                 writer.WritePropertyName(ConversationsPropertyName);
                 writer.WriteStartObject();
 
@@ -277,17 +283,32 @@ namespace GlobalConversationTracker.Persistence
                     sourcePath, $"Root element is {root.ValueKind}, expected an object.");
             }
 
-            if (!root.TryGetProperty(VersionPropertyName, out JsonElement versionElement))
+            if (!root.TryGetProperty(FormatStamp.FormatPropertyName, out JsonElement named)
+                || named.ValueKind != JsonValueKind.String
+                || named.GetString() != FormatName)
             {
-                return GlobalStateLoadResult.Corrupt(
-                    sourcePath, $"Missing required '{VersionPropertyName}' property.");
+                // A DOCUMENT OF THE WRONG KIND rather than a damaged one of the right kind,
+                // and refused as such: the shapes in this repository overlap, so one read as
+                // another parses and yields whatever happened to line up.
+                return GlobalStateLoadResult.UnsupportedVersion(
+                    sourcePath,
+                    $"This is not a {FormatName} document. Convert it first:\n  "
+                    + FormatStamp.Converter);
+            }
+
+            if (!root.TryGetProperty(FormatStamp.VersionPropertyName, out JsonElement versionElement))
+            {
+                return GlobalStateLoadResult.UnsupportedVersion(
+                    sourcePath,
+                    $"It carries no {FormatStamp.VersionPropertyName}. Convert it first:\n  "
+                    + FormatStamp.Converter);
             }
 
             if (versionElement.ValueKind != JsonValueKind.Number
                 || !versionElement.TryGetInt32(out int version))
             {
                 return GlobalStateLoadResult.Corrupt(
-                    sourcePath, $"'{VersionPropertyName}' is not an integer.");
+                    sourcePath, $"'{FormatStamp.VersionPropertyName}' is not an integer.");
             }
 
             formatVersion = version;
