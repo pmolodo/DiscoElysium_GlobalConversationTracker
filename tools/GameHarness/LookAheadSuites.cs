@@ -165,15 +165,27 @@ namespace GlobalConversationTracker.Harness
         /// a CHANGE rather than a claim on its own, and in the recovery suite it is also the
         /// "after" that says the markers came back. Three copies of it would be three
         /// chances for one to drift.
+        ///
+        /// ONE MARKER IS ENOUGH FOR THAT, and only one is drawn here. The two inspect options
+        /// reach the speakers by coming back to the stall, where buying is still on offer;
+        /// the purchase beside them goes straight on. A marking that recommended all three
+        /// would be telling the player that browsing is a way forward, which is the thing it
+        /// exists to stop saying. See de-0jsf.17.
         /// </remarks>
         private static readonly OptionExpectation[] MarkedSiilengMenu =
         {
             new OptionExpectation(
                 BuySneakersEntry, Marker.Orange, "buying the sneakers leads on to the speakers"),
             new OptionExpectation(
-                InspectSneakersEntry, Marker.Orange, "looking returns to the hub, which still can"),
+                InspectSneakersEntry,
+                Marker.None,
+                "looking at them only reaches the speakers by returning to the stall, and the "
+                    + "option beside it does not"),
             new OptionExpectation(
-                InspectSpeakersEntry, Marker.Orange, "and so does looking at the other"),
+                InspectSpeakersEntry,
+                Marker.None,
+                "and so does looking at the other: both send the player round the loop the "
+                    + "purchase goes straight through"),
             new OptionExpectation(LeaveEntry, Marker.None, "leaving reaches nothing at all"),
         };
 
