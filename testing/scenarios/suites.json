@@ -304,9 +304,9 @@
       ]
     },
     {
-      "suite": "red-check",
+      "suite": "red-check-menu",
       "what": "a red check is the first thing a menu offers, and the mod draws on it",
-      "why": "THE MENU'S SHAPE, which the branch-shape rows deliberately do not claim: they open this same conversation but take markers as 'noneAnywhere', because a row of that table is about the Pass / Fail LINE and the option ids are not its subject. This names them. Conversation 656 offers exactly two things - 3, 'Move your hand, fast!', carrying DifficultyRed, and 7, '[Discard chance.]' - and neither carries a marker of its own, because a rolled check draws none (de-8hh2.2) and declining reaches nothing unread. It is the one place in the game where a RED check is the first thing offered, which is what de-8hh2.9 went looking for and why the suite exists at all. It was declared in code until it had a claim both executors could check; it has one now, so it lives here like everything else.",
+      "why": "THE MENU'S SHAPE, which is why the name says menu: the red-check-* rows of branch-shapes.json open this same conversation but take markers as 'noneAnywhere', because a row of that table is about the Pass / Fail LINE and the option ids are not its subject. This names them. Conversation 656 offers exactly two things - 3, 'Move your hand, fast!', carrying DifficultyRed, and 7, '[Discard chance.]' - and neither carries a marker of its own, because a rolled check draws none (de-8hh2.2) and declining reaches nothing unread. It is the one place in the game where a RED check is the first thing offered, which is what de-8hh2.9 went looking for and why the suite exists at all. It was declared in code until it had a claim both executors could check; it has one now, so it lives here like everything else.",
       "state": "global-state-empty.json",
       "scenarios": [
         {

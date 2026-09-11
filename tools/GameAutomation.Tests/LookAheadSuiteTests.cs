@@ -121,13 +121,13 @@ namespace GlobalConversationTracker.Automation.Tests
         {
             LookAheadSuite[] asked =
             {
-                LookAheadSuites.EngineDeath, LookAheadSuites.Pristine, LookAheadSuites.RedCheck,
+                LookAheadSuites.EngineDeath, LookAheadSuites.Pristine, LookAheadSuites.RedCheckMenu,
             };
 
             Assert.Equal(
                 new[]
                 {
-                    LookAheadSuites.Pristine, LookAheadSuites.RedCheck, LookAheadSuites.EngineDeath,
+                    LookAheadSuites.Pristine, LookAheadSuites.RedCheckMenu, LookAheadSuites.EngineDeath,
                 },
                 LookAheadSuites.InRunOrder(asked));
         }
@@ -138,7 +138,7 @@ namespace GlobalConversationTracker.Automation.Tests
             Assert.Equal(LookAheadSuites.Default, LookAheadSuites.InRunOrder(LookAheadSuites.Default));
             Assert.Equal(LookAheadSuites.All, LookAheadSuites.InRunOrder(LookAheadSuites.All));
 
-            LookAheadSuite[] asked = { LookAheadSuites.RedCheck, LookAheadSuites.Pristine };
+            LookAheadSuite[] asked = { LookAheadSuites.RedCheckMenu, LookAheadSuites.Pristine };
 
             Assert.Equal(asked, LookAheadSuites.InRunOrder(asked));
         }

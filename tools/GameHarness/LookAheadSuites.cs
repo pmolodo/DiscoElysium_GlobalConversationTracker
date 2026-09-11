@@ -436,7 +436,7 @@ namespace GlobalConversationTracker.Harness
             new[]
             {
                 Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff, AllSeen,
-                RedCheck, KimCase,
+                RedCheckMenu, KimCase,
             }.Concat(BranchShapes).Append(EngineRecovery).Append(EngineDeath).ToArray();
 
         /// <summary>TEMPORARY, for observation - remove with its row in the table.</summary>
@@ -489,7 +489,7 @@ namespace GlobalConversationTracker.Harness
         /// <remarks>
         /// <para>THE DECLARED LISTS ARE ALREADY IN THIS ORDER, so for a default run this
         /// changes nothing. It is for the order a person types - <c>--suite
-        /// engine-death,red-check</c> is a reasonable thing to ask for and a false failure
+        /// engine-death,red-check-menu</c> is a reasonable thing to ask for and a false failure
         /// without this, since the second suite would be drawing its first menus while the
         /// engine the first one killed is still being replaced.</para>
         ///
@@ -670,7 +670,7 @@ namespace GlobalConversationTracker.Harness
         /// having the shape the index describes is asserted somewhere rather than assumed
         /// by everything.</para>
         /// </remarks>
-        public static LookAheadSuite RedCheck => FromDefinition("red-check");
+        public static LookAheadSuite RedCheckMenu => FromDefinition("red-check-menu");
 
         /// <summary>
         /// The engine dies and the game carries on, with the feature off and nothing else.
