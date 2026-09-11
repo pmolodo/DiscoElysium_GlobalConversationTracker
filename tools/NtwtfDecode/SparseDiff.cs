@@ -55,12 +55,11 @@ public static class SparseDiff
             throw new InvalidDataException($"{context} is not a {DiffFormat} JSON file");
         }
 
-        // Absent means version 1, which is what every diff written before
-        // the stamp existed is - the shape did not change when it arrived.
-        FormatStamp.EnsureReadable(
+        FormatStamp.EnsureStamped(
             DiffFormat,
-            patch.Find(FormatStamp.VersionPropertyName) as int? ?? FormatStamp.Unstamped,
-            FormatVersion);
+            patch.Find(FormatStamp.VersionPropertyName) as int?,
+            FormatVersion,
+            context);
         // Absent means empty for both, so a patch states only what it does.
         SparseMap removals = OptionalMap(patch, RemoveName, context);
         SparseMap changes = OptionalMap(patch, ChangesName, context);

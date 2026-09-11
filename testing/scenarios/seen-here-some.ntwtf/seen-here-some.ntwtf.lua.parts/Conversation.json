@@ -1,5 +1,6 @@
 {
   "_format": "sparse-diff",
+  "_formatVersion": 1,
   "_changes": {
     "451": {
       "Dialog": {

@@ -47,14 +47,28 @@ namespace GlobalConversationTracker.Core.Tests
             Assert.Contains("not damaged", refused.Message);
         }
 
+        /// <remarks>
+        /// It was read as version 1 for as long as committed files went without one, on the
+        /// sound grounds that every format was stamped without changing its shape. A reader
+        /// that cannot tell version 1 from silence reads the first version 2 file it meets
+        /// as the old shape, so now that every committed fixture carries a stamp, silence
+        /// is refused - and pointed at the one tool whose job is an old file.
+        /// </remarks>
         [Fact]
-        public void AnUnstampedFileIsReadableWhereTheCurrentVersionIsStillOne()
+        public void AFileCarryingNoVersionAtAllIsRefused()
         {
-            // Every format was stamped without changing its shape, so a file written
-            // before the stamp existed is version 1 in fact rather than by convention -
-            // and every Lua-side format is still at version 1, so every committed fixture
-            // in this repository reads.
-            FormatStamp.EnsureReadable("sparse", FormatStamp.Unstamped, 1);
+            InvalidDataException refused = Assert.Throws<InvalidDataException>(
+                () => FormatStamp.EnsureStamped("sparse", null, 1, "a table"));
+
+            Assert.Contains("a table", refused.Message);
+            Assert.Contains(FormatStamp.VersionPropertyName, refused.Message);
+            Assert.Contains(FormatStamp.Converter, refused.Message);
+        }
+
+        [Fact]
+        public void AFileCarryingTheCurrentVersionReads()
+        {
+            FormatStamp.EnsureStamped("sparse", 1, 1, "a table");
         }
 
         [Fact]

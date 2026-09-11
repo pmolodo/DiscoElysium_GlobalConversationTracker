@@ -360,10 +360,11 @@ public static class ExpandedSave
 
         // BEFORE THE CHAIN IS WALKED. A manifest from a newer build may name members this
         // one would resolve wrongly, and what follows writes a save.
-        FormatStamp.EnsureReadable(
+        FormatStamp.EnsureStamped(
             DiffFormat,
-            manifest[FormatStamp.VersionPropertyName]?.GetValue<int>() ?? FormatStamp.Unstamped,
-            FormatVersion);
+            manifest[FormatStamp.VersionPropertyName]?.GetValue<int>(),
+            FormatVersion,
+            manifestPath);
 
         chain ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         Descend(chain, source, manifestPath);

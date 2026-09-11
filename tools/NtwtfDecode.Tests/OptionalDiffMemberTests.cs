@@ -9,11 +9,10 @@ namespace NtwtfDecode.Tests;
 /// A diff carries only the halves it uses.
 /// </summary>
 /// <remarks>
-/// Both formats used to require <c>_remove</c> and <c>_changes</c> whether or not they
-/// held anything, so a diff that changed a single value still carried an empty removal
-/// list. These files are read by people - a scenario save's diff is how a reader learns
-/// what that scenario changes - and an empty half is one more thing to look past before
-/// finding the one line that matters.
+/// Neither <c>_remove</c> nor <c>_changes</c> is written when it would be empty. These
+/// files are read by people - a scenario save's diff is how a reader learns what that
+/// scenario changes - and an empty half is one more thing to look past before finding the
+/// one line that matters.
 /// </remarks>
 public class OptionalDiffMemberTests
 {
@@ -45,7 +44,11 @@ public class OptionalDiffMemberTests
     public void AJsonDiffAppliesWithNeitherMemberPresent()
     {
         JsonNode baseline = JsonNode.Parse("""{"money":0}""")!;
-        var patch = new JsonObject { [FormatStamp.FormatPropertyName] = JsonDiff.Format };
+        var patch = new JsonObject
+        {
+            [FormatStamp.FormatPropertyName] = JsonDiff.Format,
+            [FormatStamp.VersionPropertyName] = JsonDiff.FormatVersion,
+        };
 
         JsonNode? rebuilt = JsonDiff.Apply(baseline, patch, "empty patch");
 
@@ -55,11 +58,11 @@ public class OptionalDiffMemberTests
     [Fact]
     public void AJsonDiffStillAppliesWithBothMembersPresent()
     {
-        // Files written before this change carry both, and must keep working.
         JsonNode baseline = JsonNode.Parse("""{"money":0,"drop":1}""")!;
         var patch = new JsonObject
         {
             [FormatStamp.FormatPropertyName] = JsonDiff.Format,
+            [FormatStamp.VersionPropertyName] = JsonDiff.FormatVersion,
             ["_remove"] = new JsonArray("/drop"),
             ["_changes"] = new JsonObject { ["money"] = 5100 },
         };
@@ -77,6 +80,7 @@ public class OptionalDiffMemberTests
         var patch = new JsonObject
         {
             [FormatStamp.FormatPropertyName] = JsonDiff.Format,
+            [FormatStamp.VersionPropertyName] = JsonDiff.FormatVersion,
             ["_remove"] = "not an array",
         };
 
@@ -109,6 +113,7 @@ public class OptionalDiffMemberTests
         baseline.Add("kept", "same");
         var patch = new SparseMap();
         patch.Add(FormatStamp.FormatPropertyName, SparseDiff.DiffFormat);
+        patch.Add(FormatStamp.VersionPropertyName, SparseDiff.FormatVersion);
 
         SparseMap rebuilt = SparseDiff.Apply(baseline, patch, "empty patch");
 

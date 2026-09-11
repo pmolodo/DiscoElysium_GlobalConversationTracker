@@ -173,10 +173,15 @@ public static class LuaSplitFiles
             // BEFORE ANYTHING IS PARSED, and for either form. A file from a newer build
             // may hold a shape this one would half-read, and half-reading a save is how a
             // save gets corrupted by the write that follows.
-            if (form is not null)
+            if (form is null)
             {
-                FormatStamp.EnsureReadable(form, LuaJson.VersionOf(stream), FormatVersion);
+                throw new InvalidDataException(
+                    $"{TablePath(directory, name)} does not say what format it is written "
+                    + "in. Convert it first:\n  " + FormatStamp.Converter);
             }
+
+            FormatStamp.EnsureStamped(
+                form, LuaJson.VersionOf(stream), FormatVersion, TablePath(directory, name));
 
             if (form == SparseFormat)
             {

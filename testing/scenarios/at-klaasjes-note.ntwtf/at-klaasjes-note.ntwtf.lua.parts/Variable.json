@@ -1,5 +1,6 @@
 {
   "_format": "sparse-diff",
+  "_formatVersion": 1,
   "_changes": {
     "TASK.report_to_the_tribunal_done": true,
     "TASK.locate_ruby_on_the_coast_done": true,

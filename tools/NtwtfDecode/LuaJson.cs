@@ -36,13 +36,22 @@ public static class LuaJson
     /// <paramref name="format"/> is null: a file that does not say what it is has
     /// nothing for a version to be a version of.
     /// </param>
+    /// <summary>What a format is at before it has ever been revised.</summary>
+    /// <remarks>
+    /// A WRITER'''S DEFAULT AND NOT A READER'''S, which is the whole difference. Nothing is
+    /// assumed about a file that arrives without a stamp - that is refused, see
+    /// <see cref="FormatStamp.EnsureStamped"/>. This is what a caller writing a format
+    /// that has never changed shape stamps it with.
+    /// </remarks>
+    public const int FirstVersion = 1;
+
     public static void Write(
         Stream stream,
         object? value,
         int? indent,
         string tablePath = DefaultTablePath,
         string? format = null,
-        int formatVersion = FormatStamp.Unstamped
+        int formatVersion = FirstVersion
     )
     {
         var options = new JsonWriterOptions
@@ -137,28 +146,31 @@ public static class LuaJson
     }
 
     /// <summary>
-    /// The version a JSON object records for its format, or
-    /// <see cref="FormatStamp.Unstamped"/> when it records none.
+    /// The version a JSON object records for its format, or null when it records none.
     /// </summary>
     /// <remarks>
-    /// Reads only the two leading properties, so it costs nothing on a large file - and
-    /// takes the same view of an unstamped file every other reader here does: it is
-    /// version 1, because every format was stamped without changing its shape.
+    /// Reads only the two leading properties, so it costs nothing on a large file. A file
+    /// carrying no stamp answers null, and what to do about that is the caller's - see
+    /// <see cref="FormatStamp.EnsureStamped"/>.
     /// </remarks>
-    public static int VersionOf(Stream stream)
+    public static int? VersionOf(Stream stream)
     {
         var reader = new Utf8JsonReader(ReadLeadingBytes(stream));
         if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
         {
-            return FormatStamp.Unstamped;
+            return null;
         }
 
-        // Past the format name and its value, which is what a version sits after.
-        for (int skip = 0; skip < 2; skip++)
+        // Past the format name and its value, and ON to the property after them - which is
+        // THREE reads, not two. It was two until 2026-09-11, so this landed on the format's
+        // own value, decided that was not a version, and answered "none" for every file
+        // ever written. Nothing noticed because "none" was read as version 1 and every file
+        // was version 1: the reader was wrong and the fallback was right by coincidence.
+        for (int skip = 0; skip < 3; skip++)
         {
             if (!reader.Read())
             {
-                return FormatStamp.Unstamped;
+                return null;
             }
         }
 
@@ -166,12 +178,12 @@ public static class LuaJson
             || reader.GetString() != FormatStamp.VersionPropertyName
             || !reader.Read())
         {
-            return FormatStamp.Unstamped;
+            return null;
         }
 
         return reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out int version)
             ? version
-            : FormatStamp.Unstamped;
+            : null;
     }
 
     private static byte[] ReadLeadingBytes(Stream stream)
@@ -239,7 +251,7 @@ public static class LuaJson
         LuaTable table,
         string path,
         string? format = null,
-        int formatVersion = FormatStamp.Unstamped
+        int formatVersion = FirstVersion
     )
     {
         if (table.NumListEntries < 0 || table.NumListEntries > table.Count)

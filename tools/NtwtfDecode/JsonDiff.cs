@@ -51,7 +51,7 @@ public static class JsonDiff
         FormatStamp.EnsureHeader(
             Format,
             patch[FormatStamp.FormatPropertyName]?.GetValue<string>(),
-            patch[FormatStamp.VersionPropertyName]?.GetValue<int>() ?? FormatStamp.Unstamped,
+            patch[FormatStamp.VersionPropertyName]?.GetValue<int>(),
             FormatVersion,
             context);
 

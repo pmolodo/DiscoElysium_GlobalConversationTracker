@@ -6,5 +6,6 @@
       }
     }
   },
-  "_format": "sparse-diff"
+  "_format": "sparse-diff",
+  "_formatVersion": 1
 }

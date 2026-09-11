@@ -391,4 +391,43 @@ public class LuaJsonTests
 
         Assert.Equal(original, lua.ToArray());
     }
+
+    /// <summary>
+    /// The version a file records is the version that is read back, whatever it is.
+    /// </summary>
+    /// <remarks>
+    /// WHAT THIS WOULD HAVE CAUGHT: the reader stopped one token short and answered "no
+    /// version" for every file ever written, which nobody saw because an absent version was
+    /// read as 1 and every file was version 1. It surfaced the moment an absent version
+    /// started being refused - a reader whose two mistakes cancelled out until one of them
+    /// was fixed.
+    /// </remarks>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(7)]
+    public void TheVersionInAFileIsTheVersionReadBack(int version)
+    {
+        var table = new LuaTable();
+        table.Add("Name", "Fysique");
+
+        using var json = new MemoryStream();
+        LuaJson.Write(json, table, Indent, "Actor", "sparse", version);
+        json.Position = 0;
+
+        Assert.Equal("sparse", LuaJson.FormatOf(json));
+        Assert.Equal(version, LuaJson.VersionOf(json));
+    }
+
+    [Fact]
+    public void AFileThatRecordsNoVersionAnswersNone()
+    {
+        var table = new LuaTable();
+        table.Add("Name", "Fysique");
+
+        using var json = new MemoryStream();
+        LuaJson.Write(json, table, Indent, "Actor");
+        json.Position = 0;
+
+        Assert.Null(LuaJson.VersionOf(json));
+    }
 }

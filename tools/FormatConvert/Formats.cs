@@ -34,6 +34,16 @@ public sealed record Detected(string Name, int Version, int Current)
 /// <summary>What this build knows how to recognise, and how to convert it.</summary>
 public static class Formats
 {
+
+    /// <summary>What a file that records no version is taken to be.</summary>
+    /// <remarks>
+    /// THE ONE PLACE THIS MAY BE ASSUMED, and the reason is what this tool is for: every
+    /// format was stamped without changing its shape, so a file written before the stamp
+    /// existed IS version 1 - and bringing such a file forward is precisely the job here.
+    /// Every reader outside this tool refuses an unstamped file instead; see
+    /// FormatStamp.EnsureStamped.
+    /// </remarks>
+    private const int Unstamped = 1;
     /// <summary>What the global state file is called, for messages.</summary>
     public const string GlobalState = "global-conversation-state";
 
@@ -136,7 +146,7 @@ public static class Formats
                     && v.ValueKind == JsonValueKind.Number
                     && v.TryGetInt32(out int read)
                         ? read
-                        : FormatStamp.Unstamped;
+                        : Unstamped;
 
                 return new Detected(name, stamped, current);
             }

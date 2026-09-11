@@ -55,13 +55,6 @@ public static class FormatStamp
     /// <summary>What a file calls its format version, beside its <c>_format</c>.</summary>
     public const string VersionPropertyName = "_formatVersion";
 
-    /// <summary>What a file with no stamp is taken to be.</summary>
-    /// <remarks>
-    /// See the remarks on this class: every format was stamped without changing its shape,
-    /// so this is what those files are rather than a guess about them.
-    /// </remarks>
-    public const int Unstamped = 1;
-
     /// <summary>How to bring a file that is refused up to date, named in every message.</summary>
     /// <remarks>
     /// A STRICT READER WITHOUT A SIGNPOSTED CONVERTER IS A WALL, which is de-bnjy.3's own
@@ -108,14 +101,34 @@ public static class FormatStamp
                 $"{context} is a '{found}' file, and this reads '{expected}'.");
         }
 
-        if (version is null)
+        EnsureStamped(expected, version, current, context);
+    }
+
+    /// <summary>
+    /// Checks a version where a file may carry none at all, and refuses it where it does not.
+    /// </summary>
+    /// <remarks>
+    /// AN ABSENT STAMP IS REFUSED RATHER THAN ASSUMED. It was read as version 1 for as long
+    /// as committed files went without one, on the sound grounds that every format was
+    /// stamped without changing its shape - but a reader that cannot tell version 1 from
+    /// silence reads the first version 2 file it meets as the old shape, which is the day
+    /// the assumption costs something. Every file this repository commits carries one now.
+    /// </remarks>
+    /// <param name="format">What the format is called, for the message.</param>
+    /// <param name="found">The version the file records, or null where it records none.</param>
+    /// <param name="current">The version this build writes.</param>
+    /// <param name="context">The file, for the message.</param>
+    /// <exception cref="InvalidDataException">It carries no version, or the wrong one.</exception>
+    public static void EnsureStamped(string format, int? found, int current, string context)
+    {
+        if (found is null)
         {
             throw new InvalidDataException(
-                $"{context} is a {expected} and carries no {VersionPropertyName}. Convert "
-                + "it first:\n  " + Converter);
+                $"{context} is a {format} and carries no {VersionPropertyName}. Convert it "
+                + "first:\n  " + Converter);
         }
 
-        EnsureReadable(expected, version.Value, current);
+        EnsureReadable(format, found.Value, current);
     }
 
     /// <summary>
