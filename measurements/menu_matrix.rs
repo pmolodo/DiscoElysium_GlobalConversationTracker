@@ -148,11 +148,10 @@ const COLUMNS: [&str; 11] = [
 /// The groups to measure when nothing is named: the heavy list the matrix has always meant.
 const CONVERSATIONS: [i32; 6] = [362, 368, 631, 14, 28, 1030];
 
-/// What a player's response menu is allowed.
-///
-/// THE PLAYER'S OWN 256 MB, not a measurement's six gigabytes, because the question is what a
-/// menu costs and a menu is answered under the shipped allowance.
-const BUDGET_MB: usize = 256;
+/// What a player's search gets, TAKEN FROM THE ENGINE rather than restated. A menu is
+/// answered under the shipped allowance, so a number typed here would go stale the day
+/// that one moved and the row would quietly stop being what it claims to be.
+const BUDGET_MB: usize = DiagramBudget::DEFAULT_MEMORY_BUDGET / (1024 * 1024);
 
 /// How many options the menu asks about.
 ///

@@ -111,8 +111,8 @@ namespace GlobalConversationTracker.Engine
         /// budget is now stated in the unit it is actually spent in. See de-e23q.</para>
         ///
         /// <para>MEGABYTES HERE, BYTES IN THE ENGINE. This is a figure a player types into
-        /// a configuration file, and 256 is a number a person can hold in their head where
-        /// 268435456 is not.</para>
+        /// a configuration file, and 300 is a number a person can hold in their head where
+        /// 314572800 is not.</para>
         ///
         /// <para>ZERO MEANS THE DEFAULT, not "no limit" - the opposite of what zero means
         /// for the time budget, and deliberately so. A crawl with no clock still finishes;

@@ -28,10 +28,10 @@ namespace GlobalConversationTracker.Automation.Tests
             + "# Default value: #FF8C42\n"
             + "NovelOptionColor = #FF8C42\n"
             + "\n"
-            + "## The most search states one option's look-ahead may explore ...\n"
+            + "## The most memory one option's look-ahead may use ...\n"
             + "# Setting type: Int32\n"
-            + "# Default value: 200000\n"
-            + "LookAheadMemoryBudgetMb = 256\n";
+            + "# Default value: 300\n"
+            + "LookAheadMemoryBudgetMb = 300\n";
 
         private readonly string _root;
         private readonly string _game;
@@ -87,7 +87,7 @@ namespace GlobalConversationTracker.Automation.Tests
                 Assert.Equal(
                     "false", StagedPluginConfig.Get(updated, "LogLookAheadBudgetExceeded"));
                 Assert.Contains("## Plugin GUID:", updated);
-                Assert.Contains("# Default value: 200000", updated);
+                Assert.Contains("# Default value: 300", updated);
                 Assert.Contains("[Diagnostics]", updated);
             }
         }
@@ -146,7 +146,7 @@ namespace GlobalConversationTracker.Automation.Tests
             using (StagedPluginConfig.Apply(_game, Settings("LookAheadMemoryBudgetMb", "7")))
             {
                 string updated = File.ReadAllText(_config);
-                Assert.Contains("# Default value: 200000", updated);
+                Assert.Contains("# Default value: 300", updated);
                 Assert.Equal("7", StagedPluginConfig.Get(updated, "LookAheadMemoryBudgetMb"));
             }
         }

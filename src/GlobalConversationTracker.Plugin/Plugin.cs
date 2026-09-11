@@ -334,12 +334,18 @@ namespace GlobalConversationTracker
             // that is the unit it is spent in. A search state carries one slot per variable
             // its group tracks, so the old state budget of 200,000 bought 136 MB in one
             // conversation and 455 MB in another - a number that elastic protects nothing
-            // in particular. 256 MB gives every conversation the same allowance and roughly
-            // halves the worst case. See de-e23q.
+            // in particular. A budget in megabytes gives every conversation the same
+            // allowance and roughly halves the worst case. See de-e23q.
+            //
+            // 300 RATHER THAN 256, which was a round number rather than a measured one. The
+            // heaviest group in the game cannot be marked EXACTLY below about 288 MB at any
+            // clock, so a ceiling of 256 sat just under the one conversation that needed it.
+            // The shipped marking does not need the headroom - it answers every menu at 256 -
+            // but the exact search it falls back to does. See de-0jsf.16.
             var lookAheadMemoryBudget = Config.Bind(
                 PerformanceSection,
                 "LookAheadMemoryBudgetMb",
-                256,
+                300,
                 "The most memory one option's look-ahead may use, in megabytes, before giving "
                 + "up. Lower it if response menus feel slow or the game is short of memory; an "
                 + "option whose search gives up is marked with MarkUncertainLookAhead rather "

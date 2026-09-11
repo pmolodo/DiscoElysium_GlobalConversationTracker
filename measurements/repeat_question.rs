@@ -123,11 +123,10 @@ const COUNTER_CAP: i32 = 16;
 /// The groups a player actually stands in for a while, which is the matrix's heavy list.
 const CONVERSATIONS: [i32; 5] = [28, 368, 14, 631, 362];
 
-/// What the manager is given, in megabytes.
-///
-/// THE PLAYER'S DEFAULT, not a measurement's six gigabytes, because the question is what a
-/// MENU costs and a menu is answered under the shipped allowance.
-const BUDGET_MB: usize = 256;
+/// What a player's search gets, TAKEN FROM THE ENGINE rather than restated. A menu is
+/// answered under the shipped allowance, so a number typed here would go stale the day
+/// that one moved and the row would quietly stop being what it claims to be.
+const BUDGET_MB: usize = DiagramBudget::DEFAULT_MEMORY_BUDGET / (1024 * 1024);
 
 /// How long the search may run, so a group that never settles does not decide the run.
 ///

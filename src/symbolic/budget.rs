@@ -178,10 +178,29 @@ impl DiagramBudget {
 
     /// What a player's search gets when they have not said otherwise, in bytes.
     ///
-    /// 256 MB, which is what every shipped configuration has run under. It buys diagram
-    /// nodes, at [`Self::BYTES_PER_NODE`] apiece.
+    /// 300 MB. It buys diagram nodes, at [`Self::BYTES_PER_NODE`] apiece.
     ///
-    /// IT IS ENOUGH, AND THAT IS MEASURED. de-dt75.2 asked the question two ways.
+    /// ## Why 300 and not 256
+    ///
+    /// 256 was never measured as a threshold, only as a round number that was enough for
+    /// everything the engine then did. It stopped being enough for one thing: conversation
+    /// 761 cannot be marked EXACTLY below about 288 MB at any clock, and answers above it
+    /// (de-0jsf.16). A ceiling that sits eleven per cent under the one group that needs it is
+    /// an arbitrary number doing harm, so this clears it with headroom rather than sitting on
+    /// the edge of it.
+    ///
+    /// THE SHIPPED MARKING DOES NOT NEED IT, which is what makes the bump cheap rather than a
+    /// concession. `menu::mark_menu_hybrid` answers every menu in the game at 256, 761
+    /// included, in 1.3 seconds. The headroom is for the exact search behind it - the thing a
+    /// fallback reaches for - and for the groups nobody has profiled.
+    ///
+    /// It is 44 MB of a preallocation made in-process with a Unity game, against a worst case
+    /// that already leaves most of the store idle.
+    ///
+    /// ## What 256 bought, which still holds
+    ///
+    /// IT WAS ENOUGH FOR THE MARKING, AND THAT IS MEASURED. de-dt75.2 asked the question two
+    /// ways.
     ///
     /// NOTHING IN THE GAME RUNS OUT. A whole-game matrix, 2,334 measured rows across both
     /// engine arms, records no manager that filled - `no-room` and `no-ram` appear on no row.
@@ -194,13 +213,14 @@ impl DiagramBudget {
     /// add two tenths of a per cent, so what a group holds is a constant of the group rather
     /// than a curve heading for the ceiling.
     ///
-    /// So there is 5.6 times the headroom on the worst group, and raising this would be
-    /// memory every player gives up whether their conversations need it or not - the node
-    /// store is one preallocation made in-process with a Unity game.
+    /// So there is over six times the headroom on the worst group, and every megabyte here is
+    /// memory a player gives up whether their conversations need it or not - the node store
+    /// is one preallocation made in-process with a Unity game. That is the argument against
+    /// raising it further, and it is why this went to 300 rather than to a gigabyte.
     ///
-    /// Raising it anyway would want a matrix run either side of the change, since a
-    /// regression traced to a budget that moved in the same commit is not traced at all.
-    pub const DEFAULT_MEMORY_BUDGET: usize = 256 * 1024 * 1024;
+    /// A CHANGE HERE WANTS A MATRIX RUN EITHER SIDE OF IT, since a regression traced to a
+    /// budget that moved in the same commit is not traced at all.
+    pub const DEFAULT_MEMORY_BUDGET: usize = 300 * 1024 * 1024;
 
     /// What a measurement gets: six gigabytes, and the same six for every one of them.
     ///

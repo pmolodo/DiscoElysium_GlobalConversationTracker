@@ -108,8 +108,10 @@ const COUNTER_CAP: i32 = 16;
 /// One group, since the question is about a session in ONE conversation.
 const CONVERSATION: i32 = 28;
 
-/// The player's allowance.
-const BUDGET_MB: usize = 256;
+/// What a player's search gets, TAKEN FROM THE ENGINE rather than restated. A menu is
+/// answered under the shipped allowance, so a number typed here would go stale the day
+/// that one moved and the row would quietly stop being what it claims to be.
+const BUDGET_MB: usize = DiagramBudget::DEFAULT_MEMORY_BUDGET / (1024 * 1024);
 
 /// How many requests to put through the one manager.
 const ROUNDS: usize = 40;
