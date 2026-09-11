@@ -30,6 +30,20 @@ mod common;
 const EXPENSIVE: [i32; 5] = [368, 631, 14, 28, 1030];
 
 #[test]
+fn the_player_actor_is_you() {
+    let path = common::actors().expect("actor table is required");
+    let text = std::fs::read_to_string(path).unwrap();
+    let actor = text
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find(|actor| {
+            actor["id"].as_i64().unwrap().to_string() == lookahead_engine::index::PLAYER_ACTOR
+        })
+        .expect("player actor exists");
+    assert_eq!(actor["name"], "You");
+}
+
+#[test]
 fn the_trimmed_index_keeps_every_field_the_engine_reads() {
     let (Some(full), Some(trimmed)) = (common::conversation_index(), common::shipped_index())
     else {
@@ -162,6 +176,12 @@ fn a_group_built_from_the_trimmed_index_is_the_same_group() {
                 .get(node.id)
                 .unwrap_or_else(|| panic!("{} is missing from the trimmed graph", node.id));
 
+            assert_eq!(node.player, twin.player, "{}: the speaker changed", node.id);
+            assert_eq!(
+                node.choice, twin.choice,
+                "{}: the choice flag changed",
+                node.id
+            );
             assert_eq!(node.kind, twin.kind, "{}: the check kind changed", node.id);
             assert_eq!(node.cost, twin.cost, "{}: the cost changed", node.id);
             assert_eq!(

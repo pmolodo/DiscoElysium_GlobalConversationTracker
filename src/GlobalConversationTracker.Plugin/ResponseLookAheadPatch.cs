@@ -630,6 +630,7 @@ namespace GlobalConversationTracker
                 request.MenuTimeBudgetMs = _menuTimeBudgetMs;
                 request.MemoryBudgetMb = _memoryBudgetMb;
 
+                request.Menu = true;
                 foreach (DialogueNodeId start in starts)
                 {
                     request.Starts.Add(new NodeRef(start.ConversationId, start.EntryId));

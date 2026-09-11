@@ -62,6 +62,30 @@ impl LookAheadGraph {
         let mut order: Vec<DialogueNodeId> = map.keys().copied().collect();
         order.sort_unstable_by_key(|id| (id.conversation_id, id.entry_id));
 
+        let mut choices = HashSet::new();
+        for parent in map.values() {
+            let mut pending = parent.links.clone();
+            let mut visited = HashSet::new();
+            let mut offered = HashSet::new();
+            while let Some(id) = pending.pop() {
+                if !visited.insert(id) {
+                    continue;
+                }
+                let Some(node) = map.get(&id) else { continue };
+                if node.is_group {
+                    pending.extend(node.links.iter().copied());
+                } else if node.player {
+                    offered.insert(id);
+                }
+            }
+            if offered.len() > 1 {
+                choices.extend(offered);
+            }
+        }
+        for id in choices {
+            map.get_mut(&id).expect("offered entry exists").choice = true;
+        }
+
         Ok(Self {
             nodes: map,
             order,

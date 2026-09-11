@@ -124,6 +124,7 @@ fn a_request_is_measured_and_the_entry_sets_have_a_shape() {
     world.seen = entries.iter().copied().collect();
 
     let request = LookAheadRequest {
+        menu: false,
         conversation: MEASURED,
         starts: entries.iter().copied().take(12).collect(),
         unseen_any_game: seen_elsewhere.iter().copied().collect(),

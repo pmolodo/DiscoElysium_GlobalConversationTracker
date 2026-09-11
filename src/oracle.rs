@@ -30,7 +30,7 @@
 //! unit tests below pin the rules it applies so the comparison is between two understood
 //! things rather than two guesses.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::core::action::{CounterCaps, DialogueAction};
 use crate::core::state::{LookAheadState, seed_state};
@@ -197,6 +197,80 @@ pub fn walk_branch(
 
     walk.states = seen.len();
     walk
+}
+
+/// Exact choice distances from one menu outcome, enumerating concrete states.
+/// A missing result means the walk hit its ceiling and cannot serve as an oracle.
+pub fn choice_distances(
+    graph: &LookAheadGraph,
+    start: DialogueNodeId,
+    branch: StartBranch,
+    cut: &HashSet<DialogueNodeId>,
+    world: &dyn ILookAheadWorld,
+    counter_cap: i32,
+) -> Option<HashMap<DialogueNodeId, usize>> {
+    let context = CrawlContext::new(graph.symbols(), world);
+    let caps = CounterCaps::flat(counter_cap);
+    let clock_locked = world.is_clock_locked();
+    let start_node = graph.get(start)?;
+    let entered = keep(
+        branch,
+        enter(
+            start_node,
+            &seed_state(graph, world),
+            &context,
+            &caps,
+            clock_locked,
+        ),
+    );
+    let mut pending = VecDeque::new();
+    let mut seen = HashMap::new();
+    let mut distances = HashMap::new();
+    for state in entered {
+        seen.insert((start, state.clone(), true), 0usize);
+        pending.push_back((start, state, 0usize, true));
+    }
+    while let Some((id, state, distance, first)) = pending.pop_front() {
+        if seen.len() >= CEILING {
+            return None;
+        }
+        if seen.get(&(id, state.clone(), first)) != Some(&distance) {
+            continue;
+        }
+        let node = graph.get(id)?;
+        if !node.is_group
+            && !(node.kind == DialogueCheckKind::Passive
+                && world.check_passes(id) == Ternary::False)
+        {
+            distances
+                .entry(id)
+                .and_modify(|d: &mut usize| *d = (*d).min(distance))
+                .or_insert(distance);
+        }
+        let cost = usize::from(node.choice && !first);
+        for &child_id in &node.links {
+            if cut.contains(&child_id) {
+                continue;
+            }
+            let Some(child) = graph.get(child_id) else {
+                continue;
+            };
+            let candidate = distance + cost;
+            for next in enter(child, &state, &context, &caps, clock_locked) {
+                let key = (child_id, next.clone(), false);
+                if seen.get(&key).is_none_or(|d| candidate < *d) {
+                    seen.insert(key, candidate);
+                    let item = (child_id, next, candidate, false);
+                    if cost == 0 {
+                        pending.push_front(item);
+                    } else {
+                        pending.push_back(item);
+                    }
+                }
+            }
+        }
+    }
+    Some(distances)
 }
 
 /// The states one branch of a rolled start keeps, out of everything entering it produced.

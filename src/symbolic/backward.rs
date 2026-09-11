@@ -194,6 +194,21 @@ pub struct Backward<'a> {
     stats: BackwardStats,
 }
 
+/// One menu outcome, before entering any of its starting entries.
+#[derive(Clone)]
+pub struct Position {
+    pub option: DialogueNodeId,
+    pub entries: Vec<DialogueNodeId>,
+    pub holding: BDDFunction,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Nearest {
+    Found { distance: usize, winner: usize },
+    Unreachable,
+    Unfinished { out_of_memory: bool },
+}
+
 impl<'a> Backward<'a> {
     /// Runs the fixed point backwards from `target`.
     pub fn reaching(
@@ -243,6 +258,30 @@ impl<'a> Backward<'a> {
         budget: &Budget,
         known: Option<&Known>,
     ) -> Self {
+        Self::reaching_any_knowing(
+            graph,
+            &[target],
+            &HashSet::new(),
+            compiler,
+            world,
+            counter_cap,
+            budget,
+            known,
+        )
+    }
+
+    /// Worklist reachability from any target, refusing routes through cut options.
+    #[allow(clippy::too_many_arguments)]
+    pub fn reaching_any_knowing(
+        graph: &LookAheadGraph,
+        targets: &[DialogueNodeId],
+        cut: &HashSet<DialogueNodeId>,
+        compiler: &mut GuardCompiler<'a>,
+        world: &dyn ILookAheadWorld,
+        counter_cap: u32,
+        budget: &Budget,
+        known: Option<&Known>,
+    ) -> Self {
         let vars = compiler.vars();
         let mut image = ActionImage::new(vars, counter_cap);
         let mut this = Self {
@@ -266,7 +305,7 @@ impl<'a> Backward<'a> {
                 &owned_parents
             }
         };
-        let relevant = Self::can_reach(parents, target);
+        let relevant = Self::can_reach(parents, targets, cut);
 
         // Only worth asking when something is actually known; `meets` on an empty `Known`
         // is a walk over the parents to conclude nothing.
@@ -303,23 +342,28 @@ impl<'a> Backward<'a> {
         // means no frontier, the pass settles having established nothing, and the refusal
         // is a real one rather than an unfinished search - see `never_displays`.
         let mut frontier: HashMap<DialogueNodeId, BDDFunction> = HashMap::new();
-        if let Some(node) = graph
-            .get(target)
-            .filter(|node| !never_displays(node, world))
-        {
-            let arriving = this.pre_enter(node, &vars.top(), compiler, world, &mut image);
-            if let Some(fresh) = this.widen(target, &arriving) {
-                // The target itself can be the meeting point, and where the search begins
-                // at the target it is: whether what the search holds arriving there is a
-                // state the target's own guard admits is the whole question, and both
-                // halves of that are already in hand.
-                if let Some(known) = meeting {
-                    if this.meets_known(known, target) {
-                        this.stats.met_at = Some(target);
+        for &target in targets {
+            if cut.contains(&target) {
+                continue;
+            }
+            if let Some(node) = graph
+                .get(target)
+                .filter(|node| !never_displays(node, world))
+            {
+                let arriving = this.pre_enter(node, &vars.top(), compiler, world, &mut image);
+                if let Some(fresh) = this.widen(target, &arriving) {
+                    // The target itself can be the meeting point, and where the search begins
+                    // at the target it is: whether what the search holds arriving there is a
+                    // state the target's own guard admits is the whole question, and both
+                    // halves of that are already in hand.
+                    if let Some(known) = meeting {
+                        if this.meets_known(known, target) {
+                            this.stats.met_at = Some(target);
+                        }
                     }
+                    frontier.insert(target, fresh);
+                    queue.push(target);
                 }
-                frontier.insert(target, fresh);
-                queue.push(target);
             }
         }
 
@@ -367,7 +411,7 @@ impl<'a> Backward<'a> {
             }
 
             for &parent in parents.get(&id).into_iter().flatten() {
-                if !relevant.contains(&parent) {
+                if !relevant.contains(&parent) || cut.contains(&parent) {
                     continue;
                 }
 
@@ -434,6 +478,211 @@ impl<'a> Backward<'a> {
     /// runs out of room, with [`BackwardStats::out_of_memory`] set to say so, because
     /// once that happens every set since is the pre-image of nothing in particular and
     /// the caller must stop rather than carry on with a smaller answer.
+    /// Finds one nearest position to a target, stopping at its first meet within a layer.
+    /// Only cumulative sets and the two frontiers are retained.
+    #[allow(clippy::too_many_arguments)]
+    pub fn nearest(
+        graph: &LookAheadGraph,
+        target: DialogueNodeId,
+        cut: &HashSet<DialogueNodeId>,
+        compiler: &mut GuardCompiler<'a>,
+        world: &dyn ILookAheadWorld,
+        counter_cap: u32,
+        budget: &Budget,
+        known: &Known,
+        positions: &[Position],
+    ) -> Nearest {
+        let vars = compiler.vars();
+        let began = std::time::Instant::now();
+        let mut this = Self {
+            vars,
+            sets: HashMap::new(),
+            stats: BackwardStats::default(),
+        };
+        let mut image = ActionImage::new(vars, counter_cap);
+        let Some(node) = graph.get(target).filter(|n| !never_displays(n, world)) else {
+            return Nearest::Unreachable;
+        };
+        if cut.contains(&target) {
+            return Nearest::Unreachable;
+        }
+        let seed = this.pre_enter(node, &vars.top(), compiler, world, &mut image);
+        let mut next = HashMap::new();
+        if let Some(delta) = this.widen(target, &seed) {
+            next.insert(target, delta);
+        }
+        if let Some(found) = this.meeting(target, 0, positions) {
+            return found;
+        }
+        for distance in 0usize.. {
+            let mut queue = Worklist::new(known.order());
+            let mut frontier = HashMap::new();
+            // A stable order keeps diagram allocation and measurements repeatable.
+            let mut incoming: Vec<_> = std::mem::take(&mut next).into_iter().collect();
+            incoming.sort_by_key(|(id, _)| (id.conversation_id, id.entry_id));
+            for (id, states) in incoming {
+                // At the target these states have arrived nowhere yet. Everywhere else they
+                // are a choice's, already asked about when the choice was reached, and what
+                // this layer buys is leaving it.
+                if distance == 0 {
+                    frontier.insert(id, states);
+                    queue.push(id);
+                } else if let Some(found) = this.spread(
+                    graph,
+                    known,
+                    id,
+                    &states,
+                    cut,
+                    compiler,
+                    world,
+                    &mut image,
+                    &mut frontier,
+                    &mut queue,
+                    distance,
+                    positions,
+                ) {
+                    return found;
+                }
+            }
+            while let Some(id) = queue.pop() {
+                this.stats.steps += 1;
+                if began.elapsed() >= budget.time || this.stats.steps >= budget.steps {
+                    return Nearest::Unfinished {
+                        out_of_memory: false,
+                    };
+                }
+                let Some(delta) = frontier.remove(&id) else {
+                    continue;
+                };
+                // LEAVING A CHOICE COSTS ONE, and the charge is the node's rather than the
+                // link's, so every route out of it belongs to the next layer. The option the
+                // search is walking towards is where the player already stands and is free.
+                if id != target && graph.get(id).is_some_and(|n| n.choice) {
+                    let pending = next.get(&id).cloned().unwrap_or_else(|| vars.bottom());
+                    match pending.or(&delta) {
+                        Ok(joined) => {
+                            next.insert(id, joined);
+                        }
+                        Err(_) => {
+                            return Nearest::Unfinished {
+                                out_of_memory: true,
+                            };
+                        }
+                    }
+                    continue;
+                }
+                if let Some(found) = this.spread(
+                    graph,
+                    known,
+                    id,
+                    &delta,
+                    cut,
+                    compiler,
+                    world,
+                    &mut image,
+                    &mut frontier,
+                    &mut queue,
+                    distance,
+                    positions,
+                ) {
+                    return found;
+                }
+                if this.stats.out_of_memory || image.out_of_memory() {
+                    return Nearest::Unfinished {
+                        out_of_memory: true,
+                    };
+                }
+            }
+            if this.stats.out_of_memory || image.out_of_memory() {
+                return Nearest::Unfinished {
+                    out_of_memory: true,
+                };
+            }
+            if next.is_empty() {
+                return Nearest::Unreachable;
+            }
+        }
+        unreachable!("choice distance exhausted usize")
+    }
+
+    fn meeting(
+        &self,
+        id: DialogueNodeId,
+        distance: usize,
+        positions: &[Position],
+    ) -> Option<Nearest> {
+        let states = self.sets.get(&id)?;
+        for (winner, position) in positions.iter().enumerate() {
+            if !position.entries.contains(&id) {
+                continue;
+            }
+            match states.and(&position.holding) {
+                Ok(meet) if meet.satisfiable() => return Some(Nearest::Found { distance, winner }),
+                Ok(_) => {}
+                Err(_) => {
+                    return Some(Nearest::Unfinished {
+                        out_of_memory: true,
+                    });
+                }
+            }
+        }
+        None
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn spread(
+        &mut self,
+        graph: &LookAheadGraph,
+        known: &Known,
+        id: DialogueNodeId,
+        delta: &BDDFunction,
+        cut: &HashSet<DialogueNodeId>,
+        compiler: &mut GuardCompiler<'a>,
+        world: &dyn ILookAheadWorld,
+        image: &mut ActionImage<'a>,
+        frontier: &mut HashMap<DialogueNodeId, BDDFunction>,
+        queue: &mut Worklist,
+        distance: usize,
+        positions: &[Position],
+    ) -> Option<Nearest> {
+        for &parent in known.parents_of(id) {
+            if cut.contains(&parent) {
+                continue;
+            }
+            let Some(node) = graph.get(parent) else {
+                continue;
+            };
+            let before = self.pre_enter(node, delta, compiler, world, image);
+            let Some(fresh) = self.widen(parent, &before) else {
+                continue;
+            };
+            if self.stats.out_of_memory || image.out_of_memory() {
+                return Some(Nearest::Unfinished {
+                    out_of_memory: true,
+                });
+            }
+            if let Some(found) = self.meeting(parent, distance, positions) {
+                return Some(found);
+            }
+            let waiting = frontier
+                .get(&parent)
+                .cloned()
+                .unwrap_or_else(|| self.vars.bottom());
+            match waiting.or(&fresh) {
+                Ok(joined) => {
+                    frontier.insert(parent, joined);
+                    queue.push(parent);
+                }
+                Err(_) => {
+                    return Some(Nearest::Unfinished {
+                        out_of_memory: true,
+                    });
+                }
+            }
+        }
+        None
+    }
+
     fn widen(&mut self, node: DialogueNodeId, arriving: &BDDFunction) -> Option<BDDFunction> {
         if !arriving.satisfiable() {
             return None;
@@ -810,16 +1059,25 @@ impl<'a> Backward<'a> {
         parents
     }
 
-    /// The entries that can reach `target` through links, guards ignored.
+    /// The entries that can reach a target through uncut links, guards ignored.
     fn can_reach(
         parents: &HashMap<DialogueNodeId, Vec<DialogueNodeId>>,
-        target: DialogueNodeId,
+        targets: &[DialogueNodeId],
+        cut: &HashSet<DialogueNodeId>,
     ) -> HashSet<DialogueNodeId> {
-        let mut seen = HashSet::from([target]);
-        let mut queue = VecDeque::from([target]);
+        let mut seen: HashSet<_> = targets
+            .iter()
+            .copied()
+            .filter(|id| !cut.contains(id))
+            .collect();
+        let mut queue: VecDeque<_> = targets
+            .iter()
+            .copied()
+            .filter(|id| !cut.contains(id))
+            .collect();
         while let Some(id) = queue.pop_front() {
             for &parent in parents.get(&id).into_iter().flatten() {
-                if seen.insert(parent) {
+                if !cut.contains(&parent) && seen.insert(parent) {
                     queue.push_back(parent);
                 }
             }

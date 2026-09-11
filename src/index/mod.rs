@@ -27,6 +27,7 @@ use crate::parser::guard_parser::parse_guard;
 use crate::symbolic::data_layout::DataLayout;
 
 /// Field names as the asset spells them.
+const ACTOR_FIELD: &str = "Actor";
 const PASSIVE_FIELD: &str = "DifficultyPass";
 const RED_FIELD: &str = "DifficultyRed";
 const WHITE_FIELD: &str = "DifficultyWhite";
@@ -38,6 +39,12 @@ const FLAG_NAME_FIELD: &str = "FlagName";
 const CLICK_COST_FIELD: &str = "ClickCost";
 const COST_ONCE_FIELD: &str = "CostOnce";
 const HIDDEN_NOT_ENOUGH_FIELD: &str = "HiddenNotEnough";
+
+/// The actor an entry names when the player speaks it, as [`ACTOR_FIELD`] spells it.
+///
+/// A number rather than a name because that is what the field holds. `tests/shipped_index.rs`
+/// pins it to the actor table, where 396 is "You".
+pub const PLAYER_ACTOR: &str = "396";
 
 /// Every field this module reads out of an entry, and the only ones a shipped index needs
 /// to carry.
@@ -57,7 +64,8 @@ const HIDDEN_NOT_ENOUGH_FIELD: &str = "HiddenNotEnough";
 /// The extractor is C# and cannot share a constant with this, so `tests/shipped_index.rs`
 /// checks the two against each other instead: for every name here, an entry that has it in
 /// the full index must still have it in the trimmed one.
-pub const ENTRY_FIELDS_READ: [&str; 11] = [
+pub const ENTRY_FIELDS_READ: [&str; 12] = [
+    ACTOR_FIELD,
     PASSIVE_FIELD,
     RED_FIELD,
     WHITE_FIELD,
@@ -82,7 +90,7 @@ pub const FORMAT_PROPERTY: &str = "format";
 /// game"; this answers "is this an index this engine can read" - and an index from an
 /// older build would pass its content hash while missing fields the engine has since
 /// started reading, which is a cache hit on a file that cannot answer the question.
-pub const FORMAT_VERSION: i32 = 1;
+pub const FORMAT_VERSION: i32 = 2;
 
 /// A shipped index's header, which is its first line.
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
@@ -143,7 +151,7 @@ pub fn read_index(path: &Path) -> anyhow::Result<Index> {
 
 /// The same, keeping what the header said.
 ///
-/// A shipped index opens with `{"format":1}`; the full index has no header at all, and
+/// A shipped index opens with `{"format":2}`; the full index has no header at all, and
 /// then there is no version and no per-conversation hash, so nothing can be validated
 /// against it. That is not an error - it is the mod shipping a build intermediate, and it
 /// works exactly as well as it did before there was such a thing as validation.
@@ -394,7 +402,7 @@ pub fn build_group_graph(index: &Index, start: i32) -> Result<(LookAheadGraph, V
                 -1
             };
 
-            nodes.push(LookAheadNode::new(
+            let mut node = LookAheadNode::new(
                 node_id,
                 entry.group,
                 kind,
@@ -408,7 +416,12 @@ pub fn build_group_graph(index: &Index, start: i32) -> Result<(LookAheadGraph, V
                 failed_flag_slot,
                 boolean_only,
                 seen_slot,
-            ));
+            );
+            node.player = entry
+                .fields
+                .get(ACTOR_FIELD)
+                .is_some_and(|actor| actor == PLAYER_ACTOR);
+            nodes.push(node);
         }
     }
 
@@ -746,7 +759,7 @@ mod tests {
     #[test]
     fn a_shipped_index_reports_its_format() {
         let path = written(concat!(
-            "{\"format\":1}\n",
+            "{\"format\":2}\n",
             "{\"id\":7,\"hash\":\"abc\",\"entries\":[]}\n",
         ));
 
@@ -785,7 +798,7 @@ mod tests {
     /// and no entries, which looks like a real, empty conversation.
     #[test]
     fn a_header_is_never_mistaken_for_a_conversation() {
-        let path = written("{\"format\":1}\n{\"id\":7,\"entries\":[]}\n");
+        let path = written("{\"format\":2}\n{\"id\":7,\"entries\":[]}\n");
         let (index, _) = read_index_with_header(path.path()).expect("it reads");
 
         assert!(!index.contains_key(&0), "the header became conversation 0");

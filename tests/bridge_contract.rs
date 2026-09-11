@@ -180,6 +180,7 @@ fn an_answer_survives_the_crossing() {
 
         let request = LookAheadRequest {
             conversation,
+            menu: false,
             starts: vec![NodeRef::from(start)],
             unseen_any_game: unseen.iter().copied().collect(),
             unseen_this_game: Default::default(),
@@ -262,6 +263,7 @@ fn a_menu_that_runs_out_of_its_wall_still_answers_every_option() {
 
     let request = LookAheadRequest {
         conversation,
+        menu: false,
         starts: starts.clone(),
         unseen_any_game: profile.unseen.iter().map(|id| NodeRef::from(*id)).collect(),
         unseen_this_game: Default::default(),

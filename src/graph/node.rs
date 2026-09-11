@@ -11,6 +11,9 @@ use crate::core::types::{DialogueCheckKind, DialogueNodeId};
 pub struct LookAheadNode {
     pub id: DialogueNodeId,
     pub is_group: bool,
+    pub player: bool,
+    /// A player line offered alongside another player line.
+    pub choice: bool,
     pub kind: DialogueCheckKind,
     pub guard: Guard,
     pub actions: Vec<DialogueAction>,
@@ -54,6 +57,8 @@ impl LookAheadNode {
         Self {
             id,
             is_group,
+            player: false,
+            choice: false,
             kind,
             guard,
             actions,

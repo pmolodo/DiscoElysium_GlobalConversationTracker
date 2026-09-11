@@ -30,6 +30,7 @@ pub mod guard_formula;
 pub mod isolated;
 pub mod known;
 pub mod memo;
+pub mod menu;
 pub mod novelty_search;
 pub mod order;
 pub mod reachability;

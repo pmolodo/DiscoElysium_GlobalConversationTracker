@@ -28,6 +28,7 @@ pub struct Entry {
     pub script: Option<String>,
     pub links: Vec<i32>,
     pub is_group: bool,
+    pub player: bool,
     pub kind: DialogueCheckKind,
     pub flag: Option<String>,
     pub boolean_only: bool,
@@ -43,6 +44,7 @@ impl Entry {
             script: None,
             links: Vec::new(),
             is_group: false,
+            player: false,
             kind: DialogueCheckKind::None,
             flag: None,
             boolean_only: false,
@@ -68,6 +70,11 @@ impl Entry {
 
     pub fn group(mut self) -> Self {
         self.is_group = true;
+        self
+    }
+
+    pub fn player(mut self) -> Self {
+        self.player = true;
         self
     }
 
@@ -147,7 +154,7 @@ impl GraphBuilder {
 
             let links: Vec<DialogueNodeId> = entry.links.iter().map(|l| node(*l)).collect();
 
-            nodes.push(LookAheadNode::new(
+            let mut built = LookAheadNode::new(
                 id,
                 entry.is_group,
                 entry.kind,
@@ -161,7 +168,9 @@ impl GraphBuilder {
                 failed_flag_slot,
                 entry.boolean_only,
                 seen_slot,
-            ));
+            );
+            built.player = entry.player;
+            nodes.push(built);
         }
 
         let snapshot = symbols.clone();

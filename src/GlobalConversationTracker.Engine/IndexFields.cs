@@ -25,6 +25,7 @@ namespace GlobalConversationTracker.Engine
         /// </summary>
         public static readonly string[] Read =
         {
+            "Actor",
             "DifficultyPass",
             "DifficultyRed",
             "DifficultyWhite",

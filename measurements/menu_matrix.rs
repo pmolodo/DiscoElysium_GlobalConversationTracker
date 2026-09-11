@@ -18,13 +18,14 @@
 //! ## What it does
 //!
 //! One group per row. Builds the adversarial profile - `menu_profile`, shared with
-//! `menu_residue` and `menu_wall` - takes its starts as the menu, and answers every one of
-//! them through `answer::best_novelty` against one manager, exactly as the bridge does.
+//! `menu_residue` and `menu_wall` - takes its starts as the menu, and marks the whole menu
+//! through `symbolic::menu::mark_menu` against one manager, exactly as the bridge does.
 //!
-//! THE GATE THE GAME APPLIES IS APPLIED HERE, so an option the mod would refuse before
-//! touching a diagram is refused here too: `graph.best_linked_class` decides, which is what
-//! `bridge::class_worth_hunting` calls. Counting those as searches would fill a row with
-//! free options and make a heavy group read as a light one.
+//! EVERY START IS A CONTESTANT, because the marking is competitive: an option that has
+//! nothing to hunt for is refused against the class being hunted, by the baseline it
+//! already lands on, and that happens inside `mark_menu` rather than before it. So
+//! `options` counts the width of the menu rather than the searches it provoked, and it is
+//! `offered` over again.
 //!
 //! ONE MANAGER PER MENU, ON A THREAD OF ITS OWN. Building a second manager on a thread that
 //! has already built one is what overflows a stack (de-fpax), and the menu's own warmth is
@@ -37,13 +38,14 @@
 //! `setup ms` is how much of it was building the layout, the manager, the compiled guards
 //! and the seed rather than searching, so the searching is the difference.
 //!
-//! `options` is how many of the profile's starts were actually searched, out of how many the
-//! profile offered; the difference is what the gate refused. `asked` is candidates asked
-//! about across the menu, one fixed point each.
+//! `asked` is fixed points run across the whole menu: one worklist pass per round to ask
+//! whether anything is still reachable, and one single-target pass per target the branch
+//! and bound did not skip. `rounds` is how many of them ended in a marker, which is how
+//! many options the menu claimed content for.
 //!
-//! `settled`, `at start` and `partly` split the options by how they were answered - see
-//! `answer::Answered`. A menu that is mostly `partly` is one where the budget bound, and its
-//! milliseconds are a floor rather than a cost.
+//! `settled` and `partly` split the options by whether their answer is final. A menu that
+//! is mostly `partly` is one where the budget bound, and its milliseconds are a floor
+//! rather than a cost.
 //!
 //! `nodes` is what the manager holds when the menu ends, which is the number a parallel
 //! split has to clear a group against.
@@ -118,7 +120,6 @@ use lookahead_engine::bridge::{SnapshotWorld, WorldSnapshot};
 use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
 use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
-use lookahead_engine::symbolic::answer;
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
@@ -126,6 +127,7 @@ use lookahead_engine::symbolic::isolated;
 use lookahead_engine::symbolic::known::GroupShape;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
+use lookahead_engine::symbolic::{menu, novelty_search};
 
 #[path = "../tests/common/mod.rs"]
 mod common;
@@ -139,7 +141,7 @@ use menu_profile::MenuProfile;
 /// A DRIVER ASKS FOR THESE rather than parsing them off a row, so that a file assembled from
 /// many processes cannot get a header that disagrees with its rows.
 const COLUMNS: [&str; 11] = [
-    "conv", "entries", "options", "offered", "menu_ms", "setup_ms", "asked", "settled", "at_start",
+    "conv", "entries", "options", "offered", "menu_ms", "setup_ms", "asked", "rounds", "settled",
     "partly", "nodes",
 ];
 
@@ -177,8 +179,8 @@ struct Menu {
     setup: Duration,
     options: usize,
     asked: usize,
+    rounds: usize,
     settled: usize,
-    at_start: usize,
     partly: usize,
     nodes: usize,
 }
@@ -289,40 +291,40 @@ where
             ..Default::default()
         };
 
-        for &start in starts {
-            // THE GATE THE GAME APPLIES, so an option the mod would not search is not
-            // searched here either - `bridge::class_worth_hunting` refuses when nothing
-            // link-reachable beats where the option already lands.
-            let Some(hunting) = graph.best_linked_class(start, novelty) else {
-                continue;
-            };
-            if hunting <= Novelty::SeenThisGame {
-                continue;
-            }
-
-            let found = answer::best_novelty(
-                graph,
-                start,
-                StartBranch::Either,
-                &seed,
-                &mut compiler,
-                &world,
-                COUNTER_CAP as u32,
-                novelty,
-                hunting,
-                &search,
-                &shape,
-                None,
-            );
-
-            counted.options += 1;
-            counted.asked += found.targets_asked;
-            match found.by {
-                answer::Answered::Backwards => counted.settled += 1,
-                answer::Answered::AtTheStart => counted.at_start += 1,
-                answer::Answered::Partly => counted.partly += 1,
-            }
-        }
+        let contestants: Vec<_> = starts
+            .iter()
+            .map(|&start| menu::Contestant {
+                position: novelty_search::Where::of(
+                    graph,
+                    start,
+                    StartBranch::Either,
+                    &seed,
+                    &mut compiler,
+                    &world,
+                    COUNTER_CAP as u32,
+                )
+                .position(start),
+                baseline: novelty(start),
+            })
+            .collect();
+        let found = menu::mark_menu(
+            graph,
+            &mut compiler,
+            &world,
+            COUNTER_CAP as u32,
+            novelty,
+            &contestants,
+            &menu::Budget {
+                wall: search.overall.saturating_mul(starts.len() as u32),
+                each: search.each,
+            },
+            &shape,
+        );
+        counted.options = contestants.len();
+        counted.asked = found.passes;
+        counted.rounds = found.rounds;
+        counted.settled = found.marks.iter().filter(|mark| mark.complete).count();
+        counted.partly = counted.options - counted.settled;
 
         counted.took = began.elapsed();
         counted.nodes = vars.node_count();
@@ -351,8 +353,8 @@ fn row(
             format!("{:.0}", ms(m.took)),
             format!("{:.0}", ms(m.setup)),
             m.asked.to_string(),
+            m.rounds.to_string(),
             m.settled.to_string(),
-            m.at_start.to_string(),
             m.partly.to_string(),
             m.nodes.to_string(),
         ],

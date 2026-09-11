@@ -591,6 +591,9 @@ pub struct LookAheadRequest {
     pub conversation: i32,
     /// The option entries to score. One answer comes back per start.
     pub starts: Vec<NodeRef>,
+    /// Score these options together as one menu, claiming nearest content between them.
+    #[serde(default)]
+    pub menu: bool,
     /// Entries the player has never seen in any game.
     #[serde(default)]
     pub unseen_any_game: NodeSet,
@@ -1279,6 +1282,9 @@ pub fn answer_starts<'a, F>(
 where
     F: Fn(DialogueNodeId) -> Novelty,
 {
+    if request.menu {
+        return answer_menu(graph, world, request, novelty, compiler, seed, shape);
+    }
     let budget = request.search_budget();
     let menu = request.menu_budget();
     let began = std::time::Instant::now();
@@ -1331,6 +1337,110 @@ where
         }
     }
 
+    answers
+}
+
+/// Scores a response menu, retaining a separate position and baseline for each roll.
+#[allow(clippy::too_many_arguments)]
+fn answer_menu<'a, F: Fn(DialogueNodeId) -> Novelty>(
+    graph: &LookAheadGraph,
+    world: &dyn ILookAheadWorld,
+    request: &LookAheadRequest,
+    novelty: &F,
+    compiler: &mut GuardCompiler<'a>,
+    seed: &BDDFunction,
+    shape: &GroupShape,
+) -> Vec<LookAheadAnswer> {
+    use crate::symbolic::menu::{self, Contestant};
+    let began = std::time::Instant::now();
+    let mut answers = Vec::new();
+    let mut contestants = Vec::new();
+    let mut indices = Vec::new();
+    for &start in &request.starts {
+        let id = DialogueNodeId::from(start);
+        let Some(node) = graph.get(id) else {
+            answers.push(unanswered(start, "none"));
+            continue;
+        };
+        let branches: &[StartBranch] = if node.is_rolled() {
+            &[StartBranch::Pass, StartBranch::Fail]
+        } else {
+            &[StartBranch::Either]
+        };
+        for &branch in branches {
+            let mut from = novelty_search::Where::of(
+                graph,
+                id,
+                branch,
+                seed,
+                compiler,
+                world,
+                COUNTER_CAP as u32,
+            );
+            let destinations = if branch == StartBranch::Either {
+                vec![id]
+            } else {
+                from.destinations(graph, compiler, world, COUNTER_CAP as u32)
+            };
+            let baseline = destinations
+                .iter()
+                .map(|id| novelty(*id))
+                .max()
+                .unwrap_or(Novelty::SeenThisGame);
+            let mut result = unanswered(start, "none");
+            result.branch = if branch == StartBranch::Either {
+                None
+            } else {
+                Some(branch_name(branch).to_string())
+            };
+            result.destination = baseline as i32;
+            result.best = baseline as i32;
+            if from.out_of_nodes() {
+                result.stopped_by = "memory".to_string();
+            } else {
+                indices.push(answers.len());
+                contestants.push(Contestant {
+                    position: from.position(id),
+                    baseline,
+                });
+            }
+            answers.push(result);
+        }
+    }
+    let ration = request.search_budget();
+    let wall = request
+        .menu_budget()
+        .min(ration.overall.saturating_mul(contestants.len() as u32));
+    let found = menu::mark_menu(
+        graph,
+        compiler,
+        world,
+        COUNTER_CAP as u32,
+        novelty,
+        &contestants,
+        &menu::Budget {
+            wall: wall.saturating_sub(began.elapsed()),
+            each: ration.each,
+        },
+        shape,
+    );
+    for (index, mark) in indices.into_iter().zip(found.marks) {
+        let answer = &mut answers[index];
+        answer.best = mark.best as i32;
+        answer.witness = mark.witness.map(NodeRef::from);
+        answer.complete = mark.complete;
+        answer.stopped_by = if mark.out_of_nodes {
+            "memory"
+        } else {
+            stopped_name(mark.stopped_by)
+        }
+        .to_string();
+    }
+    // Menu work is shared, so report its cost once rather than multiplying by options.
+    if let Some(first) = answers.first_mut() {
+        first.elapsed_ms = began.elapsed().as_millis() as u64;
+        first.nodes_reached = found.passes;
+    }
     answers
 }
 
@@ -2336,6 +2446,7 @@ mod tests {
 
         let request = LookAheadRequest {
             conversation: 631,
+            menu: false,
             starts: vec![NodeRef {
                 conversation: 631,
                 entry: 4,
@@ -2381,6 +2492,7 @@ mod tests {
     fn a_memory_budget_crosses_as_megabytes_and_arrives_as_bytes() {
         let request = LookAheadRequest {
             conversation: 1,
+            menu: false,
             starts: Vec::new(),
             unseen_any_game: NodeSet::default(),
             unseen_this_game: NodeSet::default(),
@@ -2404,6 +2516,7 @@ mod tests {
     fn an_unset_memory_budget_is_the_default_rather_than_none() {
         let request = LookAheadRequest {
             conversation: 1,
+            menu: false,
             starts: Vec::new(),
             unseen_any_game: NodeSet::default(),
             unseen_this_game: NodeSet::default(),
@@ -2433,6 +2546,7 @@ mod tests {
     fn a_time_budget_that_crosses_is_the_budget_the_search_runs_under() {
         let request = LookAheadRequest {
             conversation: 1,
+            menu: false,
             starts: Vec::new(),
             unseen_any_game: NodeSet::default(),
             unseen_this_game: NodeSet::default(),
@@ -2461,6 +2575,7 @@ mod tests {
     fn a_budget_of_zero_means_what_the_plugins_setting_means() {
         let request = LookAheadRequest {
             conversation: 1,
+            menu: false,
             starts: Vec::new(),
             unseen_any_game: NodeSet::default(),
             unseen_this_game: NodeSet::default(),

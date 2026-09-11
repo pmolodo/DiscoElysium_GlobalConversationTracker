@@ -236,7 +236,57 @@ pub struct Where {
     out_of_nodes: bool,
 }
 
+/// A lower bound on choices between this option and each target. Guards can only
+/// remove these routes; cut options cannot be entered, even after a loop.
+pub fn choice_bounds(
+    graph: &LookAheadGraph,
+    position: &super::backward::Position,
+    cut: &HashSet<DialogueNodeId>,
+) -> HashMap<DialogueNodeId, usize> {
+    let mut distances = HashMap::new();
+    let mut pending = VecDeque::new();
+    for &id in &position.entries {
+        if !cut.contains(&id) {
+            distances.insert(id, 0usize);
+            pending.push_back((id, 0usize));
+        }
+    }
+    while let Some((id, distance)) = pending.pop_front() {
+        if distances.get(&id) != Some(&distance) {
+            continue;
+        }
+        let Some(node) = graph.get(id) else { continue };
+        let cost = usize::from(node.choice && id != position.option);
+        for &child in &node.links {
+            if cut.contains(&child) || graph.get(child).is_none() {
+                continue;
+            }
+            let candidate = distance + cost;
+            if distances
+                .get(&child)
+                .is_none_or(|previous| candidate < *previous)
+            {
+                distances.insert(child, candidate);
+                if cost == 0 {
+                    pending.push_front((child, candidate));
+                } else {
+                    pending.push_back((child, candidate));
+                }
+            }
+        }
+    }
+    distances
+}
+
 impl Where {
+    /// The states and entries from which this outcome is searched.
+    pub fn position(&self, option: DialogueNodeId) -> super::backward::Position {
+        super::backward::Position {
+            option,
+            entries: self.at.clone(),
+            holding: self.holding.clone(),
+        }
+    }
     /// The starting position for this outcome of this start.
     #[allow(clippy::too_many_arguments)]
     pub fn of<'a>(
