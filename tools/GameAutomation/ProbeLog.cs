@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -294,33 +293,6 @@ namespace GlobalConversationTracker.Automation
         /// <summary>One run of text in one colour, as the game's markup spells it.</summary>
         private static readonly Regex ColouredSpan = new Regex(
             "<color=(?<colour>[^>]+)>(?<text>[^<]*)</color>", RegexOptions.Compiled);
-
-        /// <summary>
-        /// Every probe event in a log file, in order, or none if it is not there yet.
-        /// </summary>
-        /// <remarks>
-        /// A missing file is empty rather than an error because a run deletes the log
-        /// before launching - which is what stops it reading the PREVIOUS run's events
-        /// and acting on them - so there is a window, until BepInEx creates its own,
-        /// where the right answer is "nothing has happened yet".
-        /// </remarks>
-        /// <param name="logPath">The BepInEx log.</param>
-        /// <exception cref="ArgumentNullException"><paramref name="logPath"/> is null.</exception>
-        public static ProbeEvent[] ReadFile(string logPath)
-        {
-            if (logPath == null)
-            {
-                throw new ArgumentNullException(nameof(logPath));
-            }
-
-            if (!File.Exists(logPath))
-            {
-                return Array.Empty<ProbeEvent>();
-            }
-
-            // Shared: BepInEx holds the log open for writing for the whole run.
-            return Read(FilePaths.ReadShared(logPath));
-        }
 
         /// <summary>Every probe event in some text, in order.</summary>
         /// <param name="text">Log text.</param>

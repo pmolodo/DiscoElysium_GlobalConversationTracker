@@ -16,17 +16,29 @@ namespace GlobalConversationTracker.Automation
     /// response menu is drawn - look alike to any pixel threshold loose enough to be
     /// stable. The probe says them outright.</para>
     ///
-    /// <para>The whole log is re-read on each poll rather than tailed. It is small, the
-    /// poll interval is half a second, and a tail would have to cope with BepInEx
-    /// rewriting the file per run and with a partial line at the end - complexity bought
-    /// for nothing. Events already seen when the watcher was created are skipped, so a
-    /// wait cannot be satisfied by a previous scenario's event: that mistake would make
-    /// a test pass by looking at the wrong menu.</para>
+    /// <para>The log is read from where the last read stopped, by
+    /// <see cref="ProbeLogTail"/>, rather than parsed whole each time. Events already seen
+    /// when the watcher was created are skipped, so a wait cannot be satisfied by a
+    /// previous scenario's event: that mistake would make a test pass by looking at the
+    /// wrong menu.</para>
     /// </remarks>
     public sealed class ProbeWatcher
     {
         /// <summary>How often the log is re-read.</summary>
-        public static readonly TimeSpan DefaultPollInterval = TimeSpan.FromMilliseconds(500);
+        /// <remarks>
+        /// <para>A WAIT IS ROUNDED UP TO THE NEXT POLL, so the interval is what a run
+        /// spends noticing rather than waiting: over the two hundred-odd waits of a full
+        /// suite the expected cost is half an interval each. At half a second that was
+        /// most of a minute of a seven-minute run, and every event's mean wait sat on a
+        /// multiple of it, which is how it was found.</para>
+        ///
+        /// <para>WELL UNDER THE PROBE'S OWN CADENCE, which is a poll every ten frames -
+        /// about 170 ms at sixty. Matching it exactly would leave the two clocks beating
+        /// against each other; polling faster than the fastest an answer can arrive means
+        /// the watcher is never what a run is waiting on. It is affordable because a poll
+        /// that finds nothing new costs a length check and no parsing.</para>
+        /// </remarks>
+        public static readonly TimeSpan DefaultPollInterval = TimeSpan.FromMilliseconds(100);
 
         /// <summary>The event the probe writes when a command throws.</summary>
         public const string CommandFailedEvent = "command-failed";
@@ -43,14 +55,10 @@ namespace GlobalConversationTracker.Automation
         /// <exception cref="ArgumentNullException"><paramref name="logPath"/> is null.</exception>
         public ProbeWatcher(string logPath, TimeSpan? poll = null)
             : this(
-                () => ProbeLog.ReadFile(
-                    logPath ?? throw new ArgumentNullException(nameof(logPath))),
+                new ProbeLogTail(
+                    logPath ?? throw new ArgumentNullException(nameof(logPath))).Read,
                 poll)
         {
-            if (logPath == null)
-            {
-                throw new ArgumentNullException(nameof(logPath));
-            }
         }
 
         /// <summary>Watches whatever a reader returns. For tests.</summary>

@@ -215,7 +215,6 @@ namespace GlobalConversationTracker.Automation.Tests
         public void NothingIsRefusedRatherThanRead()
         {
             Assert.Throws<ArgumentNullException>(() => ProbeLog.Read(null!));
-            Assert.Throws<ArgumentNullException>(() => ProbeLog.ReadFile(null!));
         }
     }
 }
