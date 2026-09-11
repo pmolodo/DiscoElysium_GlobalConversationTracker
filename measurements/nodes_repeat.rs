@@ -38,9 +38,9 @@
 
 use std::collections::HashSet;
 
-use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
+use lookahead_engine::bridge::{LookAheadRequest, NodeRef, answer_starts};
+use lookahead_engine::core::types::{DialogueNodeId, Novelty};
 use lookahead_engine::index::{build_group_graph, read_index};
-use lookahead_engine::symbolic::answer::best_novelty;
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
@@ -122,7 +122,7 @@ fn main() {
         memory_budget_mb: 256,
         ..Default::default()
     };
-    let budget = request.search_budget();
+    let _budget = request.search_budget();
 
     println!(
         "{:>6}  {:>10}  {:>12}  {:>7}  {:>6}",
@@ -151,24 +151,29 @@ fn main() {
                         .with_constant_clock(DataLayout::group_passes_time(&graph));
                     let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
 
+                    // A MENU OF ONE OPTION, which is the only kind of request there is. The
+                    // question here is whether the nodes column is a fact about the search or
+                    // about the process, and one option is enough to ask it.
+                    let request = LookAheadRequest {
+                        conversation: start.conversation_id,
+                        starts: vec![NodeRef::from(start)],
+                        ..Default::default()
+                    };
                     let began = std::time::Instant::now();
-                    let answer = best_novelty(
+                    let answers = answer_starts(
                         &graph,
-                        start,
-                        StartBranch::Either,
-                        &seed,
-                        &mut compiler,
                         &world,
-                        COUNTER_CAP as u32,
+                        &request,
                         &novelty,
-                        Novelty::UnseenAnyGame,
-                        &budget,
+                        &mut compiler,
+                        &seed,
                         &shape,
                     );
                     let took = began.elapsed();
+                    let answer = answers.into_iter().next().expect("one start, one answer");
                     (
-                        format!("{:?}", answer.best),
-                        answer.targets_asked,
+                        format!("{}", answer.best),
+                        answer.nodes_reached,
                         vars.node_count(),
                         took,
                     )

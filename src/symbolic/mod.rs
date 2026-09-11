@@ -25,6 +25,9 @@ pub mod answer;
 pub mod backward;
 pub mod budget;
 pub mod data_layout;
+
+/// Which entries lie on every path from a start. A standalone graph analysis: it reads
+/// links and nothing else, and shares none of the diagram machinery.
 pub mod dominators;
 pub mod guard_formula;
 pub mod isolated;

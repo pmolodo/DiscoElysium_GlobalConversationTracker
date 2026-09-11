@@ -36,7 +36,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use lookahead_engine::bridge::{LookAheadRequest, NodeRef, answer_starts};
-use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
+use lookahead_engine::core::types::{DialogueNodeId, Novelty};
 use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::oracle::{self, Walk};

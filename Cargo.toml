@@ -33,22 +33,6 @@ oxidd = "0.12.0"
 [dev-dependencies]
 proptest = "1.0"
 
-# MEASUREMENTS LIVE HERE, not in tests/. A test passes or fails on its own; a measurement
-# produces a number a person reads, and the two were being confused - see de-18bo. Run one
-# with:
-#
-#     tools/run-logged.sh cargo answers -- cargo run --release --example symbolic_answers
-#
-# An example rather than a test because that is what these are: a `main` somebody runs, not
-# a claim the suite can check. It also takes them out of `cargo test`, which used to compile
-# and link every one of them on the way to running none.
-#
-# EACH NEEDS ITS PATH SPELLED OUT. Cargo looks for examples in examples/, and these live in
-# measurements/ beside the logs they produce.
-[[example]]
-name = "symbolic_answers"
-path = "measurements/symbolic_answers.rs"
-
 [[example]]
 name = "backward_support"
 path = "measurements/backward_support.rs"
@@ -95,12 +79,6 @@ path = "measurements/layout_shape.rs"
 name = "live_ranges"
 path = "measurements/live_ranges.rs"
 
-# What live_ranges only counted, applied and priced. Two arms behind one `main`, picked by
-# argument - the fixed point over a group, and the shipped call over a menu.
-[[example]]
-name = "performance_matrix"
-path = "measurements/performance_matrix.rs"
-
 [[example]]
 name = "repeat_question"
 path = "measurements/repeat_question.rs"
@@ -126,22 +104,6 @@ path = "measurements/static_analysis.rs"
 [[example]]
 name = "unread_slots"
 path = "measurements/unread_slots.rs"
-
-[[example]]
-name = "dominance_share"
-path = "measurements/dominance_share.rs"
-
-# Structural too, and the gate on de-a88z: whether two options of one menu ask the same
-# questions at all.
-[[example]]
-name = "candidate_recurrence"
-path = "measurements/candidate_recurrence.rs"
-
-# The same walk with the searches actually run: how many of the recurring asks end in a
-# verdict a memo could hold, and what holding one costs. The gate on de-znov.3.
-[[example]]
-name = "cacheable_asks"
-path = "measurements/cacheable_asks.rs"
 
 [[example]]
 name = "cache_split_menu"

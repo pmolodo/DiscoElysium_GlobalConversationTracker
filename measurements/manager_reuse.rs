@@ -84,10 +84,11 @@
 use std::collections::HashSet;
 use std::time::Instant;
 
-use lookahead_engine::bridge::{NodeRef, SnapshotWorld, WorldSnapshot};
-use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
+use lookahead_engine::bridge::{
+    LookAheadRequest, NodeRef, SnapshotWorld, WorldSnapshot, answer_starts,
+};
+use lookahead_engine::core::types::{DialogueNodeId, Novelty};
 use lookahead_engine::index::{build_group_graph, read_index};
-use lookahead_engine::symbolic::answer;
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
@@ -182,7 +183,6 @@ fn main() {
             return;
         };
         let shape = GroupShape::of(&graph);
-        let search = answer::Budget::default();
 
         // Entries that will be marked seen, one more per round, in a fixed order so two
         // runs vary the world the same way.
@@ -222,32 +222,27 @@ fn main() {
             let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
             let novelty = profile.novelty();
 
-            let mut found = 0;
+            // THE WHOLE MENU IN ONE CALL, which is what a request is. This asked the options
+            // one at a time until the per-option path was deleted.
+            let request = LookAheadRequest {
+                conversation: profile.starts.first().map_or(0, |s| s.conversation_id),
+                starts: profile.starts.iter().copied().map(NodeRef::from).collect(),
+                ..Default::default()
+            };
             let began = Instant::now();
-            for &start in &profile.starts {
-                let Some(hunting) = graph.best_linked_class(start, &novelty) else {
-                    continue;
-                };
-                if hunting <= Novelty::SeenThisGame {
-                    continue;
-                }
-                let answer = answer::best_novelty(
-                    &graph,
-                    start,
-                    StartBranch::Either,
-                    &seed,
-                    &mut compiler,
-                    &world,
-                    COUNTER_CAP as u32,
-                    &novelty,
-                    hunting,
-                    &search,
-                    &shape,
-                );
-                if answer.best > Novelty::SeenThisGame {
-                    found += 1;
-                }
-            }
+            let answers = answer_starts(
+                &graph,
+                &world,
+                &request,
+                &novelty,
+                &mut compiler,
+                &seed,
+                &shape,
+            );
+            let found = answers
+                .iter()
+                .filter(|answer| answer.best > Novelty::SeenThisGame as i32)
+                .count();
             let took = began.elapsed();
             answers_each_round.push(found);
 
