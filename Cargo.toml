@@ -178,3 +178,7 @@ path = "measurements/start_relative_layout.rs"
 [[example]]
 name = "bound_slack"
 path = "measurements/bound_slack.rs"
+
+[[example]]
+name = "bidirectional_headroom"
+path = "measurements/bidirectional_headroom.rs"
