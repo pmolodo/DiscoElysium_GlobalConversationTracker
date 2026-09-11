@@ -173,7 +173,7 @@ fn real_conversations_agree_with_the_greedy_walk() {
     let path = common::conversation_index().expect("conversation index is required");
     let index = lookahead_engine::index::read_index(&path).unwrap();
     let world = common::measurement_save();
-    for conversation in [1123, 484, 1066, 1147, 949, 511] {
+    for conversation in [1123, 484, 1066, 1147, 949, 511, 640] {
         let (graph, _) = lookahead_engine::index::build_group_graph(&index, conversation).unwrap();
         let options: Vec<_> = graph
             .nodes()

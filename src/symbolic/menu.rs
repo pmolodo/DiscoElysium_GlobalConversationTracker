@@ -25,7 +25,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
-use super::backward::{Backward, Budget as PassBudget, Nearest, Position};
+use super::backward::{Backward, Budget as PassBudget, Nearest, Position, Round};
 use super::guard_formula::GuardCompiler;
 use super::known::GroupShape;
 use super::novelty_search::{StoppedBy, choice_bounds};
@@ -197,7 +197,54 @@ pub fn mark_menu<'a, F: Fn(DialogueNodeId) -> Novelty>(
             drop(pass);
             let mut best = None;
             let mut chosen = None;
+            let mut pooled = false;
+            // ONE POOL FOR THE WHOLE ROUND, where the loop below spends a pass per target.
+            // The forward half of a meeting search is the same walk for every target in the
+            // round - same options, same cut - so asking per target walks it once per target
+            // and asking once walks it once. See [`Backward::nearest_of_many`].
+            if std::env::var("DEGCTT_MEETING").is_ok() {
+                let left = budget.wall.saturating_sub(began.elapsed());
+                if left.is_zero() {
+                    failure = Some((StoppedBy::Time, false));
+                    break 'classes;
+                }
+                answer.passes += 1;
+                match Backward::nearest_of_many(
+                    graph,
+                    &in_play,
+                    &cut,
+                    compiler,
+                    world,
+                    counter_cap,
+                    &pass_budget(left),
+                    &known,
+                    &positions,
+                ) {
+                    Round::Found {
+                        distance,
+                        winner,
+                        target,
+                    } => {
+                        best = Some(distance);
+                        chosen = Some((hunting[winner], target));
+                        pooled = true;
+                    }
+                    Round::Unreachable => break,
+                    Round::Unfinished { out_of_memory } => {
+                        failure = Some((StoppedBy::Incomplete, out_of_memory));
+                        break 'classes;
+                    }
+                }
+            }
             for &target in &in_play {
+                // THE POOL ABOVE ALREADY ANSWERED, if it ran: it asks about every target at
+                // once, so there is nothing left for a per-target pass to add.
+                if pooled {
+                    break;
+                }
+                if best.is_some_and(|d| bounds[&target] >= d) {
+                    break;
+                }
                 if best.is_some_and(|d| bounds[&target] >= d) {
                     break;
                 }
@@ -207,7 +254,12 @@ pub fn mark_menu<'a, F: Fn(DialogueNodeId) -> Novelty>(
                     break 'classes;
                 }
                 answer.passes += 1;
-                let nearest = Backward::nearest(
+                let find = if std::env::var("DEGCTT_MEETING").is_ok() {
+                    Backward::nearest_meeting
+                } else {
+                    Backward::nearest
+                };
+                let nearest = find(
                     graph,
                     target,
                     &cut,
