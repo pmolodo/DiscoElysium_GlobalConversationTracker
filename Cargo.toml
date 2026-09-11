@@ -182,3 +182,7 @@ path = "measurements/bound_slack.rs"
 [[example]]
 name = "bidirectional_headroom"
 path = "measurements/bidirectional_headroom.rs"
+
+[[example]]
+name = "onward_or_back"
+path = "measurements/onward_or_back.rs"
