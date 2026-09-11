@@ -49,6 +49,51 @@
 //! seven against three, on 640 seven against five. The three groups that mark nothing mark
 //! nothing either way, which matches their zero rounds under the exact search.
 //!
+//! ## THE WHOLE GAME, 2026-09-11: 2.6 seconds, and it discriminates
+//!
+//! All 395 menus, one process per group, the player's 256 MB, nothing crashed.
+//!
+//! ```text
+//!   onward, whole game        2,589 ms    median menu 0   p90 9   max 967
+//!   the exact marking        17,346 ms    median menu 20  p90 34  max 2,886
+//! ```
+//!
+//! SEVEN TIMES CHEAPER OVER THE GAME, and the shape is better than the total suggests: the
+//! median menu costs NOTHING measurable and the worst in the game is 761 at 967 ms - the
+//! group that cannot be answered at this allowance at all by an exact distance.
+//!
+//! ```text
+//!     conv   onward_ms   onward   reachable
+//!      761         967      4/8         5/8
+//!      368         254      0/8         0/8
+//!       14         155      0/8         0/8
+//!      631         152      3/8         7/8
+//!     1030         144      0/8         0/8
+//!      640         139      5/8         7/8
+//!       16          82      3/8         7/8
+//! ```
+//!
+//! AND IT ACTUALLY POINTS SOMEWHERE, which is the whole reason the nearest rule was
+//! introduced. Over the 371 menus where anything unread is reachable at all:
+//!
+//! ```text
+//!   menus where onward separates some options from others   321 of 371
+//!   menus where every reachable option is onward             25
+//!   menus where no option is onward - every route loops back 25
+//!
+//!   options lit by plain reachability   2,484 of 2,778 offered   (89%)
+//!   options lit by onward                 831 of 2,778           (30%)
+//! ```
+//!
+//! Reachability lights nearly nine options in ten, which is a marker that tells a player
+//! nothing. Onward lights three in ten and separates the menu in 87 per cent of the cases
+//! where there is anything to separate.
+//!
+//! THE 25 MENUS WHERE NOTHING IS ONWARD are the honest cost of this marker: unread content
+//! is reachable but every route returns through the menu first, so the player is shown no
+//! guidance where a nearest-distance marking would have picked a winner. Whether that should
+//! draw as "nothing" or as a third state is a decision de-0jsf.17 has not taken.
+//!
 //! ## Against the exact marking: 22 of 32 agree, and the other 10 are not mistakes
 //!
 //! ```text
@@ -74,6 +119,40 @@
 //! 631, 5 against 7 on 640 - and it never marked nothing where the exact marking marked
 //! something. Both of those are the right way round for a marker meant to point somewhere
 //! rather than to light up.
+//!
+//! ## And the bound's slack is CONSTANT within a group, which is de-0jsf.18's answer
+//!
+//! `DEGCT_COMPARE=1` also prints each option's OWN nearest distance - the same marking asked
+//! with no rivals - beside the structural lower bound, which is a zero-one walk over links
+//! with no diagrams at all. The gap between them does not vary:
+//!
+//! ```text
+//!   conv   own distances        bounds   slack
+//!    761   23 23 23 - 24 - 24 -    8 8 8 8 9 8 9 8      15 on every reachable option
+//!    631   16 18 18 18 17 17 - 18  10 12 12 12 11 11 11 12    6
+//!    640   14 13 14 14 13 14 14 -   8  7  8  8  7  8  8  7    6
+//!     16    - - - - - - - 4        ...                        1
+//! ```
+//!
+//! A CONSTANT OFFSET PRESERVES ORDER, so the free bound ranks the reachable options exactly
+//! as their true distances do - on 761 every bound of 8 is a true 23 and every bound of 9 is
+//! a true 24, and on 631 the bound's order is the true order with nothing out of place.
+//!
+//! ITS ONE FAILURE IS THE UNREACHABLE. 761:1007, :856 and :806 all carry a bound of 8, tied
+//! with the best, and none of them arrives at all. 631:75 and 640:380 are the same. A bound
+//! is a lower bound and cannot tell "close" from "never", so ranking by it alone would put
+//! three dead options at the top of 761's menu.
+//!
+//! THE TWO HALVES FIT TOGETHER. Reachability - or the onward form of it above - says which
+//! options arrive, and it is the cheap pass this engine is fastest at. The structural bound
+//! orders the survivors, and costs no diagram work whatsoever. Between them that is a
+//! complete marking without a layered pass anywhere in it.
+//!
+//! WHAT WOULD UNDERMINE IT is the profile. These runs mark the ten DEEPEST entries unread,
+//! which clusters the targets, so every option's route shares one long tail and the options
+//! differ only near the front - exactly where a structural walk is accurate. A real save's
+//! unread lines are scattered, and whether the slack stays constant then is NOT measured
+//! here.
 //!
 //! ## How to run it
 //!
@@ -271,14 +350,49 @@ fn ask(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budget:
         &shape,
     );
     println!("   exact marking in {} ms:", began.elapsed().as_millis());
-    for (start, mark) in profile.starts.iter().zip(&found.marks) {
+    println!(
+        "   {:>10}  {:>6}  {:>8}  {:>5}  {:>5}  {:>5}",
+        "option", "marked", "distance", "own", "bound", "slack"
+    );
+    for (index, (start, mark)) in profile.starts.iter().zip(&found.marks).enumerate() {
+        // ITS OWN NEAREST, not the one the competition left it. A menu of one contestant is
+        // the same marking asked without rivals, so round one's distance is this option's
+        // own distance to the nearest unread line - which is what a RANKING would order by
+        // and what the greedy's answer deliberately is not (de-0jsf.18).
+        let alone = menu::mark_menu(
+            graph,
+            &mut compiler,
+            &world,
+            COUNTER_CAP as u32,
+            &novelty,
+            std::slice::from_ref(&contestants[index]),
+            &menu::Budget {
+                wall: Duration::from_secs(600),
+                each: Duration::from_secs(300),
+            },
+            &shape,
+        );
+        let own = alone.marks[0].distance;
+        // The structural lower bound this option has on the nearest unread line: a zero-one
+        // walk over links with no guards and no diagrams at all.
+        let bound = lookahead_engine::symbolic::novelty_search::choice_bounds(
+            graph,
+            &contestants[index].position,
+            &HashSet::new(),
+        );
+        let least = targets.iter().filter_map(|id| bound.get(id)).min().copied();
         println!(
-            "   {:>5}:{:<4}  marked {:>5}  distance {:>5}  settled {}",
+            "   {:>5}:{:<4}  {:>6}  {:>8}  {:>5}  {:>5}  {:>5}",
             start.conversation_id,
             start.entry_id,
             if mark.round.is_some() { "YES" } else { "no" },
             mark.distance.map_or("-".into(), |d| d.to_string()),
-            mark.complete
+            own.map_or("-".into(), |d| d.to_string()),
+            least.map_or("-".into(), |d| d.to_string()),
+            match (own, least) {
+                (Some(o), Some(b)) => (o.saturating_sub(b)).to_string(),
+                _ => "-".into(),
+            }
         );
     }
 }
