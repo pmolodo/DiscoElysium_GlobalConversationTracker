@@ -71,6 +71,36 @@
 //! same depth. A fixed rule that picked the forward side would lose; one that watches which
 //! side is growing cannot.
 //!
+//! ## IT WAS BUILT, AND THEN REMOVED. This file is what is left of it
+//!
+//! The search this measurement argued for was written, verified and deleted, all of which is
+//! worth knowing before anyone argues for it again.
+//!
+//! WHAT IT ACHIEVED, on 761 at six gigabytes: 10,846 ms and 10.1 million diagram nodes,
+//! against 138,545 and 92.3 million for the one-way walk, with every option settled and
+//! `tests/menu_oracle.rs` agreeing exactly - so the distances and winners were right, not
+//! approximated. It answered that group from about 288 MB, where nothing had answered it at
+//! any budget.
+//!
+//! TWO THINGS IT TAUGHT, both intrinsic to meeting rather than to this implementation:
+//!
+//! - THE MEETING ENTRY'S OWN CHARGE IS PAID BY NEITHER SIDE. The metric charges entries, and
+//!   each side charges one only when it LEAVES it, so a forward layer has paid for the
+//!   choices strictly before the meeting and a backward layer for those strictly after. The
+//!   first version returned a distance one short.
+//! - A UNIONED FORWARD FRONT'S EXEMPTION BELONGS TO THE SEEDING, not to the option entries.
+//!   Exempting every option by identity makes a route that loops back through a SIBLING
+//!   option free of its charge, which is exactly the hub shape the group is.
+//!
+//! WHY IT WENT ANYWAY. de-0jsf.20's hybrid answers the whole game in 11.9 seconds by asking a
+//! cheaper question, and reaches the exact marking on 25 menus of 395 - none of them 761, 631
+//! or 640. So the group this was built for stopped reaching it, and the groups that still
+//! could are the two where it measured three times SLOWER: 631 at 1,936 ms against 573, and
+//! 640 at 833 against 255. A faster search nothing fast needs is not worth the code.
+//!
+//! See de-0jsf.16 for the build and de-0jsf.27 for the removal. This measurement still runs,
+//! and is the thing to run first if the question ever comes back.
+//!
 //! ## What this measurement does NOT establish
 //!
 //! - THE MEET TEST IS NOT COSTED. Conjoining a forward set with a backward set at every
