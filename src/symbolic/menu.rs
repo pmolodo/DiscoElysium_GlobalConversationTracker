@@ -62,6 +62,257 @@ pub struct Budget {
     pub each: Duration,
 }
 
+/// Marks a menu by the cheap question, falling back to the exact one only where it answers
+/// nothing.
+///
+/// ## The rule
+///
+/// 1. Ask each option whether it reaches unread content with its SIBLINGS CUT. A route that
+///    had to return through another option of this menu cannot survive the cut, so a yes
+///    means the option leads onward and a no means it only gets there by looping back.
+/// 2. Where any option leads onward, those are the marks and nothing else runs.
+/// 3. Where none does and something is reachable, take the exact marking whole.
+///
+/// ## Why, from the whole game
+///
+/// The onward question answers all 395 menus in 2.6 seconds at the player's 256 MB, against
+/// 17.3 for the exact marking, and it answers conversation 761 - which no exact arrangement
+/// answers at that allowance at all. It also DISCRIMINATES where plain reachability does
+/// not: nine options in ten are reachable and three in ten lead onward.
+///
+/// Its one cost is 25 menus of 395 where content is reachable and every route to it returns
+/// through the menu, so the cheap question marks nothing. Those are all small - 24 of the 25
+/// answer exactly in between 18 and 80 ms - so step 3 is affordable exactly where it fires,
+/// and never fires on 761, 631 or 640.
+///
+/// IT IS NOT A SUPERSET OF THE EXACT MARKING, and it is worth being exact about why, since
+/// the shape of the rule invites the assumption. Where the cheap question marks SOME options
+/// the exact answer is never consulted, and it may have marked more of them. Over the whole
+/// game: 365 menus of 395 mark the same options, 18 mark more, and 12 mark FEWER - 865
+/// markers against 837, which is more in total and not a containment either way.
+///
+/// The twelve are the rule working rather than failing. An option is dropped there because it
+/// reaches its content only by returning through the menu while a sibling goes straight on,
+/// which is precisely the option this marking exists to stop recommending. 631 is the clearest
+/// case: four marks become three, and the menu goes from 2,886 ms to 279.
+///
+/// An onward mark carries no distance, because none was computed. See de-0jsf.18 for the
+/// free structural bound that orders them when an ordering is wanted.
+#[allow(clippy::too_many_arguments)]
+pub fn mark_menu_hybrid<'a, F: Fn(DialogueNodeId) -> Novelty>(
+    graph: &LookAheadGraph,
+    compiler: &mut GuardCompiler<'a>,
+    world: &dyn ILookAheadWorld,
+    counter_cap: u32,
+    novelty: &F,
+    contestants: &[Contestant],
+    budget: &Budget,
+    shape: &GroupShape,
+) -> MenuAnswer {
+    let onward = mark_onward(
+        graph,
+        compiler,
+        world,
+        counter_cap,
+        novelty,
+        contestants,
+        budget,
+        shape,
+    );
+    if onward.rounds > 0 {
+        return onward;
+    }
+    // NOTHING LED ONWARD. Either there is nothing to find - in which case the exact marking
+    // settles on its own first pass and agrees - or every route loops back, which is the one
+    // case the cheap question cannot answer and the expensive one can.
+    let mut exact = mark_menu(
+        graph,
+        compiler,
+        world,
+        counter_cap,
+        novelty,
+        contestants,
+        budget,
+        shape,
+    );
+    exact.passes += onward.passes;
+    exact
+}
+
+/// Marks every option that reaches unread content without returning through the menu.
+///
+/// One worklist pass decides the whole menu before any option is asked about: where nothing
+/// of a class is reachable from ANY option, asking each of them separately would be eight
+/// passes to reach the same nothing.
+#[allow(clippy::too_many_arguments)]
+pub fn mark_onward<'a, F: Fn(DialogueNodeId) -> Novelty>(
+    graph: &LookAheadGraph,
+    compiler: &mut GuardCompiler<'a>,
+    world: &dyn ILookAheadWorld,
+    counter_cap: u32,
+    novelty: &F,
+    contestants: &[Contestant],
+    budget: &Budget,
+    shape: &GroupShape,
+) -> MenuAnswer {
+    let began = Instant::now();
+    let mut answer = blank(contestants);
+    let options: HashSet<_> = contestants.iter().map(|c| c.position.option).collect();
+    let mut marked = HashSet::new();
+    let mut failure = None;
+
+    'classes: for class in [Novelty::UnseenAnyGame, Novelty::UnseenThisGame] {
+        let hunting: Vec<_> = (0..contestants.len())
+            .filter(|i| !marked.contains(i) && contestants[*i].baseline < class)
+            .collect();
+        if hunting.is_empty() {
+            continue;
+        }
+        let refused: HashSet<_> = options
+            .iter()
+            .copied()
+            .filter(|option| {
+                !hunting
+                    .iter()
+                    .any(|i| contestants[*i].position.option == *option)
+            })
+            .collect();
+        let targets: Vec<_> = graph
+            .nodes()
+            .filter(|n| !n.is_group && novelty(n.id) == class && !options.contains(&n.id))
+            .map(|n| n.id)
+            .collect();
+        if targets.is_empty() {
+            continue;
+        }
+
+        // THE GATE, and it is one pass rather than one per option: what the whole menu can
+        // reach with nothing of its own cut. Where that is nothing, no option can do better.
+        let mut together = shape.known_from(graph, contestants[hunting[0]].position.option);
+        for &i in &hunting {
+            let position = &contestants[i].position;
+            for &entry in &position.entries {
+                together = together.from(entry, &position.holding);
+            }
+        }
+        let left = budget.wall.saturating_sub(began.elapsed());
+        if left.is_zero() {
+            failure = Some((StoppedBy::Time, false));
+            break 'classes;
+        }
+        answer.passes += 1;
+        let reachable = Backward::reaching_any_knowing(
+            graph,
+            &targets,
+            &refused,
+            compiler,
+            world,
+            counter_cap,
+            &PassBudget {
+                time: budget.each.min(left),
+                steps: usize::MAX,
+                ..Default::default()
+            },
+            Some(&together),
+        );
+        if reachable.stats().met_at.is_none() {
+            if reachable.stats().reached_fixed_point {
+                continue;
+            }
+            failure = Some((StoppedBy::Incomplete, reachable.stats().out_of_memory));
+            break 'classes;
+        }
+        drop(reachable);
+
+        for &i in &hunting {
+            // EVERY SIBLING CUT, so what is left is what this option reaches on its own.
+            let mut cut = refused.clone();
+            for &other in &hunting {
+                if other != i {
+                    cut.insert(contestants[other].position.option);
+                }
+            }
+            let position = &contestants[i].position;
+            let mut known = shape.known_from(graph, position.option);
+            for &entry in &position.entries {
+                known = known.from(entry, &position.holding);
+            }
+            let left = budget.wall.saturating_sub(began.elapsed());
+            if left.is_zero() {
+                failure = Some((StoppedBy::Time, false));
+                break 'classes;
+            }
+            answer.passes += 1;
+            let alone = Backward::reaching_any_knowing(
+                graph,
+                &targets,
+                &cut,
+                compiler,
+                world,
+                counter_cap,
+                &PassBudget {
+                    time: budget.each.min(left),
+                    steps: usize::MAX,
+                    ..Default::default()
+                },
+                Some(&known),
+            );
+            if alone.stats().met_at.is_some() {
+                answer.rounds += 1;
+                answer.marks[i] = Marked {
+                    best: class,
+                    // NO DISTANCE, because none was computed and inventing one would be a
+                    // claim this question cannot support.
+                    distance: None,
+                    round: Some(answer.rounds),
+                    witness: None,
+                    complete: true,
+                    stopped_by: StoppedBy::Nothing,
+                    out_of_nodes: false,
+                };
+                marked.insert(i);
+            } else if !alone.stats().reached_fixed_point {
+                failure = Some((StoppedBy::Incomplete, alone.stats().out_of_memory));
+                break 'classes;
+            }
+        }
+    }
+
+    if let Some((reason, memory)) = failure {
+        for (index, mark) in answer.marks.iter_mut().enumerate() {
+            if !marked.contains(&index) && mark.best < Novelty::UnseenAnyGame {
+                mark.complete = false;
+                mark.stopped_by = reason;
+                mark.out_of_nodes = memory;
+            }
+        }
+    }
+    answer.elapsed = began.elapsed();
+    answer
+}
+
+/// Every option answered by its own baseline and nothing else, which is where both markings
+/// start.
+fn blank(contestants: &[Contestant]) -> MenuAnswer {
+    MenuAnswer {
+        marks: contestants
+            .iter()
+            .map(|c| Marked {
+                best: c.baseline,
+                distance: None,
+                round: None,
+                witness: None,
+                complete: true,
+                stopped_by: StoppedBy::Nothing,
+                out_of_nodes: false,
+            })
+            .collect(),
+        passes: 0,
+        rounds: 0,
+        elapsed: Duration::ZERO,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn mark_menu<'a, F: Fn(DialogueNodeId) -> Novelty>(
     graph: &LookAheadGraph,

@@ -307,7 +307,13 @@ where
                 baseline: novelty(start),
             })
             .collect();
-        let found = menu::mark_menu(
+        // THE HYBRID ON REQUEST - de-0jsf.20 - so one row file can be taken either way and
+        // the two compared on the same profile and the same allowance.
+        let mark = match lookahead_engine::core::env::is_set("HYBRID") {
+            true => menu::mark_menu_hybrid,
+            false => menu::mark_menu,
+        };
+        let found = mark(
             graph,
             &mut compiler,
             &world,
