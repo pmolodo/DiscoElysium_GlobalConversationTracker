@@ -46,9 +46,8 @@
 //!   asks `is_seen` at all; a seen-slot a guard reads is a tracked VARIABLE, and its
 //!   starting value is the seed's business.
 //!
-//! So between two menus in one conversation, usually only the seed has changed. That is
-//! what makes a memo worth having: a settled pass's sets are a function of the graph, the
-//! guards and the target, and none of those knows what has been read.
+//! So between two menus in one conversation, usually only the seed has changed. That is what
+//! keeps the manager and the layout worth holding: neither depends on what has been read.
 //!
 //! THAT ASYMMETRY IS THE WHOLE DESIGN. de-2wtl originally proposed a workspace "valid for
 //! ONE world snapshot", which would have been thrown away almost every menu and bought

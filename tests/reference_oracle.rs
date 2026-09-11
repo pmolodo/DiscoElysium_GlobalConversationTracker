@@ -35,18 +35,17 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use lookahead_engine::bridge::{LookAheadRequest, NodeRef, answer_starts};
 use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
 use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::oracle::{self, Walk};
-use lookahead_engine::symbolic::answer;
 use lookahead_engine::symbolic::backward::{Backward, Budget as BackwardBudget, SettledPass};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::known::{GroupShape, Known};
-use lookahead_engine::symbolic::novelty_search::{Budget as SearchBudget, best_novelty};
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::world::world::ILookAheadWorld;
@@ -342,41 +341,37 @@ fn the_driver_and_the_shipped_call_find_what_the_reference_walk_finds() {
             let seed = seed_of(&graph, &world, &vars).expect("room for a seed");
             let began = std::time::Instant::now();
 
-            let driver = best_novelty(
+            // THE CALL THE GAME MAKES, and only that. There used to be two here - the
+            // driver underneath and the bridge on top of it - because the bridge answered
+            // options one at a time and the two could disagree. A request is a menu now, so
+            // there is one path and one thing to compare the walk against.
+            //
+            // A MENU OF ONE OPTION is the right shape for this test rather than a weakness
+            // of it: what is being asked is whether the search reaches what a walk reaches,
+            // which is a question about one option and the graph. A test whose subject is
+            // what one option says about ANOTHER has to offer a real menu.
+            let request = LookAheadRequest {
+                conversation: start.conversation_id,
+                starts: vec![NodeRef::from(start)],
+                ..Default::default()
+            };
+            let answers = answer_starts(
                 &graph,
-                start,
-                StartBranch::Either,
-                &seed,
-                &mut compiler,
                 &world,
-                COUNTER_CAP as u32,
+                &request,
                 &novelty,
-                &SearchBudget::default(),
-                None,
-            );
-
-            // And the call above it, which is what the bridge actually runs.
-            let answer = answer::best_novelty(
-                &graph,
-                start,
-                StartBranch::Either,
-                &seed,
                 &mut compiler,
-                &world,
-                COUNTER_CAP as u32,
-                &novelty,
-                graph
-                    .best_linked_class(start, &novelty)
-                    .unwrap_or(Novelty::SeenThisGame),
-                &answer::Budget::default(),
+                &seed,
                 &GroupShape::of(&graph),
             );
+            let answer = answers.into_iter().next().expect("one start, one answer");
 
-            (driver.best, answer, began.elapsed().as_millis())
+            (answer.best, answer, began.elapsed().as_millis())
         });
 
         let witness = match answer.witness {
-            Some(id) => {
+            Some(node) => {
+                let id = DialogueNodeId::from(node);
                 if !walk.reached(id) {
                     unwalkable_witnesses += 1;
                 }
@@ -396,16 +391,10 @@ fn the_driver_and_the_shipped_call_find_what_the_reference_walk_finds() {
         );
 
         assert!(
-            driver >= expected,
-            "conversation {conversation}: the driver said {driver:?} where the walk found \
-             {expected:?}, which is a marker lost",
-        );
-        assert!(
-            answer.best >= expected,
-            "conversation {conversation}: the shipped call said {:?} where the walk found \
-             {expected:?}, so there IS a case a state-at-a-time search answers and the two \
-             symbolic halves do not",
-            answer.best,
+            driver >= expected as i32,
+            "conversation {conversation}: the shipped call said {driver:?} where the walk \
+             found {expected:?}, which is a marker lost - and the walk shares none of the \
+             symbolic machinery, so this is the one test that can say so",
         );
 
         compared += 1;
