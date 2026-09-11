@@ -12,6 +12,8 @@
 
   "_two_files": "This one and branch-shapes.json, and the split is by SHAPE rather than by executor. A branch shape varies along one axis - what the two outcomes of one check land on - so its definition is a table with the conversation and entry named once and eight rows under them, and the eight-shape coverage argument is only readable in that form. Everything else varies along all of them at once, so it is written out. Both are shared definitions and both build the same in-game suite type.",
 
+  "_offline_only": "A scenario marked offlineOnly is run by tests/scenario_suites.rs and skipped by the in-game harness. WHAT IT IS FOR, and the only thing it is for: a row that repeats another row of the same suite in the GAME while covering a different group OFFLINE. The offline executor asks a suite's claim of every entry in a group, so a second conversation is a second group covered and costs milliseconds; the in-game run loads a save for it, five or six seconds, to watch the same rule hold in a menu the first row already watched it hold in. A row that stages a different balance, a different recorded state, or a check where the first had none is NOT this - that is the feature, and both executors run it.",
+
   "_executor_specific": "What only one side can run goes under a key naming the executor, offline or inGame, rather than in a scenario's own fields - a definition that reads as shared and is not is worse than two honest declarations. Two standing cases. inGame: the artefact and log checks, which read files the game wrote over a whole launch, are C# predicates, and are named here and resolved there. offline: a claim about EVERY entry in a group rather than about the options a menu happened to compose, which no in-game run can make because a menu is all it can see.",
 
   "_what_is_not_here": "1. switched-off: What it stages is a MOD SETTING - MarkLookAhead=false - and there is no such thing to stage without a mod: the offline engine has no switch to turn off, so from the same fixture it answers what the money suite answers, one option marked. A row claiming every option is unmarked would be a definition only one side could execute. It stays declared in LookAheadSuites, honestly, and the remarks there say the same. 2. engine-recovery: tests in-game notification when the rust look-ahead process dies, and we respawn.  3. engine-death: tests in-game notification when the rust look-ahead process dies, and we give up.",
@@ -168,7 +170,7 @@
     {
       "suite": "pristine",
       "what": "an option that is itself unread anywhere is never marked, and never crawled",
-      "why": "The rule that gives the feature its shape: nothing outranks where such an option already leads, so a marker would say nothing. On a profile that has recorded nothing at all - a first playthrough - no option in the game is ever marked, which is a strong claim and worth holding to. And it is decided WITHOUT crawling: the engine answers from the option's own novelty and returns before it builds a state, so a first playthrough pays nothing at all for the feature. That is why the statistics artefact asserts no STATE was built rather than no crawl was asked for. The four conversations are named for their shapes rather than at random: the ceiling fan has no purchase in it, Klaasje's note is small and heavily gated, the smoker is mid-sized, and Garte is one of the largest in the game.",
+      "why": "The rule that gives the feature its shape: nothing outranks where such an option already leads, so a marker would say nothing. On a profile that has recorded nothing at all - a first playthrough - no option in the game is ever marked, which is a strong claim and worth holding to. And it is decided WITHOUT crawling: the engine answers from the option's own novelty and returns before it builds a state, so a first playthrough pays nothing at all for the feature. That is why the statistics artefact asserts no STATE was built rather than no crawl was asked for. The four conversations are named for their shapes rather than at random: the ceiling fan has no purchase in it, Klaasje's note is small and heavily gated, the smoker is mid-sized, and Garte is one of the largest in the game. ONLY GARTE IS OPENED IN GAME. The other three make the same claim in the same words, and what they add is three more GROUPS for the offline executor, which asks the claim of every entry in each rather than of the options a menu offered - milliseconds there against a save load each in the game. Garte is the one kept because the claim is that even the largest group costs nothing.",
       "state": "global-state-empty.json",
       "settings": { "KeepLookAheadStates": "true" },
       "inGame": {
@@ -187,6 +189,7 @@
       "scenarios": [
         {
           "save": "at-the-fan",
+          "offlineOnly": true,
           "conversation": 9,
           "what": "the ceiling fan, in the player's own room, on a profile that has recorded nothing",
           "advances": 0,
@@ -198,6 +201,7 @@
         },
         {
           "save": "at-klaasjes-note",
+          "offlineOnly": true,
           "conversation": 717,
           "what": "Klaasje's note, in her room, on a profile that has recorded nothing",
           "advances": 1,
@@ -209,6 +213,7 @@
         },
         {
           "save": "at-the-smoker",
+          "offlineOnly": true,
           "conversation": 892,
           "what": "the smoker on the balcony, on a profile that has recorded nothing",
           "advances": 0,
@@ -235,7 +240,7 @@
     {
       "suite": "all-seen",
       "what": "the biggest conversations cost nothing when every entry is already recorded",
-      "why": "This suite used to be called headroom and used to be a measurement: the staged global state records every entry of every conversation, which was once the most expensive shape a crawl could take, because no option's own novelty is unseen-anywhere - so the early exit did not fire - and nothing reachable is unseen-anywhere either, so a crawl could not stop the instant it found something and had to explore everything. The no-potential-improvement short-circuit ended that: when every entry is recorded, nothing can outrank the option being asked about, so no walk can produce a marker and the crawl is skipped before any state is built. The expensive shape is now the near-opposite - a group with one unseen node, or a handful - and is measured elsewhere. What these five conversations are for now is the strongest available statement of the cheap case: they are the largest in the game, so if a crawl were going to run anywhere it would run here, and the claim is that not one does.",
+      "why": "This suite used to be called headroom and used to be a measurement: the staged global state records every entry of every conversation, which was once the most expensive shape a crawl could take, because no option's own novelty is unseen-anywhere - so the early exit did not fire - and nothing reachable is unseen-anywhere either, so a crawl could not stop the instant it found something and had to explore everything. The no-potential-improvement short-circuit ended that: when every entry is recorded, nothing can outrank the option being asked about, so no walk can produce a marker and the crawl is skipped before any state is built. The expensive shape is now the near-opposite - a group with one unseen node, or a handful - and is measured elsewhere. What these five conversations are for now is the strongest available statement of the cheap case: they are the largest in the game, so if a crawl were going to run anywhere it would run here, and the claim is that not one does. FIVE OFFLINE AND ONE IN GAME. The claim is asked of every entry of all five groups by tests/scenario_suites.rs, which is where it is worth having five; the suite says nothing about markers - its policy is ignored - so the game has only one thing to show, and Joyce, the largest of them, shows it.",
       "_size": "The five are ranks two to six of the game's 1,501 conversations by entry count - 368, 14, 631, 28 and 1030, from 1,770 entries down to 1,476 - and tests/all_seen.rs holds them to that against the shipped index rather than taking it on trust. The largest, 362, is not among them. ENTRY COUNT IS NOT THE COST: the budget counts entry-and-state pairs, so what blows up is the state slots a conversation touches multiplied by its reachable entries, and the count turns out to be a poor proxy - 1030 is the sixth largest and its crawls peak at 201 states, a thousandth of Joyce's. It is still the only ordering available without running them.",
       "state": "global-state-worst-case.json",
       "settings": {
@@ -264,12 +269,14 @@
       "scenarios": [
         {
           "save": "at-noid",
+          "offlineOnly": true,
           "conversation": 368,
           "what": "Noid, under the mural",
           "markers": "ignored"
         },
         {
           "save": "at-the-hanged-man",
+          "offlineOnly": true,
           "conversation": 14,
           "what": "the hanged man, in the yard",
           "markers": "ignored"
@@ -282,12 +289,14 @@
         },
         {
           "save": "at-garte",
+          "offlineOnly": true,
           "conversation": 28,
           "what": "Garte, behind the cafeteria counter",
           "markers": "ignored"
         },
         {
           "save": "at-the-doom-spiral",
+          "offlineOnly": true,
           "conversation": 1030,
           "what": "the doom spiral, in the village",
           "markers": "ignored"

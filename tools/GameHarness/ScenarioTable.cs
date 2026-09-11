@@ -224,7 +224,10 @@ namespace GlobalConversationTracker.Harness
                 Suite,
                 What,
                 State,
-                Scenarios.Select(scenario => scenario.Build(Suite)).ToArray(),
+                Scenarios
+                    .Where(scenario => !scenario.OfflineOnly)
+                    .Select(scenario => scenario.Build(Suite))
+                    .ToArray(),
                 pluginSettings: settings.Count > 0 ? settings : null,
                 artefacts: artefacts.Count > 0 ? artefacts : null,
                 logExpectations: logs.Count > 0 ? logs : null);
@@ -339,6 +342,21 @@ namespace GlobalConversationTracker.Harness
         /// <summary>The conversation to open.</summary>
         [JsonPropertyName("conversation")]
         public int Conversation { get; set; }
+
+        /// <summary>Whether the in-game run should skip this row.</summary>
+        /// <remarks>
+        /// <para>FOR A ROW THAT REPEATS ANOTHER ONE IN GAME AND NOT OFFLINE. The offline
+        /// executor asks a suite'''s claim of every entry in a group, so a second scenario
+        /// over a second conversation is a second group covered, and it costs milliseconds.
+        /// The in-game run loads a save for it - five or six seconds - to watch the same
+        /// rule hold in a menu the first row already watched it hold in.</para>
+        ///
+        /// <para>ONLY WHERE THE ROWS DIFFER IN NOTHING THE SUITE TESTS. A second save that
+        /// stages a different balance, a different recorded state or a check where the first
+        /// had none is not this: it is the feature.</para>
+        /// </remarks>
+        [JsonPropertyName("offlineOnly")]
+        public bool OfflineOnly { get; set; }
 
         /// <summary>What this scenario is for, in one line.</summary>
         [JsonPropertyName("what")]

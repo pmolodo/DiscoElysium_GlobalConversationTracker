@@ -234,11 +234,18 @@ namespace GlobalConversationTracker.Automation.Tests
             }
         }
 
+        /// <remarks>
+        /// THE LARGEST OF THE FOUR, and the other three are offlineOnly. All four make the
+        /// same claim in the same words, so what the other three add is three more GROUPS
+        /// for the offline executor - which asks the claim of every entry in each - and a
+        /// save load each for the game to watch the same rule hold again. Garte is the one
+        /// kept because the claim is that even the largest group costs nothing.
+        /// </remarks>
         [Fact]
-        public void PristineKeepsItsFourRepresentativeConversations()
+        public void PristineOpensItsLargestConversationInGame()
         {
             Assert.Equal(
-                new[] { 9, 717, 892, 28 },
+                new[] { LookAheadSuites.Garte.Conversation },
                 LookAheadSuites.Pristine.Scenarios.Select(s => s.ConversationId));
         }
 
@@ -278,15 +285,18 @@ namespace GlobalConversationTracker.Automation.Tests
         /// if it ran anywhere - is checked in <c>tests/all_seen.rs</c> against the shipped
         /// index, which is the only place it can be checked rather than restated.
         /// </remarks>
+        /// <remarks>
+        /// ONE IN GAME OF THE FIVE THE TABLE HOLDS. The suite says nothing about markers -
+        /// its policy is ignored - so the game has one thing to show and shows it once; the
+        /// other four are offlineOnly, where asking the claim of every entry of four more
+        /// groups costs milliseconds instead of a save load each.
+        /// </remarks>
         [Fact]
-        public void AllSeenAsksSeveralConversationsAndKeepsTheStatistics()
+        public void AllSeenOpensOneConversationInGameAndKeepsTheStatistics()
         {
             LookAheadSuite suite = LookAheadSuites.AllSeen;
 
-            Assert.Equal(5, suite.Scenarios.Count);
-            Assert.Equal(
-                suite.Scenarios.Count,
-                suite.Scenarios.Select(scenario => scenario.ConversationId).Distinct().Count());
+            Assert.Single(suite.Scenarios);
             Assert.Equal("true", suite.PluginSettings["KeepLookAheadStates"]);
         }
 
@@ -463,12 +473,12 @@ namespace GlobalConversationTracker.Automation.Tests
         {
             IReadOnlyList<LookAheadSuite> only = LookAheadSuites.Only(
                 new[] { LookAheadSuites.Pristine },
-                new[] { LookAheadSuites.CeilingFan.Save });
+                new[] { LookAheadSuites.Garte.Save });
 
             LookAheadSuite suite = Assert.Single(only);
             Assert.All(
                 suite.Scenarios,
-                scenario => Assert.Equal(LookAheadSuites.CeilingFan.Save, scenario.SaveName));
+                scenario => Assert.Equal(LookAheadSuites.Garte.Save, scenario.SaveName));
             Assert.NotEmpty(suite.Scenarios);
         }
 
@@ -479,11 +489,11 @@ namespace GlobalConversationTracker.Automation.Tests
                 new[] { LookAheadSuites.Pristine },
                 new[]
                 {
-                    LookAheadSuites.CeilingFan.Save + ":" + LookAheadSuites.CeilingFan.Conversation,
+                    LookAheadSuites.Garte.Save + ":" + LookAheadSuites.Garte.Conversation,
                 });
 
             LookAheadScenario scenario = Assert.Single(Assert.Single(only).Scenarios);
-            Assert.Equal(LookAheadSuites.CeilingFan.Conversation, scenario.ConversationId);
+            Assert.Equal(LookAheadSuites.Garte.Conversation, scenario.ConversationId);
         }
 
         /// <summary>
@@ -496,7 +506,7 @@ namespace GlobalConversationTracker.Automation.Tests
                 new[] { LookAheadSuites.Pristine, LookAheadSuites.SeenElsewhere },
                 new[]
                 {
-                    LookAheadSuites.CeilingFan.Save + ":" + LookAheadSuites.CeilingFan.Conversation,
+                    LookAheadSuites.Garte.Save + ":" + LookAheadSuites.Garte.Conversation,
                 });
 
             Assert.Equal("pristine", Assert.Single(only).Name);
@@ -518,7 +528,7 @@ namespace GlobalConversationTracker.Automation.Tests
                     new[] { LookAheadSuites.Pristine }, new[] { "at-the-moon" }));
 
             Assert.Contains("at-the-moon", error.Message);
-            Assert.Contains(LookAheadSuites.CeilingFan.Save, error.Message);
+            Assert.Contains(LookAheadSuites.Garte.Save, error.Message);
         }
 
         /// <summary>
