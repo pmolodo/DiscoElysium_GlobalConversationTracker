@@ -175,7 +175,7 @@ public static class Formats
     {
         if (what.Name == GlobalState)
         {
-            return GlobalStateJson.ConvertLegacyToUtf8Bytes(utf8Json, path);
+            return LegacyGlobalState.ConvertToUtf8Bytes(utf8Json, path);
         }
 
         // NO LUA-SIDE FORMAT HAS EVER HAD AN OLDER SHAPE - every one of them is at version

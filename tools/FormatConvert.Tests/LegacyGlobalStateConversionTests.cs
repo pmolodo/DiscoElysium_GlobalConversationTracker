@@ -2,11 +2,17 @@
 using System;
 using System.IO;
 using System.Text;
+using GlobalConversationTracker.Persistence;
 using Xunit;
 
-namespace GlobalConversationTracker.Persistence.Tests
+namespace FormatConvert.Tests
 {
-    /// <summary>Strict migration from the two legacy per-entry formats.</summary>
+    /// <summary>Strict migration from every shape this repository has ever written.</summary>
+    /// <remarks>
+    /// HERE RATHER THAN BESIDE THE READER, because this tool is the only thing that knows
+    /// what an older shape looks like. The mod refuses one and names the converter; what the
+    /// converter then does with it is what these check.
+    /// </remarks>
     public class LegacyGlobalStateConversionTests
     {
         private const string TestSource = "test";
@@ -75,7 +81,9 @@ namespace GlobalConversationTracker.Persistence.Tests
 
             InvalidDataException error = Assert.Throws<InvalidDataException>(() => Convert(legacy));
 
-            Assert.Contains("1 unreadable row(s) would be lost", error.Message, StringComparison.Ordinal);
+            // REFUSED WHOLE rather than converted with the row dropped: a converted file
+            // missing history nobody asked it to lose is worse than no file.
+            Assert.Contains("Could not convert", error.Message, StringComparison.Ordinal);
         }
 
         [Fact]
@@ -91,7 +99,7 @@ namespace GlobalConversationTracker.Persistence.Tests
 
             // Refused for being current rather than for its shape, since the converter has
             // nothing to convert a current file into.
-            Assert.Contains("format version 4", error.Message, StringComparison.Ordinal);
+            Assert.Contains("version 4", error.Message, StringComparison.Ordinal);
         }
 
         [Fact]
@@ -99,7 +107,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         {
             InvalidDataException error = Assert.Throws<InvalidDataException>(() => Convert("{"));
 
-            Assert.Contains("Not valid JSON", error.Message, StringComparison.Ordinal);
+            Assert.Contains("not valid JSON", error.Message, StringComparison.Ordinal);
         }
 
         [Fact]
@@ -111,7 +119,9 @@ namespace GlobalConversationTracker.Persistence.Tests
 
             InvalidDataException error = Assert.Throws<InvalidDataException>(() => Convert(legacy));
 
-            Assert.Contains("1 unreadable row(s) would be lost", error.Message, StringComparison.Ordinal);
+            // REFUSED WHOLE rather than converted with the row dropped: a converted file
+            // missing history nobody asked it to lose is worse than no file.
+            Assert.Contains("Could not convert", error.Message, StringComparison.Ordinal);
             Assert.Contains("Nonsense", error.Message, StringComparison.Ordinal);
         }
 
@@ -125,12 +135,12 @@ namespace GlobalConversationTracker.Persistence.Tests
 
             InvalidDataException error = Assert.Throws<InvalidDataException>(() => Convert(legacy));
 
-            Assert.Contains($"format version {version}", error.Message, StringComparison.Ordinal);
+            Assert.Contains($"version {version}", error.Message, StringComparison.Ordinal);
         }
 
         private static string Convert(string legacy) =>
             Encoding.UTF8.GetString(
-                GlobalStateJson.ConvertLegacyToUtf8Bytes(
+                LegacyGlobalState.ConvertToUtf8Bytes(
                     Encoding.UTF8.GetBytes(legacy), TestSource));
     }
 }

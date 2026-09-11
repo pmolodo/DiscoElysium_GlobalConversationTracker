@@ -31,19 +31,10 @@ namespace GlobalConversationTracker.Persistence
     /// it. The worst case for a run encoding is a perfectly alternating set, where it costs
     /// what the array costs; that is not what a playthrough produces.</para>
     ///
-    /// <para>Shape (format version 3), no longer read at runtime:</para>
-    /// <code>
-    /// {"version":3,"conversations":{"WasDisplayed":{"3":[17,19]},"WasOffered":{"3":[18]}},"orbs":[]}
-    /// </code>
-    /// <para>The same grouping with a plain array of entry IDs. A status string is written
-    /// once per conversation that has entries in it rather than once per entry, and an
-    /// entry costs the digits of its ID: a state recording every one of the game's ~113,000
-    /// entries is about 0.4 MB this way against 2.3 MB spelled out per entry.</para>
-    ///
-    /// <para>Shape (format versions 1 and 2), still read:</para>
-    /// <code>
-    /// {"version":2,"conversations":{"3":{"17":"WasDisplayed","18":"WasOffered"}},"orbs":[]}
-    /// </code>
+    /// <para>THE ONLY SHAPE THIS READS. Three older ones exist on players' disks, and what
+    /// each looks like is written down in <c>tools/FormatConvert</c> - the one place that
+    /// knows, and the remedy every refusal here names. A reader that still understood an
+    /// old shape would be where that shape ROTS, since nothing else would exercise it.</para>
     ///
     /// <para>JSON object keys must be strings, so the integer IDs are written as
     /// invariant decimal strings. Statuses are written as the game's own strings rather
@@ -82,43 +73,15 @@ namespace GlobalConversationTracker.Persistence
         /// The oldest version <see cref="Deserialize(byte[], string)"/> accepts.
         /// </summary>
         /// <remarks>
-        /// Equal to <see cref="FormatVersion"/> since de-pc2.2: the per-entry shape is no
-        /// longer loadable at runtime. An older file is refused loudly, as
+        /// Equal to <see cref="FormatVersion"/>, and this reader knows no other shape at
+        /// all. An older file is refused loudly, as
         /// <see cref="GlobalStateLoadOutcome.UnsupportedVersion"/>, rather than parsed by
         /// a path nothing else exercises - and refused rather than treated as corrupt,
-        /// because it is full of real history and the caller must not overwrite it.
-        /// <see cref="DeserializeLegacy"/> still reads it, for migration only.
+        /// because it is full of real history and the caller must not overwrite it. What an
+        /// older shape looks like is written down in tools/FormatConvert, which is the only
+        /// thing that reads one and the remedy every refusal names.
         /// </remarks>
         public const int MinimumReadableFormatVersion = FormatVersion;
-
-        /// <summary>
-        /// The newest version written in the per-entry shape.
-        /// </summary>
-        /// <remarks>
-        /// Only <see cref="DeserializeLegacy"/> and the converter built on it read this
-        /// far back. The runtime reader stops at
-        /// <see cref="MinimumReadableFormatVersion"/>.
-        /// </remarks>
-        public const int LegacyPerEntryFormatVersion = 2;
-
-        /// <summary>
-        /// The newest version that wrote each conversation's entry IDs as an ARRAY.
-        /// </summary>
-        /// <remarks>
-        /// <para>Version 3 grouped by status and conversation, as 4 does, and wrote a plain
-        /// array where 4 writes a run-encoded string. Only <see cref="DeserializeLegacy"/>
-        /// and the converter read it; the runtime reader stops at
-        /// <see cref="MinimumReadableFormatVersion"/> and never reaches the array branch.
-        /// </para>
-        ///
-        /// <para>IT HAD NO READER AT ALL UNTIL de-bnjy.7, which is the failure this
-        /// constant exists to have fixed. The runtime refused a version 3 file and told the
-        /// caller to convert it; the converter refused it too, because its bound was
-        /// <see cref="LegacyPerEntryFormatVersion"/> - so a shape this repository had
-        /// written was one nothing could read, while every byte in it was perfectly
-        /// intelligible.</para>
-        /// </remarks>
-        public const int LegacyGroupedArrayFormatVersion = 3;
 
         /// <summary>Name of the root version property.</summary>
         public const string VersionPropertyName = "version";
@@ -241,67 +204,6 @@ namespace GlobalConversationTracker.Persistence
             return Encoding.UTF8.GetString(SerializeToUtf8Bytes(state));
         }
 
-        /// <summary>
-        /// Converts a format version 1 or 2 document to the current grouped format.
-        /// </summary>
-        /// <remarks>
-        /// Unlike the runtime reader, conversion is strict: a document that would lose
-        /// even one unreadable row is rejected instead of producing a partial migration.
-        /// </remarks>
-        /// <exception cref="ArgumentNullException">
-        /// <paramref name="utf8Json"/> or <paramref name="sourcePath"/> is null.
-        /// </exception>
-        /// <exception cref="InvalidDataException">
-        /// The input is corrupt, is not format version 1 or 2, or contains an unreadable
-        /// row.
-        /// </exception>
-        public static byte[] ConvertLegacyToUtf8Bytes(byte[] utf8Json, string sourcePath)
-        {
-            if (utf8Json == null)
-            {
-                throw new ArgumentNullException(nameof(utf8Json));
-            }
-
-            if (sourcePath == null)
-            {
-                throw new ArgumentNullException(nameof(sourcePath));
-            }
-
-            GlobalStateLoadResult result = DeserializeWithFormatVersion(
-                utf8Json, sourcePath, allowLegacy: true, out int? sourceFormatVersion);
-            if (!result.IsLoaded)
-            {
-                throw new InvalidDataException(
-                    $"Could not convert '{sourcePath}': {result.ErrorMessage ?? result.Outcome.ToString()}.");
-            }
-
-            // EVERY VERSION BELOW THE CURRENT ONE, derived rather than listed. It used to
-            // stop at LegacyPerEntryFormatVersion, which is 2, and that left version 3 as a
-            // shape this repository had WRITTEN and nothing could read: the runtime refused
-            // it and said to convert it, and the converter said it was not a legacy version
-            // it knew (de-bnjy.7). A bound that has to be remembered when a version is added
-            // is a bound that will be forgotten again, so it is computed from FormatVersion
-            // and there is nothing left to update.
-            int version = sourceFormatVersion.GetValueOrDefault();
-            if (!sourceFormatVersion.HasValue || version < 1 || version >= FormatVersion)
-            {
-                throw new InvalidDataException(
-                    $"Could not convert '{sourcePath}': format version {version} is not "
-                    + $"an older version this build can convert (expected 1 to "
-                    + $"{FormatVersion - 1}).");
-            }
-
-            if (result.SkippedRowCount > 0)
-            {
-                string warnings = string.Join(" ", result.Warnings);
-                throw new InvalidDataException(
-                    $"Could not convert '{sourcePath}': {result.SkippedRowCount} unreadable row(s) "
-                    + $"would be lost. {warnings}");
-            }
-
-            return SerializeToUtf8Bytes(result.RequireState());
-        }
-
         /// <summary>Parses UTF-8 JSON bytes back into a state.</summary>
         /// <param name="utf8Json">The file contents.</param>
         /// <param name="sourcePath">
@@ -324,39 +226,12 @@ namespace GlobalConversationTracker.Persistence
             }
 
             return DeserializeWithFormatVersion(
-                utf8Json, sourcePath, allowLegacy: false, out _);
-        }
-
-        /// <summary>
-        /// Parses a file of any version this build has ever written, including the
-        /// per-entry shape the runtime reader now refuses. For migration only.
-        /// </summary>
-        /// <remarks>
-        /// Separate from <see cref="Deserialize(byte[], string)"/> rather than a flag on
-        /// it, so that reading a legacy file is something a caller has to ask for by
-        /// name. The runtime must not: an ancient file loaded quietly is a profile whose
-        /// history depends on a code path nothing else exercises, which is exactly what
-        /// de-pc2 set out to end. The only caller that should ask is the converter.
-        /// </remarks>
-        /// <param name="utf8Json">The file contents.</param>
-        /// <param name="sourcePath">Named in messages; not read from.</param>
-        /// <returns>What was read, with the same warnings any other read produces.</returns>
-        /// <exception cref="ArgumentNullException"><paramref name="utf8Json"/> is null.</exception>
-        public static GlobalStateLoadResult DeserializeLegacy(byte[] utf8Json, string sourcePath)
-        {
-            if (utf8Json == null)
-            {
-                throw new ArgumentNullException(nameof(utf8Json));
-            }
-
-            return DeserializeWithFormatVersion(
-                utf8Json, sourcePath, allowLegacy: true, out _);
+                utf8Json, sourcePath, out _);
         }
 
         private static GlobalStateLoadResult DeserializeWithFormatVersion(
             byte[] utf8Json,
             string sourcePath,
-            bool allowLegacy,
             out int? formatVersion)
         {
             JsonDocument document;
@@ -374,8 +249,7 @@ namespace GlobalConversationTracker.Persistence
 
             using (document)
             {
-                return ReadRoot(
-                    document.RootElement, sourcePath, allowLegacy, out formatVersion);
+                return ReadRoot(document.RootElement, sourcePath, out formatVersion);
             }
         }
 
@@ -393,7 +267,6 @@ namespace GlobalConversationTracker.Persistence
         private static GlobalStateLoadResult ReadRoot(
             JsonElement root,
             string sourcePath,
-            bool allowLegacy,
             out int? formatVersion)
         {
             formatVersion = null;
@@ -433,7 +306,7 @@ namespace GlobalConversationTracker.Persistence
             // than Corrupt, for the same reason a too-new file is: the file is full of
             // real history, so the caller has to stop rather than overwrite it with a
             // stale backup. The remedy is the converter, so the message names it.
-            if (!allowLegacy && version < MinimumReadableFormatVersion)
+            if (version < MinimumReadableFormatVersion)
             {
                 return GlobalStateLoadResult.UnsupportedVersion(
                     sourcePath,
@@ -460,15 +333,7 @@ namespace GlobalConversationTracker.Persistence
             var warnings = new List<string>();
             int skippedRowCount = 0;
 
-            if (version > LegacyPerEntryFormatVersion)
-            {
-                ReadGroupedConversations(
-                    conversations, state, warnings, ref skippedRowCount, version);
-            }
-            else
-            {
-                ReadPerEntryConversations(conversations, state, warnings, ref skippedRowCount);
-            }
+            ReadGroupedConversations(conversations, state, warnings, ref skippedRowCount);
 
             ReadOrbs(root, state, warnings, ref skippedRowCount);
 
@@ -488,14 +353,8 @@ namespace GlobalConversationTracker.Persistence
             JsonElement conversations,
             GlobalConversationState state,
             List<string> warnings,
-            ref int skippedRowCount,
-            int version)
+            ref int skippedRowCount)
         {
-            // WHICH SHAPE THE ENTRY IDS ARE IN, and it is decided by the version rather
-            // than by looking at the value. Version 3 wrote an array and 4 writes a
-            // run-encoded string, so a version 4 file carrying an array is a CORRUPT file
-            // and not an old one - sniffing the value would quietly accept it.
-            bool asArray = version <= LegacyGroupedArrayFormatVersion;
             foreach (JsonProperty status in conversations.EnumerateObject())
             {
                 if (status.Value.ValueKind != JsonValueKind.Object)
@@ -529,63 +388,37 @@ namespace GlobalConversationTracker.Persistence
                         continue;
                     }
 
-                    JsonValueKind wanted =
-                        asArray ? JsonValueKind.Array : JsonValueKind.String;
-                    if (conversation.Value.ValueKind != wanted)
+                    // A CONVERSATION'''S ENTRIES ARE ONE RUN-ENCODED STRING. A file carrying
+                    // an array here is a damaged current file rather than an old one, and
+                    // is skipped as such: the shape is decided by the version at the top,
+                    // and sniffing the value would quietly accept what the version denies.
+                    if (conversation.Value.ValueKind != JsonValueKind.String)
                     {
                         skippedRowCount++;
                         AddWarning(
                             warnings,
                             $"Conversation {conversationId} in '{status.Name}' is "
-                            + $"{conversation.Value.ValueKind}, expected "
-                            + (asArray ? "an array of IDs" : "a run-encoded string")
-                            + "; skipped.");
+                            + $"{conversation.Value.ValueKind}, expected a run-encoded "
+                            + "string; skipped.");
                         continue;
                     }
 
                     List<long> dialogueEntryIds;
-                    if (asArray)
+                    try
                     {
-                        // ONE SKIPPED ROW PER BAD ELEMENT, unlike the run below, because an
-                        // array IS a list with elements in it: a string among the numbers
-                        // costs that entry and nothing else, and the rest of the array
-                        // still says what it says.
-                        dialogueEntryIds = new List<long>();
-                        foreach (JsonElement id in conversation.Value.EnumerateArray())
-                        {
-                            if (id.ValueKind != JsonValueKind.Number
-                                || !id.TryGetInt64(out long entryId))
-                            {
-                                skippedRowCount++;
-                                AddWarning(
-                                    warnings,
-                                    $"Dialogue entry ID in conversation {conversationId} of "
-                                    + $"'{status.Name}' is {id.ValueKind}, expected a "
-                                    + "number; skipped.");
-                                continue;
-                            }
-
-                            dialogueEntryIds.Add(entryId);
-                        }
+                        dialogueEntryIds = SparseOrder.UnpackRange(
+                            conversation.Value.GetString() ?? string.Empty,
+                            $"Conversation {conversationId} in '{status.Name}'");
                     }
-                    else
+                    catch (InvalidDataException malformed)
                     {
-                        try
-                        {
-                            dialogueEntryIds = SparseOrder.UnpackRange(
-                                conversation.Value.GetString() ?? string.Empty,
-                                $"Conversation {conversationId} in '{status.Name}'");
-                        }
-                        catch (InvalidDataException malformed)
-                        {
-                            // ONE WARNING FOR THE WHOLE RUN, and one skipped row, because a
-                            // malformed run is not a list with a bad element in it - nothing
-                            // in it can be trusted to mean what it says. Counting the entries
-                            // it might have held would be inventing a number.
-                            skippedRowCount++;
-                            AddWarning(warnings, malformed.Message + " skipped.");
-                            continue;
-                        }
+                        // ONE WARNING FOR THE WHOLE RUN, and one skipped row, because a
+                        // malformed run is not a list with a bad element in it - nothing in
+                        // it can be trusted to mean what it says. Counting the entries it
+                        // might have held would be inventing a number.
+                        skippedRowCount++;
+                        AddWarning(warnings, malformed.Message + " skipped.");
+                        continue;
                     }
 
                     foreach (long dialogueEntryId in dialogueEntryIds)
@@ -604,75 +437,6 @@ namespace GlobalConversationTracker.Persistence
                         // The name is known good by here, so a false return is impossible
                         // and is not treated as a skipped row.
                         state.TryMerge(conversationId, (int)dialogueEntryId, status.Name, out _);
-                    }
-                }
-            }
-        }
-
-        /// <summary>
-        /// Reads the per-entry shape written by format versions 1 and 2.
-        /// </summary>
-        /// <remarks>
-        /// Goes when <see cref="LegacyPerEntryFormatVersion"/> does; see de-pc2.
-        /// </remarks>
-        private static void ReadPerEntryConversations(
-            JsonElement conversations,
-            GlobalConversationState state,
-            List<string> warnings,
-            ref int skippedRowCount)
-        {
-            foreach (JsonProperty conversation in conversations.EnumerateObject())
-            {
-                if (!TryParseId(conversation.Name, out int conversationId))
-                {
-                    int dropped = CountRows(conversation.Value);
-                    skippedRowCount += dropped;
-                    AddWarning(
-                        warnings,
-                        $"Conversation key '{conversation.Name}' is not an integer; skipped {dropped} row(s).");
-                    continue;
-                }
-
-                if (conversation.Value.ValueKind != JsonValueKind.Object)
-                {
-                    skippedRowCount++;
-                    AddWarning(
-                        warnings,
-                        $"Conversation {conversationId} is {conversation.Value.ValueKind}, expected an object; skipped.");
-                    continue;
-                }
-
-                foreach (JsonProperty entry in conversation.Value.EnumerateObject())
-                {
-                    if (!TryParseId(entry.Name, out int dialogueEntryId))
-                    {
-                        skippedRowCount++;
-                        AddWarning(
-                            warnings,
-                            $"Dialogue entry key '{entry.Name}' in conversation {conversationId} is not an integer; skipped.");
-                        continue;
-                    }
-
-                    if (entry.Value.ValueKind != JsonValueKind.String)
-                    {
-                        skippedRowCount++;
-                        AddWarning(
-                            warnings,
-                            $"Status of {conversationId}/{dialogueEntryId} is {entry.Value.ValueKind}, expected a string; skipped.");
-                        continue;
-                    }
-
-                    string? statusName = entry.Value.GetString();
-
-                    // TryMerge, never an assignment: an unknown status string is a skipped
-                    // row rather than a failed load, and a status that is lower than what
-                    // is already in memory cannot pull anything back down.
-                    if (!state.TryMerge(conversationId, dialogueEntryId, statusName, out _))
-                    {
-                        skippedRowCount++;
-                        AddWarning(
-                            warnings,
-                            $"Unrecognized status '{statusName}' for {conversationId}/{dialogueEntryId}; skipped.");
                     }
                 }
             }
