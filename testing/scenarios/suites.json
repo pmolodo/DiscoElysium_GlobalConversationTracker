@@ -321,6 +321,25 @@
           "branchesWhy": "Nothing is recorded anywhere, so both outcomes are on the top rung and neither can carry a marker - there is nothing above orange for one to report."
         }
       ]
+    },
+
+    {
+      "suite": "kim-case",
+      "what": "what Kim's own conversation looks like from the trash can save",
+      "why": "FOR OBSERVATION rather than assertion, which is why its markers policy is ignored: the run reports every option it was offered with the marker the game drew, and claims nothing about them. What it is for is the world a menu is answered against rather than the menu - conversation 29's group asks four CheckItem, four IsTaskActive and five IsTHCPresent, and no committed scenario had asked any of them before. See de-bnh6, which is where the offline and in-game answers disagree, and de-q9w6, which is where this suite's markers stop being observed and start being asserted.",
+      "state": "global-state-kim-case.json",
+      "offline": {
+        "claim": "unseenAnywhereIsNeverCrawled",
+        "why": "The standing rule, asked of every entry in the group rather than of the six a menu happened to offer. It is what this fixture can be held to while its markers are still being observed: an option already on the top rung is never searched, whatever else is true of the world it is searched in."
+      },
+      "scenarios": [
+        {
+          "save": "at-trashcan",
+          "conversation": 29,
+          "what": "Kim's main conversation, as it opens from the trash can",
+          "markers": "ignored"
+        }
+      ]
     }
   ]
 }

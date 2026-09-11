@@ -436,8 +436,11 @@ namespace GlobalConversationTracker.Harness
             new[]
             {
                 Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff, AllSeen,
-                RedCheck,
+                RedCheck, KimCase,
             }.Concat(BranchShapes).Append(EngineRecovery).Append(EngineDeath).ToArray();
+
+        /// <summary>TEMPORARY, for observation - remove with its row in the table.</summary>
+        public static LookAheadSuite KimCase => FromDefinition("kim-case");
 
         /// <summary>The suites a run does when it is not told which to do.</summary>
         /// <remarks>

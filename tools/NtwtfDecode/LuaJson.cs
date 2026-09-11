@@ -163,7 +163,7 @@ public static class LuaJson
         }
 
         if (reader.TokenType != JsonTokenType.PropertyName
-            || reader.GetString() != FormatStamp.PropertyName
+            || reader.GetString() != FormatStamp.VersionPropertyName
             || !reader.Read())
         {
             return FormatStamp.Unstamped;
@@ -258,7 +258,7 @@ public static class LuaJson
             // BESIDE THE NAME, AND ONLY WHERE THERE IS A NAME. A file that does not say
             // which representation it is in has nothing for a version to be a version OF,
             // and the two are read together or not at all.
-            writer.WriteNumber(FormatStamp.PropertyName, formatVersion);
+            writer.WriteNumber(FormatStamp.VersionPropertyName, formatVersion);
         }
         if (table.NumListEntries > 0)
         {
@@ -320,7 +320,7 @@ public static class LuaJson
     /// </summary>
     private static void ClaimName(HashSet<string> used, string name, string path)
     {
-        if (name == ListCountName || name == FormatName || name == FormatStamp.PropertyName)
+        if (name == ListCountName || name == FormatName || name == FormatStamp.VersionPropertyName)
         {
             // Either would be read back as this object's own bookkeeping.
             throw new InvalidDataException(
@@ -362,7 +362,7 @@ public static class LuaJson
             // this build can read is the format's own business - see the callers, which
             // ask FormatStamp before they get this far. A file written before the stamp
             // existed has no such property and reads exactly as it did.
-            if (more && properties.Current.Name == FormatStamp.PropertyName)
+            if (more && properties.Current.Name == FormatStamp.VersionPropertyName)
             {
                 more = properties.MoveNext();
             }

@@ -55,8 +55,8 @@ public static class LuaSparse
     {
         KeysName,
         RetiredReorderName,
-        LuaJson.FormatName,
-        FormatStamp.PropertyName,
+        FormatStamp.FormatPropertyName,
+        FormatStamp.VersionPropertyName,
     };
 
     /// <summary>The table whose variables mirror another table's data.</summary>
@@ -175,12 +175,12 @@ public static class LuaSparse
         bool boundaryGiven = false;
         foreach (KeyValuePair<string, object?> entry in map.Entries)
         {
-            if (entry.Key == LuaJson.FormatName && table.Count == 0)
+            if (entry.Key == FormatStamp.FormatPropertyName && table.Count == 0)
             {
                 // Which representation this is; the caller has already acted on it.
                 continue;
             }
-            if (entry.Key == FormatStamp.PropertyName && table.Count == 0)
+            if (entry.Key == FormatStamp.VersionPropertyName && table.Count == 0)
             {
                 // And which version of it, likewise. Only leading, and only beside the
                 // name - deeper in the tree it would be an ordinary key, and the check

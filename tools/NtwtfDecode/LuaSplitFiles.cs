@@ -279,11 +279,11 @@ public static class LuaSplitFiles
             // and a reader can find both without parsing the file.
             map.Entries.Insert(
                 0,
-                new KeyValuePair<string, object?>(LuaJson.FormatName, SparseFormat)
+                new KeyValuePair<string, object?>(FormatStamp.FormatPropertyName, SparseFormat)
             );
             map.Entries.Insert(
                 1,
-                new KeyValuePair<string, object?>(FormatStamp.PropertyName, FormatVersion)
+                new KeyValuePair<string, object?>(FormatStamp.VersionPropertyName, FormatVersion)
             );
             trees[name] = map;
         }

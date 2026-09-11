@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
 using GlobalConversationTracker.Core;
+using GlobalConversationTracker.Persistence;
 
 namespace NtwtfDecode;
 
@@ -306,8 +307,8 @@ public static class ExpandedSave
         }
         var manifest = new JsonObject
         {
-            [LuaJson.FormatName] = DiffFormat,
-            [FormatStamp.PropertyName] = FormatVersion,
+            [FormatStamp.FormatPropertyName] = DiffFormat,
+            [FormatStamp.VersionPropertyName] = FormatVersion,
             ["base"] = Path.GetRelativePath(directory, fullBaseline)
                 .Replace(Path.DirectorySeparatorChar, '/'),
             ["members"] = members,
@@ -350,7 +351,7 @@ public static class ExpandedSave
     {
         JsonObject manifest = JsonNode.Parse(File.ReadAllText(manifestPath)) as JsonObject
             ?? throw new InvalidDataException($"'{manifestPath}' is not a JSON object");
-        if (manifest[LuaJson.FormatName]?.GetValue<string>() != DiffFormat
+        if (manifest[FormatStamp.FormatPropertyName]?.GetValue<string>() != DiffFormat
             || manifest["base"]?.GetValue<string>() is not string relativeBase
             || manifest["members"] is not JsonArray members)
         {
@@ -361,7 +362,7 @@ public static class ExpandedSave
         // one would resolve wrongly, and what follows writes a save.
         FormatStamp.EnsureReadable(
             DiffFormat,
-            manifest[FormatStamp.PropertyName]?.GetValue<int>() ?? FormatStamp.Unstamped,
+            manifest[FormatStamp.VersionPropertyName]?.GetValue<int>() ?? FormatStamp.Unstamped,
             FormatVersion);
 
         chain ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);

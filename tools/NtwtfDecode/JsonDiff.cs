@@ -28,8 +28,8 @@ public static class JsonDiff
         // that a reader has to look past to find the change.
         var patch = new JsonObject
         {
-            [LuaJson.FormatName] = Format,
-            [FormatStamp.PropertyName] = FormatVersion,
+            [FormatStamp.FormatPropertyName] = Format,
+            [FormatStamp.VersionPropertyName] = FormatVersion,
         };
         if (removed.Count > 0)
         {
@@ -45,17 +45,15 @@ public static class JsonDiff
     /// <summary>Applies a diff document to a baseline.</summary>
     public static JsonNode? Apply(JsonNode? baseline, JsonObject patch, string context)
     {
-        if (patch[LuaJson.FormatName]?.GetValue<string>() != Format)
-        {
-            throw new InvalidDataException($"{context} is not a {Format} JSON file");
-        }
-
-        // Absent means version 1, which is what every file written before the
-        // stamp existed is - the shape did not change when it was added.
-        FormatStamp.EnsureReadable(
+        // THE WHOLE HEADER, through the one piece of code that reads one: what the file
+        // says it is as well as which version of that, because a document of the wrong
+        // KIND read as this one parses and quietly yields whatever happened to line up.
+        FormatStamp.EnsureHeader(
             Format,
-            patch[FormatStamp.PropertyName]?.GetValue<int>() ?? FormatStamp.Unstamped,
-            FormatVersion);
+            patch[FormatStamp.FormatPropertyName]?.GetValue<string>(),
+            patch[FormatStamp.VersionPropertyName]?.GetValue<int>() ?? FormatStamp.Unstamped,
+            FormatVersion,
+            context);
 
         // Absent means empty, for both. Only the format marker is required, so a diff
         // that removes nothing and a diff that changes nothing each say only what they

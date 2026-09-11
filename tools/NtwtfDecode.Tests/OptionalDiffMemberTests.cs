@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 using System.Text.Json.Nodes;
+using GlobalConversationTracker.Core;
 using Xunit;
 
 namespace NtwtfDecode.Tests;
@@ -44,7 +45,7 @@ public class OptionalDiffMemberTests
     public void AJsonDiffAppliesWithNeitherMemberPresent()
     {
         JsonNode baseline = JsonNode.Parse("""{"money":0}""")!;
-        var patch = new JsonObject { [LuaJson.FormatName] = JsonDiff.Format };
+        var patch = new JsonObject { [FormatStamp.FormatPropertyName] = JsonDiff.Format };
 
         JsonNode? rebuilt = JsonDiff.Apply(baseline, patch, "empty patch");
 
@@ -58,7 +59,7 @@ public class OptionalDiffMemberTests
         JsonNode baseline = JsonNode.Parse("""{"money":0,"drop":1}""")!;
         var patch = new JsonObject
         {
-            [LuaJson.FormatName] = JsonDiff.Format,
+            [FormatStamp.FormatPropertyName] = JsonDiff.Format,
             ["_remove"] = new JsonArray("/drop"),
             ["_changes"] = new JsonObject { ["money"] = 5100 },
         };
@@ -75,7 +76,7 @@ public class OptionalDiffMemberTests
         JsonNode baseline = JsonNode.Parse("""{"money":0}""")!;
         var patch = new JsonObject
         {
-            [LuaJson.FormatName] = JsonDiff.Format,
+            [FormatStamp.FormatPropertyName] = JsonDiff.Format,
             ["_remove"] = "not an array",
         };
 
@@ -107,7 +108,7 @@ public class OptionalDiffMemberTests
         var baseline = new SparseMap();
         baseline.Add("kept", "same");
         var patch = new SparseMap();
-        patch.Add(LuaJson.FormatName, SparseDiff.DiffFormat);
+        patch.Add(FormatStamp.FormatPropertyName, SparseDiff.DiffFormat);
 
         SparseMap rebuilt = SparseDiff.Apply(baseline, patch, "empty patch");
 

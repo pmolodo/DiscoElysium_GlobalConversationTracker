@@ -17,7 +17,7 @@ namespace FormatConvert;
 ///
 /// <para>TWO PLACES A VERSION CAN LIVE, and it is not tidiness that they differ. The
 /// Lua-side formats carry <c>_format</c> naming their representation, so their version sits
-/// beside it as <see cref="FormatStamp.PropertyName"/>. The global state file is not a Lua
+/// beside it as <see cref="FormatStamp.VersionPropertyName"/>. The global state file is not a Lua
 /// table and has carried a plain <c>version</c> at its root through four versions of real
 /// player history; renaming that would be a format break bought with nothing. See
 /// <see cref="FormatStamp"/>, which says the same thing from the reading end.</para>
@@ -116,7 +116,7 @@ public static class Formats
                 return new Detected(GlobalState, found, GlobalStateJson.FormatVersion);
             }
 
-            if (root.TryGetProperty(LuaJson.FormatName, out JsonElement format)
+            if (root.TryGetProperty(FormatStamp.FormatPropertyName, out JsonElement format)
                 && format.ValueKind == JsonValueKind.String)
             {
                 string name = format.GetString() ?? string.Empty;
@@ -132,7 +132,7 @@ public static class Formats
                 // ABSENT MEANS VERSION 1, everywhere, because every format was stamped
                 // while its shape was unchanged - so the files written before the stamp
                 // are version 1 in fact and not by convention.
-                int stamped = root.TryGetProperty(FormatStamp.PropertyName, out JsonElement v)
+                int stamped = root.TryGetProperty(FormatStamp.VersionPropertyName, out JsonElement v)
                     && v.ValueKind == JsonValueKind.Number
                     && v.TryGetInt32(out int read)
                         ? read
@@ -144,7 +144,7 @@ public static class Formats
 
         throw new InvalidDataException(
             $"'{path}' names no format this converter knows. A file it can read carries "
-            + $"either a '{LuaJson.FormatName}' naming its representation, or a "
+            + $"either a '{FormatStamp.FormatPropertyName}' naming its representation, or a "
             + $"'{GlobalStateVersion}' beside a '{GlobalStateConversations}'. The formats "
             + "it knows are: "
             + string.Join(", ", Known)

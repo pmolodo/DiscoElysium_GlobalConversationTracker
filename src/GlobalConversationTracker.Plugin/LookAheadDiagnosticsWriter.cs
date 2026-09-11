@@ -247,7 +247,7 @@ namespace GlobalConversationTracker
                 // in tools/GameHarness), so a shape change here fails a suite in terms of
                 // whatever the parse happened to produce rather than in terms of the
                 // version. A log nothing reads would not need this.
-                writer.WriteNumber(FormatStamp.PropertyName, FormatVersion);
+                writer.WriteNumber(FormatStamp.VersionPropertyName, FormatVersion);
                 writer.WriteString(
                     "written",
                     DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture));

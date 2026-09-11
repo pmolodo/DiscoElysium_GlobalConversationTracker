@@ -19,7 +19,7 @@ namespace GlobalConversationTracker.Core;
 /// <para>TWO PROPERTY NAMES, DELIBERATELY. The Lua-side formats - the sparse tables, the
 /// sparse diffs, the expanded-save manifest - already carry a <c>_format</c> naming which
 /// representation they are in, so their version sits beside it as
-/// <see cref="PropertyName"/>. The global state file is not a Lua table and has carried a
+/// <see cref="VersionPropertyName"/>. The global state file is not a Lua table and has carried a
 /// plain <c>version</c> at its root through four versions, which is load-bearing across
 /// real player files; renaming that for tidiness would be a format break bought with
 /// nothing.</para>
@@ -43,8 +43,17 @@ namespace GlobalConversationTracker.Core;
 /// </remarks>
 public static class FormatStamp
 {
-    /// <summary>What a Lua-side file calls its format version, beside its <c>_format</c>.</summary>
-    public const string PropertyName = "_formatVersion";
+    /// <summary>What a file calls the format it is written in.</summary>
+    /// <remarks>
+    /// HERE RATHER THAN BESIDE ONE OF THE FORMATS, which is where it was: the Lua reader
+    /// owned the name and every other format borrowed it from there, so a document that is
+    /// not a Lua table still had to reach into the Lua reader to say what it was. The pair
+    /// of names is one fact and belongs in one place.
+    /// </remarks>
+    public const string FormatPropertyName = "_format";
+
+    /// <summary>What a file calls its format version, beside its <c>_format</c>.</summary>
+    public const string VersionPropertyName = "_formatVersion";
 
     /// <summary>What a file with no stamp is taken to be.</summary>
     /// <remarks>
@@ -62,6 +71,54 @@ public static class FormatStamp
     public const string Converter = "dotnet run --project tools/FormatConvert -- <file>";
 
     /// <summary>
+    /// Checks a file's whole header - what it says it is, and which version of that - and
+    /// refuses anything but exactly what the reader was written for.
+    /// </summary>
+    /// <remarks>
+    /// <para>THE FORMAT NAME IS CHECKED THE SAME WAY THE VERSION IS, and for the same
+    /// reason. A reader handed a document of the wrong KIND is in worse trouble than one
+    /// handed an old version of the right kind: the shapes of these formats overlap - they
+    /// are all objects of objects - so a diff read as a state, or a manifest read as a
+    /// diff, parses, yields something, and loses whatever did not happen to line up.
+    /// Inferring what a document is from what it contains is the thing a name at the top
+    /// of the file exists to stop.</para>
+    ///
+    /// <para>A document with NO name is refused too, rather than assumed to be the one the
+    /// reader wanted. Every file this repository writes carries one.</para>
+    /// </remarks>
+    /// <param name="expected">What the reader is written for.</param>
+    /// <param name="found">What the file says it is, or null where it says nothing.</param>
+    /// <param name="version">The version the file records, or null where it records none.</param>
+    /// <param name="current">The version this build writes.</param>
+    /// <param name="context">The file, for the message.</param>
+    /// <exception cref="InvalidDataException">It is not that format, or not that version.</exception>
+    public static void EnsureHeader(
+        string expected, string? found, int? version, int current, string context)
+    {
+        if (found is null)
+        {
+            throw new InvalidDataException(
+                $"{context} does not say what format it is written in. A "
+                + $"{FormatPropertyName} of '{expected}' is what this reads.");
+        }
+
+        if (found != expected)
+        {
+            throw new InvalidDataException(
+                $"{context} is a '{found}' file, and this reads '{expected}'.");
+        }
+
+        if (version is null)
+        {
+            throw new InvalidDataException(
+                $"{context} is a {expected} and carries no {VersionPropertyName}. Convert "
+                + "it first:\n  " + Converter);
+        }
+
+        EnsureReadable(expected, version.Value, current);
+    }
+
+    /// <summary>
     /// Checks a file's version against the build's, and refuses anything but the current one.
     /// </summary>
     /// <remarks>
@@ -75,14 +132,9 @@ public static class FormatStamp
     /// whatever branch happened to still handle it - and a legacy branch inside a live
     /// reader is a place where an old shape ROTS, because nothing else exercises it. A
     /// converter is a place where one is written down and tested.</para>
-    ///
-    /// <para>IT REFUSES NOTHING TODAY. Every Lua-side format is at version 1 and an
-    /// unstamped file is version 1, so no committed fixture and no file this repository has
-    /// written is turned away. That is the right moment to make a reader strict: the rule
-    /// is in place before there is a second version for it to be wrong about.</para>
     /// </remarks>
     /// <param name="format">What the format is called, for the message.</param>
-    /// <param name="found">The version the file records, or <see cref="Unstamped"/>.</param>
+    /// <param name="found">The version the file records.</param>
     /// <param name="current">The version this build writes.</param>
     /// <exception cref="InvalidDataException">
     /// The file is not the current version. NOT treated as corruption in either direction:

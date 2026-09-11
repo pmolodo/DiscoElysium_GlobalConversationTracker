@@ -26,8 +26,8 @@ public static class SparseDiff
         }
 
         var patch = new SparseMap();
-        patch.Add(LuaJson.FormatName, DiffFormat);
-        patch.Add(FormatStamp.PropertyName, FormatVersion);
+        patch.Add(FormatStamp.FormatPropertyName, DiffFormat);
+        patch.Add(FormatStamp.VersionPropertyName, FormatVersion);
 
         // Left out when empty, like the JSON form: a table diff that only changes a
         // value should read as that value.
@@ -50,7 +50,7 @@ public static class SparseDiff
     /// <summary>Recursively merges a patch onto its baseline.</summary>
     public static SparseMap Apply(SparseMap baseline, SparseMap patch, string context)
     {
-        if (patch.Find(LuaJson.FormatName) is not string format || format != DiffFormat)
+        if (patch.Find(FormatStamp.FormatPropertyName) is not string format || format != DiffFormat)
         {
             throw new InvalidDataException($"{context} is not a {DiffFormat} JSON file");
         }
@@ -59,7 +59,7 @@ public static class SparseDiff
         // the stamp existed is - the shape did not change when it arrived.
         FormatStamp.EnsureReadable(
             DiffFormat,
-            patch.Find(FormatStamp.PropertyName) as int? ?? FormatStamp.Unstamped,
+            patch.Find(FormatStamp.VersionPropertyName) as int? ?? FormatStamp.Unstamped,
             FormatVersion);
         // Absent means empty for both, so a patch states only what it does.
         SparseMap removals = OptionalMap(patch, RemoveName, context);
