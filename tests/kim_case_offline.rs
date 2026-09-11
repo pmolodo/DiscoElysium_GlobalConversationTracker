@@ -153,7 +153,7 @@ fn the_kim_case_menu_as_the_engine_answers_it() {
         asked.thoughts.len(),
     );
     println!(
-        "unanswered offline: {} of {} queries, and every CheckItem",
+        "unanswered offline: {} of {} queries",
         unanswered.len(),
         asked.queries.len(),
     );
@@ -206,6 +206,7 @@ fn the_kim_case_menu_as_the_engine_answers_it() {
             // run of the game is in. See de-3jec.
             clock_locked: true,
             queries: answered,
+            items: holdings.items,
             tasks: holdings.tasks,
             thoughts: holdings.thoughts,
             variables: fixtures::variables_in_save(&scenario.save),

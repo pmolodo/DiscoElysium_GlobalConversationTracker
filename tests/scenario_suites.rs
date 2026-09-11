@@ -206,6 +206,7 @@ fn stage(
                 // run of the game is in. See de-3jec.
                 clock_locked: true,
                 queries: holdings.answers_to(&asked.queries),
+                items: holdings.items,
                 tasks: holdings.tasks,
                 thoughts: holdings.thoughts,
                 // FROM THE SAVE, and the difference between a run and no run. An ordinary

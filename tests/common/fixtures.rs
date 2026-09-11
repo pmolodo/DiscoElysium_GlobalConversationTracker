@@ -840,6 +840,10 @@ fn world_state(save: &str, member_name: &str) -> serde_json::Value {
 /// and turned its first scenario red. `CheckItem` therefore stays unanswered, which reads as
 /// not held, exactly as it did before. See de-bnh6 for where to look next.
 pub struct Holdings {
+    /// Items in the player's possession, carried or worn.
+    pub items: HashSet<String>,
+    /// Items in a slot: what CheckEquipped answers about.
+    pub equipped: HashSet<String>,
     /// Journal tasks taken and not yet closed.
     pub tasks: HashSet<String>,
     /// Thoughts the cabinet has reached, whatever state they are in.
@@ -904,6 +908,9 @@ impl Holdings {
             "IsTHCFixed" => Some(WireValue::Bool {
                 value: self.thought_states.get(argument?).map(String::as_str) == Some(FIXED),
             }),
+            "CheckEquipped" => Some(WireValue::Bool {
+                value: self.equipped.contains(argument?),
+            }),
             "IsTHCCookingOrFixed" => Some(WireValue::Bool {
                 value: matches!(
                     self.thought_states.get(argument?).map(String::as_str),
@@ -945,8 +952,17 @@ pub fn holdings_in_save(save: &str) -> Holdings {
     let clock = world_state(save, "sunshineClockTimeHolder");
 
     let thought_states = thought_states(&cabinet);
+    let carried = world_state(save, "inventoryState");
+    let equipped = equipped(&carried);
 
     Holdings {
+        // WORN COUNTS AS HELD, since an item in a slot is still the player's. What is NOT
+        // in either is the catalogue: inventoryState.itemListState names every item the
+        // database defines - 206 of them, in every save here - and reading THAT as the
+        // inventory told the world the Faln speakers were already bought, which shut the
+        // route the money suite exists to measure.
+        items: held(&carried).union(&equipped).cloned().collect(),
+        equipped,
         tasks: active_tasks(&journal),
         thoughts: thought_states
             .iter()
@@ -972,6 +988,33 @@ fn named(holder: &serde_json::Value, list: &str, field: &str) -> HashSet<String>
         .into_iter()
         .flatten()
         .filter_map(|record| record[field].as_str().map(str::to_string))
+        .collect()
+}
+
+/// What the player is carrying, by the inventory the game draws.
+///
+/// THE VIEW IS THE INVENTORY, and the list beside it is not. `inventoryViewState.inventory`
+/// holds what is in hand, in categories - tools, clothes and the rest - where
+/// `itemListState` is the per-item state of every item the database defines. Checked
+/// against the game 2026-09-11: it answers CheckItem true for the flashlight and the suede
+/// jacket and false for the deserter's gun and the Villiers, which is this set exactly.
+fn held(inventory: &serde_json::Value) -> HashSet<String> {
+    inventory["inventoryViewState"]["inventory"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .flat_map(|(_, category)| category.as_array().into_iter().flatten())
+        .filter_map(|entry| entry["Value"].as_str().map(str::to_string))
+        .collect()
+}
+
+/// What the player has in a slot, which is what `CheckEquipped` answers about.
+fn equipped(inventory: &serde_json::Value) -> HashSet<String> {
+    inventory["inventoryViewState"]["equipment"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter_map(|(_, item)| item.as_str().map(str::to_string))
         .collect()
 }
 
