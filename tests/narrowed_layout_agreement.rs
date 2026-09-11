@@ -249,7 +249,6 @@ fn answers_on_this_thread(
         &mut compiler,
         &seed,
         &shape,
-        None,
     ))
 }
 

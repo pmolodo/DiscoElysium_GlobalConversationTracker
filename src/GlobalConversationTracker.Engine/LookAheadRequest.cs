@@ -42,9 +42,6 @@ namespace GlobalConversationTracker.Engine
         /// <summary>The option entries to score.</summary>
         public IList<NodeRef> Starts { get; } = new List<NodeRef>();
 
-        /// <summary>Score Starts together as the options of one response menu.</summary>
-        public bool Menu { get; set; }
-
         /// <summary>Entries the player has never seen in any save.</summary>
         public NodeSet UnseenAnyGame { get; } = new NodeSet();
 
@@ -130,7 +127,6 @@ namespace GlobalConversationTracker.Engine
             {
                 writer.WriteStartObject();
                 writer.WriteNumber("conversation", Conversation);
-                writer.WriteBoolean("menu", Menu);
 
                 writer.WritePropertyName("starts");
                 writer.WriteStartArray();

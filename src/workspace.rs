@@ -423,7 +423,6 @@ fn own(
             &mut compiler,
             &seed,
             &shape,
-            Some(&memo),
         );
 
         // A caller that has gone away is not an error - it means the request was abandoned,

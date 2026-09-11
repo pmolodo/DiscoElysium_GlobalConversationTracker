@@ -591,9 +591,6 @@ pub struct LookAheadRequest {
     pub conversation: i32,
     /// The option entries to score. One answer comes back per start.
     pub starts: Vec<NodeRef>,
-    /// Score these options together as one menu, claiming nearest content between them.
-    #[serde(default)]
-    pub menu: bool,
     /// Entries the player has never seen in any game.
     #[serde(default)]
     pub unseen_any_game: NodeSet,
@@ -1226,10 +1223,6 @@ where
     // `measurements/per_start_setup.rs` priced at 246 ms a menu. See `GroupShape`.
     let shape = GroupShape::of(graph);
 
-    // NO MEMO. What `crate::symbolic::memo` keeps are formulas in the manager built four
-    // lines up, and that manager is dropped when this call returns - so there is nothing for
-    // a kept pass to outlive. A memo belongs to a caller that holds a manager between
-    // requests, which is `crate::workspace` and only that.
     Some(answer_starts(
         graph,
         world,
@@ -1238,7 +1231,6 @@ where
         &mut compiler,
         &seed,
         &shape,
-        None,
     ))
 }
 
@@ -1254,95 +1246,18 @@ where
 /// The caller owns the diagram side, so it also owns the de-fpax invariant: this must run
 /// on the thread that built `compiler`'s manager.
 ///
-/// ## The menu's wall, and what it costs the options at the bottom
+/// ## EVERY REQUEST IS A MENU, and a menu of one option is still a menu
 ///
-/// [`LookAheadRequest::menu_time_budget_ms`] bounds the LOOP, where
-/// [`LookAheadRequest::time_budget_ms`] bounds one turn of it. The arithmetic is de-cluo's,
-/// one level up: each option's ration is narrowed to what is left of the menu, so the parts
-/// are spent out of the whole rather than added to it, and the last option to get any time
-/// ends AT the wall rather than one option's budget past it.
+/// There was a second path here that answered the options one at a time, reached by a flag
+/// on the request. The plugin never set it: a response menu is what the game asks about, and
+/// the only callers that took the other path were the CLI and a handful of fixtures. So the
+/// flag separated the product from its own tests, and every offline scenario was green
+/// against code the game does not run - which is exactly how two defects in this path
+/// survived until an in-game run found them. See de-0jsf.21.
 ///
-/// THE OPTIONS THAT LOSE ARE THE ONES AT THE BOTTOM OF THE MENU, because `starts` arrives in
-/// the order the menu draws and this walks it in order. That is worth saying rather than
-/// hiding: under a wall that binds, the player gets a menu whose first options are answered
-/// and whose last ones say "did not finish". Answering some of them well beats answering all
-/// of them not at all, which is the alternative - the host's read deadline is not a budget,
-/// and crossing it kills the engine mid-conversation.
+/// A separate position and baseline is retained for each roll, so a check is two contestants.
 #[allow(clippy::too_many_arguments)]
-pub fn answer_starts<'a, F>(
-    graph: &LookAheadGraph,
-    world: &dyn ILookAheadWorld,
-    request: &LookAheadRequest,
-    novelty: &F,
-    compiler: &mut GuardCompiler<'a>,
-    seed: &BDDFunction,
-    shape: &GroupShape,
-    memo: Option<&crate::symbolic::memo::Memo>,
-) -> Vec<LookAheadAnswer>
-where
-    F: Fn(DialogueNodeId) -> Novelty,
-{
-    if request.menu {
-        return answer_menu(graph, world, request, novelty, compiler, seed, shape);
-    }
-    let budget = request.search_budget();
-    let menu = request.menu_budget();
-    let began = std::time::Instant::now();
-    let mut answers = Vec::with_capacity(request.starts.len());
-
-    for start in &request.starts {
-        // THE WALL IS TESTED PER OPTION, NOT PER OUTCOME, so a rolled check is never
-        // answered by half a pair. `crate::bridge::BranchLine`'s reader takes the absence of
-        // one outcome to mean the option is not a roll, and an outcome invented to fill the
-        // gap would have to name a destination it never worked out - which the Pass / Fail
-        // line paints as the option's seen colour, stating something false about the game.
-        // One branchless answer says only "did not finish", which is true.
-        let left = menu.saturating_sub(began.elapsed());
-        if left.is_zero() {
-            answers.push(unanswered(*start, "time"));
-            continue;
-        }
-
-        let id = DialogueNodeId::from(*start);
-        if graph.get(id).is_none() {
-            // Not an error for the request as a whole: a menu can offer an option the
-            // loaded group does not carry, and the honest answer about it is "nothing
-            // known" rather than a failed call for every other option too.
-            answers.push(unanswered(*start, "none"));
-            continue;
-        }
-
-        // A ROLLED CHECK IS TWO STARTS, because it is two options wearing one line of text
-        // and the mod draws them apart - see de-fes. Two searches rather than one, and only
-        // here: a menu of ordinary options costs what it did.
-        let rolled = matches!(
-            graph.get(id).map(|node| node.kind),
-            Some(DialogueCheckKind::Red) | Some(DialogueCheckKind::White)
-        );
-
-        let branches: &[StartBranch] = if rolled {
-            &[StartBranch::Pass, StartBranch::Fail]
-        } else {
-            &[StartBranch::Either]
-        };
-
-        for branch in branches {
-            // NARROWED AGAIN FOR THE SECOND OUTCOME, since the first has just spent some of
-            // the menu. A pair sharing one ration could take twice what was left, which is
-            // the one place a wall tested per option could be overrun by a whole option.
-            let ration = budget.within(menu.saturating_sub(began.elapsed()));
-            answers.push(scored(
-                graph, id, *start, world, novelty, *branch, seed, compiler, &ration, shape, memo,
-            ));
-        }
-    }
-
-    answers
-}
-
-/// Scores a response menu, retaining a separate position and baseline for each roll.
-#[allow(clippy::too_many_arguments)]
-fn answer_menu<'a, F: Fn(DialogueNodeId) -> Novelty>(
+pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
     graph: &LookAheadGraph,
     world: &dyn ILookAheadWorld,
     request: &LookAheadRequest,
@@ -1483,118 +1398,6 @@ fn unanswered(start: NodeRef, stopped_by: &str) -> LookAheadAnswer {
     }
 }
 
-/// What one start scored: an ordinary option, or one outcome of a rolled check.
-///
-/// ONE ROUTINE FOR BOTH, which is the whole of de-8hh2.6. The two differ in exactly one
-/// place now - where the search is measured from - and everything else about them is the
-/// same question. They used to be two routines that had to be kept saying the same thing,
-/// and the drift showed: the rule that refuses a search which cannot improve on its
-/// baseline had to be restated for branches, and the top-rung guard that follows from it
-/// was a separate fix rather than a consequence.
-#[allow(clippy::too_many_arguments)]
-fn scored<'a, F>(
-    graph: &LookAheadGraph,
-    id: DialogueNodeId,
-    start: NodeRef,
-    world: &dyn ILookAheadWorld,
-    novelty: F,
-    branch: StartBranch,
-    seed: &BDDFunction,
-    compiler: &mut GuardCompiler<'a>,
-    budget: &answer::Budget,
-    shape: &GroupShape,
-    memo: Option<&crate::symbolic::memo::Memo>,
-) -> LookAheadAnswer
-where
-    F: Fn(DialogueNodeId) -> Novelty,
-{
-    let began = std::time::Instant::now();
-
-    // WHERE THE SEARCH IS MEASURED FROM, and both cases name actual entries: the option
-    // itself, or the entries the outcome opens. The baseline is their best class, and they
-    // are also where the refusal walks from - one fact, used twice, so a walk can never be
-    // measuring from somewhere the baseline did not come from.
-    let mut where_from =
-        novelty_search::Where::of(graph, id, branch, seed, compiler, world, COUNTER_CAP as u32);
-    let from: Vec<DialogueNodeId> = match branch {
-        StartBranch::Either => vec![id],
-        _ => where_from.destinations(graph, compiler, world, COUNTER_CAP as u32),
-    };
-    let destination = from
-        .iter()
-        .map(|id| novelty(*id))
-        .max()
-        .unwrap_or(Novelty::SeenThisGame);
-
-    let answered =
-        |best: Novelty, complete, witness: Option<DialogueNodeId>, asked, stopped: &str| {
-            LookAheadAnswer {
-                start,
-                branch: match branch {
-                    StartBranch::Either => None,
-                    branch => Some(branch_name(branch).to_string()),
-                },
-                destination: destination as i32,
-                best: best as i32,
-                witness: witness.map(NodeRef::from),
-                complete,
-                elapsed_ms: began.elapsed().as_millis() as u64,
-                // A SET-BASED SEARCH DOES NOT ENUMERATE STATES, so a count of them is meaningless
-                // here and reported as the zero it is. What this search counts instead is candidates
-                // asked about, which is `nodes_reached`'s nearest true relative: the entries it had
-                // to consider before it could answer.
-                states_explored: 0,
-                nodes_reached: asked,
-                stopped_by: stopped.to_string(),
-            }
-        };
-
-    // THE BASELINE COULD NOT BE BUILT. Entering the start to find where this outcome lands
-    // filled the manager, so `from` is empty for want of nodes rather than because the
-    // outcome opens nothing - and an empty baseline is not a low bar, it is no answer at
-    // all. "memory" rather than "no-ram": the manager was supplied and then filled, which
-    // is what `StoppedBy::Incomplete` crosses the wire as everywhere else.
-    if where_from.out_of_nodes() {
-        return answered(destination, false, None, 0, "memory");
-    }
-
-    // NOTHING BETTER IS REACHABLE, so there is no search to run.
-    //
-    // A COMPLETE ANSWER, not a gave-up one: this establishes that nothing outranks the
-    // baseline, which is exactly what a finished search finding nothing would. And `best`
-    // is the baseline rather than the floor, because that is what was established - the
-    // start reaches where it reaches, and nothing beyond it does better.
-    //
-    // WHERE IT DOES NOT REFUSE, it has named the class the search should hunt, and that
-    // walk is not done again further in. See `class_worth_hunting`.
-    let Some(hunting) = class_worth_hunting(graph, &from, destination, &novelty) else {
-        return answered(destination, true, None, 0, "none");
-    };
-
-    let found = answer::best_novelty(
-        graph,
-        id,
-        branch,
-        seed,
-        compiler,
-        world,
-        COUNTER_CAP as u32,
-        &novelty,
-        hunting,
-        budget,
-        shape,
-        memo,
-    );
-
-    answered(
-        found.best,
-        found.by != answer::Answered::Partly,
-        found.witness,
-        found.targets_asked,
-        stopped_name(found.stopped_by),
-    )
-}
-
 /// The name a stopped search crosses the wire under.
 ///
 /// THE WORDS ARE THE WIRE'S, and they do not change, because the C# side and the harness read them
@@ -1687,11 +1490,15 @@ mod branch_wire_tests {
     use crate::test_graph::{Entry, GraphBuilder, node};
     use crate::world::test_world::TestWorld;
 
-    /// One start scored, with the diagram apparatus `answer_within` would have built.
+    /// One outcome of one start, asked through the path the game asks through.
     ///
-    /// The same shape as the real path, small enough to read: the layout, the variables and
-    /// the compiled guards are the group's, and the search is asked one question about one
-    /// outcome.
+    /// A MENU OF ONE OPTION, because that is the only kind of request there is. A rolled
+    /// check comes back as two answers - one per outcome, told apart by `branch` - so this
+    /// picks the one it was asked about.
+    ///
+    /// The subject of every caller is the ROLL rather than the competition between options,
+    /// so a menu of one costs these tests nothing: with no siblings there is no competition
+    /// to express. A test whose subject IS the competition must offer a real menu.
     fn score_one<F>(
         graph: &LookAheadGraph,
         world: &TestWorld,
@@ -1708,19 +1515,33 @@ mod branch_wire_tests {
         let mut compiler = GuardCompiler::new(&vars).with_world(world);
         let seed = seed_of(graph, world, &vars).expect("room for a seed");
 
-        scored(
+        let request = LookAheadRequest {
+            conversation: start.conversation_id,
+            starts: vec![NodeRef::from(start)],
+            ..Default::default()
+        };
+        let answers = answer_starts(
             graph,
-            start,
-            NodeRef::from(start),
             world,
-            novelty,
-            branch,
-            &seed,
+            &request,
+            &novelty,
             &mut compiler,
-            &answer::Budget::default(),
+            &seed,
             &GroupShape::of(graph),
-            None,
-        )
+        );
+        answers
+            .into_iter()
+            .find(|answer| answer.branch == branch_name(branch))
+            .expect("the outcome asked about comes back")
+    }
+
+    /// What the wire calls an outcome, so a test can find the answer it wanted.
+    fn branch_name(branch: StartBranch) -> Option<String> {
+        match branch {
+            StartBranch::Either => None,
+            StartBranch::Pass => Some("pass".to_string()),
+            StartBranch::Fail => Some("fail".to_string()),
+        }
     }
 
     /// A check whose outcomes land on different rungs, both below the top one.
@@ -2455,7 +2276,6 @@ mod tests {
 
         let request = LookAheadRequest {
             conversation: 631,
-            menu: false,
             starts: vec![NodeRef {
                 conversation: 631,
                 entry: 4,
@@ -2501,7 +2321,6 @@ mod tests {
     fn a_memory_budget_crosses_as_megabytes_and_arrives_as_bytes() {
         let request = LookAheadRequest {
             conversation: 1,
-            menu: false,
             starts: Vec::new(),
             unseen_any_game: NodeSet::default(),
             unseen_this_game: NodeSet::default(),
@@ -2525,7 +2344,6 @@ mod tests {
     fn an_unset_memory_budget_is_the_default_rather_than_none() {
         let request = LookAheadRequest {
             conversation: 1,
-            menu: false,
             starts: Vec::new(),
             unseen_any_game: NodeSet::default(),
             unseen_this_game: NodeSet::default(),
@@ -2555,7 +2373,6 @@ mod tests {
     fn a_time_budget_that_crosses_is_the_budget_the_search_runs_under() {
         let request = LookAheadRequest {
             conversation: 1,
-            menu: false,
             starts: Vec::new(),
             unseen_any_game: NodeSet::default(),
             unseen_this_game: NodeSet::default(),
@@ -2584,7 +2401,6 @@ mod tests {
     fn a_budget_of_zero_means_what_the_plugins_setting_means() {
         let request = LookAheadRequest {
             conversation: 1,
-            menu: false,
             starts: Vec::new(),
             unseen_any_game: NodeSet::default(),
             unseen_this_game: NodeSet::default(),

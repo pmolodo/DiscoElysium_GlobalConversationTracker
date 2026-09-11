@@ -299,7 +299,6 @@ fn main() -> anyhow::Result<()> {
         &index,
         None,
         &LookAheadRequest {
-            menu: false,
             conversation: args.conversation_id,
             starts,
             unseen_any_game: unseen.into_iter().collect(),
