@@ -641,6 +641,9 @@ namespace GlobalConversationTracker.TestProbe
             // Absent means the shipped recovery policy, which is what not mentioning it
             // means. A suite that wants the shutdown notice sends zero - see de-bnjy.1.3.
             int recoveryLimit = NumberMember(root, "recoveryLimit") ?? -1;
+            // Absent means not capturing, which is what not mentioning it means. Only a
+            // suite comparing its world against an offline one asks for this.
+            bool keepRequests = BoolMember(root, "keepRequests") ?? false;
 
             ProbeLog.Write(
                 "command-started",
@@ -657,6 +660,7 @@ namespace GlobalConversationTracker.TestProbe
                 {
                     sourcePath, enabled, stateBudget, timeBudgetMs, menuTimeBudgetMs,
                     memoryBudgetMb, logBudgetExceeded, keepStatistics, recoveryLimit,
+                    keepRequests,
                 });
             ProbeLog.Write(
                 "look-ahead-suite-prepared",
@@ -668,7 +672,8 @@ namespace GlobalConversationTracker.TestProbe
                 "memoryBudgetMb", memoryBudgetMb,
                 "logBudgetExceeded", logBudgetExceeded,
                 "keepStatistics", keepStatistics,
-                "recoveryLimit", recoveryLimit);
+                "recoveryLimit", recoveryLimit,
+                "keepRequests", keepRequests);
         }
 
         /// <summary>

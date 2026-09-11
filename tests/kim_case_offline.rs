@@ -26,6 +26,7 @@ use lookahead_engine::index::{build_group_graph, read_index};
 mod common;
 
 use common::fixtures;
+use common::repo_root;
 use common::suites;
 
 /// The suite this reads its fixture out of.
@@ -209,6 +210,18 @@ fn the_kim_case_menu_as_the_engine_answers_it() {
         },
         ..Default::default()
     };
+
+    // THE WORLD THIS ASSEMBLED, written out beside the answer. The game writes its own -
+    // the mod's KeepLookAheadRequests setting, which this suite turns on - and the two are
+    // a diff apart, which is the only way to find out which FIELD the two executors
+    // disagree about rather than which marker. See de-v702.
+    let written = repo_root().join(".build").join("offline-requests");
+    std::fs::create_dir_all(&written).expect("a folder to write the request into");
+    std::fs::write(
+        written.join(format!("look-ahead-request-{conversation}.json")),
+        serde_json::to_string(&request).expect("the request serialises"),
+    )
+    .expect("the request writes");
 
     let response = answer(&index, None, &request);
     assert!(response.error.is_none(), "{:?}", response.error);

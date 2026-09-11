@@ -220,6 +220,10 @@ namespace GlobalConversationTracker.Automation
         /// five, so one kill otherwise produces a silent replacement and the notice the
         /// suite is waiting for never comes. See de-bnjy.1.3.
         /// </param>
+        /// <param name="keepRequests">
+        /// Whether the mod writes out the world each group was crawled from, as the JSON
+        /// that crossed to the engine. For comparing a suite against an offline run of it.
+        /// </param>
         public static void SendPrepareLookAheadSuite(
             string saveGamesFolder,
             string fileName,
@@ -230,7 +234,8 @@ namespace GlobalConversationTracker.Automation
             int memoryBudgetMb,
             bool logBudgetExceeded,
             bool keepStatistics,
-            int recoveryLimit = -1)
+            int recoveryLimit = -1,
+            bool keepRequests = false)
         {
             if (string.IsNullOrWhiteSpace(fileName))
             {
@@ -248,7 +253,8 @@ namespace GlobalConversationTracker.Automation
                 "memoryBudgetMb", memoryBudgetMb,
                 "logBudgetExceeded", logBudgetExceeded,
                 "keepStatistics", keepStatistics,
-                "recoveryLimit", recoveryLimit);
+                "recoveryLimit", recoveryLimit,
+                "keepRequests", keepRequests);
         }
 
         /// <summary>Asks the mod to flush the current suite's diagnostics.</summary>

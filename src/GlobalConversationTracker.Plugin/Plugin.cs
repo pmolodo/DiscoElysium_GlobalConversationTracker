@@ -111,6 +111,10 @@ namespace GlobalConversationTracker
         /// kill otherwise produces a replacement and no notice at all. See
         /// <c>EngineRecovery</c> and de-bnjy.1.3.
         /// </param>
+        /// <param name="keepRequests">
+        /// Whether to write out the world each group was crawled from, as the JSON that
+        /// crossed to the engine. For comparing a suite against an offline run of it.
+        /// </param>
         /// <remarks>
         /// A SUITE THAT WANTS TO STARVE A CRAWL ON PURPOSE reaches for the memory budget
         /// now that the state budget is gone (de-7z0f). It cannot promise a give-up after
@@ -127,7 +131,8 @@ namespace GlobalConversationTracker
             int memoryBudgetMb,
             bool logBudgetExceeded,
             bool keepStatistics,
-            int recoveryLimit)
+            int recoveryLimit,
+            bool keepRequests)
         {
             Session.ReloadFrom(sourcePath);
 
@@ -145,7 +150,8 @@ namespace GlobalConversationTracker
                     store.DirectoryPath,
                     log,
                     logBudgetExceeded,
-                    keepStatistics),
+                    keepStatistics,
+                    keepRequests),
                 recoveryLimit);
 
             // AFTER Configure, SO THE NEW POLICY IS THE ONE THE REVIVED ENGINE RUNS UNDER.
@@ -455,6 +461,15 @@ namespace GlobalConversationTracker
                 "Maintain " + LookAheadDiagnosticsWriter.StatisticsFileName + " in the SaveGames "
                 + "folder: how many states and how long each look-ahead takes, as totals, "
                 + "extremes, a histogram, and a per-conversation breakdown.");
+            var keepLookAheadRequests = Config.Bind(
+                "Diagnostics",
+                "KeepLookAheadRequests",
+                false,
+                "Write out the world each group was crawled from, as the JSON that crossed to "
+                + "the engine, one file per conversation in the SaveGames folder. For comparing "
+                + "what the game answered a menu from against what an offline run assembles "
+                + "from the same save - which is the only way to find out which field the two "
+                + "disagree about.");
 
             // Every binding is done, so the file on disk can be brought into line with
             // them - which is what writes a newly added setting out for a player to find
@@ -559,7 +574,8 @@ namespace GlobalConversationTracker
                         store.DirectoryPath,
                         log,
                         logLookAheadBudgetExceeded.Value,
-                        keepLookAheadStates.Value)));
+                        keepLookAheadStates.Value,
+                        keepLookAheadRequests.Value)));
 
             // Not in the condition below: the band inset is presentation for a line that
             // only the look-ahead draws, so it is never the reason to keep the hooks in

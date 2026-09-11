@@ -634,6 +634,12 @@ namespace GlobalConversationTracker
                     request.Starts.Add(new NodeRef(start.ConversationId, start.EntryId));
                 }
 
+                // BEFORE IT IS ASKED, and as the JSON that crosses. What this is for is the
+                // comparison nothing could make until now: an offline run assembles the
+                // same world out of the committed save and the staged state, and when the
+                // two disagree about a menu the question is which FIELD differs.
+                _diagnostics?.RecordRequest(conversation, request.ToJson());
+
                 LookAheadResponse answered = bridge.Engine.Ask(request);
                 if (answered.Error != null)
                 {

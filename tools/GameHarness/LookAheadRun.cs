@@ -505,6 +505,7 @@ namespace GlobalConversationTracker.Harness
                     watcher.WaitForEvent("look-ahead-suite-finished", timeout, Log);
                     CheckArtefacts(suite, saveGames, report);
                     CheckLog(suite, logPath, logWrittenBefore, report);
+                    KeepCapturedRequests(saveGames, artifacts);
                 }
 
                 // Closed here, not in the finally, and asked rather than killed: the
@@ -670,7 +671,10 @@ namespace GlobalConversationTracker.Harness
                 // Negative unless a suite asks the mod not to replace a killed engine.
                 // Test-only, like the state budget above, and no player setting
                 // corresponds to it either.
-                Setting(suite, LookAheadSuites.TestRecoveryLimitSetting, -1));
+                Setting(suite, LookAheadSuites.TestRecoveryLimitSetting, -1),
+                // Off unless a suite is comparing the world it was answered from against
+                // the one an offline run assembles - see de-v702.
+                Setting(suite, "KeepLookAheadRequests", false));
         }
 
         private static bool Setting(LookAheadSuite suite, string name, bool fallback) =>
@@ -695,6 +699,34 @@ namespace GlobalConversationTracker.Harness
             return suite.PluginSettings.TryGetValue(name, out string? value)
                 ? int.Parse(value)
                 : fallback;
+        }
+
+        /// <summary>Takes copies of any captured requests before the profile is put back.</summary>
+        /// <remarks>
+        /// THE PROFILE IS RESTORED WHEN THE RUN ENDS, which is right and which would take
+        /// these with it. What they are for outlives the run: the world the game answered a
+        /// group from, to be compared against the one an offline run assembles from the
+        /// same save. Nothing is written unless a suite asked for the capture.
+        /// </remarks>
+        /// <param name="saveGames">The profile's SaveGames folder.</param>
+        /// <param name="artifacts">Where the run's own output goes.</param>
+        private static void KeepCapturedRequests(string saveGames, string artifacts)
+        {
+            string[] captured = Directory.GetFiles(saveGames, "look-ahead-request-*.json");
+            if (captured.Length == 0)
+            {
+                return;
+            }
+
+            string kept = Path.Combine(artifacts, "requests");
+            Directory.CreateDirectory(kept);
+            foreach (string path in captured)
+            {
+                File.Copy(path, Path.Combine(kept, Path.GetFileName(path)), overwrite: true);
+            }
+
+            Console.WriteLine(
+                $"        kept {captured.Length} captured request(s) in {kept}");
         }
 
         private static void ClearArtefacts(LookAheadSuite suite, string saveGames)

@@ -48,20 +48,36 @@ namespace GlobalConversationTracker
         /// </summary>
         private const int StatisticsWriteInterval = 200;
 
+        /// <summary>What a captured request is called, by the conversation it asks about.</summary>
+        /// <remarks>
+        /// ONE FILE PER GROUP, rewritten each time that group is asked. A journal of every
+        /// menu would be a bigger file saying the same thing: what is wanted from this is
+        /// the WORLD a group was crawled from, and that does not change between two menus
+        /// of the same group in the same place.
+        /// </remarks>
+        internal const string RequestFileNameFormat = "look-ahead-request-{0}.json";
+
         private readonly IGlobalStateLog _log;
         private readonly LookAheadStatistics _statistics = new LookAheadStatistics();
+        private readonly string _directoryPath;
         private long _sinceLastWrite;
         private bool _overflowLogFailed;
         private bool _statisticsFailed;
+        private bool _requestCaptureFailed;
 
         /// <summary>Creates a writer.</summary>
         /// <param name="directoryPath">The SaveGames directory.</param>
         /// <param name="log">Where write failures are reported.</param>
         /// <param name="logOverflows">Whether to record budget overflows.</param>
         /// <param name="keepStatistics">Whether to accumulate and write statistics.</param>
+        /// <param name="keepRequests">Whether to write out what crossed to the engine.</param>
         /// <exception cref="ArgumentNullException">An argument is null.</exception>
         internal LookAheadDiagnosticsWriter(
-            string directoryPath, IGlobalStateLog log, bool logOverflows, bool keepStatistics)
+            string directoryPath,
+            IGlobalStateLog log,
+            bool logOverflows,
+            bool keepStatistics,
+            bool keepRequests = false)
         {
             if (string.IsNullOrWhiteSpace(directoryPath))
             {
@@ -69,8 +85,10 @@ namespace GlobalConversationTracker
             }
 
             _log = log ?? throw new ArgumentNullException(nameof(log));
+            _directoryPath = directoryPath;
             LogOverflows = logOverflows;
             KeepStatistics = keepStatistics;
+            KeepRequests = keepRequests;
             OverflowLogPath = Path.Combine(directoryPath, OverflowLogName);
             StatisticsPath = Path.Combine(directoryPath, StatisticsFileName);
         }
@@ -87,8 +105,52 @@ namespace GlobalConversationTracker
         /// <summary>Where the statistics summary is written.</summary>
         internal string StatisticsPath { get; }
 
+        /// <summary>Whether what crosses to the engine is being written out.</summary>
+        internal bool KeepRequests { get; }
+
         /// <summary>Whether anything at all needs recording.</summary>
-        internal bool Enabled => LogOverflows || KeepStatistics;
+        internal bool Enabled => LogOverflows || KeepStatistics || KeepRequests;
+
+        /// <summary>Writes out the request a group was answered from, as it crossed.</summary>
+        /// <remarks>
+        /// <para>WHAT THIS IS FOR, and it is not the marker. An offline run assembles the
+        /// same world out of the committed save and the staged state, and when the two
+        /// executors disagree about a menu the question is always WHICH FIELD differs -
+        /// which nothing could answer, because only one side's world was ever written
+        /// down. This writes the game's side. The offline side writes its own, and the
+        /// two are a diff apart.</para>
+        ///
+        /// <para>THE JSON THAT CROSSED, not a rendering of it: the same string the engine
+        /// was handed, so what is compared is what was asked rather than what this
+        /// assembly made of it afterwards.</para>
+        /// </remarks>
+        /// <param name="conversation">The group the request asks about.</param>
+        /// <param name="json">The request, as it crossed to the engine.</param>
+        internal void RecordRequest(int conversation, string json)
+        {
+            if (!KeepRequests || _requestCaptureFailed)
+            {
+                return;
+            }
+
+            string path = Path.Combine(
+                _directoryPath,
+                string.Format(
+                    CultureInfo.InvariantCulture, RequestFileNameFormat, conversation));
+
+            try
+            {
+                File.WriteAllText(path, json);
+            }
+            catch (Exception ex)
+            {
+                _requestCaptureFailed = true;
+                _log.Warning(
+                    $"Could not write '{path}' ({ex.Message}). Look-ahead requests will not "
+                    + "be captured for the rest of this session; the marker itself is "
+                    + "unaffected.");
+            }
+        }
 
 
         /// <summary>Records one finished crawl.</summary>
