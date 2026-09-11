@@ -163,7 +163,9 @@ pub fn mark_onward<'a, F: Fn(DialogueNodeId) -> Novelty>(
 
     'classes: for class in [Novelty::UnseenAnyGame, Novelty::UnseenThisGame] {
         let hunting: Vec<_> = (0..contestants.len())
-            .filter(|i| !marked.contains(i) && contestants[*i].baseline < class)
+            .filter(|i| {
+                !marked.contains(i) && worth_hunting(graph, &contestants[*i], novelty, class)
+            })
             .collect();
         if hunting.is_empty() {
             continue;
@@ -280,7 +282,14 @@ pub fn mark_onward<'a, F: Fn(DialogueNodeId) -> Novelty>(
 
     if let Some((reason, memory)) = failure {
         for (index, mark) in answer.marks.iter_mut().enumerate() {
-            if !marked.contains(&index) && mark.best < Novelty::UnseenAnyGame {
+            // ONLY WHAT WAS ACTUALLY BEING SEARCHED FOR. An option nothing of either class
+            // could improve was settled before a diagram was touched, and a budget that ran
+            // out somewhere else does not unsettle it - see `worth_hunting`. Reporting it
+            // unfinished draws the uncertain marker over "there is nothing down there".
+            let hunted = [Novelty::UnseenAnyGame, Novelty::UnseenThisGame]
+                .into_iter()
+                .any(|class| worth_hunting(graph, &contestants[index], novelty, class));
+            if !marked.contains(&index) && hunted {
                 mark.complete = false;
                 mark.stopped_by = reason;
                 mark.out_of_nodes = memory;
@@ -289,6 +298,34 @@ pub fn mark_onward<'a, F: Fn(DialogueNodeId) -> Novelty>(
     }
     answer.elapsed = began.elapsed();
     answer
+}
+
+/// Whether this option could be improved on by the class being hunted.
+///
+/// TWO REFUSALS, AND THE SECOND IS THE ONE A BUDGET MUST NOT UNDO. The baseline says the
+/// option already lands at or above the class, so nothing of that class could outrank it.
+/// The link walk says nothing of that class is even LINK-REACHABLE from here - guards
+/// ignored, so it can only be optimistic - which settles the option without a diagram.
+///
+/// WHY IT BELONGS HERE rather than only in the caller. A menu is marked by passes shared
+/// across its options, so an option left in the contest is one a budget can strand: when the
+/// pass runs out, every option still hunting is reported unfinished, and "the search gave up"
+/// is drawn where "there is nothing down there" is the truth. Conversation 451's "Leave." is
+/// exactly that - it reaches nothing at all, which is as firmly established at a budget of
+/// one as at any other, and it drew the uncertain marker for want of this test.
+///
+/// `graph.best_linked_class` is the same walk `bridge::class_worth_hunting` makes for an
+/// option asked on its own, so a menu and a single option refuse on the same grounds.
+fn worth_hunting<F: Fn(DialogueNodeId) -> Novelty>(
+    graph: &LookAheadGraph,
+    contestant: &Contestant,
+    novelty: &F,
+    class: Novelty,
+) -> bool {
+    contestant.baseline < class
+        && graph
+            .best_linked_class(contestant.position.option, novelty)
+            .is_some_and(|reachable| reachable >= class)
 }
 
 /// Every option answered by its own baseline and nothing else, which is where both markings
@@ -355,7 +392,9 @@ pub fn mark_menu<'a, F: Fn(DialogueNodeId) -> Novelty>(
     let mut unreachable = HashSet::new();
     'classes: for class in [Novelty::UnseenAnyGame, Novelty::UnseenThisGame] {
         let mut hunting: Vec<_> = (0..contestants.len())
-            .filter(|i| !marked.contains(i) && contestants[*i].baseline < class)
+            .filter(|i| {
+                !marked.contains(i) && worth_hunting(graph, &contestants[*i], novelty, class)
+            })
             .collect();
         let mut cut: HashSet<_> = options
             .iter()
@@ -562,7 +601,14 @@ pub fn mark_menu<'a, F: Fn(DialogueNodeId) -> Novelty>(
     }
     if let Some((reason, memory)) = failure {
         for (index, mark) in answer.marks.iter_mut().enumerate() {
-            if !marked.contains(&index) && mark.best < Novelty::UnseenAnyGame {
+            // ONLY WHAT WAS ACTUALLY BEING SEARCHED FOR. An option nothing of either class
+            // could improve was settled before a diagram was touched, and a budget that ran
+            // out somewhere else does not unsettle it - see `worth_hunting`. Reporting it
+            // unfinished draws the uncertain marker over "there is nothing down there".
+            let hunted = [Novelty::UnseenAnyGame, Novelty::UnseenThisGame]
+                .into_iter()
+                .any(|class| worth_hunting(graph, &contestants[index], novelty, class));
+            if !marked.contains(&index) && hunted {
                 mark.complete = false;
                 mark.stopped_by = reason;
                 mark.out_of_nodes = memory;

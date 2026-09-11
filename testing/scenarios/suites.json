@@ -38,8 +38,8 @@
           "advances": 1,
           "options": [
             { "entry": 86, "marker": "orange", "why": "buying the sneakers leads on to the speakers" },
-            { "entry": 33, "marker": "orange", "why": "looking returns to the hub, which still can" },
-            { "entry": 67, "marker": "orange", "why": "and so does looking at the other" },
+            { "entry": 33, "marker": "none", "why": "looking at them reaches the speakers only by coming back to the stall, where buying is still on offer - so it is not the way on, and the option beside it is" },
+            { "entry": 67, "marker": "none", "why": "and so is looking at the other: both send the player round the loop that the purchase goes straight through" },
             { "entry": 85, "marker": "none", "why": "leaving reaches nothing at all" }
           ],
           "branches": "noneAnywhere",

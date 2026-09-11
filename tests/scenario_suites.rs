@@ -124,9 +124,22 @@ impl Staged {
     }
 
     /// The request, asking about these starts.
+    /// The request for one scenario's options, ASKED AS A MENU.
+    ///
+    /// `menu` is not a detail. `bridge::answer_starts` branches on it and answers a menu
+    /// through an entirely different path from a row of separate options, and the marking
+    /// this file exists to check lives only down the menu side. Asked one at a time, the
+    /// competitive rules cannot even be expressed: whether an option reaches unread content
+    /// without returning through the MENU is a question about the other options, and there
+    /// are none.
+    ///
+    /// This ran per option until 2026-09-11, so every scenario here was passing against code
+    /// the game does not run. Nine in-game checks failed the same day against an offline
+    /// suite that was green.
     fn asking(&self, starts: Vec<NodeRef>) -> LookAheadRequest {
         LookAheadRequest {
             starts,
+            menu: true,
             ..self.request.clone()
         }
     }
