@@ -853,6 +853,9 @@ pub struct Holdings {
     pub day_counter: i32,
 }
 
+/// Minutes in an hour, for a clock the game answers to the hour.
+const MINUTES_PER_HOUR: i32 = 60;
+
 /// The state a thought the player has never reached is in.
 const NOT_YET: &str = "UNKNOWN";
 
@@ -952,7 +955,12 @@ pub fn holdings_in_save(save: &str) -> Holdings {
             .collect(),
         thought_states,
         money: whole(&character["Money"], save, "the balance"),
-        day_minutes: whole(&clock["time"]["dayMinutes"], save, "the clock"),
+        // TO THE HOUR, because that is the resolution the game answers at: the plugin reads
+        // the clock through Lua, where HourCount is as fine as it gets, and every guard in
+        // the database compares hours or days. A save that knows the minute would otherwise
+        // be staging a world the run it stands for cannot be in.
+        day_minutes: whole(&clock["time"]["dayMinutes"], save, "the clock") / MINUTES_PER_HOUR
+            * MINUTES_PER_HOUR,
         day_counter: whole(&clock["time"]["dayCounter"], save, "the day"),
     }
 }

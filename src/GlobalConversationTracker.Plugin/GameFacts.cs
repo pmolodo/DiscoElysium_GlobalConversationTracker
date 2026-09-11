@@ -2,6 +2,7 @@
 using System;
 using PixelCrushers.DialogueSystem;
 using Voidforge;
+using GlobalConversationTracker.Session;
 
 namespace GlobalConversationTracker
 {
@@ -58,18 +59,87 @@ namespace GlobalConversationTracker
             return UnknownMoney;
         }
 
-        /// <summary>The game's clock, or null before it exists.</summary>
-        internal static SunshineClockTime? ReadClock()
+        /// <summary>Where a clock that cannot be read is reported. Set once, at load.</summary>
+        internal static IGlobalStateLog? Log { get; set; }
+
+        /// <summary>Minutes in an hour, for a clock read to the hour.</summary>
+        private const int MinutesPerHour = 60;
+
+        /// <summary>Whether the complaint below has been made this session.</summary>
+        private static bool _clockComplained;
+
+        /// <summary>What the game's clock says, to the hour.</summary>
+        /// <remarks>
+        /// TO THE HOUR, WHICH IS EVERY RESOLUTION THE GAME ASKS FOR. The database's guards
+        /// compare the clock with <c>HourCount</c>, <c>TotalHourCount</c>,
+        /// <c>IsHourBetween</c>, <c>IsDayFrom</c> and <c>DayCount</c>, and not one of them
+        /// asks after a minute - so an hour read exactly is worth more than a minute read
+        /// not at all, which is what the alternative turned out to be.
+        /// </remarks>
+        internal readonly struct GameClock
         {
-            try
+            /// <summary>Creates a reading.</summary>
+            /// <param name="dayMinutes">Minutes past midnight.</param>
+            /// <param name="dayCounter">Which day it is.</param>
+            internal GameClock(int dayMinutes, int dayCounter)
             {
-                SunshineClock clock = SingletonClass<SunshineClock>.Singleton;
-                return clock == null ? null : clock.Time;
+                DayMinutes = dayMinutes;
+                DayCounter = dayCounter;
             }
-            catch (Exception)
+
+            /// <summary>Minutes past midnight.</summary>
+            internal int DayMinutes { get; }
+
+            /// <summary>Which day it is.</summary>
+            internal int DayCounter { get; }
+        }
+
+        /// <summary>The game's clock, or null where it cannot be read.</summary>
+        /// <remarks>
+        /// <para>ASKED OF LUA, THE WAY THE BALANCE IS, and that is the whole of de-3jec.
+        /// This used to read <c>SingletonClass&lt;SunshineClock&gt;.Singleton</c> - a static
+        /// on a GENERIC base class, which answers null through the IL2CPP interop layer
+        /// however alive the object is - and then reported "no clock", which sends a crawl
+        /// to midnight on day one. Every marker the mod has ever drawn was computed there.
+        /// Captured 2026-09-11: the game sent day_minutes 0 and day_counter 1 for
+        /// conversation 29 while the HUD in the same frame drew 10:35 on day three.</para>
+        ///
+        /// <para>THE SCENE WAS TRIED FIRST AND IS NOT THE ANSWER: the singleton is a plain
+        /// object rather than a component, so <c>FindObjectOfType</c> never sees it. Lua is
+        /// where the game already answers this, to the game's own dialogue, and it is the
+        /// path <see cref="ReadMoney"/> has always used.</para>
+        ///
+        /// <para>AND IT SAYS SO WHEN IT CANNOT, once per session. What this replaces was
+        /// silent for as long as the feature has existed.</para>
+        /// </remarks>
+        internal static GameClock? ReadClock()
+        {
+            Lua.Result? hour = Run("HourCount()");
+            Lua.Result? day = Run("DayCount()");
+
+            if (hour == null || !hour.isNumber || day == null || !day.isNumber)
             {
+                Complain("the game's clock did not answer");
                 return null;
             }
+
+            return new GameClock((int)hour.asFloat * MinutesPerHour, (int)day.asFloat);
+        }
+
+        /// <summary>Says something once, and never again this session.</summary>
+        /// <param name="what">What could not be read.</param>
+        private static void Complain(string what)
+        {
+            if (_clockComplained)
+            {
+                return;
+            }
+
+            _clockComplained = true;
+            Log?.Warning(
+                $"Look-ahead: {what}, so every crawl this session runs at midnight on day "
+                + "one with time locked. Markers will be drawn for a world the player is "
+                + "not in.");
         }
 
         /// <summary>

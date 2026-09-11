@@ -176,6 +176,16 @@ fn stage(
     let holdings = fixtures::holdings_in_save(&scenario.save);
     let asked = lookahead_engine::bridge::questions_of(&graph, group.clone());
 
+    // BUILT BEFORE THE FIELD THAT MOVES IT, since the rungs and the seen set are the same
+    // reading of the same save.
+    let seen = read_here
+        .iter()
+        .map(|&(conversation, entry)| NodeRef {
+            conversation,
+            entry,
+        })
+        .collect();
+
     let mut staged = Staged {
         graph,
         recorded,
@@ -190,6 +200,11 @@ fn stage(
                 money: scenario.money.unwrap_or(holdings.money),
                 day_minutes: scenario.day_minutes.unwrap_or(holdings.day_minutes),
                 day_counter: holdings.day_counter,
+                // LOCKED, as the plugin sends it: nothing the game exposes to Lua says whether
+                // its clock is locked, so the mod reports locked and a crawl leaves the hour
+                // where it found it. A fixture that let time pass would be staging a world no
+                // run of the game is in. See de-3jec.
+                clock_locked: true,
                 queries: holdings.answers_to(&asked.queries),
                 tasks: holdings.tasks,
                 thoughts: holdings.thoughts,
@@ -199,6 +214,12 @@ fn stage(
                 // stops the search before it builds a state, so the option draws nothing
                 // where the game draws a marker.
                 variables: fixtures::variables_in_save(&scenario.save),
+                // WHAT THIS SAVE HAS ALREADY SHOWN, which the engine seeds its seen slots from
+                // and which no offline run has ever sent. The same set the novelty rungs are
+                // built out of, put where a guard on having been shown can read it: without it
+                // every once-only entry starts unfired, and a route that is spent in the save
+                // is open to the crawl. Found by diffing against what the game sends - de-v702.
+                seen,
                 checks_pass: checks.pass,
                 checks_fail: checks.fail,
                 ..Default::default()

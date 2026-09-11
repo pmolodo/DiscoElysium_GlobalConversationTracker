@@ -275,6 +275,10 @@ namespace GlobalConversationTracker
             _store = store;
             _globalStateLog = log;
 
+            // So a fact the look-ahead cannot read out of the game is SAID rather than
+            // quietly replaced by a fallback - see GameFacts.ReadClock and de-3jec.
+            GameFacts.Log = log;
+
             // Everything the mod has been asked to do, or not do. Separate switches
             // because they answer different questions - how far along this run is, how
             // much has ever been seen, which options are new - and a player who wants one

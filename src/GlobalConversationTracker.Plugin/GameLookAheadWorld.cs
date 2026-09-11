@@ -39,10 +39,15 @@ namespace GlobalConversationTracker
         {
             Money = GameFacts.ReadMoney();
 
-            SunshineClockTime? time = GameFacts.ReadClock();
-            DayMinutes = time == null ? 0 : time.DayMinutes;
-            DayCounter = time == null ? 1 : time.DayCounter;
-            IsClockLocked = time == null || time.IsTimeLocked;
+            GameFacts.GameClock? time = GameFacts.ReadClock();
+            DayMinutes = time?.DayMinutes ?? 0;
+            DayCounter = time?.DayCounter ?? 1;
+            // LOCKED WHATEVER THE READING SAYS, because nothing the game exposes to Lua
+            // says whether its clock is locked, and a crawl that invents movement can mark
+            // an option for content behind a wait the player cannot make happen. So time
+            // stands still during a crawl, which is what it did when the clock could not be
+            // read at all - what changes is that the HOUR is now the hour. See de-3jec.
+            IsClockLocked = true;
         }
 
         /// <inheritdoc/>
