@@ -119,6 +119,16 @@ pub struct OptionRow {
     pub why: String,
 }
 
+/// The header this reader is written for.
+///
+/// CHECKED RATHER THAN ASSUMED, and the cheap mistake it catches is real: the two tables
+/// are the same shape of document, so one read as the other parses, deserialises into
+/// something, and quietly describes nothing the reader wanted.
+const FORMAT: lookahead_engine::formats::header::Expected =
+    lookahead_engine::formats::header::Expected {
+        format: "scenario-suites",
+        version: 1,
+    };
 /// The definition, read.
 ///
 /// # Panics
@@ -129,6 +139,13 @@ pub fn table() -> Table {
     let path = repo_root().join(TABLE);
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("{} does not read: {error}", path.display()));
-    serde_json::from_str(&text)
+
+    let document: serde_json::Value = serde_json::from_str(&text)
+        .unwrap_or_else(|error| panic!("{} is not JSON: {error}", path.display()));
+    FORMAT
+        .check_document(&document)
+        .unwrap_or_else(|fault| panic!("{}: {fault}", path.display()));
+
+    serde_json::from_value(document)
         .unwrap_or_else(|error| panic!("{} is not a scenario table: {error}", path.display()))
 }

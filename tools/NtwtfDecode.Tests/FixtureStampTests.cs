@@ -33,6 +33,8 @@ public class FixtureStampTests
         [SparseDiff.DiffFormat] = SparseDiff.FormatVersion,
         [JsonDiff.Format] = JsonDiff.FormatVersion,
         [ExpandedSave.DiffFormat] = ExpandedSave.FormatVersion,
+        [FixtureFormats.ScenarioSuites] = FixtureFormats.FormatVersion,
+        [FixtureFormats.BranchShapes] = FixtureFormats.FormatVersion,
     };
 
     [Fact]

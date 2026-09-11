@@ -1,4 +1,7 @@
 {
+  "_format": "scenario-suites",
+  "_formatVersion": 1,
+
   "_what": "Every look-ahead scenario that is not a check's Pass / Fail shape, as the fixture that makes it and the markers that must come out. THE DEFINITION, not a description of one: tools/GameHarness turns each suite into an in-game run, and tests/scenario_suites.rs puts the same scenarios to the engine over the shipped index. Adding a suite adds a test to both; neither side declares anything of its own.",
 
   "_why_a_suite_and_not_a_row": "A suite is what fixes a launch. The mod reads the global state file once, when it first needs it, and BepInEx reads its configuration at chainload - so scenarios that disagree about either cannot share a game, however much else they have in common. What can vary inside a suite is the save, which the probe loads in place, and the conversation, which it opens on command.",

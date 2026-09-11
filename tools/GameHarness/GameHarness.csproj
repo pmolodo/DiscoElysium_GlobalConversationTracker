@@ -16,6 +16,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\GameAutomation\GameAutomation.csproj" />
+    <!-- The header every fixture this reads carries, and the check that refuses one that
+         says it is something else. -->
+    <ProjectReference
+      Include="..\..\src\GlobalConversationTracker.Core\GlobalConversationTracker.Core.csproj" />
   </ItemGroup>
 
   <!-- The harness invokes the net10 decoder as a child process. -->

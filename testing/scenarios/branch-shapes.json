@@ -1,4 +1,7 @@
 {
+  "_format": "branch-shapes",
+  "_formatVersion": 1,
+
   "_what": "Every shape one half of a check's Pass / Fail line can take, as the fixture that produces it and the line it must draw. THE DEFINITION, not a description of one: tools/GameHarness turns each row into an in-game suite, and tests/branch_shapes.rs runs the same row through the engine over the shipped index. Adding a row adds a test to both; neither side declares anything of its own.",
   "_colours": "orange = unseen in any game, red = unseen this game, darkRed = already read in this save. A marker is one of those three, or gaveUp for a search that did not finish, or absent where nothing beyond the destination outranks it.",
   "_extra": "A row is the whole scenario, and both executors read all of it. If one ever needs something the other cannot use - an in-game screenshot reference, say - it goes under a key naming the executor, 'offline' or 'inGame', so a reader can see at a glance which half of the world it belongs to. NOTHING NEEDS THAT YET and no support for it is built; what the offline executor needs beyond these fields, it reads from the same save the in-game one loads.",

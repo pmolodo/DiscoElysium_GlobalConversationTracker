@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using GlobalConversationTracker.Automation;
+using GlobalConversationTracker.Core;
 
 namespace GlobalConversationTracker.Harness
 {
@@ -76,8 +77,19 @@ namespace GlobalConversationTracker.Harness
                     path);
             }
 
+            // WHAT IT SAYS IT IS, for the reason ScenarioTable gives: the two tables are
+            // the same shape of document, so one read as the other parses and yields
+            // nothing the reader wanted.
+            string text = File.ReadAllText(path);
+            FormatStamp.EnsureHeader(
+                FixtureFormats.BranchShapes,
+                Header(text, FormatStamp.FormatPropertyName)?.GetString(),
+                Header(text, FormatStamp.VersionPropertyName)?.GetInt32(),
+                FixtureFormats.FormatVersion,
+                path);
+
             BranchShapeTable? table = JsonSerializer.Deserialize<BranchShapeTable>(
-                File.ReadAllText(path),
+                text,
                 new JsonSerializerOptions { ReadCommentHandling = JsonCommentHandling.Skip });
 
             if (table == null || !table.Rows.Any())
@@ -86,6 +98,19 @@ namespace GlobalConversationTracker.Harness
             }
 
             return table;
+        }
+
+        /// <summary>One header field of a table, or null where it carries none.</summary>
+        /// <param name="text">The document.</param>
+        /// <param name="name">The field.</param>
+        /// <returns>The value, for the header check to judge.</returns>
+        private static JsonElement? Header(string text, string name)
+        {
+            using JsonDocument document = JsonDocument.Parse(
+                text, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip });
+            return document.RootElement.TryGetProperty(name, out JsonElement found)
+                ? found.Clone()
+                : null;
         }
     }
 
