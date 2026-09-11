@@ -13,13 +13,20 @@
     laid out so that extracting it into a Disco Elysium game folder installs the
     plugin:
 
-        BepInEx\plugins\GlobalConversationTracker\GlobalConversationTracker*.dll
+        BepInEx\plugins\GlobalConversationTracker\GlobalConversationTracker*
+        BepInEx\plugins\GlobalConversationTracker\Google.Protobuf.dll
         GlobalConversationTracker-README.md
 
-    That is one DLL: the mod's own layers (Core, Persistence, Session) are
-    compiled into the plugin assembly, and the .pdb is left out. This archive
-    assumes a working BepInEx 6 IL2CPP install already exists - which is every
-    developer, and almost no player.
+    The mod's own layers (Core, Persistence, Session, Engine) are compiled into
+    the plugin assembly, so they are one DLL, and the .pdb is left out. Beside it
+    travel the look-ahead engine, the conversation index, the variable table, the
+    engine's build stamp - all named GlobalConversationTracker-something so that
+    nothing here has to be told they exist - and Google.Protobuf, which cannot be
+    renamed because .NET resolves an assembly by its identity rather than by its
+    filename. What is staged comes from Get-PluginPayloadFile either way.
+
+    This archive assumes a working BepInEx 6 IL2CPP install already exists -
+    which is every developer, and almost no player.
 
     Then, unless -PluginOnly says otherwise, a second archive for the players who
     do not:
@@ -111,9 +118,18 @@ if (-not (Test-Path -LiteralPath $ReadmeSource)) {
 Copy-Item -LiteralPath $ReadmeSource -Destination (Join-Path $stageDir $ReadmeReleaseName)
 Write-Host "  $ReadmeReleaseName"
 
-# The licence travels with the DLL. This archive bundles nothing of anyone
-# else's, so it needs no third-party notice - only our own terms.
+# The licences travel with the DLLs. Ours because MIT asks the notice to travel
+# with the software, and Google.Protobuf's because this archive redistributes it
+# in binary form and BSD-3-Clause asks the same - its LICENSE carries the
+# copyright notice and the conditions, which is what has to be here.
+#
+# That is the whole of the third party in this archive. The all-in-one bundle
+# carries BepInEx as well and has a notice naming all three; here two licence
+# files say it without prose between them.
 Copy-PluginLicense -StageDir $stageDir
+Copy-Item -LiteralPath (Get-GoogleProtobufLicense) `
+    -Destination (Join-Path $stageDir $GoogleProtobufLicenseReleaseName)
+Write-Host "  $GoogleProtobufLicenseReleaseName"
 
 # --- Zip ----------------------------------------------------------------------
 # Both file operations go through Invoke-WithFileRetry: replacing an archive

@@ -108,13 +108,19 @@ equivalent is:
 dotnet build src\GlobalConversationTracker.Plugin -c Release
 ```
 
-Output: `.build\bin\GlobalConversationTracker.Plugin\Release\net6.0\`, holding one
+Output: `.build\bin\GlobalConversationTracker.Plugin\Release\net6.0\`, holding
 `GlobalConversationTracker.dll` and its `.pdb`; `Directory.Build.props` redirects `bin`/`obj`
-under `.build`. Only the DLL is installed or packaged - the `.pdb` stays here, for debugging
-the build you just made. That DLL is the whole plugin: the mod's own layers (Core,
-Persistence, Session) are compiled into it rather than referenced as projects, so an install
-is one file. The three projects still build and are tested on their own; the plugin csproj
-says why it takes them as source.
+under `.build`. The `.pdb` is not installed or packaged - it stays here, for debugging the
+build you just made. That DLL is all of the mod's own code: the layers (Core, Persistence,
+Session, Engine) are compiled into it rather than referenced as projects. The projects still
+build and are tested on their own; the plugin csproj says why it takes them as source.
+
+Beside it travel the look-ahead engine, the conversation index, the variable table, the
+engine's build stamp, and `Google.Protobuf.dll`. The first four are named
+`GlobalConversationTracker`-something so that deploy, packaging and the uninstaller handle
+them without being told they exist; protobuf keeps its own name, because .NET resolves an
+assembly by its identity rather than by its filename, so `Get-PluginPayloadFile` names it
+outright.
 
 ## Installing
 

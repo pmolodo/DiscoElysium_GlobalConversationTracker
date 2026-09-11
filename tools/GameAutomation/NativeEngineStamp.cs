@@ -174,6 +174,11 @@ namespace GlobalConversationTracker.Automation
             "build.rs",
             "src",
             ":(exclude)src/GlobalConversationTracker.*",
+
+            // The wire's schema, which the build generates the engine's types from. A
+            // change to it changes what the engine says and understands, so a stamp that
+            // left it out would call an engine current while it spoke the previous shape.
+            "proto",
         };
 
         /// <summary>

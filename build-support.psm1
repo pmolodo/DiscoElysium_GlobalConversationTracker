@@ -110,6 +110,11 @@ $BepInExZipName = $BepInExPin["BepInExZipName"]
 $BepInExZipUrl = $BepInExPin["BepInExZipUrl"]
 $BepInExZipSha256 = $BepInExPin["BepInExZipSha256"]
 $BepInExLicenseUrl = $BepInExPin["BepInExLicenseUrl"]
+
+# The protobuf pin, from the file MSBuild reads. Bump it there, not here.
+$ProtobufPin = Read-MSBuildProperties -Path (Join-Path $RepoRoot "Protobuf.props")
+$GoogleProtobufVersion = $ProtobufPin["GoogleProtobufVersion"]
+$GoogleProtobufLicenseUrl = $ProtobufPin["GoogleProtobufLicenseUrl"]
 # Trailing separators come from MSBuild's habit of ending directory properties
 # with one; PowerShell's paths read better without.
 $BepInExCacheDir = $BepInExPin["BepInExCacheDir"].TrimEnd("\")
@@ -150,6 +155,10 @@ $LicenseReleaseName = "$AssemblyName-LICENSE.txt"
 # than pasted into the notice, so it reads as a licence rather than as prose.
 $BepInExLicenseReleaseName = "BepInEx-LICENSE.txt"
 
+# And Google.Protobuf's, for the same reason and on the same terms: BSD-3-Clause
+# requires the copyright notice and this text to travel with the binary.
+$GoogleProtobufLicenseReleaseName = "Google.Protobuf-LICENSE.txt"
+
 # Steam AppID for Disco Elysium / The Final Cut (from appmanifest_632470.acf).
 $DiscoElysiumAppId = 632470
 # Conventional steamapps\common folder name, used if the manifest is unreadable.
@@ -187,6 +196,25 @@ $PluginFolderName = $AssemblyName
 # therefore contains an executable, which it never did before - and it is the only one, so
 # a .exe beside the plugin is this and nothing else.
 $PluginPayloadExtensions = @(".dll", ".exe", ".json", ".jsonl")
+# The shipped files NOT named for this project, by exact name.
+#
+# Everything else in the payload is called $AssemblyName-something, which is what lets one
+# predicate answer for deploy, release packaging and the uninstaller without any of them
+# being told what exists. Two shipped files are named that way on purpose rather than by
+# accident - the engine is renamed to GlobalConversationTracker.Native.exe on the way in,
+# and the index to GlobalConversationTracker.Index.jsonl - so the obvious move for a third
+# would be to rename it too.
+#
+# THAT DOES NOT WORK FOR A MANAGED ASSEMBLY, which is why this list exists. .NET resolves
+# an assembly by its identity, and renaming the file does not change it: a
+# GlobalConversationTracker.Protobuf.dll would sit in the folder while the loader went on
+# looking for Google.Protobuf.dll and did not find it. The file has to keep its own name,
+# so the predicate has to learn the name.
+#
+# Google.Protobuf is what the generated wire types are built on - see proto/engine.proto,
+# which both sides of the boundary generate from so that the shape crossing it is written
+# down once. It is the only run-time package the plugin has.
+$PluginPayloadByName = @("Google.Protobuf.dll")
 # Appended to the commit hash the build stamps into the plugin assembly when the
 # tree it was built from differed from that commit in a way the build could see.
 # Written by Get-SourceRevisionId and read back by Get-PluginBuildStamp, which is
@@ -716,6 +744,18 @@ function Get-BepInExLicense {
 }
 
 
+function Get-GoogleProtobufLicense {
+    # Google.Protobuf's LICENSE at the tag matching the pinned version. No hash,
+    # for the same reason as BepInEx's: the URL names a tag, not a branch.
+    #
+    # Fetched rather than taken out of the package because the package declares its
+    # licence as an SPDX expression and carries no text to copy.
+    return Get-CachedDownload -Url $GoogleProtobufLicenseUrl `
+        -FileName "Google.Protobuf-LICENSE-$GoogleProtobufVersion.txt" `
+        -What "the Google.Protobuf licence"
+}
+
+
 function Get-FileLockHolder {
     # Who has this file open, as "name (pid N)", or $null if that cannot be
     # answered. Best effort and quiet: this only ever decorates an error
@@ -959,6 +999,25 @@ BepInEx $BepInExVersion (IL2CPP, win-x64)
   pristine copy of the game straight from Steam has none of them. The
   uninstaller removes them along with everything else this bundle wrote.
 
+Google.Protobuf $GoogleProtobufVersion
+
+  Redistributed unmodified, as published on NuGet:
+    https://www.nuget.org/packages/Google.Protobuf/$GoogleProtobufVersion
+
+  Source: https://github.com/protocolbuffers/protobuf/tree/v$GoogleProtobufVersion
+
+  License: BSD 3-Clause
+           see $GoogleProtobufLicenseReleaseName in this archive for the full text
+
+  Google.Protobuf.dll sits beside the plugin under
+  BepInEx\plugins\$AssemblyName\. It is what the wire between the plugin and its
+  look-ahead engine is built on: both ends generate their types from one schema,
+  so the shape crossing the boundary is written down once rather than twice.
+
+  It keeps its own filename because .NET resolves an assembly by its identity
+  rather than by what the file is called - everything else this mod ships is
+  renamed to $AssemblyName-something, and this one cannot be.
+
 $AssemblyName itself
 $("=" * ($AssemblyName.Length + 6))
 
@@ -969,8 +1028,9 @@ $("=" * ($AssemblyName.Length + 6))
   License: MIT - see $LicenseReleaseName in this archive
   Source:  https://github.com/pmolodo/DiscoElysium_GlobalConversationTracker
 
-  The plugin is the one file under BepInEx\plugins\$AssemblyName\; every other
-  file in this archive belongs to BepInEx.
+  Under BepInEx\plugins\$AssemblyName\ are this mod's own files and
+  Google.Protobuf.dll, named above. Every other file in this archive belongs to
+  BepInEx.
 "@
     [System.IO.File]::WriteAllText($Destination, $notice)
 }
@@ -1004,6 +1064,7 @@ function New-AllInOneBundle {
 
     $bepInExZip = Get-BepInExBundleZip
     $license = Get-BepInExLicense
+    $protobufLicense = Get-GoogleProtobufLicense
 
     if (Test-Path -LiteralPath $StageDir) {
         Remove-Item -LiteralPath $StageDir -Recurse -Force
@@ -1020,11 +1081,15 @@ function New-AllInOneBundle {
 
     # The licences, each as its own file at the archive root: ours because MIT
     # asks the notice to travel with the software, BepInEx's because LGPL-2.1
-    # asks the same of a redistribution. The notice beside them says who wrote
-    # what and points at both.
+    # asks the same of a redistribution, and Google.Protobuf's because
+    # BSD-3-Clause asks it of a redistribution in binary form. The notice beside
+    # them says who wrote what and points at all three.
     Copy-PluginLicense -StageDir $StageDir
     Copy-Item -LiteralPath $license -Destination (Join-Path $StageDir $BepInExLicenseReleaseName)
     Write-Host "  $BepInExLicenseReleaseName"
+    Copy-Item -LiteralPath $protobufLicense `
+        -Destination (Join-Path $StageDir $GoogleProtobufLicenseReleaseName)
+    Write-Host "  $GoogleProtobufLicenseReleaseName"
     New-ThirdPartyNotice -Destination (Join-Path $StageDir $ThirdPartyNoticeName)
     Write-Host "  $ThirdPartyNoticeName"
 
@@ -1223,20 +1288,25 @@ function Invoke-PluginBuild {
 
 
 function Get-PluginPayloadFile {
-    # The plugin payload files present in $Directory - $AssemblyName*.dll and
-    # nothing else - sorted by name, as FileInfo objects. Empty if the directory
-    # does not exist.
+    # The plugin payload files present in $Directory - those named for this project,
+    # plus the few in $PluginPayloadByName that cannot be - sorted by name, as
+    # FileInfo objects. Empty if the directory does not exist.
     #
     # One predicate, used against both ends of an install: the build output
     # Copy-PluginPayload reads from, and the previous install Remove-PluginPayload
     # clears out. Keeping those the same set is what makes it safe for deploy.ps1
-    # to delete files instead of the whole folder.
+    # to delete files instead of the whole folder - and is why a file added to the
+    # payload has to be added HERE rather than to a copier, or an install would
+    # leave the previous one behind.
     param([Parameter(Mandatory = $true)][string]$Directory)
     if (-not (Test-Path -LiteralPath $Directory)) {
         return @()
     }
     return @(Get-ChildItem -LiteralPath $Directory -File |
-        Where-Object { $_.Name -like "$AssemblyName*" -and $_.Extension -in $PluginPayloadExtensions } |
+        Where-Object {
+            ($_.Name -like "$AssemblyName*" -and $_.Extension -in $PluginPayloadExtensions) -or
+            ($_.Name -in $PluginPayloadByName)
+        } |
         Sort-Object Name)
 }
 

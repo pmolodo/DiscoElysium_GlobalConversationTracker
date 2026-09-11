@@ -3,6 +3,9 @@
   <!-- The pinned BepInEx build, shared with build-support.psm1. -->
   <Import Project="$(MSBuildThisFileDirectory)BepInEx.props" />
 
+  <!-- The pinned protobuf packages, shared with build-support.psm1. -->
+  <Import Project="$(MSBuildThisFileDirectory)Protobuf.props" />
+
   <!--
     Keep every generated file under one gitignored .build\ folder at the repo
     root, instead of scattering bin\ and obj\ through src\. The PowerShell build

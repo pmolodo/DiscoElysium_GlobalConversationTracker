@@ -268,14 +268,20 @@ Four things about it are worth knowing:
   about whose it is. Nothing collides with a file the game ships - `changelog.txt`,
   `winhttp.dll`, `doorstop_config.ini`, `.doorstop_version` and `dotnet\` are all BepInEx's,
   and none of them appear in a copy straight from Steam.
-- **Both archives carry a licence, and the bundle carries three files about licensing.**
+- **Both archives carry licences, and the bundle carries four files about licensing.**
   Ours (`GlobalConversationTracker-LICENSE.txt`, MIT) ships in both, because a DLL in
   somebody's game folder is a distribution and MIT asks the notice to travel with it.
-  BepInEx's (`BepInEx-LICENSE.txt`, LGPL-2.1) ships in the bundle, as its own file rather
-  than quoted inside prose. `GlobalConversationTracker-THIRD-PARTY-NOTICES.txt` is the
-  attribution: what BepInEx build is in here, its commit, the URL it came from, that SHA256,
-  and which single file in the archive is ours. Packaging fails rather than shipping without
-  a licence.
+  Google.Protobuf's (`Google.Protobuf-LICENSE.txt`, BSD-3-Clause) ships in both too: the
+  plugin folder holds `Google.Protobuf.dll`, and that is a binary redistribution.
+  BepInEx's (`BepInEx-LICENSE.txt`, LGPL-2.1) ships in the bundle only, as its own file
+  rather than quoted inside prose. `GlobalConversationTracker-THIRD-PARTY-NOTICES.txt` is
+  the attribution: what BepInEx build is in here, its commit, the URL it came from, that
+  SHA256, which protobuf version and where it came from, and which files in the archive are
+  ours. Packaging fails rather than shipping without a licence.
+- **The protobuf pin lives in `Protobuf.props`**, read by both csprojs and by
+  `build-support.psm1`, so the version the wire is generated against, the runtime that
+  ships, and the licence that is fetched cannot name three different releases. The licence
+  URL carries the version, so it always matches the binary.
 - **`BepInEx\interop` cannot be shipped.** Those assemblies are generated from the player's
   own game build on first launch, which is why that launch is slow.
 - **The uninstaller is hash-checked.** `GlobalConversationTracker-install-manifest.json`

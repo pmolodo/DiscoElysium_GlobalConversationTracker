@@ -38,4 +38,29 @@
       Include="..\GlobalConversationTracker.Core\GlobalConversationTracker.Core.csproj" />
   </ItemGroup>
 
+  <!--
+    The wire's types, generated from the same proto/engine.proto the Rust side
+    generates from. That one file is the point of the whole arrangement: the shape
+    that crosses used to be written twice, here by hand and there as serde types,
+    and the two agreed only because someone remembered.
+
+    Grpc.Tools carries a protoc and runs it at build time; PrivateAssets="all"
+    keeps it out of anything that references this project, since it is a compiler
+    rather than something the code calls. Google.Protobuf IS called at run time and
+    is the one assembly that has to travel with the plugin - see the payload list in
+    build-support.psm1, which had to learn about it because it is the first shipped
+    file not named for this project.
+
+    GrpcServices="None" because there is no service here. A .proto can describe
+    calls as well as messages and the generator will write client and server stubs
+    for them; the boundary is a length and a body over a pipe (de-bnjy.1), and
+    nothing about that changes here - only what the body holds.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="$(GoogleProtobufVersion)" />
+    <PackageReference Include="Grpc.Tools" Version="$(GrpcToolsVersion)" PrivateAssets="all" />
+    <Protobuf Include="$(MSBuildThisFileDirectory)..\..\proto\engine.proto"
+      ProtoRoot="$(MSBuildThisFileDirectory)..\..\proto" GrpcServices="None" />
+  </ItemGroup>
+
 </Project>

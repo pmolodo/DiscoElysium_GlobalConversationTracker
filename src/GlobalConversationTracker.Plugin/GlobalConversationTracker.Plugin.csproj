@@ -24,20 +24,56 @@
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
         <!-- BepInEx resolves plugin dependencies itself; a deps.json only confuses it. -->
         <GenerateDependencyFile>false</GenerateDependencyFile>
+        <!--
+          So Google.Protobuf.dll lands beside the plugin. A library project leaves package
+          assemblies in the package folder by default, which is right for something another
+          project will reference and wrong for something BepInEx loads from a directory: it
+          resolves a plugin's dependencies out of the plugin's own folder, so an assembly
+          that is not there is not found.
+        -->
+        <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     </PropertyGroup>
 
     <!--
+    The wire's types, generated here as well as in the Engine project, because this
+    assembly compiles that project's SOURCES rather than referencing it - and the
+    generated file lands in obj\, which the Compile globs below deliberately exclude.
+    Generating it again costs a protoc invocation; sharing one copy would mean a
+    generated file checked in or globbed out of another project's obj\, and both of
+    those are a build that reads another build's leavings.
+
+    THIS IS WHERE THE ONE-FILE INSTALL ENDS, and the comment below about compiling
+    the layers in should be read with that in mind: the four layers still merge into
+    one assembly, but the payload is now that assembly plus Google.Protobuf.dll. It
+    is the first shipped file not named for this project, which is why
+    build-support.psm1 had to be told about it by name.
+  -->
+    <ItemGroup>
+        <PackageReference Include="Google.Protobuf" Version="$(GoogleProtobufVersion)" />
+        <PackageReference Include="Grpc.Tools" Version="$(GrpcToolsVersion)" PrivateAssets="all" />
+        <Protobuf Include="$(MSBuildThisFileDirectory)..\..\proto\engine.proto"
+            ProtoRoot="$(MSBuildThisFileDirectory)..\..\proto" GrpcServices="None" />
+    </ItemGroup>
+
+    <!--
     The mod's own layers, compiled INTO this assembly rather than referenced as
-    projects, so the build output is one DLL and an install is one file.
+    projects, so all of the mod's own code is one DLL.
 
     Why source and not a ProjectReference: a reference would put
     GlobalConversationTracker.Core/.Persistence/.Session.dll next to the plugin and
     all four would have to be installed together, since BepInEx resolves a plugin's
     dependencies out of the plugin's own folder - three extra files to lose, to ship
     a stale copy of, or to leave behind on an uninstall. Merging them after the fact
-    (ILRepack and friends) would need a NuGet tool in a build that otherwise has zero
-    package references; compiling the sources in needs nothing, and the layering it
-    would enforce is enforced by the projects themselves anyway.
+    (ILRepack and friends) would need a NuGet tool of its own; compiling the sources
+    in needs nothing, and the layering it would enforce is enforced by the projects
+    themselves anyway.
+
+    THAT ARGUMENT IS ABOUT THE MOD'S OWN LAYERS and is unaffected by the protobuf
+    runtime above it: Google.Protobuf is a third-party assembly with its own
+    identity and its own licence, so it travels as itself rather than being folded
+    in. Every file the install writes is still one predicate's answer - see
+    Get-PluginPayloadFile - which is what keeps an uninstall able to remove exactly
+    what a deploy wrote.
 
     The three projects still exist, still build on their own and are still what the
     test projects reference; this only changes what ships. Their namespaces already

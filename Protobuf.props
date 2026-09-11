@@ -1,0 +1,37 @@
+<Project>
+
+  <!--
+    The protobuf packages this repo pins, in one place.
+
+    Three things need these facts and would otherwise each carry a copy: the
+    Engine project and the Plugin project, which both generate the wire's types
+    from proto/engine.proto and so both reference the packages, and
+    build-support.psm1, which names the runtime and its licence in the
+    third-party notice of the all-in-one archive. A version that lives in three
+    files is a version waiting to drift - and the drift that matters here is
+    between the two csprojs, since the plugin compiles the engine's sources in
+    and a mismatch would be one generated wire compiled against another's
+    runtime.
+
+    GRPC.TOOLS IS THE COMPILER, NOT A DEPENDENCY. It carries a protoc and runs
+    it at build time; nothing calls into it and nothing ships it, which is what
+    PrivateAssets="all" says at each reference. Its version tracks the runtime's
+    loosely - the two are released together but are not required to match, and
+    what matters is that the generated code and Google.Protobuf agree.
+  -->
+  <PropertyGroup>
+    <GoogleProtobufVersion>3.28.3</GoogleProtobufVersion>
+    <GrpcToolsVersion>2.67.0</GrpcToolsVersion>
+    <!--
+      BSD-3-Clause, per the package's own licence expression. Redistributing it
+      means shipping that text and the copyright notice, so the all-in-one
+      archive carries both - see Write-ThirdPartyNotice.
+
+      Fetched at the tag matching the pinned version, so the licence shipped
+      always matches the binary shipped, which is the same rule the BepInEx pin
+      follows.
+    -->
+    <GoogleProtobufLicenseUrl>https://raw.githubusercontent.com/protocolbuffers/protobuf/v$(GoogleProtobufVersion)/LICENSE</GoogleProtobufLicenseUrl>
+  </PropertyGroup>
+
+</Project>
