@@ -326,7 +326,7 @@
     {
       "suite": "kim-case",
       "what": "what Kim's own conversation looks like from the trash can save",
-      "why": "FOR OBSERVATION rather than assertion, which is why its markers policy is ignored: the run reports every option it was offered with the marker the game drew, and claims nothing about them. What it is for is the world a menu is answered against rather than the menu - conversation 29's group asks four CheckItem, four IsTaskActive and five IsTHCPresent, and no committed scenario had asked any of them before. See de-bnh6, which is where the offline and in-game answers disagree, and de-q9w6, which is where this suite's markers stop being observed and start being asserted.",
+      "why": "THE WORLD A MENU IS ANSWERED AGAINST, rather than the menu. Conversation 29's group asks four CheckItem, four IsTaskActive and five IsTHCPresent, and no committed scenario had asked any of them before. It is also the suite the two executors were first made to agree on, field by field, by capturing the world the game answered from and diffing it against the one the fixtures build - which is what de-v702 exists for and how de-3jec and de-bnh6 were both found.",
       "state": "global-state-kim-case.json",
       "settings": { "KeepLookAheadRequests": "true" },
       "offline": {
@@ -338,7 +338,19 @@
           "save": "at-trashcan",
           "conversation": 29,
           "what": "Kim's main conversation, as it opens from the trash can",
-          "markers": "ignored"
+          "advances": 0,
+          "options": [
+            { "entry": 582, "marker": "none", "why": "going over the case again returns to the hub it was reached from, and everything that way has been read in this save" },
+            { "entry": 1008, "marker": "none", "why": "a rolled check draws no marker of its own; its two outcomes carry what they found" },
+            { "entry": 90, "marker": "red", "why": "admitting the amnesia leads on to lines this save has not shown and another save has" },
+            { "entry": 221, "marker": "none", "why": "asking about Kim himself reaches nothing this save has not already had" },
+            { "entry": 697, "marker": "red", "why": "accusing him of following leads on the same way the amnesia does" },
+            { "entry": 882, "marker": "none", "why": "leaving reaches nothing at all" }
+          ],
+          "branches": "everyCheck",
+          "pass": { "colour": "orange" },
+          "fail": { "colour": "darkRed" },
+          "branchesWhy": "Passing lands on a line no save has read, so the word carries that colour itself. Failing lands on one this save has already been shown and reaches nothing better, which is the bottom rung and the plain word."
         }
       ]
     }
