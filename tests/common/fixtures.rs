@@ -183,12 +183,9 @@ const NOT_A_VARIABLE: [&str; 3] = ["_format", "_formatVersion", "_derived_simx"]
 ///
 /// ## What it cannot answer
 ///
-/// The INVENTORY. `CheckItem("x")` is answered from the world's items and a save's Lua
-/// parts carry the item definition table rather than what is held, so an offline world
-/// says "not held" for everything. That is the right answer for every fixture here - the
-/// Siileng scenarios exist to buy the sneakers, so the save does not hold them - and it is
-/// more permissive than the game in general. A scenario that needs an item HELD will have
-/// to say so in its row.
+/// Nothing that is not a dialogue variable. The Lua parts carry the variables and the
+/// tables that DEFINE items and thoughts; what is held, thought and asked for is in the
+/// save's second document, and [`holdings_in_save`] reads it.
 ///
 /// # Panics
 ///
@@ -774,7 +771,23 @@ fn whole(value: &serde_json::Value, save: &str, what: &str) -> i32 {
 
 /// A save's character sheet, with the bases it rests on merged in.
 fn character_sheet(save: &str) -> serde_json::Value {
-    /// The archive member the sheet lives in, by the suffix the manifest names it with.
+    world_state(save, "characterSheet")
+}
+
+/// One member of a save's second document, with the bases it rests on merged in.
+///
+/// WHERE EVERYTHING THE GAME ANSWERS FROM LIVES, and the reason an offline world was ever
+/// thinner than the running one. The Lua parts carry the dialogue variables and the tables
+/// that DEFINE items and thoughts; what the player is actually holding, has actually
+/// thought, and has actually been asked to do is here, beside the character sheet that was
+/// already being read from it.
+///
+/// # Panics
+///
+/// If the chain carries no such member. A world assembled from a member that is not there
+/// would be a more permissive one than the run it stands for, silently.
+fn world_state(save: &str, member_name: &str) -> serde_json::Value {
+    /// The archive member the world state lives in, by the suffix the manifest names it with.
     const SECOND_BLOB: &str = ".2nd.ntwtf.json";
 
     let mut document = serde_json::Value::Null;
@@ -789,8 +802,225 @@ fn character_sheet(save: &str) -> serde_json::Value {
         overlay(&mut document, &changes);
     }
 
-    let sheet = document.get("characterSheet").cloned();
-    sheet.unwrap_or_else(|| panic!("{save}'s chain carries no character sheet"))
+    document
+        .get(member_name)
+        .cloned()
+        .unwrap_or_else(|| panic!("{save}'s chain carries no {member_name}"))
+}
+
+/// Everything the plugin puts in a world snapshot that is not a variable or a check.
+///
+/// ## Why these are read rather than defaulted
+///
+/// THE PLUGIN ANSWERS ALL OF THEM FROM THE RUNNING GAME - `CheckItem`, `IsTaskActive`,
+/// `IsTHCPresent`, the balance and the clock - and an offline world that answered none of
+/// them was not a stricter world but a DIFFERENT one: an empty item set says "not held"
+/// rather than "unknown", so a guard on not holding something opened a route the game
+/// closes, and one on holding it closed a route the game opens. Measured on conversation
+/// 29, whose group asks thirteen of these: two options carried a marker offline that the
+/// game did not draw, and the Fail half of its white check landed on a different rung.
+///
+/// ## What each one means, and where the reading comes from
+///
+/// The names are the save's, and the meanings are what the game's own tables say rather
+/// than what this code decides:
+///
+/// - PRESENT, for a thought, is any state but `UNKNOWN`. The cabinet lists every thought in
+///   the game and marks the ones the player has reached - cooking, known, fixed, forgotten -
+///   so presence is the absence of the one state that means "not yet".
+/// - ACTIVE, for a task, is acquired and not resolved. The journal records when each was
+///   taken and when each was closed, and a task closed at a time is no longer active; one
+///   acquired with a null resolution is.
+///
+/// WHAT IS HELD IS STILL NOT ANSWERED, and the near miss is worth writing down because the
+/// data looks like the answer and is not. `inventoryState.itemListState` names 206 items in
+/// every save here, which is every item the database defines - it is the per-item state of
+/// the catalogue, not what is in hand. Reading it as the inventory told the world the player
+/// already owned the Faln speakers, which shut the route the money suite exists to measure
+/// and turned its first scenario red. `CheckItem` therefore stays unanswered, which reads as
+/// not held, exactly as it did before. See de-bnh6 for where to look next.
+pub struct Holdings {
+    /// Journal tasks taken and not yet closed.
+    pub tasks: HashSet<String>,
+    /// Thoughts the cabinet has reached, whatever state they are in.
+    pub thoughts: HashSet<String>,
+    /// What state each of those is in, which some guards ask after by name.
+    pub thought_states: HashMap<String, String>,
+    /// The balance, in centimes.
+    pub money: i32,
+    /// Minutes past midnight, and which day it is.
+    pub day_minutes: i32,
+    pub day_counter: i32,
+}
+
+/// The state a thought the player has never reached is in.
+const NOT_YET: &str = "UNKNOWN";
+
+/// The state a thought that is finished is in.
+const FIXED: &str = "FIXED";
+
+/// The state a thought still being thought is in.
+const COOKING: &str = "COOKING";
+
+impl Holdings {
+    /// The world queries this can answer, out of the ones a group asks.
+    ///
+    /// ## Why some are answered and some are left alone
+    ///
+    /// A QUERY KEY IS THE LUA CALL ITSELF - `MoneyAmount()`, `IsTHCFixed("aces_high")` -
+    /// and the plugin answers one by running it in the game. A save answers some of them
+    /// exactly: the balance, the day, and what state a thought is in are all written down
+    /// in it. Others are about the scene rather than the character - whether it is raining,
+    /// whether this is outdoors, what is worn - and where this cannot answer one it says
+    /// NOTHING, which is what the plugin sends for a query it could not run and what the
+    /// engine treats as unknown. See de-bnh6 for where the rest of them live.
+    pub fn answers_to(&self, asked: &[String]) -> HashMap<String, WireValue> {
+        let mut answers = HashMap::new();
+        for key in asked {
+            let Some(answer) = self.answer(key) else {
+                continue;
+            };
+
+            answers.insert(key.clone(), answer);
+        }
+
+        answers
+    }
+
+    /// One query, where this can answer it.
+    fn answer(&self, key: &str) -> Option<WireValue> {
+        let (call, argument) = split_call(key);
+
+        match call {
+            "MoneyAmount" => Some(WireValue::Number {
+                value: f64::from(self.money),
+            }),
+            "DayCount" => Some(WireValue::Number {
+                value: f64::from(self.day_counter),
+            }),
+            "IsTHCFixed" => Some(WireValue::Bool {
+                value: self.thought_states.get(argument?).map(String::as_str) == Some(FIXED),
+            }),
+            "IsTHCCookingOrFixed" => Some(WireValue::Bool {
+                value: matches!(
+                    self.thought_states.get(argument?).map(String::as_str),
+                    Some(FIXED) | Some(COOKING)
+                ),
+            }),
+            _ => None,
+        }
+    }
+}
+
+/// A query key as the call it is: the name, and the one string argument where it has one.
+fn split_call(key: &str) -> (&str, Option<&str>) {
+    let Some((call, rest)) = key.split_once('(') else {
+        return (key, None);
+    };
+
+    let argument = rest.trim_end_matches(')').trim_matches('"');
+    (
+        call,
+        if argument.is_empty() {
+            None
+        } else {
+            Some(argument)
+        },
+    )
+}
+
+/// What one save holds, for the world a scenario is answered against.
+///
+/// # Panics
+///
+/// If the save's chain carries no inventory, cabinet, journal, character or clock. Every
+/// one of them is written by the game into every save.
+pub fn holdings_in_save(save: &str) -> Holdings {
+    let cabinet = world_state(save, "thoughtCabinetState");
+    let journal = world_state(save, "aquiredJournalTasks");
+    let character = world_state(save, "playerCharacter");
+    let clock = world_state(save, "sunshineClockTimeHolder");
+
+    let thought_states = thought_states(&cabinet);
+
+    Holdings {
+        tasks: active_tasks(&journal),
+        thoughts: thought_states
+            .iter()
+            .filter(|(_, state)| *state != NOT_YET)
+            .map(|(name, _)| name.clone())
+            .collect(),
+        thought_states,
+        money: whole(&character["Money"], save, "the balance"),
+        day_minutes: whole(&clock["time"]["dayMinutes"], save, "the clock"),
+        day_counter: whole(&clock["time"]["dayCounter"], save, "the day"),
+    }
+}
+
+/// The strings one field carries across a list of records.
+fn named(holder: &serde_json::Value, list: &str, field: &str) -> HashSet<String> {
+    holder[list]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|record| record[field].as_str().map(str::to_string))
+        .collect()
+}
+
+/// What state the cabinet holds each thought in.
+fn thought_states(cabinet: &serde_json::Value) -> HashMap<String, String> {
+    cabinet["thoughtListState"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|thought| {
+            Some((
+                thought["name"].as_str()?.to_string(),
+                thought["state"].as_str()?.to_string(),
+            ))
+        })
+        .collect()
+}
+
+/// The tasks taken and not closed, with their subtasks.
+///
+/// SUBTASKS COUNT AS TASKS, because the journal keeps them under their parent and a guard
+/// asks after either by the same name. A subtask's own resolution is not recorded
+/// separately, so it is active while its parent is.
+fn active_tasks(journal: &serde_json::Value) -> HashSet<String> {
+    let resolved = |name: &String| {
+        !journal["TaskResolutions"]
+            .get(name)
+            .is_none_or(serde_json::Value::is_null)
+    };
+
+    let mut active: HashSet<String> = journal["TaskAquisitions"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .map(|(name, _)| name.clone())
+        .filter(|name| !resolved(name))
+        .collect();
+
+    for (parent, children) in journal["SubtaskAquisitions"]
+        .as_object()
+        .into_iter()
+        .flatten()
+    {
+        if resolved(parent) {
+            continue;
+        }
+
+        active.extend(
+            children
+                .as_object()
+                .into_iter()
+                .flatten()
+                .map(|(name, _)| name.clone()),
+        );
+    }
+
+    active
 }
 
 /// One of a save folder's top-level members, by the suffix it is named with.

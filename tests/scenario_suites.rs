@@ -168,6 +168,14 @@ fn stage(
     let checks = fixtures::checks_in_save(&scenario.save, &group)
         .expect("the actor table and the full index are both present");
 
+    // WHAT THE PLUGIN ANSWERS FROM THE RUNNING GAME, answered from the save instead: the
+    // inventory, the journal, the thought cabinet, the balance and the clock. A world
+    // missing them is not a stricter one, it is a different one - an empty item set says
+    // "not held" rather than "unknown" - and a guard on either side of that opens or closes
+    // a route the game does not.
+    let holdings = fixtures::holdings_in_save(&scenario.save);
+    let asked = lookahead_engine::bridge::questions_of(&graph, group.clone());
+
     let mut staged = Staged {
         graph,
         recorded,
@@ -176,9 +184,15 @@ fn stage(
             conversation,
             state_budget: suite.state_budget,
             world: WorldSnapshot {
-                money: scenario.money.unwrap_or_default(),
-                day_minutes: scenario.day_minutes.unwrap_or(NOON),
-                day_counter: 1,
+                // THE ROW WINS OVER THE SAVE where it names one, because a row that names a
+                // balance is staging a balance - the money suite's three scenarios are one
+                // save at three of them, and the save can only hold one.
+                money: scenario.money.unwrap_or(holdings.money),
+                day_minutes: scenario.day_minutes.unwrap_or(holdings.day_minutes),
+                day_counter: holdings.day_counter,
+                queries: holdings.answers_to(&asked.queries),
+                tasks: holdings.tasks,
+                thoughts: holdings.thoughts,
                 // FROM THE SAVE, and the difference between a run and no run. An ordinary
                 // option is often guarded on a dialogue variable - 451:86 is guarded on
                 // whether Siileng has the sneakers to sell - and a world that cannot answer

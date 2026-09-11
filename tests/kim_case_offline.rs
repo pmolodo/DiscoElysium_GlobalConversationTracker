@@ -31,14 +31,6 @@ use common::suites;
 /// The suite this reads its fixture out of.
 const SUITE: &str = "kim-case";
 
-/// The clock the in-game run was at, in minutes past midnight, and the day it was on.
-///
-/// NAMED RATHER THAN DEFAULTED. A guard that compares the time answers differently at
-/// midnight, so a report taken at some other hour than the one the game was at would be
-/// reporting a different menu that happens to share its options.
-const DAY_MINUTES: i32 = 635;
-const DAY: i32 = 3;
-
 /// The three rungs as the engine numbers them.
 const SEEN_THIS_GAME: i32 = 0;
 const UNSEEN_THIS_GAME: i32 = 1;
@@ -135,6 +127,36 @@ fn the_kim_case_menu_as_the_engine_answers_it() {
     let read_here = fixtures::read_in_save_group(&scenario.save, &group);
     let checks = fixtures::checks_in_save(&scenario.save, &group)
         .expect("the actor table and the full index are both present");
+    let holdings = fixtures::holdings_in_save(&scenario.save);
+
+    let asked = lookahead_engine::bridge::questions_of(&graph, group.clone());
+    let answered = holdings.answers_to(&asked.queries);
+
+    // WHAT THE WORLD COULD NOT BE TOLD, on every run of this report rather than in a note
+    // that goes stale. The plugin answers every one of these from the running game; a
+    // question left unanswered here is a question this menu is answered more permissively
+    // than the game answers it, and the list is the shortest statement of what de-bnh6 has
+    // left to do.
+    let unanswered: Vec<&String> = asked
+        .queries
+        .iter()
+        .filter(|key| !answered.contains_key(*key))
+        .collect();
+
+    println!(
+        "\nthe group asks {} variables, {} queries, {} items, {} tasks and {} thoughts",
+        asked.variables.len(),
+        asked.queries.len(),
+        asked.items.len(),
+        asked.tasks.len(),
+        asked.thoughts.len(),
+    );
+    println!(
+        "unanswered offline: {} of {} queries, and every CheckItem",
+        unanswered.len(),
+        asked.queries.len(),
+    );
+    println!("  {unanswered:?}");
 
     let novelty_of = |node: NodeRef| {
         let key = (node.conversation, node.entry);
@@ -171,9 +193,15 @@ fn the_kim_case_menu_as_the_engine_answers_it() {
             .collect(),
         state_budget: suite.state_budget,
         world: WorldSnapshot {
-            money: scenario.money.unwrap_or_default(),
-            day_minutes: scenario.day_minutes.unwrap_or(DAY_MINUTES),
-            day_counter: DAY,
+            // THE SAVE'S OWN WORLD, down to the hour it was saved at: a guard comparing the
+            // time answers differently at midnight, and a report taken at some other hour
+            // than the game was at would be a different menu that happens to share options.
+            money: scenario.money.unwrap_or(holdings.money),
+            day_minutes: scenario.day_minutes.unwrap_or(holdings.day_minutes),
+            day_counter: holdings.day_counter,
+            queries: answered,
+            tasks: holdings.tasks,
+            thoughts: holdings.thoughts,
             variables: fixtures::variables_in_save(&scenario.save),
             checks_pass: checks.pass,
             checks_fail: checks.fail,
