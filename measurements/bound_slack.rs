@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-//! How much of the structural bound's slack is guards that NO data state can satisfy.
+//! Where the structural bound's slack is, and what refusals and dominance can take off it.
 //!
 //! The branch and bound in `symbolic::menu` skips a target when its bound cannot beat the
 //! best distance proven this round, and on conversation 761 it skips nothing: the bound
@@ -23,10 +23,13 @@
 //!
 //! ## What it prints
 //!
-//! One block per group. How many nodes each refusal catches, and then, per menu option, the
-//! bound the walk gives now against the bound it gives over the smaller graph. The row that
-//! matters is the per-target one: the ten unread candidates of 761 against the 8 and 9 the
-//! bound reads today.
+//! One block per group: how many entries each refusal catches, then one row per unread
+//! target. `bound` is what the walk gives today and `refusing` what it gives over the
+//! smaller graph. `doms` is the target's strict dominators and `to open` how many of those
+//! are gates the seed shuts but some state opens; `route` is the length of one shortest
+//! structural route and `shut on` how many gates lie along it. `detour` is the bound the
+//! dominance composition gives, `-` where a gate's guard reads something the layout does not
+//! track, `shut` where nothing in the group writes what it reads.
 //!
 //! ## What it said, 2026-09-10: NOTHING, on every heavy group
 //!
@@ -59,6 +62,40 @@
 //! set before an entry opens, and what setting it costs - rather than about which entries
 //! are shut from the start. See de-0jsf.15.
 //!
+//! ## And the order analysis, measured the same day: SOUND, AND WORTH TWO
+//!
+//! Dominance is what makes an order analysis cheap. Where `t` lies on every route to `u`,
+//! every route is `s..w..t..u` for some `w` that opens `t`, so the distance is at least
+//! `d(s,w) + d(t,u)` - and because `t` dominates `u`, `d(t,u)` is `d(s,u) - d(s,t)` out of
+//! the walk's own distances, so nothing is walked twice. `detour_charge` is that line.
+//!
+//! DOMINANCE ALONE CANNOT HELP AND IT IS WORTH SAYING WHY. Where `t` dominates `u`,
+//! `d(s,u)` ALREADY EQUALS `d(s,t) + d(t,u)`: the shortest route splits at `t`, and
+//! concatenating the two shortest halves is a route, so neither inequality is strict.
+//! Decomposing at a choke point reproduces the number the walk already had. Only a segment
+//! carrying a fact the walk does not have - a gate that must be opened first, or a distance
+//! an earlier round proved - can move anything.
+//!
+//! ```text
+//!   conv   bound   with the detour   true      dominators   of those, gates
+//!    761    8, 9           10, 11   23-25           26-33             1 or 2
+//!    631  10, 11                -      20           53-58                  1
+//!    640    7- 9             7- 9       -           38-48                  4
+//!    368   20-21            21-22       -          97-101                  1
+//!     14   11-12            12-13       -           50-55             1 or 2
+//! ```
+//!
+//! TWO CHOICES, AGAINST A GAP OF SIXTEEN. 761's targets go from 8 to 10 where the truth is
+//! 24, so round one still cannot skip a thing, and nothing about the group changes. 631 gets
+//! nothing at all: its one gate reads a variable the layout does not track, so the openers
+//! cannot be enumerated and no charge may be made.
+//!
+//! The data says why, and it is a fact about how this dialogue is written rather than about
+//! the analysis. A target has thirty to a hundred strict dominators and only one to four of
+//! them are gates the seed shuts - and the nearest thing that opens such a gate sits a
+//! choice or two away, because a conversation puts the line that sets a flag beside the line
+//! that reads it. There is no long forced detour to charge for.
+//!
 //! ## How to run it
 //!
 //! ```text
@@ -72,11 +109,14 @@
 use std::collections::HashSet;
 
 use lookahead_engine::bridge::{SnapshotWorld, WorldSnapshot};
+use lookahead_engine::core::guard::GuardExpression;
 use lookahead_engine::core::types::{DialogueCheckKind, DialogueNodeId, Novelty, StartBranch};
 use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
+use lookahead_engine::symbolic::backward::Position;
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
+use lookahead_engine::symbolic::dominators::Dominators;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
 use lookahead_engine::symbolic::novelty_search::{Where, choice_bounds};
@@ -200,9 +240,32 @@ fn report(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budg
         .collect();
     targets.sort_by_key(|id| (id.conversation_id, id.entry_id));
 
+    // SHUT ON ARRIVAL BUT NOT SHUT ALWAYS, which is the only kind of guard a detour bound
+    // can charge for. A guard no state admits is already in `shut` above and refusing it
+    // costs the walk nothing; a guard the seed admits asks nothing of the route. What is
+    // left is a guard the route has to OPEN, and the entry carrying one is where a
+    // dominator becomes worth something.
+    let mut needs_opening = HashSet::new();
+    for node in graph.nodes() {
+        if node.is_group || shut.contains(&node.id) {
+            continue;
+        }
+        let compiled = compiler.compile_for(node.id, &node.guard);
+        if compiled
+            .may_be_true
+            .and(&seed)
+            .is_ok_and(|open| !open.satisfiable())
+        {
+            needs_opening.insert(node.id);
+        }
+    }
+
     let empty = HashSet::new();
     let mut now = std::collections::HashMap::<DialogueNodeId, usize>::new();
     let mut tighter = std::collections::HashMap::<DialogueNodeId, usize>::new();
+    let mut chains = std::collections::HashMap::<DialogueNodeId, Vec<DialogueNodeId>>::new();
+    let mut routes = std::collections::HashMap::<DialogueNodeId, Vec<DialogueNodeId>>::new();
+    let mut detours = std::collections::HashMap::<DialogueNodeId, usize>::new();
     for &start in &profile.starts {
         let position = Where::of(
             graph,
@@ -225,20 +288,156 @@ fn report(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budg
                 .and_modify(|d| *d = (*d).min(distance))
                 .or_insert(distance);
         }
+        // PER OPTION, because dominance is a fact about paths FROM somewhere and each
+        // option is a different somewhere. A target is bounded by the option nearest it, so
+        // the chain worth keeping is the one belonging to that option.
+        let tree = Dominators::of(graph, &position.entries);
+        let reached = choice_bounds(graph, &position, &empty);
+        for &target in &targets {
+            let Some(&here) = reached.get(&target) else {
+                continue;
+            };
+            if now.get(&target) != Some(&here) {
+                continue;
+            }
+            let chain: Vec<_> = tree.above(target).collect();
+            let best = chain
+                .iter()
+                .filter(|t| needs_opening.contains(t))
+                .filter_map(|&gate| detour_charge(graph, &vars, &reached, gate, target))
+                .max();
+            chains.insert(target, chain);
+            routes.insert(target, shortest_route(graph, &position, &reached, target));
+            if let Some(charge) = best {
+                detours.insert(target, charge);
+            }
+        }
     }
 
-    println!("   {:>14}  {:>6}  {:>8}", "target", "bound", "refusing");
+    println!(
+        "   entries whose guard the seed shuts but some state opens: {}",
+        needs_opening.len()
+    );
+    println!(
+        "   {:>14}  {:>6}  {:>8}  {:>5}  {:>7}  {:>6}  {:>7}  {:>6}",
+        "target", "bound", "refusing", "doms", "to open", "route", "shut on", "detour"
+    );
     for id in targets {
         let before = now.get(&id).map(|d| d.to_string()).unwrap_or("-".into());
         let after = tighter
             .get(&id)
             .map(|d| d.to_string())
             .unwrap_or("-".into());
+        let chain = chains.get(&id).cloned().unwrap_or_default();
+        let route = routes.get(&id).cloned().unwrap_or_default();
         println!(
-            "   {:>9}:{:<4}  {:>6}  {:>8}",
-            id.conversation_id, id.entry_id, before, after
+            "   {:>9}:{:<4}  {:>6}  {:>8}  {:>5}  {:>7}  {:>6}  {:>7}  {:>6}",
+            id.conversation_id,
+            id.entry_id,
+            before,
+            after,
+            chain.len(),
+            chain.iter().filter(|t| needs_opening.contains(t)).count(),
+            route.len(),
+            route.iter().filter(|t| needs_opening.contains(t)).count(),
+            match detours.get(&id) {
+                None => "-".to_string(),
+                Some(&charge) if charge == usize::MAX => "shut".to_string(),
+                Some(charge) => charge.to_string(),
+            },
         );
     }
+}
+
+/// What a dominator the seed shuts is worth as a charge on the distance to `target`.
+///
+/// THE WHOLE COMPOSITION IN ONE LINE. `t` lies on every route to `u`, so a route is
+/// s..w..t..u for some `w` that opens `t`, and its length is at least `d(s,w) + d(t,u)`.
+/// Because `t` dominates `u`, `d(t,u)` is just `d(s,u) - d(s,t)` out of the distances
+/// already in hand, so nothing has to be walked again. The charge beats the plain bound
+/// exactly where the nearest opener is farther off than `t` itself.
+///
+/// `None` where the guard reads anything the layout does not track, since then the openers
+/// cannot be enumerated and nothing may be assumed about them. `Some(usize::MAX)` where the
+/// guard reads only tracked slots and NOTHING in the group writes them: the gate cannot be
+/// opened at all, so the target is unreachable rather than far.
+fn detour_charge(
+    graph: &LookAheadGraph,
+    vars: &DataVars<'_>,
+    distances: &std::collections::HashMap<DialogueNodeId, usize>,
+    gate: DialogueNodeId,
+    target: DialogueNodeId,
+) -> Option<usize> {
+    let node = graph.get(gate)?;
+    let mut slots = HashSet::new();
+    for part in node.guard.nodes() {
+        if let GuardExpression::Variable(name) = part.expression() {
+            slots.insert(vars.slot_of(name)?);
+        }
+    }
+    if slots.is_empty() {
+        return None;
+    }
+    let opener = graph
+        .nodes()
+        .filter(|n| {
+            n.actions.iter().any(|a| {
+                a.writes_slot() && usize::try_from(a.slot()).is_ok_and(|s| slots.contains(&s))
+            })
+        })
+        .filter_map(|n| distances.get(&n.id).copied())
+        .min();
+    let (Some(&whole), Some(&upto)) = (distances.get(&target), distances.get(&gate)) else {
+        return None;
+    };
+    match opener {
+        None => Some(usize::MAX),
+        Some(reach) => Some(reach + whole.saturating_sub(upto)),
+    }
+}
+
+/// The entries on one shortest structural route from `position` to `target`, target last.
+///
+/// WALKED BACK OUT OF `choice_bounds`'s OWN DISTANCES rather than measured again: a parent
+/// lies on a shortest route exactly where its distance plus what leaving it charges equals
+/// the child's. Only the charge is restated here, and it is one expression; re-deriving the
+/// distances would be a second answer to a question that already has one.
+fn shortest_route(
+    graph: &LookAheadGraph,
+    position: &Position,
+    distances: &std::collections::HashMap<DialogueNodeId, usize>,
+    target: DialogueNodeId,
+) -> Vec<DialogueNodeId> {
+    let mut parents: std::collections::HashMap<DialogueNodeId, Vec<DialogueNodeId>> =
+        std::collections::HashMap::new();
+    for node in graph.nodes() {
+        for &child in &node.links {
+            parents.entry(child).or_default().push(node.id);
+        }
+    }
+    let mut route = vec![target];
+    let mut at = target;
+    let mut guard = 0;
+    while !position.entries.contains(&at) && guard < graph.count() {
+        guard += 1;
+        let Some(&here) = distances.get(&at) else {
+            break;
+        };
+        let Some(&step) = parents.get(&at).into_iter().flatten().find(|parent| {
+            let charged = graph
+                .get(**parent)
+                .is_some_and(|n| n.choice && **parent != position.option);
+            distances
+                .get(*parent)
+                .is_some_and(|&d| d + usize::from(charged) == here)
+        }) else {
+            break;
+        };
+        route.push(step);
+        at = step;
+    }
+    route.reverse();
+    route
 }
 
 fn from_env(name: &str, fallback: usize) -> usize {
