@@ -5,9 +5,9 @@
 //!
 //! One save's tables are committed WHOLE - `testing/save_template.ntwtf` - and every
 //! scenario is a chain of sparse diffs ending at it. So reading the committed tables means
-//! walking each chain and applying what each link changes, which is what this does: the
-//! result is the tree the offline runner actually reads for that scenario, rather than the
-//! patch file beside it.
+//! walking each chain and applying what each link changes, which
+//! [`lookahead_engine::formats::lua_parts`] does: what is checked here is the tree the
+//! offline runner actually reads for that scenario, rather than the patch file beside it.
 //!
 //! ## The bar, and why it is not byte-for-byte
 //!
@@ -27,12 +27,11 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use lookahead_engine::formats::expanded_save;
 use lookahead_engine::formats::lua_blob::TABLE_NAMES;
 use lookahead_engine::formats::lua_simx::{self, Derivation, Orders};
 use lookahead_engine::formats::lua_sparse::{self, CONVERSATION_TABLE, LuaSparseFault};
-use lookahead_engine::formats::sparse::{self, SparseMap, SparseValue};
-use lookahead_engine::formats::sparse_diff;
+use lookahead_engine::formats::sparse::{SparseMap, SparseValue};
+use lookahead_engine::formats::{expanded_save, header, lua_parts};
 
 mod common;
 
@@ -84,12 +83,6 @@ fn saves() -> Vec<PathBuf> {
     found
 }
 
-/// The split directory holding a save's five table files.
-fn parts_of(save: &Path) -> PathBuf {
-    let name = save.file_name().unwrap_or_default().to_string_lossy();
-    save.join(format!("{name}.lua.parts"))
-}
-
 /// What a save is called in a failure.
 fn name_of(save: &Path) -> String {
     save.file_name()
@@ -98,69 +91,16 @@ fn name_of(save: &Path) -> String {
         .into_owned()
 }
 
-/// The chain a save sits at the end of, oldest first, ending with the save itself.
-fn chain(save: &Path) -> Vec<PathBuf> {
-    let manifest = save.join("_archive.json");
-    let Ok(text) = fs::read_to_string(&manifest) else {
-        return vec![save.to_path_buf()];
-    };
-
-    let read = expanded_save::read_manifest(&text, &manifest.to_string_lossy())
-        .expect("a committed manifest reads");
-    let mut links = chain(&save.join(read.base));
-    links.push(save.to_path_buf());
-    links
-}
-
 /// The five tables of a save, with every diff between it and a whole save applied.
+///
+/// Through the library rather than by walking the chain here, which is the point of there
+/// being a library: a reader in the test would be a second one to keep in step, and the
+/// thing it would drift from is the one the game's saves are rebuilt by.
 fn tables_of(save: &Path) -> BTreeMap<&'static str, SparseMap> {
-    let mut tables = BTreeMap::new();
-    for (at, link) in chain(save).iter().enumerate() {
-        let parts = parts_of(link);
-        for name in TABLE_NAMES {
-            let path = parts.join(format!("{name}.json"));
-            let Ok(text) = fs::read_to_string(&path) else {
-                assert!(at > 0, "{} has no {name} table", name_of(link));
-                continue;
-            };
+    let parts = lua_parts::read(&expanded_save::OnDisk, save)
+        .unwrap_or_else(|why| panic!("{}: {why}", save.display()));
 
-            let document = sparse::read(&text, &path.to_string_lossy()).expect("it reads");
-            let tree = match tables.remove(name) {
-                // A LINK OF THE CHAIN, which changes what the one before it held.
-                Some(was) => sparse_diff::apply(&was, &document)
-                    .unwrap_or_else(|why| panic!("{}: {why}", path.display())),
-                // The whole table the chain starts from.
-                None => {
-                    let named = document.find(FORMAT_KEY).and_then(as_text);
-                    let stamped = document.find(VERSION_KEY).and_then(as_count);
-                    lua_sparse::FORMAT
-                        .check(named, stamped)
-                        .unwrap_or_else(|why| panic!("{}: {why}", path.display()));
-                    document
-                }
-            };
-            tables.insert(name, tree);
-        }
-    }
-
-    tables
-}
-
-const FORMAT_KEY: &str = "_format";
-const VERSION_KEY: &str = "_formatVersion";
-
-fn as_text(value: &SparseValue) -> Option<&str> {
-    match value {
-        SparseValue::Text(text) => Some(text),
-        _ => None,
-    }
-}
-
-fn as_count(value: &SparseValue) -> Option<u32> {
-    match value {
-        SparseValue::Int(whole) => u32::try_from(*whole).ok(),
-        _ => None,
-    }
+    TABLE_NAMES.into_iter().zip(parts.tables).collect()
 }
 
 /// Where two trees first differ, and whether it is only the order they are written in.
@@ -210,7 +150,7 @@ fn first_difference(written: &SparseMap, expected: &SparseMap, path: &str) -> Op
 fn without_header(tree: &SparseMap) -> SparseMap {
     let mut stripped = SparseMap::new();
     for (name, value) in tree.entries() {
-        if name != FORMAT_KEY && name != VERSION_KEY {
+        if name != header::FORMAT_KEY && name != header::VERSION_KEY {
             stripped.add(name.clone(), value.clone());
         }
     }

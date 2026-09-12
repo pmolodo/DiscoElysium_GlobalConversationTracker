@@ -16,18 +16,20 @@
 //! [`expanded_save`] is a save written as a change to another save, with the members that
 //! come of resolving one.
 //!
-//! A SAVE'S OWN DATA lives in four more. [`lua_blob`] is the binary form the game writes,
+//! A SAVE'S OWN DATA lives in five more. [`lua_blob`] is the binary form the game writes,
 //! [`lua_sparse`] turns that into the tree it is stored as on disk and back, [`lua_manifest`]
-//! is what the second knows about the shape of the first, and [`lua_simx`] is the one place
+//! is what the second knows about the shape of the first, [`lua_simx`] is the one place
 //! a save repeats itself - the variables that are a second copy of the conversations, left
-//! out and rebuilt. [`runs`] is how all of them - and the wire, and the mod's own state file
-//! - spell a dense run of integers.
+//! out and rebuilt - and [`lua_parts`] is the directory those trees are split across, read
+//! back as one blob. [`runs`] is how all of them - and the wire, and the mod's own state
+//! file - spell a dense run of integers.
 
 pub mod expanded_save;
 pub mod header;
 pub mod json_diff;
 pub mod lua_blob;
 pub mod lua_manifest;
+pub mod lua_parts;
 pub mod lua_simx;
 pub mod lua_sparse;
 pub mod resolve;

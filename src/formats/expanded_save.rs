@@ -270,6 +270,83 @@ impl Files for OnDisk {
     }
 }
 
+/// One save of a chain: where it is, and what it says it changes where it changes one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Link {
+    /// Where the save is, with its `..` steps taken so one directory has one spelling.
+    pub directory: PathBuf,
+    /// What it is a change to, or nothing where it holds everything itself.
+    pub manifest: Option<Manifest>,
+}
+
+impl Link {
+    /// The save's own name, which every one of its files is prefixed with.
+    ///
+    /// From the manifest where there is one, because that is the name the members were
+    /// written for and a directory can be renamed without its contents. Otherwise from the
+    /// directory, which is the only thing a whole save has to go on.
+    #[must_use]
+    pub fn stem(&self) -> String {
+        self.manifest
+            .as_ref()
+            .and_then(Manifest::stem)
+            .map_or_else(|| stem_of(&self.directory), str::to_string)
+    }
+}
+
+/// The saves a save is built on, oldest first, ending with the save itself.
+///
+/// The first link is always a whole save and every later one is a change to the one before
+/// it, which is the order both halves of a save are resolved in - the pass-through members
+/// here, and the Lua tables in [`super::lua_parts`].
+///
+/// # Errors
+///
+/// Where a manifest will not read or is not one, or where the bases run in a circle.
+pub fn chain(files: &impl Files, directory: &Path) -> Result<Vec<Link>, SaveFault> {
+    // FLATTENED, because a chain joins one relative path onto another and the same
+    // directory arrives spelled differently each time round: "one", then "one/../two",
+    // then "one/../two/../one". A guard keyed on the spelling would never see a repeat, and
+    // a circle would run until the walk did.
+    let mut at = flatten(directory);
+    let mut walked = HashSet::new();
+    let mut links = Vec::new();
+
+    loop {
+        let manifest_path = at.join(MANIFEST_NAME);
+        let Some(raw) = files.read(&manifest_path) else {
+            // No manifest: the directory holds everything itself, and the chain starts here.
+            links.push(Link {
+                directory: at,
+                manifest: None,
+            });
+            break;
+        };
+
+        // BEFORE THE NEXT STEP IS TAKEN, so a circle is reported at the step that closes it
+        // rather than by running forever. A chain is otherwise unbounded on purpose: a long
+        // one is unusual and not wrong, and a depth cap would only turn a working save into
+        // a refused one.
+        if !walked.insert(at.clone()) {
+            return Err(SaveFault::Circular(shown(&at)));
+        }
+
+        let context = shown(&manifest_path);
+        let text = String::from_utf8(raw)
+            .map_err(|why| SaveFault::Unreadable(context.clone(), why.to_string()))?;
+        let manifest = read_manifest(&text, &context)?;
+        let next = flatten(&at.join(&manifest.base));
+        links.push(Link {
+            directory: at,
+            manifest: Some(manifest),
+        });
+        at = next;
+    }
+
+    links.reverse();
+    Ok(links)
+}
+
 /// The pass-through members of an expanded save, with every diff between it and a whole
 /// save applied.
 ///
@@ -281,41 +358,25 @@ impl Files for OnDisk {
 /// Where a file is missing or will not read, where a manifest is not one, where a diff will
 /// not apply, or where the bases run in a circle.
 pub fn members_of(files: &impl Files, directory: &Path) -> Result<Members, SaveFault> {
-    let mut walked = HashSet::new();
-    members_through(files, directory, &mut walked)
-}
-
-fn members_through(
-    files: &impl Files,
-    directory: &Path,
-    walked: &mut HashSet<PathBuf>,
-) -> Result<Members, SaveFault> {
-    // FLATTENED FIRST, because a chain joins one relative path onto another and the same
-    // directory arrives spelled differently each time round: "one", then "one/../two",
-    // then "one/../two/../one". A guard keyed on the spelling would never see a repeat, and
-    // a circle would run until the stack did.
-    let directory = &flatten(directory);
-    let manifest_path = directory.join(MANIFEST_NAME);
-    let Some(raw) = files.read(&manifest_path) else {
-        // No manifest: the directory holds the members themselves, whole.
-        return Ok(whole_members(files, directory));
-    };
-
-    // BEFORE THE CHAIN IS WALKED, so a circle is reported at the step that closes it rather
-    // than by running out of stack. A chain is otherwise unbounded on purpose: a long one
-    // is unusual and not wrong, and a depth cap would only turn a working save into a
-    // refused one.
-    if !walked.insert(directory.to_path_buf()) {
-        return Err(SaveFault::Circular(shown(directory)));
+    let mut members = Members::new();
+    for link in chain(files, directory)? {
+        members = match &link.manifest {
+            None => whole_members(files, &link.directory),
+            Some(manifest) => applied_members(files, &link.directory, manifest, &members)?,
+        };
     }
 
-    let context = shown(&manifest_path);
-    let text = String::from_utf8(raw)
-        .map_err(|why| SaveFault::Unreadable(context.clone(), why.to_string()))?;
-    let manifest = read_manifest(&text, &context)?;
+    Ok(members)
+}
 
-    let base = members_through(files, &directory.join(&manifest.base), walked)?;
-
+/// What one link of a chain leaves the members as, given what the link before it held.
+fn applied_members(
+    files: &impl Files,
+    directory: &Path,
+    manifest: &Manifest,
+    base: &Members,
+) -> Result<Members, SaveFault> {
+    let context = shown(&directory.join(MANIFEST_NAME));
     let mut applied = Vec::with_capacity(manifest.members.len());
     for member in &manifest.members {
         let was = base
@@ -440,7 +501,7 @@ fn stem_of(directory: &Path) -> String {
 }
 
 /// A path as a message says it, which is its last two parts.
-fn shown(path: &Path) -> String {
+pub(super) fn shown(path: &Path) -> String {
     let file = path.file_name().unwrap_or_default().to_string_lossy();
     match path.parent().and_then(Path::file_name) {
         Some(parent) => format!("{}/{file}", parent.to_string_lossy()),
@@ -448,42 +509,50 @@ fn shown(path: &Path) -> String {
     }
 }
 
+/// Files held in memory, so a chain is testable without a filesystem.
+///
+/// Beside the code it stands in for rather than in either module's tests, because both
+/// halves of a save are resolved along the same chain and both are tested against it.
+#[cfg(test)]
+#[derive(Default)]
+pub(super) struct Held(std::collections::HashMap<PathBuf, Vec<u8>>);
+
+#[cfg(test)]
+impl Held {
+    pub(super) fn with(self, path: &str, text: &str) -> Self {
+        self.holding(path, text.as_bytes().to_vec())
+    }
+
+    pub(super) fn holding(mut self, path: &str, bytes: Vec<u8>) -> Self {
+        self.0.insert(PathBuf::from(path), bytes);
+        self
+    }
+}
+
+#[cfg(test)]
+impl Files for Held {
+    fn read(&self, path: &Path) -> Option<Vec<u8>> {
+        self.0.get(&flatten(path)).cloned()
+    }
+
+    fn list(&self, directory: &Path) -> Vec<String> {
+        let directory = flatten(directory);
+        self.0
+            .keys()
+            .filter(|path| path.parent() == Some(directory.as_path()))
+            .map(|path| {
+                path.file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use super::*;
-
-    /// Files held in memory, so the chain walk is testable without a filesystem.
-    #[derive(Default)]
-    struct Held(HashMap<PathBuf, Vec<u8>>);
-
-    impl Held {
-        fn with(mut self, path: &str, text: &str) -> Self {
-            self.0.insert(PathBuf::from(path), text.as_bytes().to_vec());
-            self
-        }
-    }
-
-    impl Files for Held {
-        fn read(&self, path: &Path) -> Option<Vec<u8>> {
-            self.0.get(&flatten(path)).cloned()
-        }
-
-        fn list(&self, directory: &Path) -> Vec<String> {
-            let directory = flatten(directory);
-            self.0
-                .keys()
-                .filter(|path| path.parent() == Some(directory.as_path()))
-                .map(|path| {
-                    path.file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .into_owned()
-                })
-                .collect()
-        }
-    }
 
     const HEADER: &str = r#""_format": "expanded-save-diff", "_formatVersion": 1"#;
 

@@ -371,10 +371,20 @@ fn integer_keyed(table: &LuaTable) -> Option<Vec<(i64, &LuaValue)>> {
     Some(entries)
 }
 
+/// [`decode`] with the outermost object already in hand.
+///
 /// A WHOLE TABLE DOCUMENT, which is the only place the bookkeeping a caller owns can appear:
 /// what the document is, which version of it, and what it leaves out. A table nested inside
 /// one goes through [`decode_shape`] and has none of that.
-fn decode_map(
+///
+/// How a reader that pulled a tree out of a file reaches this without copying it into a
+/// [`SparseValue`] first - a save's `Conversation` tree is megabytes, and that copy would be
+/// the largest thing the read did.
+///
+/// # Errors
+///
+/// As [`decode`].
+pub fn decode_map(
     map: &SparseMap,
     path: &str,
     derivation: Option<&Derivation<'_>>,
