@@ -124,8 +124,6 @@
     -->
         <Project Path="tools/GameHarness/GameHarness.csproj" />
         <Project Path="tools/GlobalStateBenchmark/GlobalStateBenchmark.csproj" />
-        <Project Path="tools/GlobalStateCheck.Tests/GlobalStateCheck.Tests.csproj" />
-        <Project Path="tools/GlobalStateCheck/GlobalStateCheck.csproj" />
     </Folder>
 
 </Solution>

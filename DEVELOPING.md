@@ -88,8 +88,10 @@ Two things about its contents are deliberate:
   - `NtwtfDecode` - dumps the Lua tables inside a `{save}.ntwtf` save (zip, folder or
     `.lua` file) as JSON. It dumps the `Conversation` table by default; `-t all` dumps
     all five (Actor, Item, Location, Variable, Conversation) as one document.
-  - `GlobalStateCheck` - verifies `global-conversation-state.json` is the union of two or
-    more saves, with no dialogue status lower than the highest save that mentions it.
+  - `gct-state-check` - a Rust binary rather than one of these: verifies
+    `global-conversation-state.json` is the union of two or more saves, with no dialogue
+    status lower than the highest save that mentions it. Run it by hand after a real
+    playthrough, which is the only thing that can answer the question it asks.
   - `GlobalStateBenchmark` - times `GlobalStateStore.Save` broken out by phase, and what
     a caller pays now that the write runs on a background thread, over a sweep of state
     sizes.

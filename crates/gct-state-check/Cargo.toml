@@ -1,0 +1,25 @@
+[package]
+name = "gct_state_check"
+version = "0.1.0"
+edition = "2024"
+
+# THE ONE THING THAT HOLDS THE MOD'S OUTPUT AGAINST THE GAME'S OWN SAVES. Every test in this
+# repository runs over saves this repository wrote; this runs over a real playthrough's, and
+# asks the only question that matters about the state file - that nothing a save recorded
+# came out lower in it.
+#
+# ITS OWN CRATE, and small on purpose. It is a REPORT rather than a format operation, so it
+# is not a verb on the engine host; and it needs nothing but the two formats it compares, so
+# it does not link the search the way a verb would.
+
+[[bin]]
+name = "gct-state-check"
+path = "src/main.rs"
+
+[lib]
+name = "gct_state_check"
+path = "src/lib.rs"
+
+[dependencies]
+gct_formats = { path = "../gct-formats" }
+thiserror = "1.0"

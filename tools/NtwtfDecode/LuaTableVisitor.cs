@@ -7,7 +7,7 @@ namespace NtwtfDecode;
 
 /// <summary>
 /// Builds the whole blob as nested <see cref="LuaTable"/>s - the decode
-/// <c>NtwtfDecode</c> and <c>GlobalStateCheck</c> want, where nothing is known in
+/// <c>NtwtfDecode</c> wants, where nothing is known in
 /// advance about which parts matter.
 ///
 /// The result is a single table whose five entries are the top-level tables, keyed
