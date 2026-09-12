@@ -63,6 +63,9 @@ const NO_REVISION: &str = "nogit";
 /// EXCLUDED BY PATTERN RATHER THAN LISTED POSITIVELY, so that a Rust module added tomorrow
 /// is covered without anyone remembering to add it - which is the direction the mistake
 /// must not be able to go, since a source left out is a stale engine that passes.
+///
+/// [`watch_sources`] reads this list too, and reads the exclusions with it, so what Cargo
+/// re-runs this for and what the hash is taken over are the same set.
 const SOURCES: &[&str] = &[
     "Cargo.toml",
     "Cargo.lock",
@@ -77,34 +80,27 @@ const SOURCES: &[&str] = &[
 
 fn main() {
     // RE-RUN FOR THE PATHS THE STAMP IS BUILT FROM, which is [`SOURCES`] and therefore
-    // cannot fall behind it: a path added there is a path emitted here, and a path left
+    // cannot fall behind it: a path named there is a path watched here, and a path left
     // out of there was already outside the hash. Saying nothing at all makes Cargo re-run
     // this whenever ANY file in the package changes, which recompiles the library for an
     // edit to a measurement or a test - work that cannot alter the answer, since the hash
     // is taken over these paths and no others.
-    //
-    // A DIRECTORY IS ONE LINE and Cargo walks it, so `src` covers a module added tomorrow
-    // without anyone remembering. That is the direction this must not be able to go wrong
-    // in, the same reasoning as the exclusion below being a pattern.
-    //
-    // THE EXCLUSION HAS NO EQUIVALENT HERE, and it is worth saying rather than finding
-    // out: `rerun-if-changed` takes a path, not a git pathspec, so naming `src` re-runs
-    // this on a C# edit too. That is a build of one library rather than the whole package,
-    // and it only ever costs time - the stamp it recomputes is the same one.
-    for source in SOURCES {
-        if source.starts_with(':') {
-            continue;
-        }
-        println!("cargo::rerun-if-changed={source}");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let listed = source_listing(&root);
+    let watched = watch_sources(&root);
+    if let Some(listed) = &listed {
+        refuse_unwatched(listed, &watched);
     }
 
     generate_wire();
 
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let stamp = format!(
         "{{\n  \"commit\": \"{}\",\n  \"tree\": \"{}\",\n  \"profile\": \"{}\"\n}}\n",
         git(&root, &["rev-parse", "HEAD"]).unwrap_or_else(|| NO_REVISION.to_string()),
-        tree_hash(&root).unwrap_or_else(|| NO_REVISION.to_string()),
+        listed.as_deref().map_or_else(
+            || NO_REVISION.to_string(),
+            |listed| digest(listed.as_bytes())
+        ),
         std::env::var("PROFILE").unwrap_or_else(|_| "unknown".to_string()),
     );
 
@@ -119,6 +115,106 @@ fn main() {
     };
 
     let _ = std::fs::write(target.join("lookahead_engine.built.json"), stamp);
+}
+
+/// How a git pathspec spells "and not this".
+const EXCLUDE: &str = ":(exclude)";
+
+/// Tells Cargo to re-run this for a change to any source the stamp is taken over.
+///
+/// ## Why this is not one line per [`SOURCES`] entry
+///
+/// `rerun-if-changed` takes a PATH, not a git pathspec, and Cargo walks a directory whole.
+/// So naming `src` watches the eight C# projects that share it with the Rust crate, and the
+/// `:(exclude)` that keeps them out of the hash does nothing about the trigger. Re-running a
+/// build script marks its crate dirty, and this crate is the workspace root that every test,
+/// example and binary depends on - so editing one C# file cost a relink of all of them.
+/// Measured 2026-09-12: 0.4 seconds with nothing changed, 2 minutes 47 with one C# file
+/// touched and nothing else.
+///
+/// A directory holding an excluded path is therefore listed a level at a time, and every
+/// other path stays one line for Cargo to walk.
+///
+/// ## What still covers a module added tomorrow
+///
+/// `src` itself is not watched, so a new entry appearing directly under it is not noticed by
+/// being created. It is noticed anyway, because a Rust file nothing declares is not part of
+/// the crate: a new module means a `mod` line in a file that IS watched, and the same goes
+/// for anything reached by `include!`. That is the direction this must not be able to go
+/// wrong in, and it holds for the same reason the exclusion is a pattern rather than a list.
+fn watch_sources(root: &Path) -> Vec<String> {
+    let excluded: Vec<String> = SOURCES
+        .iter()
+        .filter_map(|source| source.strip_prefix(EXCLUDE))
+        .map(|pattern| pattern.trim_end_matches('*').to_string())
+        .collect();
+
+    let mut watched = Vec::new();
+    for source in SOURCES {
+        if source.starts_with(':') {
+            continue;
+        }
+
+        watch(root, source, &excluded, &mut watched);
+    }
+
+    watched
+}
+
+/// Watches one path, or its children where some of them are excluded.
+fn watch(root: &Path, source: &str, excluded: &[String], watched: &mut Vec<String>) {
+    let within = format!("{source}/");
+    let holds_excluded = excluded.iter().any(|prefix| prefix.starts_with(&within));
+
+    // UNREADABLE MEANS WATCH THE WHOLE THING. Listing nothing would leave the sources
+    // unwatched and the library stale without a word, where watching too much only costs
+    // the rebuild this exists to avoid.
+    let entries = holds_excluded.then(|| std::fs::read_dir(root.join(source)).ok());
+    let Some(Some(entries)) = entries else {
+        println!("cargo::rerun-if-changed={source}");
+        watched.push(source.to_string());
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = format!("{source}/{}", entry.file_name().to_string_lossy());
+        if excluded.iter().any(|prefix| path.starts_with(prefix)) {
+            continue;
+        }
+
+        watch(root, &path, excluded, watched);
+    }
+}
+
+/// Fails the build if any source the stamp is taken over is not one Cargo will re-run for.
+///
+/// ## Why this is checked rather than reasoned about
+///
+/// The two lists come from one declaration, so they cannot disagree by being edited apart -
+/// but [`watch`] descends a directory to skip what is excluded, and a source that landed
+/// somewhere that descent does not reach would be HASHED WITHOUT BEING WATCHED. That is the
+/// silent failure the whole stamp exists to prevent, one level down: the library would go
+/// stale and its stamp would still say it was current.
+///
+/// The listing is already in hand for the hash, so the check costs a string scan.
+fn refuse_unwatched(listed: &str, watched: &[String]) {
+    let unwatched: Vec<&str> = listed
+        .lines()
+        .filter_map(|line| line.split_once('\t').map(|(_, path)| path))
+        .filter(|path| {
+            !watched
+                .iter()
+                .any(|under| *path == under || path.starts_with(&format!("{under}/")))
+        })
+        .collect();
+
+    assert!(
+        unwatched.is_empty(),
+        "the stamp is taken over {} source(s) Cargo will not re-run this for, so the library \
+         could go stale while the stamp says it is current: {}",
+        unwatched.len(),
+        unwatched.join(", "),
+    );
 }
 
 /// The path of the wire schema, relative to the package root.
@@ -165,8 +261,17 @@ fn git(root: &Path, arguments: &[&str]) -> Option<String> {
     Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-/// A hash over this library's sources, uncommitted changes to tracked files included.
-fn tree_hash(root: &Path) -> Option<String> {
+/// Every source the stamp covers, as `git ls-files -s` spells them.
+///
+/// A blob sha and a path per line, with uncommitted changes to tracked files counted - so
+/// hashing the listing hashes the CONTENT of every source without reading one, git having
+/// already hashed them all. It is also the list of what has to be watched, which is why it
+/// is taken once and used for both.
+///
+/// NOT TRIMMED, and it matters: the reader in `tools/GameAutomation/NativeEngineStamp.cs`
+/// hashes what git printed, trailing newline included, and a stamp that disagreed with its
+/// reader would refuse every run.
+fn source_listing(root: &Path) -> Option<String> {
     let index = root.join("target").join("built-stamp-index");
     std::fs::create_dir_all(index.parent()?).ok()?;
     std::fs::copy(root.join(".git").join("index"), &index).ok()?;
@@ -196,9 +301,7 @@ fn tree_hash(root: &Path) -> Option<String> {
         return None;
     }
 
-    // Each line is a blob sha and a path, so hashing the listing hashes the CONTENT of
-    // every source without reading one - git has already hashed them all.
-    Some(digest(&listed.stdout))
+    Some(String::from_utf8_lossy(&listed.stdout).into_owned())
 }
 
 /// A hex digest of some bytes, in a form the reader can reproduce.
