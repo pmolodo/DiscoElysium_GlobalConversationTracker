@@ -773,6 +773,172 @@ mod tests {
         assert_eq!(answer.marks[2].distance, None);
     }
 
+    /// The menu from `.claude/plans/MovingCloserToNewContent.md`, E included.
+    ///
+    /// ```text
+    ///   S  the menu, every option of it already read
+    ///   A  loops back to S - and links at W, which only E's variable opens
+    ///   B  six nodes to X, then back to S
+    ///   C  five nodes to X, then back to S
+    ///   D  four nodes to Y, then back to S
+    ///   E  straight back to S, having set the variable that opens A's link
+    ///   Z  ends the conversation
+    /// ```
+    ///
+    /// W, X and Y are the unread content and nothing else is. The shape exists for E, which
+    /// is the case that says a walk may not be abandoned merely for returning to where it
+    /// started: it saw nothing new on the way, but it CHANGED STATE, and that state is what
+    /// opens A. A marking that prunes on position alone loses the three-step route E, S, A,
+    /// W; one that prunes on position and state together keeps it.
+    ///
+    /// B and C share a target and D has its own, which is what makes the distances worth
+    /// ordering rather than merely counting.
+    fn the_e_menu() -> LookAheadGraph {
+        let mut builder = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1, 2, 3, 4, 5, 6]))
+            .add(Entry::new(1).player().links(&[0, 7]))
+            .add(Entry::new(2).player().links(&[10]))
+            .add(Entry::new(3).player().links(&[16]))
+            .add(Entry::new(4).player().links(&[21]))
+            .add(
+                Entry::new(5)
+                    .player()
+                    .script("SetVariableValue(\"opened\", true)")
+                    .links(&[0]),
+            )
+            .add(Entry::new(6).player())
+            .add(Entry::new(7).guard("Variable[\"opened\"] == true"))
+            .add(Entry::new(8).links(&[0]))
+            .add(Entry::new(9).links(&[0]));
+
+        // The three corridors, each ending at the content it leads to. Written as a loop so
+        // that their LENGTHS are the only thing that differs, which is the whole point of
+        // having three of them.
+        for (first, length, target) in [(10, 6, 8), (16, 5, 8), (21, 4, 9)] {
+            for step in 0..length {
+                let next = if step + 1 == length {
+                    target
+                } else {
+                    first + step + 1
+                };
+                builder = builder.add(Entry::new(first + step).links(&[next]));
+            }
+        }
+
+        builder.build()
+    }
+
+    /// The menu's options, in the order the letters name them.
+    const E_MENU_OPTIONS: [i32; 6] = [1, 2, 3, 4, 5, 6];
+
+    /// W, X and Y, and nothing else.
+    const E_MENU_UNREAD: [i32; 3] = [7, 8, 9];
+
+    /// Which of A, B, C, D, E and Z a marking stars.
+    fn starred(answer: &MenuAnswer) -> Vec<bool> {
+        answer
+            .marks
+            .iter()
+            .map(|mark| mark.round.is_some())
+            .collect()
+    }
+
+    /// The exact marking keeps the route a state change opens, and stars the nearest of each.
+    ///
+    /// ```text
+    ///   A  no    it only reaches W by coming back to the menu and taking E first
+    ///   B  no    six nodes to X, where C is five - same content, further away
+    ///   C  yes   the nearest route to X
+    ///   D  yes   the nearest route to Y
+    ///   E  yes   three steps to W by way of the menu, which is nearer than either
+    ///   Z  no    ends the conversation
+    /// ```
+    ///
+    /// E IS THE ONE THE SHAPE EXISTS FOR. It sees nothing new and comes straight back to
+    /// where it started, so a walk pruned on POSITION alone would abandon it - and the route
+    /// it opens is the shortest on the menu. Pruning on position and state together keeps
+    /// it, and this is what says the shipped exact marking does.
+    #[test]
+    fn the_exact_marking_keeps_the_route_a_state_change_opens() {
+        let answer = marking(&the_e_menu(), &E_MENU_OPTIONS, &E_MENU_UNREAD, Which::Exact);
+
+        assert_eq!(
+            starred(&answer),
+            vec![false, false, true, true, true, false],
+            "A, B, C, D, E, Z",
+        );
+
+        // AND E IS NOT MERELY REACHED, it is ordered behind the two that are already there:
+        // C and D win their own rounds at distance 0, and E wins the round after, one step
+        // further out. A marking that found E by accident would not have it in third place.
+        assert_eq!(answer.marks[4].distance, Some(1));
+        assert_eq!(answer.marks[2].distance, Some(0));
+        assert_eq!(answer.marks[3].distance, Some(0));
+    }
+
+    /// The cheap question loses E, and stars B in its place.
+    ///
+    /// ```text
+    ///   A  no    its siblings are cut, so nothing opens W
+    ///   B  YES   it leads onward, and the cheap question does not ask how far
+    ///   C  yes
+    ///   D  yes
+    ///   E  NO    everything it opens runs through the menu, which the cut removes
+    ///   Z  no
+    /// ```
+    ///
+    /// TWO WRONG ANSWERS, not one, and they are the same mistake: the question is whether an
+    /// option reaches unread content WITHOUT RETURNING THROUGH THE MENU, which is a yes or no
+    /// about routes rather than a comparison of distances. So it cannot see that B is further
+    /// from X than C is, and it cannot see E at all - E's whole value is the return.
+    ///
+    /// This is a record of what the shipped marking does, not an endorsement. See de-2p8j.2.
+    #[test]
+    fn the_cheap_question_loses_the_route_a_state_change_opens() {
+        let answer = marking(
+            &the_e_menu(),
+            &E_MENU_OPTIONS,
+            &E_MENU_UNREAD,
+            Which::Onward,
+        );
+
+        assert_eq!(
+            starred(&answer),
+            vec![false, true, true, true, false, false],
+            "A, B, C, D, E, Z",
+        );
+    }
+
+    /// And on this menu the hybrid is the cheap question, because the fallback never fires.
+    ///
+    /// The fallback runs only where NO option leads onward. Here three of them do, so the
+    /// expensive marking is never asked and E goes unstarred - which is the gap de-2p8j.2
+    /// exists to close, and is pinned here so that closing it shows up as a changed test
+    /// rather than as a quietly different menu.
+    ///
+    /// BOTH HALVES ARE NEEDED. That the hybrid agrees with the cheap question says which
+    /// question answered; that it DISAGREES with the exact one says the choice of question
+    /// is what decided the menu.
+    #[test]
+    fn the_hybrid_answers_the_e_menu_with_the_cheap_question() {
+        let graph = the_e_menu();
+        let onward = marking(&graph, &E_MENU_OPTIONS, &E_MENU_UNREAD, Which::Onward);
+        let hybrid = marking(&graph, &E_MENU_OPTIONS, &E_MENU_UNREAD, Which::Hybrid);
+        let exact = marking(&graph, &E_MENU_OPTIONS, &E_MENU_UNREAD, Which::Exact);
+
+        assert!(onward.rounds > 0, "three options lead onward here");
+        assert_eq!(starred(&hybrid), starred(&onward));
+        assert_eq!(
+            hybrid.passes, onward.passes,
+            "the fallback must not have run"
+        );
+        assert_ne!(
+            starred(&hybrid),
+            starred(&exact),
+            "the two questions must disagree here, or this menu pins nothing",
+        );
+    }
+
     #[test]
     fn a_cut_winner_cannot_be_used_to_reach_other_content() {
         let graph = GraphBuilder::new()
