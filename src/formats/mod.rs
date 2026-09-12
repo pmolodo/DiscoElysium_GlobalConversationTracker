@@ -24,8 +24,12 @@
 //! back as one blob. [`runs`] is how all of them - and the wire, and the mod's own state
 //! file - spell a dense run of integers. [`packed_save`] puts the two halves of a save back
 //! together as the archive the game loads.
+//!
+//! AND ONE THAT IS NOT A SAVE'S. [`global_state`] is the mod's own record of what a player
+//! has read across every save, which is the only file here that cannot be regenerated.
 
 pub mod expanded_save;
+pub mod global_state;
 pub mod header;
 pub mod json_diff;
 pub mod lua_blob;
