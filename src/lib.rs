@@ -13,6 +13,9 @@ pub mod formats;
 /// The types that cross the pipe, generated from `proto/engine.proto`.
 pub mod wire;
 
+/// Between those generated types and the engine's own.
+pub mod wire_convert;
+
 /// What crosses between the plugin and this engine, and what it means.
 pub mod bridge;
 

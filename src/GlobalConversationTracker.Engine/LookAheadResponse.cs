@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 using System;
 using System.Collections.Generic;
-using System.Text.Json;
 
 namespace GlobalConversationTracker.Engine
 {
@@ -138,96 +137,24 @@ namespace GlobalConversationTracker.Engine
                 : null;
         }
 
-        /// <summary>Reads what the engine's <c>look_ahead</c> call answered.</summary>
-        /// <param name="json">The engine's answer.</param>
-        /// <exception cref="ArgumentNullException">The JSON is null.</exception>
-        /// <exception cref="FormatException">It is not a response document.</exception>
-        public static LookAheadResponse Parse(string json)
-        {
-            if (json == null)
-            {
-                throw new ArgumentNullException(nameof(json));
-            }
-
-            try
-            {
-                using JsonDocument document = JsonDocument.Parse(json);
-                JsonElement root = document.RootElement;
-
-                string? error = root.TryGetProperty("error", out JsonElement reason)
-                    && reason.ValueKind == JsonValueKind.String
-                        ? reason.GetString()
-                        : null;
-
-                var answers = new List<LookAheadAnswer>();
-                if (root.TryGetProperty("answers", out JsonElement listed)
-                    && listed.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (JsonElement answer in listed.EnumerateArray())
-                    {
-                        JsonElement start = answer.GetProperty("start");
-                        answers.Add(new LookAheadAnswer(
-                            new NodeRef(
-                                start.GetProperty("conversation").GetInt32(),
-                                start.GetProperty("entry").GetInt32()),
-                            answer.GetProperty("best").GetInt32(),
-                            answer.GetProperty("complete").GetBoolean(),
-                            answer.GetProperty("elapsed_ms").GetInt64(),
-                            Number(answer, "states_explored"),
-                            Number(answer, "nodes_reached"),
-                            Text(answer, "stopped_by"),
-                            Branch(answer),
-                            (int)Number(answer, "destination")));
-                    }
-                }
-
-                return new LookAheadResponse(answers, error);
-            }
-            catch (JsonException error)
-            {
-                throw new FormatException(
-                    "the look-ahead engine's answer could not be read: " + error.Message,
-                    error);
-            }
-        }
-
-        /// <summary>One optional number, or zero where the library did not send it.</summary>
+        /// <summary>Composes a response from what crossed.</summary>
         /// <remarks>
-        /// Absent reads as zero rather than as a parse failure. These are diagnostics, and a
-        /// library built before they existed should still answer questions rather than
-        /// refuse them.
+        /// For <c>WireConvert</c>, which is the only thing that builds one: a response is
+        /// something the engine said, never something this side makes up. The constructor
+        /// stays private so that stays true.
         /// </remarks>
-        /// <summary>
-        /// Which outcome an answer is for, or null where the start has only one.
-        /// </summary>
-        /// <remarks>
-        /// A MISSING NAME IS NOT A MALFORMED ANSWER. The engine writes it only for a white
-        /// or red check, so its absence carries meaning - the start is not a roll - and an
-        /// older library that never named an outcome reads as exactly that.
-        /// </remarks>
-        private static string? Branch(JsonElement answer)
+        /// <param name="answers">One per thing that can be chosen.</param>
+        /// <param name="error">Why the whole request failed, or null if it did not.</param>
+        /// <exception cref="ArgumentNullException">The answers are null.</exception>
+        internal static LookAheadResponse Of(
+            IReadOnlyList<LookAheadAnswer> answers, string? error)
         {
-            return answer.TryGetProperty("branch", out JsonElement branch)
-                && branch.ValueKind == JsonValueKind.String
-                ? branch.GetString()
-                : null;
-        }
+            if (answers == null)
+            {
+                throw new ArgumentNullException(nameof(answers));
+            }
 
-        private static long Number(JsonElement answer, string name)
-        {
-            return answer.TryGetProperty(name, out JsonElement value)
-                && value.ValueKind == JsonValueKind.Number
-                ? value.GetInt64()
-                : 0;
-        }
-
-        /// <summary>One optional string, or empty where the library did not send it.</summary>
-        private static string Text(JsonElement answer, string name)
-        {
-            return answer.TryGetProperty(name, out JsonElement value)
-                && value.ValueKind == JsonValueKind.String
-                ? value.GetString() ?? string.Empty
-                : string.Empty;
+            return new LookAheadResponse(answers, error);
         }
     }
 }

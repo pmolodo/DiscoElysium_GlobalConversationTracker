@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: MIT
 using System.Collections.Generic;
-using System.Text.Json;
+using System.Linq;
+
 using GlobalConversationTracker.Engine;
+
+using Google.Protobuf;
+
+using Wire = GlobalConversationTracker.Engine.Wire;
+
 using Xunit;
 using Xunit.Abstractions;
 
@@ -23,6 +29,24 @@ namespace GlobalConversationTracker.LookAhead.Tests
     /// </remarks>
     public class SnapshotTests
     {
+
+        /// <summary>A set's runs, as one line, so an encoding can be asserted as text.</summary>
+        /// <remarks>
+        /// The runs are what actually crosses, and they are the thing worth pinning: a set
+        /// that collapsed differently from one call to the next would make two requests
+        /// impossible to compare, and comparing them is how the in-game check against an
+        /// offline run works at all.
+        /// </remarks>
+        private static string Runs(Wire.NodeSet set)
+        {
+            return string.Join(
+                "; ",
+                set.Conversations.Select(conversation =>
+                    $"{conversation.Conversation}: "
+                    + string.Join(
+                        ", ",
+                        conversation.Runs.Select(run => $"{run.First}-{run.Last}"))));
+        }
         private readonly ITestOutputHelper _output;
 
         public SnapshotTests(ITestOutputHelper output)
@@ -45,14 +69,15 @@ namespace GlobalConversationTracker.LookAhead.Tests
 
             set.Add(new NodeRef(636, 7));
 
-            Assert.Equal(@"{""631"":""0-3,5,9-10"",""636"":""7""}", set.ToJson());
+            Assert.Equal(
+                "631: 0-3, 5-5, 9-10; 636: 7-7", Runs(WireConvert.Write(set)));
         }
 
         /// <summary>An empty set is an empty object, not an absent one.</summary>
         [Fact]
         public void AnEmptyEntrySetIsAnEmptyObject()
         {
-            Assert.Equal("{}", new NodeSet().ToJson());
+            Assert.Equal("", Runs(WireConvert.Write(new NodeSet())));
         }
 
         /// <summary>Adding an entry twice does not write it twice.</summary>
@@ -64,7 +89,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
             set.Add(new NodeRef(631, 4));
 
             Assert.Equal(1, set.Count);
-            Assert.Equal(@"{""631"":""4""}", set.ToJson());
+            Assert.Equal("631: 4-4", Runs(WireConvert.Write(set)));
         }
 
         /// <summary>
@@ -88,53 +113,74 @@ namespace GlobalConversationTracker.LookAhead.Tests
             request.Starts.Add(new NodeRef(631, 4));
             request.UnseenAnyGame.Add(new NodeRef(631, 9));
 
-            string json = request.ToJson();
-            _output.WriteLine(json);
+            Wire.LookAheadRequest sent = WireConvert.Write(request);
+            _output.WriteLine(sent.ToString());
 
-            using JsonDocument document = JsonDocument.Parse(json);
-            JsonElement root = document.RootElement;
+            Assert.Equal(631, sent.Conversation);
+            Assert.Equal(4, Assert.Single(sent.Starts).Entry);
+            Assert.Equal("631: 9-9", Runs(sent.UnseenAnyGame));
+            Assert.Empty(sent.UnseenThisGame.Conversations);
 
-            Assert.Equal(631, root.GetProperty("conversation").GetInt32());
-            Assert.Equal(4, root.GetProperty("starts")[0].GetProperty("entry").GetInt32());
-            Assert.Equal("9", root.GetProperty("unseen_any_game").GetProperty("631").GetString());
-            Assert.Equal("{}", root.GetProperty("unseen_this_game").ToString());
-
-            JsonElement snapshot = root.GetProperty("world");
-            Assert.Equal(250, snapshot.GetProperty("money").GetInt32());
-            Assert.Equal(720, snapshot.GetProperty("day_minutes").GetInt32());
-            Assert.False(snapshot.GetProperty("clock_locked").GetBoolean());
-            Assert.Equal("number", snapshot.GetProperty("variable_values")[0]
-                .GetProperty("kind").GetString());
-            Assert.Equal("bool", snapshot.GetProperty("query_values")[0]
-                .GetProperty("kind").GetString());
-            Assert.Equal("badge", snapshot.GetProperty("items")[0].GetString());
-            Assert.Equal("2", snapshot.GetProperty("seen").GetProperty("631").GetString());
+            Wire.WorldSnapshot snapshot = sent.World;
+            Assert.Equal(250, snapshot.Money);
+            Assert.Equal(720, snapshot.DayMinutes);
+            Assert.False(snapshot.ClockLocked);
+            Assert.Equal(
+                Wire.WireValue.ValueOneofCase.Number,
+                snapshot.VariableValues[0].ValueCase);
+            Assert.Equal(
+                Wire.WireValue.ValueOneofCase.Boolean,
+                snapshot.QueryValues[0].ValueCase);
+            Assert.Equal("badge", snapshot.Items[0]);
+            Assert.Equal("631: 2-2", Runs(snapshot.Seen));
         }
 
-        /// <summary>A value's wire form is what the engine expects, for each kind.</summary>
+        /// <summary>A value crosses as the one member of the oneof that names its kind.</summary>
+        /// <remarks>
+        /// AND UNKNOWN CROSSES AS NONE OF THEM. That is what silence means on the far
+        /// side, it is what a default-constructed value already is, and it costs no bytes -
+        /// so there is no way to send a value that means neither this nor an answer.
+        /// </remarks>
         [Fact]
-        public void EachKindOfAnswerIsWrittenTheWayTheEngineReadsIt()
+        public void EachKindOfAnswerCrossesAsItsOwnMember()
         {
-            Assert.Equal(@"[{""kind"":""bool"",""value"":true}]", Written(WireValue.FromBoolean(true)));
-            Assert.Equal(@"[{""kind"":""number"",""value"":3}]", Written(WireValue.FromNumber(3)));
-            Assert.Equal(@"[{""kind"":""text"",""value"":""blue""}]", Written(WireValue.FromText("blue")));
-            Assert.Equal(@"[{""kind"":""unknown""}]", Written(WireValue.Unknown));
+            Assert.Equal(
+                Wire.WireValue.ValueOneofCase.Boolean, Sent(WireValue.FromBoolean(true)).ValueCase);
+            Assert.Equal(
+                Wire.WireValue.ValueOneofCase.Number, Sent(WireValue.FromNumber(3)).ValueCase);
+            Assert.Equal(
+                Wire.WireValue.ValueOneofCase.Text, Sent(WireValue.FromText("blue")).ValueCase);
+            Assert.Equal(
+                Wire.WireValue.ValueOneofCase.None, Sent(WireValue.Unknown).ValueCase);
+
+            Assert.True(Sent(WireValue.FromBoolean(true)).Boolean);
+            Assert.Equal(3, Sent(WireValue.FromNumber(3)).Number);
+            Assert.Equal("blue", Sent(WireValue.FromText("blue")).Text);
+            Assert.Empty(Sent(WireValue.Unknown).ToByteArray());
+        }
+
+        /// <summary>One value, as it leaves a snapshot.</summary>
+        private static Wire.WireValue Sent(WireValue value)
+        {
+            var world = new WorldSnapshot();
+            world.VariableValues.Add(value);
+            return Assert.Single(WireConvert.Write(world).VariableValues);
         }
 
         /// <summary>Reading the questions gives back the lists the engine sent.</summary>
         [Fact]
         public void TheQuestionsAreReadBackAsTheyWereSent()
         {
-            LookAheadQuestions questions = LookAheadQuestions.Parse(@"{
-                ""conversations"": [631, 636],
-                ""variables"": [""jam.asked""],
-                ""queries"": [""IsKimHere()""],
-                ""items"": [""badge""],
-                ""tasks"": [],
-                ""thoughts"": [""jamais_vu""],
-                ""checks"": [{""conversation"": 631, ""entry"": 12}],
-                ""entries"": [{""conversation"": 631, ""entry"": 0}]
-            }");
+            var sent = new Wire.Questions();
+            sent.Conversations.AddRange(new[] { 631, 636 });
+            sent.Variables.Add("jam.asked");
+            sent.Queries.Add("IsKimHere()");
+            sent.Items.Add("badge");
+            sent.Thoughts.Add("jamais_vu");
+            sent.Checks.Add(WireConvert.Write(new NodeRef(631, 12)));
+            sent.Entries.Add(WireConvert.Write(new NodeRef(631, 0)));
+
+            LookAheadQuestions questions = WireConvert.Read(sent);
 
             Assert.Equal(new[] { 631, 636 }, questions.Conversations);
             Assert.Equal("jam.asked", Assert.Single(questions.Variables));
@@ -150,13 +196,16 @@ namespace GlobalConversationTracker.LookAhead.Tests
         [Fact]
         public void AResponseIsReadBackIntoAnswers()
         {
-            LookAheadResponse response = LookAheadResponse.Parse(@"{
-                ""answers"": [{
-                    ""start"": {""conversation"": 631, ""entry"": 4},
-                    ""best"": 2, ""witness"": null, ""complete"": true, ""elapsed_ms"": 7
-                }],
-                ""error"": null
-            }");
+            var sent = new Wire.LookAheadResponse();
+            sent.Answers.Add(new Wire.LookAheadAnswer
+            {
+                Start = WireConvert.Write(new NodeRef(631, 4)),
+                Best = Wire.Novelty.UnseenAnyGame,
+                Complete = true,
+                ElapsedMs = 7,
+            });
+
+            LookAheadResponse response = WireConvert.Read(sent);
 
             Assert.Null(response.Error);
             LookAheadAnswer answer = Assert.Single(response.Answers);
@@ -170,8 +219,12 @@ namespace GlobalConversationTracker.LookAhead.Tests
         [Fact]
         public void AFailedRequestComesBackAsAReasonRatherThanAnException()
         {
-            LookAheadResponse response = LookAheadResponse.Parse(
-                @"{""answers"": [], ""error"": ""no such conversation""}");
+            var sent = new Wire.LookAheadResponse
+            {
+                Error = "no such conversation",
+            };
+
+            LookAheadResponse response = WireConvert.Read(sent);
 
             Assert.Empty(response.Answers);
             Assert.Equal("no such conversation", response.Error);
@@ -235,8 +288,8 @@ namespace GlobalConversationTracker.LookAhead.Tests
                 request.Starts.Add(entry);
             }
 
-            string json = request.ToJson();
-            _output.WriteLine($"the request is {json.Length} bytes");
+            _output.WriteLine(
+                $"the request is {WireConvert.Write(request).CalculateSize()} bytes");
 
             LookAheadResponse response = engine.Ask(request);
             Assert.Null(response.Error);
@@ -404,17 +457,6 @@ namespace GlobalConversationTracker.LookAhead.Tests
             {
                 yield return items[index];
             }
-        }
-
-        private static string Written(WireValue value)
-        {
-            var world = new WorldSnapshot();
-            world.VariableValues.Add(value);
-
-            using JsonDocument document = JsonDocument.Parse(
-                new LookAheadRequest(1, world).ToJson());
-            return document.RootElement.GetProperty("world")
-                .GetProperty("variable_values").ToString();
         }
     }
 }

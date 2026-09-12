@@ -95,9 +95,7 @@ fn a_kept_manager_answers_what_a_fresh_one_answers() {
                 ..Default::default()
             };
 
-            let through_workspace = service
-                .look_ahead(&serde_json::to_string(&request).expect("a request serialises"))
-                .expect("a well-formed request is answered");
+            let through_workspace = service.answer_request(request.clone());
             let direct = answer(&index, None, &request);
 
             assert_eq!(
@@ -182,9 +180,7 @@ fn a_world_answering_the_wrong_questions_is_refused_through_a_workspace() {
             ..Default::default()
         };
 
-        let through_workspace = service
-            .look_ahead(&serde_json::to_string(&request).expect("a request serialises"))
-            .expect("a well-formed request is answered");
+        let through_workspace = service.answer_request(request.clone());
         let direct = answer(&index, None, &request);
 
         let reason = through_workspace
@@ -255,12 +251,7 @@ fn a_workspace_replaced_by_another_group_still_answers_the_first() {
         return;
     }
 
-    let ask = |request: &LookAheadRequest| {
-        service
-            .look_ahead(&serde_json::to_string(request).expect("a request serialises"))
-            .expect("a well-formed request is answered")
-            .answers
-    };
+    let ask = |request: &LookAheadRequest| service.answer_request(request.clone()).answers;
 
     let first = ask(&requests[0]);
     for other in &requests[1..] {

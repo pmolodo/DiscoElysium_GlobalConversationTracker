@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 using GlobalConversationTracker.Engine;
+
+using Wire = GlobalConversationTracker.Engine.Wire;
 using Xunit;
 
 namespace GlobalConversationTracker.LookAhead.Tests
@@ -14,6 +16,14 @@ namespace GlobalConversationTracker.LookAhead.Tests
     /// </remarks>
     public class BranchLineTests
     {
+
+        /// <summary>A response carrying the answers given, as the engine would send it.</summary>
+        private static LookAheadResponse Answered(params Wire.LookAheadAnswer[] answers)
+        {
+            var sent = new Wire.LookAheadResponse();
+            sent.Answers.AddRange(answers);
+            return WireConvert.Read(sent);
+        }
         private const string Any = "#AAAAAA";
         private const string This = "#BBBBBB";
         private const string Seen = "#CCCCCC";
@@ -68,9 +78,12 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public void AnOptionThatDoesNotRollGetsNoLine()
         {
             var plain = new NodeRef(451, 12);
-            LookAheadResponse response = LookAheadResponse.Parse(
-                "{\"answers\":[{\"start\":{\"conversation\":451,\"entry\":12},"
-                + "\"best\":0,\"complete\":true,\"elapsed_ms\":0}]}");
+            LookAheadResponse response = Answered(
+                new Wire.LookAheadAnswer
+                {
+                    Start = WireConvert.Write(plain),
+                    Complete = true,
+                });
 
             Assert.Null(response.OutcomesOf(plain));
             Assert.NotNull(response.Find(plain, null));
@@ -81,12 +94,22 @@ namespace GlobalConversationTracker.LookAhead.Tests
         public void ARolledCheckIsFoundAsItsTwoOutcomes()
         {
             var check = new NodeRef(451, 12);
-            LookAheadResponse response = LookAheadResponse.Parse(
-                "{\"answers\":["
-                + "{\"start\":{\"conversation\":451,\"entry\":12},\"branch\":\"pass\","
-                + "\"destination\":0,\"best\":2,\"complete\":true,\"elapsed_ms\":0},"
-                + "{\"start\":{\"conversation\":451,\"entry\":12},\"branch\":\"fail\","
-                + "\"destination\":1,\"best\":1,\"complete\":true,\"elapsed_ms\":0}]}");
+            LookAheadResponse response = Answered(
+                new Wire.LookAheadAnswer
+                {
+                    Start = WireConvert.Write(check),
+                    Branch = Wire.Branch.Pass,
+                    Best = Wire.Novelty.UnseenAnyGame,
+                    Complete = true,
+                },
+                new Wire.LookAheadAnswer
+                {
+                    Start = WireConvert.Write(check),
+                    Branch = Wire.Branch.Fail,
+                    Destination = Wire.Novelty.UnseenThisGame,
+                    Best = Wire.Novelty.UnseenThisGame,
+                    Complete = true,
+                });
 
             Outcomes both = Assert.NotNull(response.OutcomesOf(check));
             Assert.Equal(2, both.Pass.Best);

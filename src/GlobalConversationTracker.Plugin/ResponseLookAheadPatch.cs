@@ -634,11 +634,18 @@ namespace GlobalConversationTracker
                     request.Starts.Add(new NodeRef(start.ConversationId, start.EntryId));
                 }
 
-                // BEFORE IT IS ASKED, and as the JSON that crosses. What this is for is the
-                // comparison nothing could make until now: an offline run assembles the
-                // same world out of the committed save and the staged state, and when the
-                // two disagree about a menu the question is which FIELD differs.
-                _diagnostics?.RecordRequest(conversation, request.ToJson());
+                // BEFORE IT IS ASKED, as the message that crosses rendered to text. What
+                // this is for is the comparison nothing could make until now: an offline
+                // run assembles the same world out of the committed save and the staged
+                // state, and when the two disagree about a menu the question is which
+                // FIELD differs.
+                //
+                // RENDERED RATHER THAN THE BYTES THEMSELVES, because what crosses is now
+                // binary and a person diffing two of these needs to read them. It is the
+                // same message either way - the rendering comes from the generated code,
+                // so it cannot describe a field the wire does not carry - and it is built
+                // only when the diagnostics are on, since the call short-circuits.
+                _diagnostics?.RecordRequest(conversation, WireConvert.Write(request).ToString());
 
                 LookAheadResponse answered = bridge.Engine.Ask(request);
                 if (answered.Error != null)

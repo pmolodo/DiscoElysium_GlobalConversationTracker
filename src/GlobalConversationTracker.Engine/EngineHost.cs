@@ -5,8 +5,11 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Text.Json;
 using System.Threading.Tasks;
+
+using Google.Protobuf;
+
+using Wire = GlobalConversationTracker.Engine.Wire;
 
 namespace GlobalConversationTracker.Engine
 {
@@ -332,9 +335,9 @@ namespace GlobalConversationTracker.Engine
         /// on this. Not thread-safe for the same reason, and does not need to be - the
         /// plugin asks from the frame that draws the menu.
         /// </remarks>
-        /// <param name="requestJson">One request, as the protocol spells it.</param>
+        /// <param name="request">One request, as the schema describes it.</param>
         /// <exception cref="InvalidOperationException">The engine stopped answering.</exception>
-        internal Answer Ask(string requestJson)
+        internal Answer Ask(Wire.Request request)
         {
             // The death first, and repeated verbatim: an engine that has gone should keep
             // saying how, rather than degrading into "the pipe is closed" on the second ask.
@@ -350,7 +353,7 @@ namespace GlobalConversationTracker.Engine
                     "the look-ahead engine has been closed.");
             }
 
-            WriteFrame(Encoding.UTF8.GetBytes(requestJson));
+            WriteFrame(request.ToByteArray());
             return Answer.Parse(ReadFrame());
         }
 
@@ -663,125 +666,60 @@ namespace GlobalConversationTracker.Engine
         }
 
         /// <summary>
-        /// The requests, written the way <c>src/host.rs</c> reads them.
+        /// One answer: a status, and whichever payload the call it answers has.
         /// </summary>
         /// <remarks>
-        /// <para>Serde's EXTERNAL TAGGING: a call with no arguments is a bare JSON string
-        /// naming it, and a call with arguments is an object of exactly one property, whose
-        /// name is the call and whose value holds them. Both spellings are asserted on the
-        /// Rust side in <c>host::tests::a_request_looks_on_the_wire_the_way_the_client_
-        /// writes_it</c>, so a derive attribute changed there fails there rather than in
-        /// the game.</para>
-        ///
-        /// <para>Built with <see cref="Utf8JsonWriter"/> rather than by concatenation
-        /// because the arguments include WINDOWS PATHS, which are full of backslashes, and
-        /// a look-ahead request, which is itself JSON carried as a string. Both need
-        /// escaping and neither would forgive getting it wrong.</para>
+        /// A thin reading of the generated <c>Wire.Response</c> rather than the message
+        /// itself, so a caller says <c>answer.Value</c> without first asking whether the
+        /// member is present. The payload members are populated by the calls that have one
+        /// and absent otherwise, which is what lets a caller read one member per call
+        /// rather than a discriminant it already knows from what it asked.
         /// </remarks>
-        internal static class Requests
-        {
-            /// <summary>This build's version.</summary>
-            internal const string Version = "\"version\"";
-
-            /// <summary>How many conversations the open index holds.</summary>
-            internal const string ConversationCount = "\"conversation_count\"";
-
-            /// <summary>How many variables the deployed table declares.</summary>
-            internal const string VariableCount = "\"variable_count\"";
-
-            /// <summary>What version the open index says it is.</summary>
-            internal const string IndexFormat = "\"index_format\"";
-
-            /// <summary>Open the engine over an index, and optionally a variable table.</summary>
-            internal static string Open(string index, string? variables)
-            {
-                return Tagged("open", writer =>
-                {
-                    writer.WriteString("index", index);
-                    if (variables == null)
-                    {
-                        writer.WriteNull("variables");
-                    }
-                    else
-                    {
-                        writer.WriteString("variables", variables);
-                    }
-                });
-            }
-
-            /// <summary>How many entries one conversation holds.</summary>
-            internal static string EntryCount(int conversation) =>
-                About("entry_count", conversation);
-
-            /// <summary>What the index says one conversation's content reduced to.</summary>
-            internal static string ConversationHash(int conversation) =>
-                About("conversation_hash", conversation);
-
-            /// <summary>Every question a crawl over one conversation's group can ask.</summary>
-            internal static string Questions(int conversation) =>
-                About("questions", conversation);
-
-            /// <summary>Answer a look-ahead request, whose body is the wire's own JSON.</summary>
-            internal static string LookAhead(string requestJson) =>
-                Tagged("look_ahead", writer => writer.WriteString("request", requestJson));
-
-            /// <summary>One of the calls whose only argument is a conversation.</summary>
-            private static string About(string kind, int conversation) =>
-                Tagged(kind, writer => writer.WriteNumber("conversation", conversation));
-
-            /// <summary>An object of one property, named for the call.</summary>
-            private static string Tagged(string kind, Action<Utf8JsonWriter> arguments)
-            {
-                var buffer = new MemoryStream();
-                using (var writer = new Utf8JsonWriter(buffer))
-                {
-                    writer.WriteStartObject();
-                    writer.WritePropertyName(kind);
-                    writer.WriteStartObject();
-                    arguments(writer);
-                    writer.WriteEndObject();
-                    writer.WriteEndObject();
-                }
-
-                return Encoding.UTF8.GetString(buffer.ToArray());
-            }
-        }
-
-        /// <summary>
-        /// One answer: a status, and at most one of a number and a string.
-        /// </summary>
         /// <param name="Status">What the engine made of the request.</param>
         /// <param name="Value">The answer to a call that returns a count or a format.</param>
-        /// <param name="Text">The answer to a call that returns text or a JSON document.</param>
-        internal readonly record struct Answer(Status Status, int Value, string? Text)
+        /// <param name="Text">The answer to a call that returns text.</param>
+        /// <param name="Questions">The answer to a questions call, or null.</param>
+        /// <param name="LookAhead">The answer to a look-ahead call, or null.</param>
+        internal readonly record struct Answer(
+            Status Status,
+            int Value,
+            string? Text,
+            Wire.Questions? Questions,
+            Wire.LookAheadResponse? LookAhead)
         {
             /// <summary>Reads one response frame.</summary>
+            /// <remarks>
+            /// A STATUS THIS BUILD DOES NOT NAME is refused rather than passed on. It can
+            /// only come from an engine built from different sources, and a code read as
+            /// whatever this build happens to map it to is a wrong answer wearing the
+            /// clothes of a right one - which is the whole reason the numbers are pinned
+            /// on both sides.
+            /// </remarks>
             /// <exception cref="FormatException">It was not a response.</exception>
             internal static Answer Parse(byte[] frame)
             {
                 try
                 {
-                    using JsonDocument document = JsonDocument.Parse(frame);
-                    JsonElement root = document.RootElement;
-
-                    // Absent rather than null where a call has no payload, so the two are
-                    // read with TryGetProperty rather than by looking at a null.
-                    int value = root.TryGetProperty("value", out JsonElement number)
-                        ? number.GetInt32()
-                        : 0;
-                    string? text = root.TryGetProperty("text", out JsonElement written)
-                        ? written.GetString()
-                        : null;
+                    Wire.Response response = Wire.Response.Parser.ParseFrom(frame);
+                    if (!Enum.IsDefined(typeof(Status), (int)response.Status))
+                    {
+                        throw new FormatException(
+                            "the look-ahead engine answered with a status this build does "
+                            + $"not know: {(int)response.Status}");
+                    }
 
                     return new Answer(
-                        (Status)root.GetProperty("status").GetInt32(), value, text);
+                        (Status)(int)response.Status,
+                        response.HasValue ? response.Value : 0,
+                        response.HasText ? response.Text : null,
+                        response.Questions,
+                        response.LookAhead);
                 }
-                catch (Exception error)
-                    when (error is JsonException || error is KeyNotFoundException)
+                catch (InvalidProtocolBufferException error)
                 {
                     throw new FormatException(
                         "the look-ahead engine sent something that is not a response: "
-                        + Encoding.UTF8.GetString(frame), error);
+                        + $"{frame.Length} byte(s)", error);
                 }
             }
         }

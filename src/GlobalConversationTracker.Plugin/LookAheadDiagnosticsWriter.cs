@@ -120,9 +120,12 @@ namespace GlobalConversationTracker
         /// down. This writes the game's side. The offline side writes its own, and the
         /// two are a diff apart.</para>
         ///
-        /// <para>THE JSON THAT CROSSED, not a rendering of it: the same string the engine
-        /// was handed, so what is compared is what was asked rather than what this
-        /// assembly made of it afterwards.</para>
+        /// <para>THE MESSAGE THAT CROSSED, rendered to text. What crosses is binary, so a
+        /// person diffing two of these needs it readable; the rendering comes from the
+        /// generated code, so it cannot name a field the wire does not carry or leave one
+        /// out. It is built from the same message the engine is handed, which is what
+        /// makes this what was ASKED rather than what this assembly made of it
+        /// afterwards.</para>
         /// </remarks>
         /// <param name="conversation">The group the request asks about.</param>
         /// <param name="json">The request, as it crossed to the engine.</param>

@@ -116,15 +116,16 @@ namespace GlobalConversationTracker.LookAhead.Tests
 
             // Conversation 631's group is the one every measurement uses, so its shape is
             // known independently of this bridge: six conversations and 4,514 entries.
-            string questions = engine.Questions(631);
+            LookAheadQuestions questions = engine.QuestionsFor(631);
             _output.WriteLine(
-                questions.Length > 400 ? questions.Substring(0, 400) + "..." : questions);
+                $"{questions.Conversations.Count} conversation(s), "
+                + $"{questions.Entries.Count} entries, "
+                + $"{questions.Queries.Count} quer(ies)");
 
-            Assert.Contains("\"conversations\"", questions);
-            Assert.Contains("\"queries\"", questions);
-            Assert.Contains("\"entries\"", questions);
+            Assert.NotEmpty(questions.Conversations);
+            Assert.NotEmpty(questions.Entries);
             // The group, not just the conversation asked about.
-            Assert.Contains("636", questions);
+            Assert.Contains(636, questions.Conversations);
         }
 
         /// <summary>
@@ -147,43 +148,19 @@ namespace GlobalConversationTracker.LookAhead.Tests
 
             using LookAheadLibrary engine = LookAheadLibrary.Open(index);
 
-            const string Request = @"{
-                ""conversation"": 1123,
-                ""starts"": [ { ""conversation"": 1123, ""entry"": 0 } ],
-                ""unseen_any_game"": [ { ""conversation"": 1123, ""entry"": 3 } ],
-                ""world"": {
-                    ""money"": 0, ""day_minutes"": 720,
-                    ""day_counter"": 1, ""clock_locked"": false
-                }
-            }";
+            var world = new WorldSnapshot { DayMinutes = 720, DayCounter = 1 };
+            var request = new LookAheadRequest(1123, world);
+            request.Starts.Add(new NodeRef(1123, 0));
+            request.UnseenAnyGame.Add(new NodeRef(1123, 3));
 
-            string response = engine.LookAhead(Request);
-            _output.WriteLine(response);
+            LookAheadResponse response = engine.Ask(request);
+            _output.WriteLine($"{response.Answers.Count} answer(s)");
 
-            Assert.Contains("\"answers\"", response);
-            Assert.Contains("\"start\"", response);
-            Assert.DoesNotContain("\"error\":\"", response);
-        }
-
-        /// <summary>
-        /// A request that is not JSON is refused as a call, not as a response.
-        /// </summary>
-        [Fact]
-        public void ARequestThatIsNotJsonIsRefused()
-        {
-            string? index = NativeLookAhead.Index;
-            if (NativeLookAhead.Engine == null || index == null)
-            {
-                _output.WriteLine("the engine or the index is missing; skipping.");
-                return;
-            }
-
-            using LookAheadLibrary engine = LookAheadLibrary.Open(index);
-
-            InvalidOperationException refused = Assert.Throws<InvalidOperationException>(
-                () => engine.LookAhead("not json"));
-
-            Assert.Contains(nameof(Status.BadArgument), refused.Message);
+            Assert.Null(response.Error);
+            Assert.NotEmpty(response.Answers);
+            Assert.All(
+                response.Answers,
+                answer => Assert.Equal(new NodeRef(1123, 0), answer.Start));
         }
 
         /// <summary>

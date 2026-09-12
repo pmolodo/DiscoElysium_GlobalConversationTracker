@@ -15,15 +15,23 @@
 //!
 //! ## The frame
 //!
-//! A four-byte LITTLE-ENDIAN length, then that many bytes of UTF-8 JSON. Both directions,
-//! and that is the whole of it.
+//! A four-byte LITTLE-ENDIAN length, then that many bytes of an encoded protobuf message.
+//! Both directions, and that is the whole of it.
 //!
-//! Length-prefixed rather than line-delimited because the bodies carry conversation text
-//! and a newline inside a JSON string is legal; a reader that split on newlines would work
-//! until the first line of dialogue that had one. Little-endian because both ends are
-//! x86-64 and `BitConverter` on the .NET side is little-endian on every platform the game
-//! ships on - stated here because it is the kind of thing that is silently assumed and
+//! Length-prefixed rather than delimited because an encoded message is binary and contains
+//! every byte value, so there is no delimiter to choose. Little-endian because both ends
+//! are x86-64 and `BitConverter` on the .NET side is little-endian on every platform the
+//! game ships on - stated here because it is the kind of thing that is silently assumed and
 //! then silently wrong.
+//!
+//! ## The bodies are generated from one schema
+//!
+//! `proto/engine.proto` describes everything that crosses, and both sides generate their
+//! types from it - see [`crate::wire`] for this one. The shape used to be written twice,
+//! here as serde types and on the .NET side as classes composing the same members by hand,
+//! and the two agreed only because someone remembered. A look-ahead request also had to be
+//! serialised to JSON and then embedded in a JSON envelope as a string, which is a wire
+//! admitting it could not carry what it was carrying.
 //!
 //! [`MAX_FRAME`] bounds what a reader will allocate on being told a length. Without it a
 //! corrupt or hostile four bytes is a four-gigabyte allocation, which is a crash rather
@@ -50,7 +58,10 @@ use std::io::{BufReader, BufWriter, Read, Write};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 
+use prost::Message;
+
 use crate::service::{Service, Status};
+use crate::wire_convert;
 
 /// The largest frame either side will read.
 ///
@@ -60,95 +71,71 @@ use crate::service::{Service, Status};
 /// rather than an out-of-memory abort.
 pub const MAX_FRAME: usize = 16 * 1024 * 1024;
 
-/// What the caller asked for.
+/// What the caller asked for, and what goes back.
 ///
-/// Tagged externally, so a frame reads as `{"kind":{...}}` and an unknown kind is a parse
-/// failure the server answers rather than something it acts on by accident.
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Request {
-    /// This build's version, which the caller checks against the one it was built with.
-    Version,
-    /// Open the engine over an index, and optionally a variable table.
-    ///
-    /// A serving process holds ONE engine, so there is no handle in the protocol: the
-    /// process IS the handle, and closing it is closing the process. That is the whole
-    /// reason `gct_engine_close` has no counterpart here either.
-    Open {
-        index: String,
-        variables: Option<String>,
-    },
-    /// How many conversations the open index holds.
-    ConversationCount,
-    /// How many variables the deployed table declares; zero if none was read.
-    VariableCount,
-    /// How many entries one conversation holds.
-    EntryCount { conversation: i32 },
-    /// What the index says one conversation's content reduced to.
-    ConversationHash { conversation: i32 },
-    /// What version the open index says it is; 0 where it has no header.
-    IndexFormat,
-    /// Every question a search over one conversation's group can ask.
-    Questions { conversation: i32 },
-    /// Answer a look-ahead request, whose body is the JSON the wire already uses.
-    LookAhead { request: String },
-}
-
-/// What came back.
+/// Both are the generated types, re-exported so a reader of this module finds them where
+/// the protocol is described rather than having to know which schema package they came
+/// from. `proto/engine.proto` is where their members are documented.
 ///
-/// `status` is always present and is the number [`Status`] has always carried. The payload
-/// fields are populated by the calls that have one and absent otherwise, rather than being
-/// a tagged union, because the .NET side reads one field per call and a union would make
-/// it read a discriminant first to learn what it already knew from what it asked.
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct Response {
-    pub status: Status,
-    /// The answer to a call that returns a count or a format.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub value: Option<i32>,
-    /// The answer to a call that returns text or a JSON document.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub text: Option<String>,
-}
+/// A request's `kind` is a oneof, so a kind this build does not know arrives as a field
+/// number it does not recognise - which decodes to nothing rather than to something it
+/// acts on by accident.
+pub use crate::wire::{Request, Response};
 
-impl Response {
+/// The kinds a request can be, as the generated oneof spells them.
+pub use crate::wire::request::Kind;
+
+/// Builders for the answers this module gives.
+///
+/// Free functions rather than an `impl` block, because [`Response`] is generated and an
+/// inherent impl on it would live here while its members live in the schema - two places
+/// to look for one type. These are the host's own vocabulary for filling it in.
+mod answers {
+    use super::{Response, Status};
+    use crate::wire;
+
     /// A status and nothing else - a refusal, or a call whose whole answer is that it
     /// worked.
-    fn bare(status: Status) -> Self {
-        Self {
-            status,
-            value: None,
-            text: None,
+    pub fn bare(status: Status) -> Response {
+        Response {
+            status: status as i32,
+            ..Default::default()
         }
     }
 
     /// A number.
-    fn value(value: i32) -> Self {
-        Self {
-            status: Status::Ok,
+    pub fn value(value: i32) -> Response {
+        Response {
+            status: Status::Ok as i32,
             value: Some(value),
-            text: None,
+            ..Default::default()
         }
     }
 
-    /// A string, which for most calls is a JSON document.
-    fn text(text: impl Into<String>) -> Self {
-        Self {
-            status: Status::Ok,
-            value: None,
+    /// A string.
+    pub fn text(text: impl Into<String>) -> Response {
+        Response {
+            status: Status::Ok as i32,
             text: Some(text.into()),
+            ..Default::default()
         }
     }
 
-    /// A value serialised to JSON, or [`Status::SerialiseFailed`] if it would not.
-    ///
-    /// Reported rather than unwrapped: these are plain data types and it should not
-    /// happen, but "should not happen" is not a reason to end a process the game is
-    /// waiting on.
-    fn json<T: serde::Serialize>(value: &T) -> Self {
-        match serde_json::to_string(value) {
-            Ok(text) => Self::text(text),
-            Err(_) => Self::bare(Status::SerialiseFailed),
+    /// The questions a group can ask.
+    pub fn questions(questions: wire::Questions) -> Response {
+        Response {
+            status: Status::Ok as i32,
+            questions: Some(questions),
+            ..Default::default()
+        }
+    }
+
+    /// A whole menu's worth of answers.
+    pub fn look_ahead(response: wire::LookAheadResponse) -> Response {
+        Response {
+            status: Status::Ok as i32,
+            look_ahead: Some(response),
+            ..Default::default()
         }
     }
 }
@@ -212,55 +199,66 @@ pub fn answer(engine: &mut Option<Service>, request: Request) -> Response {
     // on. It would unwind out of the serve loop, which is quieter than unwinding into
     // managed frames used to be and just as final.
     let work = AssertUnwindSafe(|| answer_unguarded(engine, request));
-    catch_unwind(work).unwrap_or_else(|_| Response::bare(Status::Panic))
+    catch_unwind(work).unwrap_or_else(|_| answers::bare(Status::Panic))
 }
 
 fn answer_unguarded(engine: &mut Option<Service>, request: Request) -> Response {
+    // A request naming no kind at all. Either a caller sent an empty message or one built
+    // from a newer schema sent a kind this build has no field for, and the two are
+    // indistinguishable here - which is the right answer to both: this cannot act on it.
+    let Some(kind) = request.kind else {
+        return answers::bare(Status::BadArgument);
+    };
+
     // Answered before the engine is looked at, because it is a fact about the BUILD rather
     // than about the index - and the caller asks it precisely when it is not yet sure the
     // two sides match.
-    if let Request::Version = request {
-        return Response::text(env!("CARGO_PKG_VERSION"));
+    if let Kind::Version(_) = kind {
+        return answers::text(env!("CARGO_PKG_VERSION"));
     }
 
-    if let Request::Open { index, variables } = request {
-        let variables = variables.map(PathBuf::from);
-        return match Service::open(&PathBuf::from(index), variables.as_deref()) {
+    if let Kind::Open(open) = kind {
+        let variables = open.variables.map(PathBuf::from);
+        return match Service::open(&PathBuf::from(open.index), variables.as_deref()) {
             Ok(opened) => {
                 *engine = Some(opened);
-                Response::bare(Status::Ok)
+                answers::bare(Status::Ok)
             }
-            Err(status) => Response::bare(status),
+            Err(status) => answers::bare(status),
         };
     }
 
     let Some(engine) = engine.as_ref() else {
-        return Response::bare(Status::BadHandle);
+        return answers::bare(Status::BadHandle);
     };
 
-    match request {
+    match kind {
         // Both answered above, and unreachable here.
-        Request::Version | Request::Open { .. } => Response::bare(Status::BadArgument),
-        Request::ConversationCount => Response::value(engine.conversation_count()),
-        Request::VariableCount => Response::value(engine.variable_count()),
-        Request::IndexFormat => Response::value(engine.index_format()),
-        Request::EntryCount { conversation } => match engine.entry_count(conversation) {
-            Ok(count) => Response::value(count),
-            Err(status) => Response::bare(status),
+        Kind::Version(_) | Kind::Open(_) => answers::bare(Status::BadArgument),
+        Kind::ConversationCount(_) => answers::value(engine.conversation_count()),
+        Kind::VariableCount(_) => answers::value(engine.variable_count()),
+        Kind::IndexFormat(_) => answers::value(engine.index_format()),
+        Kind::EntryCount(asked) => match engine.entry_count(asked.conversation) {
+            Ok(count) => answers::value(count),
+            Err(status) => answers::bare(status),
         },
-        Request::ConversationHash { conversation } => {
-            match engine.conversation_hash(conversation) {
-                Ok(hash) => Response::text(hash),
-                Err(status) => Response::bare(status),
-            }
-        }
-        Request::Questions { conversation } => match engine.questions(conversation) {
-            Ok(questions) => Response::json(&questions),
-            Err(status) => Response::bare(status),
+        Kind::ConversationHash(asked) => match engine.conversation_hash(asked.conversation) {
+            Ok(hash) => answers::text(hash),
+            Err(status) => answers::bare(status),
         },
-        Request::LookAhead { request } => match engine.look_ahead(&request) {
-            Ok(response) => Response::json(&response),
-            Err(status) => Response::bare(status),
+        Kind::Questions(asked) => match engine.questions(asked.conversation) {
+            Ok(questions) => answers::questions(wire_convert::write_questions(questions)),
+            Err(status) => answers::bare(status),
+        },
+        Kind::LookAhead(asked) => match wire_convert::read_look_ahead(asked) {
+            // A request whose SHAPE will not read is BadArgument, the same as one whose
+            // bytes would not decode: nothing was asked. A request that reads and cannot
+            // be SERVED is a successful response carrying `error`, which is the engine's
+            // answer rather than the wire's - see the module note.
+            Err(_) => answers::bare(Status::BadArgument),
+            Ok(request) => answers::look_ahead(wire_convert::write_look_ahead(
+                engine.answer_request(request),
+            )),
         },
     }
 }
@@ -280,19 +278,15 @@ pub fn serve(input: impl Read, output: impl Write) -> std::io::Result<()> {
     let mut engine: Option<Service> = None;
 
     while let Some(frame) = read_frame(&mut input)? {
-        let response = match serde_json::from_slice::<Request>(&frame) {
+        let response = match Request::decode(frame.as_slice()) {
             Ok(request) => answer(&mut engine, request),
-            Err(_) => Response::bare(Status::BadArgument),
+            Err(_) => answers::bare(Status::BadArgument),
         };
 
-        // A response that will not serialise is a bug here rather than in the caller, and
-        // there is nowhere to report it but the status - so it is answered with the code
-        // that means exactly that, and the loop continues.
-        let body = serde_json::to_vec(&response).unwrap_or_else(|_| {
-            serde_json::to_vec(&Response::bare(Status::SerialiseFailed))
-                .expect("a status-only response always serialises")
-        });
-        write_frame(&mut output, &body)?;
+        // ENCODING CANNOT FAIL for a generated message - prost writes into a Vec that
+        // grows - so there is no fallback here, unlike the JSON writer this replaced,
+        // which could refuse a value and needed a status for it.
+        write_frame(&mut output, &response.encode_to_vec())?;
     }
 
     Ok(())
@@ -301,15 +295,20 @@ pub fn serve(input: impl Read, output: impl Write) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wire;
 
-    /// Round-trips one request through the serve loop and reads the answer back.
+    /// A request of one kind, which is how every caller builds one.
+    fn asking(kind: Kind) -> Request {
+        Request { kind: Some(kind) }
+    }
+
+    /// Round-trips requests through the serve loop and reads the answers back.
     ///
     /// The loop itself rather than [`answer`] alone, so the framing is under test too.
     fn served(requests: &[Request]) -> Vec<Response> {
         let mut input: Vec<u8> = Vec::new();
         for request in requests {
-            let body = serde_json::to_vec(request).expect("a request serialises");
-            write_frame(&mut input, &body).expect("writing to a vec");
+            write_frame(&mut input, &request.encode_to_vec()).expect("writing to a vec");
         }
 
         let mut output: Vec<u8> = Vec::new();
@@ -318,57 +317,93 @@ mod tests {
         let mut answers = Vec::new();
         let mut reader = output.as_slice();
         while let Some(frame) = read_frame(&mut reader).expect("reading back") {
-            answers.push(serde_json::from_slice(&frame).expect("a response parses"));
+            answers.push(Response::decode(frame.as_slice()).expect("a response decodes"));
         }
         answers
     }
 
-    /// THE WIRE SHAPE, written out rather than round-tripped.
+    /// The status a response carries, as the engine's own enum.
+    fn status_of(response: &Response) -> Status {
+        Status::try_from(response.status).expect("a status this build knows")
+    }
+
+    /// THE WIRE SHAPE, written out as bytes rather than round-tripped.
     ///
-    /// A round trip through serde proves the two halves of serde agree, which they always
-    /// will. What the .NET client is written against is these exact bytes, and it does not
-    /// use serde - so this is the contract, and a derive attribute changed without meaning
-    /// to should fail here rather than in the game.
+    /// A round trip through the generated encoder proves the encoder agrees with the
+    /// decoder, which it always will. What the .NET client is written against is these
+    /// exact bytes, and it decodes them with its own generated code from the same schema -
+    /// so this is the contract, and a FIELD NUMBER changed without meaning to should fail
+    /// here rather than in the game.
+    ///
+    /// Field numbers are what protobuf actually carries; the names are not on the wire at
+    /// all. So a renamed field is invisible and harmless, and a renumbered one is silent
+    /// and not - it decodes as whatever the other side has under that number, or as
+    /// nothing. These bytes are spelled out so that a renumber cannot be silent.
     #[test]
     fn a_request_looks_on_the_wire_the_way_the_client_writes_it() {
-        let wrote = |request: &Request| serde_json::to_string(request).expect("serialises");
+        // Tag byte = (field number << 3) | wire type. Kind::Version is field 1 and a
+        // message, so 0x0a, and an empty VersionRequest is zero bytes long.
+        assert_eq!(
+            asking(Kind::Version(wire::VersionRequest {})).encode_to_vec(),
+            vec![0x0a, 0x00],
+        );
 
-        assert_eq!(wrote(&Request::Version), r#""version""#);
+        // Field 3, same shape.
         assert_eq!(
-            wrote(&Request::ConversationCount),
-            r#""conversation_count""#
+            asking(Kind::ConversationCount(wire::ConversationCountRequest {})).encode_to_vec(),
+            vec![0x1a, 0x00],
         );
+
+        // Field 5, two bytes long, holding its own field 1 varint 631.
         assert_eq!(
-            wrote(&Request::EntryCount { conversation: 631 }),
-            r#"{"entry_count":{"conversation":631}}"#,
+            asking(Kind::EntryCount(wire::EntryCountRequest {
+                conversation: 631
+            }))
+            .encode_to_vec(),
+            vec![0x2a, 0x03, 0x08, 0xf7, 0x04],
         );
+
+        // Field 2, holding a string in ITS field 1 and nothing for the absent optional -
+        // which is the point of the optional: a caller with no variable table sends no
+        // bytes for it rather than a null.
         assert_eq!(
-            wrote(&Request::Open {
+            asking(Kind::Open(wire::OpenRequest {
                 index: "i.jsonl".into(),
-                variables: None
-            }),
-            r#"{"open":{"index":"i.jsonl","variables":null}}"#,
-        );
-        assert_eq!(
-            wrote(&Request::LookAhead {
-                request: "{}".into()
-            }),
-            r#"{"look_ahead":{"request":"{}"}}"#,
+                variables: None,
+            }))
+            .encode_to_vec(),
+            vec![
+                0x12, 0x09, 0x0a, 0x07, b'i', b'.', b'j', b's', b'o', b'n', b'l',
+            ],
         );
     }
 
-    /// And the answer, whose absent fields are absent rather than null.
+    /// And the answer, whose absent members take no bytes rather than a null.
     #[test]
     fn a_response_looks_on_the_wire_the_way_the_client_reads_it() {
-        let wrote = |response: &Response| serde_json::to_string(response).expect("serialises");
+        // A success carries nothing at all: status is field 1 and zero is the default, and
+        // protobuf does not write a default. An empty frame IS "it worked".
+        assert_eq!(answers::bare(Status::Ok).encode_to_vec(), Vec::<u8>::new());
 
-        assert_eq!(wrote(&Response::bare(Status::Ok)), r#"{"status":0}"#);
+        // A refusal is the status and nothing else. Negative enums are varint-encoded as
+        // ten bytes, which is what proto3 does with a negative and is why the numbers
+        // being negative is a decision the schema states rather than hides.
+        let refused = answers::bare(Status::NoSuchConversation).encode_to_vec();
+        assert_eq!(refused[0], 0x08, "field 1, a varint");
         assert_eq!(
-            wrote(&Response::bare(Status::NoSuchConversation)),
-            r#"{"status":-5}"#,
+            Response::decode(refused.as_slice())
+                .expect("it decodes")
+                .status,
+            Status::NoSuchConversation as i32,
         );
-        assert_eq!(wrote(&Response::value(7)), r#"{"status":0,"value":7}"#);
-        assert_eq!(wrote(&Response::text("hi")), r#"{"status":0,"text":"hi"}"#);
+
+        // Field 2, a varint.
+        assert_eq!(answers::value(7).encode_to_vec(), vec![0x10, 0x07]);
+        // Field 3, a string.
+        assert_eq!(
+            answers::text("hi").encode_to_vec(),
+            vec![0x1a, 0x02, b'h', b'i'],
+        );
     }
 
     #[test]
@@ -412,8 +447,8 @@ mod tests {
     /// The version is answerable before anything is open, which is when it is asked.
     #[test]
     fn the_version_needs_no_engine() {
-        let answers = served(&[Request::Version]);
-        assert_eq!(answers[0].status, Status::Ok);
+        let answers = served(&[asking(Kind::Version(wire::VersionRequest {}))]);
+        assert_eq!(status_of(&answers[0]), Status::Ok);
         assert_eq!(answers[0].text.as_deref(), Some(env!("CARGO_PKG_VERSION")));
     }
 
@@ -421,16 +456,16 @@ mod tests {
     #[test]
     fn a_call_before_the_open_is_a_bad_handle() {
         let answers = served(&[
-            Request::ConversationCount,
-            Request::EntryCount { conversation: 631 },
-            Request::LookAhead {
-                request: "{}".into(),
-            },
+            asking(Kind::ConversationCount(wire::ConversationCountRequest {})),
+            asking(Kind::EntryCount(wire::EntryCountRequest {
+                conversation: 631,
+            })),
+            asking(Kind::LookAhead(wire::LookAheadRequest::default())),
         ]);
 
         assert_eq!(answers.len(), 3);
         for answer in &answers {
-            assert_eq!(answer.status, Status::BadHandle);
+            assert_eq!(status_of(answer), Status::BadHandle);
             assert!(
                 answer.value.is_none(),
                 "a refused call must not answer a number"
@@ -439,41 +474,57 @@ mod tests {
                 answer.text.is_none(),
                 "a refused call must not answer a string"
             );
+            assert!(
+                answer.questions.is_none() && answer.look_ahead.is_none(),
+                "nor a message"
+            );
         }
     }
 
     #[test]
     fn opening_a_path_that_is_not_an_index_reports_it_and_keeps_serving() {
         let answers = served(&[
-            Request::Open {
+            asking(Kind::Open(wire::OpenRequest {
                 index: "no-such-file.jsonl".into(),
                 variables: None,
-            },
-            Request::Version,
+            })),
+            asking(Kind::Version(wire::VersionRequest {})),
         ]);
 
-        assert_eq!(answers[0].status, Status::IndexUnreadable);
+        assert_eq!(status_of(&answers[0]), Status::IndexUnreadable);
         assert_eq!(
-            answers[1].status,
+            status_of(&answers[1]),
             Status::Ok,
             "one bad request does not end the server"
         );
     }
 
     /// A frame that is not a request at all is answered rather than acted on.
+    ///
+    /// A REQUEST NAMING NO KIND IS ONE OF THESE, and it is what a kind from a newer schema
+    /// arrives as: the field number carrying it is not one this build has, so it is skipped
+    /// and what is left names nothing. Answering rather than guessing is the whole reason
+    /// the kinds are a oneof.
     #[test]
     fn a_frame_that_is_not_a_request_is_a_bad_argument() {
         let mut input: Vec<u8> = Vec::new();
-        write_frame(&mut input, b"not json at all").expect("writing");
-        write_frame(&mut input, br#"{"no_such_kind":{}}"#).expect("writing");
+        // Field 15, a varint, which no Request has - an unknown kind, skipped on decode.
+        write_frame(&mut input, &[0x78, 0x01]).expect("writing");
+        // A request that decodes and names nothing.
+        write_frame(&mut input, &Request::default().encode_to_vec()).expect("writing");
+        // Bytes that are not a message at all: field 0 is illegal in every protobuf.
+        write_frame(&mut input, &[0x00, 0x01, 0x02]).expect("writing");
 
         let mut output: Vec<u8> = Vec::new();
-        serve(input.as_slice(), &mut output).expect("the loop survives both");
+        serve(input.as_slice(), &mut output).expect("the loop survives all three");
 
+        let mut seen = 0;
         let mut reader = output.as_slice();
         while let Some(frame) = read_frame(&mut reader).unwrap() {
-            let response: Response = serde_json::from_slice(&frame).unwrap();
-            assert_eq!(response.status, Status::BadArgument);
+            let response = Response::decode(frame.as_slice()).unwrap();
+            assert_eq!(status_of(&response), Status::BadArgument);
+            seen += 1;
         }
+        assert_eq!(seen, 3, "every one of them is answered");
     }
 }

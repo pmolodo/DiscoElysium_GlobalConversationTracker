@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 using System.Collections.Generic;
-using System.Text.Json;
 
 namespace GlobalConversationTracker.Engine
 {
@@ -89,56 +88,5 @@ namespace GlobalConversationTracker.Engine
         /// <summary>Entries the player has already been shown in this save.</summary>
         public NodeSet Seen { get; } = new NodeSet();
 
-        /// <summary>Writes the snapshot as the value of the property already begun.</summary>
-        /// <param name="writer">The writer, positioned to take a value.</param>
-        public void Write(Utf8JsonWriter writer)
-        {
-            writer.WriteStartObject();
-
-            writer.WriteNumber("money", Money);
-            writer.WriteNumber("day_minutes", DayMinutes);
-            writer.WriteNumber("day_counter", DayCounter);
-            writer.WriteBoolean("clock_locked", ClockLocked);
-
-            WriteValues(writer, "variable_values", VariableValues);
-            WriteValues(writer, "query_values", QueryValues);
-            WriteNames(writer, "items", Items);
-            WriteNames(writer, "tasks", Tasks);
-            WriteNames(writer, "thoughts", Thoughts);
-
-            writer.WritePropertyName("checks_pass");
-            ChecksPass.Write(writer);
-            writer.WritePropertyName("checks_fail");
-            ChecksFail.Write(writer);
-            writer.WritePropertyName("seen");
-            Seen.Write(writer);
-
-            writer.WriteEndObject();
-        }
-
-        private static void WriteValues(
-            Utf8JsonWriter writer, string name, IList<WireValue> values)
-        {
-            writer.WritePropertyName(name);
-            writer.WriteStartArray();
-            foreach (WireValue value in values)
-            {
-                value.Write(writer);
-            }
-
-            writer.WriteEndArray();
-        }
-
-        private static void WriteNames(Utf8JsonWriter writer, string name, ISet<string> names)
-        {
-            writer.WritePropertyName(name);
-            writer.WriteStartArray();
-            foreach (string member in names)
-            {
-                writer.WriteStringValue(member);
-            }
-
-            writer.WriteEndArray();
-        }
     }
 }

@@ -217,17 +217,18 @@ impl Service {
             .map_err(|_| Status::NoSuchConversation)
     }
 
-    /// Answers a look-ahead request, given as JSON.
+    /// Answers a look-ahead request.
     ///
-    /// A request that cannot be SERVED comes back as a response carrying `error`, not as a
-    /// status: the caller then has one thing to parse and one place to look. A status is
-    /// for what happens before there is a response at all - here, a request that is not
-    /// JSON.
-    pub fn look_ahead(&self, request: &str) -> Result<crate::bridge::LookAheadResponse, Status> {
-        let parsed: crate::bridge::LookAheadRequest =
-            serde_json::from_str(request).map_err(|_| Status::BadArgument)?;
-
-        Ok(self.answer_through_workspace(parsed))
+    /// NO `Result`, because at this point there is nothing left to refuse: a request that
+    /// cannot be SERVED comes back as a response carrying `error`, so the caller has one
+    /// thing to read and one place to look. A status is for what happens before there is a
+    /// request at all - bytes that will not decode, or a shape that will not read - and
+    /// those are answered by whoever turned bytes into one of these.
+    pub fn answer_request(
+        &self,
+        request: crate::bridge::LookAheadRequest,
+    ) -> crate::bridge::LookAheadResponse {
+        self.answer_through_workspace(request)
     }
 
     /// How many diagram nodes the live workspace's manager holds, or `None` where there is
@@ -397,25 +398,18 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn a_request_that_is_not_json_is_a_bad_argument() {
-        let service = Service::empty();
-        assert!(matches!(
-            service.look_ahead("not json at all"),
-            Err(Status::BadArgument)
-        ));
-    }
-
     /// An empty index answers nothing, and says so as a RESPONSE rather than as a status.
+    ///
+    /// Refusing a request that will not READ happens before this - in the host, which is
+    /// where bytes become a request. By the time one arrives here it has a shape, and
+    /// everything that can go wrong is something the engine has to answer for.
     #[test]
-    fn a_well_formed_request_over_an_empty_index_still_answers() {
+    fn a_request_over_an_empty_index_still_answers() {
         let service = Service::empty();
-        let response = service
-            .look_ahead(
-                r#"{"conversation":1,"starts":[],"world":{"money":0,"day_minutes":0,
-                   "day_counter":1,"clock_locked":false}}"#,
-            )
-            .expect("a well-formed request is answered");
+        let response = service.answer_request(crate::bridge::LookAheadRequest {
+            conversation: 1,
+            ..Default::default()
+        });
 
         assert!(response.answers.is_empty());
     }

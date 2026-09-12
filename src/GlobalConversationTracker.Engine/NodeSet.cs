@@ -5,7 +5,6 @@ using System.Globalization;
 
 using GlobalConversationTracker.Core;
 using System.Text;
-using System.Text.Json;
 
 namespace GlobalConversationTracker.Engine
 {
@@ -65,33 +64,6 @@ namespace GlobalConversationTracker.Engine
 
         /// <inheritdoc/>
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
-
-        /// <summary>Writes the set as the value of the property already begun.</summary>
-        /// <param name="writer">The writer, positioned to take a value.</param>
-        public void Write(Utf8JsonWriter writer)
-        {
-            writer.WriteStartObject();
-            foreach (KeyValuePair<int, List<int>> conversation in ByConversation())
-            {
-                writer.WriteString(
-                    conversation.Key.ToString(CultureInfo.InvariantCulture),
-                    Runs(conversation.Value));
-            }
-
-            writer.WriteEndObject();
-        }
-
-        /// <summary>The set as its own JSON object. For tests and for diagnostics.</summary>
-        public string ToJson()
-        {
-            var buffer = new System.IO.MemoryStream();
-            using (var writer = new Utf8JsonWriter(buffer))
-            {
-                Write(writer);
-            }
-
-            return Encoding.UTF8.GetString(buffer.ToArray());
-        }
 
         /// <summary>The entry ids of each conversation, ascending.</summary>
         /// <remarks>

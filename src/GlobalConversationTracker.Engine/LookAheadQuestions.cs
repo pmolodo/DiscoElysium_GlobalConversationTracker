@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 using System;
 using System.Collections.Generic;
-using System.Text.Json;
 
 namespace GlobalConversationTracker.Engine
 {
@@ -73,98 +72,32 @@ namespace GlobalConversationTracker.Engine
         /// <summary>Every entry in the group, because any of them may have been seen.</summary>
         public IReadOnlyList<NodeRef> Entries { get; }
 
-        /// <summary>Reads what the engine's <c>questions</c> call answered.</summary>
-        /// <param name="json">The engine's answer.</param>
-        /// <exception cref="ArgumentNullException">The JSON is null.</exception>
-        /// <exception cref="FormatException">It is not a questions document.</exception>
-        public static LookAheadQuestions Parse(string json)
-        {
-            if (json == null)
-            {
-                throw new ArgumentNullException(nameof(json));
-            }
-
-            try
-            {
-                using JsonDocument document = JsonDocument.Parse(json);
-                JsonElement root = document.RootElement;
-
-                return new LookAheadQuestions(
-                    Numbers(root, "conversations"),
-                    Texts(root, "variables"),
-                    Texts(root, "queries"),
-                    Texts(root, "items"),
-                    Texts(root, "tasks"),
-                    Texts(root, "thoughts"),
-                    Nodes(root, "checks"),
-                    Nodes(root, "entries"));
-            }
-            catch (JsonException error)
-            {
-                // Rethrown rather than swallowed. The only thing that produces this is the
-                // engine, so a document that will not parse means the two sides disagree
-                // about the format - which must be loud, not permissive.
-                throw new FormatException(
-                    "the look-ahead engine's questions could not be read: " + error.Message,
-                    error);
-            }
-        }
-
-        private static IReadOnlyList<string> Texts(JsonElement root, string name)
-        {
-            var found = new List<string>();
-            foreach (JsonElement item in Array(root, name))
-            {
-                found.Add(item.GetString() ?? string.Empty);
-            }
-
-            return found;
-        }
-
-        private static IReadOnlyList<int> Numbers(JsonElement root, string name)
-        {
-            var found = new List<int>();
-            foreach (JsonElement item in Array(root, name))
-            {
-                found.Add(item.GetInt32());
-            }
-
-            return found;
-        }
-
-        private static IReadOnlyList<NodeRef> Nodes(JsonElement root, string name)
-        {
-            var found = new List<NodeRef>();
-            foreach (JsonElement item in Array(root, name))
-            {
-                found.Add(new NodeRef(
-                    item.GetProperty("conversation").GetInt32(),
-                    item.GetProperty("entry").GetInt32()));
-            }
-
-            return found;
-        }
-
-        /// <summary>
-        /// One array property, or nothing where the engine omitted it.
-        /// </summary>
+        /// <summary>Composes the questions from what crossed.</summary>
         /// <remarks>
-        /// Absent reads as empty rather than as an error, so a hand-written fixture may
-        /// say only what it cares about. A property that is present and is NOT an array is
-        /// a disagreement about the format, and throws.
+        /// For <c>WireConvert</c>, which is the only thing that builds one: these are what
+        /// the engine asked, never something this side decides. The constructor stays
+        /// private so that stays true.
         /// </remarks>
-        private static IEnumerable<JsonElement> Array(JsonElement root, string name)
+        /// <param name="conversations">The conversations the group covers.</param>
+        /// <param name="variables">Dialogue variables read by some guard.</param>
+        /// <param name="queries">World queries, by the key their answers come back under.</param>
+        /// <param name="items">Items some guard asks about.</param>
+        /// <param name="tasks">Journal tasks some guard asks about.</param>
+        /// <param name="thoughts">Thoughts some guard asks about.</param>
+        /// <param name="checks">Entries carrying a skill check.</param>
+        /// <param name="entries">Every entry, because any may have been seen.</param>
+        internal static LookAheadQuestions Of(
+            IReadOnlyList<int> conversations,
+            IReadOnlyList<string> variables,
+            IReadOnlyList<string> queries,
+            IReadOnlyList<string> items,
+            IReadOnlyList<string> tasks,
+            IReadOnlyList<string> thoughts,
+            IReadOnlyList<NodeRef> checks,
+            IReadOnlyList<NodeRef> entries)
         {
-            if (!root.TryGetProperty(name, out JsonElement value)
-                || value.ValueKind == JsonValueKind.Null)
-            {
-                yield break;
-            }
-
-            foreach (JsonElement item in value.EnumerateArray())
-            {
-                yield return item;
-            }
+            return new LookAheadQuestions(
+                conversations, variables, queries, items, tasks, thoughts, checks, entries);
         }
     }
 }

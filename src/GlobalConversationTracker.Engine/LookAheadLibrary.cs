@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 using System;
 
+using Wire = GlobalConversationTracker.Engine.Wire;
+
 namespace GlobalConversationTracker.Engine
 {
     /// <summary>
@@ -87,7 +89,8 @@ namespace GlobalConversationTracker.Engine
             get
             {
                 using EngineHost host = EngineHost.Start();
-                EngineHost.Answer answer = host.Ask(EngineHost.Requests.Version);
+                EngineHost.Answer answer = host.Ask(
+                    new Wire.Request { Version = new Wire.VersionRequest() });
                 return answer.Status == Status.Ok ? answer.Text ?? string.Empty : string.Empty;
             }
         }
@@ -115,8 +118,13 @@ namespace GlobalConversationTracker.Engine
             EngineHost host = EngineHost.Start();
             try
             {
-                Status status =
-                    host.Ask(EngineHost.Requests.Open(indexPath, variablesPath)).Status;
+                var open = new Wire.OpenRequest { Index = indexPath };
+                if (variablesPath != null)
+                {
+                    open.Variables = variablesPath;
+                }
+
+                Status status = host.Ask(new Wire.Request { Open = open }).Status;
                 if (status != Status.Ok)
                 {
                     throw new InvalidOperationException(
@@ -145,7 +153,11 @@ namespace GlobalConversationTracker.Engine
         public int ProcessId => _host.ProcessId;
 
         /// <summary>How many conversations the index holds.</summary>
-        public int ConversationCount => Count(EngineHost.Requests.ConversationCount);
+        public int ConversationCount =>
+            Count(new Wire.Request
+            {
+                ConversationCount = new Wire.ConversationCountRequest(),
+            });
 
         /// <summary>
         /// How many variables the deployed table declares, or 0 if none was read.
@@ -156,7 +168,8 @@ namespace GlobalConversationTracker.Engine
         /// answers one variable in seventy-five less precisely - exactly the kind of thing
         /// that is never noticed unless a line says it.
         /// </remarks>
-        public int VariableCount => Count(EngineHost.Requests.VariableCount);
+        public int VariableCount =>
+            Count(new Wire.Request { VariableCount = new Wire.VariableCountRequest() });
 
         /// <summary>
         /// What version the opened index says it is, or 0 where it has no header.
@@ -167,7 +180,8 @@ namespace GlobalConversationTracker.Engine
         /// version this build does not read is refused at <see cref="Open"/>, so anything
         /// non-zero here is a version it understands.
         /// </remarks>
-        public int IndexFormat => Count(EngineHost.Requests.IndexFormat);
+        public int IndexFormat =>
+            Count(new Wire.Request { IndexFormat = new Wire.IndexFormatRequest() });
 
         /// <summary>
         /// How many entries one conversation holds, or -1 if the index has no such
@@ -182,8 +196,10 @@ namespace GlobalConversationTracker.Engine
         /// </remarks>
         public int EntryCount(int conversation)
         {
-            EngineHost.Answer answer =
-                _host.Ask(EngineHost.Requests.EntryCount(conversation));
+            EngineHost.Answer answer = _host.Ask(new Wire.Request
+            {
+                EntryCount = new Wire.EntryCountRequest { Conversation = conversation },
+            });
             return answer.Status == Status.Ok ? answer.Value : -1;
         }
 
@@ -201,8 +217,11 @@ namespace GlobalConversationTracker.Engine
         /// <exception cref="InvalidOperationException">The index has no such conversation.</exception>
         public string HashOf(int conversation)
         {
-            EngineHost.Answer answer =
-                _host.Ask(EngineHost.Requests.ConversationHash(conversation));
+            EngineHost.Answer answer = _host.Ask(new Wire.Request
+            {
+                ConversationHash =
+                    new Wire.ConversationHashRequest { Conversation = conversation },
+            });
             if (answer.Status != Status.Ok)
             {
                 throw new InvalidOperationException(
@@ -224,17 +243,33 @@ namespace GlobalConversationTracker.Engine
         /// </remarks>
         /// <param name="conversation">Any conversation in the group.</param>
         /// <exception cref="InvalidOperationException">The group could not be built.</exception>
-        /// <exception cref="FormatException">The answer was not a questions document.</exception>
         public LookAheadQuestions QuestionsFor(int conversation)
         {
-            return LookAheadQuestions.Parse(Questions(conversation));
+            EngineHost.Answer answer = _host.Ask(new Wire.Request
+            {
+                Questions = new Wire.QuestionsRequest { Conversation = conversation },
+            });
+            if (answer.Status != Status.Ok)
+            {
+                throw new InvalidOperationException(
+                    "the look-ahead engine would not describe conversation "
+                    + $"{conversation}: {answer.Status}");
+            }
+
+            return WireConvert.Read(answer.Questions);
         }
 
         /// <summary>Answers a look-ahead request.</summary>
+        /// <remarks>
+        /// A request the engine could not serve at all comes back as a response carrying
+        /// <see cref="LookAheadResponse.Error"/> rather than as an exception, so a caller
+        /// has one thing to read. What throws here is what happens BEFORE there is a
+        /// response: a request the engine would not accept, or an engine that has stopped
+        /// answering.
+        /// </remarks>
         /// <param name="request">The question, built against a cached questions list.</param>
         /// <exception cref="ArgumentNullException">The request is null.</exception>
         /// <exception cref="InvalidOperationException">The call itself failed.</exception>
-        /// <exception cref="FormatException">The answer was not a response document.</exception>
         public LookAheadResponse Ask(LookAheadRequest request)
         {
             if (request == null)
@@ -242,59 +277,17 @@ namespace GlobalConversationTracker.Engine
                 throw new ArgumentNullException(nameof(request));
             }
 
-            return LookAheadResponse.Parse(LookAhead(request.ToJson()));
-        }
-
-        /// <summary>
-        /// The same questions, as the JSON the engine produced.
-        /// </summary>
-        /// <remarks>
-        /// The layer under <see cref="QuestionsFor"/>, kept public so a test can look at
-        /// what actually crossed rather than at what this assembly made of it.
-        /// </remarks>
-        /// <param name="conversation">Any conversation in the group.</param>
-        /// <exception cref="InvalidOperationException">The group could not be built.</exception>
-        public string Questions(int conversation)
-        {
-            EngineHost.Answer answer =
-                _host.Ask(EngineHost.Requests.Questions(conversation));
-            if (answer.Status != Status.Ok)
+            EngineHost.Answer answer = _host.Ask(new Wire.Request
             {
-                throw new InvalidOperationException(
-                    $"the look-ahead engine would not describe conversation "
-                    + $"{conversation}: {answer.Status}");
-            }
-
-            return answer.Text ?? string.Empty;
-        }
-
-        /// <summary>
-        /// Answers a look-ahead request, both sides as JSON.
-        /// </summary>
-        /// <remarks>
-        /// A request the engine could not serve at all comes back as a response carrying
-        /// an <c>error</c> field rather than as an exception, so a caller has one thing to
-        /// parse. What throws here is what happens BEFORE there is a response: a request
-        /// that is not JSON, or an engine that has stopped answering.
-        /// </remarks>
-        /// <exception cref="ArgumentNullException">The request is null.</exception>
-        /// <exception cref="InvalidOperationException">The call itself failed.</exception>
-        public string LookAhead(string requestJson)
-        {
-            if (requestJson == null)
-            {
-                throw new ArgumentNullException(nameof(requestJson));
-            }
-
-            EngineHost.Answer answer =
-                _host.Ask(EngineHost.Requests.LookAhead(requestJson));
+                LookAhead = WireConvert.Write(request),
+            });
             if (answer.Status != Status.Ok)
             {
                 throw new InvalidOperationException(
                     $"the look-ahead engine refused the request: {answer.Status}");
             }
 
-            return answer.Text ?? string.Empty;
+            return WireConvert.Read(answer.LookAhead);
         }
 
         /// <summary>
@@ -305,7 +298,7 @@ namespace GlobalConversationTracker.Engine
         /// a log line at load and none is worth failing over: a count that cannot be got is
         /// reported as none, which is also what none looks like.
         /// </remarks>
-        private int Count(string request)
+        private int Count(Wire.Request request)
         {
             EngineHost.Answer answer = _host.Ask(request);
             return answer.Status == Status.Ok ? answer.Value : 0;

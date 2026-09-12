@@ -16,8 +16,11 @@
 use std::io::{BufReader, BufWriter};
 use std::process::{Child, Command, Stdio};
 
-use lookahead_engine::host::{Request, Response, read_frame, write_frame};
+use prost::Message;
+
+use lookahead_engine::host::{Kind, Request, Response, read_frame, write_frame};
 use lookahead_engine::service::{Service, Status};
+use lookahead_engine::{wire, wire_convert};
 
 mod common;
 
@@ -63,14 +66,14 @@ impl Host {
     ///
     /// One frame in, one frame out, in that order and with nothing in between: the protocol
     /// has no way to say which answer belongs to which question, so it relies on this.
-    fn ask(&mut self, request: Request) -> Response {
-        let body = serde_json::to_vec(&request).expect("a request serialises");
-        write_frame(&mut self.input, &body).expect("the child is still reading");
+    fn ask(&mut self, kind: Kind) -> Response {
+        let request = Request { kind: Some(kind) };
+        write_frame(&mut self.input, &request.encode_to_vec()).expect("the child is still reading");
 
         let frame = read_frame(&mut self.output)
             .expect("the child is still writing")
             .expect("the child answered rather than closing the pipe");
-        serde_json::from_slice(&frame).expect("a response parses")
+        Response::decode(frame.as_slice()).expect("a response decodes")
     }
 
     /// Closes the pipe and waits, which is how the child is told there is no more.
@@ -92,6 +95,14 @@ impl Host {
     }
 }
 
+/// The status a response carries, as the engine's own enum.
+///
+/// A number the schema does not name is a build mismatch rather than an answer, and
+/// unwrapping here says so at the point it arrives.
+fn status_of(response: &Response) -> Status {
+    Status::try_from(response.status).expect("a status this build knows")
+}
+
 /// Every accessor, over the real index, answered both ways and compared.
 #[test]
 fn the_host_answers_what_the_service_answers() {
@@ -101,47 +112,53 @@ fn the_host_answers_what_the_service_answers() {
     let here = Service::open(&path, None).expect("the index reads in this process");
     let mut host = Host::spawn();
 
-    let version = host.ask(Request::Version);
-    assert_eq!(version.status, Status::Ok);
+    let version = host.ask(Kind::Version(wire::VersionRequest {}));
+    assert_eq!(status_of(&version), Status::Ok);
     assert_eq!(
         version.text.as_deref(),
         Some(env!("CARGO_PKG_VERSION")),
         "the child is a different build from this test's",
     );
 
-    let opened = host.ask(Request::Open {
+    let opened = host.ask(Kind::Open(wire::OpenRequest {
         index: path.to_string_lossy().into_owned(),
         variables: None,
-    });
+    }));
     assert_eq!(
-        opened.status,
+        status_of(&opened),
         Status::Ok,
         "the host would not open the index"
     );
 
     assert_eq!(
-        host.ask(Request::ConversationCount).value,
+        host.ask(Kind::ConversationCount(wire::ConversationCountRequest {}))
+            .value,
         Some(here.conversation_count()),
     );
     assert_eq!(
-        host.ask(Request::VariableCount).value,
-        Some(here.variable_count())
+        host.ask(Kind::VariableCount(wire::VariableCountRequest {}))
+            .value,
+        Some(here.variable_count()),
     );
     assert_eq!(
-        host.ask(Request::IndexFormat).value,
-        Some(here.index_format())
+        host.ask(Kind::IndexFormat(wire::IndexFormatRequest {}))
+            .value,
+        Some(here.index_format()),
     );
 
     for conversation in CHECKABLE {
         assert_eq!(
-            host.ask(Request::EntryCount { conversation }).value,
+            host.ask(Kind::EntryCount(wire::EntryCountRequest { conversation }))
+                .value,
             Some(here.entry_count(conversation).expect("the index holds it")),
             "entry count for {conversation}",
         );
         assert_eq!(
-            host.ask(Request::ConversationHash { conversation })
-                .text
-                .as_deref(),
+            host.ask(Kind::ConversationHash(wire::ConversationHashRequest {
+                conversation
+            }))
+            .text
+            .as_deref(),
             Some(
                 here.conversation_hash(conversation)
                     .expect("the index holds it")
@@ -149,16 +166,18 @@ fn the_host_answers_what_the_service_answers() {
             "hash for {conversation}",
         );
 
-        // Compared as the JSON that actually crossed, not as parsed documents: what this
-        // file is about is the crossing, and two documents that parse the same from
-        // different bytes would hide a difference in what was sent.
-        let questions = host.ask(Request::Questions { conversation });
-        assert_eq!(questions.status, Status::Ok);
+        // Compared as the ENCODED BYTES rather than as decoded messages: what this file is
+        // about is the crossing, and two messages that decode alike from different bytes
+        // would hide a difference in what was sent.
+        let questions = host.ask(Kind::Questions(wire::QuestionsRequest { conversation }));
+        assert_eq!(status_of(&questions), Status::Ok);
         assert_eq!(
-            questions.text,
+            questions.questions.map(|answered| answered.encode_to_vec()),
             Some(
-                serde_json::to_string(&here.questions(conversation).expect("the group builds"))
-                    .expect("questions serialise")
+                wire_convert::write_questions(
+                    here.questions(conversation).expect("the group builds")
+                )
+                .encode_to_vec()
             ),
             "questions for {conversation}",
         );
@@ -179,31 +198,41 @@ fn a_look_ahead_crosses_and_comes_back_the_same() {
     let here = Service::open(&path, None).expect("the index reads in this process");
     let mut host = Host::spawn();
 
-    let opened = host.ask(Request::Open {
+    let opened = host.ask(Kind::Open(wire::OpenRequest {
         index: path.to_string_lossy().into_owned(),
         variables: None,
-    });
-    assert_eq!(opened.status, Status::Ok);
+    }));
+    assert_eq!(status_of(&opened), Status::Ok);
 
     for conversation in CHECKABLE {
         // The first entry of the group, asked about from a world with nothing in it. The
         // answer is not the point - the two answers being identical is.
-        let request = format!(
-            r#"{{"conversation":{conversation},"starts":[{{"conversation":{conversation},
-               "entry":0}}],"world":{{"money":0,"day_minutes":720,"day_counter":1,
-               "clock_locked":false}}}}"#,
+        let request = wire::LookAheadRequest {
+            conversation,
+            starts: vec![wire::NodeRef {
+                conversation,
+                entry: 0,
+            }],
+            world: Some(wire::WorldSnapshot {
+                day_minutes: 720,
+                day_counter: 1,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let crossed = host.ask(Kind::LookAhead(request.clone()));
+        assert_eq!(
+            status_of(&crossed),
+            Status::Ok,
+            "look-ahead for {conversation}"
         );
 
-        let crossed = host.ask(Request::LookAhead {
-            request: request.clone(),
-        });
-        assert_eq!(crossed.status, Status::Ok, "look-ahead for {conversation}");
+        let answered_here =
+            here.answer_request(wire_convert::read_look_ahead(request).expect("the request reads"));
         assert_eq!(
-            crossed.text,
-            Some(
-                serde_json::to_string(&here.look_ahead(&request).expect("a valid request"))
-                    .expect("a response serialises")
-            ),
+            crossed.look_ahead.map(|answer| answer.encode_to_vec()),
+            Some(wire_convert::write_look_ahead(answered_here).encode_to_vec()),
             "look-ahead for {conversation}",
         );
     }
@@ -222,61 +251,74 @@ fn a_refusal_crosses_as_a_status_and_leaves_the_host_serving() {
 
     // Before the open, when there is no engine to ask.
     assert_eq!(
-        host.ask(Request::ConversationCount).status,
-        Status::BadHandle
+        status_of(&host.ask(Kind::ConversationCount(wire::ConversationCountRequest {}))),
+        Status::BadHandle,
     );
 
-    let missing = host.ask(Request::Open {
+    let missing = host.ask(Kind::Open(wire::OpenRequest {
         index: "no-such-file.jsonl".into(),
         variables: None,
-    });
-    assert_eq!(missing.status, Status::IndexUnreadable);
+    }));
+    assert_eq!(status_of(&missing), Status::IndexUnreadable);
 
     let Some(path) = common::conversation_index() else {
         return;
     };
-    let opened = host.ask(Request::Open {
+    let opened = host.ask(Kind::Open(wire::OpenRequest {
         index: path.to_string_lossy().into_owned(),
         variables: None,
-    });
+    }));
     assert_eq!(
-        opened.status,
+        status_of(&opened),
         Status::Ok,
         "a failed open must not poison the next one"
     );
 
     // And after it, when the engine is there and the question is not answerable.
     assert_eq!(
-        host.ask(Request::EntryCount {
+        status_of(&host.ask(Kind::EntryCount(wire::EntryCountRequest {
             conversation: ABSENT
-        })
-        .status,
+        }))),
         Status::NoSuchConversation,
     );
     assert_eq!(
-        host.ask(Request::ConversationHash {
-            conversation: ABSENT
-        })
-        .status,
+        status_of(
+            &host.ask(Kind::ConversationHash(wire::ConversationHashRequest {
+                conversation: ABSENT
+            }))
+        ),
         Status::NoSuchConversation,
     );
     assert_eq!(
-        host.ask(Request::Questions {
+        status_of(&host.ask(Kind::Questions(wire::QuestionsRequest {
             conversation: ABSENT
-        })
-        .status,
+        }))),
         Status::NoSuchConversation,
     );
+
+    // A look-ahead whose SHAPE will not read. The bytes decode - it is a well-formed
+    // message - and the entry set inside it holds a run that ends before it starts, which
+    // is nonsense rather than absence and so is refused rather than read as empty.
+    let backwards = wire::NodeSet {
+        conversations: vec![wire::ConversationRuns {
+            conversation: 1123,
+            runs: vec![wire::NodeRun { first: 50, last: 1 }],
+        }],
+    };
     assert_eq!(
-        host.ask(Request::LookAhead {
-            request: "not json at all".into()
-        })
-        .status,
+        status_of(&host.ask(Kind::LookAhead(wire::LookAheadRequest {
+            conversation: 1123,
+            unseen_any_game: Some(backwards),
+            ..Default::default()
+        }))),
         Status::BadArgument,
     );
 
     // Still serving after all of that, which is the point.
-    assert_eq!(host.ask(Request::ConversationCount).status, Status::Ok);
+    assert_eq!(
+        status_of(&host.ask(Kind::ConversationCount(wire::ConversationCountRequest {}))),
+        Status::Ok,
+    );
 
     host.finish();
 }

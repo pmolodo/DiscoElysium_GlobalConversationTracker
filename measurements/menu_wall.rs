@@ -140,9 +140,7 @@ fn main() {
         let service = Service::open(&path, None).expect("the engine opens");
 
         let began = Instant::now();
-        let response = service
-            .look_ahead(&json)
-            .expect("a well-formed request is answered");
+        let response = service.answer_request(request.clone());
         let took = began.elapsed().as_secs_f64() * 1000.0;
 
         let asked = request.starts.len();

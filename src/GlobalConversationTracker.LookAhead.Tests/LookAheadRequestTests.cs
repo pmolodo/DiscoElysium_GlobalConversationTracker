@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
-using System.Text.Json;
 using GlobalConversationTracker.Engine;
+
+using Wire = GlobalConversationTracker.Engine.Wire;
 using Xunit;
 
 namespace GlobalConversationTracker.LookAhead.Tests
@@ -17,8 +18,8 @@ namespace GlobalConversationTracker.LookAhead.Tests
     /// </remarks>
     public class LookAheadRequestTests
     {
-        private static JsonElement Sent(LookAheadRequest request) =>
-            JsonDocument.Parse(request.ToJson()).RootElement;
+        private static Wire.LookAheadRequest Sent(LookAheadRequest request) =>
+            WireConvert.Write(request);
 
         private static LookAheadRequest Request() =>
             new LookAheadRequest(1, new WorldSnapshot());
@@ -32,10 +33,10 @@ namespace GlobalConversationTracker.LookAhead.Tests
             request.MenuTimeBudgetMs = 3000;
             request.MemoryBudgetMb = 64;
 
-            JsonElement sent = Sent(request);
-            Assert.Equal(250, sent.GetProperty("time_budget_ms").GetInt32());
-            Assert.Equal(3000, sent.GetProperty("menu_time_budget_ms").GetInt32());
-            Assert.Equal(64, sent.GetProperty("memory_budget_mb").GetInt32());
+            Wire.LookAheadRequest sent = Sent(request);
+            Assert.Equal(250UL, sent.TimeBudgetMs);
+            Assert.Equal(3000UL, sent.MenuTimeBudgetMs);
+            Assert.Equal(64UL, sent.MemoryBudgetMb);
         }
 
         /// <summary>
@@ -54,28 +55,27 @@ namespace GlobalConversationTracker.LookAhead.Tests
             request.TimeBudgetMs = 1000;
             request.MenuTimeBudgetMs = 3000;
 
-            JsonElement sent = Sent(request);
-            Assert.Equal(1000, sent.GetProperty("time_budget_ms").GetInt32());
-            Assert.Equal(3000, sent.GetProperty("menu_time_budget_ms").GetInt32());
+            Wire.LookAheadRequest sent = Sent(request);
+            Assert.Equal(1000UL, sent.TimeBudgetMs);
+            Assert.Equal(3000UL, sent.MenuTimeBudgetMs);
         }
 
-        /// <summary>
-        /// An unset budget crosses as zero rather than not at all.
-        /// </summary>
+        /// <summary>An unset budget crosses as zero.</summary>
         /// <remarks>
         /// Zero is a value the engine understands - the default for memory, no limit
-        /// for time - so sending it says what the plugin means. Omitting the field
-        /// would mean the same thing only by accident of the deserialiser's defaults, and
-        /// would stop saying it the moment one of them changed.
+        /// for time - and it is also protobuf's default, so an unset budget arrives as
+        /// zero without a byte being spent on it. What guarantees that is the SCHEMA,
+        /// which both sides generate from, rather than an agreement between two
+        /// hand-written readers about what a missing field means.
         /// </remarks>
         [Fact]
-        public void AnUnsetBudgetStillCrosses()
+        public void AnUnsetBudgetCrossesAsZero()
         {
-            JsonElement sent = Sent(Request());
+            Wire.LookAheadRequest sent = Sent(Request());
 
-            Assert.Equal(0, sent.GetProperty("time_budget_ms").GetInt32());
-            Assert.Equal(0, sent.GetProperty("menu_time_budget_ms").GetInt32());
-            Assert.Equal(0, sent.GetProperty("memory_budget_mb").GetInt32());
+            Assert.Equal(0UL, sent.TimeBudgetMs);
+            Assert.Equal(0UL, sent.MenuTimeBudgetMs);
+            Assert.Equal(0UL, sent.MemoryBudgetMb);
         }
 
         /// <summary>A negative budget crosses as zero, not as a negative.</summary>
@@ -92,10 +92,10 @@ namespace GlobalConversationTracker.LookAhead.Tests
             request.MenuTimeBudgetMs = -1;
             request.MemoryBudgetMb = -1;
 
-            JsonElement sent = Sent(request);
-            Assert.Equal(0, sent.GetProperty("time_budget_ms").GetInt32());
-            Assert.Equal(0, sent.GetProperty("menu_time_budget_ms").GetInt32());
-            Assert.Equal(0, sent.GetProperty("memory_budget_mb").GetInt32());
+            Wire.LookAheadRequest sent = Sent(request);
+            Assert.Equal(0UL, sent.TimeBudgetMs);
+            Assert.Equal(0UL, sent.MenuTimeBudgetMs);
+            Assert.Equal(0UL, sent.MemoryBudgetMb);
         }
     }
 }

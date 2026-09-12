@@ -2,7 +2,6 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
-using System.Text.Json;
 
 namespace GlobalConversationTracker.Engine
 {
@@ -117,46 +116,5 @@ namespace GlobalConversationTracker.Engine
         /// unset value must not switch the protection off.</para>
         /// </remarks>
         public int MemoryBudgetMb { get; set; }
-
-
-        /// <summary>The request as the JSON the library reads.</summary>
-        public string ToJson()
-        {
-            var buffer = new System.IO.MemoryStream();
-            using (var writer = new Utf8JsonWriter(buffer))
-            {
-                writer.WriteStartObject();
-                writer.WriteNumber("conversation", Conversation);
-
-                writer.WritePropertyName("starts");
-                writer.WriteStartArray();
-                foreach (NodeRef start in Starts)
-                {
-                    writer.WriteStartObject();
-                    writer.WriteNumber("conversation", start.Conversation);
-                    writer.WriteNumber("entry", start.Entry);
-                    writer.WriteEndObject();
-                }
-
-                writer.WriteEndArray();
-
-                writer.WritePropertyName("unseen_any_game");
-                UnseenAnyGame.Write(writer);
-                writer.WritePropertyName("unseen_this_game");
-                UnseenThisGame.Write(writer);
-
-                writer.WriteNumber("state_budget", Math.Max(0, StateBudget));
-                writer.WriteNumber("time_budget_ms", Math.Max(0, TimeBudgetMs));
-                writer.WriteNumber("menu_time_budget_ms", Math.Max(0, MenuTimeBudgetMs));
-                writer.WriteNumber("memory_budget_mb", Math.Max(0, MemoryBudgetMb));
-
-                writer.WritePropertyName("world");
-                World.Write(writer);
-
-                writer.WriteEndObject();
-            }
-
-            return Encoding.UTF8.GetString(buffer.ToArray());
-        }
     }
 }

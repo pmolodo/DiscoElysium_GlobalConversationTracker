@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 using System.Globalization;
-using System.Text.Json;
+
+using Wire = GlobalConversationTracker.Engine.Wire;
 
 namespace GlobalConversationTracker.Engine
 {
@@ -67,26 +68,26 @@ namespace GlobalConversationTracker.Engine
         /// <summary>Whether this is <see cref="Unknown"/>.</summary>
         public bool IsUnknown => _kind == "unknown";
 
-        /// <summary>Writes the value as the value of the property already begun.</summary>
-        /// <param name="writer">The writer, positioned to take a value.</param>
-        public void Write(Utf8JsonWriter writer)
+        /// <summary>The value as it crosses.</summary>
+        /// <remarks>
+        /// UNKNOWN IS AN UNSET ONEOF, which is to say a message with nothing in it. That is
+        /// what silence means on the far side, it encodes to no bytes at all, and it is
+        /// what a default-constructed one already is - so there is no way to build a value
+        /// that means neither this nor an answer.
+        /// </remarks>
+        public Wire.WireValue Written()
         {
-            writer.WriteStartObject();
-            writer.WriteString("kind", _kind);
             switch (_kind)
             {
                 case "bool":
-                    writer.WriteBoolean("value", _boolean);
-                    break;
+                    return new Wire.WireValue { Boolean = _boolean };
                 case "number":
-                    writer.WriteNumber("value", _number);
-                    break;
+                    return new Wire.WireValue { Number = _number };
                 case "text":
-                    writer.WriteString("value", _text);
-                    break;
+                    return new Wire.WireValue { Text = _text };
+                default:
+                    return new Wire.WireValue();
             }
-
-            writer.WriteEndObject();
         }
 
         /// <inheritdoc/>

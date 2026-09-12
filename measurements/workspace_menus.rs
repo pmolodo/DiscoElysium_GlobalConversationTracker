@@ -211,12 +211,8 @@ fn main() {
             },
             ..Default::default()
         };
-        let json = serde_json::to_string(&request).expect("a request serialises");
-
         let began = Instant::now();
-        let response = service
-            .look_ahead(&json)
-            .expect("a well-formed request is answered");
+        let response = service.answer_request(request);
         let took = began.elapsed();
         std::hint::black_box(&response);
 
