@@ -1,6 +1,6 @@
 {
   "_format": "sparse-diff",
-  "_formatVersion": 1,
+  "_formatVersion": 2,
   "_base": "../../../save_template.ntwtf/save_template.ntwtf.lua.parts/Conversation.json",
   "_changes": {
     "37": {
@@ -10,37 +10,51 @@
     },
     "251": {
       "Dialog": {
-        "_keys": ""
+        "_remove": {
+          "_keys": "0-1"
+        }
       }
     },
     "252": {
       "Dialog": {
-        "_keys": ""
+        "_remove": {
+          "_keys": "0-1"
+        }
       }
     },
     "253": {
       "Dialog": {
-        "_keys": ""
+        "_remove": {
+          "_keys": "0-1"
+        }
       }
     },
     "305": {
       "Dialog": {
-        "_keys": ""
+        "_remove": {
+          "_keys": "0-3,5-10"
+        }
       }
     },
     "487": {
       "Dialog": {
-        "_keys": ""
+        "_remove": {
+          "_keys": "0-1"
+        }
       }
     },
     "1157": {
       "Dialog": {
-        "_keys": ""
+        "_remove": {
+          "_keys": "0-1"
+        }
       }
     },
     "1158": {
       "Dialog": {
-        "_keys": ""
+        "_remove": {
+          "_keys": "0-1"
+        }
       }
     }
   }

@@ -1,11 +1,16 @@
 {
   "_format": "sparse-diff",
-  "_formatVersion": 1,
+  "_formatVersion": 2,
   "_base": "../../../save_template.ntwtf/save_template.ntwtf.lua.parts/Variable.json",
   "_changes": {
     "_derived_simx": {
-      "_conversations": "1499-1159,1156-488,486-306,304-254,250-1,1500-1501",
-      "_at": "10650-12141,12151,12153"
+      "_changes": {
+        "_at": "12151,12153"
+      },
+      "_remove": {
+        "_at": "12142-12143"
+      },
+      "_conversations": "1499-1159,1156-488,486-306,304-254,250-1,1500-1501"
     },
     "apt.cleaning_greeting_done": true,
     "apt.padlock_examined": true,

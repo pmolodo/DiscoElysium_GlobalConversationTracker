@@ -1,11 +1,16 @@
 {
   "_format": "sparse-diff",
-  "_formatVersion": 1,
+  "_formatVersion": 2,
   "_base": "../../../save_template.ntwtf/save_template.ntwtf.lua.parts/Variable.json",
   "_changes": {
     "_derived_simx": {
-      "_conversations": "1500-1159,1156-488,486-306,304-254,250-1,1501",
-      "_at": "10650-12142,12144"
+      "_changes": {
+        "_at": "12144"
+      },
+      "_remove": {
+        "_at": "12143"
+      },
+      "_conversations": "1500-1159,1156-488,486-306,304-254,250-1,1501"
     },
     "whirling.sense_may_bells_clicked": true,
     "Actor": "Cuno",

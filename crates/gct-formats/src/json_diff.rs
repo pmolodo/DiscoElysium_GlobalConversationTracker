@@ -91,7 +91,7 @@ fn merge(baseline: &Value, changes: &Value, path: &str, removed: &[String]) -> V
     let mut merged = Map::new();
     for (name, value) in old {
         let child = child_path(path, name);
-        if removed.iter().any(|gone| *gone == child) {
+        if removed.contains(&child) {
             continue;
         }
 

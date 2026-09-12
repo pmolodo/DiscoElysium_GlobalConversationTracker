@@ -1,6 +1,6 @@
 {
   "_format": "sparse-diff",
-  "_formatVersion": 1,
+  "_formatVersion": 2,
   "_base": "../../../save_template.ntwtf/save_template.ntwtf.lua.parts/Variable.json",
   "_changes": {
     "TASK.locate_ruby_on_the_coast_done": true,

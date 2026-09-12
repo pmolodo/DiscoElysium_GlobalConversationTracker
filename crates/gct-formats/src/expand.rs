@@ -255,7 +255,7 @@ pub fn expansion(
     for table in TABLE_NAMES {
         let file = format!("{table}{JSON_SUFFIX}");
         let path = expanded_save::table_beneath(files, base, &file, lua_parts::directory_in)?
-            .ok_or_else(|| ExpandFault::Unmatched(file))?;
+            .ok_or(ExpandFault::Unmatched(file))?;
         named.push(expanded_save::relative(&tables, &path));
     }
 

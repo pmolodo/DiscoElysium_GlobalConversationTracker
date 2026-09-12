@@ -406,7 +406,7 @@ mod tests {
     /// A sparse diff of the tree at `base`, changing the one entry every test table holds.
     fn diff_of(base: &str, becomes: &str) -> String {
         format!(
-            r#"{{"_format": "sparse-diff", "_formatVersion": 1, "_base": "{base}",
+            r#"{{"_format": "sparse-diff", "_formatVersion": 2, "_base": "{base}",
                 "_changes": {{"who": "{becomes}"}}}}"#
         )
     }
@@ -568,7 +568,7 @@ mod tests {
             .with("save.ntwtf/_archive.json", &manifest("../base.ntwtf"))
             .with(
                 &format!("save.ntwtf/save.ntwtf{PARTS_SUFFIX}/Actor.json"),
-                r#"{"_format": "sparse-diff", "_formatVersion": 1,
+                r#"{"_format": "sparse-diff", "_formatVersion": 2,
                     "_changes": {"who": "changed"}}"#,
             );
 

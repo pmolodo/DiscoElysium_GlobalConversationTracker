@@ -1,6 +1,6 @@
 {
   "_format": "sparse-diff",
-  "_formatVersion": 1,
+  "_formatVersion": 2,
   "_base": "../../at-klaasjes-flower.ntwtf/at-klaasjes-flower.ntwtf.lua.parts/Conversation.json",
   "_changes": {
     "656": {

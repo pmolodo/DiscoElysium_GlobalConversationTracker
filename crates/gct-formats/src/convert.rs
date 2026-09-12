@@ -450,10 +450,20 @@ mod tests {
     /// The stamp was added without changing any shape, so a file from before it IS v1.
     #[test]
     fn a_document_that_names_a_format_and_no_version_is_version_one() {
-        let what = detected(r#"{"_format": "sparse-diff"}"#);
+        let what = detected(r#"{"_format": "json-diff"}"#);
 
         assert_eq!(what.version, 1);
         assert!(what.is_current());
+    }
+
+    /// And one at a version this build has moved past is neither current nor from ahead.
+    #[test]
+    fn a_document_at_a_version_this_build_has_moved_past_is_recognised_as_older() {
+        let what = detected(r#"{"_format": "sparse-diff", "_formatVersion": 1}"#);
+
+        assert_eq!(what.version, 1);
+        assert_eq!(what.current, crate::sparse_diff::FORMAT.version);
+        assert!(!what.is_current() && !what.is_from_the_future());
     }
 
     #[test]

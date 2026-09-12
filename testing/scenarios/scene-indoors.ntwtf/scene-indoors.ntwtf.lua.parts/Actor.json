@@ -1,6 +1,6 @@
 {
   "_format": "sparse-diff",
-  "_formatVersion": 1,
+  "_formatVersion": 2,
   "_base": "../../at-trashcan.ntwtf/at-trashcan.ntwtf.lua.parts/Actor.json",
   "_changes": {
     "Glen": {
