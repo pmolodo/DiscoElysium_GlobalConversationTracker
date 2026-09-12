@@ -22,6 +22,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use lookahead_engine::formats::expanded_save;
 use lookahead_engine::formats::sparse;
 use lookahead_engine::formats::sparse_diff;
 use lookahead_engine::formats::text_diff;
@@ -202,6 +203,68 @@ fn every_committed_text_diff_is_in_a_shape_this_build_reads() {
         match text_diff::apply("", &patch, &name) {
             Err(text_diff::TextDiffFault::Mismatch(_, _)) | Ok(_) => {}
             Err(malformed) => panic!("{malformed}"),
+        }
+    }
+}
+
+/// Every expanded save that carries a manifest.
+fn committed_saves() -> Vec<PathBuf> {
+    let scenarios = common::repo_root().join("testing").join("scenarios");
+    let Ok(entries) = fs::read_dir(&scenarios) else {
+        return Vec::new();
+    };
+
+    let mut found: Vec<PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.join(expanded_save::MANIFEST_NAME).is_file())
+        .collect();
+    found.sort();
+    found
+}
+
+#[test]
+fn every_committed_manifest_reads() {
+    let saves = committed_saves();
+    assert!(
+        saves.len() >= 20,
+        "found only {} saves with a manifest, which is fewer than this repository carries",
+        saves.len(),
+    );
+
+    for save in &saves {
+        let name = save.file_name().unwrap_or_default().to_string_lossy();
+        let path = save.join(expanded_save::MANIFEST_NAME);
+        let text = fs::read_to_string(&path).unwrap_or_else(|why| panic!("{name}: {why}"));
+
+        let manifest =
+            expanded_save::read_manifest(&text, &name).unwrap_or_else(|why| panic!("{why}"));
+
+        assert!(
+            manifest.stem().is_some(),
+            "{name}: its members do not agree about the save's own name",
+        );
+    }
+}
+
+/// And every one of them resolves, through however many bases it takes, to real bytes.
+///
+/// THE PASS-THROUGH MEMBERS ONLY. The Lua blob is de-xz48.6.3, and this deliberately does
+/// not reach for it - what is under test is the manifest, the member kinds and the chain,
+/// which is everything about an expanded save that is not the game's binary format.
+#[test]
+fn every_committed_save_resolves_to_its_members() {
+    for save in &committed_saves() {
+        let name = save.file_name().unwrap_or_default().to_string_lossy();
+        let members = expanded_save::members_of(&expanded_save::OnDisk, save)
+            .unwrap_or_else(|why| panic!("{name}: {why}"));
+
+        assert!(!members.is_empty(), "{name} resolved to no members at all");
+        for (suffix, bytes) in &members {
+            assert!(
+                !bytes.is_empty(),
+                "{name}: its '{suffix}' member resolved to nothing",
+            );
         }
     }
 }
