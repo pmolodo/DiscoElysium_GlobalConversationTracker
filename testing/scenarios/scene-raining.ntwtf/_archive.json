@@ -10,8 +10,8 @@
       "suffix": ".1st.ntwtf.json"
     },
     {
-      "diff": null,
-      "kind": "inherit",
+      "diff": "scene-raining.2nd.ntwtf.json",
+      "kind": "json",
       "name": "scene-raining.2nd.ntwtf.json",
       "suffix": ".2nd.ntwtf.json"
     },

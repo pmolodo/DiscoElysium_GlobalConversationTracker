@@ -387,7 +387,7 @@
           "save": "scene-raining",
           "conversation": 29,
           "what": "the same conversation in the rain, where IsRaining answers true",
-          "why": "THE MEASUREMENT THE OFFLINE WORLD RESTS ON. IsExterior is read out of a committed game asset and is as certain as an export can make it; IsRaining is an INFERENCE, because FELDLuaFunctions is IL2CPP and AssetRipper emits a body that returns false. What names auto.is_raining is ArcticSwimmerEasterEgg, which watches the sibling variable for the same condition the guards ask about - plausible, and not measured. This row measures it: the save sets that one variable, and the captured request says what the running game then answers IsRaining() with. If the weather system overwrites it on load, that is the answer instead and worth knowing.",
+          "why": "THE MEASUREMENT THE OFFLINE WORLD RESTS ON, and it took two goes to make. IsExterior is read out of a committed game asset and is as certain as an export can make it; that IsRaining reads auto.is_raining was an INFERENCE, because FELDLuaFunctions is IL2CPP and AssetRipper emits a body that returns false. It is measured now, and so is the thing that nearly made it unmeasurable: this save first set only the variable, and WeatherController rewrites both weather variables from the scene's preset whenever the weather changes - which loading a save does. Mid-load the save read as raining and by the time its menu went up it was dry again. It sets the preset as well now, and the game answers IsRaining() true where the save says it should.",
           "advances": 0,
           "options": [
             { "entry": 582, "marker": "none", "why": "going over the case again returns to the hub it was reached from, and everything that way has been read in this save" },
@@ -400,7 +400,7 @@
           "branches": "everyCheck",
           "pass": { "colour": "orange" },
           "fail": { "colour": "darkRed" },
-          "branchesWhy": "One variable away from the save this was made from, and the weather is not on either outcome's way, so the two words carry what they carry dry."
+          "branchesWhy": "Only the weather away from the save this was made from, and the weather is not on either outcome's way, so the two words carry what they carry dry."
         },
         {
           "save": "scene-snowing",
@@ -419,7 +419,7 @@
           "branches": "everyCheck",
           "pass": { "colour": "orange" },
           "fail": { "colour": "darkRed" },
-          "branchesWhy": "One variable away from the save this was made from, and the weather is not on either outcome's way, so the two words carry what they carry dry."
+          "branchesWhy": "Only the weather away from the save this was made from, and the weather is not on either outcome's way, so the two words carry what they carry dry."
         }
       ]
     }

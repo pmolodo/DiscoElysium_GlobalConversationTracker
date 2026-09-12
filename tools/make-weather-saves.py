@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 
-"""Write the weather saves as one-variable changes to a save that is already in the clear.
+"""Write the weather saves as the smallest change to a save that is already in the clear.
 
 MADE RATHER THAN PLAYED, and that is the point: waiting in game for the weather to turn
 means letting the clock run, and the clock moves the day, the thoughts cooking and whatever
 else is on a timer - so two saves meant to differ in the sky would differ in a dozen things
-and no run could say which one moved a marker. A hand-made diff differs in ONE VARIABLE.
+and no run could say which one moved a marker. A hand-made diff differs in the weather and
+nothing else.
 
 FOUR OF THEM, in two pairs. The outdoor pair hangs off the trash can save and is where the
 weather guards can actually be reached; the indoor pair hangs off the save one door away and
@@ -13,10 +14,30 @@ is there to show they cannot. Conversation 29 only asks about the sky below the 
 IsExterior opens, so an indoor save in the rain should reach exactly what an indoor save in
 the clear does - which is a claim worth a fixture, and not one the outdoor pair can make.
 
-What it writes is the smallest expanded save there is: a manifest inheriting every
-pass-through member, and one sparse diff over the base's Variable table. The writer then
-regenerates both properly - see the rewrite verb - so what lands in the repository is this
-build's own output rather than this script's.
+## TWO FIELDS, NOT ONE, AND THE PRESET IS THE ONE THAT DECIDES
+
+The dialogue guards call IsRaining(), which reads the Lua variable `auto.is_raining` - so
+setting that variable is what an offline world needs. IT IS NOT WHAT THE GAME NEEDS.
+`WeatherController`, on every weather change, writes both variables from the preset it is
+changing to:
+
+    LuaHelper.SetVariable("auto.is_raining", weatherPresets[weatherPresetB].type == RAIN)
+
+and `WeatherPersister` triggers the weather on load. So a save that sets only the variable
+is overwritten the moment it is read. Measured in game 2026-09-12: mid-load scene-raining
+answers IsRaining() true, and by the time its menu goes up both the query and the variable
+are false again.
+
+The preset therefore goes in too, and the two are set consistently. Preset indices come from
+`tools/derive-weather-presets.py`, which resolves the controller's ordered array to each
+preset's own type; the plain ones are used rather than the heavy or dramatic variants, since
+what is wanted is the weather TYPE and not whatever else a dramatic preset drags with it.
+
+What it writes is the smallest expanded save there is: a manifest inheriting the members it
+does not touch, a sparse diff over the base's Variable table, and a JSON diff over the
+world-state document that holds the preset. The writer then regenerates them properly - see
+the rewrite verb - so what lands in the repository is this build's own output rather than
+this script's.
 """
 
 import argparse
@@ -36,19 +57,44 @@ EXPANDED_SUFFIX = ".ntwtf"
 RAINING = "auto.is_raining"
 SNOWING = "auto.is_snowing"
 
+# The preset each weather is, as its index in WeatherController.weatherPresets.
+RAIN_PRESET = 1
+SNOW_PRESET = 2
+
 OUTDOORS = "at-trashcan"
 INDOORS = "scene-indoors"
 
-# What each variant is a change to, and the one variable it changes.
+# What each variant is a change to, and the weather it changes it to.
 WEATHER = {
-    "scene-raining": (OUTDOORS, RAINING),
-    "scene-snowing": (OUTDOORS, SNOWING),
-    "scene-indoors-raining": (INDOORS, RAINING),
-    "scene-indoors-snowing": (INDOORS, SNOWING),
+    "scene-raining": (OUTDOORS, RAINING, RAIN_PRESET),
+    "scene-snowing": (OUTDOORS, SNOWING, SNOW_PRESET),
+    "scene-indoors-raining": (INDOORS, RAINING, RAIN_PRESET),
+    "scene-indoors-snowing": (INDOORS, SNOWING, SNOW_PRESET),
 }
 
+# The member holding the preset, which is the one these change rather than inherit.
+WORLD_SUFFIX = ".2nd.ntwtf.json"
+
 # The members every save carries, which these inherit whole.
-SUFFIXES = [".1st.ntwtf.json", ".2nd.ntwtf.json", ".FOW.json", ".states.lua"]
+SUFFIXES = [".1st.ntwtf.json", WORLD_SUFFIX, ".FOW.json", ".states.lua"]
+
+
+def member_for(name, suffix):
+    """One manifest entry: a diff of its own where it has one, inherited where not."""
+    if suffix != WORLD_SUFFIX:
+        return {
+            "diff": None,
+            "kind": "inherit",
+            "name": f"{name}{suffix}",
+            "suffix": suffix,
+        }
+
+    return {
+        "diff": f"{name}{suffix}",
+        "kind": "json",
+        "name": f"{name}{suffix}",
+        "suffix": suffix,
+    }
 
 
 def manifest_for(name, base):
@@ -56,25 +102,27 @@ def manifest_for(name, base):
         "_format": "expanded-save-diff",
         "_formatVersion": 1,
         "base": f"../{base}{EXPANDED_SUFFIX}",
-        "members": [
-            {
-                "diff": None,
-                "kind": "inherit",
-                "name": f"{name}{suffix}",
-                "suffix": suffix,
-            }
-            for suffix in SUFFIXES
-        ],
+        "members": [member_for(name, suffix) for suffix in SUFFIXES],
     }
 
 
 def variable_diff(base, variable):
-    """The one change, as a diff of the base's own Variable table."""
+    """What the guards read, as a diff of the base's own Variable table."""
     return {
         "_format": "sparse-diff",
         "_formatVersion": 2,
         "_base": f"../../{base}{EXPANDED_SUFFIX}/{base}{EXPANDED_SUFFIX}{PARTS_SUFFIX}/Variable.json",
         "_changes": {variable: True},
+    }
+
+
+def preset_diff(base, preset):
+    """What the game reads, as a diff of the base's own world-state document."""
+    return {
+        "_format": "json-diff",
+        "_formatVersion": 1,
+        "_base": f"../{base}{EXPANDED_SUFFIX}/{base}{WORLD_SUFFIX}",
+        "_changes": {"weatherState": {"weatherPreset": preset}},
     }
 
 
@@ -89,7 +137,7 @@ def make(repo, wanted):
     scenarios = pathlib.Path(repo) / "testing" / "scenarios"
 
     for name in wanted:
-        base, variable = WEATHER[name]
+        base, variable, preset = WEATHER[name]
         beneath = scenarios / f"{base}{EXPANDED_SUFFIX}"
         if not beneath.is_dir():
             raise RuntimeError(f"{beneath} is not there, and it is what {name} changes")
@@ -103,7 +151,8 @@ def make(repo, wanted):
             save / f"{name}{EXPANDED_SUFFIX}{PARTS_SUFFIX}" / "Variable.json",
             variable_diff(base, variable),
         )
-        print(f"  {name}: {variable} = true over {base}, everything else inherited")
+        write_json(save / f"{name}{WORLD_SUFFIX}", preset_diff(base, preset))
+        print(f"  {name}: {variable} = true and preset {preset} over {base}, everything else inherited")
 
     print(f"{len(wanted)} save(s) written")
 

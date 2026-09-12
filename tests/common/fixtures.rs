@@ -766,6 +766,14 @@ pub struct Scene {
     pub outside: bool,
     pub raining: bool,
     pub snowing: bool,
+    /// The weather the save's own preset says it is in: `CLEAR`, `RAIN` or `SNOW`.
+    ///
+    /// NOT WHAT THE GUARDS READ, and carried anyway. `IsRaining()` reads the Lua variable,
+    /// which is what [`Scene::raining`] answers from - but the game DERIVES that variable
+    /// from the preset on every weather change and triggers the weather on load, so a save
+    /// whose two halves disagree contradicts itself the moment it is read. This is what
+    /// lets a fixture say they agree.
+    pub weather: String,
 }
 
 /// The scenes the game calls outdoors, read off the table derived from its own asset.
@@ -821,7 +829,53 @@ fn scene_in_save(save: &str) -> Scene {
         area,
         raining: says(RAINING),
         snowing: says(SNOWING),
+        weather: weather_of(save),
     }
+}
+
+/// What the save's weather preset is, by the table derived from the game's own assets.
+///
+/// # Panics
+///
+/// If the save records no preset, or records one the controller's list does not hold.
+fn weather_of(save: &str) -> String {
+    let preset = world_state(save, "weatherState")["weatherPreset"]
+        .as_i64()
+        .unwrap_or_else(|| panic!("{save} records no weather preset"));
+
+    let types = weather_presets();
+    usize::try_from(preset)
+        .ok()
+        .and_then(|at| types.get(at))
+        .cloned()
+        .unwrap_or_else(|| panic!("{save} is in weather preset {preset}, which the game has no"))
+}
+
+/// The weather each preset index is, read off the table derived from the game's own assets.
+///
+/// THE NAME IS NOT THE ANSWER: `RainClear_0` is CLEAR and `SnowClear_0` is SNOW. See
+/// `tools/derive-weather-presets.py`, which resolves the controller's ordered array of
+/// preset assets to the `type` each one carries.
+fn weather_presets() -> &'static Vec<String> {
+    static TYPES: OnceLock<Vec<String>> = OnceLock::new();
+    TYPES.get_or_init(|| {
+        let path = repo_root().join("testing").join("weather.json");
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|why| panic!("{}: {why}", path.display()));
+        let document: serde_json::Value =
+            serde_json::from_str(&text).unwrap_or_else(|why| panic!("{}: {why}", path.display()));
+
+        document["types"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{} names no preset types", path.display()))
+            .iter()
+            .map(|kind| {
+                kind.as_str()
+                    .unwrap_or_else(|| panic!("{}: a preset type is not a name", path.display()))
+                    .to_string()
+            })
+            .collect()
+    })
 }
 
 /// One member of a save's second document, with the bases it rests on merged in.

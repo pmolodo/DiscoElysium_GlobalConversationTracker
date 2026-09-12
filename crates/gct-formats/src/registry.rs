@@ -18,12 +18,12 @@
 //!
 //! ## The ones with no module of their own
 //!
-//! Three of them describe a TEST FIXTURE rather than a player's or a save's data - the
-//! scenario suites, the branch shapes, and the table of which scenes are outdoors. They are
-//! read by the tests and written by hand or by a script, so there is no reader module to
-//! hang them off; their `Expected` is declared here instead. They are still formats, they
-//! are still stamped, and a converter that did not know them would call a committed fixture
-//! foreign.
+//! Four of them describe a TEST FIXTURE rather than a player's or a save's data - the
+//! scenario suites, the branch shapes, the table of which scenes are outdoors, and the table
+//! of which weather each preset is. They are read by the tests and written by hand or by a
+//! script, so there is no reader module to hang them off; their `Expected` is declared here
+//! instead. They are still formats, they are still stamped, and a converter that did not
+//! know them would call a committed fixture foreign.
 
 use super::header::Expected;
 use super::{expanded_save, global_state, json_diff, lua_sparse, sparse_diff};
@@ -46,8 +46,18 @@ pub const SCENES: Expected = Expected {
     version: 1,
 };
 
+/// Which weather each preset index is, which is what `IsRaining()` ends up answering from.
+///
+/// A save records the weather as an index into the controller's ordered list of presets, and
+/// the name at that index is not the answer - `RainClear_0` is CLEAR and `SnowClear_0` is
+/// SNOW - so the type each one carries is written down.
+pub const WEATHER_PRESETS: Expected = Expected {
+    format: "weather-presets",
+    version: 1,
+};
+
 /// Every format, and the version of it this build writes.
-pub const EVERY_FORMAT: [Expected; 8] = [
+pub const EVERY_FORMAT: [Expected; 9] = [
     global_state::FORMAT,
     json_diff::FORMAT,
     sparse_diff::FORMAT,
@@ -56,6 +66,7 @@ pub const EVERY_FORMAT: [Expected; 8] = [
     SCENARIO_SUITES,
     BRANCH_SHAPES,
     SCENES,
+    WEATHER_PRESETS,
 ];
 
 /// What version of a named format this build writes, or nothing where it knows none.

@@ -21,14 +21,19 @@
 //! `tools/derive-scene-properties.py`. Two of the game's thirty-seven scenes are outdoors.
 //!
 //! A LUA VARIABLE, for the weather: `auto.is_raining` and `auto.is_snowing`, which every
-//! save's `Variable` table carries. Nothing in either JSON document mentions weather, and
-//! the export cannot say what `IsRaining()` reads because its body is an IL2CPP stub - but
-//! `ArcticSwimmerEasterEgg` watches `auto.is_snowing` for the same condition the dialogue
-//! guards ask about, which is what named them.
+//! save's `Variable` table carries. `IsRaining()` reads that variable, measured in game -
+//! which is worth saying because the export cannot tell you, its body being an IL2CPP stub.
 //!
-//! WHETHER THE GAME AGREES is not checkable here. An offline world that answers the way
-//! this one does still has to be held against a running game, which is what the scene suite
-//! in `suites.json` is for.
+//! AND THE PRESET BEHIND IT. The variable is not the source: `WeatherController` writes both
+//! variables from the preset's type on every weather change, and loading a save triggers the
+//! weather. So a save that sets the variable and leaves the preset saying clear is dry by
+//! the time its first menu goes up - measured too, and it is why the weather saves set both.
+//! `testing/weather.json` is what each preset index is, derived from the game's own assets
+//! by `tools/derive-weather-presets.py`.
+//!
+//! WHETHER THE GAME AGREES about a marker is not checkable here. An offline world that
+//! answers the way this one does still has to be held against a running game, which is what
+//! the scene rows of the kim-case suite are for.
 
 use std::collections::BTreeSet;
 
@@ -71,17 +76,18 @@ const RAINING: &str = "scene-raining";
 /// And in the snow.
 const SNOWING: &str = "scene-snowing";
 
-/// The weather saves, each with the save it was made from and the one variable it changes.
+/// The weather saves: the save each was made from, the variable it sets, and the weather
+/// its preset says it is in.
 ///
 /// TWO PAIRS, and the indoor one is the interesting half. Outdoors the weather guards can
 /// be reached, so those two saves say what the answer does; indoors they cannot, so those
 /// two say that setting the sky changes nothing - which is a claim only a save that is both
 /// indoors and wet can make.
-const WEATHER: [(&str, &str, &str); 4] = [
-    (RAINING, OUTDOORS, "auto.is_raining"),
-    (SNOWING, OUTDOORS, "auto.is_snowing"),
-    ("scene-indoors-raining", INDOORS, "auto.is_raining"),
-    ("scene-indoors-snowing", INDOORS, "auto.is_snowing"),
+const WEATHER: [(&str, &str, &str, &str); 4] = [
+    (RAINING, OUTDOORS, "auto.is_raining", "RAIN"),
+    (SNOWING, OUTDOORS, "auto.is_snowing", "SNOW"),
+    ("scene-indoors-raining", INDOORS, "auto.is_raining", "RAIN"),
+    ("scene-indoors-snowing", INDOORS, "auto.is_snowing", "SNOW"),
 ];
 
 #[test]
@@ -195,8 +201,8 @@ fn a_save_outdoors_and_a_save_indoors_answer_the_scene_differently() {
 /// cooking, and whatever else is on a timer - so two saves meant to differ in the sky would
 /// differ in a dozen things and no run could say which one moved a marker.
 #[test]
-fn a_weather_save_differs_from_the_one_it_was_made_from_in_one_variable() {
-    for (save, base, wet) in WEATHER {
+fn a_weather_save_differs_from_the_one_it_was_made_from_in_the_weather_alone() {
+    for (save, base, wet, _) in WEATHER {
         let dry = common::fixtures::holdings_in_save(base);
         let was = common::fixtures::variables_in_save(base);
         let scene = common::fixtures::holdings_in_save(save);
@@ -224,18 +230,57 @@ fn a_weather_save_differs_from_the_one_it_was_made_from_in_one_variable() {
             BTreeSet::from([wet]),
             "{save} differs from {base} in something other than the weather",
         );
+
+        // AND THE PRESET MOVED WITH IT, which is the second field and the one the game
+        // actually reads. The variable alone would be undone on load.
+        assert_ne!(
+            scene.scene.weather, dry.scene.weather,
+            "{save} sets {wet} but is in the same weather as {base}",
+        );
     }
 }
 
-/// And what differs is what the queries answer from.
+/// And what differs is what the queries answer from, on both halves.
 #[test]
 fn the_weather_saves_answer_the_weather_they_were_made_with() {
-    for (save, _, wet) in WEATHER {
+    for (save, _, _, weather) in WEATHER {
         let scene = common::fixtures::holdings_in_save(save).scene;
-        let (raining, snowing) = (wet.ends_with("raining"), wet.ends_with("snowing"));
 
-        assert_eq!(scene.raining, raining, "{save}: {scene:?}");
-        assert_eq!(scene.snowing, snowing, "{save}: {scene:?}");
+        assert_eq!(scene.raining, weather == "RAIN", "{save}: {scene:?}");
+        assert_eq!(scene.snowing, weather == "SNOW", "{save}: {scene:?}");
+        assert_eq!(scene.weather, weather, "{save}: {scene:?}");
+    }
+}
+
+/// Every save's preset agrees with the two variables the game derives from it.
+///
+/// THE HALF A SAVE CAN GET WRONG WITHOUT ANYTHING NOTICING, until a run. The guards read the
+/// Lua variable and so does the offline world, but `WeatherController` writes both variables
+/// from the preset's type whenever the weather changes, and loading a save changes it. A
+/// save that sets only the variable is therefore overwritten on the way in: measured
+/// 2026-09-12, scene-raining answered `IsRaining()` true mid-load and false by the time its
+/// menu went up.
+///
+/// Held over EVERY committed save, not only the four made wet on purpose, because the
+/// failure this guards against is a save whose two halves disagree - and a save that was
+/// never meant to be in weather can acquire that just as easily.
+#[test]
+fn every_committed_save_agrees_with_itself_about_the_weather() {
+    for save in common::fixtures::committed_saves() {
+        let scene = common::fixtures::holdings_in_save(&save).scene;
+        let derived = match scene.weather.as_str() {
+            "RAIN" => (true, false),
+            "SNOW" => (false, true),
+            _ => (false, false),
+        };
+
+        assert_eq!(
+            (scene.raining, scene.snowing),
+            derived,
+            "{save}'s variables disagree with its {} preset, which the game would \
+             overwrite them from: {scene:?}",
+            scene.weather,
+        );
     }
 }
 
@@ -249,7 +294,7 @@ fn the_weather_saves_answer_the_weather_they_were_made_with() {
 #[test]
 fn a_save_can_be_indoors_and_in_the_weather_at_once() {
     let mut held = 0;
-    for (save, base, _) in WEATHER {
+    for (save, base, _, _) in WEATHER {
         if base != INDOORS {
             continue;
         }
