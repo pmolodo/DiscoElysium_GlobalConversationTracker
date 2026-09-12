@@ -5,7 +5,18 @@
 //! languages before, which is the arrangement that has already cost this repository twice:
 //! a fact stated twice drifts, and the half that drifts is whichever one no test happens to
 //! exercise. C# reaches these through a verb on the engine host rather than through a
-//! second implementation of them.
+//! second implementation of them - except the one that runs inside the game, which links a
+//! library built from this crate instead.
+//!
+//! ## Why this is a crate and not a module of the engine
+//!
+//! Because of that library. What it drags in is the whole question: built from the engine
+//! crate it would be the thirty megabytes the root `Cargo.toml` records the removal of, and
+//! the plugin already ships that engine once as the host binary. Built from here it is the
+//! formats, and a linker drops whatever a caller does not call.
+//!
+//! Nothing here knows about the search, and nothing ever did - this was a module that used
+//! nothing else in the engine. The split is what stops that quietly ceasing to be true.
 //!
 //! WHAT A DOCUMENT IS IS WRITTEN AT THE TOP OF IT. [`header`] is the two fields every file
 //! carries and the one rule for reading them; [`json_diff`] is what one document changes in

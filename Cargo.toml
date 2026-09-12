@@ -1,3 +1,13 @@
+# A WORKSPACE, so that something small can be built from the formats alone. The mod reads
+# its own state file from inside the game by linking a library, and a library built from
+# this package would carry the whole search with it - see crates/gct-formats.
+#
+# The root package is a member of its own workspace, so `cargo build` and `cargo test` at
+# the root still mean what they meant, and `target/release/gct-engine-host.exe` is still
+# where it was.
+[workspace]
+members = ["crates/*"]
+
 [package]
 name = "lookahead_engine"
 version = "0.1.0"
@@ -30,17 +40,11 @@ bincode = "1.3"
 petgraph = { version = "0.6", features = ["serde-1", "graphmap"] }
 oxidd = "0.12.0"
 prost = "0.13"
-diffy = "0.5.2"
 
-# The archive a packed save is. Deflate and nothing else: that is what the game's own saves
-# use, and a reader that understood more would be a reader for files this never writes.
-zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
-
-# The clock, for the one thing in this crate that needs to know what time it is: a packed
-# save whose name carries no timestamp is given one, because that is how the game's saves
-# are named. LOCAL TIME, with UTC as the answer where the offset cannot be had - a save
-# stamped in the wrong zone is odd to read, and one that refuses to pack is a stopped run.
-time = { version = "0.3", features = ["local-offset"] }
+# The file formats, which this re-exports as `formats` so every path that named them as a
+# module still names them. Their own dependencies - the diff, the zip, the clock - travel
+# with them rather than with the search.
+gct_formats = { path = "crates/gct-formats" }
 
 # The wire's types, generated from proto/engine.proto by build.rs.
 #
@@ -55,6 +59,10 @@ protox = "0.7"
 
 [dev-dependencies]
 proptest = "1.0"
+
+# For the tests that open a packed save and look inside it. The packer itself lives with the
+# formats and brings its own copy; this is the reader a test uses to check what it wrote.
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 
 [[example]]
 name = "backward_support"

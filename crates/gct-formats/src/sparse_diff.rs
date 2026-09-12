@@ -12,7 +12,7 @@
 //!
 //! ## Why `_remove` is an object here and a list in the JSON diff
 //!
-//! [`crate::formats::json_diff`] carries its removals as a list of paths and this carries
+//! [`crate::json_diff`] carries its removals as a list of paths and this carries
 //! them as an object whose values are all `true`. That is not a considered difference, it
 //! is two formats written at different times - but it is a difference in FILES THAT EXIST,
 //! so it is described rather than tidied. A set spelled as an object is what the sparse

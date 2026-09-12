@@ -233,7 +233,7 @@ fn whole(document: &SparseMap, context: &str) -> Result<(), PartsFault> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::formats::expanded_save::Held;
+    use crate::expanded_save::Held;
 
     /// A whole save's five tables and the bytes after them.
     ///

@@ -1,0 +1,33 @@
+[package]
+name = "gct_formats"
+version = "0.1.0"
+edition = "2024"
+
+# THE FILE FORMATS AND NOTHING ELSE, which is what makes this a crate rather than a module
+# of the engine. The mod has to read its own state file from inside the game, and it links
+# a library to do it - so what that library drags in is the whole question. Built from the
+# engine crate it would be the thirty megabytes `Cargo.toml` at the root records the removal
+# of; built from here it is the formats, and a linker drops what a caller does not call.
+#
+# NOTHING HERE KNOWS ABOUT THE SEARCH. That was already true as a module - src/formats used
+# nothing else in the crate - and the split is what stops it quietly becoming untrue.
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+
+# The unified diffs a save's text members are stored as.
+diffy = "0.5.2"
+
+# The archive a packed save is. Deflate and nothing else: that is what the game's own saves
+# use, and a reader that understood more would be a reader for files this never writes.
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+
+# The clock, for the one thing here that needs to know what time it is: a packed save whose
+# name carries no timestamp is given one, because that is how the game's saves are named.
+# LOCAL TIME, with UTC as the answer where the offset cannot be had - a save stamped in the
+# wrong zone is odd to read, and one that refuses to pack is a stopped run.
+time = { version = "0.3", features = ["local-offset"] }

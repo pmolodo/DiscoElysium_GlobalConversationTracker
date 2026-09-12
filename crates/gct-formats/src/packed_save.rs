@@ -288,9 +288,9 @@ fn ends_with(path: &Path, suffix: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::formats::expanded_save::Held;
-    use crate::formats::lua_blob::TABLE_NAMES;
-    use crate::formats::lua_parts::{PARTS_SUFFIX, TRAILING_NAME};
+    use crate::expanded_save::Held;
+    use crate::lua_blob::TABLE_NAMES;
+    use crate::lua_parts::{PARTS_SUFFIX, TRAILING_NAME};
 
     /// A stamp with every field a different width, so a misplaced one shows.
     const STAMP: Stamp = Stamp {

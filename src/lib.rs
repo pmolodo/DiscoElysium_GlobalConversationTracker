@@ -8,7 +8,11 @@ pub mod symbolic;
 pub mod world;
 
 /// The file formats this repository defines, read and written in one place.
-pub mod formats;
+///
+/// A CRATE OF ITS OWN, re-exported here under the name it had as a module so that every
+/// path naming it still names it. It is separate because the mod links a library built from
+/// it and that library has to be small - see the crate's own note.
+pub use gct_formats as formats;
 
 /// The types that cross the pipe, generated from `proto/engine.proto`.
 pub mod wire;

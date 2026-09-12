@@ -665,8 +665,8 @@ fn parse_dictionary_key(name: &str, kind: KeyType, path: &str) -> Result<LuaValu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::formats::lua_manifest::{SIM_STATUS_KEY, UNTOUCHED_STATUS};
-    use crate::formats::sparse;
+    use crate::lua_manifest::{SIM_STATUS_KEY, UNTOUCHED_STATUS};
+    use crate::sparse;
 
     /// A dialogue-status child, which is what a grouped table is made of.
     fn status(value: &str) -> LuaValue {

@@ -342,6 +342,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
+name = "gct_formats"
+version = "0.1.0"
+dependencies = [
+ "diffy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time",
+ "zip",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -510,7 +522,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "clap",
- "diffy",
+ "gct_formats",
  "oxidd",
  "petgraph",
  "proptest",
@@ -520,7 +532,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
- "time",
  "zip",
 ]
 
