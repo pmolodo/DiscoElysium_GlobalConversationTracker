@@ -23,9 +23,10 @@
 //! another; [`resolve`] follows a diff to what it is a diff of, and to what that is a diff
 //! of, until it reaches a whole document; [`sparse`] is the ordered, array-less tree a
 //! save's Lua tables are stored as, and [`sparse_diff`] is what one of those changes in
-//! another; [`text_diff`] applies what git wrote for the members that are not JSON; and
+//! another; [`text_diff`] applies what git wrote for the members that are not JSON;
 //! [`expanded_save`] is a save written as a change to another save, with the members that
-//! come of resolving one.
+//! come of resolving one; and [`cycle_refs`] is the one thing in a save's JSON that a
+//! round trip through a diff can break, put back before the game is asked to read it.
 //!
 //! A SAVE'S OWN DATA lives in five more. [`lua_blob`] is the binary form the game writes,
 //! [`lua_sparse`] turns that into the tree it is stored as on disk and back, [`lua_manifest`]
@@ -41,6 +42,7 @@
 //! has read across every save, which is the only file here that cannot be regenerated.
 
 pub mod convert;
+pub mod cycle_refs;
 pub mod expand;
 pub mod expanded_save;
 pub mod global_state;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 using System;
 using System.IO;
+using System.Text;
 using BepInEx;
 using BepInEx.Unity.IL2CPP;
 using DiscoPages.Elements.Dialogue;
@@ -231,8 +232,8 @@ namespace GlobalConversationTracker.TestProbe
         }
 
         /// <summary>
-        /// A few of the player's skills as the RUNNING GAME values them, or null before
-        /// the world exists.
+        /// Every ability and skill as the RUNNING GAME values them, or null before the
+        /// world exists.
         /// </summary>
         /// <remarks>
         /// <para>THE SAVE'S OWN SHEET IS NOT OBVIOUSLY THE ANSWER, which is why this is
@@ -242,34 +243,135 @@ namespace GlobalConversationTracker.TestProbe
         /// holding that save cleared checks that arithmetic says it cannot. See
         /// de-2p8j.5.</para>
         ///
-        /// <para>Read exactly the way the mod reads it - World.Singleton.you, then
-        /// GetSkillValue - so the number here is the number the check rule used, and a
-        /// difference from the file is a difference in the game rather than in how two
-        /// readers spell the question.</para>
+        /// <para>Read exactly the way the mod reads it - World.Singleton.you, then the
+        /// value the sheet holds - so the number here is the number the check rule used,
+        /// and a difference from the file is a difference in the game rather than in how
+        /// two readers spell the question.</para>
+        ///
+        /// <para>All twenty-eight rather than a handful, because a fixture has to
+        /// reproduce every one of them: any skill can be a passive check's speaker.</para>
         /// </remarks>
         internal static string? Skills()
         {
             try
             {
-                World? world = World.Singleton;
-                CharacterSheet? sheet = world == null ? null : world.you;
+                CharacterSheet? sheet = PlayerSheet();
                 if (sheet == null)
                 {
                     return null;
                 }
 
-                return string.Join(
-                    ",",
-                    $"LOGIC={sheet.GetSkillValue(SkillType.LOGIC)}",
-                    $"PERCEPTION={sheet.GetSkillValue(SkillType.PERCEPTION)}",
-                    $"DRAMA={sheet.GetSkillValue(SkillType.DRAMA)}",
-                    $"EMPATHY={sheet.GetSkillValue(SkillType.EMPATHY)}",
-                    $"AUTHORITY={sheet.GetSkillValue(SkillType.AUTHORITY)}");
+                var said = new StringBuilder();
+                foreach (Ability ability in sheet.abilities)
+                {
+                    Say(said, ability.abilityType.ToString(), ability.value);
+                }
+
+                foreach (Skill skill in sheet.skills)
+                {
+                    Say(said, skill.skillType.ToString(), skill.value);
+                }
+
+                return said.ToString();
             }
             catch (Exception)
             {
                 return null;
             }
+        }
+
+        /// <summary>
+        /// What each of those values is made of: every modifier on every ability and
+        /// skill, with the amount the game counts and what caused it.
+        /// </summary>
+        /// <remarks>
+        /// <para>A VALUE ON ITS OWN CANNOT BE REPRODUCED OFFLINE. The save stores the
+        /// modifier list stripped - <c>ClearModifiersForPersistence</c> runs before
+        /// serialising - and what the game rebuilds on load is not simply what was
+        /// stripped: an ITEM or THC modifier's amount is re-read from the asset, and one
+        /// whose thought is no longer cooking or internalised is dropped. So the parts
+        /// are the measurement, and the total is only the check on it.</para>
+        ///
+        /// <para><c>Amount</c> rather than the persisted amount, because that is what
+        /// <c>Recalc</c> sums: a CALCULATED_ABILITY modifier reports the ability's live
+        /// value and stores zero.</para>
+        /// </remarks>
+        internal static string? SkillModifiers()
+        {
+            try
+            {
+                CharacterSheet? sheet = PlayerSheet();
+                if (sheet == null)
+                {
+                    return null;
+                }
+
+                var said = new StringBuilder();
+                foreach (Ability ability in sheet.abilities)
+                {
+                    Say(said, ability.abilityType.ToString(), ability);
+                }
+
+                foreach (Skill skill in sheet.skills)
+                {
+                    Say(said, skill.skillType.ToString(), skill);
+                }
+
+                return said.ToString();
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>The player's character sheet, or null before the world exists.</summary>
+        private static CharacterSheet? PlayerSheet()
+        {
+            World? world = World.Singleton;
+            return world == null ? null : world.you;
+        }
+
+        /// <summary>One `NAME=value` entry, separated from whatever came before it.</summary>
+        private static void Say(StringBuilder said, string name, int value)
+        {
+            if (said.Length > 0)
+            {
+                said.Append(' ');
+            }
+
+            said.Append(name).Append('=').Append(value);
+        }
+
+        /// <summary>
+        /// One `NAME=value[modifier,modifier]` entry, where a modifier is its type, its
+        /// signed amount, and the thought, item or ability behind it where there is one.
+        /// </summary>
+        private static void Say(StringBuilder said, string name, Modifiable modifiable)
+        {
+            Say(said, name, modifiable.value);
+            said.Append('[');
+
+            bool first = true;
+            foreach (Modifier modifier in modifiable.GetModifierList())
+            {
+                if (!first)
+                {
+                    said.Append(',');
+                }
+
+                first = false;
+                said.Append(modifier.type.ToString()).Append(modifier.Amount.ToString("+#;-#;0"));
+
+                ModifierCauseHolder? cause =
+                    ModifierCauseHolder.GetModifierCauseHolder(modifier.modifierCause);
+                if (cause != null)
+                {
+                    said.Append('(').Append(cause.ModifierKey).Append(')');
+                }
+            }
+
+            said.Append(']');
         }
 
         /// <summary>The money the game reports now, or null if Lua would not answer.</summary>
@@ -593,7 +695,8 @@ namespace GlobalConversationTracker.TestProbe
                         "save-applied",
                         "bytes", bytes == null ? 0 : bytes.Length,
                         "money", Money(),
-                        "skills", Skills());
+                        "skills", Skills(),
+                        "modifiers", SkillModifiers());
                 }
                 catch (Exception error)
                 {

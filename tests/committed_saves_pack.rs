@@ -36,7 +36,7 @@ use std::path::{Path, PathBuf};
 use lookahead_engine::formats::expanded_save::OnDisk;
 use lookahead_engine::formats::lua_simx::{self, Orders};
 use lookahead_engine::formats::packed_save::{LUA_SUFFIX, Stamp, ZIP_SUFFIX};
-use lookahead_engine::formats::{lua_blob, lua_parts, packed_save};
+use lookahead_engine::formats::{cycle_refs, lua_blob, lua_parts, packed_save};
 
 mod common;
 
@@ -143,6 +143,23 @@ fn packs(name: &str, orders: &Orders) {
     );
 }
 
+/// Every committed save, whole or written as a change to another.
+fn every_save() -> Vec<PathBuf> {
+    let testing = common::repo_root().join("testing");
+    let scenarios = testing.join("scenarios");
+
+    let mut found: Vec<PathBuf> = fs::read_dir(&scenarios)
+        .unwrap_or_else(|why| panic!("{}: {why}", scenarios.display()))
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .collect();
+
+    found.push(testing.join(WHOLE));
+    found.sort();
+    found
+}
+
 #[test]
 fn a_save_committed_whole_packs_into_an_archive_that_reads_back() {
     let Some(orders) = orders() else {
@@ -167,4 +184,58 @@ fn a_save_committed_as_a_change_to_another_packs_the_same_way() {
     };
 
     packs(CHANGED, &orders);
+}
+
+/// ALL of them for this one, rather than one of each shape, because what it is checking is
+/// a property of each save's own data rather than of the machinery: a forward reference
+/// exists where the game happened to write one, and a save without one proves nothing about
+/// the save beside it.
+///
+/// WHAT GOES WRONG WITHOUT IT is invisible from here and expensive in game. FullSerializer
+/// resolves `$ref` in document order, and a merge through `serde_json` sorts every object's
+/// keys - so a reference can end up above the `$id` that defines it. The game then loads
+/// the save's dialogue half, throws the world half away with a stack trace it carries on
+/// past, and runs the scenario against whatever character it already had: at-trashcan
+/// scored every skill at 12 and passed every check in the kim-case suite that its own sheet
+/// says it fails. See `gct_formats::cycle_refs`.
+#[test]
+fn every_committed_save_packs_with_its_cycle_references_in_order() {
+    let Some(orders) = orders() else {
+        println!(
+            "no {} beside the repository, so nothing is packed",
+            lua_simx::ORDERS_FILE_NAME
+        );
+        return;
+    };
+
+    for source in every_save() {
+        let name = source
+            .file_name()
+            .expect("a save has a name")
+            .to_string_lossy();
+        let asked = common::repo_root()
+            .join(".build")
+            .join("packed-saves")
+            .join(format!("{name}.zip"));
+
+        let packed = packed_save::contents(&OnDisk, &source, &asked, Some(&orders), STAMP)
+            .unwrap_or_else(|why| panic!("{name}: {why}"));
+
+        for entry in &packed.entries {
+            if !entry.name.ends_with(".json") {
+                continue;
+            }
+
+            let document: serde_json::Value = serde_json::from_slice(&entry.bytes)
+                .unwrap_or_else(|why| panic!("{}: {why}", entry.name));
+            let missing = cycle_refs::unresolvable(&document);
+            assert!(
+                missing.is_empty(),
+                "{}: {} cycle reference(s) point at an id nothing above them defines: {}",
+                entry.name,
+                missing.len(),
+                missing.join(", "),
+            );
+        }
+    }
 }

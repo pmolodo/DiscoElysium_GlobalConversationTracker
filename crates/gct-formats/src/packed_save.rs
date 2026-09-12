@@ -29,6 +29,7 @@ use std::io::Write;
 use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
 
+use super::cycle_refs;
 use super::expanded_save::{self, EXPANDED_SUFFIX, Files, SaveFault, shown};
 use super::lua_blob;
 use super::lua_parts::{self, PartsFault};
@@ -268,11 +269,36 @@ pub fn contents(
     for (suffix, bytes) in expanded_save::members_of(files, source)? {
         entries.push(Entry {
             name: format!("{archive_name}{suffix}"),
-            bytes,
+            bytes: readable(&suffix, bytes),
         });
     }
 
     Ok(Packed { path, entries })
+}
+
+/// What a JSON member ends in.
+const JSON_SUFFIX: &str = ".json";
+
+/// One member's bytes, with its cycle references put in an order the game can resolve.
+///
+/// UNCHANGED UNLESS IT WOULD NOT LOAD. A member whose references already resolve is passed
+/// through byte for byte, so packing does not reformat the members it has nothing to say
+/// about, and a member that is not JSON at all is never parsed. See
+/// [`super::cycle_refs`] for what goes wrong without this and how a save comes to need it.
+fn readable(suffix: &str, bytes: Vec<u8>) -> Vec<u8> {
+    if !suffix.ends_with(JSON_SUFFIX) {
+        return bytes;
+    }
+
+    let Ok(mut document) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return bytes;
+    };
+    if cycle_refs::unresolvable(&document).is_empty() {
+        return bytes;
+    }
+
+    cycle_refs::normalise(&mut document);
+    serde_json::to_vec_pretty(&document).unwrap_or(bytes)
 }
 
 /// Writes one out.
