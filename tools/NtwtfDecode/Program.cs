@@ -16,7 +16,6 @@ const string Usage = """
       dotnet run --project tools/NtwtfDecode -- <save.ntwtf.zip> --split -o <expanded.ntwtf>
       dotnet run --project tools/NtwtfDecode -- <input> --split --sparse --base <expanded.ntwtf> -o <directory>
       dotnet run --project tools/NtwtfDecode -- --to-lua <directory> --split -o <output.ntwtf.lua>
-      dotnet run --project tools/NtwtfDecode -- --pack <expanded.ntwtf> -o <save.ntwtf.zip>
       dotnet run --project tools/NtwtfDecode -- --each <folder> --split --sparse --base <expanded.ntwtf> -o <directory>
 
     <input> is any of:
@@ -28,6 +27,9 @@ const string Usage = """
     Packed input with --split writes a complete expanded save: companion archive
     members stay at top level and the Lua split goes in <name>.ntwtf.lua.parts.
 
+    Turning one back into the archive the game loads is the engine's job:
+      gct-engine-host pack <expanded.ntwtf> <save.ntwtf.zip>
+
     Options:
       -o, --output PATH   Write output here instead of stdout. With --split
                           conversion to JSON, this is the output directory.
@@ -36,7 +38,6 @@ const string Usage = """
           --indent N      JSON indent width. Default: 2.
           --compact       Single-line JSON (overrides --indent).
           --to-lua        Convert reversible JSON back to a .ntwtf.lua blob.
-          --pack          Rebuild and pack an expanded sparse save for the game.
           --base PATH     With --split --sparse, diff every save member against this
                           packed save, sparse split directory, or expanded save.
                           JSON uses recursive overlays; other members use text diffs.
@@ -84,7 +85,6 @@ int Run(string[] argv)
     bool toLua = false;
     bool split = false;
     bool sparse = false;
-    bool pack = false;
     bool each = false;
     string? baseline = null;
 
@@ -110,9 +110,6 @@ int Run(string[] argv)
                 break;
             case "--to-lua":
                 toLua = true;
-                break;
-            case "--pack":
-                pack = true;
                 break;
             case "--base":
                 baseline = NextArg(argv, ref i, arg);
@@ -149,24 +146,14 @@ int Run(string[] argv)
     {
         throw new ArgumentException($"--sparse only applies to --split output\n\n{Usage}");
     }
-    if (baseline is not null && (!split || !sparse || toLua || pack))
+    if (baseline is not null && (!split || !sparse || toLua))
     {
         throw new ArgumentException($"--base requires --split --sparse output\n\n{Usage}");
     }
 
-    if (pack)
-    {
-        if (toLua || split || sparse || output is null)
-        {
-            throw new ArgumentException($"--pack requires only --output <save.ntwtf.zip>\n\n{Usage}");
-        }
-        Console.WriteLine(ExpandedSave.Pack(input, output));
-        return 0;
-    }
-
     if (each)
     {
-        if (toLua || pack || !split)
+        if (toLua || !split)
         {
             throw new ArgumentException(
                 $"--each converts saves to expanded form, so it needs --split\n\n{Usage}");

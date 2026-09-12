@@ -6,7 +6,7 @@ using Xunit;
 
 namespace NtwtfDecode.Tests;
 
-/// <summary>Tests for rebuilding a game archive from a sparse expanded source.</summary>
+/// <summary>Tests for writing a save out as a sparse expanded directory.</summary>
 public class ExpandedSaveTests
 {
     [Fact]
@@ -41,137 +41,17 @@ public class ExpandedSaveTests
         Assert.False(File.Exists(Path.Combine(source, "chosen.ntwtf.lua")));
     }
 
-    [Fact]
-    public void Pack_ReconstructsLuaAndIncludesPassThroughFiles()
-    {
-        using var temp = new TempDirectory();
-        string source = temp.Combine("chosen.ntwtf");
-        string parts = Path.Combine(source, "chosen.ntwtf.lua.parts");
-        string output = temp.Combine("chosen.ntwtf.zip");
-        byte[] original = LuaBlob.SerializeSampleSave();
-        LuaTable document = LuaTableVisitor.ReadAllTables(original, out _);
-        LuaSplitFiles.Write(parts, document, indent: 2, sparse: true);
-        File.WriteAllText(Path.Combine(source, "chosen.states.lua"), "state");
-
-        string actualOutput = ExpandedSave.Pack(
-            source,
-            output,
-            new DateTime(2026, 8, 31, 20, 13, 30)
-        );
-
-        Assert.Equal(
-            temp.Combine("chosen(8_31_2026 8-13-30 PM).ntwtf.zip"),
-            actualOutput
-        );
-        Assert.False(File.Exists(output));
-        Assert.Equal(original, SaveBlob.Read(actualOutput));
-        using ZipArchive archive = ZipFile.OpenRead(actualOutput);
-        Assert.Equal(
-            new[]
-            {
-                "chosen(8_31_2026 8-13-30 PM).ntwtf.lua",
-                "chosen(8_31_2026 8-13-30 PM).states.lua",
-            },
-            archive.Entries.Select(entry => entry.FullName).ToArray()
-        );
-    }
-
+    /// <summary>
+    /// Every member is diffed against the base's, and every one resolves back to itself.
+    /// </summary>
     /// <remarks>
-    /// The reason a prefixed copy of a save is not a save. Every entry inside the
-    /// archive is prefixed with the save's own name, and the game ignores an archive
-    /// whose entries disagree with it: the main menu comes up with no Continue and Load
-    /// Game greyed out, having found no saves at all. Renaming the outer file alone -
-    /// which is what packing to an explicit name used to do - produces exactly that.
+    /// The three kinds in one save: a JSON member that changed, one that did not and is
+    /// inherited, and a text member that changed. What is under test is the WRITER - that
+    /// it picks the right kind for each and writes only what differs - and what proves it
+    /// is resolving the result and finding the members it started from.
     /// </remarks>
     [Fact]
-    public void Pack_NamesMembersForTheRequestedOutputRatherThanTheSource()
-    {
-        using var temp = new TempDirectory();
-        string source = temp.Combine("chosen.ntwtf");
-        string parts = Path.Combine(source, "chosen.ntwtf.lua.parts");
-        byte[] original = LuaBlob.SerializeSampleSave();
-        LuaTable document = LuaTableVisitor.ReadAllTables(original, out _);
-        LuaSplitFiles.Write(parts, document, indent: 2, sparse: true);
-        File.WriteAllText(Path.Combine(source, "chosen.states.lua"), "state");
-
-        string actualOutput = ExpandedSave.Pack(
-            source,
-            temp.Combine("GCT-chosen.ntwtf.zip"),
-            new DateTime(2026, 8, 31, 20, 13, 30)
-        );
-
-        Assert.Equal(
-            temp.Combine("GCT-chosen(8_31_2026 8-13-30 PM).ntwtf.zip"),
-            actualOutput
-        );
-        Assert.Equal(original, SaveBlob.Read(actualOutput));
-        using ZipArchive archive = ZipFile.OpenRead(actualOutput);
-        Assert.Equal(
-            new[]
-            {
-                "GCT-chosen(8_31_2026 8-13-30 PM).ntwtf.lua",
-                "GCT-chosen(8_31_2026 8-13-30 PM).states.lua",
-            },
-            archive.Entries.Select(entry => entry.FullName).ToArray()
-        );
-    }
-
-    /// <remarks>
-    /// A name that already carries a timestamp is used as it stands, so a second one is
-    /// not appended to the first. The outer file keeps the name that was asked for.
-    /// </remarks>
-    [Fact]
-    public void Pack_KeepsAnOutputNameThatAlreadyCarriesATimestamp()
-    {
-        using var temp = new TempDirectory();
-        string source = temp.Combine("chosen.ntwtf");
-        string parts = Path.Combine(source, "chosen.ntwtf.lua.parts");
-        LuaTable document = LuaTableVisitor.ReadAllTables(
-            LuaBlob.SerializeSampleSave(),
-            out _
-        );
-        LuaSplitFiles.Write(parts, document, indent: 2, sparse: true);
-        File.WriteAllText(Path.Combine(source, "chosen.states.lua"), "state");
-        string requested = temp.Combine("GCT-chosen(1_2_2026 3-04-05 AM).ntwtf.zip");
-
-        string actualOutput = ExpandedSave.Pack(
-            source,
-            requested,
-            new DateTime(2026, 8, 31, 20, 13, 30)
-        );
-
-        Assert.Equal(requested, actualOutput);
-        using ZipArchive archive = ZipFile.OpenRead(actualOutput);
-        Assert.Equal(
-            new[]
-            {
-                "GCT-chosen(1_2_2026 3-04-05 AM).ntwtf.lua",
-                "GCT-chosen(1_2_2026 3-04-05 AM).states.lua",
-            },
-            archive.Entries.Select(entry => entry.FullName).ToArray()
-        );
-    }
-
-    [Fact]
-    public void Pack_RejectsPassThroughFilesForAnotherSave()
-    {
-        using var temp = new TempDirectory();
-        string source = temp.Combine("chosen.ntwtf");
-        string parts = Path.Combine(source, "chosen.ntwtf.lua.parts");
-        LuaTable document = LuaTableVisitor.ReadAllTables(
-            LuaBlob.SerializeSampleSave(),
-            out _
-        );
-        LuaSplitFiles.Write(parts, document, indent: 2, sparse: true);
-        File.WriteAllText(Path.Combine(source, "other.states.lua"), "state");
-
-        Assert.Throws<InvalidDataException>(() =>
-            ExpandedSave.Pack(source, temp.Combine("chosen.ntwtf.zip"))
-        );
-    }
-
-    [Fact]
-    public void DiffAndPack_ProcessesEveryArchiveMemberAgainstPackedBaseline()
+    public void WriteDiff_DiffsEveryMemberAndResolvesBackToIt()
     {
         using var temp = new TempDirectory();
         byte[] lua = LuaBlob.SerializeSampleSave();
@@ -213,28 +93,19 @@ public class ExpandedSaveTests
             File.ReadAllText(Path.Combine(expanded, "target.states.lua.diff"))
         );
 
-        string rebuilt = temp.Combine("target.ntwtf.zip");
-        string actualRebuilt = ExpandedSave.Pack(
-            expanded,
-            rebuilt,
-            new DateTime(2026, 8, 31, 20, 13, 30)
-        );
-        PackedSave packed = SaveBlob.ReadArchive(actualRebuilt);
-        Assert.Equal(lua, packed.LuaBytes);
-        Assert.Equal(
-            target.PassThrough.Select(entry =>
-                entry.Name.Replace("target", "target(8_31_2026 8-13-30 PM)")
-            ),
-            packed.PassThrough.Select(entry => entry.Name)
-        );
+        IReadOnlyDictionary<string, PackedSaveEntry> resolved =
+            ExpandedSave.MembersBySuffix(expanded);
+        using var rebuilt = new MemoryStream();
+        LuaBinary.WriteDocument(rebuilt, ExpandedSave.ReadBaseDocument(expanded));
+        Assert.Equal(lua, rebuilt.ToArray());
         foreach (PackedSaveEntry expected in target.PassThrough)
         {
-            string expectedName = expected.Name.Replace(
-                "target",
-                "target(8_31_2026 8-13-30 PM)"
-            );
-            PackedSaveEntry actual = packed.PassThrough.Single(entry => entry.Name == expectedName);
-            if (expected.Name.EndsWith(".json", StringComparison.Ordinal))
+            string suffix = expected.Name["target".Length..];
+            PackedSaveEntry actual = resolved[suffix];
+
+            // A JSON member is compared as a document: a diff is applied by a parser, so
+            // what comes back is the same object written out by a writer of its own.
+            if (suffix.EndsWith(".json", StringComparison.Ordinal))
             {
                 Assert.True(
                     JsonNode.DeepEquals(JsonNode.Parse(expected.Bytes), JsonNode.Parse(actual.Bytes))

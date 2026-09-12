@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT
-using System.IO.Compression;
 using System.Text.Json.Nodes;
 using GlobalConversationTracker.Persistence.Tests;
 using Xunit;
@@ -21,8 +20,11 @@ namespace NtwtfDecode.Tests;
 /// </remarks>
 public class ChainedBaseTests
 {
-    /// <summary>Writes a complete expanded save with the given pass-through members.</summary>
-    private static void WriteComplete(string directory, string name, JsonObject metadata)
+    /// <summary>The member whose contents each test varies.</summary>
+    private const string MetadataSuffix = ".1st.ntwtf.json";
+
+    /// <summary>A save with the given metadata, as the game would have written it.</summary>
+    private static (PackedSave Packed, LuaTable Document) Save(string name, JsonObject metadata)
     {
         byte[] original = LuaBlob.SerializeSampleSave();
         LuaTable document = LuaTableVisitor.ReadAllTables(original, out _);
@@ -33,35 +35,39 @@ public class ChainedBaseTests
             {
                 new PackedSaveEntry(name + ".states.lua", "state"u8.ToArray()),
                 new PackedSaveEntry(
-                    name + ".1st.ntwtf.json",
+                    name + MetadataSuffix,
                     System.Text.Encoding.UTF8.GetBytes(metadata.ToJsonString())
                 ),
             }
         );
+        return (packed, document);
+    }
+
+    /// <summary>Writes a complete expanded save with the given pass-through members.</summary>
+    private static void WriteComplete(string directory, string name, JsonObject metadata)
+    {
+        (PackedSave packed, LuaTable document) = Save(name, metadata);
         ExpandedSave.Write(directory, packed, document, indent: 2, sparse: true, baseline: null);
     }
 
-    /// <summary>Packs an expanded source and reads one member back out.</summary>
-    private static JsonNode ReadMetadata(string source, string output)
+    /// <summary>Writes one as a diff of a base, which may itself be a diff.</summary>
+    private static void WriteDiff(
+        string directory,
+        string name,
+        JsonObject metadata,
+        string baseline
+    )
     {
-        string actual = ExpandedSave.Pack(source, output, new DateTime(2026, 9, 1, 12, 0, 0));
-        using ZipArchive archive = ZipFile.OpenRead(actual);
-        ZipArchiveEntry entry = archive.Entries.Single(e =>
-            e.Name.EndsWith(".1st.ntwtf.json", StringComparison.Ordinal));
-        using Stream stream = entry.Open();
-        using var reader = new StreamReader(stream);
-        return JsonNode.Parse(reader.ReadToEnd())
-            ?? throw new InvalidDataException("metadata is not JSON");
+        (PackedSave packed, LuaTable document) = Save(name, metadata);
+        ExpandedSave.Write(directory, packed, document, indent: 2, sparse: true, baseline);
     }
 
-    /// <summary>Diffs a complete save against a base, which may itself be a diff.</summary>
-    private static void WriteDiff(string source, string target, string baseline)
+    /// <summary>Resolves an expanded save and reads the member each test varies.</summary>
+    private static JsonNode ReadMetadata(string source)
     {
-        string packed = ExpandedSave.Pack(
-            source, Path.Combine(Path.GetDirectoryName(target)!, "seed.ntwtf.zip"));
-        PackedSave read = SaveBlob.ReadArchive(packed);
-        LuaTable document = LuaTableVisitor.ReadAllTables(read.LuaBytes, out _);
-        ExpandedSave.Write(target, read, document, indent: 2, sparse: true, baseline: baseline);
+        PackedSaveEntry entry = ExpandedSave.MembersBySuffix(source)[MetadataSuffix];
+        return JsonNode.Parse(System.Text.Encoding.UTF8.GetString(entry.Bytes))
+            ?? throw new InvalidDataException("metadata is not JSON");
     }
 
     [Fact]
@@ -70,7 +76,7 @@ public class ChainedBaseTests
         using var temp = new TempDirectory();
 
         // A complete base, then a diff that changes one field, then a diff of THAT which
-        // changes a different one. Only the last is packed, and both changes must show.
+        // changes a different one. Only the last is resolved, and both changes must show.
         string root = temp.Combine("root.ntwtf");
         WriteComplete(root, "root", new JsonObject
         {
@@ -79,24 +85,20 @@ public class ChainedBaseTests
         });
 
         string shared = temp.Combine("shared.ntwtf");
-        string sharedSource = temp.Combine("shared-source.ntwtf");
-        WriteComplete(sharedSource, "shared", new JsonObject
+        WriteDiff(shared, "shared", new JsonObject
         {
             ["area"] = "Martinaise",
             ["money"] = 0,
-        });
-        WriteDiff(sharedSource, shared, root);
+        }, root);
 
-        string leafSource = temp.Combine("leaf-source.ntwtf");
-        WriteComplete(leafSource, "leaf", new JsonObject
+        string leaf = temp.Combine("leaf.ntwtf");
+        WriteDiff(leaf, "leaf", new JsonObject
         {
             ["area"] = "Martinaise",
             ["money"] = 5100,
-        });
-        string leaf = temp.Combine("leaf.ntwtf");
-        WriteDiff(leafSource, leaf, shared);
+        }, shared);
 
-        JsonNode metadata = ReadMetadata(leaf, temp.Combine("out.ntwtf.zip"));
+        JsonNode metadata = ReadMetadata(leaf);
 
         Assert.Equal("Martinaise", metadata["area"]!.GetValue<string>());
         Assert.Equal(5100, metadata["money"]!.GetValue<int>());
@@ -110,29 +112,24 @@ public class ChainedBaseTests
         string root = temp.Combine("root.ntwtf");
         WriteComplete(root, "root", new JsonObject { ["area"] = "Whirling", ["money"] = 0 });
 
-        string sharedSource = temp.Combine("shared-source.ntwtf");
-        WriteComplete(sharedSource, "shared", new JsonObject
+        string shared = temp.Combine("shared.ntwtf");
+        WriteDiff(shared, "shared", new JsonObject
         {
             ["area"] = "Martinaise",
             ["money"] = 0,
-        });
-        string shared = temp.Combine("shared.ntwtf");
-        WriteDiff(sharedSource, shared, root);
+        }, root);
 
-        string leafSource = temp.Combine("leaf-source.ntwtf");
-        WriteComplete(leafSource, "leaf", new JsonObject
+        string leaf = temp.Combine("leaf.ntwtf");
+        WriteDiff(leaf, "leaf", new JsonObject
         {
             ["area"] = "Martinaise",
             ["money"] = 5100,
-        });
-        string leaf = temp.Combine("leaf.ntwtf");
-        WriteDiff(leafSource, leaf, shared);
+        }, shared);
 
         // The point of chaining: the leaf says nothing about the area, because its base
         // already does. That is what makes the layout state which field varies.
-        // The packer stamps the time into member names, so the file is found by suffix.
         string metadata = File.ReadAllText(
-            Directory.GetFiles(leaf, "*.1st.ntwtf.json").Single());
+            Directory.GetFiles(leaf, "*" + MetadataSuffix).Single());
 
         Assert.Contains("money", metadata);
         Assert.DoesNotContain("Martinaise", metadata);
@@ -149,10 +146,8 @@ public class ChainedBaseTests
         string root = temp.Combine("root.ntwtf");
         WriteComplete(root, "root", new JsonObject { ["area"] = "Whirling" });
 
-        string leafSource = temp.Combine("leaf-source.ntwtf");
-        WriteComplete(leafSource, "leaf", new JsonObject { ["area"] = "Martinaise" });
         string leaf = temp.Combine("leaf.ntwtf");
-        WriteDiff(leafSource, leaf, root);
+        WriteDiff(leaf, "leaf", new JsonObject { ["area"] = "Martinaise" }, root);
 
         string manifestPath = Path.Combine(leaf, ExpandedSave.DiffManifestFileName);
         JsonObject manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
@@ -160,7 +155,7 @@ public class ChainedBaseTests
         File.WriteAllText(manifestPath, manifest.ToJsonString());
 
         InvalidDataException error = Assert.Throws<InvalidDataException>(
-            () => ExpandedSave.Pack(leaf, temp.Combine("out.ntwtf.zip")));
+            () => ExpandedSave.MembersBySuffix(leaf));
 
         Assert.Contains("returns to", error.Message);
     }
@@ -174,16 +169,14 @@ public class ChainedBaseTests
         string root = temp.Combine("root.ntwtf");
         WriteComplete(root, "root", new JsonObject { ["area"] = "Whirling", ["money"] = 0 });
 
-        string leafSource = temp.Combine("leaf-source.ntwtf");
-        WriteComplete(leafSource, "leaf", new JsonObject
+        string leaf = temp.Combine("leaf.ntwtf");
+        WriteDiff(leaf, "leaf", new JsonObject
         {
             ["area"] = "Whirling",
             ["money"] = 42,
-        });
-        string leaf = temp.Combine("leaf.ntwtf");
-        WriteDiff(leafSource, leaf, root);
+        }, root);
 
-        JsonNode metadata = ReadMetadata(leaf, temp.Combine("out.ntwtf.zip"));
+        JsonNode metadata = ReadMetadata(leaf);
 
         Assert.Equal("Whirling", metadata["area"]!.GetValue<string>());
         Assert.Equal(42, metadata["money"]!.GetValue<int>());

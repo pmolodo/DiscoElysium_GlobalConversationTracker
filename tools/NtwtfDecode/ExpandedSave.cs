@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: MIT
-using System.IO.Compression;
-using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 
 using GlobalConversationTracker.Core;
 using GlobalConversationTracker.Persistence;
 
 namespace NtwtfDecode;
 
-/// <summary>Builds a game-ready archive from an expanded sparse save source.</summary>
+/// <summary>Writes a save out as an expanded directory, and reads one back.</summary>
+/// <remarks>
+/// Turning one back into the archive the game loads is the engine's own
+/// <c>formats::packed_save</c>, reached by <c>gct-engine-host pack</c>.
+/// </remarks>
 public static class ExpandedSave
 {
     public const string DiffManifestFileName = "_archive.json";
@@ -24,11 +25,6 @@ public static class ExpandedSave
 
     /// <summary>The version of it this build writes.</summary>
     public const int FormatVersion = 1;
-
-    private static readonly Regex TimestampPattern = new(
-        @"\(\d{1,2}_\d{1,2}_\d{4} \d{1,2}-\d{2}-\d{2} (?:AM|PM)\)$",
-        RegexOptions.CultureInvariant
-    );
 
     /// <summary>Writes a complete expanded save from a packed input.</summary>
     public static void Write(
@@ -56,118 +52,6 @@ public static class ExpandedSave
             LuaSplitFiles.WriteDiff(
                 parts, document, ReadBaseDocument(Path.GetFullPath(baseline), null), indent);
         }
-    }
-
-    /// <summary>
-    /// Reconstructs the Lua blob and packs it with the expanded save's pass-through files.
-    /// </summary>
-    public static string Pack(string source, string output, DateTime? now = null)
-    {
-        if (!Directory.Exists(source))
-        {
-            throw new DirectoryNotFoundException($"No expanded save directory at '{source}'.");
-        }
-        if (!source.EndsWith(SaveBlob.ExpandedExtension, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new ArgumentException(
-                $"An expanded save directory must end in '{SaveBlob.ExpandedExtension}': '{source}'.",
-                nameof(source)
-            );
-        }
-        if (!output.EndsWith(SaveBlob.ZipExtension, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new ArgumentException(
-                $"A packed save must end in '{SaveBlob.ZipExtension}': '{output}'.",
-                nameof(output)
-            );
-        }
-
-        string manifestPath = Path.Combine(source, DiffManifestFileName);
-        bool isDiff = File.Exists(manifestPath);
-        string archiveName = isDiff ? ManifestStem(manifestPath) : string.Empty;
-        string luaName = archiveName + SaveBlob.LuaExtension;
-        string? parts = FindParts(source);
-        if (parts is not null)
-        {
-            string partsName = Path.GetFileName(parts);
-            const string PartsSuffix = ".parts";
-            if (!partsName.EndsWith(SaveBlob.LuaExtension + PartsSuffix, StringComparison.Ordinal))
-            {
-                throw new InvalidDataException(
-                    $"Split directory '{parts}' is not named for a Lua blob"
-                );
-            }
-            luaName = partsName[..^PartsSuffix.Length];
-            archiveName = luaName[..^SaveBlob.LuaExtension.Length];
-        }
-        else if (!isDiff)
-        {
-            // Only a diff may leave the tables out; a complete save has nowhere else to
-            // keep them.
-            throw new InvalidDataException(
-                $"'{source}' has no split directory and no {DiffManifestFileName} to inherit from."
-            );
-        }
-        // Named for the archive the game will see, not for the directory it came from.
-        // Every entry in a save is prefixed with the save's own name and an archive whose
-        // entries disagree is ignored outright - the main menu comes up with no Continue
-        // and Load Game greyed out - so an explicit output name has to reach the members
-        // too. When the output is named after its source, which is the ordinary case,
-        // this is the source stem and nothing changes.
-        string outputArchiveName = Path.GetFileName(output)[..^SaveBlob.ZipExtension.Length];
-        if (outputArchiveName.Length == 0)
-        {
-            throw new ArgumentException(
-                $"A packed save needs a name before '{SaveBlob.ZipExtension}': '{output}'.",
-                nameof(output)
-            );
-        }
-        if (!TimestampPattern.IsMatch(outputArchiveName))
-        {
-            string timestamp = (now ?? DateTime.Now).ToString(
-                "(M_d_yyyy h-mm-ss tt)",
-                CultureInfo.InvariantCulture
-            );
-            outputArchiveName += timestamp;
-            output = AppendTimestamp(output, timestamp);
-        }
-        string outputLuaName = outputArchiveName + SaveBlob.LuaExtension;
-        LuaTable document = isDiff
-            ? LuaSplitFiles.ReadDiff(parts, ReadBaseDocument(BaseOf(source, manifestPath), null))
-            : LuaSplitFiles.Read(parts!);
-
-        string? parent = Path.GetDirectoryName(output);
-        if (!string.IsNullOrEmpty(parent))
-        {
-            Directory.CreateDirectory(parent);
-        }
-        using FileStream destination = File.Create(output);
-        using var archive = new ZipArchive(destination, ZipArchiveMode.Create);
-        ZipArchiveEntry lua = archive.CreateEntry(outputLuaName, CompressionLevel.Optimal);
-        using (Stream stream = lua.Open())
-        {
-            LuaBinary.WriteDocument(stream, document);
-        }
-
-        if (isDiff)
-        {
-            WriteDiffMembers(archive, source, manifestPath, archiveName, outputArchiveName);
-            return output;
-        }
-
-        foreach (string file in Directory.GetFiles(source))
-        {
-            string name = Path.GetFileName(file);
-            if (!name.StartsWith(archiveName + ".", StringComparison.Ordinal))
-            {
-                throw new InvalidDataException(
-                    $"Expanded save member '{name}' does not match save name '{archiveName}'."
-                );
-            }
-            string outputName = outputArchiveName + name[archiveName.Length..];
-            archive.CreateEntryFromFile(file, outputName, CompressionLevel.Optimal);
-        }
-        return output;
     }
 
     /// <summary>The save name a diff's members are written for.</summary>
@@ -316,23 +200,6 @@ public static class ExpandedSave
         JsonDiff.Write(Path.Combine(directory, DiffManifestFileName), manifest, indent);
     }
 
-    private static void WriteDiffMembers(
-        ZipArchive archive,
-        string source,
-        string manifestPath,
-        string archiveName,
-        string outputArchiveName
-    )
-    {
-        foreach (PackedSaveEntry entry in ApplyDiff(source, manifestPath, chain: null))
-        {
-            string outputName = outputArchiveName + entry.Name[archiveName.Length..];
-            ZipArchiveEntry output = archive.CreateEntry(outputName, CompressionLevel.Optimal);
-            using Stream stream = output.Open();
-            stream.Write(entry.Bytes);
-        }
-    }
-
     /// <summary>
     /// Materialises the members a diff describes, resolving its base first.
     /// </summary>
@@ -441,6 +308,18 @@ public static class ExpandedSave
         return Path.Combine(source, diff);
     }
 
+    /// <summary>A save's pass-through members, with every diff beneath it applied.</summary>
+    /// <remarks>
+    /// Keyed by SUFFIX rather than by filename, because that is what two saves of the same
+    /// member share: the name carries the save's own name and the suffix is what is left.
+    /// </remarks>
+    /// <param name="path">A packed save, an expanded one, or one written as a diff.</param>
+    /// <returns>Each member's bytes, by the suffix that names it.</returns>
+    public static IReadOnlyDictionary<string, PackedSaveEntry> MembersBySuffix(string path)
+    {
+        return ReadMembers(Path.GetFullPath(path)).BySuffix;
+    }
+
     private static SaveMembers ReadMembers(string path, HashSet<string>? chain = null)
     {
         if (SaveBlob.IsArchive(path))
@@ -517,12 +396,6 @@ public static class ExpandedSave
             : throw new InvalidDataException(
                 $"Save member '{name}' does not match save name '{stem}'"
             );
-
-    private static string AppendTimestamp(string output, string timestamp)
-    {
-        string stem = output[..^SaveBlob.ZipExtension.Length];
-        return stem + timestamp + SaveBlob.ZipExtension;
-    }
 
     private sealed record SaveMembers(Dictionary<string, PackedSaveEntry> BySuffix);
 }
