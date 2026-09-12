@@ -30,11 +30,20 @@
 //! write the formats this repository defines, which live in this crate, and C# reaches them
 //! by running this binary. A second binary would be a second thing to find, deploy and keep
 //! in step for no gain - and an FFI would be the cdylib `Cargo.toml` records the removal of.
+//!
+//! ## A verb may print something the caller cannot work out for itself
+//!
+//! `pack` prints the archive it wrote. The name asked for is not always the name written -
+//! a save's name carries a timestamp and one without is given it - so the caller reads the
+//! answer off stdout rather than assuming the path it passed in.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use lookahead_engine::formats::expanded_save::OnDisk;
+use lookahead_engine::formats::lua_simx::{self, Orders};
+use lookahead_engine::formats::packed_save::{self, Stamp};
 use lookahead_engine::formats::{json_diff, resolve};
 
 /// What to do, where a verb was given.
@@ -47,6 +56,8 @@ enum Verb {
         target: PathBuf,
         out: PathBuf,
     },
+    /// Write an expanded save as the archive the game loads.
+    Pack { source: PathBuf, out: PathBuf },
 }
 
 fn main() -> ExitCode {
@@ -86,10 +97,15 @@ fn verb(arguments: &[String]) -> Result<Verb, String> {
             target: PathBuf::from(&arguments[2]),
             out: PathBuf::from(&arguments[3]),
         }),
+        "pack" if arguments.len() == 3 => Ok(Verb::Pack {
+            source: PathBuf::from(&arguments[1]),
+            out: PathBuf::from(&arguments[2]),
+        }),
         other => Err(format!(
             "'{other}' is not something this does. The verbs are:\n  \
              resolve <file>               print it with every diff beneath it applied\n  \
-             diff <base> <target> <out>   write the diff that turns one into the other\n\
+             diff <base> <target> <out>   write the diff that turns one into the other\n  \
+             pack <save.ntwtf> <out.zip>  write an expanded save as the game's archive\n\
              With no arguments at all it serves the engine over stdin and stdout.",
         )),
     }
@@ -107,7 +123,52 @@ fn perform(asked: Verb) -> Result<(), String> {
             Ok(())
         }
         Verb::Diff { base, target, out } => write_diff(&base, &target, &out),
+        Verb::Pack { source, out } => {
+            // WHAT IT WROTE, which is not always what it was asked for: a name carrying no
+            // timestamp is given one, and the caller has no way to work out which.
+            let written =
+                packed_save::pack(&OnDisk, &source, &out, orders().as_ref(), Stamp::now())
+                    .map_err(|fault| fault.to_string())?;
+            println!("{}", written.display());
+            Ok(())
+        }
     }
+}
+
+/// The id map a save's derived variables are rebuilt from, where it is to be found.
+///
+/// NOT AN ERROR WHEN IT IS NOT THERE, because only the `Variable` table needs it and
+/// [`packed_save`] refuses a save that needs one without it, naming the file. Turning a
+/// missing map into a failure here would refuse saves that do not need it and would say so
+/// before knowing whether this one did.
+fn orders() -> Option<Orders> {
+    let text = std::fs::read_to_string(beside_us(lua_simx::ORDERS_FILE_NAME)?).ok()?;
+    Orders::read(&text).ok()
+}
+
+/// A repository file, looked for from the working directory and from this binary outwards.
+///
+/// TWO STARTING POINTS because the two are different places and either can be the one
+/// inside the checkout: the host is run from the repository root by a person, and from
+/// wherever the game is by the harness and the plugin.
+fn beside_us(name: &str) -> Option<PathBuf> {
+    let starts = [
+        std::env::current_dir().ok(),
+        std::env::current_exe()
+            .ok()
+            .and_then(|path| path.parent().map(Path::to_path_buf)),
+    ];
+
+    for start in starts.into_iter().flatten() {
+        for folder in start.ancestors() {
+            let candidate = folder.join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    None
 }
 
 /// Writes the diff that turns one document into another, naming the first in it.

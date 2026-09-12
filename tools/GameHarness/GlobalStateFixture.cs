@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: MIT
 using System;
-using System.Diagnostics;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Text.Json;
-using GlobalConversationTracker.Automation;
 using GlobalConversationTracker.Core;
 
 namespace GlobalConversationTracker.Harness
@@ -38,9 +35,6 @@ namespace GlobalConversationTracker.Harness
 
         /// <summary>The verb on the engine host that resolves one.</summary>
         private const string ResolveVerb = "resolve";
-
-        /// <summary>What the engine host is called where cargo builds it.</summary>
-        private const string HostName = "gct-engine-host";
 
         /// <summary>How long to wait for it, which is a formality on a 30 KB document.</summary>
         private static readonly TimeSpan Patience = TimeSpan.FromSeconds(30);
@@ -97,67 +91,7 @@ namespace GlobalConversationTracker.Harness
         /// <exception cref="InvalidDataException">The engine refused it.</exception>
         private static string Resolved(string path)
         {
-            var run = new ProcessStartInfo(EngineHost)
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            };
-            run.ArgumentList.Add(ResolveVerb);
-            run.ArgumentList.Add(path);
-
-            using Process? engine = Process.Start(run);
-            if (engine == null)
-            {
-                throw new InvalidDataException($"{EngineHost} would not start.");
-            }
-
-            string document = engine.StandardOutput.ReadToEnd();
-            string complaint = engine.StandardError.ReadToEnd();
-            if (!engine.WaitForExit((int)Patience.TotalMilliseconds))
-            {
-                engine.Kill(entireProcessTree: true);
-                throw new InvalidDataException(
-                    $"{EngineHost} did not answer within {Patience.TotalSeconds:N0}s for "
-                    + path);
-            }
-
-            if (engine.ExitCode != 0)
-            {
-                throw new InvalidDataException(
-                    $"{path} will not resolve: {complaint.Trim()}");
-            }
-
-            return document;
-        }
-
-        /// <summary>Where cargo leaves the engine host.</summary>
-        /// <remarks>
-        /// THE ONE THIS TREE BUILT, not the one deployed beside the game: a fixture is
-        /// resolved by the code in this working tree, and reading it with whatever was last
-        /// deployed would be reading it with another build.
-        /// </remarks>
-        /// <exception cref="FileNotFoundException">It has not been built.</exception>
-        private static string EngineHost
-        {
-            get
-            {
-                string name = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-                    ? HostName + ".exe"
-                    : HostName;
-                string path = Path.Combine(
-                    GameInstall.RepoRoot(), "target", "release", name);
-
-                if (!File.Exists(path))
-                {
-                    throw new FileNotFoundException(
-                        $"The engine host is not at {path}, and a global state written as a "
-                        + "diff is resolved by it. Build it first:\n  cargo build --release",
-                        path);
-                }
-
-                return path;
-            }
+            return EngineHost.Run($"{path} will not resolve", Patience, ResolveVerb, path);
         }
     }
 }

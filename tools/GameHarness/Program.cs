@@ -46,6 +46,19 @@ namespace GlobalConversationTracker.Harness
         private const string SaveLoadedLogText =
             "Resynced the global state after a savegame load:";
 
+        /// <summary>The verb on the engine host that writes a save's archive.</summary>
+        private const string PackVerb = "pack";
+
+        /// <summary>
+        /// How long to give it, which is minutes rather than seconds for a reason.
+        /// </summary>
+        /// <remarks>
+        /// Packing rebuilds a save's five Lua tables from the split JSON and deflates about
+        /// fifty megabytes. A generous ceiling costs nothing on a run that works and turns a
+        /// hung one into a message rather than a harness that waits forever.
+        /// </remarks>
+        private static readonly TimeSpan PackPatience = TimeSpan.FromMinutes(5);
+
         /// <summary>Entry point.</summary>
         /// <param name="args">The verb and its options.</param>
         /// <returns>0 when every check passed.</returns>
@@ -1323,6 +1336,17 @@ Options:
         }
 
         /// <summary>Turns an expanded sparse save into the archive the game reads.</summary>
+        /// <remarks>
+        /// <para>THE ENGINE WRITES IT, because the engine is where a save's formats are
+        /// defined - the manifest, the diffs, the split tables and the blob under them.</para>
+        ///
+        /// <para>THE NAME IT REPORTS IS THE NAME TO USE. A save's name carries a timestamp
+        /// and one without is given it, so the archive is not always at the path asked
+        /// for.</para>
+        /// </remarks>
+        /// <param name="source">The expanded save, or a packed one to pass through.</param>
+        /// <param name="artifacts">Where the archive goes.</param>
+        /// <returns>The archive, at the name it was actually written under.</returns>
         internal static string PackSave(string source, string artifacts)
         {
             if (!Directory.Exists(source))
@@ -1330,42 +1354,15 @@ Options:
                 return source;
             }
 
-            string configuration =
-                new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory).Parent?.Name ?? "Debug";
-            string decoder = Path.Combine(
-                RepoRoot(),
-                ".build",
-                "bin",
-                "NtwtfDecode",
-                configuration,
-                "net10.0",
-                "NtwtfDecode.dll");
-            if (!File.Exists(decoder))
-            {
-                throw new FileNotFoundException(
-                    "NtwtfDecode was not built with GameHarness.", decoder);
-            }
-
             string packed = Path.Combine(artifacts, Path.GetFileName(source) + ".zip");
             Console.WriteLine($"packing:   {Path.GetFileName(source)}");
-            using Process process = Process.Start(new ProcessStartInfo
-            {
-                FileName = "dotnet",
-                Arguments = $"\"{decoder}\" --pack \"{source}\" -o \"{packed}\"",
-                RedirectStandardOutput = true,
-                UseShellExecute = false,
-            }) ?? throw new InvalidOperationException("Could not start NtwtfDecode.");
-            string actualPacked = process.StandardOutput.ReadToEnd().Trim();
-            process.WaitForExit();
-            if (process.ExitCode != 0)
-            {
-                throw new InvalidOperationException(
-                    $"NtwtfDecode could not pack '{source}' (exit {process.ExitCode}).");
-            }
+            string actualPacked = EngineHost
+                .Run($"'{source}' will not pack", PackPatience, PackVerb, source, packed)
+                .Trim();
             if (!File.Exists(actualPacked))
             {
                 throw new FileNotFoundException(
-                    "NtwtfDecode did not report a packed save it created.", actualPacked);
+                    "The engine host did not report a packed save it wrote.", actualPacked);
             }
             return actualPacked;
         }

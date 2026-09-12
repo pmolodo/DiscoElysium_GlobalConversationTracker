@@ -22,12 +22,4 @@
       Include="..\..\src\GlobalConversationTracker.Core\GlobalConversationTracker.Core.csproj" />
   </ItemGroup>
 
-  <!-- The harness invokes the net10 decoder as a child process. -->
-  <Target Name="BuildNtwtfDecode" BeforeTargets="Build">
-    <MSBuild
-      Projects="..\NtwtfDecode\NtwtfDecode.csproj"
-      Targets="Build"
-      Properties="Configuration=$(Configuration)" />
-  </Target>
-
 </Project>
