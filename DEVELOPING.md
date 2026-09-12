@@ -93,14 +93,12 @@ Two things about its contents are deliberate:
   - `GlobalStateBenchmark` - times `GlobalStateStore.Save` broken out by phase, and what
     a caller pays now that the write runs on a background thread, over a sweep of state
     sizes.
-  - `FormatConvert` - brings any file this repository wrote up to the current version of
-    its own format. It works out WHICH format and WHICH version from the file itself, so
-    neither is an argument: point it at a file and it converts, or says the file is
-    already current and succeeds. Never modifies the input and refuses to overwrite an
-    existing output. Every reader in the repository refuses anything but the version it
-    writes and names this tool, so it is the only way to open an older file. See
-    `tools\FormatConvert\README.md` for the migration order and for why the readers are
-    strict.
+Bringing an older file forward is `gct-engine-host convert <file> [<out>]`, a verb rather
+than a tool of its own. It works out WHICH format and WHICH version from the file itself,
+so neither is an argument: point it at a file and it converts, or says the file is already
+current and succeeds. It never modifies the input and never overwrites an existing output.
+Every reader in the repository refuses anything but the version it writes and names that
+command, so it is the only way to open an older file.
 
 The `.slnx` format, not the classic `.sln`, because it is what `dotnet new sln` emits with
 the SDK this repo builds on and it can carry those notes as comments. It needs the .NET SDK

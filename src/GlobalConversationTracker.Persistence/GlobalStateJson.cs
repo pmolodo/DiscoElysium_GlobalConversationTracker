@@ -31,7 +31,7 @@ namespace GlobalConversationTracker.Persistence
     /// what the array costs; that is not what a playthrough produces.</para>
     ///
     /// <para>THE ONLY SHAPE THIS READS. Three older ones exist on players' disks, and what
-    /// each looks like is written down in <c>tools/FormatConvert</c> - the one place that
+    /// each looks like is written down in the engine host's convert verb - the one place that
     /// knows, and the remedy every refusal here names. A reader that still understood an
     /// old shape would be where that shape ROTS, since nothing else would exercise it.</para>
     ///
@@ -67,7 +67,7 @@ namespace GlobalConversationTracker.Persistence
         /// </summary>
         /// <remarks>
         /// Five versions, of which this reads one. The others are described where they are
-        /// read - tools/FormatConvert - and what the latest changed is the HEADER: the file
+        /// read - the engine host's convert verb - and what the latest changed is the HEADER: the file
         /// says which format it is in as well as which version of it, as every other
         /// document here does.
         /// </remarks>
@@ -78,7 +78,7 @@ namespace GlobalConversationTracker.Persistence
         /// VERSION 5 IS THE HEADER, and nothing else. The shape of what follows is what
         /// version 4 wrote; what changed is that the file now says WHICH FORMAT it is in
         /// rather than only which version, like every other document this repository
-        /// writes. A player's file goes through tools/FormatConvert once, and the mod says
+        /// writes. A player's file goes through the engine host's convert verb once, and the mod says
         /// so rather than guessing.
         /// </remarks>
         public const string FormatName = "global-state";
@@ -92,7 +92,7 @@ namespace GlobalConversationTracker.Persistence
         /// <see cref="GlobalStateLoadOutcome.UnsupportedVersion"/>, rather than parsed by
         /// a path nothing else exercises - and refused rather than treated as corrupt,
         /// because it is full of real history and the caller must not overwrite it. What an
-        /// older shape looks like is written down in tools/FormatConvert, which is the only
+        /// older shape looks like is written down in the engine host's convert verb, which is the only
         /// thing that reads one and the remedy every refusal names.
         /// </remarks>
         public const int MinimumReadableFormatVersion = FormatVersion;

@@ -44,7 +44,7 @@ use std::process::ExitCode;
 use lookahead_engine::formats::expanded_save::{self, OnDisk};
 use lookahead_engine::formats::lua_simx::{self, Orders};
 use lookahead_engine::formats::packed_save::{self, Stamp};
-use lookahead_engine::formats::{expand, json_diff, resolve};
+use lookahead_engine::formats::{convert, expand, json_diff, resolve};
 
 /// What to do, where a verb was given.
 enum Verb {
@@ -66,6 +66,11 @@ enum Verb {
     },
     /// Write a committed save again, as this build would write it.
     Rewrite { save: PathBuf },
+    /// Bring a file up to the current version of its own format.
+    Convert {
+        input: PathBuf,
+        out: Option<PathBuf>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -117,6 +122,10 @@ fn verb(arguments: &[String]) -> Result<Verb, String> {
         "rewrite" if arguments.len() == 2 => Ok(Verb::Rewrite {
             save: PathBuf::from(&arguments[1]),
         }),
+        "convert" if matches!(arguments.len(), 2 | 3) => Ok(Verb::Convert {
+            input: PathBuf::from(&arguments[1]),
+            out: arguments.get(2).map(PathBuf::from),
+        }),
         other => Err(format!(
             "'{other}' is not something this does. The verbs are:\n  \
              resolve <file>                     print it with every diff beneath it applied\n  \
@@ -125,7 +134,10 @@ fn verb(arguments: &[String]) -> Result<Verb, String> {
              expand <save.zip> <out> [<base>]   write the game's archive as an expanded save,\n  \
              \x20                               as a change to <base> where one is named\n  \
              rewrite <save.ntwtf>               write a committed save again, as this build\n  \
-             \x20                               writes one, in place\n\
+             \x20                               writes one, in place\n  \
+             convert <file> [<out>]             bring a file up to the current version of\n  \
+             \x20                               its own format, beside it where <out> is\n  \
+             \x20                               not named\n\
              With no arguments at all it serves the engine over stdin and stdout.",
         )),
     }
@@ -174,7 +186,64 @@ fn perform(asked: Verb) -> Result<(), String> {
             println!("{}", save.display());
             Ok(())
         }
+        Verb::Convert { input, out } => convert_file(&input, out.as_deref()),
     }
+}
+
+/// Brings one file up to the current version of its own format.
+///
+/// # Errors
+///
+/// Where the file will not read, is not a format this build knows, was written by a newer
+/// build, or where the output is already there.
+fn convert_file(input: &Path, out: Option<&Path>) -> Result<(), String> {
+    let shown = input.display().to_string();
+    let bytes = std::fs::read(input).map_err(|fault| format!("{shown}: {fault}"))?;
+    let what = convert::detect(&bytes, &shown).map_err(|fault| fault.to_string())?;
+
+    if what.is_current() {
+        println!(
+            "{shown} is already {} version {}, which is what this build writes. Nothing to do.",
+            what.name, what.version,
+        );
+        return Ok(());
+    }
+
+    // REFUSED, NOT CONVERTED, and this is the direction that matters most. A file from a
+    // newer build is full of real history this one cannot read all of, so writing anything
+    // at all would be inventing the parts it could not.
+    if what.is_from_the_future() {
+        return Err(format!(
+            "{shown} is {} version {}, and this build writes version {} at most. It was \
+             written by a newer build and is not damaged, so do not overwrite it - use a \
+             build at least as new as the one that wrote it.",
+            what.name, what.version, what.current,
+        ));
+    }
+
+    let out = out.map_or_else(|| convert::beside(input, what.current), Path::to_path_buf);
+    if out == input {
+        return Err("the input and the output must be different files".to_string());
+    }
+
+    let converted =
+        convert::to_current(&what, &bytes, &shown).map_err(|fault| fault.to_string())?;
+
+    // REFUSED WHERE THE OUTPUT IS ALREADY THERE rather than replaced. What is being
+    // converted is somebody's history, and the output may be an earlier conversion of it.
+    if out.exists() {
+        return Err(format!("{} is already there", out.display()));
+    }
+    std::fs::write(&out, converted).map_err(|fault| format!("{}: {fault}", out.display()))?;
+
+    println!(
+        "Converted {shown} from {} version {} to version {} at {}.",
+        what.name,
+        what.version,
+        what.current,
+        out.display(),
+    );
+    Ok(())
 }
 
 /// The id map a save's derived variables are rebuilt from, where it is to be found.

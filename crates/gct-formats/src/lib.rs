@@ -40,6 +40,7 @@
 //! AND ONE THAT IS NOT A SAVE'S. [`global_state`] is the mod's own record of what a player
 //! has read across every save, which is the only file here that cannot be regenerated.
 
+pub mod convert;
 pub mod expand;
 pub mod expanded_save;
 pub mod global_state;
@@ -51,6 +52,7 @@ pub mod lua_parts;
 pub mod lua_simx;
 pub mod lua_sparse;
 pub mod packed_save;
+pub mod registry;
 pub mod resolve;
 pub mod runs;
 pub mod sparse;

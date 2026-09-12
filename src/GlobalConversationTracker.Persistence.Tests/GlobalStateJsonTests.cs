@@ -393,7 +393,7 @@ namespace GlobalConversationTracker.Persistence.Tests
             Assert.Equal(GlobalStateLoadOutcome.UnsupportedVersion, result.Outcome);
             Assert.Null(result.State);
             Assert.Contains(
-                "tools/FormatConvert", result.ErrorMessage!, StringComparison.Ordinal);
+                FormatStamp.Converter, result.ErrorMessage!, StringComparison.Ordinal);
             Assert.Throws<InvalidOperationException>(() => result.RequireState());
         }
 
@@ -402,7 +402,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         {
             // Says out loud what the gate is, so that lowering it needs a deliberate edit
             // here rather than passing unnoticed. What an older file looks like is
-            // tools/FormatConvert's business now, and nothing here can read one.
+            // the engine host's convert verb's business now, and nothing here reads one.
             Assert.Equal(
                 GlobalStateJson.FormatVersion,
                 GlobalStateJson.MinimumReadableFormatVersion);

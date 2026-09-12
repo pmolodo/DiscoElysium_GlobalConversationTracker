@@ -61,7 +61,7 @@ public static class FormatStamp
     /// warning about itself. The refusal below is only useful if the person reading it can
     /// act on it, and "your file is version 2" is not an instruction.
     /// </remarks>
-    public const string Converter = "dotnet run --project tools/FormatConvert -- <file>";
+    public const string Converter = "gct-engine-host convert <file>";
 
     /// <summary>
     /// Checks a file's whole header - what it says it is, and which version of that - and

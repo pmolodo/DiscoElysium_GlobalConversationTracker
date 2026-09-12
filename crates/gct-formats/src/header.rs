@@ -35,7 +35,7 @@ pub const BASE_KEY: &str = "_base";
 ///
 /// A STRICT READER WITHOUT A SIGNPOSTED CONVERTER IS A WALL. "your file is version 2" is
 /// not an instruction, and the person reading the refusal is the one who has to act on it.
-pub const CONVERTER: &str = "dotnet run --project tools/FormatConvert -- <file>";
+pub const CONVERTER: &str = "gct-engine-host convert <file>";
 
 /// Why a document could not be read as the format a reader wanted.
 ///
