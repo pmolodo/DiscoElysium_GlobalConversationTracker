@@ -39,6 +39,9 @@ pub const FORMAT: Expected = Expected {
     version: 1,
 };
 
+/// What an expanded save's directory name ends in.
+pub const EXPANDED_SUFFIX: &str = ".ntwtf";
+
 /// What a manifest is called, inside the directory it describes.
 pub const MANIFEST_NAME: &str = "_archive.json";
 
@@ -143,6 +146,9 @@ pub enum SaveFault {
     /// A member inherits from a base that does not have it.
     #[error("{0}: '{1}' inherits a member the base does not have")]
     NothingToInherit(String, String),
+    /// A whole save holds a file that is not one of its members.
+    #[error("{0}: '{1}' is not prefixed with the save's name, '{2}'")]
+    Unprefixed(String, String, String),
     /// A base chain that returns to itself.
     #[error("the bases run in a circle, through {0}")]
     Circular(String),
@@ -361,7 +367,7 @@ pub fn members_of(files: &impl Files, directory: &Path) -> Result<Members, SaveF
     let mut members = Members::new();
     for link in chain(files, directory)? {
         members = match &link.manifest {
-            None => whole_members(files, &link.directory),
+            None => whole_members(files, &link.directory)?,
             Some(manifest) => applied_members(files, &link.directory, manifest, &members)?,
         };
     }
@@ -449,7 +455,12 @@ fn apply_json(patch: &str, baseline: &[u8], context: &str) -> Result<Vec<u8>, Sa
 }
 
 /// The members of a save that is written whole, which are its files but the manifest.
-fn whole_members(files: &impl Files, directory: &Path) -> Members {
+///
+/// A FILE THAT IS NOT PREFIXED WITH THE SAVE'S NAME IS REFUSED rather than passed over.
+/// Every member of a save carries that prefix, so one that does not is either not a member
+/// or a member of another save, and skipping it would leave it out of the archive built
+/// from this directory without anything saying so.
+fn whole_members(files: &impl Files, directory: &Path) -> Result<Members, SaveFault> {
     let stem = stem_of(directory);
     let mut found = Vec::new();
 
@@ -458,15 +469,18 @@ fn whole_members(files: &impl Files, directory: &Path) -> Members {
             continue;
         }
 
-        if let Some(suffix) = name.strip_prefix(stem.as_str())
-            && let Some(bytes) = files.read(&directory.join(&name))
-        {
-            found.push((suffix.to_string(), bytes));
-        }
+        let suffix = name
+            .strip_prefix(stem.as_str())
+            .ok_or_else(|| SaveFault::Unprefixed(shown(directory), name.clone(), stem.clone()))?;
+        let path = directory.join(&name);
+        let bytes = files
+            .read(&path)
+            .ok_or_else(|| SaveFault::Missing(shown(&path)))?;
+        found.push((suffix.to_string(), bytes));
     }
 
     found.sort_by(|(left, _), (right, _)| left.cmp(right));
-    found
+    Ok(found)
 }
 
 /// A path with its `..` steps taken, so one directory has one spelling.
@@ -495,7 +509,9 @@ fn stem_of(directory: &Path) -> String {
         .file_name()
         .map(|name| {
             let name = name.to_string_lossy();
-            name.strip_suffix(".ntwtf").unwrap_or(&name).to_string()
+            name.strip_suffix(EXPANDED_SUFFIX)
+                .unwrap_or(&name)
+                .to_string()
         })
         .unwrap_or_default()
 }

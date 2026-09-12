@@ -22,7 +22,8 @@
 //! a save repeats itself - the variables that are a second copy of the conversations, left
 //! out and rebuilt - and [`lua_parts`] is the directory those trees are split across, read
 //! back as one blob. [`runs`] is how all of them - and the wire, and the mod's own state
-//! file - spell a dense run of integers.
+//! file - spell a dense run of integers. [`packed_save`] puts the two halves of a save back
+//! together as the archive the game loads.
 
 pub mod expanded_save;
 pub mod header;
@@ -32,6 +33,7 @@ pub mod lua_manifest;
 pub mod lua_parts;
 pub mod lua_simx;
 pub mod lua_sparse;
+pub mod packed_save;
 pub mod resolve;
 pub mod runs;
 pub mod sparse;
