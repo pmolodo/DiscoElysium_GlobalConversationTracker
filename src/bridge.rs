@@ -48,6 +48,7 @@ use crate::core::guard::{Guard, GuardExpression};
 use crate::core::guard_value::{GuardValue, GuardValueKind};
 use crate::core::types::StartBranch;
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, Novelty, Ternary};
+use crate::formats::runs;
 use crate::graph::graph::LookAheadGraph;
 use crate::index::{Index, VariableTable, build_group_graph};
 use crate::symbolic::answer;
@@ -84,20 +85,11 @@ impl From<NodeRef> for DialogueNodeId {
     }
 }
 
-/// The run separator inside a [`NodeSet`]'s entry list.
+/// The run separator inside a [`NodeSet`]'s entry list, for the one message that quotes it.
 ///
-/// ## The same one every file in this repository uses
-///
-/// `3,5,7-25`, which is what `SparseOrder` writes on the C# side - the sparse saves, their
-/// diffs, and the global state file's entry sets since format 4. The wire is the last
-/// thing here that spelled a run its own way, and it had one implementation of its own on
-/// each side of the bridge: three encoders for one idea.
-///
-/// IT USED TO BE `..`, on the stated grounds that a hyphen becomes ambiguous the first
-/// time an id is negative. That reasoning does not survive the other implementation, which
-/// has always looked for the separator PAST THE FIRST CHARACTER so a leading `-` reads as
-/// a sign - one condition, and the ambiguity is gone. What was left was a second spelling
-/// with nothing behind it.
+/// The spelling itself is [`crate::formats::runs`], which is what every file in this
+/// repository uses - the sparse saves, their diffs, and the mod's own state file. The wire
+/// reads and writes through it rather than saying the same thing a second way.
 const RUN_SEPARATOR: &str = "-";
 
 /// A set of entries, in the shape it crosses the bridge in.
@@ -238,27 +230,8 @@ impl<'de> Deserialize<'de> for NodeSet {
 
 /// Sorted ids as `0-40,42,50-99`.
 fn write_runs(entries: &[i32]) -> String {
-    let mut runs: Vec<String> = Vec::new();
-    let mut index = 0;
-    while index < entries.len() {
-        let first = entries[index];
-        let mut last = first;
-        // Duplicates cannot occur - these come out of a set - so a run is strictly
-        // ascending and one step at a time.
-        while index + 1 < entries.len() && entries[index + 1] == last + 1 {
-            index += 1;
-            last = entries[index];
-        }
-
-        runs.push(if first == last {
-            first.to_string()
-        } else {
-            format!("{first}{RUN_SEPARATOR}{last}")
-        });
-        index += 1;
-    }
-
-    runs.join(",")
+    let widened: Vec<i64> = entries.iter().map(|entry| i64::from(*entry)).collect();
+    runs::pack(&widened)
 }
 
 /// Reads back what [`write_runs`] wrote.
@@ -266,36 +239,21 @@ fn write_runs(entries: &[i32]) -> String {
 /// Refuses anything it does not understand rather than skipping it. A run list that is
 /// silently half-read is a world that quietly answers "not seen" for entries the player
 /// has read, and the marker is then wrong with nothing to say so.
+///
+/// TWO REFUSALS OF ITS OWN, on top of the spelling itself. An entry set's ids come out of a
+/// sorted collection and are entry ids, so a run that COUNTS DOWN or a bound too large to
+/// BE an entry id is a document that is not what it claims to be - where in a save's
+/// dialogue variables a descending run is the ordinary case.
 fn read_runs(text: &str) -> Result<Vec<i32>, String> {
     let mut entries = Vec::new();
-    for run in text.split(',') {
-        let run = run.trim();
-        if run.is_empty() {
-            continue;
-        }
-
-        // PAST THE FIRST CHARACTER, so a leading '-' reads as a sign rather than as a
-        // separator. That one condition is the whole of what the old `..` was chosen to
-        // avoid, and it is why the wire could join the files on a spelling - see
-        // RUN_SEPARATOR.
-        let (first, last) = match run.char_indices().skip(1).find(|(_, c)| *c == '-') {
-            Some((at, _)) => (&run[..at], &run[at + 1..]),
-            None => (run, run),
-        };
-
-        let first: i32 = first
-            .trim()
-            .parse()
-            .map_err(|_| format!("'{run}' is not an entry id or a range of them"))?;
-        let last: i32 = last
-            .trim()
-            .parse()
-            .map_err(|_| format!("'{run}' is not an entry id or a range of them"))?;
+    for (first, last) in runs::bounds(text, "an entry set").map_err(|fault| fault.to_string())? {
         if last < first {
-            return Err(format!("'{run}' runs backwards"));
+            return Err(format!("'{first}{RUN_SEPARATOR}{last}' runs backwards"));
         }
 
-        entries.extend(first..=last);
+        let widen =
+            |bound: i64| i32::try_from(bound).map_err(|_| format!("'{bound}' is not an entry id"));
+        entries.extend(widen(first)?..=widen(last)?);
     }
 
     Ok(entries)

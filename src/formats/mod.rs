@@ -15,12 +15,20 @@
 //! another; [`text_diff`] applies what git wrote for the members that are not JSON; and
 //! [`expanded_save`] is a save written as a change to another save, with the members that
 //! come of resolving one.
+//!
+//! A SAVE'S OWN DATA lives in three more. [`lua_blob`] is the binary form the game writes,
+//! [`lua_sparse`] turns that into the tree it is stored as on disk and back, and
+//! [`lua_manifest`] is what the second knows about the shape of the first. [`runs`] is how
+//! all of them - and the wire, and the mod's own state file - spell a dense run of integers.
 
 pub mod expanded_save;
 pub mod header;
 pub mod json_diff;
 pub mod lua_blob;
+pub mod lua_manifest;
+pub mod lua_sparse;
 pub mod resolve;
+pub mod runs;
 pub mod sparse;
 pub mod sparse_diff;
 pub mod text_diff;

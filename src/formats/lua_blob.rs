@@ -200,7 +200,7 @@ impl Reader<'_> {
         match self.byte()? {
             marker::NIL => Ok(LuaValue::Nil),
             marker::BOOLEAN => Ok(LuaValue::Bool(self.byte()? != 0)),
-            marker::NUMBER => Ok(number_of(self.double()?)),
+            marker::NUMBER => Ok(number(self.double()?)),
             marker::STRING => {
                 let length = self.length()?;
                 let at = self.at;
@@ -248,7 +248,12 @@ impl Reader<'_> {
 }
 
 /// A number, whole and 32-bit-sized where it can be. See the module note.
-fn number_of(float: f64) -> LuaValue {
+///
+/// Public because the sparse form has to reach the same answer: a key that went into a save
+/// as the number 1 has to come back out of `"1"` as the same value, and "the same" is what
+/// this decides.
+#[must_use]
+pub fn number(float: f64) -> LuaValue {
     if float.fract() == 0.0
         && float >= f64::from(i32::MIN)
         && float <= f64::from(i32::MAX)
