@@ -122,6 +122,17 @@ namespace GlobalConversationTracker.Persistence
         [DllImport(LibraryName, EntryPoint = "gct_state_read")]
         internal static extern unsafe IntPtr Read(byte* json, nuint length);
 
+        /// <summary>
+        /// Reads a save's dialogue statuses out of the Lua blob the game wrote.
+        /// </summary>
+        /// <remarks>
+        /// THE SAME HANDLE a state read gives, because what it holds is the same thing: a
+        /// status per entry. Every accessor below works on it and it is freed the same way;
+        /// a save simply has no orbs and no skipped rows to report.
+        /// </remarks>
+        [DllImport(LibraryName, EntryPoint = "gct_state_read_save")]
+        internal static extern unsafe IntPtr ReadSave(byte* blob, nuint length);
+
         [DllImport(LibraryName, EntryPoint = "gct_state_outcome")]
         internal static extern int Outcome(IntPtr read);
 

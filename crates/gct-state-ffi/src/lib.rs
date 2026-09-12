@@ -38,6 +38,7 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use gct_formats::global_state::{self, GlobalState, Loaded, StateFault, Status};
+use gct_formats::save_statuses;
 
 /// The document read, and everything that would not.
 pub const OUTCOME_LOADED: i32 = 0;
@@ -58,7 +59,7 @@ const STATUSES: [Status; 3] = [Status::Untouched, Status::WasOffered, Status::Wa
 
 /// One entry of a state, as it crosses.
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Entry {
     pub conversation: i32,
     pub entry: i32,
@@ -119,6 +120,53 @@ pub unsafe extern "C" fn gct_state_read(json: *const u8, len: usize) -> *mut Rea
     }
 }
 
+/// Reads the dialogue statuses out of a save's Lua blob.
+///
+/// ## Why this is here, beside the state file
+///
+/// Because the mod reads BOTH from inside the running game, on the same save load. The
+/// state file is what it has recorded across playthroughs and the save is what this one has
+/// shown; it refills the second from the first. Reading the save was the last format the
+/// plugin still parsed for itself, in C#, which made the save's Lua blob a thing this
+/// repository defined twice.
+///
+/// WHAT COMES BACK IS THE SAME HANDLE a state read gives, because what it holds is the same
+/// thing: a status per entry. Every accessor works on it - the outcome, the message, the
+/// count and the entries - and it is freed the same way. There are no orbs and no warnings
+/// in one, and asking for them answers nothing rather than failing.
+///
+/// A BLOB THAT WILL NOT READ IS `OUTCOME_CORRUPT` and never `OUTCOME_UNSUPPORTED`: the
+/// distinction the state file draws is about a document whose history must not be
+/// overwritten, and a save is the game's own file that this never writes.
+///
+/// # Safety
+///
+/// `blob` must point to `len` readable bytes, or be null with `len` zero.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn gct_state_read_save(blob: *const u8, len: usize) -> *mut Read {
+    let read = catch_unwind(AssertUnwindSafe(|| {
+        let bytes = if blob.is_null() || len == 0 {
+            &[][..]
+        } else {
+            // SAFETY: the caller's contract, restated above.
+            unsafe { std::slice::from_raw_parts(blob, len) }
+        };
+
+        match save_statuses::in_blob(bytes) {
+            Ok(state) => from_state(&state),
+            Err(fault) => refused(OUTCOME_CORRUPT, fault.to_string()),
+        }
+    }));
+
+    match read {
+        Ok(read) => Box::into_raw(Box::new(read)),
+        Err(_) => Box::into_raw(Box::new(refused(
+            OUTCOME_CORRUPT,
+            "reading the save ended in a panic".to_string(),
+        ))),
+    }
+}
+
 /// Which of the two refusals a fault is.
 ///
 /// The distinction is what the caller does next: a document this build cannot read is full
@@ -143,10 +191,22 @@ fn refused(outcome: i32, message: String) -> Read {
 }
 
 fn accepted(loaded: Loaded) -> Read {
-    let mut entries = Vec::with_capacity(loaded.state.len());
-    for conversation in loaded.state.conversations() {
+    Read {
+        skipped: loaded.skipped,
+        warnings: loaded.warnings,
+        orbs: loaded.state.orbs().map(str::to_string).collect(),
+        ..from_state(&loaded.state)
+    }
+}
+
+/// A state as the flat array that crosses, with nothing else said about it.
+///
+/// Shared by the two reads, because a save and the state file hand back the same thing.
+fn from_state(state: &GlobalState) -> Read {
+    let mut entries = Vec::with_capacity(state.len());
+    for conversation in state.conversations() {
         for (at, status) in STATUSES.iter().enumerate() {
-            for entry in loaded.state.entries_at(conversation, *status) {
+            for entry in state.entries_at(conversation, *status) {
                 entries.push(Entry {
                     conversation,
                     entry,
@@ -159,10 +219,10 @@ fn accepted(loaded: Loaded) -> Read {
     Read {
         outcome: OUTCOME_LOADED,
         message: String::new(),
-        skipped: loaded.skipped,
-        warnings: loaded.warnings,
-        orbs: loaded.state.orbs().map(str::to_string).collect(),
+        skipped: 0,
+        warnings: Vec::new(),
         entries,
+        orbs: Vec::new(),
     }
 }
 
@@ -614,6 +674,99 @@ mod tests {
 
     /// Nothing at all is a valid argument everywhere, so a caller that failed to get a
     /// handle does not have to branch before asking or freeing.
+    #[test]
+    /// A save's blob crosses as the same entries a state file's does.
+    #[test]
+    fn a_saves_statuses_cross_as_the_entries_a_state_reads_as() {
+        let blob = gct_formats::lua_blob::write(&save_holding(10, 5, "WasDisplayed"));
+
+        let read = unsafe { gct_state_read_save(blob.as_ptr(), blob.len()) };
+
+        assert_eq!(unsafe { gct_state_outcome(read) }, OUTCOME_LOADED);
+        assert_eq!(
+            entries_of(read),
+            vec![Entry {
+                conversation: 10,
+                entry: 5,
+                status: 2,
+            }],
+        );
+        unsafe { gct_state_read_free(read) };
+    }
+
+    /// And it has no orbs and no skipped rows, which is asking rather than failing.
+    #[test]
+    fn a_save_has_nothing_to_say_about_orbs_or_skipped_rows() {
+        let blob = gct_formats::lua_blob::write(&save_holding(1, 2, "WasOffered"));
+
+        let read = unsafe { gct_state_read_save(blob.as_ptr(), blob.len()) };
+
+        assert_eq!(orbs_of(read), Vec::<String>::new());
+        assert_eq!(unsafe { gct_state_skipped(read) }, 0);
+        assert_eq!(unsafe { gct_state_warning_count(read) }, 0);
+        unsafe { gct_state_read_free(read) };
+    }
+
+    /// Bytes that are not a blob are corrupt, and never unsupported: a save is the game's
+    /// own file and nothing here would overwrite it either way.
+    #[test]
+    fn bytes_that_are_not_a_blob_are_corrupt_and_say_why() {
+        let bytes = b"not a blob at all";
+
+        let read = unsafe { gct_state_read_save(bytes.as_ptr(), bytes.len()) };
+
+        assert_eq!(unsafe { gct_state_outcome(read) }, OUTCOME_CORRUPT);
+        let mut len = 0;
+        let first = unsafe { gct_state_message(read, &raw mut len) };
+        assert!(!text_at(first, len).is_empty(), "a refusal says why");
+        unsafe { gct_state_read_free(read) };
+    }
+
+    #[test]
+    fn no_bytes_at_all_is_a_refusal_rather_than_an_empty_save() {
+        let read = unsafe { gct_state_read_save(std::ptr::null(), 0) };
+
+        assert_eq!(unsafe { gct_state_outcome(read) }, OUTCOME_CORRUPT);
+        unsafe { gct_state_read_free(read) };
+    }
+
+    /// The five tables a blob holds, with one status recorded in the conversations.
+    fn save_holding(conversation: i32, entry: i32, status: &str) -> gct_formats::lua_blob::Blob {
+        use gct_formats::lua_blob::{Blob, LuaTable, LuaValue, TABLE_NAMES};
+        use gct_formats::save_statuses::{DIALOG_FIELD, SIM_STATUS_FIELD};
+
+        let keyed = |entries: Vec<(LuaValue, LuaValue)>| LuaTable {
+            list: Vec::new(),
+            dict: entries,
+        };
+        let text = |what: &str| LuaValue::Text(what.to_string());
+
+        let conversations = keyed(vec![(
+            text(&conversation.to_string()),
+            LuaValue::Table(keyed(vec![(
+                text(DIALOG_FIELD),
+                LuaValue::Table(keyed(vec![(
+                    text(&entry.to_string()),
+                    LuaValue::Table(keyed(vec![(text(SIM_STATUS_FIELD), text(status))])),
+                )])),
+            )])),
+        )]);
+
+        Blob {
+            tables: TABLE_NAMES
+                .iter()
+                .map(|name| {
+                    if *name == "Conversation" {
+                        LuaValue::Table(conversations.clone())
+                    } else {
+                        LuaValue::Table(LuaTable::default())
+                    }
+                })
+                .collect(),
+            trailing: Vec::new(),
+        }
+    }
+
     #[test]
     fn a_null_handle_answers_rather_than_crashing() {
         let nothing: *mut Read = std::ptr::null_mut();

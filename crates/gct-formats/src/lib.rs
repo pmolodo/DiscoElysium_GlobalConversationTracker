@@ -55,6 +55,7 @@ pub mod packed_save;
 pub mod registry;
 pub mod resolve;
 pub mod runs;
+pub mod save_statuses;
 pub mod sparse;
 pub mod sparse_diff;
 pub mod text_diff;

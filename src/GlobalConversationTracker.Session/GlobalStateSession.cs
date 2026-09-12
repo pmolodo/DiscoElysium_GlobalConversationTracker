@@ -1193,13 +1193,25 @@ namespace GlobalConversationTracker.Session
                     return 0;
                 }
 
-                List<SimStatusRow> rows = RawDataParser.GetSimStatuses(
-                    data, out SimStatusParseCounts parseCounts);
+                // THROUGH THE LIBRARY, not a parser of our own. The save's Lua blob has one
+                // definition, in Rust, and this is the same library the state file is read
+                // and written through - both are formats the running game reads, and neither
+                // can answer for a process that will not start.
+                List<SimStatusRow> rows = SaveStatuses.Read(data, out string? failure);
 
                 // data aliases the IL2CPP array in place, and bytes is dead from here on, so
                 // without this the wrapper could be finalized - freeing its GCHandle, and with
                 // it the array - mid-read.
                 GC.KeepAlive(bytes);
+
+                if (failure != null)
+                {
+                    // NOT GIVEN UP ON, unlike a throwing merge. A save that will not read is
+                    // this save's problem rather than the session's, and the next load is a
+                    // different save.
+                    _log.Warning($"Not resyncing the global state: the save would not read. {failure}");
+                    return 0;
+                }
 
                 return Resync(rows);
             }
@@ -1426,15 +1438,17 @@ namespace GlobalConversationTracker.Session
                 return 0;
             }
 
+            // ROWS ABOVE UNTOUCHED, which is what the reader hands back: a real save holds
+            // around 113,000 entries and about 1,500 of them say anything. The rest were
+            // walked and stored nowhere, so counting them said only how big the table was.
             string raised = raisedCount == 0
-                ? $"nothing new in {rowCount} rows, so no file was written."
-                : $"{raisedCount} statuses raised from {rowCount} rows; now "
+                ? $"nothing new in {rowCount} recorded rows, so no file was written."
+                : $"{raisedCount} statuses raised from {rowCount} recorded rows; now "
                     + $"{_state.ConversationCount} conversations, {_state.EntryCount} entries.";
             _log.Info(
                 $"Resynced the global state after a savegame load: {raised} The loaded save itself "
                 + $"has {_currentSave.DisplayedCount} displayed and {_currentSave.OfferedCount} "
-                + $"offered of {rowCount} entries, scoring "
-                + $"{DialogueScore.Format(_currentSave.Score)}.");
+                + $"offered, scoring {DialogueScore.Format(_currentSave.Score)}.");
 
             if (raisedCount == 0)
             {
