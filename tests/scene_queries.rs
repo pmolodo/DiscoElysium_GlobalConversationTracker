@@ -1,0 +1,201 @@
+// SPDX-License-Identifier: MIT
+//! The scene the player is standing in, as a group's guards ask about it.
+//!
+//! ## Why these three are worth their own file
+//!
+//! `IsExterior`, `IsRaining` and `IsSnowing` are the only queries in the game that ask
+//! about the SCENE rather than about the character, and they were the last ones an offline
+//! world could not answer.
+//!
+//! What makes them sharp rather than merely missing is the SHAPE the writers used. Every
+//! one of them appears as a complementary PAIR - one entry guarded by `IsExterior()` and
+//! the next by `(IsExterior()) == false` - so exactly one of the two is ever reachable. A
+//! query nobody answers reads as unknown, which is permissive, which makes BOTH reachable.
+//! An unanswered scene query does not lose a line; it invents one.
+//!
+//! ## Where the answers come from
+//!
+//! THE AREA, for `IsExterior`. A save records the area it left the player in, and the game
+//! decides outdoors by looking that area up in `ApplicationManager.ScenePropertiesList` -
+//! so `testing/scenes.json` is that list, derived from the game's own asset by
+//! `tools/derive-scene-properties.py`. Two of the game's thirty-seven scenes are outdoors.
+//!
+//! A LUA VARIABLE, for the weather: `auto.is_raining` and `auto.is_snowing`, which every
+//! save's `Variable` table carries. Nothing in either JSON document mentions weather, and
+//! the export cannot say what `IsRaining()` reads because its body is an IL2CPP stub - but
+//! `ArcticSwimmerEasterEgg` watches `auto.is_snowing` for the same condition the dialogue
+//! guards ask about, which is what named them.
+//!
+//! WHETHER THE GAME AGREES is not checkable here. An offline world that answers the way
+//! this one does still has to be held against a running game, which is what the scene suite
+//! in `suites.json` is for.
+
+use lookahead_engine::bridge::WireValue;
+use lookahead_engine::service::Service;
+
+mod common;
+
+/// The queries that ask about the scene, as the engine renders their keys.
+const SCENE_QUERIES: [&str; 3] = ["IsExterior()", "IsRaining()", "IsSnowing()"];
+
+/// The conversation whose group asks all three.
+///
+/// Kim's own, which is also where this phase started: it was marked differently in the game
+/// and offline, and only one side's world had ever been written down.
+const ASKS_ALL_THREE: i32 = 29;
+
+/// The conversations whose guards name a scene query, found by reading the shipped index.
+///
+/// Written down because it is a fact about the GAME rather than about this build, and
+/// because it is what says the feature is worth having: six conversations, eighteen
+/// entries, nine complementary pairs. `tools/survey-scene-guards.py` prints them.
+const GUARDED_CONVERSATIONS: [i32; 6] = [29, 530, 625, 1065, 1124, 1458];
+
+/// A save the game left OUTDOORS, in Martinaise.
+const OUTDOORS: &str = "at-trashcan";
+
+/// And one it left indoors, on the Whirling's ground floor.
+const INDOORS: &str = "at-garte";
+
+#[test]
+fn the_engine_asks_about_the_scene_where_the_guards_do() {
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
+    let engine = Service::open(&path, None).expect("the index reads");
+
+    let questions = engine.questions(ASKS_ALL_THREE).expect("the group builds");
+
+    for query in SCENE_QUERIES {
+        assert!(
+            questions.queries.iter().any(|asked| asked == query),
+            "conversation {ASKS_ALL_THREE}'s group does not ask {query}; it asks {:?}",
+            questions.queries,
+        );
+    }
+}
+
+/// Every conversation whose guards name one still has it in its group's questions.
+///
+/// The list is the whole of what the shipped index holds, so this is what would notice a
+/// trim that dropped a scene guard on its way into the index the mod ships.
+#[test]
+fn every_conversation_that_guards_on_the_scene_asks_about_it() {
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
+    let engine = Service::open(&path, None).expect("the index reads");
+
+    for conversation in GUARDED_CONVERSATIONS {
+        let questions = engine
+            .questions(conversation)
+            .unwrap_or_else(|why| panic!("conversation {conversation}: {why:?}"));
+
+        assert!(
+            questions
+                .queries
+                .iter()
+                .any(|asked| SCENE_QUERIES.contains(&asked.as_str())),
+            "conversation {conversation}'s group asks about no part of the scene",
+        );
+    }
+}
+
+/// Two saves on opposite sides of one door answer `IsExterior` differently.
+///
+/// The offline world's half of the claim, read out of the committed saves themselves rather
+/// than declared here: one is in Martinaise and one is in the Whirling, and the table
+/// derived from the game says which of those the game calls outdoors.
+#[test]
+fn a_save_outdoors_and_a_save_indoors_answer_the_scene_differently() {
+    let outdoors = common::fixtures::holdings_in_save(OUTDOORS);
+    let indoors = common::fixtures::holdings_in_save(INDOORS);
+
+    assert!(
+        outdoors.scene.outside,
+        "{OUTDOORS} is in {}, which the game does not call outdoors",
+        outdoors.scene.area,
+    );
+    assert!(
+        !indoors.scene.outside,
+        "{INDOORS} is in {}, which the game calls outdoors",
+        indoors.scene.area,
+    );
+
+    // AND NEITHER IS IN THE RAIN, which is what makes the weather half of this untested by
+    // any committed save. Asserted rather than assumed, so a save that arrives wet is a
+    // failure here rather than a silently different world.
+    for holdings in [&outdoors, &indoors] {
+        assert!(
+            !holdings.scene.raining && !holdings.scene.snowing,
+            "{} is in weather, and no committed save was in any",
+            holdings.scene.area,
+        );
+    }
+}
+
+/// The offline world leaves none of the three unanswered, for any committed save.
+///
+/// THE POINT OF THE WHOLE TICKET, and the shortest statement of it. An unanswered query is
+/// not a missing line: it reads as unknown, unknown is permissive, and both halves of a
+/// complementary pair then open - so a crawl reaches a line the game would never draw.
+///
+/// Held over EVERY committed save rather than one, because the answer comes out of the save
+/// and a save that stopped recording its area would go unnoticed otherwise.
+#[test]
+fn no_committed_save_leaves_a_scene_query_unanswered() {
+    let Some(path) = common::conversation_index() else {
+        return;
+    };
+    let engine = Service::open(&path, None).expect("the index reads");
+    let asked = engine.questions(ASKS_ALL_THREE).expect("the group builds");
+
+    let scene: Vec<String> = asked
+        .queries
+        .iter()
+        .filter(|query| SCENE_QUERIES.contains(&query.as_str()))
+        .cloned()
+        .collect();
+    assert_eq!(
+        scene.len(),
+        SCENE_QUERIES.len(),
+        "conversation {ASKS_ALL_THREE} asks {scene:?}, and this needs all three",
+    );
+
+    for save in common::fixtures::committed_saves() {
+        let holdings = common::fixtures::holdings_in_save(&save);
+        let answers = holdings.answers_to(&scene);
+
+        let missing: Vec<&String> = scene
+            .iter()
+            .filter(|query| !answers.contains_key(*query))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "{save}, in {}, cannot answer {missing:?}",
+            holdings.scene.area,
+        );
+    }
+}
+
+/// And what it answers is a boolean, which is what a guard compares against.
+#[test]
+fn the_scene_is_answered_as_something_a_guard_can_compare() {
+    let holdings = common::fixtures::holdings_in_save(OUTDOORS);
+
+    let answers = holdings.answers_to(&SCENE_QUERIES.map(str::to_string));
+    let says = |query: &str| match answers.get(query) {
+        Some(WireValue::Bool { value }) => *value,
+        other => panic!("{query} is answered {other:?}, and a guard compares booleans"),
+    };
+
+    assert!(
+        says(SCENE_QUERIES[0]),
+        "{OUTDOORS} is in {}, which is outdoors",
+        holdings.scene.area,
+    );
+    assert!(
+        !says(SCENE_QUERIES[1]) && !says(SCENE_QUERIES[2]),
+        "{OUTDOORS} is in no weather",
+    );
+}

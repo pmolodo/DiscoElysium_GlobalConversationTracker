@@ -31,6 +31,30 @@ pub fn scenarios() -> PathBuf {
     repo_root().join("testing").join("scenarios")
 }
 
+/// Every committed scenario save, by the name a scenario names it with.
+///
+/// # Panics
+///
+/// If the scenarios folder will not read, or holds none.
+pub fn committed_saves() -> Vec<String> {
+    let mut found: Vec<String> = std::fs::read_dir(scenarios())
+        .unwrap_or_else(|why| panic!("{}: {why}", scenarios().display()))
+        .flatten()
+        .filter(|entry| entry.path().is_dir())
+        .filter_map(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .strip_suffix(".ntwtf")
+                .map(str::to_string)
+        })
+        .collect();
+
+    assert!(!found.is_empty(), "no committed saves were found");
+    found.sort();
+    found
+}
+
 /// Where the base every scenario save eventually rests on lives.
 ///
 /// Outside the scenarios folder, which is why a chain can walk out of it.
@@ -165,11 +189,11 @@ fn changes(document: &serde_json::Value) -> Option<&serde_json::Map<String, serd
 /// is a dialogue variable, and a world that answered one as though it were would be
 /// answering a question no guard asks.
 ///
-/// `_formatVersion` is here BEFORE ANY COMMITTED SAVE CARRIES ONE. The stamp was added
-/// while the shapes were unchanged, so the saves in this repository are unstamped and read
-/// as version 1; the first one regenerated will carry it, and a reader that learned about
-/// it only then would have been wrong in between with nothing to say so.
-const NOT_A_VARIABLE: [&str; 3] = ["_format", "_formatVersion", "_derived_simx"];
+/// `_base` says which file a diff is a diff of, and only a diff carries it - so it never
+/// reaches the loop below, which reads a diff's `_changes` rather than its top level. It is
+/// named anyway, because that is a fact about where it sits rather than a rule, and the
+/// reader should not depend on it.
+const NOT_A_VARIABLE: [&str; 4] = ["_format", "_formatVersion", "_base", "_derived_simx"];
 
 /// Every dialogue variable a save holds, with the bases it rests on merged in.
 ///
@@ -724,6 +748,82 @@ fn character_sheet(save: &str) -> serde_json::Value {
     world_state(save, "characterSheet")
 }
 
+/// What the scene queries ask about: where the player is standing, and the weather.
+///
+/// ## The three that are about the world rather than the character
+///
+/// `IsExterior`, `IsRaining` and `IsSnowing` are the only ones, and they are the reason
+/// this exists. Eighteen entries across six conversations guard on them, and EVERY ONE IS
+/// HALF OF A COMPLEMENTARY PAIR - one entry guarded by `IsExterior()` and the next by
+/// `(IsExterior()) == false`. So leaving one unanswered does not lose a line: unanswered
+/// reads as unknown, unknown is permissive, and a crawl then reaches BOTH halves, one of
+/// which the game would never draw.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Scene {
+    /// The area the save records, which is the key the outdoor table is read by.
+    pub area: String,
+    /// Whether the game calls that area outdoors.
+    pub outside: bool,
+    pub raining: bool,
+    pub snowing: bool,
+}
+
+/// The scenes the game calls outdoors, read off the table derived from its own asset.
+///
+/// TWO OF THIRTY-SEVEN, and the suffix on an area's name is not what decides it - see
+/// `tools/derive-scene-properties.py` for why the table is written down rather than
+/// inferred from the name it happens to agree with.
+fn outdoor_scenes() -> &'static HashSet<String> {
+    static OUTDOORS: OnceLock<HashSet<String>> = OnceLock::new();
+    OUTDOORS.get_or_init(|| {
+        let path = repo_root().join("testing").join("scenes.json");
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|why| panic!("{}: {why}", path.display()));
+        let document: serde_json::Value =
+            serde_json::from_str(&text).unwrap_or_else(|why| panic!("{}: {why}", path.display()));
+
+        document["outside"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{} names no outdoor scenes", path.display()))
+            .iter()
+            .filter_map(|scene| scene.as_str().map(str::to_string))
+            .collect()
+    })
+}
+
+/// Where a save leaves the player, and what the sky is doing there.
+///
+/// THE WEATHER IS A LUA VARIABLE, `auto.is_raining` and `auto.is_snowing`, and the save
+/// holds both. That is not obvious - nothing in the two JSON documents mentions weather -
+/// and it was found in `ArcticSwimmerEasterEgg`, which watches `auto.is_snowing` for the
+/// same condition the dialogue guards ask about.
+///
+/// # Panics
+///
+/// If the save records no area, or if its `Variable` table will not read.
+fn scene_in_save(save: &str) -> Scene {
+    /// Where the game keeps the rain, in the table it keeps every dialogue variable in.
+    const RAINING: &str = "auto.is_raining";
+
+    /// And the snow.
+    const SNOWING: &str = "auto.is_snowing";
+
+    let area = scene_state(save, "areaId")
+        .as_str()
+        .unwrap_or_else(|| panic!("{save} records no area to be in"))
+        .to_string();
+
+    let variables = variables_in_save(save);
+    let says = |name: &str| matches!(variables.get(name), Some(WireValue::Bool { value: true }));
+
+    Scene {
+        outside: outdoor_scenes().contains(&area),
+        area,
+        raining: says(RAINING),
+        snowing: says(SNOWING),
+    }
+}
+
 /// One member of a save's second document, with the bases it rests on merged in.
 ///
 /// WHERE EVERYTHING THE GAME ANSWERS FROM LIVES, and the reason an offline world was ever
@@ -740,9 +840,25 @@ fn world_state(save: &str, member_name: &str) -> serde_json::Value {
     /// The archive member the world state lives in, by the suffix the manifest names it with.
     const SECOND_BLOB: &str = ".2nd.ntwtf.json";
 
+    document_member(save, SECOND_BLOB, member_name)
+}
+
+/// One member of a save's FIRST document, which is where the area the player is in lives.
+///
+/// # Panics
+///
+/// If the chain carries no such member, for the reason [`world_state`] gives.
+fn scene_state(save: &str, member_name: &str) -> serde_json::Value {
+    /// The archive member the area lives in.
+    const FIRST_BLOB: &str = ".1st.ntwtf.json";
+
+    document_member(save, FIRST_BLOB, member_name)
+}
+
+fn document_member(save: &str, suffix: &str, member_name: &str) -> serde_json::Value {
     let mut document = serde_json::Value::Null;
     for folder in chain(save) {
-        let Some(member) = member(&folder, SECOND_BLOB) else {
+        let Some(member) = member(&folder, suffix) else {
             continue;
         };
 
@@ -805,6 +921,8 @@ pub struct Holdings {
     /// Minutes past midnight, and which day it is.
     pub day_minutes: i32,
     pub day_counter: i32,
+    /// Where the player is standing, and what the weather is doing there.
+    pub scene: Scene,
 }
 
 /// Minutes in an hour, for a clock the game answers to the hour.
@@ -867,6 +985,18 @@ impl Holdings {
                     Some(FIXED) | Some(COOKING)
                 ),
             }),
+            // THE THREE THAT ASK ABOUT THE SCENE. Each half of a complementary pair, so
+            // leaving one unanswered opens both halves rather than losing a line - see
+            // [`Scene`].
+            "IsExterior" => Some(WireValue::Bool {
+                value: self.scene.outside,
+            }),
+            "IsRaining" => Some(WireValue::Bool {
+                value: self.scene.raining,
+            }),
+            "IsSnowing" => Some(WireValue::Bool {
+                value: self.scene.snowing,
+            }),
             _ => None,
         }
     }
@@ -928,6 +1058,7 @@ pub fn holdings_in_save(save: &str) -> Holdings {
         day_minutes: whole(&clock["time"]["dayMinutes"], save, "the clock") / MINUTES_PER_HOUR
             * MINUTES_PER_HOUR,
         day_counter: whole(&clock["time"]["dayCounter"], save, "the day"),
+        scene: scene_in_save(save),
     }
 }
 
