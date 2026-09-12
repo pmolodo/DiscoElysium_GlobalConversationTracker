@@ -7,11 +7,17 @@ Disco Elysium - The Final Cut. The plugin's own notes live in
 ## TL;DR
 
 ```powershell
-.\deploy.ps1     # build + install into your Steam copy
-dotnet test      # compile every project, the plugin included, and run every test
+cargo build --release    # the engine host, and the state library the mod links
+.\deploy.ps1             # build + install into your Steam copy
+dotnet test              # compile every project, the plugin included, and run every test
 ```
 
 Then launch the game. That is the whole iterate loop: edit -> `.\deploy.ps1` -> relaunch.
+
+**The Rust build comes first, and is not optional.** `gct_state.dll` is the one reader and
+writer of the mod's own state file - there is no C# copy of that format - so a `dotnet
+build` without it stops and says which cargo command to run. The engine host beside it is
+different: a plugin without one logs the look-ahead as unavailable and plays on.
 
 `dotnet test` alone is enough as the end-of-change check. It builds only the test projects
 and what they reference, and no test references the plugin - none can meaningfully test it,

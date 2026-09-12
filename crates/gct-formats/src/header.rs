@@ -61,10 +61,16 @@ pub enum HeaderFault {
 impl fmt::Display for HeaderFault {
     fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            // THE CONVERTER IS NAMED HERE and not on `Mismatched`, and the difference is
+            // whether it is the remedy. A document that says NOTHING about itself is an
+            // older one - saying so is what every current format added - and the converter
+            // brings it forward. One that says it is something ELSE is a different file,
+            // and converting it would produce a newer version of that different file.
             Self::Unnamed { wanted } => write!(
                 out,
                 "it does not say what format it is written in, and a {FORMAT_KEY} of \
-                 '{wanted}' is what this reads",
+                 '{wanted}' is what this reads. A file written before formats named \
+                 themselves looks like this; convert it first:\n  {CONVERTER}",
             ),
             Self::Mismatched { wanted, found } => {
                 write!(out, "it is a '{found}' document, and this reads '{wanted}'")

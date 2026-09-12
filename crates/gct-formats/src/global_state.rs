@@ -32,24 +32,17 @@
 //! and no indentation - so two equal states produce identical files and a state that did
 //! not change produces no diff.
 //!
-//! ## THE ONE FORMAT HERE THAT IS ALSO READ IN C#, and why
+//! ## THE ONE FORMAT HERE THE GAME LINKS RATHER THAN SPAWNS
 //!
-//! Every other format in [`super`] moved out of C# so that one fact would not be stated
-//! twice. This one did not, and the reason is what the file is: the mod's own writer runs
-//! INSIDE THE GAME, and the mod is built so that an engine which will not start costs a
-//! capability rather than a playthrough - the look-ahead is a setting a player can switch
-//! off, and switching it off never stops the tracking. Putting the only writer of the one
-//! irreplaceable file behind a process that is allowed to be absent, and that has a respawn
-//! budget it can run out of, would turn a dead engine into a lost session.
+//! Every other format in [`super`] is reached from C# by running the engine host, which
+//! suits a tool: a tool that cannot start a process has failed at something it can report.
+//! This one is read and written from inside a running game, whose mod promises that an
+//! engine failing to start costs a capability rather than a playthrough - the look-ahead is
+//! a setting a player can switch off, and switching it off never stops the tracking. So the
+//! game reaches THIS code, not a copy of it, through a small library built over this crate:
+//! `crates/gct-state-ffi`, and `GlobalStateNative` on the other side.
 //!
-//! So the mod keeps `GlobalStateJson`, and what removes the drift is a pair of tests rather
-//! than a single implementation: `tests/committed_states.rs` here and
-//! `tools/GameAutomation.Tests/CommittedStateFixtureTests.cs` there, each reading every
-//! committed state fixture and writing it back byte for byte. Neither side can change what
-//! it writes without one of the two failing.
-//!
-//! What this one is for is every reader that is NOT the game: the offline fixtures, the
-//! tools, and anything the host grows a verb for.
+//! There is no second implementation to drift from. What the mod holds is the marshalling.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -258,6 +251,17 @@ pub fn read(text: &str, context: &str) -> Result<Loaded, StateFault> {
 ///
 /// As [`read`], but for the parse.
 pub fn read_document(document: &serde_json::Value, context: &str) -> Result<Loaded, StateFault> {
+    // BEFORE THE HEADER, because a document that is not an object cannot have one. It is
+    // DAMAGE rather than a document of another kind - a list or a bare string is not a file
+    // anything here ever wrote - and the difference decides whether a caller may overwrite
+    // it.
+    if !document.is_object() {
+        return Err(StateFault::Unreadable(
+            context.to_string(),
+            "it is not a JSON object".to_string(),
+        ));
+    }
+
     // BEFORE ANYTHING IS READ OFF IT, and this one matters more than most: the shapes in
     // this repository are all objects of objects, so a document of another kind read as a
     // state parses and yields whatever happened to line up - which here would be an empty

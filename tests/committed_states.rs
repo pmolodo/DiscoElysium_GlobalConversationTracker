@@ -3,23 +3,16 @@
 //!
 //! ## Why writing it back is the interesting half
 //!
-//! Every one of these was written by the C# writer that has kept this format so far. So
-//! reading one and writing it out again, and comparing the BYTES, holds the Rust writer to
-//! the C# one over real files - the status order, the conversation order, the run encoding,
-//! the orb sort and the absence of whitespace, all at once and without either side having
-//! to describe itself to the other.
+//! These files are what a player's own state file looks like, and the mod overwrites that
+//! file every time it saves. So reading one and writing it out again, and comparing the
+//! BYTES, pins everything the format decides at once: the status order, the conversation
+//! order, the run encoding, the orb sort and the absence of whitespace. A change to any of
+//! them would rewrite every player's file on the next save, and this is what makes that a
+//! decision somebody took rather than something that happened.
 //!
 //! A state written as a CHANGE to another one cannot be compared that way, because what it
 //! resolves to was never a file. Those are read, and what they resolve to is written and
 //! read back, which is the same property one step removed.
-//!
-//! ## Its other half, which is not in this language
-//!
-//! `tools/GameAutomation.Tests/CommittedStateFixtureTests.cs` does the same thing with the
-//! mod's own reader and writer. THIS FORMAT IS READ BY TWO PROGRAMS ON PURPOSE - see
-//! [`lookahead_engine::formats::global_state`] for why - and the pair of tests is what
-//! stops them drifting: neither can change what it writes without one of the two failing,
-//! and a fixture cannot be updated to suit one of them without the other saying so.
 //!
 //! ## What a committed fixture is for
 //!

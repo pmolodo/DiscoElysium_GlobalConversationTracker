@@ -43,6 +43,39 @@
       Include="..\GlobalConversationTracker.Core\GlobalConversationTracker.Core.csproj" />
   </ItemGroup>
 
+  <!--
+    The state file's one reader and writer, which is native.
+
+    NOT OPTIONAL, unlike the engine host beside the plugin. That one is conditional on
+    having been built, because a bridge that is not there costs a capability: the plugin
+    logs it as unavailable and the game plays on. This is different in kind - it is how the
+    mod reads and writes its own state, so a build without it is a build of a mod that
+    cannot track anything. A missing library is therefore a build error naming the command,
+    not a quiet omission discovered at runtime.
+
+    Carried as content so it travels to everything that references this: the plugin, the
+    tools and the tests all need it beside them.
+  -->
+  <PropertyGroup>
+    <StateLibraryName>gct_state.dll</StateLibraryName>
+    <StateLibraryRelease>$(MSBuildThisFileDirectory)..\..\target\release\$(StateLibraryName)</StateLibraryRelease>
+    <StateLibraryDebug>$(MSBuildThisFileDirectory)..\..\target\debug\$(StateLibraryName)</StateLibraryDebug>
+    <StateLibrary Condition="Exists('$(StateLibraryRelease)')">$(StateLibraryRelease)</StateLibrary>
+    <StateLibrary
+      Condition="'$(StateLibrary)' == '' And Exists('$(StateLibraryDebug)')">$(StateLibraryDebug)</StateLibrary>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(StateLibrary)' != ''">
+    <None Include="$(StateLibrary)" Link="$(StateLibraryName)">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <Target Name="RequireStateLibrary" BeforeTargets="Build" Condition="'$(StateLibrary)' == ''">
+    <Error
+      Text="The state library is not built, and it is what reads and writes the mod's own state file. Build it first:%0A  cargo build --release -p gct_state" />
+  </Target>
+
   <ItemGroup>
     <!--
       The crash-point test seams (GlobalStateStore.SaveStepHook and

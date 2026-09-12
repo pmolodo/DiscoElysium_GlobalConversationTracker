@@ -13,9 +13,37 @@ namespace GlobalConversationTracker.Persistence.Tests
     /// Format-level tests: the exact bytes written, and every way a file can be
     /// wrong.
     /// </summary>
+    /// <remarks>
+    /// The format itself is native - see <c>GlobalStateNative</c> - so what these exercise
+    /// is the library and the marshalling together, which is the pair a caller actually
+    /// gets. There is no C# reader left for them to be testing instead.
+    /// </remarks>
     public class GlobalStateJsonTests
     {
         private const string TestSource = "test";
+
+        /// <remarks>
+        /// A STATUS CROSSES AS A NUMBER, and the two sides number them the same way. That
+        /// is checked rather than assumed: a silent disagreement would not fail anything
+        /// loudly, it would rewrite every status in every file the next time one was saved.
+        /// </remarks>
+        [Theory]
+        [InlineData(SimStatus.Untouched, 0)]
+        [InlineData(SimStatus.WasOffered, 1)]
+        [InlineData(SimStatus.WasDisplayed, 2)]
+        public void AStatusIsTheSameNumberOnBothSidesOfTheBoundary(SimStatus status, int crossing)
+        {
+            Assert.Equal(crossing, (int)status);
+
+            // And the one that matters end to end: written out and read back, a status is
+            // the status it was.
+            GlobalConversationState state = StateWith((3, 7, status));
+            GlobalStateLoadResult read = Parse(GlobalStateJson.Serialize(state));
+
+            Assert.Equal(GlobalStateLoadOutcome.Loaded, read.Outcome);
+            read.RequireState().TryGetStatus(3, 7, out SimStatus back);
+            Assert.Equal(status == SimStatus.Untouched ? SimStatus.Untouched : status, back);
+        }
 
         private static GlobalConversationState StateWith(params (int Conversation, int Entry, SimStatus Status)[] rows)
         {
@@ -242,9 +270,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         [InlineData("{\"conversations\":{}}")]
         [InlineData("{\"version\":4}")]
         [InlineData("{\"version\":4,\"conversations\":{}}")]
-        [InlineData("{\"_format\":\"json-diff\",\"_formatVersion\":1,\"conversations\":{}}")]
-        public void Deserialize_FileThatDoesNotNameThisFormat_IsUnsupportedRatherThanCorrupt(
-            string json)
+        public void Deserialize_FileThatSaysNothingAboutItself_NamesTheConverter(string json)
         {
             GlobalStateLoadResult result = Parse(json);
 
@@ -252,6 +278,23 @@ namespace GlobalConversationTracker.Persistence.Tests
             Assert.Null(result.State);
             Assert.Contains(
                 FormatStamp.Converter, result.ErrorMessage!, StringComparison.Ordinal);
+        }
+
+        /// <remarks>
+        /// ALSO UNSUPPORTED AND NOT CORRUPT, for the same reason, but the message does not
+        /// offer the converter: this file is not an older state, it is a different document
+        /// altogether, and converting it would produce a newer version of that. What helps
+        /// here is being told what the file actually says it is.
+        /// </remarks>
+        [Fact]
+        public void Deserialize_FileThatNamesAnotherFormat_SaysWhichOne()
+        {
+            GlobalStateLoadResult result = Parse(
+                "{\"_format\":\"json-diff\",\"_formatVersion\":1,\"conversations\":{}}");
+
+            Assert.Equal(GlobalStateLoadOutcome.UnsupportedVersion, result.Outcome);
+            Assert.Null(result.State);
+            Assert.Contains("json-diff", result.ErrorMessage!, StringComparison.Ordinal);
         }
 
         [Fact]

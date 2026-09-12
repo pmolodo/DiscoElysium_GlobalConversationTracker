@@ -1,0 +1,25 @@
+[package]
+name = "gct_state"
+version = "0.1.0"
+edition = "2024"
+
+# THE ONE PIECE OF THIS REPOSITORY THE GAME LINKS RATHER THAN TALKS TO. Every other format
+# C# needs it reaches by running the engine host, because a tool that cannot start a process
+# has failed at something it can report. The mod's own state file is different: it is the
+# only copy of cross-save history, it is read and written from inside a running game, and
+# the mod promises that an engine which will not start costs a capability and not a
+# playthrough. A library that is simply there has no absent process to answer for.
+#
+# SMALL IS THE WHOLE POINT, which is why this is over gct_formats rather than over the
+# engine: nothing here mentions the search, so nothing links it.
+[lib]
+name = "gct_state"
+
+# THE RLIB IS FOR THE TESTS, and costs the library nothing: what C# loads is the cdylib, and
+# the same functions have to be callable from a test that can check what they do with a null
+# handle, a length list that does not add up, and a document of the wrong kind. A test that
+# could only reach them through the DLL would be a test that needs a loader.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+gct_formats = { path = "../gct-formats" }
