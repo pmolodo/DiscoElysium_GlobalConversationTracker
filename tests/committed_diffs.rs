@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-//! Can Rust read every sparse diff this repository has committed?
+//! Can Rust read every diff this repository has committed?
 //!
 //! ## Why this is the bar, and byte-for-byte with the C# writer is not
 //!
@@ -24,6 +24,7 @@ use std::path::{Path, PathBuf};
 
 use lookahead_engine::formats::sparse;
 use lookahead_engine::formats::sparse_diff;
+use lookahead_engine::formats::text_diff;
 
 mod common;
 
@@ -146,5 +147,61 @@ fn how_many_committed_diffs_this_writer_would_respell() {
     );
     for name in &differing {
         println!("  {name}");
+    }
+}
+
+/// Every `*.diff` under the scenarios, which is where the text members' diffs live.
+fn committed_text_diffs() -> Vec<PathBuf> {
+    let scenarios = common::repo_root().join("testing").join("scenarios");
+    let mut found = Vec::new();
+    collect_diffs(&scenarios, &mut found);
+    found.sort();
+    found
+}
+
+fn collect_diffs(directory: &Path, found: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(directory) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_diffs(&path, found);
+        } else if path.extension().is_some_and(|kind| kind == "diff") {
+            found.push(path);
+        }
+    }
+}
+
+/// Both committed text diffs are in a shape this build can read.
+///
+/// NOT APPLIED TO THE REAL THING, because the text a diff was taken against is inside a
+/// packed save and getting it means resolving the base chain - which is de-xz48.6.2's
+/// subject. What this catches is the one failure that would otherwise wait until then: a
+/// diff whose SHAPE the reader has no case for.
+///
+/// Applying each against an empty baseline is how that is told apart. A diff that parsed
+/// and then found nothing where its context should be reports a mismatch; one that never
+/// parsed reports a malformed document. The first is expected and the second is the
+/// failure.
+#[test]
+fn every_committed_text_diff_is_in_a_shape_this_build_reads() {
+    let diffs = committed_text_diffs();
+    assert_eq!(
+        diffs.len(),
+        2,
+        "this repository carries two text-member diffs; found {}",
+        diffs.len(),
+    );
+
+    for path in &diffs {
+        let name = name_of(path);
+        let patch = fs::read_to_string(path).unwrap_or_else(|why| panic!("{name}: {why}"));
+
+        match text_diff::apply("", &patch, &name) {
+            Err(text_diff::TextDiffFault::Mismatch(_, _)) | Ok(_) => {}
+            Err(malformed) => panic!("{malformed}"),
+        }
     }
 }

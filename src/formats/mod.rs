@@ -19,3 +19,4 @@ pub mod json_diff;
 pub mod resolve;
 pub mod sparse;
 pub mod sparse_diff;
+pub mod text_diff;
