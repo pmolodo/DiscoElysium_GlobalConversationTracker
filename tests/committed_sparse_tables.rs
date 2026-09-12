@@ -29,7 +29,8 @@ use std::path::{Path, PathBuf};
 
 use lookahead_engine::formats::expanded_save;
 use lookahead_engine::formats::lua_blob::TABLE_NAMES;
-use lookahead_engine::formats::lua_sparse::{self, LuaSparseFault};
+use lookahead_engine::formats::lua_simx::{self, Derivation, Orders};
+use lookahead_engine::formats::lua_sparse::{self, CONVERSATION_TABLE, LuaSparseFault};
 use lookahead_engine::formats::sparse::{self, SparseMap, SparseValue};
 use lookahead_engine::formats::sparse_diff;
 
@@ -59,10 +60,11 @@ const REWRITTEN: [&str; 3] = [
 
 /// The table that leaves its derived variables out.
 ///
-/// The template's carries a `_derived_simx` header, so every scenario built on it inherits
-/// one, and rebuilding what it names is de-xz48.6.3.2.2. Until that lands these are REFUSED
-/// rather than half-read: reading one and ignoring the header produces a Variable table
-/// missing the variables it names, which is a save that loads and is wrong.
+/// The template's carries a `_derived_simx` header and every scenario built on it inherits
+/// one, so this is where the rebuild is held to the real thing: the variables come back,
+/// the table is written out again, and the header it produces is compared with the one the
+/// file carries. A checkout without the id map beside it cannot do that and REFUSES these
+/// tables instead of reading them short.
 const DERIVED: &str = "Variable";
 
 /// Every expanded save under `testing`, the template included.
@@ -216,6 +218,13 @@ fn without_header(tree: &SparseMap) -> SparseMap {
     stripped
 }
 
+/// The id map, which is not committed. Nothing to read means the Variable tables cannot be.
+fn orders() -> Option<Orders> {
+    let path = common::repo_root().join(lua_simx::ORDERS_FILE_NAME);
+    let text = fs::read_to_string(&path).ok()?;
+    Some(Orders::read(&text).unwrap_or_else(|why| panic!("{}: {why}", path.display())))
+}
+
 #[test]
 fn every_committed_table_decodes_and_comes_back_as_the_same_table() {
     let saves = saves();
@@ -225,28 +234,60 @@ fn every_committed_table_decodes_and_comes_back_as_the_same_table() {
         saves.len(),
     );
 
+    let orders = orders();
+    if orders.is_none() {
+        println!(
+            "no {} beside the repository, so the {DERIVED} tables are checked only for \
+             being refused",
+            lua_simx::ORDERS_FILE_NAME,
+        );
+    }
+
     let mut checked = 0;
-    let mut derived = Vec::new();
+    let mut refused = Vec::new();
     let mut rewritten = Vec::new();
     for save in &saves {
-        for (name, tree) in tables_of(save) {
-            let table = match lua_sparse::decode(&SparseValue::Map(tree.clone()), name) {
+        let trees = tables_of(save);
+
+        // THE CONVERSATION TABLE FIRST, because the Variable table leaves out the variables
+        // that only repeat it and cannot be read without it.
+        let conversations = lua_sparse::decode(
+            &SparseValue::Map(trees[CONVERSATION_TABLE].clone()),
+            CONVERSATION_TABLE,
+            None,
+        )
+        .unwrap_or_else(|why| panic!("{}/{CONVERSATION_TABLE}: {why}", name_of(save)));
+        let derivation = orders.as_ref().map(|orders| Derivation {
+            conversations: &conversations,
+            orders,
+        });
+
+        for (name, tree) in &trees {
+            let table = match lua_sparse::decode(
+                &SparseValue::Map(tree.clone()),
+                name,
+                derivation.as_ref(),
+            ) {
                 Ok(table) => table,
-                Err(LuaSparseFault::NeedsSimX { .. }) => {
-                    assert_eq!(name, DERIVED, "{} refused its {name} table", name_of(save));
-                    derived.push(name_of(save));
+                Err(LuaSparseFault::NeedsDerivation { .. }) => {
+                    assert_eq!(*name, DERIVED, "{} refused its {name} table", name_of(save));
+                    refused.push(name_of(save));
                     continue;
                 }
                 Err(why) => panic!("{}/{name}: {why}", name_of(save)),
             };
 
-            let written = lua_sparse::encode(&table, name)
+            let written = lua_sparse::encode(&table, name, derivation.as_ref())
                 .unwrap_or_else(|why| panic!("{}/{name}: {why}", name_of(save)));
-            let back = lua_sparse::decode(&SparseValue::Map(written.clone()), name)
-                .unwrap_or_else(|why| panic!("{}/{name}, written back: {why}", name_of(save)));
+            let back = lua_sparse::decode(
+                &SparseValue::Map(written.clone()),
+                name,
+                derivation.as_ref(),
+            )
+            .unwrap_or_else(|why| panic!("{}/{name}, written back: {why}", name_of(save)));
 
             assert_eq!(back, table, "{}/{name} did not survive", name_of(save));
-            if let Some(how) = first_difference(&written, &without_header(&tree), name) {
+            if let Some(how) = first_difference(&written, &without_header(tree), name) {
                 rewritten.push((name_of(save), how));
             }
             checked += 1;
@@ -255,9 +296,9 @@ fn every_committed_table_decodes_and_comes_back_as_the_same_table() {
 
     assert!(checked > 0, "no tables were read");
     assert_eq!(
-        derived.len(),
-        saves.len(),
-        "every save inherits the template's {DERIVED} header, and these did not: {derived:?}",
+        refused.len(),
+        if orders.is_some() { 0 } else { saves.len() },
+        "the {DERIVED} tables that could not be read: {refused:?}",
     );
     let rewritten_saves: Vec<&str> = rewritten.iter().map(|(save, _)| save.as_str()).collect();
     assert_eq!(

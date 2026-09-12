@@ -73,6 +73,32 @@ pub struct LuaTable {
     pub dict: Vec<(LuaValue, LuaValue)>,
 }
 
+impl LuaTable {
+    /// The value under a Lua key, LOOKING IN BOTH HALVES.
+    ///
+    /// The list part's keys are its own 1-based indices and are not stored, so a caller
+    /// asking for key 3 must not have to know which half the table happened to keep it in -
+    /// that split is the blob's business and nothing else's.
+    ///
+    /// The dictionary half is scanned in order, because it is a table in file order rather
+    /// than a map. A save's tables are small enough for that, or are keyed by indices that
+    /// land in the list half.
+    #[must_use]
+    pub fn get(&self, key: &LuaValue) -> Option<&LuaValue> {
+        if let LuaValue::Int(whole) = key
+            && let Ok(at) = usize::try_from(*whole)
+            && (1..=self.list.len()).contains(&at)
+        {
+            return self.list.get(at - 1);
+        }
+
+        self.dict
+            .iter()
+            .find(|(held, _)| held == key)
+            .map(|(_, value)| value)
+    }
+}
+
 /// A whole blob: the five tables, and whatever followed them.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Blob {

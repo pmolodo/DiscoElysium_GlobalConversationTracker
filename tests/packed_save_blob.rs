@@ -33,8 +33,9 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use lookahead_engine::formats::lua_blob::{self, LuaTable, LuaValue};
+use lookahead_engine::formats::lua_simx::{self, Derivation, Orders};
 use lookahead_engine::formats::lua_sparse;
-use lookahead_engine::formats::sparse::SparseValue;
+use lookahead_engine::formats::sparse::{self, SparseValue};
 
 mod common;
 
@@ -211,9 +212,9 @@ fn a_blob_the_game_wrote_keeps_every_entry_through_the_sparse_form() {
                 panic!("{name}: {table_name} is {value}, not a table");
             };
 
-            let written = lua_sparse::encode(table, table_name)
+            let written = lua_sparse::encode(table, table_name, None)
                 .unwrap_or_else(|why| panic!("{name}/{table_name}: {why}"));
-            let back = lua_sparse::decode(&SparseValue::Map(written), table_name)
+            let back = lua_sparse::decode(&SparseValue::Map(written), table_name, None)
                 .unwrap_or_else(|why| panic!("{name}/{table_name}, read back: {why}"));
 
             let mut was = BTreeMap::new();
@@ -228,6 +229,135 @@ fn a_blob_the_game_wrote_keeps_every_entry_through_the_sparse_form() {
         }
 
         println!("{name}: {entries} entries through the sparse form and back");
+        checked += 1;
+    }
+
+    assert!(
+        checked > 0,
+        "found {} packed save(s) and no Lua blob in any of them",
+        packed.len(),
+    );
+}
+
+/// The id map, which this repository does not commit.
+fn orders() -> Option<Orders> {
+    let path = common::repo_root().join(lua_simx::ORDERS_FILE_NAME);
+    let text = fs::read_to_string(&path).ok()?;
+    Some(Orders::read(&text).unwrap_or_else(|why| panic!("{}: {why}", path.display())))
+}
+
+/// One table of a blob, by the name the five are known by.
+fn table_of<'a>(blob: &'a lua_blob::Blob, name: &str) -> &'a LuaTable {
+    let at = lua_blob::TABLE_NAMES
+        .iter()
+        .position(|held| *held == name)
+        .expect("one of the five");
+    match &blob.tables[at] {
+        LuaValue::Table(table) => table,
+        other => panic!("{name} is {other}, not a table"),
+    }
+}
+
+/// A `Conversation_SimX_*` string as the set of pairs it means, which is all it says.
+fn pairs_of(text: &str) -> Vec<(String, String)> {
+    let fields: Vec<&str> = text.split(';').collect();
+    let mut pairs: Vec<(String, String)> = fields
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| (pair[0].to_string(), pair[1].to_string()))
+        .collect();
+    pairs.sort();
+    pairs
+}
+
+/// Does a real save's `Variable` table come back whole once its derived variables are left
+/// out and rebuilt?
+///
+/// WHAT COMES BACK IS NOT THE SAME STRING and is not meant to be: a rebuilt one lists its
+/// pairs in one fixed order, where a save writes them in the game's own Lua table order.
+/// What has to hold is that it says the same thing - the same pairs, under the same name,
+/// at the same place in the table - which is what is checked here.
+#[test]
+fn a_real_saves_derived_variables_are_left_out_and_say_the_same_thing_when_rebuilt() {
+    let packed = packed_saves();
+    if packed.is_empty() {
+        println!(
+            "no packed saves under .build/automation, so there is no blob to read; \
+             run the in-game suite to make some"
+        );
+        return;
+    }
+
+    let Some(orders) = orders() else {
+        println!(
+            "no {} beside the repository, so nothing can be rebuilt from it",
+            lua_simx::ORDERS_FILE_NAME,
+        );
+        return;
+    };
+
+    let mut checked = 0;
+    for path in packed.iter().take(ENOUGH) {
+        let Some((name, bytes)) = blob_in(path) else {
+            continue;
+        };
+
+        let blob = lua_blob::read(&bytes).unwrap_or_else(|why| panic!("{name}: {why}"));
+        let conversations = table_of(&blob, lua_sparse::CONVERSATION_TABLE);
+        let variables = table_of(&blob, lua_sparse::VARIABLE_TABLE);
+        let derivation = Derivation {
+            conversations,
+            orders: &orders,
+        };
+
+        let whole = lua_sparse::encode(variables, lua_sparse::VARIABLE_TABLE, None)
+            .unwrap_or_else(|why| panic!("{name}: {why}"));
+        let written = lua_sparse::encode(variables, lua_sparse::VARIABLE_TABLE, Some(&derivation))
+            .unwrap_or_else(|why| panic!("{name}: {why}"));
+        let left_out = whole.len() - (written.len() - 1);
+        assert!(
+            left_out > 0,
+            "{name}: nothing was left out of {} entries",
+            whole.len(),
+        );
+
+        let back = lua_sparse::decode(
+            &SparseValue::Map(written.clone()),
+            lua_sparse::VARIABLE_TABLE,
+            Some(&derivation),
+        )
+        .unwrap_or_else(|why| panic!("{name}, read back: {why}"));
+
+        assert_eq!(
+            back.dict.len(),
+            variables.dict.len(),
+            "{name}: the table came back a different length",
+        );
+        for (at, ((was_key, was), (key, held))) in variables.dict.iter().zip(&back.dict).enumerate()
+        {
+            assert_eq!(
+                key, was_key,
+                "{name}: entry {at} came back under another name"
+            );
+            match (was, held) {
+                (LuaValue::Text(was), LuaValue::Text(held)) if was != held => {
+                    assert_eq!(
+                        pairs_of(held),
+                        pairs_of(was),
+                        "{name}: {key} came back saying something else",
+                    );
+                }
+                _ => assert_eq!(held, was, "{name}: {key} came back as something else"),
+            }
+        }
+
+        println!(
+            "{name}: {left_out} of {} variables left out, {} bytes down to {}",
+            whole.len(),
+            sparse::write(&whole).len(),
+            sparse::write(&written).len(),
+        );
         checked += 1;
     }
 

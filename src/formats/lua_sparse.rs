@@ -20,21 +20,24 @@
 //! says which keys it stands for in `_keys` and then names one key list per distinct value,
 //! leaving out the value the great majority of its children carry.
 //!
-//! ## The SimX derivation is REFUSED, not skipped
+//! ## The `Variable` table is the one that needs something beside it
 //!
-//! A `Variable` table may leave out the variables that merely repeat the `Conversation`
-//! table and name what it left out in a `_derived_simx` header. Rebuilding those is
-//! de-xz48.6.3.2.2 and is not here yet, so a document carrying that header is turned away.
-//! Reading it and ignoring the header would produce a Variable table missing the variables
-//! it names, which is a save that loads and is wrong.
+//! It leaves out the variables that merely repeat the `Conversation` table and names what
+//! it left out in a `_derived_simx` header - see [`super::lua_simx`]. So both directions
+//! take an optional [`Derivation`], and a table carrying that header is REFUSED without
+//! one: reading it and ignoring the header would produce a Variable table missing the
+//! variables it names, which is a save that loads and is wrong.
 
 use std::collections::{HashMap, HashSet};
 
 use super::header::{self, Expected};
 use super::lua_blob::{self, LuaTable, LuaValue};
 use super::lua_manifest::{self, Grouping, KeyType};
+use super::lua_simx::{self, SimXFault};
 use super::runs::{self, RunFault};
 use super::sparse::{SparseMap, SparseValue};
+
+pub use super::lua_simx::Derivation;
 
 /// What a sparse table document is called, and the version of it this build writes.
 pub const FORMAT: Expected = Expected {
@@ -51,9 +54,6 @@ pub const KEYS_KEY: &str = "_keys";
 /// it, so a hand-written file can pin the split where it has a reason to.
 pub const LIST_COUNT_KEY: &str = "_num_list_entries";
 
-/// Where a `Variable` table names the variables it left out. See the module note.
-pub const DERIVED_SIMX_KEY: &str = "_derived_simx";
-
 /// A name for a table's entry order that nothing writes.
 ///
 /// Refused rather than ignored, so a file that recorded an order fails loudly instead of
@@ -64,7 +64,7 @@ const RETIRED_REORDER_KEY: &str = "_reorder";
 pub const VARIABLE_TABLE: &str = "Variable";
 
 /// The table those variables mirror.
-pub const CONVERSATION_TABLE: &str = "Conversation";
+pub const CONVERSATION_TABLE: &str = lua_simx::CONVERSATION_TABLE;
 
 /// Property names this format uses for itself rather than for a Lua key.
 ///
@@ -75,7 +75,7 @@ pub const CONVERSATION_TABLE: &str = "Conversation";
 const BOOKKEEPING: [&str; 6] = [
     KEYS_KEY,
     LIST_COUNT_KEY,
-    DERIVED_SIMX_KEY,
+    lua_simx::HEADER_KEY,
     RETIRED_REORDER_KEY,
     header::FORMAT_KEY,
     header::VERSION_KEY,
@@ -140,12 +140,21 @@ pub enum LuaSparseFault {
     /// A grouped table gives a value to a key it does not claim.
     #[error("{path} groups key {key}, which {KEYS_KEY} omits")]
     Ungrouped { path: String, key: i64 },
-    /// It leaves out variables that only the Conversation table can rebuild.
+    /// It leaves out variables that only the Conversation table can rebuild, and it was
+    /// read without that table beside it.
     #[error(
-        "{path} carries a {DERIVED_SIMX_KEY} header, and rebuilding what it names is not \
-         implemented (de-xz48.6.3.2.2)"
+        "{path} leaves out the variables its {header} header names, and the \
+         {conversation} table it would rebuild them from was not supplied",
+        header = lua_simx::HEADER_KEY,
+        conversation = CONVERSATION_TABLE,
     )]
-    NeedsSimX { path: String },
+    NeedsDerivation { path: String },
+    /// Its header is not an object, so it names nothing.
+    #[error("{path}.{header} must be a JSON object", header = lua_simx::HEADER_KEY)]
+    HeaderNotAnObject { path: String },
+    /// The derived variables could not be left out or put back.
+    #[error("{0}")]
+    SimX(#[from] SimXFault),
 }
 
 /// Turns one table into its sparse tree.
@@ -153,10 +162,28 @@ pub enum LuaSparseFault {
 /// `path` names the table, as `Conversation/631/Dialog` - it is what the manifests match
 /// against and what a fault quotes.
 ///
+/// `derivation` is what the `Variable` table's derived variables would be rebuilt from, and
+/// only that table uses it. Without one, every variable is written out in full, which is a
+/// correct save and a larger one.
+///
 /// # Errors
 ///
 /// Where a table holds a key that has no spelling as a JSON property name.
-pub fn encode(table: &LuaTable, path: &str) -> Result<SparseMap, LuaSparseFault> {
+pub fn encode(
+    table: &LuaTable,
+    path: &str,
+    derivation: Option<&Derivation<'_>>,
+) -> Result<SparseMap, LuaSparseFault> {
+    if path == VARIABLE_TABLE
+        && let Some(derivation) = derivation
+    {
+        return encode_variables(table, derivation);
+    }
+
+    encode_table(table, path)
+}
+
+fn encode_table(table: &LuaTable, path: &str) -> Result<SparseMap, LuaSparseFault> {
     if let Some(grouping) = lua_manifest::grouping_for(path)
         && let Some(grouped) = try_encode_grouped(table, grouping)
     {
@@ -166,20 +193,61 @@ pub fn encode(table: &LuaTable, path: &str) -> Result<SparseMap, LuaSparseFault>
     encode_dense(table, path)
 }
 
+/// The `Variable` table, without the variables that only repeat the `Conversation` table.
+///
+/// What was left out is named by a leading header, so the reader can put it back where it
+/// was. A table with nothing derivable in it is written out whole rather than carrying an
+/// empty promise.
+fn encode_variables(
+    table: &LuaTable,
+    derivation: &Derivation<'_>,
+) -> Result<SparseMap, LuaSparseFault> {
+    let derived = lua_simx::derivable(table, derivation);
+    if derived.is_empty() {
+        return encode_table(table, VARIABLE_TABLE);
+    }
+
+    let mut map = SparseMap::new();
+    map.add(
+        lua_simx::HEADER_KEY,
+        SparseValue::Map(lua_simx::header(&derived)),
+    );
+    for (at, (name, value)) in named_entries(table, VARIABLE_TABLE)?
+        .into_iter()
+        .enumerate()
+    {
+        if derived.contains_key(&at) {
+            continue;
+        }
+
+        let encoded = encode_value(value, VARIABLE_TABLE, &name)?;
+        map.add(name, encoded);
+    }
+
+    Ok(map)
+}
+
 /// Turns a sparse tree back into the table it came from.
+///
+/// `derivation` is as for [`encode`], and a tree that leaves variables out is REFUSED
+/// without one rather than read short.
 ///
 /// # Errors
 ///
 /// Where the document is not an object, where it names an entry after this format's own
 /// bookkeeping, where a key is not of the type the table's keys are or is spelled a way
 /// this would not write it, where a grouped table's ranges disagree with each other, or
-/// where it leaves out variables that only the Conversation table can rebuild.
-pub fn decode(node: &SparseValue, path: &str) -> Result<LuaTable, LuaSparseFault> {
+/// where it leaves out variables and nothing was supplied to rebuild them from.
+pub fn decode(
+    node: &SparseValue,
+    path: &str,
+    derivation: Option<&Derivation<'_>>,
+) -> Result<LuaTable, LuaSparseFault> {
     let SparseValue::Map(map) = node else {
         return Err(LuaSparseFault::NotAnObject(path.to_string()));
     };
 
-    decode_map(map, path)
+    decode_map(map, path, derivation)
 }
 
 /// Every entry of a table, keyed the way the sparse form names it.
@@ -222,7 +290,7 @@ fn encode_value(value: &LuaValue, path: &str, name: &str) -> Result<SparseValue,
         LuaValue::Int(whole) => SparseValue::Int(*whole),
         LuaValue::Float(float) => SparseValue::Float(*float),
         LuaValue::Text(text) => SparseValue::Text(text.clone()),
-        LuaValue::Table(child) => SparseValue::Map(encode(child, &below(path, name))?),
+        LuaValue::Table(child) => SparseValue::Map(encode_table(child, &below(path, name))?),
     })
 }
 
@@ -303,20 +371,49 @@ fn integer_keyed(table: &LuaTable) -> Option<Vec<(i64, &LuaValue)>> {
     Some(entries)
 }
 
-fn decode_map(map: &SparseMap, path: &str) -> Result<LuaTable, LuaSparseFault> {
-    if map.has(DERIVED_SIMX_KEY) {
-        return Err(LuaSparseFault::NeedsSimX {
+/// A WHOLE TABLE DOCUMENT, which is the only place the bookkeeping a caller owns can appear:
+/// what the document is, which version of it, and what it leaves out. A table nested inside
+/// one goes through [`decode_shape`] and has none of that.
+fn decode_map(
+    map: &SparseMap,
+    path: &str,
+    derivation: Option<&Derivation<'_>>,
+) -> Result<LuaTable, LuaSparseFault> {
+    // BEFORE ANYTHING IS READ, so a table that leaves variables out is turned away rather
+    // than built short and then found to be missing them.
+    let named = map.find(lua_simx::HEADER_KEY);
+    if named.is_some() && derivation.is_none() {
+        return Err(LuaSparseFault::NeedsDerivation {
             path: path.to_string(),
         });
     }
 
-    match lua_manifest::grouping_for(path) {
-        Some(grouping) if map.has(KEYS_KEY) => decode_grouped(map, path, grouping),
-        _ => decode_dense(map, path),
+    let mut table = decode_shape(map, path, true)?;
+    if let Some(node) = named {
+        let SparseValue::Map(header) = node else {
+            return Err(LuaSparseFault::HeaderNotAnObject {
+                path: path.to_string(),
+            });
+        };
+        let derivation = derivation.expect("the absence of one was refused above");
+        lua_simx::restore(&mut table, header, derivation, path)?;
     }
+
+    Ok(table)
 }
 
-fn decode_dense(map: &SparseMap, path: &str) -> Result<LuaTable, LuaSparseFault> {
+/// Grouped where the manifest says so and the file agrees, entry by entry otherwise.
+fn decode_shape(map: &SparseMap, path: &str, top: bool) -> Result<LuaTable, LuaSparseFault> {
+    if let Some(grouping) = lua_manifest::grouping_for(path)
+        && map.has(KEYS_KEY)
+    {
+        return decode_grouped(map, path, grouping);
+    }
+
+    decode_dense(map, path, top)
+}
+
+fn decode_dense(map: &SparseMap, path: &str, top: bool) -> Result<LuaTable, LuaSparseFault> {
     let mut table = LuaTable::default();
     let mut seen: HashSet<&str> = HashSet::new();
     let mut list_count = 0;
@@ -326,12 +423,20 @@ fn decode_dense(map: &SparseMap, path: &str) -> Result<LuaTable, LuaSparseFault>
     for (name, value) in map.entries() {
         let so_far = table.list.len() + table.dict.len();
         if so_far == 0 {
-            // LEADING ONLY: what the document is, which version of it, and where its list
-            // part ends. Deeper in, each of these is an ordinary name and reserved.
-            if name == header::FORMAT_KEY || name == header::VERSION_KEY {
-                // The caller has already acted on both.
+            // LEADING, AND ONLY IN A WHOLE DOCUMENT: what it is, which version of it, and
+            // what it leaves out. Deeper in the tree each is an ordinary name and reserved,
+            // so a nested table cannot quietly lose an entry to one.
+            if top
+                && (name == header::FORMAT_KEY
+                    || name == header::VERSION_KEY
+                    || name == lua_simx::HEADER_KEY)
+            {
+                // Each is the caller's business: the first two it has already acted on, and
+                // what the third names is put back once the whole table has been read.
                 continue;
             }
+            // The list boundary is the table's own, at any depth, so a hand-written file can
+            // pin a nested table's split too.
             if name == LIST_COUNT_KEY {
                 list_count = as_count(value, path)?;
                 boundary_given = true;
@@ -397,7 +502,9 @@ fn decode_value(value: &SparseValue, path: &str, name: &str) -> Result<LuaValue,
         SparseValue::Int(whole) => LuaValue::Int(*whole),
         SparseValue::Float(float) => LuaValue::Float(*float),
         SparseValue::Text(text) => LuaValue::Text(text.clone()),
-        SparseValue::Map(child) => LuaValue::Table(decode_map(child, &below(path, name))?),
+        // NO BOOKKEEPING BELOW THE TOP. Only a save's whole table says what it is or leaves
+        // anything out, so a nested one of those names is refused as the reserved name it is.
+        SparseValue::Map(child) => LuaValue::Table(decode_shape(child, &below(path, name), false)?),
     })
 }
 
@@ -571,12 +678,12 @@ mod tests {
     }
 
     fn decode_ok(document: &str, path: &str) -> LuaTable {
-        decode(&SparseValue::Map(read(document)), path).expect("it decodes")
+        decode(&SparseValue::Map(read(document)), path, None).expect("it decodes")
     }
 
     fn round_trip(table: &LuaTable, path: &str) -> LuaTable {
-        let encoded = encode(table, path).expect("it encodes");
-        decode(&SparseValue::Map(encoded), path).expect("it decodes")
+        let encoded = encode(table, path, None).expect("it encodes");
+        decode(&SparseValue::Map(encoded), path, None).expect("it decodes")
     }
 
     #[test]
@@ -591,7 +698,7 @@ mod tests {
             ],
         };
 
-        let written = sparse::write(&encode(&table, VARIABLE_TABLE).expect("it encodes"));
+        let written = sparse::write(&encode(&table, VARIABLE_TABLE, None).expect("it encodes"));
 
         assert_eq!(
             written,
@@ -641,6 +748,7 @@ mod tests {
         let refused = decode(
             &SparseValue::Map(read(r#"{"_num_list_entries": 2, "1": "a", "x": "b"}"#)),
             VARIABLE_TABLE,
+            None,
         )
         .expect_err("refused");
         assert!(
@@ -654,6 +762,7 @@ mod tests {
         let refused = decode(
             &SparseValue::Map(read(r#"{"_num_list_entries": 3, "1": "a"}"#)),
             VARIABLE_TABLE,
+            None,
         )
         .expect_err("refused");
 
@@ -675,6 +784,7 @@ mod tests {
         let refused = decode(
             &SparseValue::Map(read(r#"{"Alert": "", "_format": "sparse"}"#)),
             VARIABLE_TABLE,
+            None,
         )
         .expect_err("refused");
         assert!(
@@ -689,6 +799,7 @@ mod tests {
         let refused = decode(
             &SparseValue::Map(read(r#"{"_reorder": "0-3"}"#)),
             VARIABLE_TABLE,
+            None,
         )
         .expect_err("refused");
 
@@ -704,7 +815,7 @@ mod tests {
         map.add("Alert", SparseValue::Text(String::new()));
         map.add("Alert", SparseValue::Int(1));
 
-        let refused = decode(&SparseValue::Map(map), VARIABLE_TABLE).expect_err("refused");
+        let refused = decode(&SparseValue::Map(map), VARIABLE_TABLE, None).expect_err("refused");
 
         assert!(
             matches!(refused, LuaSparseFault::Duplicate { .. }),
@@ -714,7 +825,7 @@ mod tests {
 
     #[test]
     fn a_root_that_is_not_an_object_is_refused() {
-        let refused = decode(&SparseValue::Int(4), VARIABLE_TABLE).expect_err("refused");
+        let refused = decode(&SparseValue::Int(4), VARIABLE_TABLE, None).expect_err("refused");
 
         assert!(refused.to_string().contains(VARIABLE_TABLE), "{refused}");
     }
@@ -734,7 +845,7 @@ mod tests {
         };
         let path = "Conversation/631/Dialog";
 
-        let written = sparse::write(&encode(&table, path).expect("it encodes"));
+        let written = sparse::write(&encode(&table, path, None).expect("it encodes"));
 
         assert_eq!(
             written,
@@ -772,7 +883,7 @@ mod tests {
                 dict: vec![(LuaValue::Int(0), odd.clone())],
             };
 
-            let encoded = encode(&table, path).expect("it encodes");
+            let encoded = encode(&table, path, None).expect("it encodes");
             assert!(!encoded.has(KEYS_KEY), "{odd} was grouped");
             assert_eq!(round_trip(&table, path), table, "{odd}");
         }
@@ -786,7 +897,7 @@ mod tests {
             dict: vec![(LuaValue::Int(0), status(KEYS_KEY))],
         };
 
-        let encoded = encode(&table, "Conversation/631/Dialog").expect("it encodes");
+        let encoded = encode(&table, "Conversation/631/Dialog", None).expect("it encodes");
 
         assert_eq!(encoded.entries().len(), 1, "it was written entry by entry");
         assert!(encoded.has("0"), "under its own key");
@@ -814,8 +925,9 @@ mod tests {
     #[test]
     fn a_grouped_table_that_contradicts_itself_is_refused() {
         let path = "Conversation/631/Dialog";
-        let refused =
-            |document: &str| decode(&SparseValue::Map(read(document)), path).expect_err("refused");
+        let refused = |document: &str| {
+            decode(&SparseValue::Map(read(document)), path, None).expect_err("refused")
+        };
 
         assert!(matches!(
             refused(r#"{"_keys": "0-2", "A": "1", "B": "1"}"#),
@@ -863,7 +975,7 @@ mod tests {
             let mut map = SparseMap::new();
             map.add(spelling, SparseValue::Map(SparseMap::new()));
 
-            let refused = decode(&SparseValue::Map(map), path).expect_err("refused");
+            let refused = decode(&SparseValue::Map(map), path, None).expect_err("refused");
             assert!(
                 matches!(
                     refused,
@@ -874,21 +986,131 @@ mod tests {
         }
     }
 
-    /// Rebuilding what the header names is the next ticket, and half-reading it is a save
-    /// that loads and is wrong.
+    /// Read without what would rebuild them, half-reading it is a save that loads and is
+    /// wrong - so it is refused instead.
     #[test]
-    fn a_table_that_leaves_out_its_derived_variables_is_refused() {
+    fn a_table_that_leaves_out_its_derived_variables_is_refused_without_them() {
         let refused = decode(
             &SparseValue::Map(read(
-                r#"{"_derived_simx": {"_conversations": "1-3"}, "Alert": ""}"#,
+                r#"{"_derived_simx": {"_conversations": "1-3", "_at": "0-2"}, "Alert": ""}"#,
             )),
             VARIABLE_TABLE,
+            None,
         )
         .expect_err("refused");
 
         assert!(
-            matches!(refused, LuaSparseFault::NeedsSimX { .. }),
+            matches!(refused, LuaSparseFault::NeedsDerivation { .. }),
             "{refused}"
+        );
+    }
+
+    /// A header deeper in the tree is an ordinary reserved name: only a save's whole
+    /// `Variable` table leaves anything out.
+    #[test]
+    fn a_header_below_the_top_is_refused_as_a_reserved_name() {
+        let refused = decode(
+            &SparseValue::Map(read(r#"{"held": {"_derived_simx": {"_at": "0"}}}"#)),
+            VARIABLE_TABLE,
+            None,
+        )
+        .expect_err("refused");
+
+        assert!(
+            matches!(refused, LuaSparseFault::Reserved { .. }),
+            "{refused}"
+        );
+    }
+
+    /// The whole trade, end to end: the variables that repeat the conversations are left
+    /// out on the way down and come back on the way up.
+    #[test]
+    fn the_variables_that_repeat_the_conversations_are_left_out_and_come_back() {
+        let orders = lua_simx::Orders::read(
+            r#"{
+                "conversations": {"0xAA": 1},
+                "dialogue_entries": {"0xAA-0": [1, [0]], "0xAA-1": [1, [1]]}
+            }"#,
+        )
+        .expect("it reads");
+        let conversations = LuaTable {
+            list: vec![LuaValue::Table(LuaTable {
+                list: Vec::new(),
+                dict: vec![
+                    (text("Articy_Id"), text("0xAA")),
+                    (
+                        text("Dialog"),
+                        LuaValue::Table(LuaTable {
+                            list: Vec::new(),
+                            dict: vec![
+                                (LuaValue::Int(0), status(UNTOUCHED_STATUS)),
+                                (LuaValue::Int(1), status("WasDisplayed")),
+                            ],
+                        }),
+                    ),
+                ],
+            })],
+            dict: Vec::new(),
+        };
+        let derivation = Derivation {
+            conversations: &conversations,
+            orders: &orders,
+        };
+        let variables = LuaTable {
+            list: Vec::new(),
+            dict: vec![
+                (text("Alert"), text("")),
+                (text("Conversation_SimX_0xAA"), text("0xAA-0;u;0xAA-1;d")),
+            ],
+        };
+
+        let written = encode(&variables, VARIABLE_TABLE, Some(&derivation)).expect("it encodes");
+
+        assert_eq!(
+            sparse::write(&written),
+            concat!(
+                "{\n",
+                "  \"_derived_simx\": {\n",
+                "    \"_conversations\": \"1\",\n",
+                "    \"_at\": \"1\"\n",
+                "  },\n",
+                "  \"Alert\": \"\"\n",
+                "}\n",
+            ),
+            "the variable itself is gone, and what it was is named",
+        );
+        assert_eq!(
+            decode(
+                &SparseValue::Map(written),
+                VARIABLE_TABLE,
+                Some(&derivation)
+            )
+            .expect("it decodes"),
+            variables,
+        );
+    }
+
+    /// Nothing derivable means nothing left out, rather than an empty promise.
+    #[test]
+    fn a_table_with_nothing_to_leave_out_carries_no_header() {
+        let conversations = LuaTable::default();
+        let orders = lua_simx::Orders::read(r#"{"conversations": {}, "dialogue_entries": {}}"#)
+            .expect("it reads");
+        let derivation = Derivation {
+            conversations: &conversations,
+            orders: &orders,
+        };
+        let variables = LuaTable {
+            list: Vec::new(),
+            dict: vec![(text("Conversation_SimX_0xAA"), text("0xAA-0;u"))],
+        };
+
+        let written = encode(&variables, VARIABLE_TABLE, Some(&derivation)).expect("it encodes");
+
+        assert!(!written.has(lua_simx::HEADER_KEY), "{written}");
+        assert!(
+            written.has("Conversation_SimX_0xAA"),
+            "and it is written out"
         );
     }
 
@@ -912,7 +1134,7 @@ mod tests {
             dict: Vec::new(),
         };
 
-        let encoded = encode(&conversations, CONVERSATION_TABLE).expect("it encodes");
+        let encoded = encode(&conversations, CONVERSATION_TABLE, None).expect("it encodes");
 
         assert!(
             sparse::write(&encoded).contains("\"_keys\": \"0\""),
@@ -933,7 +1155,7 @@ mod tests {
             dict: vec![(LuaValue::Table(LuaTable::default()), LuaValue::Int(1))],
         };
 
-        let refused = encode(&table, VARIABLE_TABLE).expect_err("refused");
+        let refused = encode(&table, VARIABLE_TABLE, None).expect_err("refused");
 
         assert!(
             matches!(refused, LuaSparseFault::UnwritableKey { .. }),
