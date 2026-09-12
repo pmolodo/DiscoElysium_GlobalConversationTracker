@@ -20,6 +20,8 @@ use std::sync::OnceLock;
 use lookahead_engine::bridge::{NodeRef, NodeSet, WireValue};
 use lookahead_engine::core::passive_check;
 use lookahead_engine::core::types::Ternary;
+use lookahead_engine::formats::global_state::{self, GlobalState, Status};
+use lookahead_engine::formats::runs;
 use serde::Deserialize;
 
 use super::repo_root;
@@ -238,25 +240,6 @@ fn wire(value: &serde_json::Value) -> Option<WireValue> {
     }
 }
 
-/// What a scenario's global state fixture records, by entry, for one conversation.
-///
-/// The mod's own state file, read as the mod reads it. Format 3 keys the entries by
-/// conversation under `conversations.WasDisplayed`.
-#[derive(Debug, Deserialize)]
-struct GlobalState {
-    #[serde(default)]
-    conversations: Recorded,
-}
-
-/// Format 4 writes each conversation's entries as a RUN-ENCODED STRING where format 3 wrote
-/// an array - see `GlobalStateJson`, and `parse_runs` for the spelling. On the worst-case
-/// fixture, which records every entry in the game, that took 423 KB to 22.5 KB.
-#[derive(Debug, Default, Deserialize)]
-struct Recorded {
-    #[serde(rename = "WasDisplayed", default)]
-    was_displayed: std::collections::HashMap<String, String>,
-}
-
 /// What some other save has read, per a staged global state file, over a whole group.
 ///
 /// ## Why a group and not a conversation
@@ -276,16 +259,9 @@ pub fn recorded_elsewhere_in_group(state_file: &str, conversations: &[i32]) -> H
     let mut recorded = HashSet::new();
 
     for conversation in conversations {
-        let Some(runs) = state
-            .conversations
-            .was_displayed
-            .get(&conversation.to_string())
-        else {
-            continue;
-        };
-
         recorded.extend(
-            parse_runs(runs)
+            state
+                .entries_at(*conversation, Status::WasDisplayed)
                 .into_iter()
                 .map(|entry| (*conversation, entry)),
         );
@@ -303,15 +279,32 @@ pub fn recorded_elsewhere_in_group(state_file: &str, conversations: &[i32]) -> H
 /// definition of that, and the in-game run stages through the same code by way of the
 /// engine host's `resolve` verb, so neither executor has a reader of its own to drift.
 ///
+/// READ BY THE LIBRARY TOO, rather than by a struct declared here. A reader of its own
+/// would check no header, so a fixture of the wrong kind would come back as a state that
+/// records nothing - which fails no assertion and makes every scenario look like a fresh
+/// playthrough.
+///
 /// # Panics
 ///
-/// If it is missing, will not resolve, or is not a global state.
+/// If it is missing, will not resolve, is not a global state, or holds a row that will not
+/// read. The last is a warning to the mod, which must not throw a player's history away
+/// over one bad row; here it is a fixture that has stopped saying what it meant.
 fn read_state(state_file: &str) -> GlobalState {
     let path = scenarios().join(state_file);
     let document = lookahead_engine::formats::resolve::document(&path)
         .unwrap_or_else(|fault| panic!("{fault}"));
-    serde_json::from_value(document)
-        .unwrap_or_else(|e| panic!("{} is not a global state: {e}", path.display()))
+    let read = global_state::read_document(&document, &path.to_string_lossy())
+        .unwrap_or_else(|fault| panic!("{fault}"));
+
+    assert_eq!(
+        read.skipped,
+        0,
+        "{} holds {} rows that will not read: {:?}",
+        path.display(),
+        read.skipped,
+        read.warnings,
+    );
+    read.state
 }
 
 /// What a scenario save has already displayed, over a whole group.
@@ -375,63 +368,20 @@ pub fn read_in_save_group(save: &str, conversations: &[i32]) -> HashSet<(i32, i3
 
 /// A run-encoded list of numbers, as every file in this repository writes one.
 ///
-/// ## The spelling, which is shared and not invented here
-///
-/// `3,5,7-25`: comma-separated pieces, each a number or a `first-last` range. The one
-/// implementation that writes it is `SparseOrder` in `GlobalConversationTracker.Core`, and
-/// this reads exactly what that writes - the sparse saves, and since format 4 the global
-/// state file's entry sets too.
-///
-/// TWO THINGS IT HAS THAT A NAIVE SPLIT ON `-` DOES NOT, both of which the writer produces:
-///
-/// - A NEGATIVE BOUND. A leading `-` is a sign, not a separator, so the separator is looked
-///   for past the first character. This is the whole of what the wire's `..` was chosen to
-///   avoid, and it is one condition.
-/// - A DESCENDING RANGE. `25-7` counts down. The saves write their dialogue variables
-///   newest first, so a backwards run is as common as a forwards one and says the same
-///   thing in the same space.
+/// `3,5,7-25`, with a leading `-` read as a sign and a descending range counting down -
+/// [`lookahead_engine::formats::runs`] is the spelling and the only implementation of it.
+/// This is the set a fixture wants, where that hands back the list it read.
 ///
 /// # Panics
 ///
 /// If a piece is not a number or a range of them. A fixture that has stopped being readable
 /// is a thing to stop for.
 pub fn parse_runs(text: &str) -> HashSet<i32> {
-    let mut entries = HashSet::new();
-
-    for piece in text
-        .split(',')
-        .map(str::trim)
-        .filter(|piece| !piece.is_empty())
-    {
-        // Past the first character, so a leading minus reads as a sign.
-        let split = piece
-            .char_indices()
-            .skip(1)
-            .find(|(_, c)| *c == '-')
-            .map(|(at, _)| at);
-
-        let (first, last) = match split {
-            Some(at) => (&piece[..at], &piece[at + 1..]),
-            None => (piece, piece),
-        };
-
-        let first: i32 = first
-            .trim()
-            .parse()
-            .unwrap_or_else(|_| panic!("'{piece}' is not a run: '{first}' is not a number"));
-        let last: i32 = last
-            .trim()
-            .parse()
-            .unwrap_or_else(|_| panic!("'{piece}' is not a run: '{last}' is not a number"));
-
-        if first <= last {
-            entries.extend(first..=last);
-        } else {
-            entries.extend(last..=first);
-        }
-    }
-
-    entries
+    runs::unpack(text, "a fixture")
+        .unwrap_or_else(|fault| panic!("{fault}"))
+        .into_iter()
+        .map(|id| i32::try_from(id).unwrap_or_else(|_| panic!("{id} is not an entry id")))
+        .collect()
 }
 
 /// Every passive skill check in these conversations, decided by the save's own sheet.
