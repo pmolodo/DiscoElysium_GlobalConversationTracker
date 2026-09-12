@@ -45,6 +45,7 @@ protox = "0.7"
 
 [dev-dependencies]
 proptest = "1.0"
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 
 [[example]]
 name = "backward_support"

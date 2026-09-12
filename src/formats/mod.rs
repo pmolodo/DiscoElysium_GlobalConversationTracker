@@ -19,6 +19,7 @@
 pub mod expanded_save;
 pub mod header;
 pub mod json_diff;
+pub mod lua_blob;
 pub mod resolve;
 pub mod sparse;
 pub mod sparse_diff;
