@@ -63,6 +63,26 @@ pub enum PackFault {
     Unwritable(String, String),
 }
 
+/// Why a save could not be unpacked.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum UnpackFault {
+    /// It is not a zip archive, or not a readable one.
+    #[error("{0} will not open as an archive: {1}")]
+    Unopenable(String, String),
+    /// It does not hold exactly one Lua blob.
+    ///
+    /// NEVER PICK ONE. Which blob a save's tables are in is not a guess worth making: the
+    /// wrong choice reads as a save that loads and is somebody else's.
+    #[error("{0} holds {1} '*{LUA_SUFFIX}' entries, and a save holds exactly one")]
+    Blobs(String, usize),
+    /// It holds something that is not a file at the top of the archive.
+    #[error("{0} holds '{1}', and a save's members are files beside each other")]
+    NotFlat(String, String),
+    /// An entry is there and will not read.
+    #[error("{0}: '{1}' will not read: {2}")]
+    Unreadable(String, String, String),
+}
+
 /// One entry of a packed save.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
@@ -131,6 +151,75 @@ impl Stamp {
             minute = self.minute,
             second = self.second,
         )
+    }
+}
+
+/// What a packed save holds, read back out of the archive.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unpacked {
+    /// What the Lua blob is called inside the archive, prefixed with the save's own name.
+    pub lua_name: String,
+    /// The blob itself, still binary.
+    pub lua: Vec<u8>,
+    /// Everything else, in the order the archive holds it.
+    pub members: Vec<Entry>,
+}
+
+impl Unpacked {
+    /// The save's own name, which every one of its entries is prefixed with.
+    #[must_use]
+    pub fn stem(&self) -> &str {
+        self.lua_name
+            .strip_suffix(LUA_SUFFIX)
+            .unwrap_or(&self.lua_name)
+    }
+}
+
+/// Reads the archive the game wrote.
+///
+/// # Errors
+///
+/// Where the file is not a readable archive, where it does not hold exactly one Lua blob,
+/// where it holds anything but files beside each other, or where an entry will not read.
+pub fn unpack(path: &Path) -> Result<Unpacked, UnpackFault> {
+    let context = shown(path);
+    let unopenable =
+        |why: &dyn std::fmt::Display| UnpackFault::Unopenable(context.clone(), why.to_string());
+
+    let file = std::fs::File::open(path).map_err(|why| unopenable(&why))?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|why| unopenable(&why))?;
+
+    let mut lua: Option<(String, Vec<u8>)> = None;
+    let mut blobs = 0;
+    let mut members = Vec::new();
+
+    for at in 0..archive.len() {
+        let mut entry = archive.by_index(at).map_err(|why| unopenable(&why))?;
+        let name = entry.name().to_string();
+        if entry.is_dir() || name.contains('/') || name.contains('\\') || name.is_empty() {
+            return Err(UnpackFault::NotFlat(context, name));
+        }
+
+        let mut bytes = Vec::with_capacity(usize::try_from(entry.size()).unwrap_or_default());
+        std::io::Read::read_to_end(&mut entry, &mut bytes).map_err(|why| {
+            UnpackFault::Unreadable(context.clone(), name.clone(), why.to_string())
+        })?;
+
+        if name.ends_with(LUA_SUFFIX) {
+            blobs += 1;
+            lua = Some((name, bytes));
+        } else {
+            members.push(Entry { name, bytes });
+        }
+    }
+
+    match lua {
+        Some((lua_name, lua)) if blobs == 1 => Ok(Unpacked {
+            lua_name,
+            lua,
+            members,
+        }),
+        _ => Err(UnpackFault::Blobs(context, blobs)),
     }
 }
 

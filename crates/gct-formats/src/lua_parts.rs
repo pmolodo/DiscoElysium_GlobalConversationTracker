@@ -30,7 +30,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::expanded_save::{self, Files, SaveFault, shown};
+use super::expanded_save::{self, Files, SaveFault, Written, shown};
 use super::header::{self, HeaderFault};
 use super::lua_blob::{Blob, LuaTable, LuaValue, TABLE_NAMES};
 use super::lua_simx::Orders;
@@ -68,6 +68,9 @@ pub enum PartsFault {
     /// A tree is not the table it claims to be.
     #[error("{0}: {1}")]
     Table(String, #[source] LuaSparseFault),
+    /// A blob holds something other than a table where one of the five should be.
+    #[error("a blob holds no {0} table")]
+    NotATable(String),
 }
 
 /// A save's five tables and its trailing bytes, before any of it is Lua again.
@@ -167,11 +170,7 @@ pub fn document(
 /// Where a tree is not the table it claims to be, or where one leaves its derived variables
 /// out and there is nothing to rebuild them from.
 pub fn decode(parts: &Parts, orders: Option<&Orders>) -> Result<Blob, PartsFault> {
-    let at_conversations = TABLE_NAMES
-        .iter()
-        .position(|name| *name == CONVERSATION_TABLE)
-        .expect("the conversations are one of the five");
-
+    let at_conversations = at_conversations();
     let conversations = table(&parts.tables[at_conversations], CONVERSATION_TABLE, None)?;
 
     // THE CONVERSATIONS ARE BORROWED for as long as anything might rebuild variables from
@@ -198,6 +197,102 @@ pub fn decode(parts: &Parts, orders: Option<&Orders>) -> Result<Blob, PartsFault
             .collect(),
         trailing: parts.trailing.clone(),
     })
+}
+
+/// The trees a blob's tables are stored as, each stamped as a whole table.
+///
+/// The inverse of [`decode`]. `orders` is what the `Variable` table's derived variables are
+/// left out against; without one every variable is written in full, which is a correct save
+/// and a larger one.
+///
+/// # Errors
+///
+/// Where a blob holds something other than a table where one of the five should be, or
+/// where a table holds a key that has no spelling as a JSON property name.
+pub fn encode(blob: &Blob, orders: Option<&Orders>) -> Result<Parts, PartsFault> {
+    let conversations = named_table(blob, at_conversations())?;
+    let derivation = orders.map(|orders| Derivation {
+        conversations,
+        orders,
+    });
+
+    let mut tables = Vec::with_capacity(TABLE_NAMES.len());
+    for (at, name) in TABLE_NAMES.iter().enumerate() {
+        let mut tree = lua_sparse::encode(named_table(blob, at)?, name, derivation.as_ref())
+            .map_err(|why| PartsFault::Table((*name).to_string(), why))?;
+        stamp(&mut tree);
+        tables.push(tree);
+    }
+
+    Ok(Parts {
+        tables,
+        trailing: blob.trailing.clone(),
+    })
+}
+
+/// The files a save's split directory holds, ready to be written.
+///
+/// With a `base`, only what DIFFERS from it: each changed table as a sparse diff, the
+/// unchanged ones left out entirely, and the trailing bytes only where they changed. So a
+/// save that changes no table at all produces no files, and therefore no directory - which
+/// is what the reader already allows for, and what stops a save carrying an empty folder to
+/// say it changed nothing.
+#[must_use]
+pub fn files(directory: &Path, parts: &Parts, base: Option<&Parts>) -> Vec<Written> {
+    let mut written = Vec::new();
+
+    for (at, name) in TABLE_NAMES.iter().enumerate() {
+        let tree = match base {
+            None => parts.tables[at].clone(),
+            Some(base) => match sparse_diff::create(&base.tables[at], &parts.tables[at]) {
+                Some(patch) => patch,
+                None => continue,
+            },
+        };
+
+        written.push(Written {
+            path: directory.join(format!("{name}.json")),
+            bytes: sparse::write(&tree).into_bytes(),
+        });
+    }
+
+    if base.is_none_or(|base| base.trailing != parts.trailing) {
+        written.push(Written {
+            path: directory.join(TRAILING_NAME),
+            bytes: parts.trailing.clone(),
+        });
+    }
+
+    written
+}
+
+/// Where the conversations are among the five, which the other tables may be rebuilt from.
+fn at_conversations() -> usize {
+    TABLE_NAMES
+        .iter()
+        .position(|name| *name == CONVERSATION_TABLE)
+        .expect("the conversations are one of the five")
+}
+
+/// One of a blob's five top-level values, where it is the table it must be.
+fn named_table(blob: &Blob, at: usize) -> Result<&LuaTable, PartsFault> {
+    match &blob.tables[at] {
+        LuaValue::Table(table) => Ok(table),
+        _ => Err(PartsFault::NotATable(TABLE_NAMES[at].to_string())),
+    }
+}
+
+/// Puts the header on a whole table's tree, ahead of the table itself.
+fn stamp(tree: &mut SparseMap) {
+    #[allow(clippy::cast_possible_wrap)]
+    tree.lead(
+        header::VERSION_KEY,
+        SparseValue::Int(lua_sparse::FORMAT.version as i32),
+    );
+    tree.lead(
+        header::FORMAT_KEY,
+        SparseValue::Text(lua_sparse::FORMAT.format.to_string()),
+    );
 }
 
 /// One tree as the table it stands for.

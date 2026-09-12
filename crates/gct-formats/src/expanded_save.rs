@@ -152,6 +152,58 @@ pub enum SaveFault {
     /// A base chain that returns to itself.
     #[error("the bases run in a circle, through {0}")]
     Circular(String),
+    /// A file would not be written.
+    #[error("{0} will not be written: {1}")]
+    Unwritable(String, String),
+    /// A save would be written where one already is.
+    #[error("{0} is already there; remove it before writing a save into it")]
+    Occupied(String),
+}
+
+/// One file of a save on its way to disk.
+///
+/// PLANNED BEFORE ANY OF IT IS WRITTEN, the way [`super::packed_save::contents`] plans an
+/// archive: what a save expands to is then a value a test can read, rather than something
+/// only a directory afterwards can be asked about.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Written {
+    /// Where it goes.
+    pub path: PathBuf,
+    /// What it holds.
+    pub bytes: Vec<u8>,
+}
+
+/// Writes a planned save out, into a directory that is not already there.
+///
+/// REFUSED WHERE THE DIRECTORY EXISTS rather than written over. A save expanded on top of
+/// an older one keeps whatever members the older one had and this one does not, and the
+/// result reads as a save nobody wrote - a directory that is a mixture is worse than one
+/// that is missing.
+///
+/// # Errors
+///
+/// Where the directory is already there, or where anything will not be written.
+pub fn write_all(directory: &Path, files: &[Written]) -> Result<(), SaveFault> {
+    if directory.exists() {
+        return Err(SaveFault::Occupied(shown(directory)));
+    }
+
+    let unwritable = |path: &Path| {
+        let path = path.to_path_buf();
+        move |why: &dyn std::fmt::Display| SaveFault::Unwritable(shown(&path), why.to_string())
+    };
+
+    for file in files {
+        if let Some(parent) = file.path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent).map_err(|why| unwritable(parent)(&why))?;
+        }
+
+        std::fs::write(&file.path, &file.bytes).map_err(|why| unwritable(&file.path)(&why))?;
+    }
+
+    Ok(())
 }
 
 /// Reads a manifest.
@@ -200,6 +252,35 @@ pub fn read_manifest(text: &str, context: &str) -> Result<Manifest, SaveFault> {
     }
 
     Ok(Manifest { base, members })
+}
+
+/// Writes a manifest, indented, with the trailing newline it is stored with.
+///
+/// KEY ORDER IS ALPHABETICAL and comes free: a JSON object here is a sorted map, and the
+/// four names a manifest uses happen to sort into the order they read best in - what the
+/// document is, which version of it, what it is a change to, and then what it holds.
+#[must_use]
+pub fn write_manifest(manifest: &Manifest) -> String {
+    let members: Vec<serde_json::Value> = manifest
+        .members
+        .iter()
+        .map(|member| {
+            serde_json::json!({
+                "diff": member.diff,
+                "kind": member.kind.as_str(),
+                "name": member.name,
+                "suffix": member.suffix,
+            })
+        })
+        .collect();
+
+    let mut document = FORMAT.stamp();
+    document.insert(BASE_KEY.to_string(), manifest.base.clone().into());
+    document.insert(MEMBERS_KEY.to_string(), members.into());
+
+    let mut text = serde_json::to_string_pretty(&document).expect("a manifest is plain JSON");
+    text.push('\n');
+    text
 }
 
 fn read_member(entry: &serde_json::Value, context: &str) -> Result<Member, SaveFault> {
@@ -273,6 +354,46 @@ impl Files for OnDisk {
             .filter(|entry| entry.path().is_file())
             .map(|entry| entry.file_name().to_string_lossy().into_owned())
             .collect()
+    }
+}
+
+/// A planned save standing where it will stand, over whatever is already on disk.
+///
+/// Reads what the plan holds and falls through to the filesystem for everything else, so a
+/// save written as a CHANGE to one already committed can be resolved before it is written -
+/// its own files come from the plan and the base it names comes from disk.
+///
+/// What this is for: holding a writer to what a reader will make of its output, without
+/// writing anything anywhere first.
+pub struct Pending<'a>(pub &'a [Written]);
+
+impl Files for Pending<'_> {
+    fn read(&self, path: &Path) -> Option<Vec<u8>> {
+        let wanted = flatten(path);
+        self.0
+            .iter()
+            .find(|file| flatten(&file.path) == wanted)
+            .map(|file| file.bytes.clone())
+            .or_else(|| OnDisk.read(path))
+    }
+
+    fn list(&self, directory: &Path) -> Vec<String> {
+        let wanted = flatten(directory);
+        let mut names: Vec<String> = self
+            .0
+            .iter()
+            .filter(|file| flatten(&file.path).parent() == Some(wanted.as_path()))
+            .filter_map(|file| file.path.file_name())
+            .map(|name| name.to_string_lossy().into_owned())
+            .collect();
+
+        for name in OnDisk.list(directory) {
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+
+        names
     }
 }
 
@@ -488,7 +609,7 @@ fn whole_members(files: &impl Files, directory: &Path) -> Result<Members, SaveFa
 /// Lexical rather than [`std::fs::canonicalize`], which touches the filesystem and would
 /// refuse a path that is not there - and the walk has to be able to report a base that is
 /// missing rather than fail to name it.
-fn flatten(path: &Path) -> PathBuf {
+pub(crate) fn flatten(path: &Path) -> PathBuf {
     let mut parts: Vec<std::ffi::OsString> = Vec::new();
     for part in path.components() {
         match part {
@@ -501,6 +622,52 @@ fn flatten(path: &Path) -> PathBuf {
     }
 
     parts.iter().collect()
+}
+
+/// One path as it looks from a directory, spelled the way a manifest spells it.
+///
+/// The inverse of what [`chain`] does with a `base`: this writes the name, that one follows
+/// it. Both sides are rooted and flattened first, because a caller naming one of them
+/// relatively is the ordinary case and two spellings of one directory share no components.
+///
+/// FORWARD SLASHES whatever the platform, since a manifest is committed and read on both.
+/// A path sharing no root with the directory - another drive, on Windows - is left as it
+/// stands, because no number of `..` steps would reach it.
+#[must_use]
+pub fn relative(from: &Path, to: &Path) -> String {
+    let from = settled(from);
+    let to = settled(to);
+    let from: Vec<_> = from.components().collect();
+    let to: Vec<_> = to.components().collect();
+
+    let shared = from
+        .iter()
+        .zip(&to)
+        .take_while(|(left, right)| left == right)
+        .count();
+    let spelled = |parts: &[std::path::Component<'_>]| {
+        parts
+            .iter()
+            .map(|part| part.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+    };
+
+    if shared == 0 {
+        return spelled(&to).join("/");
+    }
+
+    let mut steps = vec!["..".to_string(); from.len() - shared];
+    steps.extend(spelled(&to[shared..]));
+    if steps.is_empty() {
+        ".".to_string()
+    } else {
+        steps.join("/")
+    }
+}
+
+/// A path with one spelling: rooted where the process stands, its `..` steps taken.
+fn settled(path: &Path) -> PathBuf {
+    flatten(&std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf()))
 }
 
 /// A whole save's own name, which is its directory's without the extension.
@@ -802,5 +969,50 @@ mod tests {
         let refused = members_of(&files, Path::new("save.ntwtf")).expect_err("refused");
 
         assert!(refused.to_string().contains("gone.diff"), "{refused}");
+    }
+
+    /// The shape every committed manifest's base has: up out of the scenarios and across.
+    #[test]
+    fn a_base_beside_the_directory_above_is_named_by_stepping_up_to_it() {
+        assert_eq!(
+            relative(
+                Path::new("testing/scenarios/at-trashcan.ntwtf"),
+                Path::new("testing/save_template.ntwtf"),
+            ),
+            "../../save_template.ntwtf",
+        );
+    }
+
+    #[test]
+    fn a_base_in_the_same_folder_is_named_by_itself() {
+        assert_eq!(
+            relative(Path::new("saves/one.ntwtf"), Path::new("saves/two.ntwtf")),
+            "../two.ntwtf",
+        );
+    }
+
+    /// The two spellings of one directory are the same directory, which is what `settled`
+    /// is for: without it these share no components and the answer would be an absolute
+    /// path.
+    #[test]
+    fn a_path_spelled_with_a_step_back_is_still_the_place_it_names() {
+        assert_eq!(
+            relative(
+                Path::new("testing/scenarios/../scenarios/one.ntwtf"),
+                Path::new("testing/base.ntwtf"),
+            ),
+            "../../base.ntwtf",
+        );
+    }
+
+    /// What the manifest says and what the chain walk does with it have to be inverses.
+    #[test]
+    fn what_it_names_is_what_the_chain_walk_follows_back() {
+        let save = Path::new("testing/scenarios/at-trashcan.ntwtf");
+        let base = Path::new("testing/save_template.ntwtf");
+
+        let named = relative(save, base);
+
+        assert_eq!(flatten(&save.join(named)), flatten(base));
     }
 }

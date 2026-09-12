@@ -18,21 +18,26 @@
 //! that anything trimming whitespace will have eaten. Each is a way to apply a diff
 //! slightly wrong and produce a file nobody wrote.
 //!
-//! ## Applying, and not creating
+//! ## Creating one, and whose edit script it is
 //!
-//! Only [`apply`] is here. Creating a diff needs a diff ALGORITHM - which of several
-//! equally correct edit scripts to emit - and nothing in this repository has an opinion
-//! about that beyond "whatever git did". Reading a save needs only to apply what git
-//! already wrote.
+//! [`create`] emits `diffy`'s. A diff is not unique - several edit scripts turn one file
+//! into another and all of them are correct - so the bytes here are not the bytes git
+//! would have written for the same pair, and nothing depends on them being. What a diff
+//! has to do is APPLY to the baseline it was taken against and produce the target, which
+//! is the property the tests hold it to.
 //!
-//! So a fixture is still WRITTEN by the C# packer and READ by this. When the packer moves
-//! it brings its own answer about creating, and `diffy` has one if it wants it.
+//! ONE LINE OF CONTEXT, which is what the committed diffs carry. A save's non-JSON members
+//! are one statement per line with no structure around them, so three lines of context
+//! triples the size of a diff without making it any easier to read.
 //!
 //! ## Line endings
 //!
 //! Normalised to `\n` before anything is compared, because the diff was taken over
 //! normalised text and a save that arrived with CRLF would otherwise match no context line
 //! at all.
+
+/// How many unchanged lines a hunk carries either side of what it changes.
+const CONTEXT: usize = 1;
 
 /// Why a diff could not be applied.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -65,6 +70,30 @@ pub fn apply(baseline: &str, patch: &str, context: &str) -> Result<String, TextD
 
     diffy::apply(&normalise(baseline), &parsed)
         .map_err(|why| TextDiffFault::Mismatch(context.to_string(), why.to_string()))
+}
+
+/// The diff that turns one member into another, or nothing where they are the same.
+///
+/// `name` is the member's own filename, which the diff names on both sides the way git
+/// names it - `a/` for what it was and `b/` for what it became.
+///
+/// NOTHING WHERE THEY MATCH, rather than an empty diff, because that is the answer the
+/// manifest needs: a member that did not change is inherited and has no file beside it.
+#[must_use]
+pub fn create(name: &str, baseline: &str, target: &str) -> Option<String> {
+    let was = normalise(baseline);
+    let wanted = normalise(target);
+    if was == wanted {
+        return None;
+    }
+
+    let patch = diffy::DiffOptions::new()
+        .set_context_len(CONTEXT)
+        .set_original_filename(format!("a/{name}"))
+        .set_modified_filename(format!("b/{name}"))
+        .create_patch(&was, &wanted);
+
+    Some(patch.to_string())
 }
 
 /// The same text with the line endings the diff was taken over.
@@ -152,6 +181,44 @@ mod tests {
     fn text_with_no_hunks_in_it_leaves_the_baseline_alone() {
         assert_eq!(applied("not a diff at all"), BASELINE);
         assert_eq!(applied("--- a/f\n+++ b/f\n"), BASELINE);
+    }
+
+    /// The property that matters about a created diff, and the only one.
+    #[test]
+    fn what_is_created_turns_the_baseline_into_the_target() {
+        let target = "one\nTWO\nthree\nfour\nfive\n";
+
+        let patch = create("a.states.lua", BASELINE, target).expect("they differ");
+
+        assert_eq!(
+            apply(BASELINE, &patch, "a.states.lua").expect("applies"),
+            target
+        );
+    }
+
+    #[test]
+    fn a_created_diff_names_the_member_on_both_sides() {
+        let patch = create("at-trashcan.states.lua", BASELINE, "one\n").expect("they differ");
+
+        assert!(
+            patch.starts_with("--- a/at-trashcan.states.lua\n+++ b/at-trashcan.states.lua\n"),
+            "{patch}",
+        );
+    }
+
+    /// A member that did not change has no diff, which is what makes it inheritable.
+    #[test]
+    fn two_of_the_same_text_produce_no_diff_at_all() {
+        assert_eq!(create("a.states.lua", BASELINE, BASELINE), None);
+    }
+
+    /// Line endings are not a change, because the diff is taken over normalised text.
+    #[test]
+    fn the_same_text_with_other_line_endings_produces_no_diff() {
+        assert_eq!(
+            create("a.states.lua", BASELINE, "one\r\ntwo\r\nthree\r\nfour\r\n"),
+            None,
+        );
     }
 
     /// A save that arrived with CRLF still matches a diff taken over LF.

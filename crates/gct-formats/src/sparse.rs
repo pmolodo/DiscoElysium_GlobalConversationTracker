@@ -63,6 +63,15 @@ impl SparseMap {
         self.entries.push((name.into(), value));
     }
 
+    /// Puts a property at the front, ahead of everything already there.
+    ///
+    /// What a header is written with. The two fields naming a document come first so that
+    /// they can be found without reading the megabyte behind them, and a writer that
+    /// appended them would put them last.
+    pub fn lead(&mut self, name: impl Into<String>, value: SparseValue) {
+        self.entries.insert(0, (name.into(), value));
+    }
+
     /// The value of a property, or nothing where it is absent.
     #[must_use]
     pub fn find(&self, name: &str) -> Option<&SparseValue> {

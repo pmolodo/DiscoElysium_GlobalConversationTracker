@@ -18,6 +18,10 @@
 //! WHETHER THE GAME LOADS IT is not checkable here and is what the harness is for. What is
 //! checkable here is that nothing was dropped or misnamed on the way.
 //!
+//! The archive is read back TWICE, by the zip library directly and by the reader that turns
+//! one into a save again, and the two have to agree. A reader checked only against the
+//! writer beside it is a round trip through one opinion.
+//!
 //! ## Why this skips rather than fails without the id map
 //!
 //! A save's `Variable` table leaves out the variables that only repeat its conversations,
@@ -121,6 +125,22 @@ fn packs(name: &str, orders: &Orders) {
     let expected = lua_parts::document(&OnDisk, &source, Some(orders))
         .unwrap_or_else(|why| panic!("{name}: {why}"));
     assert_eq!(read, expected, "{name}: the blob is not what was packed");
+
+    // AND THE READER OF AN ARCHIVE AGREES WITH THE ZIP LIBRARY ABOVE, which is what holds
+    // it to something: an archive read by the code that wrote it is a round trip through
+    // one opinion, and would pass whatever that opinion was.
+    let unpacked = packed_save::unpack(&written).unwrap_or_else(|why| panic!("{name}: {why}"));
+    assert_eq!(unpacked.lua_name, *first);
+    assert_eq!(unpacked.lua, *bytes);
+    assert_eq!(
+        unpacked
+            .members
+            .iter()
+            .map(|entry| (entry.name.clone(), entry.bytes.clone()))
+            .collect::<Vec<_>>(),
+        entries[1..].to_vec(),
+        "{name}: unpacking finds different members from reading the zip",
+    );
 }
 
 #[test]

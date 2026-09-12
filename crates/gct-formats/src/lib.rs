@@ -34,11 +34,13 @@
 //! out and rebuilt - and [`lua_parts`] is the directory those trees are split across, read
 //! back as one blob. [`runs`] is how all of them - and the wire, and the mod's own state
 //! file - spell a dense run of integers. [`packed_save`] puts the two halves of a save back
-//! together as the archive the game loads.
+//! together as the archive the game loads, and [`expand`] takes one apart again, writing it
+//! whole or as a change to a save already committed.
 //!
 //! AND ONE THAT IS NOT A SAVE'S. [`global_state`] is the mod's own record of what a player
 //! has read across every save, which is the only file here that cannot be regenerated.
 
+pub mod expand;
 pub mod expanded_save;
 pub mod global_state;
 pub mod header;

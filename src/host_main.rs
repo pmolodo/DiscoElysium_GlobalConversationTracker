@@ -41,10 +41,10 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use lookahead_engine::formats::expanded_save::OnDisk;
+use lookahead_engine::formats::expanded_save::{self, OnDisk};
 use lookahead_engine::formats::lua_simx::{self, Orders};
 use lookahead_engine::formats::packed_save::{self, Stamp};
-use lookahead_engine::formats::{json_diff, resolve};
+use lookahead_engine::formats::{expand, json_diff, resolve};
 
 /// What to do, where a verb was given.
 enum Verb {
@@ -58,6 +58,12 @@ enum Verb {
     },
     /// Write an expanded save as the archive the game loads.
     Pack { source: PathBuf, out: PathBuf },
+    /// Write the archive the game wrote as an expanded save.
+    Expand {
+        source: PathBuf,
+        out: PathBuf,
+        base: Option<PathBuf>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -101,11 +107,18 @@ fn verb(arguments: &[String]) -> Result<Verb, String> {
             source: PathBuf::from(&arguments[1]),
             out: PathBuf::from(&arguments[2]),
         }),
+        "expand" if matches!(arguments.len(), 3 | 4) => Ok(Verb::Expand {
+            source: PathBuf::from(&arguments[1]),
+            out: PathBuf::from(&arguments[2]),
+            base: arguments.get(3).map(PathBuf::from),
+        }),
         other => Err(format!(
             "'{other}' is not something this does. The verbs are:\n  \
-             resolve <file>               print it with every diff beneath it applied\n  \
-             diff <base> <target> <out>   write the diff that turns one into the other\n  \
-             pack <save.ntwtf> <out.zip>  write an expanded save as the game's archive\n\
+             resolve <file>                     print it with every diff beneath it applied\n  \
+             diff <base> <target> <out>         write the diff that turns one into the other\n  \
+             pack <save.ntwtf> <out.zip>        write an expanded save as the game's archive\n  \
+             expand <save.zip> <out> [<base>]   write the game's archive as an expanded save,\n  \
+             \x20                               as a change to <base> where one is named\n\
              With no arguments at all it serves the engine over stdin and stdout.",
         )),
     }
@@ -130,6 +143,14 @@ fn perform(asked: Verb) -> Result<(), String> {
                 packed_save::pack(&OnDisk, &source, &out, orders().as_ref(), Stamp::now())
                     .map_err(|fault| fault.to_string())?;
             println!("{}", written.display());
+            Ok(())
+        }
+        Verb::Expand { source, out, base } => {
+            let packed = packed_save::unpack(&source).map_err(|fault| fault.to_string())?;
+            let files =
+                expand::expansion(&OnDisk, &packed, &out, base.as_deref(), orders().as_ref())
+                    .map_err(|fault| fault.to_string())?;
+            expanded_save::write_all(&out, &files).map_err(|fault| fault.to_string())?;
             Ok(())
         }
     }
@@ -190,7 +211,7 @@ fn write_diff(base: &Path, target: &Path, out: &Path) -> Result<(), String> {
 
     // THE BASE IS NAMED RELATIVE TO THE DIFF, because that is where a reader of the diff
     // stands when it follows the name.
-    let named = relative(base, out.parent().unwrap_or_else(|| Path::new(".")));
+    let named = expanded_save::relative(out.parent().unwrap_or_else(|| Path::new(".")), base);
     let mut patch = patch;
     patch.as_object_mut().expect("a diff is an object").insert(
         lookahead_engine::formats::header::BASE_KEY.to_string(),
@@ -200,15 +221,4 @@ fn write_diff(base: &Path, target: &Path, out: &Path) -> Result<(), String> {
     let text = serde_json::to_string_pretty(&patch).map_err(|fault| fault.to_string())?;
     std::fs::write(out, text + "\n").map_err(|fault| format!("{}: {fault}", out.display()))?;
     Ok(())
-}
-
-/// One path as it looks from a folder, where the two share one.
-///
-/// Enough for fixtures that sit beside each other, which is every one of them today; a base
-/// somewhere else is named by whatever path the caller gave.
-fn relative(path: &Path, from: &Path) -> String {
-    match (path.parent(), path.file_name()) {
-        (Some(folder), Some(name)) if folder == from => name.to_string_lossy().into_owned(),
-        _ => path.to_string_lossy().into_owned(),
-    }
 }
