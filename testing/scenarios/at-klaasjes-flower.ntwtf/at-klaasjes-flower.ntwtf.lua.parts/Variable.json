@@ -1,6 +1,7 @@
 {
   "_format": "sparse-diff",
   "_formatVersion": 1,
+  "_base": "../../../save_template.ntwtf/save_template.ntwtf.lua.parts/Variable.json",
   "_changes": {
     "_derived_simx": {
       "_conversations": "1500-1159,1156-488,486-306,304-254,250-1,1501",

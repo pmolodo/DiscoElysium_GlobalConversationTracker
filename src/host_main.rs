@@ -64,6 +64,8 @@ enum Verb {
         out: PathBuf,
         base: Option<PathBuf>,
     },
+    /// Write a committed save again, as this build would write it.
+    Rewrite { save: PathBuf },
 }
 
 fn main() -> ExitCode {
@@ -112,13 +114,18 @@ fn verb(arguments: &[String]) -> Result<Verb, String> {
             out: PathBuf::from(&arguments[2]),
             base: arguments.get(3).map(PathBuf::from),
         }),
+        "rewrite" if arguments.len() == 2 => Ok(Verb::Rewrite {
+            save: PathBuf::from(&arguments[1]),
+        }),
         other => Err(format!(
             "'{other}' is not something this does. The verbs are:\n  \
              resolve <file>                     print it with every diff beneath it applied\n  \
              diff <base> <target> <out>         write the diff that turns one into the other\n  \
              pack <save.ntwtf> <out.zip>        write an expanded save as the game's archive\n  \
              expand <save.zip> <out> [<base>]   write the game's archive as an expanded save,\n  \
-             \x20                               as a change to <base> where one is named\n\
+             \x20                               as a change to <base> where one is named\n  \
+             rewrite <save.ntwtf>               write a committed save again, as this build\n  \
+             \x20                               writes one, in place\n\
              With no arguments at all it serves the engine over stdin and stdout.",
         )),
     }
@@ -151,6 +158,20 @@ fn perform(asked: Verb) -> Result<(), String> {
                 expand::expansion(&OnDisk, &packed, &out, base.as_deref(), orders().as_ref())
                     .map_err(|fault| fault.to_string())?;
             expanded_save::write_all(&out, &files).map_err(|fault| fault.to_string())?;
+            Ok(())
+        }
+        Verb::Rewrite { save } => {
+            // PLANNED IN FULL BEFORE ANYTHING IS REMOVED. What is on disk is what the plan
+            // is read from, so it cannot be taken away until there is a whole plan to put
+            // in its place.
+            let files = expand::rewrite(&OnDisk, &save, orders().as_ref())
+                .map_err(|fault| fault.to_string())?;
+
+            std::fs::remove_dir_all(&save)
+                .map_err(|fault| format!("{}: {fault}", save.display()))?;
+            expanded_save::write_all(&save, &files).map_err(|fault| fault.to_string())?;
+
+            println!("{}", save.display());
             Ok(())
         }
     }

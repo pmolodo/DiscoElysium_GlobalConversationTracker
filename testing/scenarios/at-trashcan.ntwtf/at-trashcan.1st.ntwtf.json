@@ -1,25 +1,26 @@
 {
-  "_format": "json-diff",
-  "_formatVersion": 1,
+  "_base": "../../save_template.ntwtf/save_template.1st.ntwtf.json",
   "_changes": {
     "areaId": "Martinaise-ext",
-    "partyState": {
-      "isKimInParty": true,
-      "isKimAbandoned": false,
-      "hasHangover": false
-    },
     "fowUnrevealersStatusCache": {
+      "fog-doomed-f1_curtains": "ACTIVE",
       "fog-main": "ACTIVE",
       "fog-whirling-backstage": "UNSEEN",
-      "fog-whirling-union": "ACTIVE",
       "fog-whirling-kitchen": "ACTIVE",
-      "fog-doomed-f1_curtains": "ACTIVE",
+      "fog-whirling-union": "ACTIVE",
       "fow_capeside-apps_bathroom": "ACTIVE",
+      "fow_capeside-apps_cunos": "UNSEEN",
       "fow_capeside-apps_destroyed": "ACTIVE",
       "fow_capeside-apps_empty": "ACTIVE",
       "fow_capeside-apps_hobo": "ACTIVE",
-      "fow_capeside-apps_mazov": "UNSEEN",
-      "fow_capeside-apps_cunos": "UNSEEN"
+      "fow_capeside-apps_mazov": "UNSEEN"
+    },
+    "partyState": {
+      "hasHangover": false,
+      "isKimAbandoned": false,
+      "isKimInParty": true
     }
-  }
+  },
+  "_format": "json-diff",
+  "_formatVersion": 1
 }

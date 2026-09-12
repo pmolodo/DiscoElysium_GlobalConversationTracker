@@ -1,6 +1,7 @@
 {
   "_format": "sparse-diff",
   "_formatVersion": 1,
+  "_base": "../../../save_template.ntwtf/save_template.ntwtf.lua.parts/Actor.json",
   "_changes": {
     "You": {
       "Position_Martinaise_ext": "-22.33911,3.714333,-114.0624,0,0.9989724,0,-0.04532386,Martinaise-ext"

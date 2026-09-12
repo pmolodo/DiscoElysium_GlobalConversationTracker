@@ -1,11 +1,12 @@
 {
+  "_format": "sparse-diff",
+  "_formatVersion": 1,
+  "_base": "../../../save_template.ntwtf/save_template.ntwtf.lua.parts/Conversation.json",
   "_changes": {
     "9": {
       "Dialog": {
         "WasDisplayed": "19,42"
       }
     }
-  },
-  "_format": "sparse-diff",
-  "_formatVersion": 1
+  }
 }

@@ -1,6 +1,7 @@
 {
   "_format": "sparse-diff",
   "_formatVersion": 1,
+  "_base": "../../../save_template.ntwtf/save_template.ntwtf.lua.parts/Conversation.json",
   "_changes": {
     "451": {
       "Dialog": {

@@ -1,337 +1,338 @@
 {
-  "_format": "json-diff",
-  "_formatVersion": 1,
+  "_base": "../../save_template.ntwtf/save_template.2nd.ntwtf.json",
   "_changes": {
+    "characterSheet": {
+      "selectedPanelName": ""
+    },
     "sunshineClockTimeHolder": {
       "time": {
         "dayCounter": 3,
         "realDayCounter": 3
       }
     },
-    "characterSheet": {
-      "selectedPanelName": ""
-    },
     "thoughtCabinetState": {
       "thoughtListState": [
         {
-          "name": "revacholian_nationhood",
           "isFresh": true,
+          "name": "revacholian_nationhood",
           "state": "UNKNOWN",
           "timeLeft": 550
         },
         {
-          "name": "guillaume_le_million",
           "isFresh": true,
+          "name": "guillaume_le_million",
           "state": "UNKNOWN",
           "timeLeft": 270
         },
         {
-          "name": "radical_feminist_agenda",
           "isFresh": true,
+          "name": "radical_feminist_agenda",
           "state": "UNKNOWN",
           "timeLeft": 225
         },
         {
-          "name": "hobocop",
           "isFresh": true,
+          "name": "hobocop",
           "state": "UNKNOWN",
           "timeLeft": 260
         },
         {
+          "isFresh": true,
           "name": "aces_high",
-          "isFresh": true,
           "state": "UNKNOWN",
           "timeLeft": 165
         },
         {
+          "isFresh": true,
           "name": "aces_low",
-          "isFresh": true,
           "state": "UNKNOWN",
           "timeLeft": 165
         },
         {
-          "name": "the_way_home",
           "isFresh": true,
+          "name": "the_way_home",
           "state": "UNKNOWN",
           "timeLeft": 365
         },
         {
-          "name": "coach_physical_instrument",
           "isFresh": true,
+          "name": "coach_physical_instrument",
           "state": "UNKNOWN",
           "timeLeft": 40
         },
         {
-          "name": "shit_together",
           "isFresh": true,
+          "name": "shit_together",
           "state": "UNKNOWN",
           "timeLeft": 30
         },
         {
-          "name": "torque_dork",
           "isFresh": true,
+          "name": "torque_dork",
           "state": "UNKNOWN",
           "timeLeft": 25
         },
         {
-          "name": "sorry_cop",
           "isFresh": true,
+          "name": "sorry_cop",
           "state": "UNKNOWN",
           "timeLeft": 360
         },
         {
-          "name": "superstar_cop",
           "isFresh": true,
+          "name": "superstar_cop",
           "state": "UNKNOWN",
           "timeLeft": 70
         },
         {
-          "name": "apocalypse_cop",
           "isFresh": true,
+          "name": "apocalypse_cop",
           "state": "UNKNOWN",
           "timeLeft": 415
         },
         {
-          "name": "communist",
           "isFresh": true,
+          "name": "communist",
           "state": "UNKNOWN",
           "timeLeft": 190
         },
         {
-          "name": "boring_cop",
           "isFresh": true,
+          "name": "boring_cop",
           "state": "UNKNOWN",
           "timeLeft": 80
         },
         {
-          "name": "ultraliberal",
           "isFresh": true,
+          "name": "ultraliberal",
           "state": "UNKNOWN",
           "timeLeft": 105
         },
         {
-          "name": "moralist",
           "isFresh": true,
+          "name": "moralist",
           "state": "UNKNOWN",
           "timeLeft": 85
         },
         {
-          "name": "the_bow_collector",
           "isFresh": true,
+          "name": "the_bow_collector",
           "state": "UNKNOWN",
           "timeLeft": 370
         },
         {
-          "name": "white_mourning",
           "isFresh": true,
+          "name": "white_mourning",
           "state": "UNKNOWN",
           "timeLeft": 300
         },
         {
-          "name": "juicy_fruit",
           "isFresh": true,
+          "name": "juicy_fruit",
           "state": "UNKNOWN",
           "timeLeft": 305
         },
         {
-          "name": "caustic_echo",
           "isFresh": true,
+          "name": "caustic_echo",
           "state": "UNKNOWN",
           "timeLeft": 600
         },
         {
-          "name": "detective_costeau",
           "isFresh": true,
+          "name": "detective_costeau",
           "state": "UNKNOWN",
           "timeLeft": 150
         },
         {
-          "name": "boiadeiro",
           "isFresh": true,
+          "name": "boiadeiro",
           "state": "UNKNOWN",
           "timeLeft": 390
         },
         {
-          "name": "art_cop",
           "isFresh": true,
+          "name": "art_cop",
           "state": "UNKNOWN",
           "timeLeft": 90
         },
         {
-          "name": "honour",
           "isFresh": true,
+          "name": "honour",
           "state": "UNKNOWN",
           "timeLeft": 20
         },
         {
-          "name": "finger_pistols",
           "isFresh": true,
+          "name": "finger_pistols",
           "state": "UNKNOWN",
           "timeLeft": 60
         },
         {
-          "name": "magnesium_based_lifeform",
           "isFresh": true,
+          "name": "magnesium_based_lifeform",
           "state": "UNKNOWN",
           "timeLeft": 75
         },
         {
-          "name": "lawbringer",
           "isFresh": true,
+          "name": "lawbringer",
           "state": "UNKNOWN",
           "timeLeft": 175
         },
         {
-          "name": "advanced_race_theory",
           "isFresh": true,
+          "name": "advanced_race_theory",
           "state": "UNKNOWN",
           "timeLeft": 100
         },
         {
-          "name": "the_destroyer",
           "isFresh": true,
+          "name": "the_destroyer",
           "state": "UNKNOWN",
           "timeLeft": 135
         },
         {
-          "name": "master_investigator",
           "isFresh": true,
+          "name": "master_investigator",
           "state": "UNKNOWN",
           "timeLeft": 65
         },
         {
-          "name": "remote_viewer",
           "isFresh": true,
+          "name": "remote_viewer",
           "state": "UNKNOWN",
           "timeLeft": 325
         },
         {
-          "name": "motorway_south",
           "isFresh": true,
+          "name": "motorway_south",
           "state": "UNKNOWN",
           "timeLeft": 490
         },
         {
-          "name": "narcomania",
           "isFresh": true,
+          "name": "narcomania",
           "state": "UNKNOWN",
           "timeLeft": 55
         },
         {
-          "name": "age_bracket",
           "isFresh": true,
+          "name": "age_bracket",
           "state": "UNKNOWN",
           "timeLeft": 435
         },
         {
-          "name": "homosexual_underground",
           "isFresh": true,
+          "name": "homosexual_underground",
           "state": "UNKNOWN",
           "timeLeft": 480
         },
         {
-          "name": "arno_van_eyck",
           "isFresh": true,
+          "name": "arno_van_eyck",
           "state": "UNKNOWN",
           "timeLeft": 50
         },
         {
-          "name": "fairweather_t_500",
           "isFresh": true,
+          "name": "fairweather_t_500",
           "state": "UNKNOWN",
           "timeLeft": 210
         },
         {
-          "name": "terrier",
           "isFresh": true,
+          "name": "terrier",
           "state": "UNKNOWN",
           "timeLeft": 195
         },
         {
-          "name": "one_more_door",
           "isFresh": true,
+          "name": "one_more_door",
           "state": "UNKNOWN",
           "timeLeft": 45
         },
         {
-          "name": "contact_mike",
           "isFresh": true,
+          "name": "contact_mike",
           "state": "UNKNOWN",
           "timeLeft": 15
         },
         {
-          "name": "hardcore_aesthetic",
           "isFresh": true,
+          "name": "hardcore_aesthetic",
           "state": "UNKNOWN",
           "timeLeft": 110
         },
         {
-          "name": "suicide_is_painless",
           "isFresh": true,
+          "name": "suicide_is_painless",
           "state": "UNKNOWN",
           "timeLeft": 120
         },
         {
-          "name": "col_do_ma_ma_daqua",
           "isFresh": true,
+          "name": "col_do_ma_ma_daqua",
           "state": "UNKNOWN",
           "timeLeft": 430
         },
         {
-          "name": "the_waste_land_of_reality",
           "isFresh": true,
+          "name": "the_waste_land_of_reality",
           "state": "UNKNOWN",
           "timeLeft": 1200
         },
         {
-          "name": "kras_mazov",
           "isFresh": true,
+          "name": "kras_mazov",
           "state": "UNKNOWN",
           "timeLeft": 285
         },
         {
-          "name": "precarious_world",
           "isFresh": true,
+          "name": "precarious_world",
           "state": "UNKNOWN",
           "timeLeft": 240
         },
         {
-          "name": "welkin_generator",
           "isFresh": true,
+          "name": "welkin_generator",
           "state": "UNKNOWN",
           "timeLeft": 335
         },
         {
-          "name": "jamais_vu",
           "isFresh": true,
+          "name": "jamais_vu",
           "state": "UNKNOWN",
           "timeLeft": 205
         },
         {
-          "name": "trant_heidelstam",
           "isFresh": false,
+          "name": "trant_heidelstam",
           "state": "UNKNOWN",
           "timeLeft": 42
         },
         {
-          "name": "return_on_investment",
           "isFresh": true,
+          "name": "return_on_investment",
           "state": "UNKNOWN",
           "timeLeft": 315
         },
         {
-          "name": "insulindian_miracle",
           "isFresh": true,
+          "name": "insulindian_miracle",
           "state": "UNKNOWN",
           "timeLeft": 465
         },
         {
-          "name": "wild_pines",
           "isFresh": true,
+          "name": "wild_pines",
           "state": "UNKNOWN",
           "timeLeft": 355
         }
       ]
     }
-  }
+  },
+  "_format": "json-diff",
+  "_formatVersion": 1
 }

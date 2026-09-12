@@ -51,6 +51,16 @@ pub const BASE_KEY: &str = "base";
 /// Where a manifest lists what the save holds.
 pub const MEMBERS_KEY: &str = "members";
 
+/// What a member written as a JSON diff is named after.
+pub const JSON_SUFFIX: &str = ".json";
+
+/// What a member written as a unified diff has appended to its name.
+///
+/// HOW A READER TELLS A DIFF FROM WHAT IT IS A DIFF OF, for the members that are not JSON:
+/// a `json-diff` says what it is in its own header, and a text file has nowhere to put one,
+/// so its name carries the distinction instead.
+pub const TEXT_DIFF_SUFFIX: &str = ".diff";
+
 /// How one member of a save relates to the same member of the base.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MemberKind {
@@ -152,6 +162,9 @@ pub enum SaveFault {
     /// A base chain that returns to itself.
     #[error("the bases run in a circle, through {0}")]
     Circular(String),
+    /// A diff that says nothing about what it is a diff of.
+    #[error("{0} is a diff and names no {} to be a diff of", header::BASE_KEY)]
+    Baseless(String),
     /// A file would not be written.
     #[error("{0} will not be written: {1}")]
     Unwritable(String, String),
@@ -474,6 +487,67 @@ pub fn chain(files: &impl Files, directory: &Path) -> Result<Vec<Link>, SaveFaul
     Ok(links)
 }
 
+/// Where the file that answers for a member actually is, along a chain of saves.
+///
+/// NOT ALWAYS IN THE SAVE THE MANIFEST NAMES, which is the whole reason this is a walk.
+/// A save's base may inherit the member rather than change it, and its base in turn, so the
+/// file a diff is a diff of can be several links up. What comes back is the nearest link
+/// that holds one.
+///
+/// # Errors
+///
+/// Where a manifest along the way will not read, or where the bases run in a circle.
+pub fn member_beneath(
+    files: &impl Files,
+    save: &Path,
+    suffix: &str,
+) -> Result<Option<PathBuf>, SaveFault> {
+    for link in chain(files, save)?.iter().rev() {
+        let Some(manifest) = &link.manifest else {
+            // A WHOLE SAVE, whose members are its files. It holds this one or nothing does.
+            let path = link.directory.join(format!("{}{suffix}", link.stem()));
+            return Ok(files.read(&path).map(|_| path));
+        };
+
+        let Some(member) = manifest.members.iter().find(|held| held.suffix == suffix) else {
+            continue;
+        };
+        if let Some(diff) = &member.diff {
+            return Ok(Some(link.directory.join(diff)));
+        }
+    }
+
+    Ok(None)
+}
+
+/// Where the file that answers for one of a save's tables actually is.
+///
+/// The same walk as [`member_beneath`] and for the same reason: a save that changes no table
+/// has no split directory at all, so the tree a diff is a diff of can be several links up.
+///
+/// `named` is what the file is called inside a split directory, and `directory_of` is how a
+/// save's split directory is found - passed in because that is [`super::lua_parts`]'s to
+/// say, and this walk is the chain's.
+///
+/// # Errors
+///
+/// As [`member_beneath`].
+pub fn table_beneath(
+    files: &impl Files,
+    save: &Path,
+    named: &str,
+    directory_of: impl Fn(&Path) -> PathBuf,
+) -> Result<Option<PathBuf>, SaveFault> {
+    for link in chain(files, save)?.iter().rev() {
+        let path = directory_of(&link.directory).join(named);
+        if files.read(&path).is_some() {
+            return Ok(Some(path));
+        }
+    }
+
+    Ok(None)
+}
+
 /// The pass-through members of an expanded save, with every diff between it and a whole
 /// save applied.
 ///
@@ -485,94 +559,104 @@ pub fn chain(files: &impl Files, directory: &Path) -> Result<Vec<Link>, SaveFaul
 /// Where a file is missing or will not read, where a manifest is not one, where a diff will
 /// not apply, or where the bases run in a circle.
 pub fn members_of(files: &impl Files, directory: &Path) -> Result<Members, SaveFault> {
-    let mut members = Members::new();
-    for link in chain(files, directory)? {
-        members = match &link.manifest {
-            None => whole_members(files, &link.directory)?,
-            Some(manifest) => applied_members(files, &link.directory, manifest, &members)?,
-        };
-    }
-
-    Ok(members)
-}
-
-/// What one link of a chain leaves the members as, given what the link before it held.
-fn applied_members(
-    files: &impl Files,
-    directory: &Path,
-    manifest: &Manifest,
-    base: &Members,
-) -> Result<Members, SaveFault> {
-    let context = shown(&directory.join(MANIFEST_NAME));
-    let mut applied = Vec::with_capacity(manifest.members.len());
-    for member in &manifest.members {
-        let was = base
-            .iter()
-            .find(|(suffix, _)| *suffix == member.suffix)
-            .map(|(_, bytes)| bytes.as_slice());
-
-        applied.push((
-            member.suffix.clone(),
-            apply_member(files, directory, member, was, &context)?,
-        ));
-    }
-
-    Ok(applied)
-}
-
-fn apply_member(
-    files: &impl Files,
-    directory: &Path,
-    member: &Member,
-    was: Option<&[u8]>,
-    context: &str,
-) -> Result<Vec<u8>, SaveFault> {
-    if member.kind == MemberKind::Inherit {
-        return was
-            .map(<[u8]>::to_vec)
-            .ok_or_else(|| SaveFault::NothingToInherit(context.to_string(), member.name.clone()));
-    }
-
-    let named = member.diff.as_deref().unwrap_or_default();
-    let path = directory.join(named);
-    let raw = files
-        .read(&path)
-        .ok_or_else(|| SaveFault::Missing(shown(&path)))?;
-    let patch = String::from_utf8(raw)
-        .map_err(|why| SaveFault::Unreadable(shown(&path), why.to_string()))?;
-
-    // A member the base does not have is an ADDITION, so it is a diff against nothing.
-    let baseline = was.unwrap_or_default();
-
-    match member.kind {
-        MemberKind::Json => apply_json(&patch, baseline, &shown(&path)),
-        MemberKind::Text => {
-            let before = String::from_utf8(baseline.to_vec())
-                .map_err(|why| SaveFault::Unreadable(shown(&path), why.to_string()))?;
-            text_diff::apply(&before, &patch, &shown(&path))
-                .map(String::into_bytes)
-                .map_err(|why| SaveFault::Unapplicable(shown(&path), why.to_string()))
-        }
-        MemberKind::Inherit => unreachable!("answered above"),
-    }
-}
-
-fn apply_json(patch: &str, baseline: &[u8], context: &str) -> Result<Vec<u8>, SaveFault> {
-    let patch: serde_json::Value = serde_json::from_str(patch)
-        .map_err(|why| SaveFault::Unreadable(context.to_string(), why.to_string()))?;
-
-    let was: serde_json::Value = if baseline.is_empty() {
-        serde_json::Value::Null
-    } else {
-        serde_json::from_slice(baseline)
-            .map_err(|why| SaveFault::Unreadable(context.to_string(), why.to_string()))?
+    let links = chain(files, directory)?;
+    let here = links.last().expect("a chain ends at the save itself");
+    let Some(manifest) = &here.manifest else {
+        return whole_members(files, &here.directory);
     };
 
-    let merged = json_diff::apply(&was, &patch)
-        .map_err(|why| SaveFault::Unapplicable(context.to_string(), why.to_string()))?;
+    let context = shown(&here.directory.join(MANIFEST_NAME));
+    let beneath = here.directory.join(&manifest.base);
+    let mut found = Vec::with_capacity(manifest.members.len());
+    for member in &manifest.members {
+        // AN INHERITED MEMBER IS THE ONE THE MANIFEST STILL ANSWERS FOR, because it has no
+        // file of its own to say anything in. Everything else names its own base and is
+        // followed from the file rather than from the walk.
+        let path = if member.kind == MemberKind::Inherit {
+            member_beneath(files, &beneath, &member.suffix)?
+                .ok_or_else(|| SaveFault::NothingToInherit(context.clone(), member.name.clone()))?
+        } else {
+            here.directory
+                .join(member.diff.as_deref().unwrap_or_default())
+        };
 
+        found.push((member.suffix.clone(), resolved(files, &path)?));
+    }
+
+    Ok(found)
+}
+
+/// One member's file, with every diff between it and a whole member applied.
+///
+/// WHAT IT IS A DIFF OF IS IN THE FILE. A `json-diff` says so in `_base`, a unified diff
+/// says so on its first line, and anything else is whole. So a member can be resolved from
+/// its own path, with no manifest anywhere in sight - which is the point of writing the
+/// base down in each of them.
+///
+/// # Errors
+///
+/// Where a file along the way is missing or will not read, where a diff names no base or
+/// will not apply, or where the bases run in a circle.
+pub fn resolved(files: &impl Files, path: &Path) -> Result<Vec<u8>, SaveFault> {
+    resolve_member(files, path, &mut HashSet::new(), &mut Vec::new())
+}
+
+fn resolve_member(
+    files: &impl Files,
+    path: &Path,
+    walked: &mut HashSet<PathBuf>,
+    chain: &mut Vec<String>,
+) -> Result<Vec<u8>, SaveFault> {
+    let at = flatten(path);
+    let context = shown(&at);
+    chain.push(context.clone());
+    if !walked.insert(at.clone()) {
+        return Err(SaveFault::Circular(chain.join(" -> ")));
+    }
+
+    let raw = files
+        .read(&at)
+        .ok_or_else(|| SaveFault::Missing(context.clone()))?;
+    let named = at.file_name().unwrap_or_default().to_string_lossy();
+    let beside = at.parent().unwrap_or_else(|| Path::new(".")).to_path_buf();
+
+    if named.ends_with(TEXT_DIFF_SUFFIX) {
+        let patch = String::from_utf8(raw)
+            .map_err(|why| SaveFault::Unreadable(context.clone(), why.to_string()))?;
+        let base = text_diff::base_of(&patch, &context)
+            .map_err(|why| SaveFault::Unapplicable(context.clone(), why.to_string()))?;
+        let was = resolve_member(files, &beside.join(base), walked, chain)?;
+        let before = String::from_utf8(was)
+            .map_err(|why| SaveFault::Unreadable(context.clone(), why.to_string()))?;
+
+        return text_diff::apply(&before, &patch, &context)
+            .map(String::into_bytes)
+            .map_err(|why| SaveFault::Unapplicable(context, why.to_string()));
+    }
+
+    if !named.ends_with(JSON_SUFFIX) {
+        return Ok(raw);
+    }
+
+    let document: serde_json::Value = serde_json::from_slice(&raw)
+        .map_err(|why| SaveFault::Unreadable(context.clone(), why.to_string()))?;
+    if document
+        .get(header::FORMAT_KEY)
+        .and_then(|named| named.as_str())
+        != Some(json_diff::FORMAT.format)
+    {
+        return Ok(raw);
+    }
+
+    let base = json_diff::base_of(&document).ok_or_else(|| SaveFault::Baseless(context.clone()))?;
+    let was = resolve_member(files, &beside.join(base), walked, chain)?;
+    let was: serde_json::Value = serde_json::from_slice(&was)
+        .map_err(|why| SaveFault::Unreadable(context.clone(), why.to_string()))?;
+
+    let merged = json_diff::apply(&was, &document)
+        .map_err(|why| SaveFault::Unapplicable(context.clone(), why.to_string()))?;
     serde_json::to_vec_pretty(&merged)
-        .map_err(|why| SaveFault::Unreadable(context.to_string(), why.to_string()))
+        .map_err(|why| SaveFault::Unreadable(context, why.to_string()))
 }
 
 /// The members of a save that is written whole, which are its files but the manifest.
@@ -838,7 +922,8 @@ mod tests {
             .with("base.ntwtf/base.states.lua", "one\ntwo\n")
             .with(
                 "save.ntwtf/save.states.lua.diff",
-                "--- a/f\n+++ b/f\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n",
+                "--- ../base.ntwtf/base.states.lua\n+++ save.states.lua\n\
+                 @@ -1,2 +1,2 @@\n one\n-two\n+TWO\n",
             )
             .with(
                 "save.ntwtf/_archive.json",
@@ -861,7 +946,8 @@ mod tests {
             .with("whole.ntwtf/whole.states.lua", "one\ntwo\n")
             .with(
                 "middle.ntwtf/middle.states.lua.diff",
-                "--- a/f\n+++ b/f\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n",
+                "--- ../whole.ntwtf/whole.states.lua\n+++ middle.states.lua\n\
+                 @@ -1,2 +1,2 @@\n one\n-two\n+TWO\n",
             )
             .with(
                 "middle.ntwtf/_archive.json",
@@ -873,7 +959,8 @@ mod tests {
             )
             .with(
                 "save.ntwtf/save.states.lua.diff",
-                "--- a/f\n+++ b/f\n@@ -1,2 +1,2 @@\n-one\n+ONE\n TWO\n",
+                "--- ../middle.ntwtf/middle.states.lua.diff\n+++ save.states.lua\n\
+                 @@ -1,2 +1,2 @@\n-one\n+ONE\n TWO\n",
             )
             .with(
                 "save.ntwtf/_archive.json",
@@ -935,7 +1022,8 @@ mod tests {
             .with("base.ntwtf/base.states.lua", "something else\n")
             .with(
                 "save.ntwtf/save.states.lua.diff",
-                "--- a/f\n+++ b/f\n@@ -1,1 +1,1 @@\n-two\n+TWO\n",
+                "--- ../base.ntwtf/base.states.lua\n+++ save.states.lua\n\
+                 @@ -1,1 +1,1 @@\n-two\n+TWO\n",
             )
             .with(
                 "save.ntwtf/_archive.json",

@@ -32,19 +32,15 @@
 use std::path::Path;
 
 use super::expanded_save::{
-    self, EXPANDED_SUFFIX, Files, Manifest, Member, MemberKind, Members, SaveFault, Written, shown,
+    self, EXPANDED_SUFFIX, Files, JSON_SUFFIX, Manifest, Member, MemberKind, Members, SaveFault,
+    TEXT_DIFF_SUFFIX, Written, shown,
 };
-use super::lua_blob::{self, Blob, BlobFault};
+use super::header;
+use super::lua_blob::{self, Blob, BlobFault, TABLE_NAMES};
 use super::lua_parts::{self, PARTS_SUFFIX, PartsFault};
 use super::lua_simx::Orders;
-use super::packed_save::{self, UnpackFault, Unpacked};
+use super::packed_save::{self, LUA_SUFFIX, UnpackFault, Unpacked};
 use super::{json_diff, text_diff};
-
-/// What a member written as a JSON diff is named after.
-const JSON_SUFFIX: &str = ".json";
-
-/// What a member written as a text diff has appended to its name.
-const TEXT_DIFF_SUFFIX: &str = ".diff";
 
 /// Why a save could not be expanded.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -70,6 +66,9 @@ pub enum ExpandFault {
     /// A member named like JSON is not JSON.
     #[error("'{0}' is not JSON: {1}")]
     NotJson(String, String),
+    /// A member has no counterpart anywhere beneath the base.
+    #[error("nothing beneath the base answers for '{0}', so it cannot be written as a change")]
+    Unmatched(String),
     /// The base is not somewhere a save can be read from.
     #[error("{0} is neither a packed save nor an expanded one")]
     NotASave(String),
@@ -110,6 +109,65 @@ pub fn read(files: &impl Files, path: &Path, orders: Option<&Orders>) -> Result<
         blob: lua_blob::read(&packed.lua)?,
         members: members_of(&packed)?,
     })
+}
+
+/// A save already expanded, put back into the shape it left the game in.
+///
+/// Every diff beneath it is resolved, so what comes back is the WHOLE save rather than the
+/// change - which is what an archive holds, and therefore what [`expansion`] has to be
+/// given. The name comes off the manifest where there is one, since that is the name the
+/// members were written for.
+///
+/// # Errors
+///
+/// Where either half of the save will not resolve.
+pub fn as_packed(
+    files: &impl Files,
+    save: &Path,
+    orders: Option<&Orders>,
+) -> Result<Unpacked, ExpandFault> {
+    let links = expanded_save::chain(files, save)?;
+    let stem = links.last().expect("a chain ends at the save").stem();
+    let whole = read(files, save, orders)?;
+
+    Ok(Unpacked {
+        lua_name: format!("{stem}{LUA_SUFFIX}"),
+        lua: lua_blob::write(&whole.blob),
+        members: whole
+            .members
+            .into_iter()
+            .map(|(suffix, bytes)| packed_save::Entry {
+                name: format!("{stem}{suffix}"),
+                bytes,
+            })
+            .collect(),
+    })
+}
+
+/// What a save already expanded would be written as by THIS build.
+///
+/// What the standing rule needs at every version bump: only the latest version of a format
+/// is committed, so a bump regenerates every file of it, and this is what regenerates one.
+/// A save written whole comes back whole, and one written as a change comes back as a
+/// change to the same base.
+///
+/// # Errors
+///
+/// As [`as_packed`] and [`expansion`].
+pub fn rewrite(
+    files: &impl Files,
+    save: &Path,
+    orders: Option<&Orders>,
+) -> Result<Vec<Written>, ExpandFault> {
+    let links = expanded_save::chain(files, save)?;
+    let here = links.last().expect("a chain ends at the save");
+    let base = here
+        .manifest
+        .as_ref()
+        .map(|manifest| here.directory.join(&manifest.base));
+
+    let packed = as_packed(files, save, orders)?;
+    expansion(files, &packed, save, base.as_deref(), orders)
 }
 
 /// The files a packed save expands into, before any of them is on disk.
@@ -156,7 +214,19 @@ pub fn expansion(
     let mut written = Vec::new();
     let mut members = Vec::with_capacity(packed.members.len());
     for entry in &packed.members {
-        let (member, diff) = change(packed, entry, &beneath.members)?;
+        let suffix = suffix_of(&entry.name, packed.stem())?;
+        let was = beneath
+            .members
+            .iter()
+            .find(|(named, _)| *named == suffix)
+            .map(|(_, bytes)| bytes.as_slice());
+
+        // WHERE THE FILE IT IS A DIFF OF ACTUALLY IS, which need not be in the base: a base
+        // that inherits this member holds no file for it, and nor may its own base.
+        let names = expanded_save::member_beneath(files, base, &suffix)?
+            .map(|path| expanded_save::relative(directory, &path));
+
+        let (member, diff) = change(entry, suffix, was, names.as_deref())?;
         if let Some(diff) = diff {
             written.push(Written {
                 path: directory.join(member.diff.as_deref().unwrap_or_default()),
@@ -178,28 +248,48 @@ pub fn expansion(
         },
     );
 
+    // WHERE EACH TABLE IT IS A DIFF OF ACTUALLY IS, on the same footing as the members: a
+    // base that changes no table has no split directory, so the file can be links further
+    // up. Named from the split directory, since that is where the diff will stand.
+    let mut named = Vec::with_capacity(TABLE_NAMES.len());
+    for table in TABLE_NAMES {
+        let file = format!("{table}{JSON_SUFFIX}");
+        let path = expanded_save::table_beneath(files, base, &file, lua_parts::directory_in)?
+            .ok_or_else(|| ExpandFault::Unmatched(file))?;
+        named.push(expanded_save::relative(&tables, &path));
+    }
+
     let beneath = lua_parts::encode(&beneath.blob, orders)?;
-    written.extend(lua_parts::files(&tables, &parts, Some(&beneath)));
+    written.extend(lua_parts::files(
+        &tables,
+        &parts,
+        Some(&lua_parts::Beneath {
+            tables: &beneath,
+            named: &named,
+        }),
+    ));
     Ok(written)
 }
 
 /// What one member of a save becomes against the base's member of the same suffix.
 ///
-/// A MEMBER THE BASE DOES NOT HAVE IS AN ADDITION, diffed against nothing, which is how a
-/// save that carries a member no earlier one did is still written as a change.
+/// `names` is where that member's file is, spelled from the directory this save is written
+/// into, and every diff written here carries it - a `_base` in the JSON kinds, and the
+/// first line in the text one. A MEMBER THE BASE DOES NOT HOLD IS REFUSED rather than
+/// written as a diff of nothing: a diff that names no base is one only the manifest beside
+/// it can read, which is the arrangement this ticket exists to end.
 fn change(
-    packed: &Unpacked,
     entry: &packed_save::Entry,
-    beneath: &Members,
+    suffix: String,
+    was: Option<&[u8]>,
+    names: Option<&str>,
 ) -> Result<(Member, Option<Vec<u8>>), ExpandFault> {
-    let suffix = suffix_of(&entry.name, packed.stem())?;
-    let was = beneath
-        .iter()
-        .find(|(named, _)| *named == suffix)
-        .map(|(_, bytes)| bytes.as_slice());
+    let (Some(was), Some(names)) = (was, names) else {
+        return Err(ExpandFault::Unmatched(entry.name.clone()));
+    };
 
-    let inherited = |name: &str| Member {
-        name: name.to_string(),
+    let inherited = Member {
+        name: entry.name.clone(),
         suffix: suffix.clone(),
         kind: MemberKind::Inherit,
         diff: None,
@@ -207,14 +297,16 @@ fn change(
 
     if entry.name.ends_with(JSON_SUFFIX) {
         let target = as_json(&entry.bytes, &entry.name)?;
-        let baseline = match was {
-            Some(bytes) => as_json(bytes, &entry.name)?,
-            None => serde_json::Value::Null,
+        let baseline = as_json(was, &entry.name)?;
+
+        let Some(mut patch) = json_diff::create(&baseline, &target) else {
+            return Ok((inherited, None));
         };
 
-        let Some(patch) = json_diff::create(&baseline, &target) else {
-            return Ok((inherited(&entry.name), None));
-        };
+        patch
+            .as_object_mut()
+            .expect("a diff is an object")
+            .insert(header::BASE_KEY.to_string(), names.into());
 
         let text = serde_json::to_string_pretty(&patch).expect("a diff is plain JSON") + "\n";
         return Ok((
@@ -229,13 +321,9 @@ fn change(
     }
 
     let target = as_text(&entry.bytes, &entry.name)?;
-    let baseline = match was {
-        Some(bytes) => as_text(bytes, &entry.name)?,
-        None => String::new(),
-    };
-
-    let Some(patch) = text_diff::create(&entry.name, &baseline, &target) else {
-        return Ok((inherited(&entry.name), None));
+    let Some(patch) = text_diff::create(names, &entry.name, &as_text(was, &entry.name)?, &target)
+    else {
+        return Ok((inherited, None));
     };
 
     Ok((

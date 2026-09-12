@@ -8,26 +8,22 @@
 //! an archive, and what gets committed is the directory, written as a CHANGE to a save that
 //! is already there.
 //!
-//! ## What it is held to, and why not the bytes
+//! ## What it is held to, which is the bytes
 //!
-//! THE SAVE HAS TO SURVIVE, and the plan has to hold the same files the committed save
-//! holds. Each committed save is rebuilt into the archive form it came from, expanded again
-//! against the same base, and the result is resolved: the members and the tables that come
-//! out have to be the ones the committed save resolves to, and the set of files planned has
-//! to be exactly the set committed.
+//! Each committed save is rebuilt into the archive form it came from, expanded again
+//! against the same base, and what comes out has to be WHAT IS COMMITTED - the same files,
+//! each holding the same bytes. Every one of them was written by this writer, so anything
+//! else means the writer has changed and the corpus has not.
 //!
-//! BYTE-FOR-BYTE IS NOT THE BAR, and three separate things stop it being. The 19 member
-//! diffs were written by .NET's default encoder and carry its 493 escapes and its own key
-//! order. A unified diff is not unique, so the two text diffs are a different edit script
-//! for the same change. And the sparse form does not record a grouped table's property
-//! order, which `committed_sparse_tables` already names the three saves affected by. All
-//! three are spelling, all three are rewritten by de-xz48.4, and none of them changes what
-//! a reader gets - which is what this checks instead.
+//! That bar was not available while the corpus carried .NET's encoder output: 493 escapes,
+//! its own key order, and its own edit script for the two unified diffs. de-xz48.4 wrote
+//! all of it again, and being able to demand the bytes is what that bought.
 //!
-//! THE MANIFEST IS THE EXCEPTION and is held to the bytes, because it is the one file whose
-//! whole content this writer decides. The diffs carry text a diff library or another
-//! encoder produced; the manifest is this writer's own sentence about what the save holds,
-//! so a difference in it is a difference in meaning rather than in spelling.
+//! THE SAVE STILL HAS TO SURVIVE, and that is checked too, because equal bytes are the
+//! easier half. The plan is read back through a view that falls through to disk for the
+//! base, so what a READER makes of the writer's output is compared with what it makes of
+//! the committed save - which is the property that would still matter if the spelling ever
+//! did drift.
 //!
 //! ## Why this skips without the id map
 //!
@@ -43,7 +39,7 @@ use std::path::{Path, PathBuf};
 
 use lookahead_engine::formats::expand::{self, ExpandFault};
 use lookahead_engine::formats::expanded_save::{
-    self, EXPANDED_SUFFIX, MANIFEST_NAME, OnDisk, Pending, Written,
+    self, EXPANDED_SUFFIX, MANIFEST_NAME, OnDisk, Pending,
 };
 use lookahead_engine::formats::lua_simx::{self, Orders};
 use lookahead_engine::formats::packed_save::{Entry, LUA_SUFFIX, Unpacked};
@@ -156,17 +152,18 @@ fn rewrites(save: &Path, orders: &Orders) -> Result<(), ExpandFault> {
         "{named}: the writer plans a different set of files from the one committed",
     );
 
-    // THE ONE FILE HELD TO ITS BYTES, for the reason at the top of this file.
-    let manifest = save.join(MANIFEST_NAME);
-    let planned_manifest = planned
-        .iter()
-        .find(|file: &&Written| file.path == manifest)
-        .unwrap_or_else(|| panic!("{named}: no manifest was planned"));
-    assert_eq!(
-        String::from_utf8_lossy(&planned_manifest.bytes),
-        fs::read_to_string(&manifest).expect("the committed manifest reads"),
-        "{named}: the manifest it writes is not the one committed",
-    );
+    // EVERY FILE HELD TO ITS BYTES. Shown as text where it is text, so a difference reads
+    // as the line it is on rather than as two lists of numbers.
+    for file in &planned {
+        let committed =
+            fs::read(&file.path).unwrap_or_else(|why| panic!("{}: {why}", file.path.display()));
+        assert_eq!(
+            String::from_utf8_lossy(&file.bytes),
+            String::from_utf8_lossy(&committed),
+            "{}: what this writer produces is not what is committed",
+            file.path.display(),
+        );
+    }
 
     // WHAT A READER GETS, which is the claim, rather than the bytes it reads to get there.
     let pending = Pending(&planned);
@@ -175,10 +172,8 @@ fn rewrites(save: &Path, orders: &Orders) -> Result<(), ExpandFault> {
         expanded_save::members_of(&OnDisk, save)?,
         "{named}: the members it writes resolve to something else",
     );
-    // DECODED, not as the trees they are stored as. The sparse form does not record a
-    // grouped table's property order, so a committed tree can spell a table one way and
-    // this writer another - which `committed_sparse_tables` names the three saves affected
-    // by. What both spellings have to agree on is the table, and they do.
+    // DECODED, not as the trees they are stored as. Equal bytes already say the trees
+    // agree; what this adds is that they agree about the TABLE, which is what a save is.
     assert_eq!(
         lua_parts::document(&pending, save, Some(orders)).map_err(ExpandFault::from)?,
         lua_parts::document(&OnDisk, save, Some(orders)).map_err(ExpandFault::from)?,

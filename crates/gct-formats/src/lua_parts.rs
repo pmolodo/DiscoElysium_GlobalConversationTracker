@@ -12,13 +12,19 @@
 //!
 //! Then each file present is a [`super::sparse_diff`] rather than a whole table, and the
 //! ones that did not change are absent - as is the whole directory, for a save that changes
-//! no table at all. So reading one means walking the SAME CHAIN the manifest names, which
-//! [`super::expanded_save::chain`] gives, and applying what each link changes to what the
-//! link before it held.
+//! no table at all.
 //!
-//! THE CHAIN IS NAMED ONCE, in `_archive.json`, and that one name answers for both halves
-//! of a save. A second copy of it down here would be a second thing to keep in step, and
-//! for a save that changes no table it would be the only reason the directory existed.
+//! ## The chain says where to look; the file says what it is a diff of
+//!
+//! Those are two questions and they have two answers. WHERE a table is written down can be
+//! several links up, because a save that changes no table has no directory to hold one, so
+//! finding it means walking the chain `_archive.json` names. WHAT it is a diff of is written
+//! in the file, in `_base`, relative to itself - so once found, a table resolves from its
+//! own path with no manifest in sight.
+//!
+//! A `_base` therefore SKIPS every save that did not touch that table, and is meant to.
+//! `fan-read-all` changes the conversations; its base changes no table at all; so its
+//! conversations are a diff of the template's, two links up.
 //!
 //! ## The order the tables are turned back into Lua in is not free
 //!
@@ -28,6 +34,7 @@
 //! them. A `Variable` table with that header and nothing to rebuild from is REFUSED rather
 //! than read short.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use super::expanded_save::{self, Files, SaveFault, Written, shown};
@@ -101,50 +108,69 @@ pub fn directory_in(save: &Path) -> PathBuf {
 /// a whole table does not say it is one, where a diff will not apply, or where nothing in
 /// the chain holds one of the five tables.
 pub fn read(files: &impl Files, save: &Path) -> Result<Parts, PartsFault> {
-    let mut tables: Vec<Option<SparseMap>> = TABLE_NAMES.iter().map(|_| None).collect();
-    let mut trailing: Option<Vec<u8>> = None;
-
-    for link in expanded_save::chain(files, save)? {
-        let directory = directory_in(&link.directory);
-        for (at, name) in TABLE_NAMES.iter().enumerate() {
-            let path = directory.join(format!("{name}.json"));
-            let Some(raw) = files.read(&path) else {
-                continue;
-            };
-
-            let context = shown(&path);
-            let text = String::from_utf8(raw)
-                .map_err(|why| PartsFault::Unreadable(context.clone(), why.to_string()))?;
-            let document = sparse::read(&text, &context)?;
-
-            tables[at] = Some(match tables[at].take() {
-                // A LINK OF THE CHAIN, which changes what the one before it held. A whole
-                // table arriving here is turned away by the diff's own header check, which
-                // is the right answer: a chain has one whole table in it and it is first.
-                Some(was) => sparse_diff::apply(&was, &document)
-                    .map_err(|why| PartsFault::Unapplicable(context, why))?,
-                None => {
-                    whole(&document, &context)?;
-                    document
-                }
-            });
-        }
-
-        if let Some(bytes) = files.read(&directory.join(TRAILING_NAME)) {
-            trailing = Some(bytes);
-        }
-    }
-
     let named = |what: &str| PartsFault::Missing(shown(save), what.to_string());
     let mut found = Vec::with_capacity(TABLE_NAMES.len());
-    for (at, name) in TABLE_NAMES.iter().enumerate() {
-        found.push(tables[at].take().ok_or_else(|| named(name))?);
+
+    for name in TABLE_NAMES {
+        // THE CHAIN SAYS WHERE TO LOOK, and the file says what it is a diff of. A save that
+        // changes no table has no split directory at all, so the nearest one holding this
+        // table can be several links up - but once found, it is followed from itself.
+        let file = format!("{name}.json");
+        let path = expanded_save::table_beneath(files, save, &file, directory_in)?
+            .ok_or_else(|| named(name))?;
+        found.push(tree(files, &path, &mut HashSet::new(), &mut Vec::new())?);
     }
+
+    let trailing = expanded_save::table_beneath(files, save, TRAILING_NAME, directory_in)?
+        .and_then(|path| files.read(&path))
+        .ok_or_else(|| named(TRAILING_NAME))?;
 
     Ok(Parts {
         tables: found,
-        trailing: trailing.ok_or_else(|| named(TRAILING_NAME))?,
+        trailing,
     })
+}
+
+/// One table's tree, with every diff between it and a whole tree applied.
+///
+/// The same walk [`expanded_save::resolved`] does for a member, over the sparse form: a file
+/// that names itself a `sparse-diff` names the tree it changes in `_base`, relative to
+/// itself, and anything else has to be a whole table of this build's version.
+fn tree(
+    files: &impl Files,
+    path: &Path,
+    walked: &mut HashSet<PathBuf>,
+    chain: &mut Vec<String>,
+) -> Result<SparseMap, PartsFault> {
+    let at = expanded_save::flatten(path);
+    let context = shown(&at);
+    chain.push(context.clone());
+    if !walked.insert(at.clone()) {
+        return Err(PartsFault::Chain(SaveFault::Circular(chain.join(" -> "))));
+    }
+
+    let raw = files
+        .read(&at)
+        .ok_or_else(|| PartsFault::Chain(SaveFault::Missing(context.clone())))?;
+    let text = String::from_utf8(raw)
+        .map_err(|why| PartsFault::Unreadable(context.clone(), why.to_string()))?;
+    let document = sparse::read(&text, &context)?;
+
+    let names = match document.find(header::FORMAT_KEY) {
+        Some(SparseValue::Text(text)) => Some(text.as_str()),
+        _ => None,
+    };
+    if names != Some(sparse_diff::FORMAT.format) {
+        whole(&document, &context)?;
+        return Ok(document);
+    }
+
+    let base = sparse_diff::base_of(&document)
+        .ok_or_else(|| PartsFault::Chain(SaveFault::Baseless(context.clone())))?;
+    let beneath = at.parent().unwrap_or_else(|| Path::new(".")).join(base);
+    let was = tree(files, &beneath, walked, chain)?;
+
+    sparse_diff::apply(&was, &document).map_err(|why| PartsFault::Unapplicable(context, why))
 }
 
 /// The blob a save's split directory holds.
@@ -230,24 +256,43 @@ pub fn encode(blob: &Blob, orders: Option<&Orders>) -> Result<Parts, PartsFault>
     })
 }
 
+/// What a save's split directory is written against: the tables beneath it, and where each
+/// of their files is, spelled from the directory being written.
+///
+/// THE TWO ARE NOT THE SAME QUESTION. What a table is a diff OF is the resolved tree, which
+/// the base save answers for; WHERE that tree is written down can be several links further
+/// up, because a save that changes no table has no split directory at all.
+pub struct Beneath<'a> {
+    /// The base's five trees, resolved and encoded the way this writer encodes.
+    pub tables: &'a Parts,
+    /// Where each one's file is, in [`TABLE_NAMES`] order.
+    pub named: &'a [String],
+}
+
 /// The files a save's split directory holds, ready to be written.
 ///
-/// With a `base`, only what DIFFERS from it: each changed table as a sparse diff, the
-/// unchanged ones left out entirely, and the trailing bytes only where they changed. So a
-/// save that changes no table at all produces no files, and therefore no directory - which
-/// is what the reader already allows for, and what stops a save carrying an empty folder to
-/// say it changed nothing.
+/// With a `base`, only what DIFFERS from it: each changed table as a sparse diff carrying
+/// the `_base` that says which file it is a diff of, the unchanged ones left out entirely,
+/// and the trailing bytes only where they changed. So a save that changes no table at all
+/// produces no files, and therefore no directory - which is what the reader already allows
+/// for, and what stops a save carrying an empty folder to say it changed nothing.
 #[must_use]
-pub fn files(directory: &Path, parts: &Parts, base: Option<&Parts>) -> Vec<Written> {
+pub fn files(directory: &Path, parts: &Parts, base: Option<&Beneath<'_>>) -> Vec<Written> {
     let mut written = Vec::new();
 
     for (at, name) in TABLE_NAMES.iter().enumerate() {
         let tree = match base {
             None => parts.tables[at].clone(),
-            Some(base) => match sparse_diff::create(&base.tables[at], &parts.tables[at]) {
-                Some(patch) => patch,
-                None => continue,
-            },
+            Some(base) => {
+                match sparse_diff::create(
+                    &base.tables.tables[at],
+                    &parts.tables[at],
+                    &base.named[at],
+                ) {
+                    Some(patch) => patch,
+                    None => continue,
+                }
+            }
         };
 
         written.push(Written {
@@ -256,7 +301,7 @@ pub fn files(directory: &Path, parts: &Parts, base: Option<&Parts>) -> Vec<Writt
         });
     }
 
-    if base.is_none_or(|base| base.trailing != parts.trailing) {
+    if base.is_none_or(|base| base.tables.trailing != parts.trailing) {
         written.push(Written {
             path: directory.join(TRAILING_NAME),
             bytes: parts.trailing.clone(),
@@ -358,6 +403,14 @@ mod tests {
         )
     }
 
+    /// A sparse diff of the tree at `base`, changing the one entry every test table holds.
+    fn diff_of(base: &str, becomes: &str) -> String {
+        format!(
+            r#"{{"_format": "sparse-diff", "_formatVersion": 1, "_base": "{base}",
+                "_changes": {{"who": "{becomes}"}}}}"#
+        )
+    }
+
     fn text_of(tree: &SparseMap, name: &str) -> String {
         match tree.find(name) {
             Some(SparseValue::Text(text)) => text.clone(),
@@ -386,8 +439,10 @@ mod tests {
             .with("save.ntwtf/_archive.json", &manifest("../base.ntwtf"))
             .with(
                 &format!("save.ntwtf/save.ntwtf{PARTS_SUFFIX}/Actor.json"),
-                r#"{"_format": "sparse-diff", "_formatVersion": 1,
-                    "_changes": {"who": "changed"}}"#,
+                &diff_of(
+                    "../../base.ntwtf/base.ntwtf.lua.parts/Actor.json",
+                    "changed",
+                ),
             );
 
         let parts = read(&files, Path::new("save.ntwtf")).expect("it reads");
@@ -470,10 +525,15 @@ mod tests {
         assert!(matches!(why, PartsFault::Header(_, _)), "{why}");
     }
 
-    /// A whole table where a diff belongs is refused by the diff's own header check, so a
-    /// chain cannot quietly have two starts.
+    /// A save may state a table WHOLE rather than as a change, and then its base is not
+    /// consulted about that table at all.
+    ///
+    /// Nothing this repository writes does that - every save beyond the template is a
+    /// change - but it follows from a file saying what it is: a tree that names itself a
+    /// whole table is one, wherever along a chain it stands. There is nothing left for a
+    /// reader to be confused by, which is what the base written in each file bought.
     #[test]
-    fn a_second_whole_table_in_one_chain_is_refused() {
+    fn a_save_may_state_a_table_whole_instead_of_changing_it() {
         let files = whole_save(Held::default(), "base.ntwtf")
             .with("save.ntwtf/_archive.json", &manifest("../base.ntwtf"))
             .with(
@@ -481,9 +541,43 @@ mod tests {
                 r#"{"_format": "sparse", "_formatVersion": 1, "who": "again"}"#,
             );
 
+        let parts = read(&files, Path::new("save.ntwtf")).expect("it reads");
+
+        assert_eq!(text_of(&parts.tables[0], "who"), "again");
+    }
+
+    /// A diff naming a base that is not there says which file it went looking for.
+    #[test]
+    fn a_diff_whose_base_is_not_there_is_refused_by_name() {
+        let files = whole_save(Held::default(), "base.ntwtf")
+            .with("save.ntwtf/_archive.json", &manifest("../base.ntwtf"))
+            .with(
+                &format!("save.ntwtf/save.ntwtf{PARTS_SUFFIX}/Actor.json"),
+                &diff_of("nowhere/Actor.json", "changed"),
+            );
+
         let why = read(&files, Path::new("save.ntwtf")).expect_err("it is refused");
 
-        assert!(matches!(why, PartsFault::Unapplicable(_, _)), "{why}");
+        assert!(why.to_string().contains("Actor.json"), "{why}");
+    }
+
+    /// A diff that says nothing about what it changes is refused rather than guessed at.
+    #[test]
+    fn a_diff_that_names_no_base_is_refused() {
+        let files = whole_save(Held::default(), "base.ntwtf")
+            .with("save.ntwtf/_archive.json", &manifest("../base.ntwtf"))
+            .with(
+                &format!("save.ntwtf/save.ntwtf{PARTS_SUFFIX}/Actor.json"),
+                r#"{"_format": "sparse-diff", "_formatVersion": 1,
+                    "_changes": {"who": "changed"}}"#,
+            );
+
+        let why = read(&files, Path::new("save.ntwtf")).expect_err("it is refused");
+
+        assert!(
+            matches!(why, PartsFault::Chain(SaveFault::Baseless(_))),
+            "{why}",
+        );
     }
 
     /// The five trees come back as the five tables of a blob, in the order it holds them.

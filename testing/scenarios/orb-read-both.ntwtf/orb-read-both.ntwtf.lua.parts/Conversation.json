@@ -1,11 +1,12 @@
 {
+  "_format": "sparse-diff",
+  "_formatVersion": 1,
+  "_base": "../../at-klaasjes-flower.ntwtf/at-klaasjes-flower.ntwtf.lua.parts/Conversation.json",
   "_changes": {
     "656": {
       "Dialog": {
         "WasDisplayed": "3,8"
       }
     }
-  },
-  "_format": "sparse-diff",
-  "_formatVersion": 1
+  }
 }

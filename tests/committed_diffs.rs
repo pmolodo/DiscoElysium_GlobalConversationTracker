@@ -1,23 +1,22 @@
 // SPDX-License-Identifier: MIT
 //! Can Rust read every diff this repository has committed?
 //!
-//! ## Why this is the bar, and byte-for-byte with the C# writer is not
+//! ## The two things every one of them has to do
 //!
-//! Two things have to be true before the C# copy of this format can go. READING is the
-//! one that matters today: 26 committed files are read on every offline run, and a reader
-//! that mangled one would answer a scenario against a world that is not the one on disk.
-//! That is checked here against the files themselves.
+//! READ, which is what matters on every offline run: 26 committed files are read to build
+//! a scenario's world, and one that mangled would answer against a world nobody wrote.
 //!
-//! WRITING has to be STABLE rather than identical. The committed files were written by
-//! .NET, and the sparse ones happen to come out the same way this writer does - same
-//! two-space indent, same separators, same absence of escapes - but that is a coincidence
-//! worth not depending on, because the MEMBER diffs beside them do not: those carry 493
-//! escapes from .NET's default encoder, mixed hex casing and all. So what is held here is
-//! that this writer's own output reads back as the same tree, and the byte-for-byte bar
-//! begins when de-xz48.4 rewrites the committed files with it.
+//! And SAY WHAT IT IS A DIFF OF. Each names its base itself - the JSON kinds in `_base`,
+//! the unified diffs on their first line - so a diff can be followed from its own path
+//! rather than only through whatever manifest happens to sit beside it. The file it names
+//! has to be there, and that is checked rather than assumed.
 //!
-//! The test says out loud how many of them this writer would rewrite, so the size of that
-//! change is known in advance rather than discovered.
+//! ## Byte-for-byte, which it now is
+//!
+//! Every committed diff was written by this build's writer, so re-spelling one has to give
+//! back what is on disk. That was not so while the corpus carried .NET's output - the
+//! member diffs had 493 escapes with mixed hex casing - and it is the bar de-xz48.4 set by
+//! writing all of them again.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -127,7 +126,7 @@ fn what_this_writer_produces_reads_back_as_the_same_tree() {
 /// and pinning it would turn every future commit of a fixture into a failure here. What it
 /// is for is that de-xz48.4 knows the size of its rewrite before it starts.
 #[test]
-fn how_many_committed_diffs_this_writer_would_respell() {
+fn every_committed_diff_is_spelled_the_way_this_writer_spells_one() {
     let diffs = committed_diffs();
     let mut differing = Vec::new();
 
@@ -141,13 +140,36 @@ fn how_many_committed_diffs_this_writer_would_respell() {
         }
     }
 
-    println!(
-        "{} of {} committed sparse diffs would be respelled by this writer",
+    assert!(
+        differing.is_empty(),
+        "{} of {} committed sparse diffs are spelled some other way: {differing:?}",
         differing.len(),
         diffs.len(),
     );
-    for name in &differing {
-        println!("  {name}");
+}
+
+/// And every one of them says what it is a diff of, which is what makes it readable alone.
+#[test]
+fn every_committed_diff_names_the_file_it_is_a_diff_of() {
+    let diffs = committed_diffs();
+    assert!(diffs.len() >= AT_LEAST, "only {} were found", diffs.len());
+
+    for path in &diffs {
+        let name = name_of(path);
+        let text = fs::read_to_string(path).unwrap_or_else(|why| panic!("{name}: {why}"));
+        let tree = sparse::read(&text, &name).unwrap_or_else(|why| panic!("{why}"));
+
+        let base = sparse_diff::base_of(&tree)
+            .unwrap_or_else(|| panic!("{name} names nothing to be a diff of"));
+        let beneath = path
+            .parent()
+            .expect("a diff sits in a directory")
+            .join(base);
+
+        assert!(
+            beneath.is_file(),
+            "{name} is a diff of '{base}', which is not there",
+        );
     }
 }
 
@@ -204,6 +226,19 @@ fn every_committed_text_diff_is_in_a_shape_this_build_reads() {
             Err(text_diff::TextDiffFault::Mismatch(_, _)) | Ok(_) => {}
             Err(malformed) => panic!("{malformed}"),
         }
+
+        // AND IT SAYS WHAT IT IS A DIFF OF, on its first line, which is where a unified
+        // diff's `_base` lives. See the note on that in the text-diff module.
+        let base = text_diff::base_of(&patch, &name).unwrap_or_else(|why| panic!("{why}"));
+        let beneath = path
+            .parent()
+            .expect("a diff sits in a directory")
+            .join(&base);
+
+        assert!(
+            beneath.is_file(),
+            "{name} is a diff of '{base}', which is not there",
+        );
     }
 }
 

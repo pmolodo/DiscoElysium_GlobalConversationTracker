@@ -9,19 +9,20 @@
 //! [`lookahead_engine::formats::lua_parts`] does: what is checked here is the tree the
 //! offline runner actually reads for that scenario, rather than the patch file beside it.
 //!
-//! ## The bar, and why it is not byte-for-byte
+//! ## The two bars, and both of them are met
 //!
 //! THE TABLE HAS TO SURVIVE. A tree decodes to a Lua table, that table encodes back, and
 //! the tree it produces decodes to the SAME table. That is the property a save depends on,
 //! and it is checked on every table of every scenario.
 //!
-//! BYTE-FOR-BYTE IS NOT THE BAR HERE, because the sparse form does not record a grouped
-//! table's property order: the writer lists one key range per distinct value in the order
-//! the values were first MET, and the reader hands the keys back in ascending order, which
-//! is a different order in general. So a tree that came out of a save in some other order
-//! is written back in ascending order, once, and is a fixed point from then on. The count
-//! of committed tables that would be rewritten is asserted rather than left to be
-//! discovered, so the size of that change is known before de-xz48.4 makes it.
+//! AND THE SPELLING HAS TO BE THIS WRITER'S, exactly. Every committed table was written by
+//! it, so re-encoding one has to produce what is on disk and not merely something equal to
+//! it. That is a fixed point rather than a coincidence: the sparse form does not record a
+//! grouped table's property order, so a tree that arrived in some other order is written
+//! back in ascending order once and stays there.
+//!
+//! A save spelled some other way is therefore a failure now, where it used to be a named
+//! exception. Three of them were, until the corpus was written again by this writer.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -40,22 +41,6 @@ mod common;
 /// A LOWER BOUND, asserted so that a test finding none - a moved directory, a glob that
 /// stopped matching - fails rather than passing over an empty list.
 const AT_LEAST: usize = 12;
-
-/// The saves whose tables this writer spells differently, and what differs.
-///
-/// NO DATA DIFFERS in any of them - each table decodes to exactly what it decoded to
-/// before, which is what the survival check asserts - so what is left is spelling, of two
-/// kinds. A grouped table's property ORDER, because the form does not record it and the
-/// reader hands the keys back ascending. And a key range written out NUMBER BY NUMBER in a
-/// fixture that never went through a writer, where this collapses the run.
-///
-/// Named rather than counted, so a fourth one fails here with the difference spelt out
-/// rather than passing as a number that happened to stay the same.
-const REWRITTEN: [&str; 3] = [
-    "at-trashcan.ntwtf",
-    "fan-read-all.ntwtf",
-    "orb-read-all.ntwtf",
-];
 
 /// The table that leaves its derived variables out.
 ///
@@ -241,10 +226,9 @@ fn every_committed_table_decodes_and_comes_back_as_the_same_table() {
         "the {DERIVED} tables that could not be read: {refused:?}",
     );
     let rewritten_saves: Vec<&str> = rewritten.iter().map(|(save, _)| save.as_str()).collect();
-    assert_eq!(
-        rewritten_saves,
-        REWRITTEN,
-        "the committed tables this writer spells differently have changed:\n  {}",
+    assert!(
+        rewritten_saves.is_empty(),
+        "the committed tables are this writer's own output, so it must respell none:\n  {}",
         rewritten
             .iter()
             .map(|(save, how)| format!("{save}: {how}"))

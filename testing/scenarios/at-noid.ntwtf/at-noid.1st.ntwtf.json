@@ -1,10 +1,11 @@
 {
-  "_format": "json-diff",
-  "_formatVersion": 1,
+  "_base": "../../save_template.ntwtf/save_template.1st.ntwtf.json",
   "_changes": {
     "areaId": "Martinaise-ext",
     "fowUnrevealersStatusCache": {
       "fog-main": "ACTIVE"
     }
-  }
+  },
+  "_format": "json-diff",
+  "_formatVersion": 1
 }

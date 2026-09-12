@@ -1,6 +1,5 @@
 {
-  "_format": "json-diff",
-  "_formatVersion": 1,
+  "_base": "../../save_template.ntwtf/save_template.2nd.ntwtf.json",
   "_changes": {
     "sunshineClockTimeHolder": {
       "time": {
@@ -8,5 +7,7 @@
         "realDayCounter": 3
       }
     }
-  }
+  },
+  "_format": "json-diff",
+  "_formatVersion": 1
 }

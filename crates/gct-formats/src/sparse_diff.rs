@@ -52,10 +52,15 @@ pub enum SparseDiffFault {
 
 /// The difference between two trees, or nothing where they are the same.
 ///
-/// The result carries the header, so what comes back is a whole document rather than
-/// something a caller has to remember to stamp.
+/// `base` is where the tree this is a diff of lives, relative to where the diff itself
+/// will. IT IS AN ARGUMENT RATHER THAN SOMETHING A CALLER ADDS AFTERWARDS, because a diff
+/// that does not name its base is only readable through whatever manifest happens to sit
+/// beside it - so there is no way to write one here that leaves it out.
+///
+/// The result carries the whole header, so what comes back is a finished document rather
+/// than something a caller has to remember to stamp.
 #[must_use]
-pub fn create(baseline: &SparseMap, target: &SparseMap) -> Option<SparseMap> {
+pub fn create(baseline: &SparseMap, target: &SparseMap, base: &str) -> Option<SparseMap> {
     let mut removed = Vec::new();
     let changes = diff_map(baseline, target, "", &mut removed);
     if removed.is_empty() && changes.is_empty() {
@@ -69,6 +74,7 @@ pub fn create(baseline: &SparseMap, target: &SparseMap) -> Option<SparseMap> {
     );
     #[allow(clippy::cast_possible_wrap)]
     patch.add(header::VERSION_KEY, SparseValue::Int(FORMAT.version as i32));
+    patch.add(header::BASE_KEY, SparseValue::Text(base.to_string()));
 
     // EACH HALF IS LEFT OUT WHEN EMPTY, so a diff that only changes a value reads as that
     // value rather than as a value and an empty promise about removals.
@@ -85,6 +91,18 @@ pub fn create(baseline: &SparseMap, target: &SparseMap) -> Option<SparseMap> {
     }
 
     Some(patch)
+}
+
+/// What a diff says it is a diff of, or nothing where it says nothing.
+///
+/// A path relative to the diff itself, which is the same spelling every other `_base` in
+/// this repository uses.
+#[must_use]
+pub fn base_of(patch: &SparseMap) -> Option<&str> {
+    match patch.find(header::BASE_KEY) {
+        Some(SparseValue::Text(text)) => Some(text.as_str()),
+        _ => None,
+    }
 }
 
 /// Applies a diff to the tree it is a diff of.
@@ -224,7 +242,7 @@ mod tests {
     /// A diff between two trees, applied, is the second tree.
     fn round_trip(baseline: &str, target: &str) -> SparseMap {
         let (was, now) = (tree(baseline), tree(target));
-        match create(&was, &now) {
+        match create(&was, &now, "beneath.json") {
             None => was,
             Some(patch) => apply(&was, &patch).expect("its own diff applies"),
         }
@@ -232,7 +250,10 @@ mod tests {
 
     #[test]
     fn two_trees_that_are_the_same_have_no_diff() {
-        assert_eq!(create(&tree(r#"{"a": 1}"#), &tree(r#"{"a": 1}"#)), None);
+        assert_eq!(
+            create(&tree(r#"{"a": 1}"#), &tree(r#"{"a": 1}"#), "beneath.json"),
+            None
+        );
     }
 
     #[test]
@@ -240,6 +261,7 @@ mod tests {
         let patch = create(
             &tree(r#"{"a": 1, "b": 2, "c": 3}"#),
             &tree(r#"{"a": 1, "b": 9, "c": 3}"#),
+            "beneath.json",
         )
         .expect("they differ");
 
@@ -257,6 +279,7 @@ mod tests {
         let patch = create(
             &tree(r#"{"one": {"deep": {"x": 1, "y": 2}}, "two": {"z": 3}}"#),
             &tree(r#"{"one": {"deep": {"x": 1, "y": 9}}, "two": {"z": 3}}"#),
+            "beneath.json",
         )
         .expect("they differ");
 
@@ -271,8 +294,12 @@ mod tests {
 
     #[test]
     fn a_removed_key_is_named_as_a_path() {
-        let patch =
-            create(&tree(r#"{"a": 1, "b": 2}"#), &tree(r#"{"a": 1}"#)).expect("they differ");
+        let patch = create(
+            &tree(r#"{"a": 1, "b": 2}"#),
+            &tree(r#"{"a": 1}"#),
+            "beneath.json",
+        )
+        .expect("they differ");
 
         let SparseValue::Map(removals) = patch.find(REMOVE_KEY).expect("something was removed")
         else {
@@ -289,6 +316,7 @@ mod tests {
         let patch = create(
             &tree(r#"{"a/b": 1, "c~d": 2, "keep": 3}"#),
             &tree(r#"{"keep": 3}"#),
+            "beneath.json",
         )
         .expect("they differ");
 
@@ -309,6 +337,7 @@ mod tests {
         let patch = create(
             &tree(r#"{"one": {"gone": 1, "kept": 2}}"#),
             &tree(r#"{"one": {"kept": 2}}"#),
+            "beneath.json",
         )
         .expect("they differ");
 
@@ -376,7 +405,8 @@ mod tests {
     /// A diff carries its own header, so what comes back is a whole document.
     #[test]
     fn a_diff_says_what_it_is() {
-        let patch = create(&tree(r#"{"a": 1}"#), &tree(r#"{"a": 2}"#)).expect("they differ");
+        let patch = create(&tree(r#"{"a": 1}"#), &tree(r#"{"a": 2}"#), "beneath.json")
+            .expect("they differ");
 
         assert_eq!(
             patch.find(header::FORMAT_KEY),

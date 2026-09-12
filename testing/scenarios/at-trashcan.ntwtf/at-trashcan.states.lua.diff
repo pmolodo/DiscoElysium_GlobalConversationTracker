@@ -1,23 +1,23 @@
---- a/at-trashcan.states.lua
-+++ b/at-trashcan.states.lua
-@@ -27,3 +27,3 @@ AreaState["FORTRESS_PHASMID_ANIM"]={LocationState=0};
+--- ../../save_template.ntwtf/save_template.states.lua
++++ at-trashcan.states.lua
+@@ -27,3 +27,3 @@
  AreaState["GATES_MEASUREHEAD"]={LocationState=0};
 -AreaState["GATES_MANANA"]={LocationState=0};
 +AreaState["GATES_MANANA"]={LocationState=1};
  AreaState["HANGED_MAN"]={LocationState=0};
-@@ -35,3 +35,3 @@ AreaState["KLAASJE"]={LocationState=0};
+@@ -35,3 +35,3 @@
  AreaState["WHIRLING_CAFE_DOOR"]={LocationState=0};
 -AreaState["WHIRLING_PINBALL"]={LocationState=0};
 +AreaState["WHIRLING_PINBALL"]={LocationState=1};
  AreaState["WHIRLING_TEQUILA_BEDROOM"]={LocationState=0};
-@@ -53,4 +53,4 @@ AreaState["PLAZA_GASTON"]={LocationState=0};
+@@ -53,4 +53,4 @@
  AreaState["SUNKEN_CAR"]={LocationState=0};
 -AreaState["WATERLOCK_GATE"]={LocationState=0};
 -AreaState["ICE_ETERNITE"]={LocationState=0};
 +AreaState["WATERLOCK_GATE"]={LocationState=1};
 +AreaState["ICE_ETERNITE"]={LocationState=1};
  AreaState["CANAL_HAWTHORN"]={LocationState=0};
-@@ -129 +129,262 @@ AreaState["collageMode"]={HasEntered=false};
+@@ -129 +129,262 @@
  AreaState["Scenes/Whirling-int-f2"]={HasEntered=true};
 +AreaState["Shoe snakeskin left"]={disappear=true};
 +AreaState["Boot-cut pants"]={disappear=true};
