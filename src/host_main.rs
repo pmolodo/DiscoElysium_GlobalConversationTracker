@@ -42,9 +42,12 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use lookahead_engine::formats::expanded_save::{self, OnDisk};
+use lookahead_engine::formats::lua_blob::{self, LuaValue, TABLE_NAMES};
 use lookahead_engine::formats::lua_simx::{self, Orders};
 use lookahead_engine::formats::packed_save::{self, Stamp};
-use lookahead_engine::formats::{convert, expand, json_diff, resolve};
+use lookahead_engine::formats::{
+    convert, expand, json_diff, lua_parts, lua_sparse, resolve, sparse,
+};
 
 /// What to do, where a verb was given.
 enum Verb {
@@ -71,6 +74,8 @@ enum Verb {
         input: PathBuf,
         out: Option<PathBuf>,
     },
+    /// Print one of a save's Lua tables, as the tree it is stored as.
+    Dump { save: PathBuf, table: String },
 }
 
 fn main() -> ExitCode {
@@ -126,6 +131,13 @@ fn verb(arguments: &[String]) -> Result<Verb, String> {
             input: PathBuf::from(&arguments[1]),
             out: arguments.get(2).map(PathBuf::from),
         }),
+        "dump" if matches!(arguments.len(), 2 | 3) => Ok(Verb::Dump {
+            save: PathBuf::from(&arguments[1]),
+            table: arguments
+                .get(2)
+                .cloned()
+                .unwrap_or_else(|| lua_sparse::CONVERSATION_TABLE.to_string()),
+        }),
         other => Err(format!(
             "'{other}' is not something this does. The verbs are:\n  \
              resolve <file>                     print it with every diff beneath it applied\n  \
@@ -137,7 +149,9 @@ fn verb(arguments: &[String]) -> Result<Verb, String> {
              \x20                               writes one, in place\n  \
              convert <file> [<out>]             bring a file up to the current version of\n  \
              \x20                               its own format, beside it where <out> is\n  \
-             \x20                               not named\n\
+             \x20                               not named\n  \
+             dump <save> [<table>]              print one of a save's five Lua tables;\n  \
+             \x20                               the conversations where none is named\n\
              With no arguments at all it serves the engine over stdin and stdout.",
         )),
     }
@@ -187,7 +201,51 @@ fn perform(asked: Verb) -> Result<(), String> {
             Ok(())
         }
         Verb::Convert { input, out } => convert_file(&input, out.as_deref()),
+        Verb::Dump { save, table } => dump_table(&save, &table),
     }
+}
+
+/// Prints one of a save's five Lua tables, as the sparse tree a split directory holds.
+///
+/// THE SPARSE FORM RATHER THAN THE BLOB'S OWN LAYOUT, which is what a person reading a save
+/// wants: it keeps every key and every value and drops where the list half ended, which is
+/// the game's business and never a question anybody is asking here.
+///
+/// # Errors
+///
+/// Where the save will not read, or names a table that is not one of the five.
+fn dump_table(save: &Path, table: &str) -> Result<(), String> {
+    let shown = save.display().to_string();
+    let at = TABLE_NAMES
+        .iter()
+        .position(|name| name.eq_ignore_ascii_case(table))
+        .ok_or_else(|| {
+            format!(
+                "'{table}' is not one of a save's tables. They are: {}",
+                TABLE_NAMES.join(", ")
+            )
+        })?;
+
+    // WHICHEVER SHAPE THE SAVE IS IN. An expanded one already holds the trees; a packed one
+    // holds the blob, and encoding it is how the two come out looking the same.
+    let tree = if save.is_dir() {
+        lua_parts::read(&OnDisk, save)
+            .map_err(|fault| format!("{shown}: {fault}"))?
+            .tables
+            .swap_remove(at)
+    } else {
+        let packed = packed_save::unpack(save).map_err(|fault| format!("{shown}: {fault}"))?;
+        let blob = lua_blob::read(&packed.lua).map_err(|fault| format!("{shown}: {fault}"))?;
+        let LuaValue::Table(held) = &blob.tables[at] else {
+            return Err(format!("{shown} holds no {} table", TABLE_NAMES[at]));
+        };
+
+        lua_sparse::encode(held, TABLE_NAMES[at], None)
+            .map_err(|fault| format!("{shown}: {fault}"))?
+    };
+
+    print!("{}", sparse::write(&tree));
+    Ok(())
 }
 
 /// Brings one file up to the current version of its own format.

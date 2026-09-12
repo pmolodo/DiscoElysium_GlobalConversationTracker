@@ -33,7 +33,7 @@ namespace GlobalConversationTracker.DialogueAsset
     /// <remarks>
     /// <para>
     /// The game's saves talk about dialogue in articy ids, and the database in its own
-    /// conversation and entry ids, so decoding a save needs the crossing. NtwtfDecode
+    /// conversation and entry ids, so decoding a save needs the crossing. the engine host
     /// reads the written form of this to rebuild a save's Conversation_SimX_* strings.
     /// </para>
     /// <para>

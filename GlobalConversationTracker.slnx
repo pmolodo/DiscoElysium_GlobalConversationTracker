@@ -92,8 +92,6 @@
     compiling, and so a repo-root `dotnet test` runs their tests.
   -->
     <Folder Name="/tools/">
-        <Project Path="tools/NtwtfDecode.Tests/NtwtfDecode.Tests.csproj" />
-        <Project Path="tools/NtwtfDecode/NtwtfDecode.csproj" />
         <!--
       Win32 interop for the PowerShell test harness - finding the game's window
       and sending it keystrokes. Compiled rather than declared inside the

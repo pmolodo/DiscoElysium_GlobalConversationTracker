@@ -27,7 +27,7 @@ namespace GlobalConversationTracker.DialogueExtract
 
             Commands:
               articy-ids          The articy id of every conversation and dialogue entry,
-                                  as the two maps NtwtfDecode reads to rebuild a save's
+                                  as the two maps the engine host reads to rebuild a
                                   Conversation_SimX_* strings.
               conversation-index  One compact JSON object per conversation, one per line:
                                   its id, title, actor, conversant, and every dialogue
@@ -76,7 +76,7 @@ namespace GlobalConversationTracker.DialogueExtract
         private static readonly string DefaultStateOut = Path.Combine("testing", "scenarios",
             "global-state-worst-case.json");
 
-        // At the repository root, where NtwtfDecode looks for it by name.
+        // At the repository root, where the engine host looks for it by name.
         private static readonly string DefaultArticyIdsOut = "articy_ids_final_cut.json";
 
         private static int Main(string[] args)

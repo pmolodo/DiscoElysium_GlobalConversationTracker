@@ -5,7 +5,7 @@ using System.IO;
 using System.Numerics;
 using GlobalConversationTracker.Persistence;
 
-namespace NtwtfDecode;
+namespace GlobalConversationTracker.Persistence.Tests;
 
 /// <summary>
 /// A Lua table read out of the raw save blob.

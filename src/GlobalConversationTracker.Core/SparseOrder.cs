@@ -16,9 +16,9 @@ namespace GlobalConversationTracker.Core;
 /// <para>IN CORE, AND NOT IN THE TOOL THAT FIRST NEEDED IT. Every file this repository
 /// writes that carries a dense run of integers spells it the same way, and it can only
 /// stay that way if there is one implementation to be the same as. It began in
-/// <c>tools/NtwtfDecode</c>, for the sparse saves; the global state file now writes its
+/// a tool that read the sparse saves; the global state file now writes its
 /// entry sets with it too (format 4), and that file is written by the shipped plugin,
-/// which cannot reference a tool. Moving it here costs nothing - NtwtfDecode already
+/// which cannot reference a tool. Moving it here cost nothing - that tool already
 /// references Persistence, which references this - and it is the difference between one
 /// spelling and two that agree until they do not.</para>
 ///

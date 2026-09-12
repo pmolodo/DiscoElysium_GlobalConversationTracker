@@ -3,11 +3,11 @@ using System;
 using System.Collections.Generic;
 using GlobalConversationTracker.Persistence;
 
-namespace NtwtfDecode;
+namespace GlobalConversationTracker.Persistence.Tests;
 
 /// <summary>
 /// Builds the whole blob as nested <see cref="LuaTable"/>s - the decode
-/// <c>NtwtfDecode</c> wants, where nothing is known in
+/// these tests want, where nothing is known in
 /// advance about which parts matter.
 ///
 /// The result is a single table whose five entries are the top-level tables, keyed

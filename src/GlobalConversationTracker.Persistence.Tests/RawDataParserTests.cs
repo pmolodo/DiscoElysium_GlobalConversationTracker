@@ -5,7 +5,6 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using GlobalConversationTracker.Core;
-using NtwtfDecode;
 using Xunit;
 
 namespace GlobalConversationTracker.Persistence.Tests;

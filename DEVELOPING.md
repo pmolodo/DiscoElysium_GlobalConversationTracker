@@ -85,9 +85,6 @@ Two things about its contents are deliberate:
       does.
     - `worst-case-state` - `testing\scenarios\global-state-worst-case.json`, derived from
       the conversation index rather than directly from the `.asset`.
-  - `NtwtfDecode` - dumps the Lua tables inside a `{save}.ntwtf` save (zip, folder or
-    `.lua` file) as JSON. It dumps the `Conversation` table by default; `-t all` dumps
-    all five (Actor, Item, Location, Variable, Conversation) as one document.
   - `gct-state-check` - a Rust binary rather than one of these: verifies
     `global-conversation-state.json` is the union of two or more saves, with no dialogue
     status lower than the highest save that mentions it. Run it by hand after a real
@@ -95,6 +92,14 @@ Two things about its contents are deliberate:
   - `GlobalStateBenchmark` - times `GlobalStateStore.Save` broken out by phase, and what
     a caller pays now that the write runs on a background thread, over a sweep of state
     sizes.
+Reading and writing a save is the engine host's, by verb rather than by a tool of its own -
+the formats live in that crate, so a second program would be a second definition of them.
+`dump <save> [<table>]` prints one of a save's five Lua tables, the conversations by
+default; `expand <save.zip> <out> [<base>]` writes the archive the game wrote as the
+directory this repository commits, and `pack` goes the other way; `rewrite <save.ntwtf>`
+writes a committed save again as this build writes one, which is what a format version bump
+needs.
+
 Bringing an older file forward is `gct-engine-host convert <file> [<out>]`, a verb rather
 than a tool of its own. It works out WHICH format and WHICH version from the file itself,
 so neither is an argument: point it at a file and it converts, or says the file is already
