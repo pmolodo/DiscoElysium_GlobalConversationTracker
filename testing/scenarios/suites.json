@@ -420,6 +420,44 @@
           "pass": { "colour": "orange" },
           "fail": { "colour": "darkRed" },
           "branchesWhy": "Only the weather away from the save this was made from, and the weather is not on either outcome's way, so the two words carry what they carry dry."
+        },
+        {
+          "save": "scene-indoors-raining",
+          "conversation": 29,
+          "what": "indoors and raining, where the rain is set and never asked about",
+          "why": "THE CLAIM THE OUTDOOR ROWS CANNOT MAKE. Conversation 29's scene guards are a chain - 226 routes on IsExterior to 227 or to 228, and 114 and 115 hang off 113, which only 227 reaches - so the weather is asked on the outdoor side and NOWHERE ELSE. An engine that answered all three correctly and routed wrongly would pass every row above this one. This save is indoors and raining, one field away from the indoor row that is neither, and it has to draw exactly what that row draws. What makes it a measurement rather than an assertion is that the game really is in that weather: the save sets the preset WeatherController derives auto.is_raining from, and not only the variable, which a load would overwrite.",
+          "advances": 0,
+          "options": [
+            { "entry": 582, "marker": "none", "why": "going over the case again returns to the hub it was reached from, and everything that way has been read in this save" },
+            { "entry": 1008, "marker": "none", "why": "a rolled check draws no marker of its own; its two outcomes carry what they found" },
+            { "entry": 90, "marker": "red", "why": "admitting the amnesia leads on to lines this save has not shown, and the rain is not on the way" },
+            { "entry": 221, "marker": "none", "why": "asking about Kim himself reaches nothing this save has not already had" },
+            { "entry": 697, "marker": "red", "why": "accusing him of following leads on the same way the amnesia does" },
+            { "entry": 882, "marker": "none", "why": "leaving reaches nothing at all" }
+          ],
+          "branches": "everyCheck",
+          "pass": { "colour": "orange" },
+          "fail": { "colour": "darkRed" },
+          "branchesWhy": "Indoors, where neither outcome's way passes a weather guard at all, so the two words carry what they carry in the clear."
+        },
+        {
+          "save": "scene-indoors-snowing",
+          "conversation": 29,
+          "what": "and indoors in the snow, the other half of the same claim",
+          "why": "The snow half, and it is not a duplicate: the two variables are read apart, and an engine that let one stand in for the sky would answer this row from the wrong one. Same shape as the row above - indoors, one field away from the dry indoor row, and required to draw what that row draws.",
+          "advances": 0,
+          "options": [
+            { "entry": 582, "marker": "none", "why": "going over the case again returns to the hub it was reached from, and everything that way has been read in this save" },
+            { "entry": 1008, "marker": "none", "why": "a rolled check draws no marker of its own; its two outcomes carry what they found" },
+            { "entry": 90, "marker": "red", "why": "admitting the amnesia leads on to lines this save has not shown, and the snow is not on the way" },
+            { "entry": 221, "marker": "none", "why": "asking about Kim himself reaches nothing this save has not already had" },
+            { "entry": 697, "marker": "red", "why": "accusing him of following leads on the same way the amnesia does" },
+            { "entry": 882, "marker": "none", "why": "leaving reaches nothing at all" }
+          ],
+          "branches": "everyCheck",
+          "pass": { "colour": "orange" },
+          "fail": { "colour": "darkRed" },
+          "branchesWhy": "Indoors, where neither outcome's way passes a weather guard at all, so the two words carry what they carry in the clear."
         }
       ]
     }
