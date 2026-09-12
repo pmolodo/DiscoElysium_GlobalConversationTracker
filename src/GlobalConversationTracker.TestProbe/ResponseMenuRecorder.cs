@@ -155,6 +155,12 @@ namespace GlobalConversationTracker.TestProbe
                     "state", state,
                     "expected", expecting ? expected : (int?)null,
                     "shown", options.Length,
+                    // WHAT THE CHECK RULE WOULD HAVE READ, at the moment the menu it is
+                    // marking goes up. The save-applied event carries the same reading
+                    // taken mid-load; the pair is what says whether a difference from the
+                    // committed sheet is the load not having finished or the game valuing
+                    // the character differently. See de-2p8j.5.
+                    "skills", TestProbePlugin.Skills(),
                     // The same two readings the line event carries, so the pair can be
                     // compared: whichever of them says something different here from what
                     // it said while a line was up is the one that can replace the

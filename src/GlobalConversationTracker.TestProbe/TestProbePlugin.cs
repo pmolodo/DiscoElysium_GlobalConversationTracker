@@ -7,6 +7,7 @@ using DiscoPages.Elements.Dialogue;
 using HarmonyLib;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using PixelCrushers.DialogueSystem;
+using Sunshine.Metric;
 using UnityEngine;
 
 namespace GlobalConversationTracker.TestProbe
@@ -227,6 +228,48 @@ namespace GlobalConversationTracker.TestProbe
             return Path.Combine(
                 Application.persistentDataPath,
                 SunshinePersistenceFileManager.SAVE_GAME_DIRECTORY);
+        }
+
+        /// <summary>
+        /// A few of the player's skills as the RUNNING GAME values them, or null before
+        /// the world exists.
+        /// </summary>
+        /// <remarks>
+        /// <para>THE SAVE'S OWN SHEET IS NOT OBVIOUSLY THE ANSWER, which is why this is
+        /// worth logging. A committed save records a value per skill, and an offline
+        /// fixture decides passive checks from it - but one save records a level 9
+        /// character with every ability at 1 and no points in any skill, and the game
+        /// holding that save cleared checks that arithmetic says it cannot. See
+        /// de-2p8j.5.</para>
+        ///
+        /// <para>Read exactly the way the mod reads it - World.Singleton.you, then
+        /// GetSkillValue - so the number here is the number the check rule used, and a
+        /// difference from the file is a difference in the game rather than in how two
+        /// readers spell the question.</para>
+        /// </remarks>
+        internal static string? Skills()
+        {
+            try
+            {
+                World? world = World.Singleton;
+                CharacterSheet? sheet = world == null ? null : world.you;
+                if (sheet == null)
+                {
+                    return null;
+                }
+
+                return string.Join(
+                    ",",
+                    $"LOGIC={sheet.GetSkillValue(SkillType.LOGIC)}",
+                    $"PERCEPTION={sheet.GetSkillValue(SkillType.PERCEPTION)}",
+                    $"DRAMA={sheet.GetSkillValue(SkillType.DRAMA)}",
+                    $"EMPATHY={sheet.GetSkillValue(SkillType.EMPATHY)}",
+                    $"AUTHORITY={sheet.GetSkillValue(SkillType.AUTHORITY)}");
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         /// <summary>The money the game reports now, or null if Lua would not answer.</summary>
@@ -549,7 +592,8 @@ namespace GlobalConversationTracker.TestProbe
                     ProbeLog.Write(
                         "save-applied",
                         "bytes", bytes == null ? 0 : bytes.Length,
-                        "money", Money());
+                        "money", Money(),
+                        "skills", Skills());
                 }
                 catch (Exception error)
                 {
