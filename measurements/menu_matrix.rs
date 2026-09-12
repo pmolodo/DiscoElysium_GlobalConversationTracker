@@ -140,9 +140,9 @@ use menu_profile::MenuProfile;
 ///
 /// A DRIVER ASKS FOR THESE rather than parsing them off a row, so that a file assembled from
 /// many processes cannot get a header that disagrees with its rows.
-const COLUMNS: [&str; 11] = [
+const COLUMNS: [&str; 12] = [
     "conv", "entries", "options", "offered", "menu_ms", "setup_ms", "asked", "rounds", "settled",
-    "partly", "nodes",
+    "partly", "nodes", "starred",
 ];
 
 /// The groups to measure when nothing is named: the heavy list the matrix has always meant.
@@ -182,6 +182,14 @@ struct Menu {
     settled: usize,
     partly: usize,
     nodes: usize,
+    /// Which entries this marking starred, comma-separated and in menu order.
+    ///
+    /// WHICH RATHER THAN HOW MANY, and the distinction is the whole reason this column
+    /// exists. Two markings can star the same NUMBER of options and not the same options,
+    /// and `rounds` cannot tell those apart - so a run that changed which options a menu
+    /// recommends while keeping the count would read as no change at all. Comparing two
+    /// markings over the game is exactly what that would hide. See de-2p8j.2.
+    starred: String,
 }
 
 fn main() {
@@ -330,6 +338,13 @@ where
         counted.rounds = found.rounds;
         counted.settled = found.marks.iter().filter(|mark| mark.complete).count();
         counted.partly = counted.options - counted.settled;
+        counted.starred = starts
+            .iter()
+            .zip(&found.marks)
+            .filter(|(_, mark)| mark.round.is_some())
+            .map(|(start, _)| start.entry_id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
 
         counted.took = began.elapsed();
         counted.nodes = vars.node_count();
@@ -362,6 +377,13 @@ fn row(
             m.settled.to_string(),
             m.partly.to_string(),
             m.nodes.to_string(),
+            // A DASH RATHER THAN AN EMPTY CELL for a menu that starred nothing, so a reader
+            // and a splitter both see a value where the column is.
+            if m.starred.is_empty() {
+                "-".to_string()
+            } else {
+                m.starred.clone()
+            },
         ],
         None => {
             let mut cells = vec![
