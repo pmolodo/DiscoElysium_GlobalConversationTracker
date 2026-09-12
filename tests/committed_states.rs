@@ -13,6 +13,14 @@
 //! resolves to was never a file. Those are read, and what they resolve to is written and
 //! read back, which is the same property one step removed.
 //!
+//! ## Its other half, which is not in this language
+//!
+//! `tools/GameAutomation.Tests/CommittedStateFixtureTests.cs` does the same thing with the
+//! mod's own reader and writer. THIS FORMAT IS READ BY TWO PROGRAMS ON PURPOSE - see
+//! [`lookahead_engine::formats::global_state`] for why - and the pair of tests is what
+//! stops them drifting: neither can change what it writes without one of the two failing,
+//! and a fixture cannot be updated to suit one of them without the other saying so.
+//!
 //! ## What a committed fixture is for
 //!
 //! These are what the offline runs stage as "what some other save has already read", which

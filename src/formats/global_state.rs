@@ -31,6 +31,25 @@
 //! Statuses in the game's own order, conversations by id, entries ascending, orbs sorted,
 //! and no indentation - so two equal states produce identical files and a state that did
 //! not change produces no diff.
+//!
+//! ## THE ONE FORMAT HERE THAT IS ALSO READ IN C#, and why
+//!
+//! Every other format in [`super`] moved out of C# so that one fact would not be stated
+//! twice. This one did not, and the reason is what the file is: the mod's own writer runs
+//! INSIDE THE GAME, and the mod is built so that an engine which will not start costs a
+//! capability rather than a playthrough - the look-ahead is a setting a player can switch
+//! off, and switching it off never stops the tracking. Putting the only writer of the one
+//! irreplaceable file behind a process that is allowed to be absent, and that has a respawn
+//! budget it can run out of, would turn a dead engine into a lost session.
+//!
+//! So the mod keeps `GlobalStateJson`, and what removes the drift is a pair of tests rather
+//! than a single implementation: `tests/committed_states.rs` here and
+//! `tools/GameAutomation.Tests/CommittedStateFixtureTests.cs` there, each reading every
+//! committed state fixture and writing it back byte for byte. Neither side can change what
+//! it writes without one of the two failing.
+//!
+//! What this one is for is every reader that is NOT the game: the offline fixtures, the
+//! tools, and anything the host grows a verb for.
 
 use std::collections::{BTreeMap, BTreeSet};
 
