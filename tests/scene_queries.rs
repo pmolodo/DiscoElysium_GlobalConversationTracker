@@ -30,6 +30,8 @@
 //! this one does still has to be held against a running game, which is what the scene suite
 //! in `suites.json` is for.
 
+use std::collections::BTreeSet;
+
 use lookahead_engine::bridge::WireValue;
 use lookahead_engine::service::Service;
 
@@ -56,6 +58,12 @@ const OUTDOORS: &str = "at-trashcan";
 
 /// And one it left indoors, on the Whirling's ground floor.
 const INDOORS: &str = "at-garte";
+
+/// The same outdoor save, in the rain.
+const RAINING: &str = "scene-raining";
+
+/// And in the snow.
+const SNOWING: &str = "scene-snowing";
 
 #[test]
 fn the_engine_asks_about_the_scene_where_the_guards_do() {
@@ -122,16 +130,64 @@ fn a_save_outdoors_and_a_save_indoors_answer_the_scene_differently() {
         indoors.scene.area,
     );
 
-    // AND NEITHER IS IN THE RAIN, which is what makes the weather half of this untested by
-    // any committed save. Asserted rather than assumed, so a save that arrives wet is a
-    // failure here rather than a silently different world.
+    // AND NEITHER IS IN ANY WEATHER, which is what makes these two the dry pair. The saves
+    // that are wet are made rather than played, and are named for it.
     for holdings in [&outdoors, &indoors] {
         assert!(
             !holdings.scene.raining && !holdings.scene.snowing,
-            "{} is in weather, and no committed save was in any",
+            "{} is in weather, and neither of these two was",
             holdings.scene.area,
         );
     }
+}
+
+/// The weather saves are in weather, and are otherwise the save they were made from.
+///
+/// MADE RATHER THAN PLAYED, which is what this has to protect. Waiting in game for the
+/// weather to turn means letting the clock run, and the clock moves the day, the thoughts
+/// cooking, and whatever else is on a timer - so two saves meant to differ in the sky would
+/// differ in a dozen things and no run could say which one moved a marker.
+#[test]
+fn a_weather_save_differs_from_the_one_it_was_made_from_in_one_variable() {
+    let dry = common::fixtures::holdings_in_save(OUTDOORS);
+    let was = common::fixtures::variables_in_save(OUTDOORS);
+
+    for (save, wet) in [(RAINING, "auto.is_raining"), (SNOWING, "auto.is_snowing")] {
+        let scene = common::fixtures::holdings_in_save(save);
+        let now = common::fixtures::variables_in_save(save);
+
+        assert!(
+            scene.scene.outside,
+            "{save} is in {}, and the weather is only asked about outdoors",
+            scene.scene.area,
+        );
+        assert_eq!(scene.scene.area, dry.scene.area, "{save} moved");
+
+        // A KEY EITHER SIDE HOLDS, since a variable could have been added as well as
+        // changed, and the set is what makes the claim rather than one map's view of it.
+        let differing: BTreeSet<&str> = now
+            .keys()
+            .chain(was.keys())
+            .map(String::as_str)
+            .filter(|named| format!("{:?}", now.get(*named)) != format!("{:?}", was.get(*named)))
+            .collect();
+
+        assert_eq!(
+            differing,
+            BTreeSet::from([wet]),
+            "{save} differs from {OUTDOORS} in something other than the weather",
+        );
+    }
+}
+
+/// And what differs is what the queries answer from.
+#[test]
+fn the_weather_saves_answer_the_weather_they_were_made_with() {
+    let raining = common::fixtures::holdings_in_save(RAINING).scene;
+    let snowing = common::fixtures::holdings_in_save(SNOWING).scene;
+
+    assert!(raining.raining && !raining.snowing, "{raining:?}");
+    assert!(snowing.snowing && !snowing.raining, "{snowing:?}");
 }
 
 /// The offline world leaves none of the three unanswered, for any committed save.

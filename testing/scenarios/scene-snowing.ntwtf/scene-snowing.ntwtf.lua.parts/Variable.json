@@ -1,0 +1,8 @@
+{
+  "_format": "sparse-diff",
+  "_formatVersion": 1,
+  "_base": "../../at-trashcan.ntwtf/at-trashcan.ntwtf.lua.parts/Variable.json",
+  "_changes": {
+    "auto.is_snowing": true
+  }
+}
