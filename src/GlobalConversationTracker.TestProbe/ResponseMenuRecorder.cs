@@ -161,6 +161,11 @@ namespace GlobalConversationTracker.TestProbe
                     // committed sheet is the load not having finished or the game valuing
                     // the character differently. See de-2p8j.5.
                     "skills", TestProbePlugin.Skills(),
+                    // AND WHAT THE SCENE GUARDS READ, which has to be taken here rather
+                    // than at save-applied to mean anything: the Lua tables are in by then
+                    // but the area is not, so a mid-load reading pairs one save's weather
+                    // with the previous save's scene. See de-kxam.1.
+                    "scene", TestProbePlugin.Scene(),
                     // The same two readings the line event carries, so the pair can be
                     // compared: whichever of them says something different here from what
                     // it said while a line was up is the one that can replace the

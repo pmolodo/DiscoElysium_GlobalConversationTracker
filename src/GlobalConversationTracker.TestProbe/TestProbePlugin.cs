@@ -374,6 +374,72 @@ namespace GlobalConversationTracker.TestProbe
             said.Append(']');
         }
 
+        /// <summary>
+        /// What the game answers the three scene queries with, beside the two Lua variables
+        /// an offline world answers them from.
+        /// </summary>
+        /// <remarks>
+        /// <para>THE OFFLINE ANSWER FOR THE WEATHER IS AN INFERENCE. `FELDLuaFunctions` is
+        /// IL2CPP, so the export's `IsRaining` is a stub returning false and says nothing
+        /// about what the real one reads; what named `auto.is_raining` and `auto.is_snowing`
+        /// is `ArcticSwimmerEasterEgg`, which watches one of them for the condition the
+        /// dialogue guards ask about. Plausible is not measured, and this is what measures
+        /// it: the variable and the query side by side, on a save that sets the variable.
+        /// They agree or they do not.</para>
+        ///
+        /// <para>Run as Lua because that is how the mod's own world snapshot answers a
+        /// query key - the key IS a call with literal arguments - so the probe and the
+        /// feature under test cannot disagree about what was asked.</para>
+        ///
+        /// <para>READ IT FROM THE MENU EVENT RATHER THAN FROM SAVE-APPLIED where the two
+        /// have to agree with each other. The Lua tables are in by the time a save is
+        /// applied but the area is not, so a mid-load reading pairs the save being loaded
+        /// with the scene of the one before it - which is a useful thing to see and a
+        /// misleading thing to quote.</para>
+        /// </remarks>
+        internal static string? Scene()
+        {
+            // Each query as the guards spell it, and each variable as the save's table does.
+            string[] asked =
+            {
+                "IsExterior()",
+                "IsRaining()",
+                "IsSnowing()",
+                "Variable[\"auto.is_raining\"]",
+                "Variable[\"auto.is_snowing\"]",
+            };
+
+            try
+            {
+                var said = new StringBuilder();
+                foreach (string question in asked)
+                {
+                    if (said.Length > 0)
+                    {
+                        said.Append(' ');
+                    }
+
+                    said.Append(question).Append('=').Append(Answer(question));
+                }
+
+                return said.ToString();
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// What Lua makes of one expression, or "?" where it will not answer with a
+        /// boolean - which is a reading in its own right and not something to default.
+        /// </summary>
+        private static string Answer(string question)
+        {
+            Lua.Result result = Lua.Run($"return {question}");
+            return result.isBool ? (result.asBool ? "true" : "false") : "?";
+        }
+
         /// <summary>The money the game reports now, or null if Lua would not answer.</summary>
         /// <remarks>
         /// In centimes, as the database's ClickCost fields are: a 50.00 real purchase
@@ -696,7 +762,8 @@ namespace GlobalConversationTracker.TestProbe
                         "bytes", bytes == null ? 0 : bytes.Length,
                         "money", Money(),
                         "skills", Skills(),
-                        "modifiers", SkillModifiers());
+                        "modifiers", SkillModifiers(),
+                        "scene", Scene());
                 }
                 catch (Exception error)
                 {
