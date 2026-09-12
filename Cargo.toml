@@ -44,7 +44,11 @@ prost = "0.13"
 # The file formats, which this re-exports as `formats` so every path that named them as a
 # module still names them. Their own dependencies - the diff, the zip, the clock - travel
 # with them rather than with the search.
-gct_formats = { path = "crates/gct-formats" }
+#
+# THE SAVE-FILE HALF, which re-exports the other half, so one name here reaches every format
+# this repository defines. The engine is outside the game and wants all of them; the split is
+# for the library the game links, which takes `gct_formats` alone. See de-2p8j.1.
+gct_save_files = { path = "crates/gct-save-files" }
 
 # The wire's types, generated from proto/engine.proto by build.rs.
 #

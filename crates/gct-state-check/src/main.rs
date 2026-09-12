@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use gct_formats::global_state::{self, GlobalState};
+use gct_save_files::global_state::{self, GlobalState};
 use gct_state_check::{DEFAULT_MAX_EXAMPLES, NamedSave};
 
 /// What the mod's state file is called beside the saves.

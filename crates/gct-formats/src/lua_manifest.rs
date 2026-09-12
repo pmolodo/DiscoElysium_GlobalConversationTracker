@@ -13,7 +13,7 @@
 //! grouping claims is written out entry by entry instead, so a rule that goes stale costs
 //! output size and never accuracy. The key-type rule is the other way round - it is a claim
 //! the reader cannot verify from the file alone, so a wrong one is a wrong key, and the
-//! canonical-spelling check in [`super::lua_sparse`] is what catches it.
+//! canonical-spelling check in `gct_save_files::lua_sparse` is what catches it.
 
 /// A table whose children all hold one value under the same key.
 ///

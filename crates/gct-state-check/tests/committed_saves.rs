@@ -14,7 +14,7 @@
 
 use std::path::{Path, PathBuf};
 
-use gct_formats::global_state::Status;
+use gct_save_files::global_state::Status;
 use gct_state_check::{NamedSave, compare, resolve_save, saves_in, statuses_in_save, written};
 
 /// The committed save that has read the most, which is the one worth projecting.

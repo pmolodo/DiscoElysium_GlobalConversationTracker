@@ -345,7 +345,17 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 name = "gct_formats"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "gct_save_files"
+version = "0.1.0"
+dependencies = [
  "diffy",
+ "gct_formats",
  "serde",
  "serde_json",
  "thiserror",
@@ -364,7 +374,7 @@ dependencies = [
 name = "gct_state_check"
 version = "0.1.0"
 dependencies = [
- "gct_formats",
+ "gct_save_files",
  "thiserror",
 ]
 
@@ -537,7 +547,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "clap",
- "gct_formats",
+ "gct_save_files",
  "oxidd",
  "petgraph",
  "proptest",

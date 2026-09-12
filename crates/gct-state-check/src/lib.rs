@@ -31,11 +31,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use gct_formats::expanded_save::OnDisk;
-use gct_formats::global_state::{GlobalState, Status};
-use gct_formats::lua_blob::{self, LuaTable, LuaValue, TABLE_NAMES};
-use gct_formats::lua_sparse::{self, CONVERSATION_TABLE};
-use gct_formats::{lua_parts, packed_save};
+use gct_save_files::expanded_save::OnDisk;
+use gct_save_files::global_state::{GlobalState, Status};
+use gct_save_files::lua_blob::{self, LuaTable, LuaValue, TABLE_NAMES};
+use gct_save_files::lua_sparse::{self, CONVERSATION_TABLE};
+use gct_save_files::{lua_parts, packed_save};
 
 /// The per-conversation field holding the dialogue entry map.
 const DIALOG_FIELD: &str = "Dialog";

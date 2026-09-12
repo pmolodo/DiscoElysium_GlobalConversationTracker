@@ -21,5 +21,8 @@ name = "gct_state_check"
 path = "src/lib.rs"
 
 [dependencies]
-gct_formats = { path = "../gct-formats" }
+# THE SAVE-FILE HALF, because this reads a real playthrough's archive - and it re-exports the
+# other half, which is where the state file it compares against lives. This runs outside the
+# game, so the split that keeps the linked library small does not apply to it.
+gct_save_files = { path = "../gct-save-files" }
 thiserror = "1.0"

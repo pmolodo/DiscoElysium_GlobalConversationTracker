@@ -1,0 +1,38 @@
+[package]
+name = "gct_save_files"
+version = "0.1.0"
+edition = "2024"
+
+# HOW A SAVE IS STORED IN THIS REPOSITORY, which is a different thing from how the game
+# writes one. The game writes an archive; this crate is the expanded form beside it - the
+# manifest and the chain of bases it names, the split Lua tables, the diffs between them, and
+# the packer that puts an archive back together. Nothing in a running game reads any of it.
+#
+# THAT IS THE WHOLE REASON IT IS A CRATE OF ITS OWN, and the reason is a dependency list. A
+# text diff needs `diffy`, an archive needs `zip`, and naming a packed save needs a clock -
+# and none of those has any business in the library the game LINKS. Splitting by who reads a
+# format is what keeps the answer to "why does the mod's library depend on this" from being
+# "because it arrived by association". See de-2p8j.1.
+#
+# It re-exports every module of `gct_formats` as well as its own, so that one path names the
+# whole set for the tools and the tests that want all of them.
+
+[dependencies]
+gct_formats = { path = "../gct-formats" }
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+
+# The unified diffs a save's text members are stored as.
+diffy = "0.5.2"
+
+# The archive a packed save is. Deflate and nothing else: that is what the game's own saves
+# use, and a reader that understood more would be a reader for files this never writes.
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+
+# The clock, for the one thing here that needs to know what time it is: a packed save whose
+# name carries no timestamp is given one, because that is how the game's saves are named.
+# LOCAL TIME, with UTC as the answer where the offset cannot be had - a save stamped in the
+# wrong zone is odd to read, and one that refuses to pack is a stopped run.
+time = { version = "0.3", features = ["local-offset"] }

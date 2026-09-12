@@ -71,7 +71,7 @@ fn main() {
     println!("save            : {}", path.display());
 
     let began = Instant::now();
-    let packed = gct_formats::packed_save::unpack(&path).expect("it unpacks");
+    let packed = gct_save_files::packed_save::unpack(&path).expect("it unpacks");
     println!("unpack          : {:?}", began.elapsed());
     println!("blob            : {}", megabytes(packed.lua.len()));
 
@@ -79,7 +79,7 @@ fn main() {
     PEAK.store(before, Ordering::Relaxed);
 
     let began = Instant::now();
-    let blob = gct_formats::lua_blob::read(&packed.lua).expect("it reads");
+    let blob = gct_save_files::lua_blob::read(&packed.lua).expect("it reads");
     let read = began.elapsed();
     let held = HELD.load(Ordering::Relaxed) - before;
 
