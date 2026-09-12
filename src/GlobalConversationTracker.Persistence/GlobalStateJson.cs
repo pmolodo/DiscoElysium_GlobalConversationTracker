@@ -112,6 +112,42 @@ namespace GlobalConversationTracker.Persistence
         /// </summary>
         public const int MaxWarnings = 20;
 
+        /// <summary>What the library says this format is, for a line in a log.</summary>
+        /// <param name="description">
+        /// The format and version it reads, or why it could not be asked.
+        /// </param>
+        /// <returns>Whether the library answered.</returns>
+        /// <remarks>
+        /// ASKED RATHER THAN ASSERTED. The point is not the version - this build knows that
+        /// - it is that the library is there and answering, said once at startup rather
+        /// than discovered at the first save. A mod that cannot reach it cannot read or
+        /// write its own state, so that is worth a line either way.
+        /// </remarks>
+        public static bool TryDescribeFormat(out string description)
+        {
+            try
+            {
+                string name = GlobalStateNative.TextAt(
+                    GlobalStateNative.FormatName(out nuint length), length);
+                description = $"{name} v{GlobalStateNative.FormatVersion()}";
+                return true;
+            }
+            catch (DllNotFoundException missing)
+            {
+                description =
+                    $"the state library is not there ({missing.Message}). Build it with: "
+                    + GlobalStateNative.BuildCommand;
+                return false;
+            }
+            catch (EntryPointNotFoundException wrong)
+            {
+                description =
+                    $"the state library is not the one this build expects ({wrong.Message}). "
+                    + "Rebuild it with: " + GlobalStateNative.BuildCommand;
+                return false;
+            }
+        }
+
         /// <summary>Serializes a state to UTF-8 JSON bytes, without a BOM.</summary>
         /// <param name="state">What to write.</param>
         /// <returns>The bytes the file holds.</returns>

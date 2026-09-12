@@ -159,6 +159,35 @@
     </Target>
 
     <!--
+    The state library, which is a different kind of thing from the engine beside it.
+
+    NOT CONDITIONAL, and not renamed. Not conditional because it is the one reader and
+    writer of the mod's own state file - there is no C# copy of that format - so a plugin
+    built without it is a plugin that cannot track anything, which is a build error rather
+    than a capability quietly missing. Not renamed because a DllImport resolves by the name
+    in the attribute and the resolver beside GlobalStateNative looks for that name; the
+    payload predicate learns it instead, the way it already learns Google.Protobuf's.
+
+    Copied here rather than arriving with the Persistence project, because the plugin
+    compiles that project's SOURCE rather than referencing it - see above - so nothing of
+    its build output travels.
+  -->
+    <Target Name="CopyStateLibrary" AfterTargets="Build">
+        <PropertyGroup>
+            <StateLibraryName>gct_state.dll</StateLibraryName>
+            <StateLibraryRelease>$(MSBuildThisFileDirectory)..\..\target\release\$(StateLibraryName)</StateLibraryRelease>
+            <StateLibraryDebug>$(MSBuildThisFileDirectory)..\..\target\debug\$(StateLibraryName)</StateLibraryDebug>
+            <StateLibrary Condition="Exists('$(StateLibraryRelease)')">$(StateLibraryRelease)</StateLibrary>
+            <StateLibrary
+                Condition="'$(StateLibrary)' == '' And Exists('$(StateLibraryDebug)')">$(StateLibraryDebug)</StateLibrary>
+        </PropertyGroup>
+        <Error Condition="'$(StateLibrary)' == ''"
+            Text="The state library is not built, and it is what reads and writes the mod's own state file. Build it first:%0A  cargo build --release -p gct_state" />
+        <Copy SourceFiles="$(StateLibrary)" DestinationFolder="$(OutDir)"
+            SkipUnchangedFiles="true" />
+    </Target>
+
+    <!--
     The conversation index the look-ahead reads, trimmed to what a crawl consults - 47.7 MB
     down to 14.3 MB, and about 1.2 MB inside a release archive. Named to match the payload
     predicate for the same reason the engine executable is, so nothing about deployment has

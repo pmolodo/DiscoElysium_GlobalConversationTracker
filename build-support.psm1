@@ -214,7 +214,13 @@ $PluginPayloadExtensions = @(".dll", ".exe", ".json", ".jsonl")
 # Google.Protobuf is what the generated wire types are built on - see proto/engine.proto,
 # which both sides of the boundary generate from so that the shape crossing it is written
 # down once. It is the only run-time package the plugin has.
-$PluginPayloadByName = @("Google.Protobuf.dll")
+#
+# gct_state.dll keeps its own name for the same reason in a different runtime: a DllImport
+# resolves by the name in the attribute, and the resolver beside GlobalStateNative looks for
+# that name next to the assembly. It is the one reader and writer of the mod's own state
+# file - there is no C# copy of that format - so a plugin installed without it is a plugin
+# that cannot track anything.
+$PluginPayloadByName = @("Google.Protobuf.dll", "gct_state.dll")
 # Appended to the commit hash the build stamps into the plugin assembly when the
 # tree it was built from differed from that commit in a way the build could see.
 # Written by Get-SourceRevisionId and read back by Get-PluginBuildStamp, which is

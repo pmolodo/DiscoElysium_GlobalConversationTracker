@@ -249,6 +249,18 @@ namespace GlobalConversationTracker
             // fatal: a bridge that is not there costs a capability, not a playthrough.
             NativeEngineCheck.Report(Log);
 
+            // And the other native piece, which is NOT optional the way that one is: it is
+            // what reads and writes the state file, so a mod that cannot reach it cannot
+            // track anything. Said at load rather than discovered at the first save.
+            if (GlobalStateJson.TryDescribeFormat(out string stateFormat))
+            {
+                Log.LogMessage($"State format: {stateFormat}");
+            }
+            else
+            {
+                Log.LogError($"State format: {stateFormat}");
+            }
+
             string saveGameDirectory = SaveGameDirectory.Resolve(Log);
 
             // A redirected global state is the sort of thing that must never happen
