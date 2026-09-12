@@ -1,0 +1,31 @@
+{
+  "_format": "expanded-save-diff",
+  "_formatVersion": 1,
+  "base": "../scene-indoors.ntwtf",
+  "members": [
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "scene-indoors-raining.1st.ntwtf.json",
+      "suffix": ".1st.ntwtf.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "scene-indoors-raining.2nd.ntwtf.json",
+      "suffix": ".2nd.ntwtf.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "scene-indoors-raining.FOW.json",
+      "suffix": ".FOW.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "scene-indoors-raining.states.lua",
+      "suffix": ".states.lua"
+    }
+  ]
+}

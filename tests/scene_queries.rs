@@ -71,6 +71,19 @@ const RAINING: &str = "scene-raining";
 /// And in the snow.
 const SNOWING: &str = "scene-snowing";
 
+/// The weather saves, each with the save it was made from and the one variable it changes.
+///
+/// TWO PAIRS, and the indoor one is the interesting half. Outdoors the weather guards can
+/// be reached, so those two saves say what the answer does; indoors they cannot, so those
+/// two say that setting the sky changes nothing - which is a claim only a save that is both
+/// indoors and wet can make.
+const WEATHER: [(&str, &str, &str); 4] = [
+    (RAINING, OUTDOORS, "auto.is_raining"),
+    (SNOWING, OUTDOORS, "auto.is_snowing"),
+    ("scene-indoors-raining", INDOORS, "auto.is_raining"),
+    ("scene-indoors-snowing", INDOORS, "auto.is_snowing"),
+];
+
 #[test]
 fn the_engine_asks_about_the_scene_where_the_guards_do() {
     let Some(path) = common::conversation_index() else {
@@ -183,19 +196,19 @@ fn a_save_outdoors_and_a_save_indoors_answer_the_scene_differently() {
 /// differ in a dozen things and no run could say which one moved a marker.
 #[test]
 fn a_weather_save_differs_from_the_one_it_was_made_from_in_one_variable() {
-    let dry = common::fixtures::holdings_in_save(OUTDOORS);
-    let was = common::fixtures::variables_in_save(OUTDOORS);
-
-    for (save, wet) in [(RAINING, "auto.is_raining"), (SNOWING, "auto.is_snowing")] {
+    for (save, base, wet) in WEATHER {
+        let dry = common::fixtures::holdings_in_save(base);
+        let was = common::fixtures::variables_in_save(base);
         let scene = common::fixtures::holdings_in_save(save);
         let now = common::fixtures::variables_in_save(save);
 
-        assert!(
-            scene.scene.outside,
-            "{save} is in {}, and the weather is only asked about outdoors",
-            scene.scene.area,
-        );
+        // THE SKY IS THE ONLY THING THAT MOVED, which includes not walking through a door:
+        // a wet save in another area would differ in the scene as well as the weather.
         assert_eq!(scene.scene.area, dry.scene.area, "{save} moved");
+        assert_eq!(
+            scene.scene.outside, dry.scene.outside,
+            "{save} changed sides of the door",
+        );
 
         // A KEY EITHER SIDE HOLDS, since a variable could have been added as well as
         // changed, and the set is what makes the claim rather than one map's view of it.
@@ -209,7 +222,7 @@ fn a_weather_save_differs_from_the_one_it_was_made_from_in_one_variable() {
         assert_eq!(
             differing,
             BTreeSet::from([wet]),
-            "{save} differs from {OUTDOORS} in something other than the weather",
+            "{save} differs from {base} in something other than the weather",
         );
     }
 }
@@ -217,11 +230,39 @@ fn a_weather_save_differs_from_the_one_it_was_made_from_in_one_variable() {
 /// And what differs is what the queries answer from.
 #[test]
 fn the_weather_saves_answer_the_weather_they_were_made_with() {
-    let raining = common::fixtures::holdings_in_save(RAINING).scene;
-    let snowing = common::fixtures::holdings_in_save(SNOWING).scene;
+    for (save, _, wet) in WEATHER {
+        let scene = common::fixtures::holdings_in_save(save).scene;
+        let (raining, snowing) = (wet.ends_with("raining"), wet.ends_with("snowing"));
 
-    assert!(raining.raining && !raining.snowing, "{raining:?}");
-    assert!(snowing.snowing && !snowing.raining, "{snowing:?}");
+        assert_eq!(scene.raining, raining, "{save}: {scene:?}");
+        assert_eq!(scene.snowing, snowing, "{save}: {scene:?}");
+    }
+}
+
+/// A save can be indoors AND in the weather, which is what says the two are read apart.
+///
+/// THE PAIR THE OUTDOOR ONES CANNOT MAKE. Conversation 29 only asks about the sky below the
+/// branch `IsExterior` opens - 114 and 115 hang off 113, which only 227 reaches - so an
+/// indoor world should reach the same lines wet as dry. A fixture for that has to hold both
+/// at once, and a world that quietly cleared the weather on going indoors, or cleared the
+/// area on getting wet, would make the claim untestable while looking like it passed.
+#[test]
+fn a_save_can_be_indoors_and_in_the_weather_at_once() {
+    let mut held = 0;
+    for (save, base, _) in WEATHER {
+        if base != INDOORS {
+            continue;
+        }
+
+        let scene = common::fixtures::holdings_in_save(save).scene;
+        assert!(
+            !scene.outside && (scene.raining || scene.snowing),
+            "{save} is meant to be indoors and in weather: {scene:?}",
+        );
+        held += 1;
+    }
+
+    assert_eq!(held, 2, "both halves of the indoor pair");
 }
 
 /// The offline world leaves none of the three unanswered, for any committed save.
