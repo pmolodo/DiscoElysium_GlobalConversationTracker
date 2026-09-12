@@ -363,6 +363,63 @@
           "pass": { "colour": "orange" },
           "fail": { "colour": "darkRed" },
           "branchesWhy": "Passing lands on a line no save has read, so the word carries that colour itself. Failing lands on one this save has already been shown and reaches nothing better, which is the bottom rung and the plain word."
+        },
+        {
+          "save": "scene-indoors",
+          "conversation": 29,
+          "what": "the same conversation opened indoors, where IsExterior answers the other way",
+          "why": "THE OTHER HALF OF THE PAIR, and the world rather than the menu. Conversation 29's scene guards are a chain: 226 routes on IsExterior to 227 or to 228, and the weather is only ever asked below 227. The trash can save exercises one side of that and nothing exercised the other. This save is the same hour of the same day one door away, so what a run finds different between the two is the door. THE SIX MARKERS ARE THE SAME AS THE TRASH CAN'S, which is stated rather than hidden: the guarded entries sit well below any option, so the menu does not discriminate and this row is not pretending to. What it holds is that the GAME answers IsExterior the way the offline world does, which the captured look-ahead request carries and no offline test can claim.",
+          "advances": 0,
+          "options": [
+            { "entry": 582, "marker": "none", "why": "going over the case again returns to the hub it was reached from, and everything that way has been read in this save" },
+            { "entry": 1008, "marker": "none", "why": "a rolled check draws no marker of its own; its two outcomes carry what they found" },
+            { "entry": 90, "marker": "red", "why": "admitting the amnesia leads on to lines this save has not shown, on either side of the door" },
+            { "entry": 221, "marker": "none", "why": "asking about Kim himself reaches nothing this save has not already had" },
+            { "entry": 697, "marker": "red", "why": "accusing him of following leads on the same way the amnesia does" },
+            { "entry": 882, "marker": "none", "why": "leaving reaches nothing at all" }
+          ],
+          "branches": "everyCheck",
+          "pass": { "colour": "orange" },
+          "fail": { "colour": "darkRed" },
+          "branchesWhy": "The check is the same check against the same read history, and the door is not on either outcome's way, so the two words carry what they carry outdoors."
+        },
+        {
+          "save": "scene-raining",
+          "conversation": 29,
+          "what": "the same conversation in the rain, where IsRaining answers true",
+          "why": "THE MEASUREMENT THE OFFLINE WORLD RESTS ON. IsExterior is read out of a committed game asset and is as certain as an export can make it; IsRaining is an INFERENCE, because FELDLuaFunctions is IL2CPP and AssetRipper emits a body that returns false. What names auto.is_raining is ArcticSwimmerEasterEgg, which watches the sibling variable for the same condition the guards ask about - plausible, and not measured. This row measures it: the save sets that one variable, and the captured request says what the running game then answers IsRaining() with. If the weather system overwrites it on load, that is the answer instead and worth knowing.",
+          "advances": 0,
+          "options": [
+            { "entry": 582, "marker": "none", "why": "going over the case again returns to the hub it was reached from, and everything that way has been read in this save" },
+            { "entry": 1008, "marker": "none", "why": "a rolled check draws no marker of its own; its two outcomes carry what they found" },
+            { "entry": 90, "marker": "red", "why": "admitting the amnesia leads on to lines this save has not shown, wet or dry" },
+            { "entry": 221, "marker": "none", "why": "asking about Kim himself reaches nothing this save has not already had" },
+            { "entry": 697, "marker": "red", "why": "accusing him of following leads on the same way the amnesia does" },
+            { "entry": 882, "marker": "none", "why": "leaving reaches nothing at all" }
+          ],
+          "branches": "everyCheck",
+          "pass": { "colour": "orange" },
+          "fail": { "colour": "darkRed" },
+          "branchesWhy": "One variable away from the save this was made from, and the weather is not on either outcome's way, so the two words carry what they carry dry."
+        },
+        {
+          "save": "scene-snowing",
+          "conversation": 29,
+          "what": "and in the snow, where IsSnowing answers true",
+          "why": "The other weather query, on the same footing and for the same reason - and the pair of them together is what says the two variables are read separately rather than one standing in for the sky. Snow is also the query ArcticSwimmerEasterEgg actually watches, so this is the half of the inference with a witness in the game's own C#.",
+          "advances": 0,
+          "options": [
+            { "entry": 582, "marker": "none", "why": "going over the case again returns to the hub it was reached from, and everything that way has been read in this save" },
+            { "entry": 1008, "marker": "none", "why": "a rolled check draws no marker of its own; its two outcomes carry what they found" },
+            { "entry": 90, "marker": "red", "why": "admitting the amnesia leads on to lines this save has not shown, whatever the sky is doing" },
+            { "entry": 221, "marker": "none", "why": "asking about Kim himself reaches nothing this save has not already had" },
+            { "entry": 697, "marker": "red", "why": "accusing him of following leads on the same way the amnesia does" },
+            { "entry": 882, "marker": "none", "why": "leaving reaches nothing at all" }
+          ],
+          "branches": "everyCheck",
+          "pass": { "colour": "orange" },
+          "fail": { "colour": "darkRed" },
+          "branchesWhy": "One variable away from the save this was made from, and the weather is not on either outcome's way, so the two words carry what they carry dry."
         }
       ]
     }

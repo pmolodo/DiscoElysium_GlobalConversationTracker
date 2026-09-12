@@ -155,6 +155,17 @@ fn a_save_outdoors_and_a_save_indoors_answer_the_scene_differently() {
         "{OUTDOORS} and {INDOORS} are at different times, so they compare nothing cleanly",
     );
 
+    // AND THEY HAVE READ THE SAME LINES. The clock is not the only thing that would muddy
+    // the comparison: an entry shown in one and not the other moves a marker by itself, and
+    // the indoor save was played rather than made, so it arrived having seen two lines the
+    // outdoor one had not. Those were taken back out, and this is what keeps them out.
+    assert_eq!(
+        common::fixtures::read_in_save_group(OUTDOORS, &GUARDED_CONVERSATIONS),
+        common::fixtures::read_in_save_group(INDOORS, &GUARDED_CONVERSATIONS),
+        "{OUTDOORS} and {INDOORS} have shown different lines, so a marker that differed \
+         between them could not be pinned on the door",
+    );
+
     // A save the game left indoors of its own accord, so the table is not being read off
     // one area alone.
     assert!(
