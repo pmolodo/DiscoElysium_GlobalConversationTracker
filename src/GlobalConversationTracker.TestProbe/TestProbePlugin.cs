@@ -811,17 +811,94 @@ namespace GlobalConversationTracker.TestProbe
         private static class WorldReadyProbe
         {
             [HarmonyPostfix]
-            private static void Postfix()
+            private static void Postfix(HudMoneyController __instance)
             {
                 try
                 {
-                    ProbeLog.Write("world-ready", "money", Money());
+                    ProbeLog.Write(
+                        "world-ready",
+                        "money", Money(),
+                        "hud", MoneyDisplay(__instance));
                 }
                 catch (Exception error)
                 {
                     ProbeLog.Failed("the HUD appearing", error);
                 }
             }
+        }
+
+        /// <summary>
+        /// The money display's own rect and every rect under it, each in the display's
+        /// coordinates.
+        /// </summary>
+        /// <remarks>
+        /// <para>WHERE THE GAME ACTUALLY DRAWS ITS MONEY, which is the thing anything
+        /// placed beside it has to be placed against. The mod's own counters hang off
+        /// this display and are positioned by reading rects at attach time, because the
+        /// HUD sits inside a fitter whose size follows the screen - so a coordinate
+        /// written down is a coordinate that is right at one resolution.</para>
+        ///
+        /// <para>Logged rather than guessed at because the hierarchy is the game's: the
+        /// icon, the flip clock and the panel are objects nobody here named, and their
+        /// sizes and offsets are what decide where a row can sit. See de-2p8j.4.</para>
+        /// </remarks>
+        private static string? MoneyDisplay(HudMoneyController money)
+        {
+            try
+            {
+                RectTransform? display = money == null
+                    ? null
+                    : money.GetComponent<RectTransform>();
+                if (display == null)
+                {
+                    return null;
+                }
+
+                var said = new StringBuilder();
+                said.Append("screen=")
+                    .Append(Screen.width)
+                    .Append('x')
+                    .Append(Screen.height);
+
+                // FROM THE PANEL DOWN, not from the money display down. The display's
+                // own children are the flip clock and its masks; the icon, the clock and
+                // the day counter are its SIBLINGS, and a row placed under the money has
+                // to be placed against those. Everything is said in the money display's
+                // coordinates, which is the frame the rows are built in.
+                Transform frame = display.parent == null ? display : display.parent;
+                foreach (RectTransform rect in frame.GetComponentsInChildren<RectTransform>(true))
+                {
+                    Say(said, display, rect, rect.gameObject.name);
+                }
+
+                return said.ToString();
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// One rect as its corners in another rect's coordinates, which is the frame
+        /// anything placed beside it would be placed in.
+        /// </summary>
+        private static void Say(
+            StringBuilder said, RectTransform frame, RectTransform rect, string name)
+        {
+            Rect own = rect.rect;
+            Vector3 lower = frame.InverseTransformPoint(
+                rect.TransformPoint(new Vector3(own.x, own.y, 0f)));
+            Vector3 upper = frame.InverseTransformPoint(
+                rect.TransformPoint(new Vector3(own.xMax, own.yMax, 0f)));
+
+            said.Append(' ')
+                .Append(name)
+                .Append('[')
+                .Append($"{lower.x:0.#},{lower.y:0.#}")
+                .Append(" to ")
+                .Append($"{upper.x:0.#},{upper.y:0.#}")
+                .Append(']');
         }
     }
 }
