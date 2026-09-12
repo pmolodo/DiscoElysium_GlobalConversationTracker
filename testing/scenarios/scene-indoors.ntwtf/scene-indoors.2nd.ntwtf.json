@@ -1,0 +1,341 @@
+{
+  "_base": "../at-trashcan.ntwtf/at-trashcan.2nd.ntwtf.json",
+  "_changes": {
+    "aquiredJournalTasks": {
+      "LastActiveTask": "Inspect victim's body"
+    },
+    "characterSheet": {
+      "selectedPanelName": ""
+    },
+    "sunshineClockTimeHolder": {
+      "time": {
+        "dayMinutes": 636,
+        "seconds": 13
+      }
+    },
+    "thoughtCabinetState": {
+      "thoughtListState": [
+        {
+          "isFresh": false,
+          "name": "revacholian_nationhood",
+          "state": "FIXED",
+          "timeLeft": 0
+        },
+        {
+          "isFresh": true,
+          "name": "guillaume_le_million",
+          "state": "UNKNOWN",
+          "timeLeft": 270
+        },
+        {
+          "isFresh": true,
+          "name": "radical_feminist_agenda",
+          "state": "UNKNOWN",
+          "timeLeft": 225
+        },
+        {
+          "isFresh": false,
+          "name": "hobocop",
+          "state": "FIXED",
+          "timeLeft": 0
+        },
+        {
+          "isFresh": true,
+          "name": "aces_high",
+          "state": "UNKNOWN",
+          "timeLeft": 165
+        },
+        {
+          "isFresh": true,
+          "name": "aces_low",
+          "state": "UNKNOWN",
+          "timeLeft": 165
+        },
+        {
+          "isFresh": true,
+          "name": "the_way_home",
+          "state": "UNKNOWN",
+          "timeLeft": 365
+        },
+        {
+          "isFresh": true,
+          "name": "coach_physical_instrument",
+          "state": "UNKNOWN",
+          "timeLeft": 40
+        },
+        {
+          "isFresh": false,
+          "name": "shit_together",
+          "state": "FIXED",
+          "timeLeft": 0
+        },
+        {
+          "isFresh": true,
+          "name": "torque_dork",
+          "state": "UNKNOWN",
+          "timeLeft": 25
+        },
+        {
+          "isFresh": false,
+          "name": "sorry_cop",
+          "state": "KNOWN",
+          "timeLeft": 360
+        },
+        {
+          "isFresh": false,
+          "name": "superstar_cop",
+          "state": "FIXED",
+          "timeLeft": 0
+        },
+        {
+          "isFresh": false,
+          "name": "apocalypse_cop",
+          "state": "KNOWN",
+          "timeLeft": 415
+        },
+        {
+          "isFresh": false,
+          "name": "communist",
+          "state": "FIXED",
+          "timeLeft": 0
+        },
+        {
+          "isFresh": true,
+          "name": "boring_cop",
+          "state": "UNKNOWN",
+          "timeLeft": 80
+        },
+        {
+          "isFresh": false,
+          "name": "ultraliberal",
+          "state": "FIXED",
+          "timeLeft": 0
+        },
+        {
+          "isFresh": false,
+          "name": "moralist",
+          "state": "FIXED",
+          "timeLeft": -5
+        },
+        {
+          "isFresh": true,
+          "name": "the_bow_collector",
+          "state": "UNKNOWN",
+          "timeLeft": 370
+        },
+        {
+          "isFresh": true,
+          "name": "white_mourning",
+          "state": "UNKNOWN",
+          "timeLeft": 300
+        },
+        {
+          "isFresh": true,
+          "name": "juicy_fruit",
+          "state": "UNKNOWN",
+          "timeLeft": 305
+        },
+        {
+          "isFresh": true,
+          "name": "caustic_echo",
+          "state": "UNKNOWN",
+          "timeLeft": 600
+        },
+        {
+          "isFresh": true,
+          "name": "detective_costeau",
+          "state": "UNKNOWN",
+          "timeLeft": 150
+        },
+        {
+          "isFresh": true,
+          "name": "boiadeiro",
+          "state": "UNKNOWN",
+          "timeLeft": 390
+        },
+        {
+          "isFresh": true,
+          "name": "art_cop",
+          "state": "UNKNOWN",
+          "timeLeft": 90
+        },
+        {
+          "isFresh": true,
+          "name": "honour",
+          "state": "UNKNOWN",
+          "timeLeft": 20
+        },
+        {
+          "isFresh": true,
+          "name": "finger_pistols",
+          "state": "UNKNOWN",
+          "timeLeft": 60
+        },
+        {
+          "isFresh": true,
+          "name": "magnesium_based_lifeform",
+          "state": "UNKNOWN",
+          "timeLeft": 75
+        },
+        {
+          "isFresh": false,
+          "name": "lawbringer",
+          "state": "COOKING",
+          "timeLeft": 19
+        },
+        {
+          "isFresh": false,
+          "name": "advanced_race_theory",
+          "state": "FORGOTTEN",
+          "timeLeft": 0
+        },
+        {
+          "isFresh": true,
+          "name": "the_destroyer",
+          "state": "UNKNOWN",
+          "timeLeft": 135
+        },
+        {
+          "isFresh": true,
+          "name": "master_investigator",
+          "state": "UNKNOWN",
+          "timeLeft": 65
+        },
+        {
+          "isFresh": true,
+          "name": "remote_viewer",
+          "state": "UNKNOWN",
+          "timeLeft": 325
+        },
+        {
+          "isFresh": true,
+          "name": "motorway_south",
+          "state": "UNKNOWN",
+          "timeLeft": 490
+        },
+        {
+          "isFresh": true,
+          "name": "narcomania",
+          "state": "UNKNOWN",
+          "timeLeft": 55
+        },
+        {
+          "isFresh": true,
+          "name": "age_bracket",
+          "state": "UNKNOWN",
+          "timeLeft": 435
+        },
+        {
+          "isFresh": true,
+          "name": "homosexual_underground",
+          "state": "UNKNOWN",
+          "timeLeft": 480
+        },
+        {
+          "isFresh": true,
+          "name": "arno_van_eyck",
+          "state": "UNKNOWN",
+          "timeLeft": 50
+        },
+        {
+          "isFresh": true,
+          "name": "fairweather_t_500",
+          "state": "UNKNOWN",
+          "timeLeft": 210
+        },
+        {
+          "isFresh": true,
+          "name": "terrier",
+          "state": "UNKNOWN",
+          "timeLeft": 195
+        },
+        {
+          "isFresh": true,
+          "name": "one_more_door",
+          "state": "UNKNOWN",
+          "timeLeft": 45
+        },
+        {
+          "isFresh": true,
+          "name": "contact_mike",
+          "state": "UNKNOWN",
+          "timeLeft": 15
+        },
+        {
+          "isFresh": true,
+          "name": "hardcore_aesthetic",
+          "state": "UNKNOWN",
+          "timeLeft": 110
+        },
+        {
+          "isFresh": true,
+          "name": "suicide_is_painless",
+          "state": "UNKNOWN",
+          "timeLeft": 120
+        },
+        {
+          "isFresh": true,
+          "name": "col_do_ma_ma_daqua",
+          "state": "UNKNOWN",
+          "timeLeft": 430
+        },
+        {
+          "isFresh": true,
+          "name": "the_waste_land_of_reality",
+          "state": "UNKNOWN",
+          "timeLeft": 1200
+        },
+        {
+          "isFresh": true,
+          "name": "kras_mazov",
+          "state": "UNKNOWN",
+          "timeLeft": 285
+        },
+        {
+          "isFresh": true,
+          "name": "precarious_world",
+          "state": "UNKNOWN",
+          "timeLeft": 240
+        },
+        {
+          "isFresh": true,
+          "name": "welkin_generator",
+          "state": "UNKNOWN",
+          "timeLeft": 335
+        },
+        {
+          "isFresh": false,
+          "name": "jamais_vu",
+          "state": "FIXED",
+          "timeLeft": 0
+        },
+        {
+          "isFresh": false,
+          "name": "trant_heidelstam",
+          "state": "KNOWN",
+          "timeLeft": 42
+        },
+        {
+          "isFresh": true,
+          "name": "return_on_investment",
+          "state": "UNKNOWN",
+          "timeLeft": 315
+        },
+        {
+          "isFresh": true,
+          "name": "insulindian_miracle",
+          "state": "UNKNOWN",
+          "timeLeft": 465
+        },
+        {
+          "isFresh": false,
+          "name": "wild_pines",
+          "state": "FIXED",
+          "timeLeft": -13
+        }
+      ]
+    }
+  },
+  "_format": "json-diff",
+  "_formatVersion": 1
+}

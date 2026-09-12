@@ -1,0 +1,21 @@
+{
+  "_format": "sparse-diff",
+  "_formatVersion": 1,
+  "_base": "../../at-trashcan.ntwtf/at-trashcan.ntwtf.lua.parts/Actor.json",
+  "_changes": {
+    "Glen": {
+      "Bark_Index": 0
+    },
+    "Kim_Kitsuragi": {
+      "Position_Whirling_int_f1": "4.940815,0.004060376,2.843355,0,0.9936887,0,-0.1121729,Whirling-int-f1",
+      "Position_Martinaise_ext": "107.0789,5.305843,-142.3135,0,0.5158508,0,-0.8566785,Martinaise-ext"
+    },
+    "You": {
+      "Position_Whirling_int_f1": "4.335975,0.004100471,3.428123,0,0.9981348,0,-0.06104943,Whirling-int-f1",
+      "Position_Martinaise_ext": "106.0183,5.320719,-141.7522,0,0.8566786,0,0.5158507,Martinaise-ext"
+    },
+    "gardenerTribunal": {
+      "Bark_Index": 0
+    }
+  }
+}

@@ -56,8 +56,14 @@ const GUARDED_CONVERSATIONS: [i32; 6] = [29, 530, 625, 1065, 1124, 1458];
 /// A save the game left OUTDOORS, in Martinaise.
 const OUTDOORS: &str = "at-trashcan";
 
-/// And one it left indoors, on the Whirling's ground floor.
-const INDOORS: &str = "at-garte";
+/// The same moment moved indoors, onto the Whirling's ground floor.
+///
+/// MADE FOR THIS, and the pair to [`OUTDOORS`]: the two are the same day and the same hour,
+/// so what a run finds different between them is the door and not the clock.
+const INDOORS: &str = "scene-indoors";
+
+/// And one the game left indoors on its own, which is a different moment entirely.
+const ELSEWHERE_INDOORS: &str = "at-garte";
 
 /// The same outdoor save, in the rain.
 const RAINING: &str = "scene-raining";
@@ -139,6 +145,23 @@ fn a_save_outdoors_and_a_save_indoors_answer_the_scene_differently() {
             holdings.scene.area,
         );
     }
+
+    // AND THEY STAGE THE SAME MOMENT, which is what makes the pair worth having. A guard
+    // comparing the hour answers differently at another one, so a run that found a
+    // different menu could not say whether the door or the clock did it.
+    assert_eq!(
+        (outdoors.day_counter, outdoors.day_minutes),
+        (indoors.day_counter, indoors.day_minutes),
+        "{OUTDOORS} and {INDOORS} are at different times, so they compare nothing cleanly",
+    );
+
+    // A save the game left indoors of its own accord, so the table is not being read off
+    // one area alone.
+    assert!(
+        !common::fixtures::holdings_in_save(ELSEWHERE_INDOORS)
+            .scene
+            .outside,
+    );
 }
 
 /// The weather saves are in weather, and are otherwise the save they were made from.

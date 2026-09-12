@@ -1,0 +1,31 @@
+{
+  "_format": "expanded-save-diff",
+  "_formatVersion": 1,
+  "base": "../at-trashcan.ntwtf",
+  "members": [
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "scene-indoors.states.lua",
+      "suffix": ".states.lua"
+    },
+    {
+      "diff": "scene-indoors.1st.ntwtf.json",
+      "kind": "json",
+      "name": "scene-indoors.1st.ntwtf.json",
+      "suffix": ".1st.ntwtf.json"
+    },
+    {
+      "diff": "scene-indoors.2nd.ntwtf.json",
+      "kind": "json",
+      "name": "scene-indoors.2nd.ntwtf.json",
+      "suffix": ".2nd.ntwtf.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "scene-indoors.FOW.json",
+      "suffix": ".FOW.json"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "_base": "../at-trashcan.ntwtf/at-trashcan.1st.ntwtf.json",
+  "_changes": {
+    "areaId": "Whirling-int-f1"
+  },
+  "_format": "json-diff",
+  "_formatVersion": 1
+}

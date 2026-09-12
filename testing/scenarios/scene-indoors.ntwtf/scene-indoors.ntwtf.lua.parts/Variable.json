@@ -1,0 +1,12 @@
+{
+  "_format": "sparse-diff",
+  "_formatVersion": 1,
+  "_base": "../../at-trashcan.ntwtf/at-trashcan.ntwtf.lua.parts/Variable.json",
+  "_changes": {
+    "tc.turn_off_tutorial_node": true,
+    "Actor": "You",
+    "Conversant": "Judit Minot",
+    "ActorIndex": "You",
+    "ConversantIndex": "Judit_Minot"
+  }
+}
