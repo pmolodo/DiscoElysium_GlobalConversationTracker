@@ -20,7 +20,8 @@
 //! One group per row. Builds the adversarial profile - `menu_profile`, shared with
 //! `menu_residue` and `menu_wall` - takes its starts as the menu, and marks the whole menu
 //! against one manager through `bridge::mark_menu_as_shipped`, so each group gets the marking
-//! the product chooses for it. `DEGCT_HYBRID` puts the hybrid marking on every group instead.
+//! the product chooses for it. `DEGCT_MARKING=hybrid` or `DEGCT_MARKING=nearest` puts that one
+//! marking on every group instead.
 //!
 //! EVERY START IS A CONTESTANT, because the marking is competitive: an option that has
 //! nothing to hunt for is refused against the class being hunted, by the baseline it
@@ -174,6 +175,42 @@ fn nolimit() -> bool {
     lookahead_engine::core::env::is_set("NOLIMIT")
 }
 
+/// Which menu marking a row is taken with. See [`marking`].
+#[derive(Clone, Copy)]
+enum Marking {
+    /// Whatever the product chooses for the group - see `bridge::mark_menu_as_shipped`.
+    Shipped,
+    /// The hybrid on every group: the sibling cut first, and the nearest-choice marking only
+    /// where that marks nothing - see `menu::mark_menu_hybrid`.
+    Hybrid,
+    /// The nearest-choice marking on every group, 761 included - see `menu::mark_menu`.
+    Nearest,
+}
+
+/// What `DEGCT_MARKING` says for each marking.
+const SHIPPED: &str = "shipped";
+const HYBRID: &str = "hybrid";
+const NEAREST: &str = "nearest";
+
+/// The marking `DEGCT_MARKING` names: `shipped`, the default, or `hybrid` or `nearest` to put
+/// one marking on every group, so row files can be taken each way and compared on the same
+/// profile and the same allowance (de-0jsf.20).
+///
+/// # Panics
+///
+/// On any other value, so a misspelt run does not quietly measure the default.
+fn marking() -> Marking {
+    match lookahead_engine::core::env::var("MARKING")
+        .unwrap_or_default()
+        .as_str()
+    {
+        "" | SHIPPED => Marking::Shipped,
+        HYBRID => Marking::Hybrid,
+        NEAREST => Marking::Nearest,
+        other => panic!("DEGCT_MARKING={other:?}: expected {SHIPPED}, {HYBRID} or {NEAREST}"),
+    }
+}
+
 /// How many options the menu asks about.
 ///
 /// EIGHT, which is what `workspace_menus` uses, so a figure here is comparable with one
@@ -218,6 +255,10 @@ fn main() {
         println!("{}", COLUMNS.join("\t"));
         return;
     }
+
+    // ASKED ONCE UP FRONT, so a misspelt DEGCT_MARKING stops the run before a group is built
+    // rather than inside the thread each menu is marked on.
+    let _ = marking();
 
     let Some(path) = common::shipped_index() else {
         eprintln!("no shipped index; skipping.");
@@ -363,26 +404,31 @@ where
                 each: search.each,
             }
         };
-        // THE MARKING THE PRODUCT CHOOSES FOR THIS GROUP, through the one function that
-        // chooses it, so a default row measures what a player waits for. `DEGCT_HYBRID` puts
-        // the hybrid on every group instead - de-0jsf.20 - so one row file can be taken
-        // either way and the two compared on the same profile and the same allowance.
-        let found = if lookahead_engine::core::env::is_set("HYBRID") {
-            menu::mark_menu_hybrid(
+        // THE MARKING THE PRODUCT CHOOSES FOR THIS GROUP by default, through the one function
+        // that chooses it, so a default row measures what a player waits for; `DEGCT_MARKING`
+        // puts one marking on every group instead. See [`marking`].
+        let found = match marking() {
+            Marking::Shipped => lookahead_engine::bridge::mark_menu_as_shipped(
                 marking_search,
                 novelty,
                 &contestants,
                 &marking_budget,
                 &shape,
-            )
-        } else {
-            lookahead_engine::bridge::mark_menu_as_shipped(
+            ),
+            Marking::Hybrid => menu::mark_menu_hybrid(
                 marking_search,
                 novelty,
                 &contestants,
                 &marking_budget,
                 &shape,
-            )
+            ),
+            Marking::Nearest => menu::mark_menu(
+                marking_search,
+                novelty,
+                &contestants,
+                &marking_budget,
+                &shape,
+            ),
         };
         counted.options = contestants.len();
         counted.asked = found.passes;
