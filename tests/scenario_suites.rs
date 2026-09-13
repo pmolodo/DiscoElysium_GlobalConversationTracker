@@ -215,6 +215,9 @@ fn stage(
                 seen,
                 checks_pass: checks.pass,
                 checks_fail: checks.fail,
+                // WHAT THE SAVE'S THOUGHTS DO TO RED CHECKS, as the plugin reads it from the
+                // game: a cooking precarious_world forces every red roll to fail.
+                red_checks_fail: fixtures::passive_thoughts_in_save(&scenario.save).red_checks_fail,
                 ..Default::default()
             },
             ..Default::default()

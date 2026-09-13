@@ -18,7 +18,8 @@ and every white and red check is carried both ways whatever its odds.
 
 - APPLIED, and so written to the table: PASSIVE_TARGET_MODIFIER moves the threshold of every
   passive check whose skill belongs to one ability; PASSIVES_SUCCEED forces every passive
-  check of one skill through.
+  check of one skill through; THC_RED_CHECK_FAILURE forces every red check to fail, which
+  closes a red check's success to every crawl.
 - Everything else is classified in NOT_APPLIED with its reason. A type in neither is refused,
   so a game patch that adds one stops this tool rather than being silently ignored.
 
@@ -68,6 +69,7 @@ FORMAT_VERSION = 1
 TARGET_MODIFIER = "PASSIVE_TARGET_MODIFIER"
 SUCCEEDS = "PASSIVES_SUCCEED"
 REPUTATION_BONUS = "REPUTATION_BONUS"
+RED_CHECKS_FAIL = "THC_RED_CHECK_FAILURE"
 
 # Which field of a thought lists the effects, and when the game applies them.
 PHASES = {"researchEffects": "research", "completionEffects": "completion"}
@@ -98,7 +100,6 @@ NOT_APPLIED = {
     "THC_CRIT_RANGE_EXPAND": ROLLED_ONLY,
     "THC_ORB_MONEY": NOT_ASKED,
     "THC_ORB_XP": NOT_ASKED,
-    "THC_RED_CHECK_FAILURE": "forces every red check to fail, which the look-ahead does not model (de-kmtt.6)",
     "TOOLTIP": NOT_ASKED,
     "XP_REWARD": IN_THE_SAVE,
 }
@@ -166,6 +167,12 @@ def applied_row(thought, phase, kind, effect, body, survey):
             "effect": kind,
             "phase": phase,
             "skill": SKILL_BY_INDEX[index],
+            "thought": thought,
+        }
+    if kind == RED_CHECKS_FAIL:
+        return {
+            "effect": kind,
+            "phase": phase,
             "thought": thought,
         }
     if kind == REPUTATION_BONUS:

@@ -75,6 +75,7 @@ namespace GlobalConversationTracker
 
             FillChecks(questions.Checks, world);
             FillFailedWhiteChecks(world);
+            FillRedChecksFail(world);
             FillNovelty(questions.Entries, session, world, request);
 
             return request;
@@ -203,6 +204,29 @@ namespace GlobalConversationTracker
             catch (System.Exception)
             {
                 world.FailedWhiteChecks.Clear();
+            }
+        }
+
+        /// <summary>
+        /// Whether a thought the player holds forces every red check to fail.
+        /// </summary>
+        /// <remarks>
+        /// <para>The game's own flag, <c>ThoughtAlterant.RedChecksFail</c>, set while a thought
+        /// with that effect is applied. No dialogue variable says so, and without it a red
+        /// check's success reads as open.</para>
+        ///
+        /// <para>A flag that cannot be read sends false, which leaves every red check free to
+        /// succeed - the permissive direction, as everywhere else here.</para>
+        /// </remarks>
+        private static void FillRedChecksFail(WorldSnapshot world)
+        {
+            try
+            {
+                world.RedChecksFail = ThoughtAlterant.RedChecksFail;
+            }
+            catch (System.Exception)
+            {
+                world.RedChecksFail = false;
             }
         }
 

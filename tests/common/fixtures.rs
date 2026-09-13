@@ -546,6 +546,11 @@ pub struct PassiveThoughts {
     shifts: HashMap<String, i32>,
     /// The skills whose checks pass whatever the numbers say.
     pub succeeding: HashSet<String>,
+    /// Whether a thought forces every red check to fail.
+    ///
+    /// Not a passive check, but decided from the same table against the same cabinet, so it
+    /// is read here rather than by a second walk over both.
+    pub red_checks_fail: bool,
 }
 
 impl PassiveThoughts {
@@ -613,6 +618,7 @@ pub fn passive_thoughts(
     let mut thoughts = PassiveThoughts {
         shifts: HashMap::new(),
         succeeding: HashSet::new(),
+        red_checks_fail: false,
     };
     for effect in effects {
         let text = |key: &str| {
@@ -641,6 +647,9 @@ pub fn passive_thoughts(
             }
             "PASSIVES_SUCCEED" => {
                 thoughts.succeeding.insert(text("skill").to_string());
+            }
+            "THC_RED_CHECK_FAILURE" => {
+                thoughts.red_checks_fail = true;
             }
             other => panic!("{thought}: a passive effect '{other}' this does not know"),
         }

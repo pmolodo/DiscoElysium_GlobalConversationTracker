@@ -156,6 +156,7 @@ namespace GlobalConversationTracker.Engine
                 DayMinutes = world.DayMinutes,
                 DayCounter = world.DayCounter,
                 ClockLocked = world.ClockLocked,
+                RedChecksFail = world.RedChecksFail,
                 ChecksPass = Write(world.ChecksPass),
                 ChecksFail = Write(world.ChecksFail),
                 Seen = Write(world.Seen),

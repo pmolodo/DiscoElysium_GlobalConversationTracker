@@ -333,7 +333,13 @@ fn enter(
         }
 
         DialogueCheckKind::Red | DialogueCheckKind::White => {
-            results.extend(enter_rolled(node, state, caps, clock_locked));
+            results.extend(enter_rolled(
+                node,
+                state,
+                caps,
+                clock_locked,
+                crate::world::roll_may_succeed(node, context.world),
+            ));
         }
 
         DialogueCheckKind::Passive => {
@@ -360,6 +366,7 @@ fn enter_rolled(
     state: &LookAheadState,
     caps: &CounterCaps<'_>,
     clock_locked: bool,
+    may_succeed: bool,
 ) -> Vec<LookAheadState> {
     let mut results = Vec::new();
 
@@ -377,13 +384,16 @@ fn enter_rolled(
     let entered = charge(node, state, caps, clock_locked);
 
     // Both branches start from the same charged state, so the success branch takes a copy
-    // and leaves the original for the failure branch.
-    let success = if node.flag_slot >= 0 {
-        entered.with(node.flag_slot as usize, 1)
-    } else {
-        entered.clone()
-    };
-    results.push(success);
+    // and leaves the original for the failure branch - where the roll may succeed at all;
+    // see `world::roll_may_succeed`.
+    if may_succeed {
+        let success = if node.flag_slot >= 0 {
+            entered.with(node.flag_slot as usize, 1)
+        } else {
+            entered.clone()
+        };
+        results.push(success);
+    }
 
     if node.failed_flag_slot >= 0 {
         results.push(entered.with(node.failed_flag_slot as usize, 1));
@@ -706,6 +716,43 @@ mod tests {
         let world = TestWorld::new().set_variable("roll_failed", GuardValue::from_boolean(true));
         let walk = walk(&graph, node(0), &world, COUNTER_CAP);
         assert!(!walk.reached(node(2)));
+    }
+
+    /// A thought that forces red checks to fail closes a red check's success to the walk.
+    ///
+    /// 1 is the check: passing opens 2 and failing opens 3. With the effect on only the
+    /// failure is left - and a white check of the same shape is untouched by it.
+    #[test]
+    fn a_red_check_forced_to_fail_opens_only_its_failure() {
+        let check_of = |kind| {
+            GraphBuilder::new()
+                .add(Entry::new(0).links(&[1]))
+                .add(Entry::new(1).kind(kind).flag("roll").links(&[2, 3]))
+                .add(Entry::new(2).guard(r#"Variable["roll"]"#))
+                .add(Entry::new(3).guard(r#"Variable["roll_failed"]"#))
+                .build()
+        };
+        let world = TestWorld::new().with_red_checks_failing(true);
+
+        let red = walk(
+            &check_of(DialogueCheckKind::Red),
+            node(0),
+            &world,
+            COUNTER_CAP,
+        );
+        assert!(!red.reached(node(2)), "a red success is closed");
+        assert!(red.reached(node(3)), "a red failure is not");
+
+        let white = walk(
+            &check_of(DialogueCheckKind::White),
+            node(0),
+            &world,
+            COUNTER_CAP,
+        );
+        assert!(
+            white.reached(node(2)),
+            "nothing forces a white check to fail"
+        );
     }
 
     #[test]

@@ -248,7 +248,8 @@ impl<'a> Reachability<'a> {
             return self.vars.bottom();
         }
 
-        let (success, failure) = self.rolled_cases(node, &allowed, image);
+        let may_succeed = crate::world::roll_may_succeed(node, world);
+        let (success, failure) = self.rolled_cases(node, may_succeed, &allowed, image);
         match branch {
             StartBranch::Pass => success,
             StartBranch::Fail => failure,
@@ -297,7 +298,10 @@ impl<'a> Reachability<'a> {
                 self.charge(node, &fresh, image)
             }
 
-            DialogueCheckKind::Red | DialogueCheckKind::White => self.rolled(node, &allowed, image),
+            DialogueCheckKind::Red | DialogueCheckKind::White => {
+                let may_succeed = crate::world::roll_may_succeed(node, world);
+                self.rolled(node, may_succeed, &allowed, image)
+            }
 
             DialogueCheckKind::Passive => {
                 let passes = world.check_passes(node.id);
@@ -324,10 +328,11 @@ impl<'a> Reachability<'a> {
     fn rolled(
         &mut self,
         node: &LookAheadNode,
+        may_succeed: bool,
         states: &BDDFunction,
         image: &mut ActionImage<'a>,
     ) -> BDDFunction {
-        let (success, failure) = self.rolled_cases(node, states, image);
+        let (success, failure) = self.rolled_cases(node, may_succeed, states, image);
         self.or_no_room(success.or(&failure))
     }
 
@@ -340,6 +345,7 @@ impl<'a> Reachability<'a> {
     fn rolled_cases(
         &mut self,
         node: &LookAheadNode,
+        may_succeed: bool,
         states: &BDDFunction,
         image: &mut ActionImage<'a>,
     ) -> (BDDFunction, BDDFunction) {
@@ -361,10 +367,15 @@ impl<'a> Reachability<'a> {
 
         let entered = self.charge(node, &open, image);
 
-        // Success raises the pass flag.
-        let success = match node.flag_slot {
-            slot if slot >= 0 => image.assign(&entered, slot as usize, 1),
-            _ => entered.clone(),
+        // Success raises the pass flag - where the roll may succeed at all; see
+        // `world::roll_may_succeed`.
+        let success = if may_succeed {
+            match node.flag_slot {
+                slot if slot >= 0 => image.assign(&entered, slot as usize, 1),
+                _ => entered.clone(),
+            }
+        } else {
+            self.vars.bottom()
         };
 
         // Failure: both kinds record it where there is a flag to record it with, and a

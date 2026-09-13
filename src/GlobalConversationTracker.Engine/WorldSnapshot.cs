@@ -96,5 +96,13 @@ namespace GlobalConversationTracker.Engine
         /// </remarks>
         public ISet<string> FailedWhiteChecks { get; } = new HashSet<string>();
 
+        /// <summary>Whether a thought forces every red check to fail.</summary>
+        /// <remarks>
+        /// The game's <c>ThoughtAlterant.RedChecksFail</c>. While it is set a red check's
+        /// success is closed to every crawl, and the check's Pass half is answered only for
+        /// what passing would open.
+        /// </remarks>
+        public bool RedChecksFail { get; set; }
+
     }
 }

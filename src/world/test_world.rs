@@ -11,6 +11,8 @@ pub struct TestWorld {
     pub day_minutes: i32,
     pub day_counter: i32,
     pub clock_locked: bool,
+    /// Whether a thought forces every red check to fail.
+    pub red_checks_fail: bool,
     pub variables: HashMap<String, GuardValue>,
     pub items: HashMap<String, bool>,
     pub tasks: HashMap<String, bool>,
@@ -55,6 +57,11 @@ impl TestWorld {
 
     pub fn with_clock_locked(mut self, locked: bool) -> Self {
         self.clock_locked = locked;
+        self
+    }
+
+    pub fn with_red_checks_failing(mut self, failing: bool) -> Self {
+        self.red_checks_fail = failing;
         self
     }
 
@@ -142,5 +149,8 @@ impl ILookAheadWorld for TestWorld {
     }
     fn is_seen(&self, node: DialogueNodeId) -> bool {
         self.seen.get(&node).copied().unwrap_or(false)
+    }
+    fn red_check_may_pass(&self, _node: DialogueNodeId) -> bool {
+        !self.red_checks_fail
     }
 }

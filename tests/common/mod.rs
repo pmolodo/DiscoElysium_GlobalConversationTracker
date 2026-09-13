@@ -399,6 +399,12 @@ impl ILookAheadWorld for SaveWorld {
         false
     }
 
+    /// Every roll is left free to succeed. This world does not read what the save's thoughts
+    /// do, and letting a red check pass is the permissive answer.
+    fn red_check_may_pass(&self, _node: lookahead_engine::core::types::DialogueNodeId) -> bool {
+        true
+    }
+
     fn get_variable(&self, name: &str) -> GuardValue {
         // The declared type first, where the database has one. That is the whole of
         // de-sze.5.4: a counter answered as a boolean makes every ordering comparison over

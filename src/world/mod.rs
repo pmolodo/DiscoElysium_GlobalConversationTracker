@@ -56,6 +56,27 @@ pub trait ILookAheadWorld: Send + Sync {
     fn query(&self, name: &str, arguments: &[GuardValue]) -> GuardValue;
     fn check_passes(&self, node: DialogueNodeId) -> Ternary;
     fn is_seen(&self, node: DialogueNodeId) -> bool;
+
+    /// Whether a red check's roll may succeed at this entry.
+    ///
+    /// False while a thought forces every red check to fail - the game's
+    /// `ThoughtAlterant.RedChecksFail` - which closes the success branch to every crawl.
+    /// Asked per entry rather than once, because a locked option's own Pass half is answered
+    /// as if its roll could succeed while every red check deeper in the walk still fails -
+    /// see `bridge::answer_starts`. Read through [`roll_may_succeed`].
+    fn red_check_may_pass(&self, node: DialogueNodeId) -> bool;
+}
+
+/// Whether entering `node` can take its roll's success branch.
+///
+/// Only a red check can be refused: a thought can force every red check to fail, and nothing
+/// forces a white one. One place decides it for the reference walk and both symbolic passes,
+/// which have to agree case for case.
+pub fn roll_may_succeed(
+    node: &crate::graph::node::LookAheadNode,
+    world: &dyn ILookAheadWorld,
+) -> bool {
+    node.kind != crate::core::types::DialogueCheckKind::Red || world.red_check_may_pass(node.id)
 }
 
 /// What a search consults that outlives any one state: the symbol table and the world.

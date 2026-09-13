@@ -123,3 +123,24 @@ fn a_research_effect_applies_only_while_its_thought_is_cooking() {
         );
     }
 }
+
+/// Red checks are forced to fail only while the thought forcing it is cooking.
+///
+/// The row is the one the shipped game carries - precarious_world's research effect - and the
+/// cabinet is made up, since no committed save has the thought in each state.
+#[test]
+fn red_checks_fail_only_while_the_thought_forcing_it_is_cooking() {
+    const THOUGHT: &str = "precarious_world";
+
+    let effects = [serde_json::json!({
+        "effect": "THC_RED_CHECK_FAILURE",
+        "phase": "research",
+        "thought": THOUGHT,
+    })];
+
+    for (state, expected) in [("COOKING", true), ("FIXED", false), ("UNKNOWN", false)] {
+        let states = HashMap::from([(THOUGHT.to_string(), state.to_string())]);
+        let thoughts = fixtures::passive_thoughts(&states, &HashMap::new(), &effects);
+        assert_eq!(thoughts.red_checks_fail, expected, "with {THOUGHT} {state}");
+    }
+}

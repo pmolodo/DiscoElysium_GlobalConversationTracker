@@ -156,6 +156,7 @@ pub fn read_snapshot(snapshot: Option<wire::WorldSnapshot>) -> Result<WorldSnaps
         checks_pass: read_node_set(snapshot.checks_pass)?,
         checks_fail: read_node_set(snapshot.checks_fail)?,
         seen: read_node_set(snapshot.seen)?,
+        red_checks_fail: snapshot.red_checks_fail,
     })
 }
 

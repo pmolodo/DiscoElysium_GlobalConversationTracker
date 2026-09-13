@@ -61,6 +61,7 @@ namespace GlobalConversationTracker.LookAhead.Tests
                 DayMinutes = (7 * 60) + 42,
                 DayCounter = 3,
                 ClockLocked = true,
+                RedChecksFail = true,
                 ChecksPass = Runs(9, (50, 50)),
                 ChecksFail = Runs(9, (42, 42), (19, 19)),
                 Seen = Runs(9, (0, 40), (42, 42), (50, 99)),

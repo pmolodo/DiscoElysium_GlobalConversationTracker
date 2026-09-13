@@ -16,6 +16,11 @@
       "thought": "lawbringer"
     },
     {
+      "effect": "THC_RED_CHECK_FAILURE",
+      "phase": "research",
+      "thought": "precarious_world"
+    },
+    {
       "ability": "PSY",
       "amount": -1,
       "effect": "PASSIVE_TARGET_MODIFIER",

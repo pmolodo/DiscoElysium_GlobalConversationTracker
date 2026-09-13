@@ -349,6 +349,10 @@ pub struct WorldSnapshot {
     /// Entries the player has already been shown.
     #[serde(default)]
     pub seen: NodeSet,
+    /// Whether a thought forces every red check to fail - see
+    /// [`ILookAheadWorld::red_check_may_pass`].
+    #[serde(default)]
+    pub red_checks_fail: bool,
 }
 
 impl WorldSnapshot {
@@ -399,11 +403,14 @@ pub fn lock_failed_white_checks(
 
 /// Why an option on the menu is closed when the search starts, though the player could open
 /// it.
+#[derive(Clone, Copy)]
 enum Lock<'w> {
     /// A check the save has failed: its failure slot, answered true.
     FailedCheck(&'w str),
     /// A price the purse cannot cover.
     Unaffordable(i32),
+    /// A red check whose roll a thought forces to fail, which locks its Pass half only.
+    RedPassForbidden(DialogueNodeId),
 }
 
 /// A world that lifts every [`Lock`] on one option, and answers everything else as `inner`
@@ -425,7 +432,7 @@ impl ILookAheadWorld for Unlocked<'_> {
             .iter()
             .filter_map(|lock| match lock {
                 Lock::Unaffordable(price) => Some(*price),
-                Lock::FailedCheck(_) => None,
+                Lock::FailedCheck(_) | Lock::RedPassForbidden(_) => None,
             })
             .fold(self.inner.money(), i32::max)
     }
@@ -476,6 +483,13 @@ impl ILookAheadWorld for Unlocked<'_> {
 
     fn is_seen(&self, node: DialogueNodeId) -> bool {
         self.inner.is_seen(node)
+    }
+
+    fn red_check_may_pass(&self, node: DialogueNodeId) -> bool {
+        self.locks
+            .iter()
+            .any(|lock| matches!(lock, Lock::RedPassForbidden(option) if *option == node))
+            || self.inner.red_check_may_pass(node)
     }
 }
 
@@ -609,6 +623,10 @@ impl ILookAheadWorld for SnapshotWorld {
 
     fn is_seen(&self, node: DialogueNodeId) -> bool {
         self.snapshot.seen.contains(&NodeRef::from(node))
+    }
+
+    fn red_check_may_pass(&self, _node: DialogueNodeId) -> bool {
+        !self.snapshot.red_checks_fail
     }
 }
 
@@ -1346,9 +1364,10 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
         };
         // A LOCKED OPTION IS ONE CLOSED WHEN THE SEARCH STARTS FOR A REASON THE PLAYER COULD
         // LIFT: a check whose failure slot is already set - the save failed it and the game
-        // will not offer it again - or a price the purse cannot cover. Its halves start from a
-        // seed with its locks lifted, so they can be answered as if it were open; the locks
-        // stay in the ordinary seed, so nothing else can route through it.
+        // will not offer it again - a price the purse cannot cover, or, for a red check's Pass
+        // half alone, a thought that forces every red roll to fail. A locked half is searched
+        // from a world with its locks lifted, so it can be answered as if it were open; the
+        // locks stay in the ordinary world, so nothing else can route through it.
         let failed_check = (node.is_rolled()
             && node.failed_flag_slot >= 0
             && started.is_set(node.failed_flag_slot as usize))
@@ -1369,6 +1388,21 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
             )
         });
         for &branch in branches {
+            // THE RED LOCK IS READ DURING THE CRAWL rather than seeded, so a half it locks is
+            // walked under the lifted world from its first step, not only started from it.
+            let red_pass_forbidden = (branch == StartBranch::Pass
+                && !crate::world::roll_may_succeed(node, world))
+            .then_some(Lock::RedPassForbidden(id));
+            let branch_locks: Vec<Lock> = locks.iter().copied().chain(red_pass_forbidden).collect();
+            let lifted = Unlocked {
+                inner: world,
+                locks: &branch_locks,
+            };
+            let world_here: &dyn ILookAheadWorld = if branch_locks.is_empty() {
+                world
+            } else {
+                &lifted
+            };
             let seed_here = match &unlocked_seed {
                 Some(Some(unlocked)) => unlocked,
                 Some(None) => {
@@ -1385,13 +1419,13 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
                 branch,
                 seed_here,
                 compiler,
-                world,
+                world_here,
                 COUNTER_CAP as u32,
             );
             let destinations = if branch == StartBranch::Either {
                 vec![id]
             } else {
-                from.destinations(graph, compiler, world, COUNTER_CAP as u32)
+                from.destinations(graph, compiler, world_here, COUNTER_CAP as u32)
             };
             let baseline = destinations
                 .iter()
@@ -1414,8 +1448,8 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
                     baseline,
                     landing: destinations,
                 };
-                if !locks.is_empty() {
-                    locked.push((answers.len(), contestant));
+                if !branch_locks.is_empty() {
+                    locked.push((answers.len(), contestant, branch_locks));
                 } else {
                     indices.push(answers.len());
                     contestants.push(contestant);
@@ -1474,7 +1508,7 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
         .collect();
     blocked.extend(found.marks.iter().filter_map(|mark| mark.witness));
     let mut passes = found.passes;
-    for (index, contestant) in locked {
+    for (index, contestant, branch_locks) in locked {
         // AN OPTION ANSWERED WHOLE STARTS AT ITSELF, where a check's half starts past the
         // check - so its own entry stays walkable for its own search, or nothing could enter
         // it at all. A half keeps its check blocked, which is what stops it cycling back.
@@ -1486,11 +1520,17 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
         {
             blocked_here.remove(&contestant.position.option);
         }
+        // Walked under its own locks lifted, which is what lets a red lock - read at every
+        // step - open this half and no other.
+        let lifted = Unlocked {
+            inner: world,
+            locks: &branch_locks,
+        };
         let alone = menu::mark_menu_blocking(
             Search {
                 graph,
                 compiler: &mut *compiler,
-                world,
+                world: &lifted,
                 counter_cap: COUNTER_CAP as u32,
             },
             novelty,
@@ -2091,6 +2131,62 @@ mod branch_wire_tests {
             best_of(node(0)),
             Novelty::SeenThisGame as i32,
             "the unaffordable one would reach only what the free one already does"
+        );
+    }
+
+    /// A red check a thought forces to fail answers its Pass half like a locked check.
+    ///
+    /// 0 is a red check: passing opens 1, which nobody has read, and failing opens 2. With
+    /// every red roll forced to fail the Pass half is still answered for what passing WOULD
+    /// open, the Fail half is answered as it stands, and 3 - a sibling that leads into the
+    /// check - cannot reach 1 through it.
+    #[test]
+    fn a_red_pass_forced_to_fail_is_answered_but_opens_nothing_else() {
+        let graph = GraphBuilder::new()
+            .add(
+                Entry::new(0)
+                    .kind(DialogueCheckKind::Red)
+                    .flag("roll")
+                    .links(&[1, 2]),
+            )
+            .add(Entry::new(1).guard(r#"Variable["roll"] == true"#))
+            .add(Entry::new(2).guard(r#"Variable["roll"] == false"#))
+            .add(Entry::new(3).links(&[0]))
+            .build();
+        let world = TestWorld::new().with_red_checks_failing(true);
+        let only_one_is_unread = |id: DialogueNodeId| {
+            if id == node(1) {
+                Novelty::UnseenAnyGame
+            } else {
+                Novelty::SeenThisGame
+            }
+        };
+
+        let answers = answer_menu(&graph, &world, &[node(0), node(3)], only_one_is_unread);
+        let best_of = |id: DialogueNodeId, branch: StartBranch| {
+            answers
+                .iter()
+                .find(|answer| {
+                    answer.start == NodeRef::from(id) && answer.branch == branch_name(branch)
+                })
+                .expect("every half is answered")
+                .best
+        };
+
+        assert_eq!(
+            best_of(node(0), StartBranch::Pass),
+            Novelty::UnseenAnyGame as i32,
+            "passing would open 1"
+        );
+        assert_eq!(
+            best_of(node(0), StartBranch::Fail),
+            Novelty::SeenThisGame as i32,
+            "failing opens only 2"
+        );
+        assert_eq!(
+            best_of(node(3), StartBranch::Either),
+            Novelty::SeenThisGame as i32,
+            "the sibling cannot pass the check to reach 1"
         );
     }
 }

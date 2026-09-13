@@ -546,7 +546,8 @@ impl<'a> Backward<'a> {
             }
 
             DialogueCheckKind::Red | DialogueCheckKind::White => {
-                self.pre_rolled(node, onward, image)
+                let may_succeed = crate::world::roll_may_succeed(node, world);
+                self.pre_rolled(node, may_succeed, onward, image)
             }
 
             DialogueCheckKind::Passive => {
@@ -588,14 +589,20 @@ impl<'a> Backward<'a> {
     fn pre_rolled(
         &mut self,
         node: &LookAheadNode,
+        may_succeed: bool,
         onward: &BDDFunction,
         image: &mut ActionImage<'a>,
     ) -> BDDFunction {
         // Success raised the pass flag, so undoing it selects the states where it is
-        // raised and then forgets it.
-        let mut landed = match node.flag_slot {
-            slot if slot >= 0 => image.pre_assign(onward, slot as usize, 1),
-            _ => onward.clone(),
+        // raised and then forgets it - where the roll may succeed at all, the same rule as
+        // `Reachability::rolled_cases`.
+        let mut landed = if may_succeed {
+            match node.flag_slot {
+                slot if slot >= 0 => image.pre_assign(onward, slot as usize, 1),
+                _ => onward.clone(),
+            }
+        } else {
+            self.vars.bottom()
         };
 
         // Failure: both kinds recorded it where there was a flag to record it with, a
@@ -1566,6 +1573,29 @@ mod tests {
             2,
             false,
         );
+    }
+
+    /// A red check a thought forces to fail is passed by no path, backwards as forwards.
+    ///
+    /// 1 is the check: passing opens 2 and failing opens 3. The pre-image has to drop the
+    /// success branch exactly where the entry step does, or the two engines disagree about 2.
+    #[test]
+    fn a_red_check_forced_to_fail_reaches_only_past_its_failure() {
+        let entries = || {
+            vec![
+                Entry::new(0).links(&[1]),
+                Entry::new(1)
+                    .kind(DialogueCheckKind::Red)
+                    .flag("roll")
+                    .links(&[2, 3]),
+                Entry::new(2).guard(r#"Variable["roll"]"#),
+                Entry::new(3).guard(r#"Variable["roll_failed"]"#),
+            ]
+        };
+        let world = TestWorld::new().with_red_checks_failing(true);
+
+        agree(entries(), &world, 2, false);
+        agree(entries(), &world, 3, true);
     }
 
     /// The case the whole approach is for: a door the path opens for itself.
