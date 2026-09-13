@@ -479,6 +479,14 @@
           "branchesWhy": "Open or locked, passing lands on a line no save has read, so the word carries that colour itself; failing lands on one this save has already been shown and reaches nothing better."
         },
         {
+          "save": "scene-thoughts",
+          "conversation": 29,
+          "what": "the trash can save with the three thoughts that change passive checks internalised",
+          "why": "WHAT THE GAME DOES WITH A PASSIVE-CHECK THOUGHT, which nothing offline can read: lawbringer's PASSIVES_SUCCEED and the PASSIVE_TARGET_MODIFIER of remote_viewer and age_bracket are applied by the game's own ThoughtAlterant hooks, and the fixture decides checks from the character sheet alone. This save is at-trashcan with those three thoughts FIXED and slotted and nothing else changed, so the checks the game sends for it, set beside the ones it sends for at-trashcan, are exactly what the three effects do. The markers are not what this row is for. See de-2jlj.",
+          "advances": 0,
+          "markers": "ignored"
+        },
+        {
           "save": "at-trashcan",
           "conversation": 29,
           "what": "the menu behind going over the case again, from the trash can",

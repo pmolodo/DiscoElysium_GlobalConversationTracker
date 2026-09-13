@@ -1,0 +1,26 @@
+{
+  "_format": "thought-effects",
+  "_formatVersion": 1,
+  "effects": [
+    {
+      "ability": "FYS",
+      "amount": -1,
+      "effect": "PASSIVE_TARGET_MODIFIER",
+      "phase": "completion",
+      "thought": "age_bracket"
+    },
+    {
+      "effect": "PASSIVES_SUCCEED",
+      "phase": "completion",
+      "skill": "HE_COORDINATION",
+      "thought": "lawbringer"
+    },
+    {
+      "ability": "PSY",
+      "amount": -1,
+      "effect": "PASSIVE_TARGET_MODIFIER",
+      "phase": "completion",
+      "thought": "remote_viewer"
+    }
+  ]
+}

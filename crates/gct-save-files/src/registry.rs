@@ -18,11 +18,11 @@
 //!
 //! ## The ones with no module of their own
 //!
-//! Four of them describe a TEST FIXTURE rather than a player's or a save's data - the
-//! scenario suites, the branch shapes, the table of which scenes are outdoors, and the table
-//! of which weather each preset is. They are read by the tests and written by hand or by a
-//! script, so there is no reader module to hang them off; their `Expected` is declared here
-//! instead. They are still formats, they are still stamped, and a converter that did not
+//! Five of them describe a TEST FIXTURE rather than a player's or a save's data - the
+//! scenario suites, the branch shapes, the table of which scenes are outdoors, the table of
+//! which weather each preset is, and the table of what thoughts do to passive checks. They
+//! are read by the tests and written by hand or by a script, so there is no reader module to
+//! hang them off; their `Expected` is declared here instead. They are still formats, they are still stamped, and a converter that did not
 //! know them would call a committed fixture foreign.
 
 use super::header::Expected;
@@ -56,8 +56,19 @@ pub const WEATHER_PRESETS: Expected = Expected {
     version: 1,
 };
 
+/// What each thought does to passive checks: a threshold moved for one ability's skills, or
+/// one skill's checks forced through.
+///
+/// The game applies these through its own hooks against the live cabinet, and the save holds
+/// only which thoughts are in which state - so an offline fixture needs the effects written
+/// down.
+pub const THOUGHT_EFFECTS: Expected = Expected {
+    format: "thought-effects",
+    version: 1,
+};
+
 /// Every format, and the version of it this build writes.
-pub const EVERY_FORMAT: [Expected; 9] = [
+pub const EVERY_FORMAT: [Expected; 10] = [
     global_state::FORMAT,
     json_diff::FORMAT,
     sparse_diff::FORMAT,
@@ -67,6 +78,7 @@ pub const EVERY_FORMAT: [Expected; 9] = [
     BRANCH_SHAPES,
     SCENES,
     WEATHER_PRESETS,
+    THOUGHT_EFFECTS,
 ];
 
 /// What version of a named format this build writes, or nothing where it knows none.

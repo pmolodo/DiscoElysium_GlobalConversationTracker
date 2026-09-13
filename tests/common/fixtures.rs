@@ -465,14 +465,15 @@ pub fn parse_runs(text: &str) -> HashSet<i32> {
 /// arithmetic and is called here rather than repeated. An `Antipassive` entry is the line
 /// that shows when you are not sharp enough, and the same call inverts for it.
 ///
-/// ## What it does not model
+/// ## And what the save's thoughts do to it
 ///
-/// A thought can shift a passive check's threshold or force one through regardless of the
-/// numbers, and neither is derivable from the sheet: the effects live in the thought
-/// definitions rather than in the save. Skill modifiers a thought CAUSES are counted, since
-/// those are in the sheet like any other. See de-2jlj.
+/// A thought can move a passive check's threshold or force one through regardless of the
+/// numbers, and neither is on the sheet: the effects live on the thought's definition, which
+/// `testing/thought-effects.json` writes down - see [`PassiveThoughts`]. Skill modifiers a
+/// thought CAUSES are on the sheet like any other, and counted there.
 pub fn checks_in_save(save: &str, conversations: &[i32]) -> Option<Checks> {
     let skills = skills_in_save(save);
+    let thoughts = passive_thoughts_in_save(save);
     let speakers = actor_names()?;
     let index = super::conversation_index()?;
 
@@ -507,14 +508,134 @@ pub fn checks_in_save(save: &str, conversations: &[i32]) -> Option<Checks> {
             });
             let antipassive = entry.fields.contains_key(ANTIPASSIVE_FIELD);
 
-            match passive_check::outcome(value, threshold, antipassive) {
-                Ternary::True => found.pass.insert(node),
-                _ => found.fail.insert(node),
+            // FORCED THROUGH ON THE RESULT rather than folded into the threshold, as the
+            // game does it: an antipassive line is the one shown when the check fails, so a
+            // check forced to pass hides it.
+            let fires = if thoughts.succeeding.contains(skill) {
+                !antipassive
+            } else {
+                let moved = threshold + thoughts.threshold_shift(skill);
+                passive_check::outcome(value, moved, antipassive) == Ternary::True
             };
+            if fires {
+                found.pass.insert(node);
+            } else {
+                found.fail.insert(node);
+            }
         }
     }
 
     Some(found)
+}
+
+/// What a save's thoughts do to its passive checks, by skill.
+///
+/// ## Which thought counts, and which way an amount moves
+///
+/// MEASURED IN GAME, because the definitions say neither (de-2jlj). With lawbringer,
+/// remote_viewer and age_bracket FIXED in at-trashcan, the game passed exactly nine checks it
+/// had failed: a PASSIVE_TARGET_MODIFIER of -1 LOWERS the threshold by one for every skill of
+/// its ability, and lawbringer's PASSIVES_SUCCEED forces Hand/Eye Coordination through. All
+/// three are completion effects, applied to a FIXED thought.
+///
+/// A RESEARCH-PHASE PASSIVE EFFECT IS REFUSED. None exists in the shipped game, so whether one
+/// applies while a thought is cooking has never been seen, and deciding checks on a guess is
+/// the failure this reading exists to remove.
+pub struct PassiveThoughts {
+    /// How far each skill's thresholds move.
+    shifts: HashMap<String, i32>,
+    /// The skills whose checks pass whatever the numbers say.
+    pub succeeding: HashSet<String>,
+}
+
+impl PassiveThoughts {
+    /// How far a skill's thresholds move; zero where no thought moves them.
+    pub fn threshold_shift(&self, skill: &str) -> i32 {
+        self.shifts.get(skill).copied().unwrap_or(0)
+    }
+}
+
+/// The state a thought has to be in for its completion effects to apply.
+const COMPLETION_STATE: &str = FIXED;
+
+/// What a save's thoughts do to its passive checks - see [`PassiveThoughts`].
+///
+/// # Panics
+///
+/// If the thought table will not read, names an effect or phase this does not know, or the
+/// save's sheet or cabinet is not the shape the game writes.
+pub fn passive_thoughts_in_save(save: &str) -> PassiveThoughts {
+    let states = thought_states(&world_state(save, "thoughtCabinetState"));
+    let sheet = character_sheet(save);
+    let ability_of: HashMap<String, String> = sheet
+        .as_object()
+        .expect("the sheet is an object")
+        .values()
+        .filter_map(|skill| {
+            Some((
+                skill.get("skillType")?.as_str()?.to_string(),
+                skill.get("abilityType")?.as_str()?.to_string(),
+            ))
+        })
+        .collect();
+
+    let mut thoughts = PassiveThoughts {
+        shifts: HashMap::new(),
+        succeeding: HashSet::new(),
+    };
+    for effect in thought_effects() {
+        let text = |key: &str| {
+            effect[key]
+                .as_str()
+                .unwrap_or_else(|| panic!("a thought effect has no '{key}': {effect}"))
+        };
+        let thought = text("thought");
+        match text("phase") {
+            "completion" => {}
+            other => panic!("{thought}: a passive effect in the '{other}' phase, never measured"),
+        }
+        if states.get(thought).map(String::as_str) != Some(COMPLETION_STATE) {
+            continue;
+        }
+
+        match text("effect") {
+            "PASSIVE_TARGET_MODIFIER" => {
+                let ability = text("ability");
+                let amount = effect["amount"]
+                    .as_i64()
+                    .unwrap_or_else(|| panic!("{thought}: a threshold modifier with no amount"))
+                    as i32;
+                for (skill, owner) in &ability_of {
+                    if owner == ability {
+                        *thoughts.shifts.entry(skill.clone()).or_default() += amount;
+                    }
+                }
+            }
+            "PASSIVES_SUCCEED" => {
+                thoughts.succeeding.insert(text("skill").to_string());
+            }
+            other => panic!("{thought}: a passive effect '{other}' this does not know"),
+        }
+    }
+
+    thoughts
+}
+
+/// The effects `tools/derive-thought-effects.py` read out of the game's thought definitions.
+fn thought_effects() -> &'static [serde_json::Value] {
+    static EFFECTS: OnceLock<Vec<serde_json::Value>> = OnceLock::new();
+    EFFECTS.get_or_init(|| {
+        let path = repo_root().join("testing").join("thought-effects.json");
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|why| panic!("{}: {why}", path.display()));
+        let document: serde_json::Value =
+            serde_json::from_str(&text).unwrap_or_else(|why| panic!("{}: {why}", path.display()));
+
+        document["effects"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{} lists no effects", path.display()))
+            .clone()
+    })
 }
 
 /// What a save's character sheet makes of a group's passive checks.
