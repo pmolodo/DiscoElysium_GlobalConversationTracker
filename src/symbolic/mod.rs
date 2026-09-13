@@ -37,6 +37,7 @@ pub mod novelty_search;
 pub mod order;
 pub mod reachability;
 pub mod register;
+pub mod search;
 pub mod vars;
 
 use std::collections::HashMap;

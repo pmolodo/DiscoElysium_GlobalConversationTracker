@@ -409,21 +409,21 @@ pub fn build_group_graph(index: &Index, start: i32) -> Result<(LookAheadGraph, V
                 -1
             };
 
-            let mut node = LookAheadNode::new(
-                node_id,
-                entry.group,
+            let mut node = LookAheadNode {
+                is_group: entry.group,
                 kind,
                 guard,
                 actions,
-                links_of(entry, conversation_id),
-                cost.max(0),
+                links: links_of(entry, conversation_id),
+                cost: cost.max(0),
                 cost_once,
                 hidden_when_unaffordable,
                 flag_slot,
                 failed_flag_slot,
                 boolean_only,
                 seen_slot,
-            );
+                ..LookAheadNode::new(node_id)
+            };
             node.player = entry
                 .fields
                 .get(ACTOR_FIELD)

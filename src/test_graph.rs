@@ -160,21 +160,20 @@ impl GraphBuilder {
 
             let links: Vec<DialogueNodeId> = entry.links.iter().map(|l| node(*l)).collect();
 
-            let mut built = LookAheadNode::new(
-                id,
-                entry.is_group,
-                entry.kind,
+            let mut built = LookAheadNode {
+                is_group: entry.is_group,
+                kind: entry.kind,
                 guard,
                 actions,
                 links,
-                entry.cost,
-                entry.cost_once,
-                false,
+                cost: entry.cost,
+                cost_once: entry.cost_once,
                 flag_slot,
                 failed_flag_slot,
-                entry.boolean_only,
+                boolean_only: entry.boolean_only,
                 seen_slot,
-            );
+                ..LookAheadNode::new(id)
+            };
             built.player = entry.player;
             nodes.push(built);
         }

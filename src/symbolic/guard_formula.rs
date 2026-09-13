@@ -1301,7 +1301,7 @@ mod tests {
     use crate::core::action::DialogueAction;
     use crate::core::guard::Guard;
     use crate::core::state::StateSymbols;
-    use crate::core::types::{DialogueCheckKind, DialogueNodeId};
+    use crate::core::types::DialogueNodeId;
     use crate::graph::graph::LookAheadGraph;
     use crate::graph::node::LookAheadNode;
     use crate::symbolic::budget::DiagramBudget;
@@ -1324,21 +1324,11 @@ mod tests {
             }
         }
 
-        let node = LookAheadNode::new(
-            DialogueNodeId::new(1, 0),
-            false,
-            DialogueCheckKind::None,
-            Guard::always_true(),
+        let node = LookAheadNode {
             actions,
-            vec![DialogueNodeId::new(1, 0)],
-            0,
-            false,
-            false,
-            -1,
-            -1,
-            false,
-            -1,
-        );
+            links: vec![DialogueNodeId::new(1, 0)],
+            ..LookAheadNode::new(DialogueNodeId::new(1, 0))
+        };
         let snapshot = symbols.clone();
         (LookAheadGraph::new(vec![node], symbols).unwrap(), snapshot)
     }
@@ -1762,21 +1752,10 @@ mod tests {
         let mut symbols = StateSymbols::new();
         let actions =
             crate::parser::action_parser::parse_actions(r#"GainItem("shoes_faln")"#, &mut symbols);
-        let node = LookAheadNode::new(
-            DialogueNodeId::new(1, 0),
-            false,
-            DialogueCheckKind::None,
-            Guard::always_true(),
+        let node = LookAheadNode {
             actions,
-            vec![],
-            0,
-            false,
-            false,
-            -1,
-            -1,
-            false,
-            -1,
-        );
+            ..LookAheadNode::new(DialogueNodeId::new(1, 0))
+        };
         let snapshot = symbols.clone();
         let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
         let layout = DataLayout::for_graph(&graph, 16, None, false);
@@ -1841,21 +1820,10 @@ mod tests {
         let mut symbols = StateSymbols::new();
         let actions =
             crate::parser::action_parser::parse_actions(r#"GainItem("shoes_faln")"#, &mut symbols);
-        let node = LookAheadNode::new(
-            DialogueNodeId::new(1, 0),
-            false,
-            DialogueCheckKind::None,
-            Guard::always_true(),
+        let node = LookAheadNode {
             actions,
-            vec![],
-            0,
-            false,
-            false,
-            -1,
-            -1,
-            false,
-            -1,
-        );
+            ..LookAheadNode::new(DialogueNodeId::new(1, 0))
+        };
         let snapshot = symbols.clone();
         let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
         let layout = DataLayout::for_graph(&graph, 16, None, false);
@@ -1887,21 +1855,10 @@ mod tests {
             r#"GainTask("TASK.find_ruby")"#,
             &mut symbols,
         );
-        let node = LookAheadNode::new(
-            DialogueNodeId::new(1, 0),
-            false,
-            DialogueCheckKind::None,
-            Guard::always_true(),
+        let node = LookAheadNode {
             actions,
-            vec![],
-            0,
-            false,
-            false,
-            -1,
-            -1,
-            false,
-            -1,
-        );
+            ..LookAheadNode::new(DialogueNodeId::new(1, 0))
+        };
         let snapshot = symbols.clone();
         let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
         let layout = DataLayout::for_graph(&graph, 16, None, false);
@@ -1938,21 +1895,10 @@ mod tests {
             r#"GainThought("jamais_vu")"#,
             &mut symbols,
         );
-        let node = LookAheadNode::new(
-            DialogueNodeId::new(1, 0),
-            false,
-            DialogueCheckKind::None,
-            Guard::always_true(),
+        let node = LookAheadNode {
             actions,
-            vec![],
-            0,
-            false,
-            false,
-            -1,
-            -1,
-            false,
-            -1,
-        );
+            ..LookAheadNode::new(DialogueNodeId::new(1, 0))
+        };
         let snapshot = symbols.clone();
         let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
         let layout = DataLayout::for_graph(&graph, 16, None, false);
@@ -2073,22 +2019,9 @@ mod tests {
         let still = crate::parser::action_parser::parse_actions("", &mut symbols);
         let moving = crate::parser::action_parser::parse_actions("PassTime()", &mut symbols);
 
-        let node = |actions| {
-            LookAheadNode::new(
-                DialogueNodeId::new(1, 0),
-                false,
-                DialogueCheckKind::None,
-                Guard::always_true(),
-                actions,
-                vec![],
-                0,
-                false,
-                false,
-                -1,
-                -1,
-                false,
-                -1,
-            )
+        let node = |actions| LookAheadNode {
+            actions,
+            ..LookAheadNode::new(DialogueNodeId::new(1, 0))
         };
 
         let quiet = LookAheadGraph::new(vec![node(still)], StateSymbols::new()).unwrap();
@@ -2130,21 +2063,10 @@ mod tests {
             false,
             "s".to_string(),
         )];
-        let node = LookAheadNode::new(
-            DialogueNodeId::new(1, 0),
-            false,
-            DialogueCheckKind::None,
-            Guard::always_true(),
-            actions.clone(),
-            vec![],
-            0,
-            false,
-            false,
-            -1,
-            -1,
-            false,
-            -1,
-        );
+        let node = LookAheadNode {
+            actions: actions.clone(),
+            ..LookAheadNode::new(DialogueNodeId::new(1, 0))
+        };
         let snapshot = symbols.clone();
         let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
         let layout = DataLayout::for_graph(&graph, 16, None, false);

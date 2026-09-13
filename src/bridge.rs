@@ -1295,7 +1295,6 @@ where
 /// survived until an in-game run found them. See de-0jsf.21.
 ///
 /// A separate position and baseline is retained for each roll, so a check is two contestants.
-#[allow(clippy::too_many_arguments)]
 pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
     graph: &LookAheadGraph,
     world: &dyn ILookAheadWorld,
@@ -1306,6 +1305,7 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
     shape: &GroupShape,
 ) -> Vec<LookAheadAnswer> {
     use crate::symbolic::menu::{self, Contestant};
+    use crate::symbolic::search::Search;
     let began = std::time::Instant::now();
     let mut answers = Vec::new();
     let mut contestants = Vec::new();
@@ -1419,10 +1419,12 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
         menu::mark_menu
     };
     let found = mark(
-        graph,
-        compiler,
-        world,
-        COUNTER_CAP as u32,
+        Search {
+            graph,
+            compiler: &mut *compiler,
+            world,
+            counter_cap: COUNTER_CAP as u32,
+        },
         novelty,
         &contestants,
         &menu::Budget {
@@ -1449,10 +1451,12 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
     let mut passes = found.passes;
     for (index, contestant) in locked {
         let alone = menu::mark_menu_blocking(
-            graph,
-            compiler,
-            world,
-            COUNTER_CAP as u32,
+            Search {
+                graph,
+                compiler: &mut *compiler,
+                world,
+                counter_cap: COUNTER_CAP as u32,
+            },
             novelty,
             std::slice::from_ref(&contestant),
             &menu::Budget {
@@ -2566,21 +2570,9 @@ mod tests {
     fn an_unknown_start_does_not_fail_the_whole_request() {
         let mut symbols = StateSymbols::new();
         let _ = symbols.variable("unused");
-        let node = LookAheadNode::new(
-            DialogueNodeId::new(1, 0),
-            false,
-            DialogueCheckKind::None,
-            Guard::always_true(),
-            Vec::new(),
-            Vec::new(),
-            0,
-            false,
-            false,
-            -1,
-            -1,
-            false,
-            -1,
-        );
+        let node = LookAheadNode {
+            ..LookAheadNode::new(DialogueNodeId::new(1, 0))
+        };
         let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
 
         // Straight at the private path rather than through an index, because what is being

@@ -90,6 +90,7 @@ use crate::symbolic::guard_formula::GuardCompiler;
 use crate::symbolic::known::Known;
 use crate::symbolic::order::{IterationOrder, Worklist};
 use crate::symbolic::reachability::{Reachability, never_displays};
+use crate::symbolic::search::Search;
 use crate::symbolic::vars::DataVars;
 use crate::world::world::ILookAheadWorld;
 
@@ -202,12 +203,10 @@ pub struct Position {
     pub holding: BDDFunction,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum Nearest {
-    Found { distance: usize, winner: usize },
-    Unreachable,
-    Unfinished { out_of_memory: bool },
-}
+/// The manager filled part way through a layer, so the walk stops and its round is
+/// unfinished.
+#[derive(Debug)]
+struct NoRoom;
 
 /// The nearest of MANY targets, and which option gets there first.
 ///
@@ -267,7 +266,6 @@ impl<'a> Backward<'a> {
     /// how many pops the same settled sets take, and not what is in them. The forward sets
     /// are the one that does: a pass that MEETS one stops there, having shown the target
     /// reachable without finishing - see [`Known`].
-    #[allow(clippy::too_many_arguments)]
     pub fn reaching_knowing(
         graph: &LookAheadGraph,
         target: DialogueNodeId,
@@ -278,29 +276,33 @@ impl<'a> Backward<'a> {
         known: Option<&Known>,
     ) -> Self {
         Self::reaching_any_knowing(
-            graph,
+            Search {
+                graph,
+                compiler,
+                world,
+                counter_cap,
+            },
             &[target],
             &HashSet::new(),
-            compiler,
-            world,
-            counter_cap,
             budget,
             known,
         )
     }
 
     /// Worklist reachability from any target, refusing routes through cut options.
-    #[allow(clippy::too_many_arguments)]
     pub fn reaching_any_knowing(
-        graph: &LookAheadGraph,
+        search: Search<'_, 'a>,
         targets: &[DialogueNodeId],
         cut: &HashSet<DialogueNodeId>,
-        compiler: &mut GuardCompiler<'a>,
-        world: &dyn ILookAheadWorld,
-        counter_cap: u32,
         budget: &Budget,
         known: Option<&Known>,
     ) -> Self {
+        let Search {
+            graph,
+            compiler,
+            world,
+            counter_cap,
+        } = search;
         let vars = compiler.vars();
         let mut image = ActionImage::new(vars, counter_cap);
         let mut this = Self {
@@ -498,211 +500,6 @@ impl<'a> Backward<'a> {
     /// runs out of room, with [`BackwardStats::out_of_memory`] set to say so, because
     /// once that happens every set since is the pre-image of nothing in particular and
     /// the caller must stop rather than carry on with a smaller answer.
-    /// Finds one nearest position to a target, stopping at its first meet within a layer.
-    /// Only cumulative sets and the two frontiers are retained.
-    #[allow(clippy::too_many_arguments)]
-    pub fn nearest(
-        graph: &LookAheadGraph,
-        target: DialogueNodeId,
-        cut: &HashSet<DialogueNodeId>,
-        compiler: &mut GuardCompiler<'a>,
-        world: &dyn ILookAheadWorld,
-        counter_cap: u32,
-        budget: &Budget,
-        known: &Known,
-        positions: &[Position],
-    ) -> Nearest {
-        let vars = compiler.vars();
-        let began = std::time::Instant::now();
-        let mut this = Self {
-            vars,
-            sets: HashMap::new(),
-            stats: BackwardStats::default(),
-        };
-        let mut image = ActionImage::new(vars, counter_cap);
-        let Some(node) = graph.get(target).filter(|n| !never_displays(n, world)) else {
-            return Nearest::Unreachable;
-        };
-        if cut.contains(&target) {
-            return Nearest::Unreachable;
-        }
-        let seed = this.pre_enter(node, &vars.top(), compiler, world, &mut image);
-        let mut next = HashMap::new();
-        if let Some(delta) = this.widen(target, &seed) {
-            next.insert(target, delta);
-        }
-        if let Some(found) = this.meeting(target, 0, positions) {
-            return found;
-        }
-        for distance in 0usize.. {
-            let mut queue = Worklist::new(known.order());
-            let mut frontier = HashMap::new();
-            // A stable order keeps diagram allocation and measurements repeatable.
-            let mut incoming: Vec<_> = std::mem::take(&mut next).into_iter().collect();
-            incoming.sort_by_key(|(id, _)| (id.conversation_id, id.entry_id));
-            for (id, states) in incoming {
-                // At the target these states have arrived nowhere yet. Everywhere else they
-                // are a choice's, already asked about when the choice was reached, and what
-                // this layer buys is leaving it.
-                if distance == 0 {
-                    frontier.insert(id, states);
-                    queue.push(id);
-                } else if let Some(found) = this.spread(
-                    graph,
-                    known,
-                    id,
-                    &states,
-                    cut,
-                    compiler,
-                    world,
-                    &mut image,
-                    &mut frontier,
-                    &mut queue,
-                    distance,
-                    positions,
-                ) {
-                    return found;
-                }
-            }
-            while let Some(id) = queue.pop() {
-                this.stats.steps += 1;
-                if began.elapsed() >= budget.time || this.stats.steps >= budget.steps {
-                    return Nearest::Unfinished {
-                        out_of_memory: false,
-                    };
-                }
-                let Some(delta) = frontier.remove(&id) else {
-                    continue;
-                };
-                // LEAVING A CHOICE COSTS ONE, and the charge is the node's rather than the
-                // link's, so every route out of it belongs to the next layer. The option the
-                // search is walking towards is where the player already stands and is free.
-                if id != target && graph.get(id).is_some_and(|n| n.choice) {
-                    let pending = next.get(&id).cloned().unwrap_or_else(|| vars.bottom());
-                    match pending.or(&delta) {
-                        Ok(joined) => {
-                            next.insert(id, joined);
-                        }
-                        Err(_) => {
-                            return Nearest::Unfinished {
-                                out_of_memory: true,
-                            };
-                        }
-                    }
-                    continue;
-                }
-                if let Some(found) = this.spread(
-                    graph,
-                    known,
-                    id,
-                    &delta,
-                    cut,
-                    compiler,
-                    world,
-                    &mut image,
-                    &mut frontier,
-                    &mut queue,
-                    distance,
-                    positions,
-                ) {
-                    return found;
-                }
-                if this.stats.out_of_memory || image.out_of_memory() {
-                    return Nearest::Unfinished {
-                        out_of_memory: true,
-                    };
-                }
-            }
-            if this.stats.out_of_memory || image.out_of_memory() {
-                return Nearest::Unfinished {
-                    out_of_memory: true,
-                };
-            }
-            if next.is_empty() {
-                return Nearest::Unreachable;
-            }
-        }
-        unreachable!("choice distance exhausted usize")
-    }
-
-    fn meeting(
-        &self,
-        id: DialogueNodeId,
-        distance: usize,
-        positions: &[Position],
-    ) -> Option<Nearest> {
-        let states = self.sets.get(&id)?;
-        for (winner, position) in positions.iter().enumerate() {
-            if !position.entries.contains(&id) {
-                continue;
-            }
-            match states.and(&position.holding) {
-                Ok(meet) if meet.satisfiable() => return Some(Nearest::Found { distance, winner }),
-                Ok(_) => {}
-                Err(_) => {
-                    return Some(Nearest::Unfinished {
-                        out_of_memory: true,
-                    });
-                }
-            }
-        }
-        None
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn spread(
-        &mut self,
-        graph: &LookAheadGraph,
-        known: &Known,
-        id: DialogueNodeId,
-        delta: &BDDFunction,
-        cut: &HashSet<DialogueNodeId>,
-        compiler: &mut GuardCompiler<'a>,
-        world: &dyn ILookAheadWorld,
-        image: &mut ActionImage<'a>,
-        frontier: &mut HashMap<DialogueNodeId, BDDFunction>,
-        queue: &mut Worklist,
-        distance: usize,
-        positions: &[Position],
-    ) -> Option<Nearest> {
-        for &parent in known.parents_of(id) {
-            if cut.contains(&parent) {
-                continue;
-            }
-            let Some(node) = graph.get(parent) else {
-                continue;
-            };
-            let before = self.pre_enter(node, delta, compiler, world, image);
-            let Some(fresh) = self.widen(parent, &before) else {
-                continue;
-            };
-            if self.stats.out_of_memory || image.out_of_memory() {
-                return Some(Nearest::Unfinished {
-                    out_of_memory: true,
-                });
-            }
-            if let Some(found) = self.meeting(parent, distance, positions) {
-                return Some(found);
-            }
-            let waiting = frontier
-                .get(&parent)
-                .cloned()
-                .unwrap_or_else(|| self.vars.bottom());
-            match waiting.or(&fresh) {
-                Ok(joined) => {
-                    frontier.insert(parent, joined);
-                    queue.push(parent);
-                }
-                Err(_) => {
-                    return Some(Nearest::Unfinished {
-                        out_of_memory: true,
-                    });
-                }
-            }
-        }
-        None
-    }
-
     fn widen(&mut self, node: DialogueNodeId, arriving: &BDDFunction) -> Option<BDDFunction> {
         let mut out_of_nodes = false;
         let fresh = widen_into(&mut self.sets, self.vars, node, arriving, &mut out_of_nodes);
@@ -1124,8 +921,8 @@ impl<'a> Backward<'a> {
     ///
     /// ## Two fronts, and why
     ///
-    /// [`Self::nearest`] walks from the target back to the options, and what it carries grows
-    /// about half again per layer. On the groups that hurt, the DEPTH is what costs, and the
+    /// A walk from the target back to the options alone carries a set that grows about half
+    /// again per layer. On the groups that hurt, the DEPTH is what costs, and the
     /// growth is in the exponent, so two fronts meeting part way are worth more than anything
     /// that shaves the width - see `measurements/bidirectional_headroom.rs`. Each side keeps
     /// its layers apart rather than as one cumulative set, so a meeting says which forward
@@ -1154,38 +951,26 @@ impl<'a> Backward<'a> {
     /// A search per target would need bounds to decide which target to spend the next pass
     /// on. A pool decides that continuously and by measurement: a target whose crawl is
     /// blowing up is starved, and one that cannot be reached dies on its own.
-    #[allow(clippy::too_many_arguments)]
     pub fn nearest_choices(
-        graph: &LookAheadGraph,
+        mut search: Search<'_, 'a>,
         targets: &[DialogueNodeId],
         cut: &HashSet<DialogueNodeId>,
-        compiler: &mut GuardCompiler<'a>,
-        world: &dyn ILookAheadWorld,
-        counter_cap: u32,
         budget: &Budget,
         known: &Known,
         positions: &[Position],
     ) -> Round {
-        let vars = compiler.vars();
+        let graph = search.graph;
+        let world = search.world;
+        let vars = search.compiler.vars();
         let began = std::time::Instant::now();
-        let mut image = ActionImage::new(vars, counter_cap);
+        let mut image = ActionImage::new(vars, search.counter_cap);
 
         let Some((mut forward, mut reached)) = union_front(positions, cut, vars) else {
             return Round::Unfinished {
                 out_of_memory: true,
             };
         };
-        if grow_forward(
-            graph,
-            cut,
-            compiler,
-            world,
-            counter_cap,
-            &mut reached,
-            &mut forward,
-        )
-        .is_some()
-        {
+        if grow_forward(search.reborrow(), cut, &mut reached, &mut forward).is_err() {
             return Round::Unfinished {
                 out_of_memory: true,
             };
@@ -1207,14 +992,14 @@ impl<'a> Backward<'a> {
                 stats: BackwardStats::default(),
             };
             let mut front = Front::new(HashSet::from([target]));
-            let seed = back.pre_enter(node, &vars.top(), compiler, world, &mut image);
+            let seed = back.pre_enter(node, &vars.top(), search.compiler, world, &mut image);
             if let Some(delta) = back.widen(target, &seed) {
                 merge(&mut front.pending, target, &delta);
                 merge(&mut front.carry, target, &delta);
             }
             if back
-                .grow_back(graph, known, cut, compiler, world, &mut image, &mut front)
-                .is_some()
+                .grow_back(search.reborrow(), known, cut, &mut image, &mut front)
+                .is_err()
             {
                 return Round::Unfinished {
                     out_of_memory: true,
@@ -1246,20 +1031,11 @@ impl<'a> Backward<'a> {
                     (true, true) => forward.carry.len() <= theirs.carry.len(),
                 };
                 let stop = if grow_forward_now {
-                    grow_forward(
-                        graph,
-                        cut,
-                        compiler,
-                        world,
-                        counter_cap,
-                        &mut reached,
-                        &mut forward,
-                    )
-                    .is_some()
+                    grow_forward(search.reborrow(), cut, &mut reached, &mut forward).is_err()
                 } else {
                     let (_, back, front) = &mut crawls[which];
-                    back.grow_back(graph, known, cut, compiler, world, &mut image, front)
-                        .is_some()
+                    back.grow_back(search.reborrow(), known, cut, &mut image, front)
+                        .is_err()
                 };
                 if stop {
                     return Round::Unfinished {
@@ -1297,17 +1073,7 @@ impl<'a> Backward<'a> {
                 let Some(layer) = theirs.layers.get(behind) else {
                     return Round::Unreachable;
                 };
-                return match claim(
-                    graph,
-                    positions,
-                    cut,
-                    compiler,
-                    world,
-                    counter_cap,
-                    ahead,
-                    at,
-                    layer,
-                ) {
+                return match claim(search.reborrow(), positions, cut, ahead, at, layer) {
                     Ok(Some(winner)) => Round::Found {
                         distance,
                         winner,
@@ -1331,17 +1097,20 @@ impl<'a> Backward<'a> {
     }
 
     /// Walks the backward front on by one choice-layer.
-    #[allow(clippy::too_many_arguments)]
     fn grow_back(
         &mut self,
-        graph: &LookAheadGraph,
+        search: Search<'_, 'a>,
         known: &Known,
         cut: &HashSet<DialogueNodeId>,
-        compiler: &mut GuardCompiler<'a>,
-        world: &dyn ILookAheadWorld,
         image: &mut ActionImage<'a>,
         front: &mut Front,
-    ) -> Option<Nearest> {
+    ) -> Result<(), NoRoom> {
+        let Search {
+            graph,
+            compiler,
+            world,
+            ..
+        } = search;
         let mut added = std::mem::take(&mut front.pending);
         // A stable order keeps diagram allocation and measurements repeatable.
         let mut queue: Vec<_> = std::mem::take(&mut front.carry).into_iter().collect();
@@ -1357,15 +1126,11 @@ impl<'a> Backward<'a> {
                 };
                 let before = self.pre_enter(node, &delta, compiler, world, image);
                 if self.stats.out_of_memory || image.out_of_memory() {
-                    return Some(Nearest::Unfinished {
-                        out_of_memory: true,
-                    });
+                    return Err(NoRoom);
                 }
                 let Some(fresh) = self.widen(parent, &before) else {
                     if self.stats.out_of_memory {
-                        return Some(Nearest::Unfinished {
-                            out_of_memory: true,
-                        });
+                        return Err(NoRoom);
                     }
                     continue;
                 };
@@ -1374,7 +1139,7 @@ impl<'a> Backward<'a> {
             }
         }
         front.layers.push(added);
-        None
+        Ok(())
     }
 }
 
@@ -1384,16 +1149,18 @@ impl<'a> Backward<'a> {
 /// a forward set holds what the search has ARRIVING at an entry, before that entry's own
 /// guard, cost or actions - which is the same moment a backward set is about. Meeting them
 /// is then one conjunction rather than a conversion.
-#[allow(clippy::too_many_arguments)]
 fn grow_forward(
-    graph: &LookAheadGraph,
+    search: Search<'_, '_>,
     cut: &HashSet<DialogueNodeId>,
-    compiler: &mut GuardCompiler<'_>,
-    world: &dyn ILookAheadWorld,
-    counter_cap: u32,
     sets: &mut HashMap<DialogueNodeId, BDDFunction>,
     front: &mut Front,
-) -> Option<Nearest> {
+) -> Result<(), NoRoom> {
+    let Search {
+        graph,
+        compiler,
+        world,
+        counter_cap,
+    } = search;
     let vars = compiler.vars();
     let mut added = std::mem::take(&mut front.pending);
     let mut queue: Vec<_> = std::mem::take(&mut front.carry).into_iter().collect();
@@ -1411,9 +1178,7 @@ fn grow_forward(
             world,
             counter_cap,
         ) else {
-            return Some(Nearest::Unfinished {
-                out_of_memory: true,
-            });
+            return Err(NoRoom);
         };
         if !onward.satisfiable() {
             continue;
@@ -1428,9 +1193,7 @@ fn grow_forward(
             let mut out_of_nodes = false;
             let fresh = widen_into(sets, vars, child, &onward, &mut out_of_nodes);
             if out_of_nodes {
-                return Some(Nearest::Unfinished {
-                    out_of_memory: true,
-                });
+                return Err(NoRoom);
             }
             let Some(fresh) = fresh else { continue };
             merge(&mut added, child, &fresh);
@@ -1438,7 +1201,7 @@ fn grow_forward(
         }
     }
     front.layers.push(added);
-    None
+    Ok(())
 }
 
 /// One side's walk, kept layer by layer.
@@ -1513,7 +1276,7 @@ impl Front {
 ///
 /// It is free at either end. The option is where the player already stands, and the target is
 /// where the route finishes rather than a choice made along it - the same two exemptions
-/// `choice_bounds` and [`Backward::nearest`] make at their own ends.
+/// `choice_bounds` makes at its own ends.
 fn meeting_of(
     graph: &LookAheadGraph,
     mine: &HashMap<DialogueNodeId, BDDFunction>,
@@ -1598,14 +1361,10 @@ fn union_front(
 /// rather than in every layer of the search for one. `Ok(None)` says no option owns it,
 /// which cannot happen for a meeting the union produced and is reported as unfinished rather
 /// than guessed at.
-#[allow(clippy::too_many_arguments)]
 fn claim(
-    graph: &LookAheadGraph,
+    mut search: Search<'_, '_>,
     positions: &[Position],
     cut: &HashSet<DialogueNodeId>,
-    compiler: &mut GuardCompiler<'_>,
-    world: &dyn ILookAheadWorld,
-    counter_cap: u32,
     ahead: usize,
     at: DialogueNodeId,
     theirs: &HashMap<DialogueNodeId, BDDFunction>,
@@ -1613,24 +1372,14 @@ fn claim(
     let Some(wanted) = theirs.get(&at) else {
         return Ok(None);
     };
-    let vars = compiler.vars();
+    let vars = search.compiler.vars();
     for (winner, position) in positions.iter().enumerate() {
         let Some((mut front, mut sets)) = union_front(std::slice::from_ref(position), cut, vars)
         else {
             return Err(());
         };
         for _ in 0..=ahead {
-            if grow_forward(
-                graph,
-                cut,
-                compiler,
-                world,
-                counter_cap,
-                &mut sets,
-                &mut front,
-            )
-            .is_some()
-            {
+            if grow_forward(search.reborrow(), cut, &mut sets, &mut front).is_err() {
                 return Err(());
             }
         }

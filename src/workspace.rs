@@ -203,7 +203,16 @@ impl Workspace {
             .stack_size(isolated::STACK)
             .spawn(move || {
                 own(
-                    owned, group, entered_at, world, declared, budget, inbox, ready,
+                    Opening {
+                        graph: owned,
+                        group,
+                        entered_at,
+                        layout_world: world,
+                        declared,
+                        budget,
+                    },
+                    inbox,
+                    ready,
                 )
             })
             .ok()?;
@@ -298,21 +307,33 @@ impl Drop for Workspace {
     }
 }
 
+/// What a workspace is opened for, handed to its owner thread whole.
+///
+/// Everything [`Workspace::open`] was given, moved rather than borrowed, because the thread
+/// outlives the call that starts it.
+struct Opening {
+    graph: Arc<LookAheadGraph>,
+    group: Vec<i32>,
+    entered_at: Vec<i32>,
+    /// The world the layout is sized from, and nothing else - every request brings its own.
+    layout_world: WorldSnapshot,
+    declared: Option<Arc<VariableTable>>,
+    budget: DiagramBudget,
+}
+
 /// The owner thread's whole life: build once, then answer until the channel closes.
 ///
 /// Every borrow below lives on this stack, with the request loop inside their scope. That
 /// is what lets `DataVars` keep borrowing the layout exactly as it does everywhere else.
-#[allow(clippy::too_many_arguments)]
-fn own(
-    graph: Arc<LookAheadGraph>,
-    group: Vec<i32>,
-    entered_at: Vec<i32>,
-    layout_world: WorldSnapshot,
-    declared: Option<Arc<VariableTable>>,
-    budget: DiagramBudget,
-    inbox: Receiver<Job>,
-    ready: Sender<bool>,
-) {
+fn own(opening: Opening, inbox: Receiver<Job>, ready: Sender<bool>) {
+    let Opening {
+        graph,
+        group,
+        entered_at,
+        layout_world,
+        declared,
+        budget,
+    } = opening;
     let symbols = graph.symbols().clone();
     // THE LAYOUT IS BUILT FROM THE WORLD THAT OPENED THIS, and the key above records which
     // ceiling that produced - so a later request whose money moves the ceiling is refused

@@ -17,12 +17,11 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use super::backward::{Backward, Budget as PassBudget, Position, Round};
-use super::guard_formula::GuardCompiler;
 use super::known::GroupShape;
 use super::novelty_search::{StoppedBy, choice_bounds};
+use super::search::Search;
 use crate::core::types::{DialogueNodeId, Novelty};
 use crate::graph::graph::LookAheadGraph;
-use crate::world::world::ILookAheadWorld;
 
 pub struct Contestant {
     pub position: Position,
@@ -93,43 +92,21 @@ pub struct Budget {
 ///
 /// An onward mark carries no distance, because none was computed. See de-0jsf.18 for the
 /// free structural bound that orders them when an ordering is wanted.
-#[allow(clippy::too_many_arguments)]
-pub fn mark_menu_hybrid<'a, F: Fn(DialogueNodeId) -> Novelty>(
-    graph: &LookAheadGraph,
-    compiler: &mut GuardCompiler<'a>,
-    world: &dyn ILookAheadWorld,
-    counter_cap: u32,
+pub fn mark_menu_hybrid<F: Fn(DialogueNodeId) -> Novelty>(
+    mut search: Search<'_, '_>,
     novelty: &F,
     contestants: &[Contestant],
     budget: &Budget,
     shape: &GroupShape,
 ) -> MenuAnswer {
-    let onward = mark_onward(
-        graph,
-        compiler,
-        world,
-        counter_cap,
-        novelty,
-        contestants,
-        budget,
-        shape,
-    );
+    let onward = mark_onward(search.reborrow(), novelty, contestants, budget, shape);
     if onward.rounds > 0 {
         return onward;
     }
     // NOTHING LED ONWARD. Either there is nothing to find - in which case the exact marking
     // settles on its own first pass and agrees - or every route loops back, which is the one
     // case the cheap question cannot answer and the expensive one can.
-    let mut exact = mark_menu(
-        graph,
-        compiler,
-        world,
-        counter_cap,
-        novelty,
-        contestants,
-        budget,
-        shape,
-    );
+    let mut exact = mark_menu(search, novelty, contestants, budget, shape);
     exact.passes += onward.passes;
     exact
 }
@@ -139,17 +116,14 @@ pub fn mark_menu_hybrid<'a, F: Fn(DialogueNodeId) -> Novelty>(
 /// One worklist pass decides the whole menu before any option is asked about: where nothing
 /// of a class is reachable from ANY option, asking each of them separately would be eight
 /// passes to reach the same nothing.
-#[allow(clippy::too_many_arguments)]
-pub fn mark_onward<'a, F: Fn(DialogueNodeId) -> Novelty>(
-    graph: &LookAheadGraph,
-    compiler: &mut GuardCompiler<'a>,
-    world: &dyn ILookAheadWorld,
-    counter_cap: u32,
+pub fn mark_onward<F: Fn(DialogueNodeId) -> Novelty>(
+    mut search: Search<'_, '_>,
     novelty: &F,
     contestants: &[Contestant],
     budget: &Budget,
     shape: &GroupShape,
 ) -> MenuAnswer {
+    let graph = search.graph;
     let began = Instant::now();
     let mut answer = blank(contestants);
     let options: HashSet<_> = contestants.iter().map(|c| c.position.option).collect();
@@ -199,12 +173,9 @@ pub fn mark_onward<'a, F: Fn(DialogueNodeId) -> Novelty>(
         }
         answer.passes += 1;
         let reachable = Backward::reaching_any_knowing(
-            graph,
+            search.reborrow(),
             &targets,
             &refused,
-            compiler,
-            world,
-            counter_cap,
             &PassBudget {
                 time: budget.each.min(left),
                 steps: usize::MAX,
@@ -241,12 +212,9 @@ pub fn mark_onward<'a, F: Fn(DialogueNodeId) -> Novelty>(
             }
             answer.passes += 1;
             let alone = Backward::reaching_any_knowing(
-                graph,
+                search.reborrow(),
                 &targets,
                 &cut,
-                compiler,
-                world,
-                counter_cap,
                 &PassBudget {
                     time: budget.each.min(left),
                     steps: usize::MAX,
@@ -345,28 +313,14 @@ fn blank(contestants: &[Contestant]) -> MenuAnswer {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn mark_menu<'a, F: Fn(DialogueNodeId) -> Novelty>(
-    graph: &LookAheadGraph,
-    compiler: &mut GuardCompiler<'a>,
-    world: &dyn ILookAheadWorld,
-    counter_cap: u32,
+pub fn mark_menu<F: Fn(DialogueNodeId) -> Novelty>(
+    search: Search<'_, '_>,
     novelty: &F,
     contestants: &[Contestant],
     budget: &Budget,
     shape: &GroupShape,
 ) -> MenuAnswer {
-    mark_menu_blocking(
-        graph,
-        compiler,
-        world,
-        counter_cap,
-        novelty,
-        contestants,
-        budget,
-        shape,
-        &HashSet::new(),
-    )
+    mark_menu_blocking(search, novelty, contestants, budget, shape, &HashSet::new())
 }
 
 /// [`mark_menu`], with `blocked` entries neither walkable nor claimable.
@@ -375,18 +329,15 @@ pub fn mark_menu<'a, F: Fn(DialogueNodeId) -> Novelty>(
 /// ordinary star is settled, with the menu's options and every entry those stars claimed
 /// blocked, so a half is starred only for content no other option reaches and without
 /// cycling back through the menu. See `bridge::answer_starts`.
-#[allow(clippy::too_many_arguments)]
-pub fn mark_menu_blocking<'a, F: Fn(DialogueNodeId) -> Novelty>(
-    graph: &LookAheadGraph,
-    compiler: &mut GuardCompiler<'a>,
-    world: &dyn ILookAheadWorld,
-    counter_cap: u32,
+pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> Novelty>(
+    mut search: Search<'_, '_>,
     novelty: &F,
     contestants: &[Contestant],
     budget: &Budget,
     shape: &GroupShape,
     blocked: &HashSet<DialogueNodeId>,
 ) -> MenuAnswer {
+    let graph = search.graph;
     let began = Instant::now();
     let mut answer = MenuAnswer {
         marks: contestants
@@ -476,7 +427,7 @@ pub fn mark_menu_blocking<'a, F: Fn(DialogueNodeId) -> Novelty>(
                 for &entry in &position.entries {
                     let states = beginnings
                         .entry(entry)
-                        .or_insert_with(|| compiler.vars().bottom());
+                        .or_insert_with(|| search.compiler.vars().bottom());
                     use oxidd::BooleanFunction;
                     match states.or(&position.holding) {
                         Ok(union) => *states = union,
@@ -502,12 +453,9 @@ pub fn mark_menu_blocking<'a, F: Fn(DialogueNodeId) -> Novelty>(
             }
             answer.passes += 1;
             let pass = Backward::reaching_any_knowing(
-                graph,
+                search.reborrow(),
                 &in_play,
                 &cut,
-                compiler,
-                world,
-                counter_cap,
                 &pass_budget(left),
                 Some(&known),
             );
@@ -531,12 +479,9 @@ pub fn mark_menu_blocking<'a, F: Fn(DialogueNodeId) -> Novelty>(
             }
             answer.passes += 1;
             let (distance, index, witness) = match Backward::nearest_choices(
-                graph,
+                search.reborrow(),
                 &in_play,
                 &cut,
-                compiler,
-                world,
-                counter_cap,
                 &pass_budget(left),
                 &known,
                 &positions,
@@ -596,6 +541,7 @@ mod tests {
     use crate::core::types::StartBranch;
     use crate::symbolic::budget::DiagramBudget;
     use crate::symbolic::data_layout::DataLayout;
+    use crate::symbolic::guard_formula::GuardCompiler;
     use crate::symbolic::novelty_search::Where;
     use crate::symbolic::reachability::seed_of;
     use crate::symbolic::vars::DataVars;
@@ -677,10 +623,12 @@ mod tests {
                 Which::Hybrid => mark_menu_hybrid,
             };
             run(
-                graph,
-                compiler,
-                world,
-                16,
+                Search {
+                    graph,
+                    compiler,
+                    world,
+                    counter_cap: 16,
+                },
                 &novelty,
                 contestants,
                 &budget,

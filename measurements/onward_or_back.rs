@@ -197,6 +197,7 @@ use lookahead_engine::symbolic::known::GroupShape;
 use lookahead_engine::symbolic::menu;
 use lookahead_engine::symbolic::novelty_search::Where;
 use lookahead_engine::symbolic::reachability::seed_of;
+use lookahead_engine::symbolic::search::Search;
 use lookahead_engine::symbolic::vars::DataVars;
 
 #[path = "../tests/common/mod.rs"]
@@ -315,21 +316,27 @@ fn ask(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budget:
         // cannot survive it, so what is left is what this option reaches on its own.
         let siblings: HashSet<_> = options.iter().copied().filter(|id| *id != start).collect();
         let (cut_yes, cut_ms) = reaches(
-            graph,
+            Search {
+                graph,
+                compiler: &mut compiler,
+                world: &world,
+                counter_cap: COUNTER_CAP as u32,
+            },
             &targets,
             &siblings,
-            &mut compiler,
-            &world,
             &seed,
             &shape,
             start,
         );
         let (open_yes, open_ms) = reaches(
-            graph,
+            Search {
+                graph,
+                compiler: &mut compiler,
+                world: &world,
+                counter_cap: COUNTER_CAP as u32,
+            },
             &targets,
             &HashSet::new(),
-            &mut compiler,
-            &world,
             &seed,
             &shape,
             start,
@@ -377,10 +384,12 @@ fn ask(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budget:
         .collect();
     let began = Instant::now();
     let found = menu::mark_menu(
-        graph,
-        &mut compiler,
-        &world,
-        COUNTER_CAP as u32,
+        Search {
+            graph,
+            compiler: &mut compiler,
+            world: &world,
+            counter_cap: COUNTER_CAP as u32,
+        },
         &novelty,
         &contestants,
         &menu::Budget {
@@ -400,10 +409,12 @@ fn ask(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budget:
         // own distance to the nearest unread line - which is what a RANKING would order by
         // and what the greedy's answer deliberately is not (de-0jsf.18).
         let alone = menu::mark_menu(
-            graph,
-            &mut compiler,
-            &world,
-            COUNTER_CAP as u32,
+            Search {
+                graph,
+                compiler: &mut compiler,
+                world: &world,
+                counter_cap: COUNTER_CAP as u32,
+            },
             &novelty,
             std::slice::from_ref(&contestants[index]),
             &menu::Budget {
@@ -439,37 +450,32 @@ fn ask(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budget:
 
 /// Whether anything in `targets` is reachable from `start` with `cut` refused.
 fn reaches(
-    graph: &LookAheadGraph,
+    mut search: Search<'_, '_>,
     targets: &[DialogueNodeId],
     cut: &HashSet<DialogueNodeId>,
-    compiler: &mut GuardCompiler<'_>,
-    world: &SnapshotWorld,
     seed: &oxidd::bdd::BDDFunction,
     shape: &GroupShape,
     start: DialogueNodeId,
 ) -> (bool, u128) {
     let began = Instant::now();
     let position = Where::of(
-        graph,
+        search.graph,
         start,
         StartBranch::Either,
         seed,
-        compiler,
-        world,
-        COUNTER_CAP as u32,
+        search.compiler,
+        search.world,
+        search.counter_cap,
     )
     .position(start);
-    let mut known = shape.known_from(graph, start);
+    let mut known = shape.known_from(search.graph, start);
     for &entry in &position.entries {
         known = known.from(entry, &position.holding);
     }
     let pass = Backward::reaching_any_knowing(
-        graph,
+        search.reborrow(),
         targets,
         cut,
-        compiler,
-        world,
-        COUNTER_CAP as u32,
         &PassBudget {
             time: Duration::from_millis(from_env("EACH_MS", EACH_MS as usize) as u64),
             steps: usize::MAX,

@@ -352,10 +352,12 @@ where
             false => menu::mark_menu,
         };
         let found = mark(
-            graph,
-            &mut compiler,
-            &world,
-            COUNTER_CAP as u32,
+            lookahead_engine::symbolic::search::Search {
+                graph,
+                compiler: &mut compiler,
+                world: &world,
+                counter_cap: COUNTER_CAP as u32,
+            },
             novelty,
             &contestants,
             &if nolimit() {

@@ -226,8 +226,7 @@ impl<'a> DataVars<'a> {
 pub(crate) mod tests {
     use super::*;
     use crate::core::action::DialogueAction;
-    use crate::core::guard::Guard;
-    use crate::core::types::{DialogueCheckKind, DialogueNodeId};
+    use crate::core::types::DialogueNodeId;
     use crate::graph::graph::LookAheadGraph;
     use crate::graph::node::LookAheadNode;
 
@@ -247,21 +246,11 @@ pub(crate) mod tests {
             }
         }
 
-        let node = LookAheadNode::new(
-            DialogueNodeId::new(1, 0),
-            false,
-            DialogueCheckKind::None,
-            Guard::always_true(),
+        let node = LookAheadNode {
             actions,
-            vec![DialogueNodeId::new(1, 0)],
-            0,
-            false,
-            false,
-            -1,
-            -1,
-            false,
-            -1,
-        );
+            links: vec![DialogueNodeId::new(1, 0)],
+            ..LookAheadNode::new(DialogueNodeId::new(1, 0))
+        };
         let snapshot = symbols.clone();
         (LookAheadGraph::new(vec![node], symbols).unwrap(), snapshot)
     }

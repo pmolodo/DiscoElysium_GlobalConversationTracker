@@ -217,21 +217,10 @@ fn graph_of(writes: &[Written]) -> (LookAheadGraph, StateSymbols) {
         });
     }
 
-    let node = LookAheadNode::new(
-        DialogueNodeId::new(1, 0),
-        false,
-        DialogueCheckKind::None,
-        Guard::always_true(),
+    let node = LookAheadNode {
         actions,
-        vec![],
-        0,
-        false,
-        false,
-        -1,
-        -1,
-        false,
-        -1,
-    );
+        ..LookAheadNode::new(DialogueNodeId::new(1, 0))
+    };
 
     let snapshot = symbols.clone();
     (

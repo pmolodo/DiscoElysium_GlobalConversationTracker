@@ -880,7 +880,7 @@ mod tests {
     use crate::core::action::DialogueAction;
     use crate::core::guard::Guard;
     use crate::core::state::StateSymbols;
-    use crate::core::types::{DialogueCheckKind, DialogueNodeId};
+    use crate::core::types::DialogueNodeId;
     use crate::graph::node::LookAheadNode;
 
     fn graph_with(actions: Vec<DialogueAction>, symbols: StateSymbols) -> LookAheadGraph {
@@ -896,21 +896,11 @@ mod tests {
         symbols: StateSymbols,
         links: Vec<DialogueNodeId>,
     ) -> LookAheadGraph {
-        let node = LookAheadNode::new(
-            DialogueNodeId::new(1, 0),
-            false,
-            DialogueCheckKind::None,
-            Guard::always_true(),
+        let node = LookAheadNode {
             actions,
             links,
-            0,
-            false,
-            false,
-            -1,
-            -1,
-            false,
-            -1,
-        );
+            ..LookAheadNode::new(DialogueNodeId::new(1, 0))
+        };
         LookAheadGraph::new(vec![node], symbols).unwrap()
     }
 
@@ -1128,30 +1118,20 @@ mod tests {
     fn rebasing_never_widens_a_slot_the_thresholds_already_squeezed() {
         let mut symbols = StateSymbols::new();
         let slot = symbols.variable("tally");
-        let mut node = LookAheadNode::new(
-            DialogueNodeId::new(1, 0),
-            false,
-            DialogueCheckKind::None,
-            Guard::comparison(
+        let mut node = LookAheadNode {
+            guard: Guard::comparison(
                 ">=".to_string(),
                 Guard::variable("tally".to_string()),
                 Guard::literal(crate::core::guard_value::GuardValue::from_number(1.0)),
             ),
-            vec![DialogueAction::increment(
+            actions: vec![DialogueAction::increment(
                 slot,
                 9,
                 false,
                 "SetVariableValue".to_string(),
             )],
-            vec![],
-            0,
-            false,
-            false,
-            -1,
-            -1,
-            false,
-            -1,
-        );
+            ..LookAheadNode::new(DialogueNodeId::new(1, 0))
+        };
         node.actions
             .push(DialogueAction::increment(slot, 9, false, "s".to_string()));
         let graph = LookAheadGraph::new(vec![node], symbols).unwrap();

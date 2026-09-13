@@ -601,21 +601,10 @@ mod tests {
         let counter = symbols.variable("counter");
         let fired = symbols.variable("fired");
         let actions = vec![DialogueAction::increment(counter, 1, true, "s".to_string())];
-        let node = crate::graph::node::LookAheadNode::new(
-            crate::core::types::DialogueNodeId::new(1, 0),
-            false,
-            crate::core::types::DialogueCheckKind::None,
-            crate::core::guard::Guard::always_true(),
-            actions.clone(),
-            vec![],
-            0,
-            false,
-            false,
-            -1,
-            -1,
-            false,
-            -1,
-        );
+        let node = crate::graph::node::LookAheadNode {
+            actions: actions.clone(),
+            ..crate::graph::node::LookAheadNode::new(crate::core::types::DialogueNodeId::new(1, 0))
+        };
         let snapshot = symbols.clone();
         let graph = crate::graph::graph::LookAheadGraph::new(vec![node], symbols).unwrap();
         let layout = DataLayout::for_graph(&graph, CAP as i32, None, false);

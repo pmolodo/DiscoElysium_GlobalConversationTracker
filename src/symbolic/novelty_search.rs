@@ -153,7 +153,6 @@ impl Where {
         }
     }
     /// The starting position for this outcome of this start.
-    #[allow(clippy::too_many_arguments)]
     pub fn of<'a>(
         graph: &LookAheadGraph,
         start: DialogueNodeId,

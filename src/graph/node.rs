@@ -39,37 +39,31 @@ pub struct LookAheadNode {
 }
 
 impl LookAheadNode {
-    pub fn new(
-        id: DialogueNodeId,
-        is_group: bool,
-        kind: DialogueCheckKind,
-        guard: Guard,
-        actions: Vec<DialogueAction>,
-        links: Vec<DialogueNodeId>,
-        cost: i32,
-        cost_once: bool,
-        hidden_when_unaffordable: bool,
-        flag_slot: i32,
-        failed_flag_slot: i32,
-        boolean_only: bool,
-        seen_slot: i32,
-    ) -> Self {
+    /// An ordinary entry with nothing on it: no guard, no actions, no links, no cost, no check
+    /// and no slots.
+    ///
+    /// A STARTING POINT FOR A STRUCT UPDATE rather than a constructor that takes every field.
+    /// The fields are public and most entries leave most of them alone, so a caller names what
+    /// it sets - `LookAheadNode { guard, links, ..LookAheadNode::new(id) }` - and a list of
+    /// thirteen positional arguments, most of them `false` or `-1`, stops being a place to put
+    /// one in the wrong slot.
+    pub fn new(id: DialogueNodeId) -> Self {
         Self {
             id,
-            is_group,
+            is_group: false,
             player: false,
             choice: false,
-            kind,
-            guard,
-            actions,
-            links,
-            cost,
-            cost_once,
-            hidden_when_unaffordable,
-            flag_slot,
-            failed_flag_slot,
-            boolean_only,
-            seen_slot,
+            kind: DialogueCheckKind::None,
+            guard: Guard::always_true(),
+            actions: Vec::new(),
+            links: Vec::new(),
+            cost: 0,
+            cost_once: false,
+            hidden_when_unaffordable: false,
+            flag_slot: -1,
+            failed_flag_slot: -1,
+            boolean_only: false,
+            seen_slot: -1,
             once_slot: -1,
         }
     }

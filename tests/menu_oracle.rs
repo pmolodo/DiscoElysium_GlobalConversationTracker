@@ -8,6 +8,7 @@ use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::known::GroupShape;
 use lookahead_engine::symbolic::reachability::seed_of;
+use lookahead_engine::symbolic::search::Search;
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::symbolic::{menu, novelty_search};
 use lookahead_engine::test_graph::{Entry, GraphBuilder, node};
@@ -45,10 +46,12 @@ fn compare(
         })
         .collect();
     let found = menu::mark_menu(
-        graph,
-        &mut compiler,
-        world,
-        16,
+        Search {
+            graph,
+            compiler: &mut compiler,
+            world,
+            counter_cap: 16,
+        },
         novelty,
         &contestants,
         &menu::Budget {

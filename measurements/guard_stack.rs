@@ -43,7 +43,7 @@
 use lookahead_engine::core::guard::{Guard, IGuardContext};
 use lookahead_engine::core::guard_value::GuardValue;
 use lookahead_engine::core::state::StateSymbols;
-use lookahead_engine::core::types::{DialogueCheckKind, DialogueNodeId};
+use lookahead_engine::core::types::DialogueNodeId;
 use lookahead_engine::graph::graph::LookAheadGraph;
 use lookahead_engine::graph::node::LookAheadNode;
 use lookahead_engine::symbolic::budget::DiagramBudget;
@@ -103,21 +103,9 @@ fn flat_consumers_survive(depth: usize) -> bool {
 fn compiling_survives(depth: usize) -> bool {
     on_a_small_thread(move || {
         let symbols = StateSymbols::new();
-        let node = LookAheadNode::new(
-            DialogueNodeId::new(1, 0),
-            false,
-            DialogueCheckKind::None,
-            Guard::always_true(),
-            vec![],
-            vec![],
-            0,
-            false,
-            false,
-            -1,
-            -1,
-            false,
-            -1,
-        );
+        let node = LookAheadNode {
+            ..LookAheadNode::new(DialogueNodeId::new(1, 0))
+        };
         let graph = LookAheadGraph::new(vec![node], symbols).expect("a one-entry graph");
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let vars = DataVars::new(&layout, graph.symbols(), DiagramBudget::modest());

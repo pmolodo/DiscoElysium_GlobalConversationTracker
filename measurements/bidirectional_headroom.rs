@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 //! What a FORWARD front costs per layer, against the backward one the search already walks.
 //!
-//! `Backward::nearest` walks one direction only: from the target back towards the options,
+//! A backward search walks one direction only: from the target back towards the options,
 //! one choice-layer at a time. On conversation 761 that is twenty-four layers and the
 //! manager grows about 1.5x per layer, 912 thousand nodes to 64 million, which is the whole
 //! cost of the group (de-0jsf.13).
@@ -20,12 +20,12 @@
 //!
 //! ## What the walk is
 //!
-//! The same unit and the same charge as `novelty_search::choice_bounds` and
-//! `Backward::nearest`: leaving a choice that is not the option itself costs one, so every
+//! The same unit and the same charge as `novelty_search::choice_bounds`: leaving a choice
+//! that is not the option itself costs one, so every
 //! route out of it belongs to the next layer, and the option the player stands on is free.
 //!
 //! The eight options' fronts are UNIONED rather than kept apart, which is what
-//! `Backward::nearest` effectively races: it stops at the first position it meets, so the
+//! a backward search effectively races: it stops at the first position it meets, so the
 //! question is when ANY option's front arrives, not which.
 //!
 //! `Reachability::entry_states` is the forward step - what entering a node from a set of
@@ -281,7 +281,7 @@ fn walk(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budget
                 continue;
             }
             // LEAVING A CHOICE COSTS ONE, and the option the player stands on is free -
-            // the same charge `choice_bounds` and `Backward::nearest` make.
+            // the same charge `choice_bounds` makes.
             let charged = node.choice && !options.contains(&id);
             for &child in &node.links {
                 if graph.get(child).is_none() {

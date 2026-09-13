@@ -159,7 +159,6 @@ impl<'a> Reachability<'a> {
     /// opens nothing", and a caller that read it as the latter would refuse every
     /// candidate on no evidence and report a settled verdict. There is no stats channel
     /// here to say it in, so the return type says it.
-    #[allow(clippy::too_many_arguments)]
     pub fn entry_states(
         graph: &LookAheadGraph,
         start: DialogueNodeId,
