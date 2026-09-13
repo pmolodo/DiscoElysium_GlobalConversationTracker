@@ -129,7 +129,8 @@ struct Key {
 /// One request for the owner thread, and where to send the answers.
 enum Job {
     Answer {
-        request: LookAheadRequest,
+        /// Boxed, so the channel does not carry a request's size in every job it holds.
+        request: Box<LookAheadRequest>,
         /// The answers, or WHY THERE ARE NONE.
         ///
         /// A refusal has to travel as a refusal. It used to come back as an empty answer
@@ -254,7 +255,12 @@ impl Workspace {
         request: LookAheadRequest,
     ) -> Option<Result<Vec<LookAheadAnswer>, String>> {
         let (answers, waiting) = std::sync::mpsc::channel();
-        self.jobs.send(Job::Answer { request, answers }).ok()?;
+        self.jobs
+            .send(Job::Answer {
+                request: Box::new(request),
+                answers,
+            })
+            .ok()?;
         waiting.recv().ok()
     }
 

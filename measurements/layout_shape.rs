@@ -484,7 +484,7 @@ fn what_each_group_carries() {
         let mut cyclic_slots = (0usize, 0usize);
         let mut widths: HashMap<u8, usize> = HashMap::new();
 
-        for slot in 0..symbols.count() {
+        for (slot, write) in writes.iter().enumerate() {
             let Some((_, bits)) = layout.slot(slot) else {
                 continue;
             };
@@ -495,7 +495,6 @@ fn what_each_group_carries() {
             vars += bits as usize;
             *widths.entry(bits).or_default() += 1;
 
-            let write = &writes[slot];
             if !write.written {
                 unwritten.0 += 1;
                 unwritten.1 += bits as usize;
@@ -610,14 +609,14 @@ fn what_each_group_carries() {
         // because there are few enough to read.
         let mut derived = 0usize;
         let mut narrowed: Vec<String> = Vec::new();
-        for slot in 0..symbols.count() {
+        for (slot, write) in writes.iter().enumerate() {
             let Some((_, bits)) = layout.slot(slot) else {
                 continue;
             };
             if bits == 0 {
                 continue;
             }
-            let wanted = match writes[slot].ceiling() {
+            let wanted = match write.ceiling() {
                 // Unbounded: it keeps the cap, which is what the cap is for.
                 None => bits,
                 Some(ceiling) => {
@@ -657,7 +656,7 @@ fn what_each_group_carries() {
         let (thresholds, unreadable) = compared_constants(&graph, &symbols);
         let mut sound = 0usize;
         let mut blocked = 0usize;
-        for slot in 0..symbols.count() {
+        for (slot, write) in writes.iter().enumerate() {
             let Some((_, bits)) = layout.slot(slot) else {
                 continue;
             };
@@ -667,7 +666,7 @@ fn what_each_group_carries() {
             // A slot read by a comparison this cannot see through keeps its full width: the
             // clamp is only sound if EVERY comparison agrees, and one that cannot be read
             // cannot be shown to.
-            let ceiling = match writes[slot].ceiling() {
+            let ceiling = match write.ceiling() {
                 _ if unreadable.contains(&slot) => {
                     if bits > 1 {
                         blocked += 1;
@@ -713,7 +712,7 @@ fn what_each_group_carries() {
         // A slot with no comparison at all is read as a condition - truthy or not - which
         // one bit already covers, so it keeps the width it has rather than being widened.
         let mut threshold_only = 0usize;
-        for slot in 0..symbols.count() {
+        for (slot, write) in writes.iter().enumerate() {
             let Some((_, bits)) = layout.slot(slot) else {
                 continue;
             };
@@ -725,7 +724,7 @@ fn what_each_group_carries() {
             // the slot's ceiling - narrowing below it would encode a value the run cannot
             // hold. So the floor is the largest thing assigned, and the threshold only
             // decides how far below the cap the INCREMENTS may be squeezed.
-            let assigned = writes[slot].max_assigned;
+            let assigned = write.max_assigned;
             let wanted = if unreadable.contains(&slot) {
                 bits
             } else {
@@ -755,15 +754,14 @@ fn what_each_group_carries() {
         // constant false - the guard folds, and a slot nothing reads any more is dropped by
         // the read trim that already exists.
         let mut dead: Vec<String> = Vec::new();
-        for slot in 0..symbols.count() {
+        for (slot, write) in writes.iter().enumerate() {
             let Some((_, bits)) = layout.slot(slot) else {
                 continue;
             };
             if bits == 0 || unreadable.contains(&slot) {
                 continue;
             }
-            let (Some(ceiling), Some((low, _))) =
-                (writes[slot].ceiling(), thresholds.get(&slot).copied())
+            let (Some(ceiling), Some((low, _))) = (write.ceiling(), thresholds.get(&slot).copied())
             else {
                 continue;
             };
@@ -846,7 +844,7 @@ fn list_the_slots() {
     let writes = writes_of(&graph, &cyclic, symbols.count());
 
     let mut rows: Vec<(String, u8, String)> = Vec::new();
-    for slot in 0..symbols.count() {
+    for (slot, write) in writes.iter().enumerate() {
         let Some((_, bits)) = layout.slot(slot) else {
             continue;
         };
@@ -854,7 +852,6 @@ fn list_the_slots() {
             continue;
         }
         let name = symbols.name_of(slot).unwrap_or("?").to_string();
-        let write = &writes[slot];
         let how = if !write.written {
             "never written".to_string()
         } else if write.incremented {

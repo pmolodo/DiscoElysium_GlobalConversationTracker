@@ -277,7 +277,7 @@ impl<'a> GuardCompiler<'a> {
     pub fn fallback_reasons(&self) -> Vec<(&'static str, usize)> {
         let mut rows: Vec<(&'static str, usize)> =
             self.reasons.iter().map(|(k, v)| (*k, *v)).collect();
-        rows.sort_by(|a, b| b.1.cmp(&a.1));
+        rows.sort_by_key(|row| std::cmp::Reverse(row.1));
         rows
     }
 

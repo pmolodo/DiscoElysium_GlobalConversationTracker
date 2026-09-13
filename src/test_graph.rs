@@ -116,6 +116,12 @@ impl GraphBuilder {
         }
     }
 
+    /// Adds one entry, and hands the builder back for the next.
+    ///
+    /// NOT `std::ops::Add`, which is what the lint suggests: this is a builder step read as
+    /// "add this entry", chained over dozens of fixtures, and `builder + entry` would say
+    /// the same thing less plainly.
+    #[allow(clippy::should_implement_trait)]
     pub fn add(mut self, entry: Entry) -> Self {
         self.entries.push(entry);
         self

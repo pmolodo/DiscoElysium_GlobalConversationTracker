@@ -157,8 +157,10 @@ impl IGuardContext for BoundContext<'_> {
 
     fn query(&self, name: &str, arguments: &[GuardValue]) -> GuardValue {
         // Clock queries answered from search state
-        if self.state.is_some() && ClockTime::owns(name) {
-            let day_minutes = self.state.unwrap().day_minutes();
+        if let Some(state) = self.state
+            && ClockTime::owns(name)
+        {
+            let day_minutes = state.day_minutes();
             let day_counter = self.world.day_counter();
             return ClockTime::answer(name, arguments, day_minutes, day_counter);
         }

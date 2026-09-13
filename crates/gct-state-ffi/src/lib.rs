@@ -411,9 +411,7 @@ pub unsafe extern "C" fn gct_state_write(
 
         // SAFETY: the caller's contract.
         for held in unsafe { slice_of(entries, count) } {
-            let Some(status) = STATUSES.get(usize::try_from(held.status).ok()?) else {
-                return None;
-            };
+            let status = STATUSES.get(usize::try_from(held.status).ok()?)?;
             state.merge(held.conversation, held.entry, *status);
         }
 
@@ -727,9 +725,6 @@ mod tests {
         unsafe { gct_state_read_free(read) };
     }
 
-    /// Nothing at all is a valid argument everywhere, so a caller that failed to get a
-    /// handle does not have to branch before asking or freeing.
-    #[test]
     /// A save's blob crosses as the same entries a state file's does.
     #[test]
     fn a_saves_statuses_cross_as_the_entries_a_state_reads_as() {

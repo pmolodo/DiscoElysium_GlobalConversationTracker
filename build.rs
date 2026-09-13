@@ -243,6 +243,14 @@ fn generate_wire() {
         .unwrap_or_else(|error| panic!("{SCHEMA} does not compile: {error}"));
 
     prost_build::Config::new()
+        // THE REQUEST'S ONEOF IS SIZED BY ITS LOOK-AHEAD ARM, and that is fine: one request
+        // is decoded, answered and dropped, never held in bulk. Boxing the arm would change
+        // every match on the generated type to save bytes nothing is short of, and the code
+        // is generated, so the lint is answered where it is generated.
+        .type_attribute(
+            ".gct.engine.v1.Request.kind",
+            "#[allow(clippy::large_enum_variant)]",
+        )
         .compile_fds(files)
         .unwrap_or_else(|error| panic!("{SCHEMA} produced no Rust types: {error}"));
 }

@@ -53,14 +53,6 @@ mod common;
 use common::fixtures;
 use common::suites::{self, Scenario, Suite, TABLE};
 
-/// The clock every scenario that does not name one runs at: midday, day one.
-///
-/// The same default `branch_shapes.rs` uses, and it has to be A default rather than
-/// nothing: a guard comparing the time answers differently at midnight, so leaving it at
-/// zero would be choosing an hour rather than declining to. A scenario whose answer depends
-/// on the clock names its own.
-const NOON: i32 = 720;
-
 /// The three rungs as the engine numbers them.
 const SEEN_THIS_GAME: i32 = 0;
 const UNSEEN_THIS_GAME: i32 = 1;

@@ -163,13 +163,13 @@ impl Half {
     }
 }
 
-/// What a scenario's global state fixture records, and what its save has already read,
-/// both come from `common::fixtures` - the same reader `scenario_suites.rs` uses.
-///
-/// SHARED RATHER THAN COPIED, and it was copied first. Assembling "what has this save
-/// read" is the fiddly half of standing a scenario up offline, and two copies of it is
-/// two things to keep agreeing - which is the drift the shared definition exists to
-/// remove, reappearing one level down in the executors.
+// What a scenario's global state fixture records, and what its save has already read,
+// both come from `common::fixtures` - the same reader `scenario_suites.rs` uses.
+//
+// SHARED RATHER THAN COPIED. Assembling "what has this save read" is the fiddly half of
+// standing a scenario up offline, and two copies of it is two things to keep agreeing -
+// which is the drift the shared definition exists to remove, reappearing one level down
+// in the executors.
 
 /// The header this reader is written for.
 ///
