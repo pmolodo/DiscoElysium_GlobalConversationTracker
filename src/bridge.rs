@@ -397,21 +397,37 @@ pub fn lock_failed_white_checks(
     }
 }
 
-/// A world that answers one check's failure slot as unset, and everything else as `inner`
+/// Why an option on the menu is closed when the search starts, though the player could open
+/// it.
+enum Lock<'w> {
+    /// A check the save has failed: its failure slot, answered true.
+    FailedCheck(&'w str),
+    /// A price the purse cannot cover.
+    Unaffordable(i32),
+}
+
+/// A world that lifts every [`Lock`] on one option, and answers everything else as `inner`
 /// does.
 ///
-/// FOR SEEDING A LOCKED CHECK'S HALVES AS IF THE CHECK WERE OPEN, and for nothing else - see
-/// [`answer_starts`]. The lock is that slot answered true; lifting it for the check's own start
-/// lets its Pass and Fail words say what unlocking it would open, while every route through it
-/// from anywhere else stays shut.
+/// FOR SEEDING A LOCKED OPTION'S HALVES AS IF IT WERE OPEN, and for nothing else - see
+/// [`answer_starts`]. Lifting the locks for the option's own start lets its words say what
+/// opening it would reach - a failed check's slot answered unset, a purse that covers the
+/// price - while every route through it from anywhere else stays shut. All of them, because
+/// an option locked twice and lifted once is still closed.
 struct Unlocked<'w> {
     inner: &'w dyn ILookAheadWorld,
-    failed: &'w str,
+    locks: &'w [Lock<'w>],
 }
 
 impl ILookAheadWorld for Unlocked<'_> {
     fn money(&self) -> i32 {
-        self.inner.money()
+        self.locks
+            .iter()
+            .filter_map(|lock| match lock {
+                Lock::Unaffordable(price) => Some(*price),
+                Lock::FailedCheck(_) => None,
+            })
+            .fold(self.inner.money(), i32::max)
     }
 
     fn day_minutes(&self) -> i32 {
@@ -427,7 +443,11 @@ impl ILookAheadWorld for Unlocked<'_> {
     }
 
     fn get_variable(&self, name: &str) -> GuardValue {
-        if name == self.failed {
+        if self
+            .locks
+            .iter()
+            .any(|lock| matches!(lock, Lock::FailedCheck(failed) if *failed == name))
+        {
             GuardValue::from_boolean(false)
         } else {
             self.inner.get_variable(name)
@@ -1324,21 +1344,26 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
         } else {
             &[StartBranch::Either]
         };
-        // A LOCKED CHECK IS ONE WHOSE FAILURE SLOT IS ALREADY SET when the search starts - the
-        // save failed it and the game will not offer it again. Its halves start from a seed
-        // with that one lock lifted, so they can be answered as if the check were open; the
-        // lock stays in the ordinary seed, so nothing else can route through it.
-        let lock = (node.is_rolled()
+        // A LOCKED OPTION IS ONE CLOSED WHEN THE SEARCH STARTS FOR A REASON THE PLAYER COULD
+        // LIFT: a check whose failure slot is already set - the save failed it and the game
+        // will not offer it again - or a price the purse cannot cover. Its halves start from a
+        // seed with its locks lifted, so they can be answered as if it were open; the locks
+        // stay in the ordinary seed, so nothing else can route through it.
+        let failed_check = (node.is_rolled()
             && node.failed_flag_slot >= 0
             && started.is_set(node.failed_flag_slot as usize))
         .then(|| graph.symbols().name_of(node.failed_flag_slot as usize))
-        .flatten();
-        let unlocked_seed = lock.map(|failed| {
+        .flatten()
+        .map(Lock::FailedCheck);
+        let unaffordable =
+            (!crate::oracle::can_afford(node, &started)).then_some(Lock::Unaffordable(node.cost));
+        let locks: Vec<Lock> = failed_check.into_iter().chain(unaffordable).collect();
+        let unlocked_seed = (!locks.is_empty()).then(|| {
             seed_of(
                 graph,
                 &Unlocked {
                     inner: world,
-                    failed,
+                    locks: &locks,
                 },
                 compiler.vars(),
             )
@@ -1389,7 +1414,7 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
                     baseline,
                     landing: destinations,
                 };
-                if lock.is_some() {
+                if !locks.is_empty() {
                     locked.push((answers.len(), contestant));
                 } else {
                     indices.push(answers.len());
@@ -1450,6 +1475,17 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
     blocked.extend(found.marks.iter().filter_map(|mark| mark.witness));
     let mut passes = found.passes;
     for (index, contestant) in locked {
+        // AN OPTION ANSWERED WHOLE STARTS AT ITSELF, where a check's half starts past the
+        // check - so its own entry stays walkable for its own search, or nothing could enter
+        // it at all. A half keeps its check blocked, which is what stops it cycling back.
+        let mut blocked_here = blocked.clone();
+        if contestant
+            .position
+            .entries
+            .contains(&contestant.position.option)
+        {
+            blocked_here.remove(&contestant.position.option);
+        }
         let alone = menu::mark_menu_blocking(
             Search {
                 graph,
@@ -1464,7 +1500,7 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
                 each: ration.each,
             },
             shape,
-            &blocked,
+            &blocked_here,
         );
         passes += alone.passes;
         record(&mut answers[index], &alone.marks[0]);
@@ -1640,18 +1676,40 @@ mod branch_wire_tests {
     where
         F: Fn(DialogueNodeId) -> Novelty,
     {
+        answer_menu(graph, world, &[start], novelty)
+            .into_iter()
+            .find(|answer| answer.branch == branch_name(branch))
+            .expect("the outcome asked about comes back")
+    }
+
+    /// Every answer for a menu of `starts`, over a layout that carries money wherever the
+    /// group reads it - so a price is refused as the product refuses it.
+    fn answer_menu<F>(
+        graph: &LookAheadGraph,
+        world: &TestWorld,
+        starts: &[DialogueNodeId],
+        novelty: F,
+    ) -> Vec<LookAheadAnswer>
+    where
+        F: Fn(DialogueNodeId) -> Novelty,
+    {
         let symbols = graph.symbols().clone();
-        let layout = DataLayout::for_graph(graph, COUNTER_CAP, None, false);
+        let layout = DataLayout::for_graph(
+            graph,
+            COUNTER_CAP,
+            DataLayout::money_ceiling(graph, world.money()),
+            false,
+        );
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
         let mut compiler = GuardCompiler::new(&vars).with_world(world);
         let seed = seed_of(graph, world, &vars).expect("room for a seed");
 
         let request = LookAheadRequest {
-            conversation: start.conversation_id,
-            starts: vec![NodeRef::from(start)],
+            conversation: starts[0].conversation_id,
+            starts: starts.iter().map(|start| NodeRef::from(*start)).collect(),
             ..Default::default()
         };
-        let answers = answer_starts(
+        answer_starts(
             graph,
             world,
             &request,
@@ -1659,11 +1717,7 @@ mod branch_wire_tests {
             &mut compiler,
             &seed,
             &GroupShape::of(graph),
-        );
-        answers
-            .into_iter()
-            .find(|answer| answer.branch == branch_name(branch))
-            .expect("the outcome asked about comes back")
+        )
     }
 
     /// What the wire calls an outcome, so a test can find the answer it wanted.
@@ -1964,6 +2018,80 @@ mod branch_wire_tests {
         // 2 rolls nothing, so it is one start and names no outcome.
         let plain = score_one(&graph, &world, node(2), StartBranch::Either, novelty);
         assert_eq!(plain.branch, None);
+    }
+
+    /// The price the options below cost, one more than the player carries.
+    const PRICE: i32 = 10;
+
+    /// What an entry is worth to the tests below: 2 has never been read, everything else has.
+    fn only_two_is_unread(id: DialogueNodeId) -> Novelty {
+        if id == node(2) {
+            Novelty::UnseenAnyGame
+        } else {
+            Novelty::SeenThisGame
+        }
+    }
+
+    /// An option the purse cannot cover is answered for what buying it would open.
+    ///
+    /// 0 costs more than the player carries and opens 2, which nobody has read. No search can
+    /// enter 0 from this purse, so an ordinary answer would say nothing; as a LOCKED option it
+    /// is answered from a purse that covers the price, the way a failed white check is
+    /// answered as if it were open.
+    #[test]
+    fn an_unaffordable_option_is_answered_for_what_buying_it_opens() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).cost(PRICE).links(&[2]))
+            .add(Entry::new(2))
+            .build();
+        let world = TestWorld::new().with_money(PRICE - 1);
+
+        let answer = score_one(
+            &graph,
+            &world,
+            node(0),
+            StartBranch::Either,
+            only_two_is_unread,
+        );
+        assert_eq!(
+            answer.best,
+            Novelty::UnseenAnyGame as i32,
+            "buying 0 opens 2, which nobody has read"
+        );
+    }
+
+    /// And, like a failed white check, it is starred only for what no other option reaches.
+    ///
+    /// 1 is free and opens 2; 0 is unaffordable and opens 2 as well. Buying 0 would reach 2,
+    /// but 1 already does, so 0 must not claim it.
+    #[test]
+    fn an_unaffordable_option_is_not_starred_for_what_a_sibling_reaches() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).cost(PRICE).links(&[2]))
+            .add(Entry::new(1).links(&[2]))
+            .add(Entry::new(2))
+            .build();
+        let world = TestWorld::new().with_money(PRICE - 1);
+
+        let answers = answer_menu(&graph, &world, &[node(0), node(1)], only_two_is_unread);
+        let best_of = |id: DialogueNodeId| {
+            answers
+                .iter()
+                .find(|answer| answer.start == NodeRef::from(id))
+                .expect("every option is answered")
+                .best
+        };
+
+        assert_eq!(
+            best_of(node(1)),
+            Novelty::UnseenAnyGame as i32,
+            "the free option reaches 2"
+        );
+        assert_eq!(
+            best_of(node(0)),
+            Novelty::SeenThisGame as i32,
+            "the unaffordable one would reach only what the free one already does"
+        );
     }
 }
 

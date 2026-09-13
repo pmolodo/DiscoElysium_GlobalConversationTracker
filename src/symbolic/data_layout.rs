@@ -702,7 +702,7 @@ impl DataLayout {
     /// group with neither can gain and lose all it likes and no answer depends on the
     /// balance, so it is not worth a variable - the same rule the slots are laid out by.
     ///
-    /// ## Why the ceiling is the start plus every gain
+    /// ## Why the ceiling is the start or the dearest price, plus every gain
     ///
     /// A register SATURATES, and the two directions are not equally bad. A balance clipped
     /// DOWN refuses an option the player can afford, which loses a marker; one that is
@@ -713,6 +713,11 @@ impl DataLayout {
     /// lose a marker; it is noted rather than fixed, because bounding it properly means
     /// knowing how often a cycle can turn, which is the same question the counter cap
     /// answers by decree.
+    ///
+    /// The dearest price stands in for the start where it is higher, because an option the
+    /// purse cannot cover is answered from a purse that covers it - see
+    /// `bridge::answer_starts` - and a register narrower than that price would clip the
+    /// lifted purse back below it.
     pub fn money_ceiling(graph: &LookAheadGraph, starting: i32) -> Option<u32> {
         let read = graph
             .nodes()
@@ -727,8 +732,14 @@ impl DataLayout {
             .filter(|action| action.kind() == DialogueActionKind::GainMoney)
             .map(|action| i64::from(action.value().max(0)))
             .sum();
+        let dearest = graph
+            .nodes()
+            .filter(|node| node.is_cost_option())
+            .map(|node| node.cost)
+            .max()
+            .unwrap_or(0);
 
-        let ceiling = i64::from(starting.max(0)) + gained;
+        let ceiling = i64::from(starting.max(dearest).max(0)) + gained;
         Some(ceiling.min(i64::from(u32::MAX)) as u32)
     }
 
@@ -907,6 +918,33 @@ mod tests {
     /// A one-entry graph whose increment can fire again, because the entry links to itself.
     fn looping_graph_with(actions: Vec<DialogueAction>, symbols: StateSymbols) -> LookAheadGraph {
         graph_linking(actions, symbols, vec![DialogueNodeId::new(1, 0)])
+    }
+
+    /// The register holds the dearest price even when the purse starts below it.
+    ///
+    /// An option the purse cannot cover is answered from a purse lifted to its price, and the
+    /// seed clamps to the ceiling - so a ceiling taken from the start alone would clip the
+    /// lifted purse back under the price and leave the option as closed as before.
+    #[test]
+    fn the_money_ceiling_covers_the_dearest_price() {
+        const PRICE: i32 = 50;
+        const STARTING: i32 = 10;
+
+        let node = LookAheadNode {
+            cost: PRICE,
+            ..LookAheadNode::new(DialogueNodeId::new(1, 0))
+        };
+        let graph = LookAheadGraph::new(vec![node], StateSymbols::new()).unwrap();
+
+        assert_eq!(
+            DataLayout::money_ceiling(&graph, STARTING),
+            Some(PRICE as u32)
+        );
+        assert_eq!(
+            DataLayout::money_ceiling(&graph, PRICE * 2),
+            Some((PRICE * 2) as u32),
+            "a purse above the price is its own ceiling"
+        );
     }
 
     #[test]

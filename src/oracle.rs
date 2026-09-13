@@ -397,7 +397,7 @@ fn enter_rolled(
 }
 
 /// Whether the player could pay for this entry out of the state's own purse.
-fn can_afford(node: &LookAheadNode, state: &LookAheadState) -> bool {
+pub(crate) fn can_afford(node: &LookAheadNode, state: &LookAheadState) -> bool {
     if !node.is_cost_option() {
         return true;
     }
