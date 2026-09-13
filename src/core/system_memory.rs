@@ -129,8 +129,8 @@ fn floor_of(machine: SystemMemory, reserve: f64) -> u64 {
 ///
 /// ## The problem with asking
 ///
-/// `GlobalMemoryStatusEx` is a system call, and the search's inner loop runs once per state
-/// - hundreds of thousands of times. Asking there would put a syscall in the hot loop to
+/// `GlobalMemoryStatusEx` is a system call, and the search's inner loop runs once per state -
+/// hundreds of thousands of times. Asking there would put a syscall in the hot loop to
 /// learn something that moves in megabytes while a state costs a hundred bytes.
 ///
 /// ## The problem with not asking

@@ -97,8 +97,8 @@ where
 /// ## What it is for
 ///
 /// A search that panics should cost its answer, not the process. The engine runs as a child
-/// process the mod talks to over a pipe, so a panic here is not a stack trace somebody reads
-/// - it is the engine vanishing mid-menu, and the mod reporting that it "stopped answering
+/// process the mod talks to over a pipe, so a panic here is not a stack trace somebody reads -
+/// it is the engine vanishing mid-menu, and the mod reporting that it "stopped answering
 /// while reading a frame length". Every question in flight is lost, and what replaces the
 /// answer is a dead engine rather than an unmarked option.
 ///

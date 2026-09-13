@@ -199,8 +199,8 @@ const NOT_A_VARIABLE: [&str; 4] = ["_format", "_formatVersion", "_base", "_deriv
 ///
 /// ## Why this is read and not declared
 ///
-/// An ordinary option's guard asks about the world in a way a check's rarely does. 451:86
-/// - buy the Faln sneakers - is guarded on `jam.siileng_faln_sneakers == true`, and a
+/// An ordinary option's guard asks about the world in a way a check's rarely does. 451:86 -
+/// buy the Faln sneakers - is guarded on `jam.siileng_faln_sneakers == true`, and a
 /// world that cannot answer it stops the search before it builds a single state: the engine
 /// reports the floor over zero states, and the option draws nothing where the game draws
 /// orange. The answer is in the save the in-game run loads, so it is read from there

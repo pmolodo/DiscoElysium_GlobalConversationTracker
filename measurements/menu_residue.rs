@@ -353,8 +353,8 @@ fn flush() {
 /// every entry in the group, and 2,186 forward closures would be the probe's slowest part
 /// by far. The links are followed in reverse, seeded with the targets themselves.
 ///
-/// LINK-REACHABLE, which is deliberately the same approximation `class_worth_hunting` makes
-/// - guards ignored, structure only. A start this says can reach a target is a start the
+/// LINK-REACHABLE, which is deliberately the same approximation `class_worth_hunting` makes -
+/// guards ignored, structure only. A start this says can reach a target is a start the
 /// bridge will not refuse, which is the whole point of asking.
 fn can_reach(graph: &LookAheadGraph, targets: &[NodeRef]) -> HashSet<DialogueNodeId> {
     let mut parents: HashMap<DialogueNodeId, Vec<DialogueNodeId>> = HashMap::new();

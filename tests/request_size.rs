@@ -11,13 +11,13 @@
 //! ## The four shapes
 //!
 //! - `objects`   `[{"conversation":631,"entry":12},...]` - what the first crossing wrote,
-//!               and the obvious thing.
+//!   and the obvious thing.
 //! - `ids`       `{"631":[0,1,2,...]}` - grouped by conversation. NOT invented here: it is
-//!               the shape the mod's own global state has been written in on disk since
-//!               format version 3, for this same data.
+//!   the shape the mod's own global state has been written in on disk since format version
+//!   3, for this same data.
 //! - `runs`      `{"631":"0..40,42,50..99"}` - the same, with consecutive ids collapsed.
 //! - `bits`      a base64 bitmap, one bit per entry, in the order `questions_for` returned
-//!               them.
+//!   them.
 //!
 //! `runs` is chosen, and `bits` - the smallest - is not. At 146 bytes for a whole group
 //! there is nothing left to buy, and what a bitmap would cost is self-description: it only

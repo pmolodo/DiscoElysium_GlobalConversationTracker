@@ -133,8 +133,8 @@ impl DiagramBudget {
     /// cache half the size of the store, sixteen is a sixteenth of it.
     ///
     /// THE TOTAL DOES NOT MOVE, which is the whole reason this exists rather than callers
-    /// passing two capacities again. A bigger cache buys fewer nodes out of the same bytes
-    /// - see [`Self::bytes_per_node`] - so a sweep over the split is a sweep over one
+    /// passing two capacities again. A bigger cache buys fewer nodes out of the same bytes -
+    /// see [`Self::bytes_per_node`] - so a sweep over the split is a sweep over one
     /// trade rather than over two budgets that happen to differ.
     ///
     /// FOR MEASURING, not for shipping. de-1e8l swept it and de-bnjy.8 swept it again over
