@@ -396,12 +396,12 @@ fn whole(value: &serde_json::Value) -> Option<u32> {
     u32::try_from(value.as_u64()?).ok()
 }
 
-/// Where a converted file goes when the caller names nowhere: beside the input, and named
-/// for the version it now is.
+/// A file's name with a version in it, beside the file: `state.json` at version 4 is
+/// `state.v4.json`.
 ///
-/// NAMED RATHER THAN IN PLACE, which is what lets the tool need no second argument while
-/// still never touching its input. Writing over the input is the obvious way to need no
-/// output path and the one thing a converter of somebody's history must not do.
+/// Where the original is kept when a file is converted in place, named for the version it
+/// was. The converted file takes the original name, because that is the name its reader
+/// looks for; the original keeps its history under a name that says which version it is.
 #[must_use]
 pub fn beside(input: &std::path::Path, version: u32) -> std::path::PathBuf {
     let stem = input.file_stem().unwrap_or_default().to_string_lossy();
@@ -601,7 +601,7 @@ mod tests {
     }
 
     #[test]
-    fn the_default_output_sits_beside_the_input_and_names_the_version() {
+    fn a_versioned_name_sits_beside_the_file_and_names_the_version() {
         assert_eq!(
             beside(Path::new("saves/state.json"), 5),
             Path::new("saves/state.v5.json"),

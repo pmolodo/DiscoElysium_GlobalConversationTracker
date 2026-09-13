@@ -103,7 +103,10 @@ needs.
 Bringing an older file forward is `gct-engine-host convert <file> [<out>]`, a verb rather
 than a tool of its own. It works out WHICH format and WHICH version from the file itself,
 so neither is an argument: point it at a file and it converts, or says the file is already
-current and succeeds. It never modifies the input and never overwrites an existing output.
+current and succeeds. With no `<out>` it converts the file in place and keeps the original
+beside it, named for the version it was (`state.json` at version 4 is kept as
+`state.v4.json`), so whatever reads the file by its name can read it straight away. It never
+overwrites anything: where the kept name, or a named output, is already taken, it refuses.
 Every reader in the repository refuses anything but the version it writes and names that
 command, so it is the only way to open an older file.
 

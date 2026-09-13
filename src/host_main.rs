@@ -148,8 +148,8 @@ fn verb(arguments: &[String]) -> Result<Verb, String> {
              rewrite <save.ntwtf>               write a committed save again, as this build\n  \
              \x20                               writes one, in place\n  \
              convert <file> [<out>]             bring a file up to the current version of\n  \
-             \x20                               its own format, beside it where <out> is\n  \
-             \x20                               not named\n  \
+             \x20                               its own format; in place where <out> is\n  \
+             \x20                               not named, keeping the original beside it\n  \
              dump <save> [<table>]              print one of a save's five Lua tables;\n  \
              \x20                               the conversations where none is named\n\
              With no arguments at all it serves the engine over stdin and stdout.",
@@ -250,10 +250,15 @@ fn dump_table(save: &Path, table: &str) -> Result<(), String> {
 
 /// Brings one file up to the current version of its own format.
 ///
+/// IN PLACE WHERE NO OUTPUT IS NAMED, which is what makes converting a file mean the file
+/// is then readable: a reader looks for a file by its name, so a conversion written under
+/// another name leaves the reader facing the same old file. The original is kept beside it.
+///
 /// # Errors
 ///
 /// Where the file will not read, is not a format this build knows, was written by a newer
-/// build, or where the output is already there.
+/// build, or where the output - or, in place, the name the original would be kept under -
+/// is already there.
 fn convert_file(input: &Path, out: Option<&Path>) -> Result<(), String> {
     let shown = input.display().to_string();
     let bytes = std::fs::read(input).map_err(|fault| format!("{shown}: {fault}"))?;
@@ -279,20 +284,28 @@ fn convert_file(input: &Path, out: Option<&Path>) -> Result<(), String> {
         ));
     }
 
-    let out = out.map_or_else(|| convert::beside(input, what.current), Path::to_path_buf);
-    if out == input {
-        return Err("the input and the output must be different files".to_string());
-    }
-
+    // CONVERTED WHOLE BEFORE ANYTHING ON DISK IS TOUCHED, so a file that will not convert
+    // leaves the input exactly as it was, whichever way the output was asked for.
     let converted =
         convert::to_current(&what, &bytes, &shown).map_err(|fault| fault.to_string())?;
+
+    let Some(out) = out else {
+        return convert_in_place(input, &what, &converted);
+    };
+    if out == input {
+        return Err(
+            "the input and the output must be different files; name no output to convert \
+             the file in place"
+                .to_string(),
+        );
+    }
 
     // REFUSED WHERE THE OUTPUT IS ALREADY THERE rather than replaced. What is being
     // converted is somebody's history, and the output may be an earlier conversion of it.
     if out.exists() {
         return Err(format!("{} is already there", out.display()));
     }
-    std::fs::write(&out, converted).map_err(|fault| format!("{}: {fault}", out.display()))?;
+    std::fs::write(out, converted).map_err(|fault| format!("{}: {fault}", out.display()))?;
 
     println!(
         "Converted {shown} from {} version {} to version {} at {}.",
@@ -303,6 +316,93 @@ fn convert_file(input: &Path, out: Option<&Path>) -> Result<(), String> {
     );
     Ok(())
 }
+
+/// Puts the converted bytes where the original was, and keeps the original beside them
+/// under the version it was.
+///
+/// ## The order, and why
+///
+/// The converted bytes are written to a file of their own first, then the original is moved
+/// to the name it is kept under, then the converted file is moved into the original's name.
+/// A stop at any point leaves the original intact under one name or the other, and never
+/// half a file where the original was.
+///
+/// NOTHING IS REPLACED. The name the original is kept under, and the file the conversion is
+/// written to first, are each refused where something is already there: either may be an
+/// earlier conversion, or somebody's own file.
+///
+/// # Errors
+///
+/// Where either of those names is taken, or a write or a move fails. A failed final move
+/// puts the original back where it was.
+fn convert_in_place(
+    input: &Path,
+    what: &convert::Detected,
+    converted: &[u8],
+) -> Result<(), String> {
+    let shown = input.display();
+    let kept = convert::beside(input, what.version);
+    if kept.exists() {
+        return Err(format!(
+            "{} is already there, and it is where the original would be kept. Move it aside, \
+             or name an output to convert to instead.",
+            kept.display(),
+        ));
+    }
+
+    let mut pending_name = input.file_name().unwrap_or_default().to_os_string();
+    pending_name.push(CONVERTING_SUFFIX);
+    let pending = input.with_file_name(pending_name);
+    if pending.exists() {
+        return Err(format!(
+            "{} is already there, and it is where the conversion is written before it replaces \
+             the original. It may be left from a conversion that stopped part way; look at it, \
+             then move it aside.",
+            pending.display(),
+        ));
+    }
+
+    std::fs::write(&pending, converted)
+        .map_err(|fault| format!("{}: {fault}", pending.display()))?;
+
+    if let Err(fault) = std::fs::rename(input, &kept) {
+        let _ = std::fs::remove_file(&pending);
+        return Err(format!(
+            "could not move {shown} to {}: {fault}. Nothing was changed.",
+            kept.display()
+        ));
+    }
+
+    if let Err(fault) = std::fs::rename(&pending, input) {
+        return Err(match std::fs::rename(&kept, input) {
+            Ok(()) => format!(
+                "could not move the conversion into {shown}: {fault}. The original is back \
+                 where it was, and the conversion is at {}.",
+                pending.display(),
+            ),
+            Err(back) => format!(
+                "could not move the conversion into {shown}: {fault}, nor the original back: \
+                 {back}. The original is at {} and the conversion at {}.",
+                kept.display(),
+                pending.display(),
+            ),
+        });
+    }
+
+    println!(
+        "Converted {shown} from {} version {} to version {}, in place. The original is kept at \
+         {}.",
+        what.name,
+        what.version,
+        what.current,
+        kept.display(),
+    );
+    Ok(())
+}
+
+/// What the file a conversion is written to first is called: the input's own name with this
+/// after it.
+const CONVERTING_SUFFIX: &str = ".converting";
 
 /// The id map a save's derived variables are rebuilt from, where it is to be found.
 ///
