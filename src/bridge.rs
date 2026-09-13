@@ -1464,20 +1464,9 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
             .overall
             .saturating_mul((contestants.len() + locked.len()) as u32),
     );
-    // THE EXACT MARKING, EXCEPT IN THE GROUPS THAT CANNOT AFFORD IT: each round stars the
-    // option nearest to unread content, found by meeting a forward front from the menu with a
-    // backward front from every target - see [`menu::mark_menu`]. In [`HYBRID_GROUPS`] the
-    // cheaper sibling-cut question is asked first, and the exact marking only where that
-    // marks nothing - see [`menu::mark_menu_hybrid`].
-    let hybrid = HYBRID_GROUPS
-        .iter()
-        .any(|conversation| graph.get(DialogueNodeId::new(*conversation, 0)).is_some());
-    let mark = if hybrid {
-        menu::mark_menu_hybrid
-    } else {
-        menu::mark_menu
-    };
-    let found = mark(
+    // THE EXACT MARKING, EXCEPT IN THE GROUPS THAT CANNOT AFFORD IT - see
+    // [`mark_menu_as_shipped`], which the menu measurement calls too.
+    let found = mark_menu_as_shipped(
         Search {
             graph,
             compiler: &mut *compiler,
@@ -1575,6 +1564,34 @@ pub(crate) fn all_unanswered(request: &LookAheadRequest, stopped_by: &str) -> Ve
 /// answers it cheaply, and falls back to the exact marking only where that marks nothing.
 /// A group is in when its graph carries the named conversation, whichever one opened it.
 const HYBRID_GROUPS: [i32; 1] = [761];
+
+/// Marks a menu the way the product does, choosing the marking by the group.
+///
+/// THE ONE PLACE THE CHOICE IS MADE, for [`answer_starts`] and the menu measurement alike, so
+/// a measurement taken by default measures what a player waits for. The exact marking stars
+/// each round's option nearest to unread content, meeting a forward front from the menu with
+/// a backward front from every target - see [`crate::symbolic::menu::mark_menu`]. In
+/// [`HYBRID_GROUPS`] the cheaper sibling-cut question is asked first, and the exact marking
+/// only where that marks nothing - see [`crate::symbolic::menu::mark_menu_hybrid`].
+pub fn mark_menu_as_shipped<F: Fn(DialogueNodeId) -> Novelty>(
+    search: crate::symbolic::search::Search<'_, '_>,
+    novelty: &F,
+    contestants: &[crate::symbolic::menu::Contestant],
+    budget: &crate::symbolic::menu::Budget,
+    shape: &GroupShape,
+) -> crate::symbolic::menu::MenuAnswer {
+    use crate::symbolic::menu;
+
+    let graph = search.graph;
+    let hybrid = HYBRID_GROUPS
+        .iter()
+        .any(|conversation| graph.get(DialogueNodeId::new(*conversation, 0)).is_some());
+    if hybrid {
+        menu::mark_menu_hybrid(search, novelty, contestants, budget, shape)
+    } else {
+        menu::mark_menu(search, novelty, contestants, budget, shape)
+    }
+}
 
 /// Writes what a marking settled about one start onto its answer.
 fn record(answer: &mut LookAheadAnswer, mark: &crate::symbolic::menu::Marked) {

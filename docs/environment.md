@@ -70,6 +70,7 @@ variable is added or removed.
 | `DEGCT_GROUPS_ONLY` | `measurements/README.md`, `measurements/performance_matrix.rs`, `tools/measure-matrix.py` |
 | `DEGCT_GUARD_SNAPSHOT` | `measurements/guard_snapshot.rs` |
 | `DEGCT_HEADER_ONLY` | `measurements/performance_matrix.rs` |
+| `DEGCT_HYBRID` | `measurements/menu_matrix.rs` |
 | `DEGCT_LOG_DIR` | `tools/measure-symbolic.sh`, `tools/run-logged.sh` |
 | `DEGCT_LONE` | `measurements/settles_within.rs` |
 | `DEGCT_MATRIX_OUT` | `measurements/README.md`, `tools/degct-env.sh`, `tools/measure-matrix.py`, `tools/measurement_common.py` |

@@ -19,7 +19,8 @@
 //!
 //! One group per row. Builds the adversarial profile - `menu_profile`, shared with
 //! `menu_residue` and `menu_wall` - takes its starts as the menu, and marks the whole menu
-//! through `symbolic::menu::mark_menu` against one manager, exactly as the bridge does.
+//! against one manager through `bridge::mark_menu_as_shipped`, so each group gets the marking
+//! the product chooses for it. `DEGCT_HYBRID` puts the hybrid marking on every group instead.
 //!
 //! EVERY START IS A CONTESTANT, because the marking is competitive: an option that has
 //! nothing to hunt for is refused against the class being hunted, by the baseline it
@@ -345,34 +346,44 @@ where
                 landing: vec![start],
             })
             .collect();
-        // THE HYBRID ON REQUEST - de-0jsf.20 - so one row file can be taken either way and
-        // the two compared on the same profile and the same allowance.
-        let mark = match lookahead_engine::core::env::is_set("HYBRID") {
-            true => menu::mark_menu_hybrid,
-            false => menu::mark_menu,
+        let marking_search = lookahead_engine::symbolic::search::Search {
+            graph,
+            compiler: &mut compiler,
+            world: &world,
+            counter_cap: COUNTER_CAP as u32,
         };
-        let found = mark(
-            lookahead_engine::symbolic::search::Search {
-                graph,
-                compiler: &mut compiler,
-                world: &world,
-                counter_cap: COUNTER_CAP as u32,
-            },
-            novelty,
-            &contestants,
-            &if nolimit() {
-                menu::Budget {
-                    wall: NOLIMIT_TIME,
-                    each: NOLIMIT_TIME,
-                }
-            } else {
-                menu::Budget {
-                    wall: search.overall.saturating_mul(starts.len() as u32),
-                    each: search.each,
-                }
-            },
-            &shape,
-        );
+        let marking_budget = if nolimit() {
+            menu::Budget {
+                wall: NOLIMIT_TIME,
+                each: NOLIMIT_TIME,
+            }
+        } else {
+            menu::Budget {
+                wall: search.overall.saturating_mul(starts.len() as u32),
+                each: search.each,
+            }
+        };
+        // THE MARKING THE PRODUCT CHOOSES FOR THIS GROUP, through the one function that
+        // chooses it, so a default row measures what a player waits for. `DEGCT_HYBRID` puts
+        // the hybrid on every group instead - de-0jsf.20 - so one row file can be taken
+        // either way and the two compared on the same profile and the same allowance.
+        let found = if lookahead_engine::core::env::is_set("HYBRID") {
+            menu::mark_menu_hybrid(
+                marking_search,
+                novelty,
+                &contestants,
+                &marking_budget,
+                &shape,
+            )
+        } else {
+            lookahead_engine::bridge::mark_menu_as_shipped(
+                marking_search,
+                novelty,
+                &contestants,
+                &marking_budget,
+                &shape,
+            )
+        };
         counted.options = contestants.len();
         counted.asked = found.passes;
         counted.rounds = found.rounds;
