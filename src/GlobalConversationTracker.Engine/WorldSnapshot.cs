@@ -88,5 +88,13 @@ namespace GlobalConversationTracker.Engine
         /// <summary>Entries the player has already been shown in this save.</summary>
         public NodeSet Seen { get; } = new NodeSet();
 
+        /// <summary>The flags of every white check the game holds as failed.</summary>
+        /// <remarks>
+        /// The game keeps these in a table of its own rather than in Lua, and refuses a failed
+        /// white check for as long as it stays there. The engine reads each as that check's
+        /// failure slot set, which closes the check both as an option and as a way through.
+        /// </remarks>
+        public ISet<string> FailedWhiteChecks { get; } = new HashSet<string>();
+
     }
 }

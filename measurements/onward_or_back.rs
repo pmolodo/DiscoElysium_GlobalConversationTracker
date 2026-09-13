@@ -372,6 +372,7 @@ fn ask(conversation: i32, graph: &LookAheadGraph, profile: &MenuProfile, budget:
             )
             .position(start),
             baseline: novelty(start),
+            landing: vec![start],
         })
         .collect();
     let began = Instant::now();

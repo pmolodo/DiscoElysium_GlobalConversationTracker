@@ -374,6 +374,15 @@ namespace GlobalConversationTracker.Harness
         [JsonPropertyName("advances")]
         public int? Advances { get; set; }
 
+        /// <summary>Options to take, by entry, before the menu is read. Absent means none.</summary>
+        /// <remarks>
+        /// NOT NARRATION, which is what <see cref="Advances"/> counts. Each entry is chosen off
+        /// the menu in front of the run and the conversation is advanced to the next one, so
+        /// the menu the scenario is about is the one behind the last of them.
+        /// </remarks>
+        [JsonPropertyName("take")]
+        public List<int>? Take { get; set; }
+
         /// <summary>How much the scenario claims about the markers. Absent means named.</summary>
         [JsonPropertyName("markers")]
         public string Markers { get; set; } = "named";
@@ -444,7 +453,8 @@ namespace GlobalConversationTracker.Harness
                 markers: MarkerPolicyOf(suite),
                 branchPolicy: branches,
                 branches: expectation,
-                advances: Advances);
+                advances: Advances,
+                takes: Take);
         }
 
         private MarkerPolicy MarkerPolicyOf(string suite) => Markers switch

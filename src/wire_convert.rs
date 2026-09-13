@@ -142,7 +142,11 @@ pub fn read_snapshot(snapshot: Option<wire::WorldSnapshot>) -> Result<WorldSnaps
         day_minutes: snapshot.day_minutes,
         day_counter: snapshot.day_counter,
         clock_locked: snapshot.clock_locked,
-        variables: read_named(snapshot.variables),
+        variables: {
+            let mut variables = read_named(snapshot.variables);
+            crate::bridge::lock_failed_white_checks(&mut variables, snapshot.failed_white_checks);
+            variables
+        },
         variable_values: read_values(snapshot.variable_values),
         queries: read_named(snapshot.queries),
         query_values: read_values(snapshot.query_values),

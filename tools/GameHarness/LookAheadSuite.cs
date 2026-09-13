@@ -228,6 +228,10 @@ namespace GlobalConversationTracker.Harness
         /// the shipped policy a kill produces a new engine and no notice at all, and a
         /// scenario that waited for the window would wait for ever.
         /// </param>
+        /// <param name="takes">
+        /// Options to choose, by destination entry and in order, before the menu is read; null
+        /// or empty for the menu the conversation opens on.
+        /// </param>
         /// <exception cref="ArgumentNullException">An argument is null.</exception>
         /// <exception cref="ArgumentException">The policy and the expectation disagree.</exception>
         public LookAheadScenario(
@@ -242,7 +246,8 @@ namespace GlobalConversationTracker.Harness
             BranchExpectation? branches = null,
             int? advances = null,
             bool killEngineFirst = false,
-            bool expectsRecovery = false)
+            bool expectsRecovery = false,
+            IReadOnlyList<int>? takes = null)
         {
             if (expectsRecovery && !killEngineFirst)
             {
@@ -278,7 +283,18 @@ namespace GlobalConversationTracker.Harness
             Advances = advances;
             KillEngineFirst = killEngineFirst;
             ExpectsRecovery = expectsRecovery;
+            Takes = takes ?? Array.Empty<int>();
         }
+
+        /// <summary>
+        /// The options to take, by destination entry and in order, before the menu is read.
+        /// </summary>
+        /// <remarks>
+        /// Empty for a scenario about the menu a conversation opens on. Otherwise each is
+        /// chosen off the menu in front of the run and the conversation is advanced to the
+        /// next, so <see cref="Options"/> and the markers are about the menu behind the last.
+        /// </remarks>
+        public IReadOnlyList<int> Takes { get; }
 
         /// <summary>The staged save's name, without extension.</summary>
         public string SaveName { get; }

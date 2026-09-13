@@ -458,6 +458,39 @@
           "pass": { "colour": "orange" },
           "fail": { "colour": "darkRed" },
           "branchesWhy": "Indoors, where neither outcome's way passes a weather guard at all, so the two words carry what they carry in the clear."
+        },
+        {
+          "save": "scene-unlocked",
+          "conversation": 29,
+          "what": "the trash can save with the white check 29:1008 never failed, so it is offered open",
+          "why": "THE OTHER HALF OF THE LOCK. The trash can save holds 1008 as a failed white check, and the engine closes it: no option can route through it. This save is the same save with 1008 taken out of failedWhiteChecksHolder and nothing else changed. Going over the case again still must not be starred: its only way to 1008's content is back out through the hub and into the check, and taking the check directly is nearer, so the check's Pass claims that content first. THE SIX MARKERS ARE THE LOCKED SAVE'S, which is the claim: opening the check changes what its own two words say about unlocking nothing, and moves no star onto a sibling.",
+          "advances": 0,
+          "options": [
+            { "entry": 582, "marker": "none", "why": "its only way to the check's content is back out through the hub and into the check, and the check's Pass lands on that content directly, so it is claimed before any round runs" },
+            { "entry": 1008, "marker": "none", "why": "a rolled check draws no marker of its own; its two outcomes carry what they found" },
+            { "entry": 90, "marker": "red", "why": "admitting the amnesia leads on to lines this save has not shown and another save has" },
+            { "entry": 221, "marker": "none", "why": "asking about Kim himself reaches nothing this save has not already had" },
+            { "entry": 697, "marker": "red", "why": "accusing him of following leads on the same way the amnesia does" },
+            { "entry": 882, "marker": "none", "why": "leaving reaches nothing at all" }
+          ],
+          "branches": "everyCheck",
+          "pass": { "colour": "orange" },
+          "fail": { "colour": "darkRed" },
+          "branchesWhy": "Open or locked, passing lands on a line no save has read, so the word carries that colour itself; failing lands on one this save has already been shown and reaches nothing better."
+        },
+        {
+          "save": "at-trashcan",
+          "conversation": 29,
+          "what": "the menu behind going over the case again, from the trash can",
+          "why": "ONE MENU DEEPER THAN ANY OTHER ROW REACHES, and it is where de-2p8j.2's complaint was seen: Kim's first menu starred going over the case again, and behind it the only starred option led straight back out. WHAT IS STARRED HERE IS RIGHT, and was looked at in game: standing at the case hub, going back out to the main hub is the nearest way to anything this save has not shown, so the way out carries the star. The complaint was that 582 was starred on the menu BEFORE this one, which came of a locked check being walked through.",
+          "advances": 0,
+          "take": [582],
+          "markers": "named",
+          "options": [
+            { "entry": 707, "marker": "red", "why": "going back out to the main hub is the nearest way to lines this save has not shown and another save has" },
+            { "entry": 1053, "marker": "none", "why": "asking whether it is a mysterious case reaches nothing this save has not already had" },
+            { "entry": 74, "marker": "none", "why": "going over the preliminary info again reaches nothing this save has not already had" }
+          ]
         }
       ]
     }

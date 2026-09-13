@@ -74,6 +74,7 @@ namespace GlobalConversationTracker
             FillMembers(questions.Thoughts, "IsTHCPresent", world.Thoughts);
 
             FillChecks(questions.Checks, world);
+            FillFailedWhiteChecks(world);
             FillNovelty(questions.Entries, session, world, request);
 
             return request;
@@ -160,6 +161,48 @@ namespace GlobalConversationTracker
                 {
                     world.ChecksFail.Add(node);
                 }
+            }
+        }
+
+        /// <summary>
+        /// The flags of every white check the game holds as failed, from its own table.
+        /// </summary>
+        /// <remarks>
+        /// <para>Not Lua: the game keeps a failed white check in
+        /// <c>FailedWhiteChecks.ChecksBySkill</c> and refuses it while it stays there, and no
+        /// dialogue variable says so. Without this a locked check reads as untried, and every
+        /// option can route through it to whatever it would have opened.</para>
+        ///
+        /// <para>ALL OF THEM, not the group's: a few dozen names, and the engine only reads the
+        /// ones its checks carry. A table that cannot be read leaves the set empty, which reads
+        /// as nothing locked - the permissive direction, as everywhere else here.</para>
+        /// </remarks>
+        private static void FillFailedWhiteChecks(WorldSnapshot world)
+        {
+            try
+            {
+                var bySkill = FailedWhiteChecks.ChecksBySkill;
+                if (bySkill == null)
+                {
+                    return;
+                }
+
+                foreach (var flags in bySkill.Values)
+                {
+                    if (flags == null)
+                    {
+                        continue;
+                    }
+
+                    foreach (string flag in flags)
+                    {
+                        world.FailedWhiteChecks.Add(flag);
+                    }
+                }
+            }
+            catch (System.Exception)
+            {
+                world.FailedWhiteChecks.Clear();
             }
         }
 

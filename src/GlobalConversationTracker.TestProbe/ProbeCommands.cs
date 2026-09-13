@@ -78,6 +78,16 @@ namespace GlobalConversationTracker.TestProbe
         internal const string AdvanceToMenuCommand = "advance-to-menu";
 
         /// <summary>
+        /// Choose one option off the response menu that is up, by its destination entry.
+        /// </summary>
+        /// <remarks>
+        /// NOT AN ADVANCE, and the pair is how a run reaches a menu behind an option: choose,
+        /// then advance-to-menu again. The recorder reports the next menu the way it reports
+        /// every other, so this answers only whether the choice was taken.
+        /// </remarks>
+        internal const string ChooseOptionCommand = "choose-option";
+
+        /// <summary>
         /// How many polls a line must keep asking before it is answered.
         /// </summary>
         /// <remarks>
@@ -415,6 +425,9 @@ namespace GlobalConversationTracker.TestProbe
                         break;
                     case AdvanceCommand:
                         Advance();
+                        break;
+                    case ChooseOptionCommand:
+                        ChooseOption(root);
                         break;
                     case AdvanceToMenuCommand:
                         ProbeLog.Write(
@@ -795,6 +808,86 @@ namespace GlobalConversationTracker.TestProbe
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Chooses one option off the menu that is up, by its destination entry, the way a
+        /// player's click chooses it.
+        /// </summary>
+        /// <remarks>
+        /// <para>THROUGH THE DIALOGUE UI'S OWN <c>OnClick</c>, which is what a response button
+        /// sends it. That hides the menu and hands the response on to the conversation, so what
+        /// follows - the chosen line, whatever is said back, the next menu - is what a player
+        /// gets. Handing the response to the conversation controller directly would skip the
+        /// interface and leave the old buttons standing.</para>
+        ///
+        /// <para>THE MENU COUNT IS FORGOTTEN BEFORE THE CLICK. It is what advance-to-menu reads
+        /// as "a menu is up", so left alone the next advance would stop at once on the menu
+        /// just left; forgotten after the click, it would lose a menu the click composed on its
+        /// way through.</para>
+        ///
+        /// <para>REFUSES RATHER THAN GUESSES. No menu, no such option, or an interface that does
+        /// not take a click each fail the command by name.</para>
+        /// </remarks>
+        private static void ChooseOption(JsonElement root)
+        {
+            int entry = NumberMember(root, "entry")
+                ?? throw new ArgumentException("No entry was given.");
+
+            ProbeLog.Write("command-started", "command", ChooseOptionCommand, "entry", entry);
+
+            if (TestProbePlugin.MenusShown == 0)
+            {
+                throw new InvalidOperationException(
+                    "No response menu has been drawn in this conversation, so there is nothing to "
+                    + "choose from.");
+            }
+
+            ConversationState state = DialogueManager.currentConversationState
+                ?? throw new InvalidOperationException(
+                    "The dialogue system has no conversation state to choose from.");
+
+            Response? chosen = null;
+            var offered = new List<int>();
+            if (state.pcResponses != null)
+            {
+                foreach (Response response in state.pcResponses)
+                {
+                    DialogueEntry? destination = response == null ? null : response.destinationEntry;
+                    if (destination == null)
+                    {
+                        continue;
+                    }
+
+                    offered.Add(destination.id);
+                    if (destination.id == entry)
+                    {
+                        chosen = response;
+                    }
+                }
+            }
+
+            if (chosen == null)
+            {
+                throw new InvalidOperationException(
+                    $"Entry {entry} is not on the menu, which offers {string.Join(", ", offered)}.");
+            }
+
+            IDialogueUI? dialogueUI = DialogueManager.dialogueUI;
+            AbstractDialogueUI ui = (dialogueUI == null ? null : dialogueUI.TryCast<AbstractDialogueUI>())
+                ?? throw new InvalidOperationException(
+                    "The dialogue UI is not one that takes a click, so there is no way to choose "
+                    + "the option the way a player does.");
+
+            TestProbePlugin.ForgetMenus();
+            ui.OnClick(chosen);
+
+            ProbeLog.Write(
+                "command-finished",
+                "command", ChooseOptionCommand,
+                "entry", entry,
+                "active", TestProbePlugin.IsConversationActive(),
+                "conversation", TestProbePlugin.ConversationId());
         }
 
         /// <summary>Ends an advance-to-menu, whatever ended it.</summary>

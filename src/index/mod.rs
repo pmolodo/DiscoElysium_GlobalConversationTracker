@@ -36,6 +36,13 @@ const TEST_FIELD: &str = "HiddenTest";
 const KIM_WATCH_FIELD: &str = "kim_watch";
 const BOOLEAN_ONLY_FIELD: &str = "boolean_only";
 const FLAG_NAME_FIELD: &str = "FlagName";
+
+/// What a check's failure slot is called: its flag's name with this after it.
+///
+/// PUBLIC because the slot is read like any other variable, so a world that knows a check is
+/// already failed - the game keeps locked white checks in a table of its own, not in Lua -
+/// answers this name as true, and the check starts closed.
+pub const FAILED_FLAG_SUFFIX: &str = "_failed";
 const CLICK_COST_FIELD: &str = "ClickCost";
 const COST_ONCE_FIELD: &str = "CostOnce";
 const HIDDEN_NOT_ENOUGH_FIELD: &str = "HiddenNotEnough";
@@ -641,7 +648,7 @@ pub fn parse_flags(
     match fields.get(FLAG_NAME_FIELD) {
         Some(flag) if !flag.trim().is_empty() => {
             let passed = symbols.variable(flag);
-            let failed = symbols.variable(&format!("{}_failed", flag));
+            let failed = symbols.variable(&format!("{flag}{FAILED_FLAG_SUFFIX}"));
             (passed as i32, failed as i32)
         }
         _ => (-1, -1),

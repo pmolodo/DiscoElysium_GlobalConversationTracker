@@ -113,6 +113,9 @@
 //!
 //! `DEGCT_STARTS` sets the menu's width, `DEGCT_UNSEEN` how many of the deepest entries are
 //! unread, and `DEGCT_BUDGET_MB` what the manager is given.
+//!
+//! `DEGCT_NOLIMIT=1` takes the limits off: a 6144 MB manager and a five-minute wall, which is
+//! also each pass's ration.
 
 use std::time::{Duration, Instant};
 
@@ -152,6 +155,23 @@ const CONVERSATIONS: [i32; 6] = [362, 368, 631, 14, 28, 1030];
 /// answered under the shipped allowance, so a number typed here would go stale the day
 /// that one moved and the row would quietly stop being what it claims to be.
 const BUDGET_MB: usize = DiagramBudget::DEFAULT_MEMORY_BUDGET / (1024 * 1024);
+
+/// What `DEGCT_NOLIMIT` gives the manager: a measurement's six gigabytes rather than a
+/// player's allowance. `DEGCT_BUDGET_MB` still overrides it.
+const NOLIMIT_BUDGET_MB: usize = 6144;
+
+/// What `DEGCT_NOLIMIT` gives the menu, as a wall AND as each pass's ration.
+///
+/// BOTH, because the pooled search spends a whole round in one pass, so a per-pass ration
+/// shorter than the wall would stop it where the wall would not. Five minutes, so that the
+/// row says where the search stops rather than where a player's patience would.
+const NOLIMIT_TIME: Duration = Duration::from_secs(300);
+
+/// Whether this run is taken with the limits off. See [`NOLIMIT_BUDGET_MB`] and
+/// [`NOLIMIT_TIME`].
+fn nolimit() -> bool {
+    lookahead_engine::core::env::is_set("NOLIMIT")
+}
 
 /// How many options the menu asks about.
 ///
@@ -204,7 +224,17 @@ fn main() {
     };
     let index = read_index(&path).expect("the shipped index reads");
 
-    let budget = DiagramBudget::new(from_env("BUDGET_MB", BUDGET_MB) * 1024 * 1024);
+    let budget = DiagramBudget::new(
+        from_env(
+            "BUDGET_MB",
+            if nolimit() {
+                NOLIMIT_BUDGET_MB
+            } else {
+                BUDGET_MB
+            },
+        ) * 1024
+            * 1024,
+    );
     let starts_wanted = from_env("STARTS", STARTS);
     let unseen_wanted = from_env("UNSEEN", UNSEEN);
 
@@ -312,6 +342,7 @@ where
                 )
                 .position(start),
                 baseline: novelty(start),
+                landing: vec![start],
             })
             .collect();
         // THE HYBRID ON REQUEST - de-0jsf.20 - so one row file can be taken either way and
@@ -327,9 +358,16 @@ where
             COUNTER_CAP as u32,
             novelty,
             &contestants,
-            &menu::Budget {
-                wall: search.overall.saturating_mul(starts.len() as u32),
-                each: search.each,
+            &if nolimit() {
+                menu::Budget {
+                    wall: NOLIMIT_TIME,
+                    each: NOLIMIT_TIME,
+                }
+            } else {
+                menu::Budget {
+                    wall: search.overall.saturating_mul(starts.len() as u32),
+                    each: search.each,
+                }
             },
             &shape,
         );

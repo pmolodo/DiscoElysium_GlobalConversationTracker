@@ -247,7 +247,45 @@ pub fn variables_in_save(save: &str) -> HashMap<String, WireValue> {
         }
     }
 
+    // THE CHECKS THIS SAVE HAS FAILED, locked the way the game locks them. The game keeps a
+    // failed white check in its own failedWhiteChecksHolder rather than in any Lua variable,
+    // and refuses the check for as long as it stays there; the engine closes a check whose
+    // failure slot is set. Answering the slot is what makes a locked check neither an option
+    // nor a way through to somewhere else.
+    lookahead_engine::bridge::lock_failed_white_checks(
+        &mut variables,
+        failed_white_checks_in_save(save),
+    );
+
     variables
+}
+
+/// The flags of every white check this save holds as failed.
+///
+/// # Panics
+///
+/// If the holder is not the shape the game writes. A lock misread as no lock opens a route the
+/// game refuses, which is the failure this reading exists to prevent.
+fn failed_white_checks_in_save(save: &str) -> HashSet<String> {
+    let holder = world_state(save, "failedWhiteChecksHolder");
+    let by_skill = holder["ChecksBySkill"]
+        .as_object()
+        .unwrap_or_else(|| panic!("{save}'s failedWhiteChecksHolder has no ChecksBySkill table"));
+
+    by_skill
+        .iter()
+        .flat_map(|(skill, flags)| {
+            flags
+                .as_array()
+                .unwrap_or_else(|| panic!("{save}'s failed {skill} checks are not a list"))
+                .iter()
+                .map(move |flag| {
+                    flag.as_str()
+                        .unwrap_or_else(|| panic!("{save}'s failed {skill} checks hold a non-name"))
+                        .to_string()
+                })
+        })
+        .collect()
 }
 
 /// One JSON value as the engine's wire vocabulary, or None where it is not one.

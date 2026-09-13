@@ -1,0 +1,28 @@
+{
+  "_format": "json-diff",
+  "_formatVersion": 1,
+  "_base": "../at-trashcan.ntwtf/at-trashcan.2nd.ntwtf.json",
+  "_changes": {
+    "failedWhiteChecksHolder": {
+      "ChecksBySkill": {
+        "INLAND_EMPIRE": []
+      },
+      "ChecksByVariable": {
+        "CheckEquipped": [
+          "jam.siileng_composure_whitecheck",
+          "jam.siileng_concept_whitecheck_clothes",
+          "canal.toy_white_check",
+          "backyard.wall_concept_wc",
+          "jam.monument_white_succeeded",
+          "canal.roy_electro_white_check",
+          "whirling.viquemare_esprit_wc_firefighters",
+          "village.netpicker_suggestion_whitecheck"
+        ],
+        "whirling.garte_body_mercenary": []
+      }
+    }
+  },
+  "_remove": [
+    "/failedWhiteChecksHolder/WhiteCheckCache/whirling.kim_inland_mystery_created"
+  ]
+}

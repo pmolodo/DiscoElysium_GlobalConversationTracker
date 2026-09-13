@@ -59,6 +59,16 @@ namespace GlobalConversationTracker.Automation
         /// </remarks>
         public const string AdvanceToMenu = "advance-to-menu";
 
+        /// <summary>
+        /// Choose one option off the response menu that is up, by its destination entry.
+        /// </summary>
+        /// <remarks>
+        /// Through the dialogue UI's own click handler, so what follows is what a player
+        /// choosing it would get. Follow it with <see cref="AdvanceToMenu"/> to reach the menu
+        /// behind the option.
+        /// </remarks>
+        public const string ChooseOption = "choose-option";
+
         /// <summary>Apply one look-ahead suite's state and runtime settings.</summary>
         public const string PrepareLookAheadSuite = "prepare-look-ahead-suite";
 
@@ -142,6 +152,14 @@ namespace GlobalConversationTracker.Automation
         public static void SendAdvanceToMenu(string saveGamesFolder)
         {
             Send(saveGamesFolder, AdvanceToMenu);
+        }
+
+        /// <summary>Asks the probe to choose an option off the menu that is up.</summary>
+        /// <param name="saveGamesFolder">The profile's SaveGames folder.</param>
+        /// <param name="entryId">The option's destination entry.</param>
+        public static void SendChooseOption(string saveGamesFolder, int entryId)
+        {
+            Send(saveGamesFolder, ChooseOption, "entry", entryId);
         }
 
         /// <summary>Waits until the probe has picked up whatever command is pending.</summary>

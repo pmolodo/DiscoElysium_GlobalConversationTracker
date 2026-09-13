@@ -41,6 +41,7 @@ fn compare(
             )
             .position(id),
             baseline: novelty(id),
+            landing: vec![id],
         })
         .collect();
     let found = menu::mark_menu(

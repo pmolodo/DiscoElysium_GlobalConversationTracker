@@ -105,6 +105,10 @@ pub struct Scenario {
     pub markers: String,
     #[serde(default)]
     pub options: Vec<OptionRow>,
+    /// Options the game takes, by entry, before it reads the menu. The menu such a row is
+    /// about is behind them, which only an executor that can choose can reach.
+    #[serde(default)]
+    pub take: Vec<i32>,
 }
 
 fn named() -> String {

@@ -115,10 +115,14 @@ fn the_kim_case_menu_as_the_engine_answers_it() {
 
     let table = suites::table();
     let suite = table.suite(SUITE);
+    // THE FIRST SCENARIO UNLESS DEGCT_SAVE NAMES ANOTHER, so a variant of the trash can save
+    // can be reported the same way without a second copy of this test.
+    let wanted = lookahead_engine::core::env::var("SAVE").ok();
     let scenario = suite
         .scenarios
-        .first()
-        .expect("the kim-case suite has its scenario");
+        .iter()
+        .find(|scenario| wanted.as_deref().is_none_or(|save| scenario.save == save))
+        .unwrap_or_else(|| panic!("the kim-case suite has no scenario for {wanted:?}"));
     let conversation = scenario.conversation;
 
     let (graph, group) =

@@ -133,8 +133,9 @@ namespace GlobalConversationTracker.TestProbe
         /// </summary>
         /// <remarks>
         /// The probe's own answer to "is a menu up", and the reason it is trustworthy: it
-        /// is reset when a conversation starts, so it cannot report the previous
-        /// scenario's menu the way the interface's own toggle does.
+        /// is reset when a conversation starts and when an option is chosen off a menu, so
+        /// it cannot report the previous scenario's menu, or the menu just left, the way the
+        /// interface's own toggle does.
         /// </remarks>
         internal static int MenusShown { get; private set; }
 
@@ -148,6 +149,12 @@ namespace GlobalConversationTracker.TestProbe
         internal static void ForgetLines()
         {
             LinesShown = 0;
+            ForgetMenus();
+        }
+
+        /// <summary>Forgets the menus drawn so far, as an option is chosen off one.</summary>
+        internal static void ForgetMenus()
+        {
             MenusShown = 0;
         }
 

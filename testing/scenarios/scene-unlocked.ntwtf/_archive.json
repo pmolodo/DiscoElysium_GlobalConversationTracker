@@ -1,0 +1,31 @@
+{
+  "_format": "expanded-save-diff",
+  "_formatVersion": 1,
+  "base": "../at-trashcan.ntwtf",
+  "members": [
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "scene-unlocked.1st.ntwtf.json",
+      "suffix": ".1st.ntwtf.json"
+    },
+    {
+      "diff": "scene-unlocked.2nd.ntwtf.json",
+      "kind": "json",
+      "name": "scene-unlocked.2nd.ntwtf.json",
+      "suffix": ".2nd.ntwtf.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "scene-unlocked.FOW.json",
+      "suffix": ".FOW.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "scene-unlocked.states.lua",
+      "suffix": ".states.lua"
+    }
+  ]
+}

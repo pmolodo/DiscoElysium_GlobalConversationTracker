@@ -378,6 +378,87 @@ impl WorldSnapshot {
     }
 }
 
+/// Answers every failed white check's failure slot as true, among the named variables.
+///
+/// THE ONE PLACE A LOCK BECOMES A VARIABLE, for the wire and for the offline fixtures alike.
+/// The game keeps a failed white check in a table of its own rather than in Lua, and refuses
+/// it while it stays there; the engine closes a check whose failure slot is set. So the lock
+/// is answered as that slot, named - and a named variable wins over a positional answer, so
+/// nothing the plugin reads from Lua can reopen it. See [`crate::index::FAILED_FLAG_SUFFIX`].
+pub fn lock_failed_white_checks(
+    variables: &mut HashMap<String, WireValue>,
+    flags: impl IntoIterator<Item = String>,
+) {
+    for flag in flags {
+        variables.insert(
+            format!("{flag}{}", crate::index::FAILED_FLAG_SUFFIX),
+            WireValue::Bool { value: true },
+        );
+    }
+}
+
+/// A world that answers one check's failure slot as unset, and everything else as `inner`
+/// does.
+///
+/// FOR SEEDING A LOCKED CHECK'S HALVES AS IF THE CHECK WERE OPEN, and for nothing else - see
+/// [`answer_starts`]. The lock is that slot answered true; lifting it for the check's own start
+/// lets its Pass and Fail words say what unlocking it would open, while every route through it
+/// from anywhere else stays shut.
+struct Unlocked<'w> {
+    inner: &'w dyn ILookAheadWorld,
+    failed: &'w str,
+}
+
+impl ILookAheadWorld for Unlocked<'_> {
+    fn money(&self) -> i32 {
+        self.inner.money()
+    }
+
+    fn day_minutes(&self) -> i32 {
+        self.inner.day_minutes()
+    }
+
+    fn day_counter(&self) -> i32 {
+        self.inner.day_counter()
+    }
+
+    fn is_clock_locked(&self) -> bool {
+        self.inner.is_clock_locked()
+    }
+
+    fn get_variable(&self, name: &str) -> GuardValue {
+        if name == self.failed {
+            GuardValue::from_boolean(false)
+        } else {
+            self.inner.get_variable(name)
+        }
+    }
+
+    fn initially_has_item(&self, name: &str) -> bool {
+        self.inner.initially_has_item(name)
+    }
+
+    fn initially_task_active(&self, name: &str) -> bool {
+        self.inner.initially_task_active(name)
+    }
+
+    fn initially_has_thought(&self, name: &str) -> bool {
+        self.inner.initially_has_thought(name)
+    }
+
+    fn query(&self, name: &str, arguments: &[GuardValue]) -> GuardValue {
+        self.inner.query(name, arguments)
+    }
+
+    fn check_passes(&self, node: DialogueNodeId) -> Ternary {
+        self.inner.check_passes(node)
+    }
+
+    fn is_seen(&self, node: DialogueNodeId) -> bool {
+        self.inner.is_seen(node)
+    }
+}
+
 /// Names `values` by `asked`, without disturbing anything `named` already says.
 fn place(
     what: &str,
@@ -1229,6 +1310,9 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
     let mut answers = Vec::new();
     let mut contestants = Vec::new();
     let mut indices = Vec::new();
+    // LOCKED CHECKS, whose halves are answered apart from the menu - see below.
+    let started = crate::core::state::seed_state(graph, world);
+    let mut locked = Vec::new();
     for &start in &request.starts {
         let id = DialogueNodeId::from(start);
         let Some(node) = graph.get(id) else {
@@ -1240,12 +1324,41 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
         } else {
             &[StartBranch::Either]
         };
+        // A LOCKED CHECK IS ONE WHOSE FAILURE SLOT IS ALREADY SET when the search starts - the
+        // save failed it and the game will not offer it again. Its halves start from a seed
+        // with that one lock lifted, so they can be answered as if the check were open; the
+        // lock stays in the ordinary seed, so nothing else can route through it.
+        let lock = (node.is_rolled()
+            && node.failed_flag_slot >= 0
+            && started.is_set(node.failed_flag_slot as usize))
+        .then(|| graph.symbols().name_of(node.failed_flag_slot as usize))
+        .flatten();
+        let unlocked_seed = lock.map(|failed| {
+            seed_of(
+                graph,
+                &Unlocked {
+                    inner: world,
+                    failed,
+                },
+                compiler.vars(),
+            )
+        });
         for &branch in branches {
+            let seed_here = match &unlocked_seed {
+                Some(Some(unlocked)) => unlocked,
+                Some(None) => {
+                    let mut result = unanswered(start, "memory");
+                    result.branch = Some(branch_name(branch).to_string());
+                    answers.push(result);
+                    continue;
+                }
+                None => seed,
+            };
             let mut from = novelty_search::Where::of(
                 graph,
                 id,
                 branch,
-                seed,
+                seed_here,
                 compiler,
                 world,
                 COUNTER_CAP as u32,
@@ -1271,29 +1384,41 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
             if from.out_of_nodes() {
                 result.stopped_by = "memory".to_string();
             } else {
-                indices.push(answers.len());
-                contestants.push(Contestant {
+                let contestant = Contestant {
                     position: from.position(id),
                     baseline,
-                });
+                    landing: destinations,
+                };
+                if lock.is_some() {
+                    locked.push((answers.len(), contestant));
+                } else {
+                    indices.push(answers.len());
+                    contestants.push(contestant);
+                }
             }
             answers.push(result);
         }
     }
     let ration = request.search_budget();
-    let wall = request
-        .menu_budget()
-        .min(ration.overall.saturating_mul(contestants.len() as u32));
-    // THE CHEAP QUESTION FIRST, and the exact one only where it answers nothing. An option
-    // is marked where it reaches unread content WITHOUT returning through the menu, which is
-    // the distinction a player can act on; where no option does and something is still
-    // reachable, the exact marking is taken whole. See [`menu::mark_menu_hybrid`].
-    //
-    // WHAT THIS BUYS, over the whole game at the player's own allowance: 11.9 seconds against
-    // 17.3, 1.9 million diagram nodes against 4.6, and every option in the game settling
-    // where eight of them used to run out of budget - conversation 761 among them, which no
-    // exact arrangement could answer at 256 MB at all.
-    let found = menu::mark_menu_hybrid(
+    let wall = request.menu_budget().min(
+        ration
+            .overall
+            .saturating_mul((contestants.len() + locked.len()) as u32),
+    );
+    // THE EXACT MARKING, EXCEPT IN THE GROUPS THAT CANNOT AFFORD IT: each round stars the
+    // option nearest to unread content, found by meeting a forward front from the menu with a
+    // backward front from every target - see [`menu::mark_menu`]. In [`HYBRID_GROUPS`] the
+    // cheaper sibling-cut question is asked first, and the exact marking only where that
+    // marks nothing - see [`menu::mark_menu_hybrid`].
+    let hybrid = HYBRID_GROUPS
+        .iter()
+        .any(|conversation| graph.get(DialogueNodeId::new(*conversation, 0)).is_some());
+    let mark = if hybrid {
+        menu::mark_menu_hybrid
+    } else {
+        menu::mark_menu
+    };
+    let found = mark(
         graph,
         compiler,
         world,
@@ -1306,22 +1431,45 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
         },
         shape,
     );
-    for (index, mark) in indices.into_iter().zip(found.marks) {
-        let answer = &mut answers[index];
-        answer.best = mark.best as i32;
-        answer.witness = mark.witness.map(NodeRef::from);
-        answer.complete = mark.complete;
-        answer.stopped_by = if mark.out_of_nodes {
-            "memory"
-        } else {
-            stopped_name(mark.stopped_by)
-        }
-        .to_string();
+    for (index, mark) in indices.into_iter().zip(&found.marks) {
+        record(&mut answers[index], mark);
     }
+
+    // THE LOCKED CHECKS, ANSWERED ONCE EVERY ORDINARY STAR IS SETTLED. Each half asks what it
+    // WOULD reach if the check were open, with every option of this menu blocked - itself and
+    // its siblings - so it cannot cycle back through the menu, and every entry an ordinary
+    // star claimed blocked too. So a half is starred only for content no other option reaches,
+    // and its word tells the player whether unlocking the check is worth a skill point.
+    let mut blocked: HashSet<DialogueNodeId> = request
+        .starts
+        .iter()
+        .map(|start| DialogueNodeId::from(*start))
+        .collect();
+    blocked.extend(found.marks.iter().filter_map(|mark| mark.witness));
+    let mut passes = found.passes;
+    for (index, contestant) in locked {
+        let alone = menu::mark_menu_blocking(
+            graph,
+            compiler,
+            world,
+            COUNTER_CAP as u32,
+            novelty,
+            std::slice::from_ref(&contestant),
+            &menu::Budget {
+                wall: wall.saturating_sub(began.elapsed()),
+                each: ration.each,
+            },
+            shape,
+            &blocked,
+        );
+        passes += alone.passes;
+        record(&mut answers[index], &alone.marks[0]);
+    }
+
     // Menu work is shared, so report its cost once rather than multiplying by options.
     if let Some(first) = answers.first_mut() {
         first.elapsed_ms = began.elapsed().as_millis() as u64;
-        first.nodes_reached = found.passes;
+        first.nodes_reached = passes;
     }
     answers
 }
@@ -1338,6 +1486,27 @@ pub(crate) fn all_unanswered(request: &LookAheadRequest, stopped_by: &str) -> Ve
         .iter()
         .map(|start| unanswered(*start, stopped_by))
         .collect()
+}
+
+/// The groups whose menus are marked by the hybrid rather than by the exact marking alone.
+///
+/// 761 ALONE, because it is the group the exact marking cannot afford at a player's
+/// allowance: the pool needs about 288 MB and ten seconds there. The hybrid's sibling cut
+/// answers it cheaply, and falls back to the exact marking only where that marks nothing.
+/// A group is in when its graph carries the named conversation, whichever one opened it.
+const HYBRID_GROUPS: [i32; 1] = [761];
+
+/// Writes what a marking settled about one start onto its answer.
+fn record(answer: &mut LookAheadAnswer, mark: &crate::symbolic::menu::Marked) {
+    answer.best = mark.best as i32;
+    answer.witness = mark.witness.map(NodeRef::from);
+    answer.complete = mark.complete;
+    answer.stopped_by = if mark.out_of_nodes {
+        "memory"
+    } else {
+        stopped_name(mark.stopped_by)
+    }
+    .to_string();
 }
 
 /// An option with nothing established about it, and why.

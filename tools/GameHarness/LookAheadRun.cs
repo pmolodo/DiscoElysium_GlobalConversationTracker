@@ -1126,6 +1126,56 @@ namespace GlobalConversationTracker.Harness
             return menu;
         }
 
+        /// <summary>
+        /// Chooses one option off the menu in front of the run, and advances to the menu
+        /// behind it.
+        /// </summary>
+        /// <remarks>
+        /// <para>REFUSED BEFORE IT IS SENT when the menu does not offer the entry. The probe
+        /// refuses too, but only from here can the refusal name the menu the run was actually
+        /// at, which is the thing to know when a scenario has drifted.</para>
+        ///
+        /// <para>CONSUMING, unlike the waits around it. The previous advance-to-menu's answer
+        /// is written after its menu, so it is still unread here and the advance below would
+        /// take it for its own. Nothing this wait passes over is wanted: the next menu is not
+        /// drawn until the conversation is advanced.</para>
+        /// </remarks>
+        /// <param name="scenario">The scenario being walked.</param>
+        /// <param name="menu">The menu the option is on.</param>
+        /// <param name="entry">The option's destination entry.</param>
+        /// <param name="saveGames">The profile's SaveGames folder, for the probe.</param>
+        /// <param name="watcher">The probe's events.</param>
+        /// <param name="timeout">How long to wait for each step.</param>
+        /// <returns>The completed menu behind the option.</returns>
+        private static ProbeEvent TakeOption(
+            LookAheadScenario scenario,
+            ProbeEvent menu,
+            int entry,
+            string saveGames,
+            ProbeWatcher watcher,
+            TimeSpan timeout)
+        {
+            string option = $"{scenario.ConversationId}:{entry}";
+            ProbeOption[] offered = menu.Options();
+            if (!offered.Any(o => o.EntryId == entry))
+            {
+                throw new InvalidOperationException(
+                    $"{scenario.SaveName}: the scenario takes {option}, and the menu in front of "
+                    + $"it offers {string.Join(", ", offered.Select(o => o.EntryId))}.");
+            }
+
+            Console.WriteLine($"        taking {option}");
+            ProbeCommand.SendChooseOption(saveGames, entry);
+            watcher.WaitFor(
+                e => e.Name == "command-finished" && e.Text("command") == ProbeCommand.ChooseOption,
+                timeout,
+                $"an answer to choose-option {option}",
+                Log);
+
+            return AdvanceToMenu(
+                scenario, saveGames, watcher, AttemptTimeout(timeout), $"the menu behind {option}");
+        }
+
         /// <summary>How many advances the last conversation opened with.</summary>
         /// <remarks>
         /// Carried out of band rather than returned beside the menu because every caller
@@ -1205,6 +1255,14 @@ namespace GlobalConversationTracker.Harness
                 Console.WriteLine(
                     $"        (this scenario does not say how many advances it needs; it "
                     + $"took {advances})");
+            }
+
+            // THE MENU A SCENARIO IS ABOUT CAN BE BEHIND AN OPTION. The count above is the
+            // opening's; each of these chooses off the menu in front of the run and reads
+            // the one behind it, and everything below is about the last.
+            foreach (int entry in scenario.Takes)
+            {
+                menu = TakeOption(scenario, menu, entry, saveGames, watcher, timeout);
             }
 
             // Taken from the menu rather than from load-finished, which is emitted when

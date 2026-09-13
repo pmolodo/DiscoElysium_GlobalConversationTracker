@@ -85,6 +85,7 @@ fn full_snapshot() -> wire::WorldSnapshot {
         checks_pass: Some(runs(9, &[(50, 50)])),
         checks_fail: Some(runs(9, &[(42, 42), (19, 19)])),
         seen: Some(runs(9, &[(0, 40), (42, 42), (50, 99)])),
+        failed_white_checks: vec!["whirling.kim_inland_mystery_created".to_string()],
     }
 }
 

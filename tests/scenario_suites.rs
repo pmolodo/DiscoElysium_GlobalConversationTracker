@@ -287,6 +287,12 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
             if scenario.markers != "named" {
                 continue;
             }
+            // A MENU BEHIND A TAKEN OPTION IS NOT THE ONE THIS EXECUTOR ASKS ABOUT. Offline, a
+            // scenario's named options are put to the engine as the menu itself, and the menu
+            // the game draws after walking deeper is a composition only the game can make.
+            if !scenario.take.is_empty() {
+                continue;
+            }
 
             let conversation = scenario.conversation;
             let Some(staged) = stage(&index, suite, scenario) else {

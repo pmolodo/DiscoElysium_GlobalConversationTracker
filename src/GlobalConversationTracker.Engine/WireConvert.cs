@@ -174,6 +174,7 @@ namespace GlobalConversationTracker.Engine
             written.Items.AddRange(world.Items);
             written.Tasks.AddRange(world.Tasks);
             written.Thoughts.AddRange(world.Thoughts);
+            written.FailedWhiteChecks.AddRange(world.FailedWhiteChecks);
             return written;
         }
 

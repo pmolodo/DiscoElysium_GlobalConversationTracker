@@ -78,6 +78,7 @@ variable is added or removed.
 | `DEGCT_MEMORY_HEADROOM` | `tools/measure-matrix.py` |
 | `DEGCT_MENUS` | `measurements/cacheable_asks.rs`, `measurements/candidate_recurrence.rs` |
 | `DEGCT_MENU_TIME_BUDGET_MS` | `measurements/menu_wall.rs` |
+| `DEGCT_NOLIMIT` | `measurements/menu_matrix.rs` |
 | `DEGCT_NO_HEADER` | `measurements/performance_matrix.rs` |
 | `DEGCT_OUT` | `tools/degct-env.sh` |
 | `DEGCT_PAST_RUNS` | `tools/measure-matrix.py` |
@@ -93,6 +94,7 @@ variable is added or removed.
 | `DEGCT_ROW_SECONDS` | `measurements/cache_split.rs`, `measurements/performance_matrix.rs`, `tools/degct-env.sh`, `tools/measure-matrix.py` |
 | `DEGCT_RUN_LOG_DIR` | `AGENTS.md`, `CLAUDE.md`, `DEVELOPING.md`, `tools/measure-symbolic.sh`, `tools/run-logged.sh` |
 | `DEGCT_RUN_NAME` | `tools/measure-symbolic.sh` |
+| `DEGCT_SAVE` | `tests/kim_case_offline.rs` |
 | `DEGCT_SEARCHES` | `measurements/search_residue.rs`, `tools/measure-residue-arms.sh` |
 | `DEGCT_SEARCH_MS` | `measurements/repeat_question.rs` |
 | `DEGCT_SERIAL_GROUPS` | `measurements/README.md`, `tools/measure-matrix.py` |

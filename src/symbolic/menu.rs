@@ -1,31 +1,22 @@
 // SPDX-License-Identifier: MIT
-//! Greedy menu marking by single-target branch and bound.
+//! Greedy menu marking by nearest distance.
 //!
 //! Each round removes one nearest target and cuts the option that first reaches it.
 //!
-//! ## The bound
+//! ## A round
 //!
-//! A round asks one worklist pass whether anything in play is still reachable, then walks
-//! the targets in bound order, one single-target pass each, and stops as soon as a target's
-//! bound cannot beat the best distance proven this round - ties included, since a tie
-//! cannot change which distance is least.
+//! One worklist pass asks whether anything in play is still reachable. Where something is,
+//! one pool of meeting crawls - a forward front over the menu, a backward front per target -
+//! finds the least distance over every option and every target, and which option owns it.
+//! See [`Backward::nearest_choices`].
 //!
-//! Two things bound a target, and the answer is the larger:
-//!
-//! - the structural choice distance, guards ignored and cut respected, which only ever
-//!   removes routes and so can only be optimistic;
-//! - whatever a previous round proved about that same target, because a round only cuts an
-//!   option and drops a winner from the contest and neither brings anything closer.
-//!
-//! THE SECOND IS WHAT MAKES THIS AFFORDABLE. The structural bound alone is far too loose to
-//! skip anything: on conversation 631 it reads 11 where the true distance is 20, so a first
-//! round evaluates every target it has. From the second round on the proven distance takes
-//! over, arrives within one of the truth, and the walk stops after two or three targets.
+//! The structural choice distance, guards ignored and cut respected, drops a target no
+//! route reaches at all before the pool spends a crawl on it.
 
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
-use super::backward::{Backward, Budget as PassBudget, Nearest, Position};
+use super::backward::{Backward, Budget as PassBudget, Position, Round};
 use super::guard_formula::GuardCompiler;
 use super::known::GroupShape;
 use super::novelty_search::{StoppedBy, choice_bounds};
@@ -36,6 +27,10 @@ use crate::world::world::ILookAheadWorld;
 pub struct Contestant {
     pub position: Position,
     pub baseline: Novelty,
+    /// What choosing it lands on directly: the option itself for an ordinary option, the
+    /// first entries an outcome opens for one half of a rolled check. `baseline` is the best
+    /// novelty among these.
+    pub landing: Vec<DialogueNodeId>,
 }
 
 #[derive(Debug)]
@@ -361,6 +356,37 @@ pub fn mark_menu<'a, F: Fn(DialogueNodeId) -> Novelty>(
     budget: &Budget,
     shape: &GroupShape,
 ) -> MenuAnswer {
+    mark_menu_blocking(
+        graph,
+        compiler,
+        world,
+        counter_cap,
+        novelty,
+        contestants,
+        budget,
+        shape,
+        &HashSet::new(),
+    )
+}
+
+/// [`mark_menu`], with `blocked` entries neither walkable nor claimable.
+///
+/// FOR A SEARCH ASKED AFTER THE MENU'S OWN: a locked check's halves are answered once every
+/// ordinary star is settled, with the menu's options and every entry those stars claimed
+/// blocked, so a half is starred only for content no other option reaches and without
+/// cycling back through the menu. See `bridge::answer_starts`.
+#[allow(clippy::too_many_arguments)]
+pub fn mark_menu_blocking<'a, F: Fn(DialogueNodeId) -> Novelty>(
+    graph: &LookAheadGraph,
+    compiler: &mut GuardCompiler<'a>,
+    world: &dyn ILookAheadWorld,
+    counter_cap: u32,
+    novelty: &F,
+    contestants: &[Contestant],
+    budget: &Budget,
+    shape: &GroupShape,
+    blocked: &HashSet<DialogueNodeId>,
+) -> MenuAnswer {
     let began = Instant::now();
     let mut answer = MenuAnswer {
         marks: contestants
@@ -380,17 +406,28 @@ pub fn mark_menu<'a, F: Fn(DialogueNodeId) -> Novelty>(
         elapsed: Duration::ZERO,
     };
     let options: HashSet<_> = contestants.iter().map(|c| c.position.option).collect();
-    let mut claimed = options.clone();
+    let mut claimed: HashSet<_> = options.union(blocked).copied().collect();
     let mut marked = HashSet::new();
     let mut failure = None;
-    // WHAT A ROUND PROVES, KEPT. A round only ever cuts an option and drops the winner from
-    // the contest, and both of those can only remove routes, so no target ever comes closer
-    // than it was. Its own last distance is therefore a bound on it from then on, and a far
-    // tighter one than the structural walk can give: on 631 the structural bound reads 11
-    // against a true distance of 20, which is too loose to skip anything at all.
-    let mut proven = HashMap::<DialogueNodeId, usize>::new();
-    let mut unreachable = HashSet::new();
     'classes: for class in [Novelty::UnseenAnyGame, Novelty::UnseenThisGame] {
+        // WHAT AN OPTION ALREADY LANDS ON IS ITS OWN. A contestant whose landing reaches this
+        // class is the nearest route there is to it - choosing it is zero steps away - so it
+        // claims those entries before any round runs, and its option is cut as a winner's is.
+        // Without this an open check whose Pass lands on unread content never competes, and
+        // any sibling that loops back through the menu and into the check claims the content
+        // the check itself shows.
+        let landed: Vec<usize> = (0..contestants.len())
+            .filter(|i| contestants[*i].baseline >= class)
+            .collect();
+        for &i in &landed {
+            claimed.extend(
+                contestants[i]
+                    .landing
+                    .iter()
+                    .copied()
+                    .filter(|id| novelty(*id) == class),
+            );
+        }
         let mut hunting: Vec<_> = (0..contestants.len())
             .filter(|i| {
                 !marked.contains(i) && worth_hunting(graph, &contestants[*i], novelty, class)
@@ -405,6 +442,8 @@ pub fn mark_menu<'a, F: Fn(DialogueNodeId) -> Novelty>(
                     .any(|i| contestants[*i].position.option == *option)
             })
             .collect();
+        cut.extend(blocked.iter().copied());
+        cut.extend(landed.iter().map(|i| contestants[*i].position.option));
         let mut in_play: Vec<_> = graph
             .nodes()
             .filter(|n| !n.is_group && novelty(n.id) == class && !claimed.contains(&n.id))
@@ -424,12 +463,7 @@ pub fn mark_menu<'a, F: Fn(DialogueNodeId) -> Novelty>(
                         .or_insert(distance);
                 }
             }
-            for (id, distance) in &proven {
-                if let Some(bound) = bounds.get_mut(id) {
-                    *bound = (*bound).max(*distance);
-                }
-            }
-            in_play.retain(|id| bounds.contains_key(id) && !unreachable.contains(id));
+            in_play.retain(|id| bounds.contains_key(id));
             if in_play.is_empty() {
                 break;
             }
@@ -485,67 +519,53 @@ pub fn mark_menu<'a, F: Fn(DialogueNodeId) -> Novelty>(
                 break 'classes;
             }
             drop(pass);
-            let mut best = None;
-            let mut chosen = None;
-            for &target in &in_play {
-                if best.is_some_and(|d| bounds[&target] >= d) {
-                    break;
-                }
-                if best.is_some_and(|d| bounds[&target] >= d) {
-                    break;
-                }
-                let left = budget.wall.saturating_sub(began.elapsed());
-                if left.is_zero() {
-                    failure = Some((StoppedBy::Time, false));
+            // ONE POOL FOR THE WHOLE ROUND. The forward half of a meeting search is the same
+            // walk for every target in the round - the same options, the same cut - so it is
+            // walked once and raced by every target's backward crawl, and the first meeting is
+            // the least distance over every option and every target still in play. See
+            // [`Backward::nearest_choices`].
+            let left = budget.wall.saturating_sub(began.elapsed());
+            if left.is_zero() {
+                failure = Some((StoppedBy::Time, false));
+                break 'classes;
+            }
+            answer.passes += 1;
+            let (distance, index, witness) = match Backward::nearest_choices(
+                graph,
+                &in_play,
+                &cut,
+                compiler,
+                world,
+                counter_cap,
+                &pass_budget(left),
+                &known,
+                &positions,
+            ) {
+                Round::Found {
+                    distance,
+                    winner,
+                    target,
+                    ..
+                } => (distance, hunting[winner], target),
+                Round::Unreachable => break,
+                Round::Unfinished { out_of_memory } => {
+                    failure = Some((StoppedBy::Incomplete, out_of_memory));
                     break 'classes;
                 }
-                answer.passes += 1;
-                let nearest = Backward::nearest(
-                    graph,
-                    target,
-                    &cut,
-                    compiler,
-                    world,
-                    counter_cap,
-                    &pass_budget(left),
-                    &known,
-                    &positions,
-                );
-                match nearest {
-                    Nearest::Found { distance, winner } => {
-                        proven.insert(target, distance);
-                        if best.is_none_or(|d| distance < d) {
-                            best = Some(distance);
-                            chosen = Some((hunting[winner], target));
-                        }
-                    }
-                    // Unreachable for the same reason it will stay unreachable: routes only
-                    // ever leave, so this one is done being asked about.
-                    Nearest::Unreachable => {
-                        unreachable.insert(target);
-                    }
-                    Nearest::Unfinished { out_of_memory } => {
-                        failure = Some((StoppedBy::Incomplete, out_of_memory));
-                        break 'classes;
-                    }
-                }
-            }
-            let distance = best.expect("worklist meet must have a nearest target");
+            };
             answer.rounds += 1;
-            if let Some((index, witness)) = chosen {
-                answer.marks[index] = Marked {
-                    best: class,
-                    distance: Some(distance),
-                    round: Some(answer.rounds),
-                    witness: Some(witness),
-                    complete: true,
-                    stopped_by: StoppedBy::Nothing,
-                    out_of_nodes: false,
-                };
-                marked.insert(index);
-                cut.insert(contestants[index].position.option);
-                claimed.insert(witness);
-            }
+            answer.marks[index] = Marked {
+                best: class,
+                distance: Some(distance),
+                round: Some(answer.rounds),
+                witness: Some(witness),
+                complete: true,
+                stopped_by: StoppedBy::Nothing,
+                out_of_nodes: false,
+            };
+            marked.insert(index);
+            cut.insert(contestants[index].position.option);
+            claimed.insert(witness);
             in_play.retain(|id| !claimed.contains(id));
             hunting.retain(|i| !marked.contains(i));
         }
@@ -600,12 +620,13 @@ mod tests {
         answer
     }
 
-    fn marking(
+    /// The apparatus a menu is answered with - world, manager, compiled guards and one
+    /// contestant per option - handed to `run`.
+    fn with_menu<R>(
         graph: &LookAheadGraph,
         options: &[i32],
-        unread: &[i32],
-        which: Which,
-    ) -> MenuAnswer {
+        run: impl FnOnce(&mut GuardCompiler<'_>, &TestWorld, &[Contestant]) -> R,
+    ) -> R {
         let world = TestWorld::new();
         let layout = DataLayout::for_graph(graph, 16, None, false);
         let vars = DataVars::new(&layout, graph.symbols(), DiagramBudget::modest());
@@ -625,35 +646,47 @@ mod tests {
                 )
                 .position(node(*id)),
                 baseline: Novelty::SeenThisGame,
+                landing: vec![node(*id)],
             })
             .collect();
-        let novelty = |id: DialogueNodeId| {
-            if unread.contains(&id.entry_id) {
-                Novelty::UnseenAnyGame
-            } else {
-                Novelty::SeenThisGame
-            }
-        };
-        let budget = Budget {
-            wall: Duration::from_secs(10),
-            each: Duration::from_secs(10),
-        };
-        let shape = GroupShape::of(graph);
-        let run = match which {
-            Which::Exact => mark_menu,
-            Which::Onward => mark_onward,
-            Which::Hybrid => mark_menu_hybrid,
-        };
-        run(
-            graph,
-            &mut compiler,
-            &world,
-            16,
-            &novelty,
-            &contestants,
-            &budget,
-            &shape,
-        )
+        run(&mut compiler, &world, &contestants)
+    }
+
+    fn marking(
+        graph: &LookAheadGraph,
+        options: &[i32],
+        unread: &[i32],
+        which: Which,
+    ) -> MenuAnswer {
+        with_menu(graph, options, |compiler, world, contestants| {
+            let novelty = |id: DialogueNodeId| {
+                if unread.contains(&id.entry_id) {
+                    Novelty::UnseenAnyGame
+                } else {
+                    Novelty::SeenThisGame
+                }
+            };
+            let budget = Budget {
+                wall: Duration::from_secs(10),
+                each: Duration::from_secs(10),
+            };
+            let shape = GroupShape::of(graph);
+            let run = match which {
+                Which::Exact => mark_menu,
+                Which::Onward => mark_onward,
+                Which::Hybrid => mark_menu_hybrid,
+            };
+            run(
+                graph,
+                compiler,
+                world,
+                16,
+                &novelty,
+                contestants,
+                &budget,
+                &shape,
+            )
+        })
     }
 
     /// A menu whose every route to the unread line goes back through the menu.
@@ -847,10 +880,10 @@ mod tests {
     ///
     /// ```text
     ///   A  no    it only reaches W by coming back to the menu and taking E first
-    ///   B  no    six nodes to X, where C is five - same content, further away
-    ///   C  yes   the nearest route to X
+    ///   B  one   no choices to X, the same as C - whichever wins, the other is cut
+    ///   C  of    the two
     ///   D  yes   the nearest route to Y
-    ///   E  yes   three steps to W by way of the menu, which is nearer than either
+    ///   E  yes   one choice to W by way of the menu, which is nearer than A's two
     ///   Z  no    ends the conversation
     /// ```
     ///
@@ -858,21 +891,28 @@ mod tests {
     /// where it started, so a walk pruned on POSITION alone would abandon it - and the route
     /// it opens is the shortest on the menu. Pruning on position and state together keeps
     /// it, and this is what says the shipped exact marking does.
+    ///
+    /// B AND C ARE A TIE, and this does not pin which of them breaks it. Distance counts
+    /// choices, and neither corridor passes one; B's extra entry is not what it measures.
     #[test]
     fn the_exact_marking_keeps_the_route_a_state_change_opens() {
         let answer = marking(&the_e_menu(), &E_MENU_OPTIONS, &E_MENU_UNREAD, Which::Exact);
+        let stars = starred(&answer);
 
         assert_eq!(
-            starred(&answer),
-            vec![false, false, true, true, true, false],
-            "A, B, C, D, E, Z",
+            [stars[0], stars[3], stars[4], stars[5]],
+            [false, true, true, false],
+            "A, D, E, Z",
         );
+        assert!(stars[1] != stars[2], "exactly one of B and C: {stars:?}");
+        let corridor = if stars[1] { 1 } else { 2 };
 
         // AND E IS NOT MERELY REACHED, it is ordered behind the two that are already there:
-        // C and D win their own rounds at distance 0, and E wins the round after, one step
-        // further out. A marking that found E by accident would not have it in third place.
+        // the X corridor and D win their own rounds at distance 0, and E wins the round
+        // after, one choice further out. A marking that found E by accident would not have
+        // it in third place.
         assert_eq!(answer.marks[4].distance, Some(1));
-        assert_eq!(answer.marks[2].distance, Some(0));
+        assert_eq!(answer.marks[corridor].distance, Some(0));
         assert_eq!(answer.marks[3].distance, Some(0));
     }
 
