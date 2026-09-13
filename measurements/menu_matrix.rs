@@ -20,8 +20,9 @@
 //! One group per row. Builds the adversarial profile - `menu_profile`, shared with
 //! `menu_residue` and `menu_wall` - takes its starts as the menu, and marks the whole menu
 //! against one manager through `bridge::mark_menu_as_shipped`, so each group gets the marking
-//! the product chooses for it. `DEGCT_MARKING=hybrid` or `DEGCT_MARKING=nearest` puts that one
-//! marking on every group instead.
+//! the product chooses for it. `DEGCT_MARKING` set to `hybrid`, `nearest`, `bnb` or `hybrid-bnb`
+//! puts that one marking on every group instead; the last two run each round of the exact
+//! marking as a branch and bound over single targets rather than as one pooled search.
 //!
 //! EVERY START IS A CONTESTANT, because the marking is competitive: an option that has
 //! nothing to hunt for is refused against the class being hunted, by the baseline it
@@ -40,10 +41,11 @@
 //! `setup ms` is how much of it was building the layout, the manager, the compiled guards
 //! and the seed rather than searching, so the searching is the difference.
 //!
-//! `asked` is fixed points run across the whole menu: one worklist pass per round to ask
-//! whether anything is still reachable, and one single-target pass per target the branch
-//! and bound did not skip. `rounds` is how many of them ended in a marker, which is how
-//! many options the menu claimed content for.
+//! `asked` is passes run across the whole menu: one worklist pass per round to ask whether
+//! anything is still reachable, then one pooled search per round - or, for `bnb` and
+//! `hybrid-bnb`, one single-target pass per target the branch and bound did not skip. The
+//! hybrids add the sibling-cut passes they ask first. `rounds` is how many rounds ended in a
+//! marker, which is how many options the menu claimed content for.
 //!
 //! `settled` and `partly` split the options by whether their answer is final. A menu that
 //! is mostly `partly` is one where the budget bound, and its milliseconds are a floor
@@ -185,16 +187,24 @@ enum Marking {
     Hybrid,
     /// The nearest-choice marking on every group, 761 included - see `menu::mark_menu`.
     Nearest,
+    /// The exact marking on every group with a branch and bound over single targets for each
+    /// round in place of the pooled search - see `menu::RoundSearch::BranchAndBound`.
+    BranchAndBound,
+    /// The hybrid on every group, falling back to the branch and bound rather than the pooled
+    /// search - see `menu::mark_menu_hybrid_by`.
+    HybridBranchAndBound,
 }
 
 /// What `DEGCT_MARKING` says for each marking.
 const SHIPPED: &str = "shipped";
 const HYBRID: &str = "hybrid";
 const NEAREST: &str = "nearest";
+const BRANCH_AND_BOUND: &str = "bnb";
+const HYBRID_BRANCH_AND_BOUND: &str = "hybrid-bnb";
 
-/// The marking `DEGCT_MARKING` names: `shipped`, the default, or `hybrid` or `nearest` to put
-/// one marking on every group, so row files can be taken each way and compared on the same
-/// profile and the same allowance (de-0jsf.20).
+/// The marking `DEGCT_MARKING` names: `shipped`, the default, or `hybrid`, `nearest`, `bnb` or
+/// `hybrid-bnb` to put one marking on every group, so row files can be taken each way and
+/// compared on the same profile and the same allowance (de-0jsf.20).
 ///
 /// # Panics
 ///
@@ -207,7 +217,12 @@ fn marking() -> Marking {
         "" | SHIPPED => Marking::Shipped,
         HYBRID => Marking::Hybrid,
         NEAREST => Marking::Nearest,
-        other => panic!("DEGCT_MARKING={other:?}: expected {SHIPPED}, {HYBRID} or {NEAREST}"),
+        BRANCH_AND_BOUND => Marking::BranchAndBound,
+        HYBRID_BRANCH_AND_BOUND => Marking::HybridBranchAndBound,
+        other => panic!(
+            "DEGCT_MARKING={other:?}: expected {SHIPPED}, {HYBRID}, {NEAREST}, \
+             {BRANCH_AND_BOUND} or {HYBRID_BRANCH_AND_BOUND}"
+        ),
     }
 }
 
@@ -428,6 +443,22 @@ where
                 &contestants,
                 &marking_budget,
                 &shape,
+            ),
+            Marking::BranchAndBound => menu::mark_menu_by(
+                marking_search,
+                novelty,
+                &contestants,
+                &marking_budget,
+                &shape,
+                menu::RoundSearch::BranchAndBound,
+            ),
+            Marking::HybridBranchAndBound => menu::mark_menu_hybrid_by(
+                marking_search,
+                novelty,
+                &contestants,
+                &marking_budget,
+                &shape,
+                menu::RoundSearch::BranchAndBound,
             ),
         };
         counted.options = contestants.len();

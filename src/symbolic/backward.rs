@@ -227,6 +227,43 @@ pub enum Round {
     },
 }
 
+/// The nearest option to ONE target, and which option it is.
+///
+/// What one target asks, where [`Round`] is what a whole round of targets asks. The branch
+/// and bound marking asks it once for each target it could not skip - see
+/// [`crate::symbolic::menu::RoundSearch::BranchAndBound`].
+#[derive(Debug, PartialEq, Eq)]
+pub enum Nearest {
+    Found {
+        distance: usize,
+        winner: usize,
+    },
+    /// No option still hunting can reach the target.
+    Unreachable,
+    Unfinished {
+        out_of_memory: bool,
+    },
+}
+
+/// What a single-target walk carries from one step to the next.
+///
+/// The question it was asked, the image its pre-images go through, and the layer being
+/// spread. Held together so that a step is one call with the entry it spreads from, rather
+/// than a dozen arguments of which two change.
+struct Walk<'w, 'a> {
+    graph: &'w LookAheadGraph,
+    world: &'w dyn ILookAheadWorld,
+    known: &'w Known,
+    cut: &'w HashSet<DialogueNodeId>,
+    positions: &'w [Position],
+    image: ActionImage<'a>,
+    /// What is waiting to be spread within the current layer.
+    frontier: HashMap<DialogueNodeId, BDDFunction>,
+    queue: Worklist<'w>,
+    /// The layer being spread, in choices from the target.
+    distance: usize,
+}
+
 impl<'a> Backward<'a> {
     /// Runs the fixed point backwards from `target`.
     pub fn reaching(
@@ -919,6 +956,204 @@ impl<'a> Backward<'a> {
 
     pub fn stats(&self) -> &BackwardStats {
         &self.stats
+    }
+
+    /// The nearest option to one target, walking back from the target alone.
+    ///
+    /// Distance is counted in choices, as [`Self::nearest_choices`] counts it: an entry is
+    /// charged when it is left, and only where it is a player line offered beside another.
+    /// The route's two ends are free.
+    ///
+    /// ONE FRONT, from the target. It keeps the cumulative set per entry and the layer being
+    /// spread, and stops in the first layer whose set meets an option's own states at that
+    /// option's entries - so the distance is exact for this target and says nothing about
+    /// any other.
+    pub fn nearest(
+        search: Search<'_, 'a>,
+        target: DialogueNodeId,
+        cut: &HashSet<DialogueNodeId>,
+        budget: &Budget,
+        known: &Known,
+        positions: &[Position],
+    ) -> Nearest {
+        let Search {
+            graph,
+            compiler,
+            world,
+            counter_cap,
+        } = search;
+        let vars = compiler.vars();
+        let began = std::time::Instant::now();
+        let mut this = Self {
+            vars,
+            sets: HashMap::new(),
+            stats: BackwardStats::default(),
+        };
+        let Some(node) = graph.get(target).filter(|n| !never_displays(n, world)) else {
+            return Nearest::Unreachable;
+        };
+        if cut.contains(&target) {
+            return Nearest::Unreachable;
+        }
+        let mut walk = Walk {
+            graph,
+            world,
+            known,
+            cut,
+            positions,
+            image: ActionImage::new(vars, counter_cap),
+            frontier: HashMap::new(),
+            queue: Worklist::new(known.order()),
+            distance: 0,
+        };
+        let seed = this.pre_enter(node, &vars.top(), compiler, world, &mut walk.image);
+        let mut next = HashMap::new();
+        if let Some(delta) = this.widen(target, &seed) {
+            next.insert(target, delta);
+        }
+        if let Some(found) = this.meeting(target, 0, positions) {
+            return found;
+        }
+        for distance in 0usize.. {
+            walk.distance = distance;
+            walk.queue = Worklist::new(known.order());
+            walk.frontier.clear();
+            // A stable order keeps diagram allocation and measurements repeatable.
+            let mut incoming: Vec<_> = std::mem::take(&mut next).into_iter().collect();
+            incoming.sort_by_key(|(id, _)| (id.conversation_id, id.entry_id));
+            for (id, states) in incoming {
+                // At the target these states have arrived nowhere yet. Everywhere else they
+                // are a choice's, already asked about when the choice was reached, and what
+                // this layer buys is leaving it.
+                if distance == 0 {
+                    walk.frontier.insert(id, states);
+                    walk.queue.push(id);
+                } else if let Some(found) = this.spread(&mut walk, compiler, id, &states) {
+                    return found;
+                }
+            }
+            while let Some(id) = walk.queue.pop() {
+                this.stats.steps += 1;
+                if began.elapsed() >= budget.time || this.stats.steps >= budget.steps {
+                    return Nearest::Unfinished {
+                        out_of_memory: false,
+                    };
+                }
+                let Some(delta) = walk.frontier.remove(&id) else {
+                    continue;
+                };
+                // LEAVING A CHOICE COSTS ONE, and the charge is the node's rather than the
+                // link's, so every route out of it belongs to the next layer. The target is
+                // where the route finishes and is free.
+                if id != target && graph.get(id).is_some_and(|n| n.choice) {
+                    let pending = next.get(&id).cloned().unwrap_or_else(|| vars.bottom());
+                    match pending.or(&delta) {
+                        Ok(joined) => {
+                            next.insert(id, joined);
+                        }
+                        Err(_) => {
+                            return Nearest::Unfinished {
+                                out_of_memory: true,
+                            };
+                        }
+                    }
+                    continue;
+                }
+                if let Some(found) = this.spread(&mut walk, compiler, id, &delta) {
+                    return found;
+                }
+                if this.stats.out_of_memory || walk.image.out_of_memory() {
+                    return Nearest::Unfinished {
+                        out_of_memory: true,
+                    };
+                }
+            }
+            if this.stats.out_of_memory || walk.image.out_of_memory() {
+                return Nearest::Unfinished {
+                    out_of_memory: true,
+                };
+            }
+            if next.is_empty() {
+                return Nearest::Unreachable;
+            }
+        }
+        unreachable!("choice distance exhausted usize")
+    }
+
+    /// Whether what is known at `id` meets an option that begins there, and which option.
+    fn meeting(
+        &self,
+        id: DialogueNodeId,
+        distance: usize,
+        positions: &[Position],
+    ) -> Option<Nearest> {
+        let states = self.sets.get(&id)?;
+        for (winner, position) in positions.iter().enumerate() {
+            if !position.entries.contains(&id) {
+                continue;
+            }
+            match states.and(&position.holding) {
+                Ok(meet) if meet.satisfiable() => return Some(Nearest::Found { distance, winner }),
+                Ok(_) => {}
+                Err(_) => {
+                    return Some(Nearest::Unfinished {
+                        out_of_memory: true,
+                    });
+                }
+            }
+        }
+        None
+    }
+
+    /// Walks back from `id` into every uncut parent, within the walk's current layer.
+    ///
+    /// `Some` where that settles the walk: an option met, or the manager full.
+    fn spread(
+        &mut self,
+        walk: &mut Walk<'_, 'a>,
+        compiler: &mut GuardCompiler<'a>,
+        id: DialogueNodeId,
+        delta: &BDDFunction,
+    ) -> Option<Nearest> {
+        let (graph, world, known, cut, positions) =
+            (walk.graph, walk.world, walk.known, walk.cut, walk.positions);
+        for &parent in known.parents_of(id) {
+            if cut.contains(&parent) {
+                continue;
+            }
+            let Some(node) = graph.get(parent) else {
+                continue;
+            };
+            let before = self.pre_enter(node, delta, compiler, world, &mut walk.image);
+            let Some(fresh) = self.widen(parent, &before) else {
+                continue;
+            };
+            if self.stats.out_of_memory || walk.image.out_of_memory() {
+                return Some(Nearest::Unfinished {
+                    out_of_memory: true,
+                });
+            }
+            if let Some(found) = self.meeting(parent, walk.distance, positions) {
+                return Some(found);
+            }
+            let waiting = walk
+                .frontier
+                .get(&parent)
+                .cloned()
+                .unwrap_or_else(|| self.vars.bottom());
+            match waiting.or(&fresh) {
+                Ok(joined) => {
+                    walk.frontier.insert(parent, joined);
+                    walk.queue.push(parent);
+                }
+                Err(_) => {
+                    return Some(Nearest::Unfinished {
+                        out_of_memory: true,
+                    });
+                }
+            }
+        }
+        None
     }
 
     /// The nearest target of many, and the option that gets there first.
