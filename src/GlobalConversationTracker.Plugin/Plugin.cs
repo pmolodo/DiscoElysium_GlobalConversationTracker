@@ -321,14 +321,14 @@ namespace GlobalConversationTracker
                 DisplaySection,
                 "HudCountOffsetX",
                 MainHudDialogueCountPatch.DefaultOffsetX,
-                "How far left of the HUD's money/time panel the dialogue counts sit, in canvas units. "
-                + "Negative is left, towards the thought cabinet button.");
+                "How far right of the money display's right edge the dialogue counts end, in canvas "
+                + "units. Negative is left. Zero right aligns them with the money's digits.");
             var hudCountOffsetY = Config.Bind(
                 DisplaySection,
                 "HudCountOffsetY",
                 MainHudDialogueCountPatch.DefaultOffsetY,
-                "How far above the money display's own line the pair of dialogue counts sits, in canvas "
-                + "units. Negative is down. Zero straddles that line, one count either side of it.");
+                "How far above the money display's bottom edge the top of the dialogue counts sits, in "
+                + "canvas units. Negative is down. Zero stacks them directly under the money.");
 
             // Config for the same reason. Anything Unity's ColorUtility can read works.
             var novelOptionColor = Config.Bind(

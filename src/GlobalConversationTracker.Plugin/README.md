@@ -41,10 +41,11 @@ a playthrough:
 
 - `HudMoneyController.Start` - the money display's own startup, in the live HUD the `Init`
   scene builds. The postfix adds two rows under that display: how many dialogue entries have
-  been reached in the save being played, and how many across all saves. They sit in the gap
-  between the thought cabinet button and the money, in the money's own font, and are placed
-  off the `HUD Money Time` panel's rect as measured at runtime, so they land in the same place
-  at any aspect ratio. Hanging them off the money display is what makes them fade with the
+  been reached in the save being played, and how many across all saves. They sit directly
+  under the money, right aligned with its digits and in its own font, and are placed off the
+  money display's rect as measured at runtime. That rect lives in a panel pinned to the
+  bottom-right corner, which keeps its shape at any screen width, so they land in the same
+  place at any aspect ratio. Hanging them off the money display is what makes them fade with the
   HUD: each HUD element fades itself, and the panel they share never does. `HudCountOffsetX`
   and `HudCountOffsetY` in the plugin's config file nudge the pair from there.
 

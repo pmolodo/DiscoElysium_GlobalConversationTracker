@@ -13,9 +13,8 @@ namespace GlobalConversationTracker
 {
     /// <summary>
     /// The display hook: the main HUD carries how many dialogue entries have been
-    /// reached, in the gap between the thought cabinet button and the money/time
-    /// panel at the bottom of the screen. Two rows - this save above, every save
-    /// below - each prefixed by its own icon.
+    /// reached, directly under the money display at the bottom right of the screen. Two
+    /// rows - this save above, every save below - each prefixed by its own icon.
     /// </summary>
     /// <remarks>
     /// <para>The HUD rather than the character sheet, which is gated behind two pieces
@@ -38,11 +37,18 @@ namespace GlobalConversationTracker
     /// instance in a private static, and <c>HudController</c> belongs to the HUD
     /// hierarchy that is not on screen.</para>
     ///
-    /// <para>The panel's left edge is the right-hand wall of the gap the display sits
-    /// in, so the rows are placed against it with a right-hand pivot and grow leftwards
-    /// towards the thought cabinet button. The two numbers share a right edge; the icon
-    /// column is measured off whichever number is wider, so the icons do not step in
-    /// and out with the digits beside them.</para>
+    /// <para>THE MONEY DISPLAY'S OWN BOTTOM-RIGHT CORNER is what the rows hang from, and
+    /// nothing outside the panel it sits in. The panel is pinned to the bottom-right of a
+    /// fitter that scales with the screen's height, so what lies inside it keeps its shape
+    /// at any width - where the gap between the panel and the thought cabinet button, the
+    /// obvious other place to put them, narrows as the screen does. Under the money is
+    /// free: the hand slots sit under the clock, to its right.</para>
+    ///
+    /// <para>The numbers are right aligned with the money's own digits and grow leftwards;
+    /// the icon column is measured off whichever number is wider, so the icons do not step
+    /// in and out with the digits beside them, and it lands roughly under the money's own
+    /// glyph. Only roughly, because that glyph is a character of the money's text rather
+    /// than an object of its own, and it moves as the sum gains or loses digits.</para>
     ///
     /// <para>The rows are children of the money display, not of the panel, so they fade
     /// with it. The HUD does not hide itself as a panel: each element carries its own
@@ -68,17 +74,15 @@ namespace GlobalConversationTracker
     internal static class MainHudDialogueCountPatch
     {
         /// <summary>
-        /// How far left of the money/time panel's left edge the counts' right-hand
-        /// edge sits, in canvas units. Negative is left. The measured gap between that
-        /// edge and the thought cabinet button is about 117 units, so this leaves room
-        /// for an icon and six or seven digits before anything collides.
+        /// How far right of the money display's right edge the counts' right-hand edge
+        /// sits, in canvas units. Negative is left. Zero right aligns them with the
+        /// money's own digits.
         /// </summary>
-        internal const float DefaultOffsetX = -10f;
+        internal const float DefaultOffsetX = 0f;
 
         /// <summary>
-        /// How far the pair of rows sits above (positive) or below (negative) the
-        /// money display's own centre line, in canvas units. Zero straddles it, which
-        /// keeps the block tied to the row of the HUD it lives in.
+        /// How far above (positive) or below (negative) the money display's bottom edge
+        /// the top of the rows sits, in canvas units. Zero stacks them directly under it.
         /// </summary>
         internal const float DefaultOffsetY = 0f;
 
@@ -113,9 +117,8 @@ namespace GlobalConversationTracker
         private const float RectWidth = 240f;
 
         /// <summary>
-        /// The gap between one row's baseline and the next, as a multiple of the font
-        /// size. The pair is centred on the money's line, so each row sits half of this
-        /// away from it.
+        /// The height of one row, and so the gap between one row's centre and the next,
+        /// as a multiple of the font size.
         /// </summary>
         private const float LineSpacingInFontSizes = 1.15f;
 
@@ -288,20 +291,11 @@ namespace GlobalConversationTracker
                 }
 
                 RectTransform moneyRect = money.GetComponent<RectTransform>();
-                if (moneyRect is null || moneyRect.parent is null)
+                if (moneyRect is null)
                 {
                     log.Warning(
-                        "The HUD money display is not a child rect the way the Init scene builds it, so "
-                        + "there is nowhere to put the dialogue counts. The HUD is unchanged.");
-                    return;
-                }
-
-                RectTransform panel = moneyRect.parent.GetComponent<RectTransform>();
-                if (panel is null)
-                {
-                    log.Warning(
-                        "The HUD money display's parent is not a rect, so the dialogue counts have no "
-                        + "panel edge to sit beside. The HUD is unchanged.");
+                        "The HUD money display is not a rect the way the Init scene builds it, so there "
+                        + "is nowhere to put the dialogue counts. The HUD is unchanged.");
                     return;
                 }
 
@@ -322,22 +316,19 @@ namespace GlobalConversationTracker
                 DestroyStale(moneyRect, CurrentSaveRowName);
                 DestroyStale(moneyRect, AllSavesRowName);
 
-                // Half a line above the money's own line and half a line below it, so
-                // the pair straddles the row of the HUD it belongs to. With one row
-                // switched off there is no pair to straddle with, so the survivor sits
-                // on that line rather than hanging half a line off it.
+                // The first row directly under the money, the second a line below it.
+                // With one row switched off, the survivor takes the top place rather than
+                // leaving a gap where the other would have been.
                 float lineSpacing = donor.fontSize * LineSpacingInFontSizes;
-                float halfLine = _showCurrentSave && _showAllSaves ? lineSpacing / 2f : 0f;
+                float secondRow = _showCurrentSave ? -lineSpacing : 0f;
 
                 CountRow? currentSave = _showCurrentSave
                     ? Build(
-                        panel, moneyRect, donor, CurrentSaveRowName, CurrentSaveIconFileName,
-                        halfLine, log)
+                        moneyRect, donor, CurrentSaveRowName, CurrentSaveIconFileName, 0f, log)
                     : null;
                 CountRow? allSaves = _showAllSaves
                     ? Build(
-                        panel, moneyRect, donor, AllSavesRowName, AllSavesIconFileName,
-                        -halfLine, log)
+                        moneyRect, donor, AllSavesRowName, AllSavesIconFileName, secondRow, log)
                     : null;
 
                 _currentSaveRow = currentSave;
@@ -372,25 +363,17 @@ namespace GlobalConversationTracker
         }
 
         /// <summary>
-        /// Creates one row - a right-aligned number with its icon - and places it
-        /// against the panel's left edge, <paramref name="verticalOffset"/> units from
-        /// the money display's centre line.
+        /// Creates one row - a right-aligned number with its icon - and places it under
+        /// the money display, right aligned with its digits and
+        /// <paramref name="verticalOffset"/> units below the first row's place.
         /// </summary>
         /// <remarks>
-        /// The placement is computed, not written down: the HUD lives inside
-        /// <c>Global UI Fitter</c>, whose size follows the screen's aspect ratio, so
-        /// reading both rects at attach time is the only way to land in the same place
-        /// on an ultrawide monitor as on a 16:9 one.
-        /// <para>Two coordinate systems, because the parent is not the reference. The
-        /// rows hang off the money display to inherit its fading, but are positioned
-        /// against the panel's left edge - and the money's own rect is far wider than
-        /// the number drawn in it, with its left edge off past the other side of the
-        /// screen. So the panel's left edge is converted into the money's coordinates,
-        /// with a right-hand pivot so a negative x offset moves the rows into the gap.
-        /// </para>
+        /// The placement is read off the money display's rect at attach time rather than
+        /// written down. Its right edge is where its digits end; its left edge is far off
+        /// past the other side of the screen, so only the right edge and the bottom are
+        /// used, with a right-hand pivot so the number grows leftwards.
         /// </remarks>
         private static CountRow Build(
-            RectTransform panel,
             RectTransform moneyRect,
             TextMeshProUGUI donor,
             string name,
@@ -418,30 +401,26 @@ namespace GlobalConversationTracker
             // Nothing here is clickable, and the HUD underneath is.
             display.raycastTarget = false;
 
-            Rect panelRect = panel.rect;
-            Rect moneyLocal = moneyRect.rect;
-
-            // The panel's bottom-left corner, said in the money display's own
-            // coordinates. Only the x of it is used; the y comes from the money rect,
-            // which is the line the numbers have to share.
-            float panelLeft = moneyRect.InverseTransformPoint(
-                panel.TransformPoint(new Vector3(panelRect.x, panelRect.y, 0f))).x;
-            float moneyCentreY = moneyLocal.y + (moneyLocal.height / 2f);
-
             RectTransform rect = display.rectTransform;
 
-            // Anchored to the money rect's own bottom-left corner, so anchoredPosition
-            // below is measured from (moneyLocal.x, moneyLocal.y).
-            rect.anchorMin = new Vector2(0f, 0f);
-            rect.anchorMax = new Vector2(0f, 0f);
+            // Anchored to the money rect's own bottom-right corner, so anchoredPosition
+            // below is measured from where its digits end, along the bottom of its box.
+            rect.anchorMin = new Vector2(1f, 0f);
+            rect.anchorMax = new Vector2(1f, 0f);
             rect.pivot = new Vector2(1f, 0.5f);
             float rowHeight = donor.fontSize * LineSpacingInFontSizes;
-            rect.sizeDelta = new Vector2(
-                RectWidth,
-                rowHeight > 0f ? rowHeight : FallbackRowHeight);
+            if (rowHeight <= 0f)
+            {
+                rowHeight = FallbackRowHeight;
+            }
+
+            rect.sizeDelta = new Vector2(RectWidth, rowHeight);
+
+            // The pivot is the row's centre, so the first row hangs half its own height
+            // below the money's bottom edge and its top touches it.
             rect.anchoredPosition = new Vector2(
-                (panelLeft + _offsetX) - moneyLocal.x,
-                (moneyCentreY + verticalOffset + _offsetY) - moneyLocal.y);
+                _offsetX,
+                (-rowHeight / 2f) + verticalOffset + _offsetY);
 
             // Drawn after the money display's own flip clock. The two do not overlap,
             // but a number that could end up behind another one would be a silent
