@@ -1,32 +1,36 @@
 #!/usr/bin/env python
 
-"""Which thoughts change passive checks, and how, read out of the prefab the game ships.
+"""Which thoughts change what an offline world answers, and how, read out of the prefab the game ships.
 
 ## What this answers, and why the save cannot
 
-A passive check's threshold, and whether it passes at all, can depend on the thoughts the
-player holds. The game applies that through `ThoughtAlterant.ModifyPassiveTargetValue` and
-`ThoughtAlterant.PassiveSuccess`, reading the live cabinet. A save records only which thought
-is in which state; what a thought DOES is a CharacterEffect on its definition in
-`Sunshine Data.prefab`. So an offline fixture needs this table beside the save.
+A save records which thought is in which state, and the results of some effects - but not
+what a thought DOES while it is held. That is a CharacterEffect on the thought's definition
+in `Sunshine Data.prefab`, and the game re-applies it from there every time a save loads. So
+an offline fixture needs this table beside the save.
 
-Two effect types touch passive checks, and three thoughts in the whole game carry them:
+## Every effect type, and what an offline world makes of it
 
-- PASSIVE_TARGET_MODIFIER moves the threshold of every passive check whose skill belongs to
-  one ability, by the effect's parameter.
-- PASSIVES_SUCCEED forces every passive check of one skill through.
+Read from the decompiled game - `CharacterEffect.Apply` for what each type does,
+`CharacterSheetPersister.ThoughtEffectShouldPersist` for which a load re-applies - and held
+against what the look-ahead is asked: the plugin consults only the two passive-check hooks,
+and every white and red check is carried both ways whatever its odds.
+
+- APPLIED, and so written to the table: PASSIVE_TARGET_MODIFIER moves the threshold of every
+  passive check whose skill belongs to one ability; PASSIVES_SUCCEED forces every passive
+  check of one skill through.
+- Everything else is classified in NOT_APPLIED with its reason. A type in neither is refused,
+  so a game patch that adds one stops this tool rather than being silently ignored.
 
 ## What was measured, because the prefab does not say it
 
-The prefab gives an ability, a skill INDEX and a parameter; it does not say which way the
-parameter moves a threshold, which thought state applies it, or which skill an index is.
-All three were measured in game on 2026-09-13 (de-2jlj): at-trashcan against the same save
-with lawbringer, remote_viewer and age_bracket FIXED moved exactly nine checks from fail to
-pass. A parameter of -1 lowers the threshold by one; the effects are completion effects and
-apply to a FIXED thought; and PASSIVES_SUCCEED's skill index 20 is HAND/EYE COORDINATION.
-
-A skill index this has not measured is refused rather than guessed, because a wrong guess
-decides checks the wrong way and nothing downstream would say so.
+The prefab gives an ability, a skill index and a parameter; it does not say which way the
+parameter moves a threshold or which thought state applies it. Both were measured in game on
+2026-09-13 (de-2jlj): at-trashcan against the same save with lawbringer, remote_viewer and
+age_bracket FIXED moved exactly nine checks from fail to pass. A parameter of -1 lowers the
+threshold by one, and the effects are completion effects applied to a FIXED thought. Which
+skill an index is comes from the game's `SkillType` enum, which agrees with the measured
+index 20, Hand/Eye Coordination.
 
 ## Where the prefab comes from
 
@@ -63,13 +67,72 @@ FORMAT_VERSION = 1
 
 TARGET_MODIFIER = "PASSIVE_TARGET_MODIFIER"
 SUCCEEDS = "PASSIVES_SUCCEED"
+REPUTATION_BONUS = "REPUTATION_BONUS"
 
 # Which field of a thought lists the effects, and when the game applies them.
 PHASES = {"researchEffects": "research", "completionEffects": "completion"}
 
-# The SkillType a CharacterEffect's skill index stands for, for the indices a passive effect
-# uses. Measured, not read: see the module doc.
-SKILL_BY_INDEX = {20: "HE_COORDINATION"}
+IN_THE_SAVE = "the save already holds its result, and loading one does not re-apply it"
+ROLLED_ONLY = "moves only a white or red check's target or odds, which the look-ahead carries both ways"
+NOT_ASKED = "changes nothing a dialogue guard or check reads"
+
+# Every effect type that is deliberately not applied offline, and why.
+NOT_APPLIED = {
+    "COMMUNISM_XP_BONUS": NOT_ASKED,
+    "DAMAGE": IN_THE_SAVE,
+    "DRUGS_ARE_BAD_MKAY": NOT_ASKED,
+    "FEMALE_TARGET": ROLLED_ONLY,
+    "FIND_BETTER_ITEMS": NOT_ASKED,
+    "HEAL": IN_THE_SAVE,
+    "KIM_TARGET": ROLLED_ONLY,
+    "LUA_COMMAND": IN_THE_SAVE,
+    "MALE_TARGET": ROLLED_ONLY,
+    "MAX_LEARNING_CAP": NOT_ASKED,
+    "MODIFY_CAMERA_MAX_ZOOM_LIMIT": NOT_ASKED,
+    "MOUTH_SLOT": NOT_ASKED,
+    "REOPEN_WHITE": IN_THE_SAVE,
+    "SKILL_BONUS": IN_THE_SAVE,
+    "SKILL_BONUS_WHEN_UNARMED": ROLLED_ONLY,
+    "SKILL_BONUS_WITHOUT_SHIRT": ROLLED_ONLY,
+    "STAT_BONUS": IN_THE_SAVE,
+    "THC_CRIT_RANGE_EXPAND": ROLLED_ONLY,
+    "THC_ORB_MONEY": NOT_ASKED,
+    "THC_ORB_XP": NOT_ASKED,
+    "THC_RED_CHECK_FAILURE": "forces every red check to fail, which the look-ahead does not model (de-kmtt.6)",
+    "TOOLTIP": NOT_ASKED,
+    "XP_REWARD": IN_THE_SAVE,
+}
+
+# The SkillType each index names, from the game's `Sunshine.Metric.SkillType` enum - the
+# skills the character sheet holds. The four Perception senses, Convalescence and ALT are
+# left out: the fixture collapses a sense onto Perception, so an effect naming one would be
+# decided against a skill it does not name.
+SKILL_BY_INDEX = {
+    1: "LOGIC",
+    2: "ENCYCLOPEDIA",
+    3: "RHETORIC",
+    4: "DRAMA",
+    5: "CONCEPTUALIZATION",
+    6: "VISUAL_CALCULUS",
+    7: "VOLITION",
+    8: "INLAND_EMPIRE",
+    9: "EMPATHY",
+    10: "AUTHORITY",
+    11: "SUGGESTION",
+    12: "ESPRIT_DE_CORPS",
+    13: "PHYSICAL_INSTRUMENT",
+    14: "ELECTROCHEMISTRY",
+    15: "ENDURANCE",
+    17: "HALF_LIGHT",
+    18: "PAIN_THRESHOLD",
+    19: "SHIVERS",
+    20: "HE_COORDINATION",
+    21: "PERCEPTION",
+    26: "REACTION",
+    27: "SAVOIR_FAIRE",
+    28: "INTERFACING",
+    29: "COMPOSURE",
+}
 
 
 def survey_module():
@@ -83,8 +146,42 @@ def survey_module():
     return module
 
 
-def passive_effects(prefab):
-    """Every effect on a thought that changes a passive check, as table rows."""
+def applied_row(thought, phase, kind, effect, body, survey):
+    """The table row for one effect, or None when it is classified as not applied."""
+    if kind == TARGET_MODIFIER:
+        if effect["ability"] in ("-", "?"):
+            raise RuntimeError(f"{thought}: a {kind} that names no ability")
+        return {
+            "ability": effect["ability"],
+            "amount": effect["parameter"],
+            "effect": kind,
+            "phase": phase,
+            "thought": thought,
+        }
+    if kind == SUCCEEDS:
+        index = effect["skill"]
+        if index not in SKILL_BY_INDEX:
+            raise RuntimeError(f"{thought}: a {kind} for skill index {index}, which is not a skill the sheet holds")
+        return {
+            "effect": kind,
+            "phase": phase,
+            "skill": SKILL_BY_INDEX[index],
+            "thought": thought,
+        }
+    if kind == REPUTATION_BONUS:
+        # A Lua write to reputation.<name>, which guards read. With no name the game looks for
+        # a variable called "reputation." and, finding none, does nothing.
+        reputation = survey.scalar(body, "stringParameter", "")
+        if reputation:
+            raise RuntimeError(f"{thought}: a {kind} for reputation.{reputation}, which is not handled")
+        return None
+    if kind in NOT_APPLIED:
+        return None
+    raise RuntimeError(f"{thought}: an effect type {kind} with no classification - see the module doc")
+
+
+def applied_effects(prefab):
+    """Every effect on a thought that changes what an offline world answers, as table rows."""
     survey = survey_module()
     thoughts, effects = survey.read(prefab)
 
@@ -96,43 +193,18 @@ def passive_effects(prefab):
                 if file_id not in effects:
                     continue
                 effect = survey.effect_of(effects[file_id])
-                kind = effect["effect"]
-                if kind == TARGET_MODIFIER:
-                    if effect["ability"] in ("-", "?"):
-                        raise RuntimeError(f"{thought}: a {kind} that names no ability")
-                    rows.append(
-                        {
-                            "ability": effect["ability"],
-                            "amount": effect["parameter"],
-                            "effect": kind,
-                            "phase": phase,
-                            "thought": thought,
-                        }
-                    )
-                elif kind == SUCCEEDS:
-                    index = effect["skill"]
-                    if index not in SKILL_BY_INDEX:
-                        raise RuntimeError(
-                            f"{thought}: a {kind} for skill index {index}, which has not been "
-                            "measured in game - see the module doc before adding it"
-                        )
-                    rows.append(
-                        {
-                            "effect": kind,
-                            "phase": phase,
-                            "skill": SKILL_BY_INDEX[index],
-                            "thought": thought,
-                        }
-                    )
+                row = applied_row(thought, phase, effect["effect"], effect, effects[file_id], survey)
+                if row is not None:
+                    rows.append(row)
 
     if not rows:
-        raise RuntimeError(f"{prefab} carries no passive-check effect on any thought")
+        raise RuntimeError(f"{prefab} carries no applied effect on any thought")
     rows.sort(key=lambda row: (row["thought"], row["phase"], row["effect"]))
     return rows
 
 
 def write_table(prefab, out):
-    rows = passive_effects(prefab)
+    rows = applied_effects(prefab)
     document = {
         "_format": FORMAT,
         "_formatVersion": FORMAT_VERSION,
@@ -144,7 +216,7 @@ def write_table(prefab, out):
         json.dump(document, handle, indent=2, ensure_ascii=False, sort_keys=True)
         handle.write("\n")
 
-    print(f"{len(rows)} passive-check effects, written to {out}")
+    print(f"{len(rows)} applied thought effects, written to {out}")
 
 
 ###############################################################################
