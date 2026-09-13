@@ -83,6 +83,10 @@ fn removals(patch: &Value) -> Result<Vec<String>, DiffFault> {
 }
 
 /// One document overlaid on another, with the named paths dropped on the way.
+///
+/// A REMOVAL CAN SIT BENEATH A KEY THE CHANGES NEVER MENTION, so an unchanged object is
+/// still walked where some removal path lies under it. Copying it whole instead would keep
+/// exactly what the diff says to drop.
 fn merge(baseline: &Value, changes: &Value, path: &str, removed: &[String]) -> Value {
     let (Some(old), Some(changed)) = (baseline.as_object(), changes.as_object()) else {
         return changes.clone();
@@ -95,10 +99,14 @@ fn merge(baseline: &Value, changes: &Value, path: &str, removed: &[String]) -> V
             continue;
         }
 
+        let beneath = format!("{child}/");
         merged.insert(
             name.clone(),
             match changed.get(name) {
                 Some(change) => merge(value, change, &child, removed),
+                None if value.is_object() && removed.iter().any(|at| at.starts_with(&beneath)) => {
+                    merge(value, &Value::Object(Map::new()), &child, removed)
+                }
                 None => value.clone(),
             },
         );
@@ -223,6 +231,28 @@ mod tests {
 
         assert_eq!(patch[REMOVE_KEY], json!(["/b"]));
         round_trip(baseline, target);
+    }
+
+    /// A removal is honoured even beneath a key the changes say nothing about - the shape a
+    /// hand-written diff takes when it changes one branch of an object and prunes another.
+    #[test]
+    fn a_removal_beneath_an_unchanged_key_is_still_removed() {
+        let baseline = json!({
+            "holder": { "changed": 1, "cache": { "gone": true, "kept": true } },
+        });
+        let patch = json!({
+            "_format": "json-diff",
+            "_formatVersion": 1,
+            CHANGES_KEY: { "holder": { "changed": 2 } },
+            REMOVE_KEY: ["/holder/cache/gone"],
+        });
+
+        let merged = apply(&baseline, &patch).expect("it applies");
+
+        assert_eq!(
+            merged,
+            json!({ "holder": { "changed": 2, "cache": { "kept": true } } })
+        );
     }
 
     #[test]

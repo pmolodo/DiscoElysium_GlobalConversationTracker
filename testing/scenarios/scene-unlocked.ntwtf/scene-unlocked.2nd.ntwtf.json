@@ -1,6 +1,4 @@
 {
-  "_format": "json-diff",
-  "_formatVersion": 1,
   "_base": "../at-trashcan.ntwtf/at-trashcan.2nd.ntwtf.json",
   "_changes": {
     "failedWhiteChecksHolder": {
@@ -19,9 +17,12 @@
           "village.netpicker_suggestion_whitecheck"
         ],
         "whirling.garte_body_mercenary": []
-      }
+      },
+      "WhiteCheckCache": {}
     }
   },
+  "_format": "json-diff",
+  "_formatVersion": 1,
   "_remove": [
     "/failedWhiteChecksHolder/WhiteCheckCache/whirling.kim_inland_mystery_created"
   ]
