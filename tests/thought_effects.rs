@@ -18,7 +18,7 @@
 //! So the claim is the whole difference, not a subset: the fixture must move these nine and no
 //! other check.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use lookahead_engine::index::{build_group_graph, read_index};
 
@@ -83,4 +83,43 @@ fn internalised_thoughts_move_exactly_the_checks_the_game_moved() {
         now_failing.is_empty(),
         "no thought makes a check harder, yet these now fail: {now_failing:?}"
     );
+}
+
+/// A research effect applies while its thought is cooking, and lifts once it is fixed.
+///
+/// No thought in the shipped game carries a research-phase passive effect, so the table here
+/// is made up and the rule is held to the game's load code instead of a measurement:
+/// `CharacterSheetPersister.DeserializeItemsAndThoughts` applies a COOKING thought's research
+/// effects and a FIXED thought's completion effects, and neither applies the other list.
+#[test]
+fn a_research_effect_applies_only_while_its_thought_is_cooking() {
+    const THOUGHT: &str = "made_up";
+    const SHIFT: i32 = -2;
+
+    let effects = [serde_json::json!({
+        "ability": "PSY",
+        "amount": SHIFT,
+        "effect": "PASSIVE_TARGET_MODIFIER",
+        "phase": "research",
+        "thought": THOUGHT,
+    })];
+    let ability_of = HashMap::from([
+        ("LOGIC".to_string(), "INT".to_string()),
+        ("VOLITION".to_string(), "PSY".to_string()),
+    ]);
+
+    for (state, expected) in [("COOKING", SHIFT), ("FIXED", 0), ("UNKNOWN", 0)] {
+        let states = HashMap::from([(THOUGHT.to_string(), state.to_string())]);
+        let thoughts = fixtures::passive_thoughts(&states, &ability_of, &effects);
+        assert_eq!(
+            thoughts.threshold_shift("VOLITION"),
+            expected,
+            "a psyche skill, with the thought {state}"
+        );
+        assert_eq!(
+            thoughts.threshold_shift("LOGIC"),
+            0,
+            "an intellect skill, with the thought {state}"
+        );
+    }
 }

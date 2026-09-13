@@ -538,9 +538,9 @@ pub fn checks_in_save(save: &str, conversations: &[i32]) -> Option<Checks> {
 /// its ability, and lawbringer's PASSIVES_SUCCEED forces Hand/Eye Coordination through. All
 /// three are completion effects, applied to a FIXED thought.
 ///
-/// A RESEARCH-PHASE PASSIVE EFFECT IS REFUSED. None exists in the shipped game, so whether one
-/// applies while a thought is cooking has never been seen, and deciding checks on a guess is
-/// the failure this reading exists to remove.
+/// A RESEARCH-PHASE EFFECT applies to a COOKING thought, and to nothing else - see
+/// [`state_applying`]. No passive effect in the shipped game is a research effect, so that
+/// half is held to the game's load code rather than to a measurement.
 pub struct PassiveThoughts {
     /// How far each skill's thresholds move.
     shifts: HashMap<String, i32>,
@@ -555,8 +555,22 @@ impl PassiveThoughts {
     }
 }
 
-/// The state a thought has to be in for its completion effects to apply.
-const COMPLETION_STATE: &str = FIXED;
+/// The state a thought has to be in for an effect of `phase` to apply.
+///
+/// The game's own load, `CharacterSheetPersister.DeserializeItemsAndThoughts`, applies a
+/// COOKING thought's research effects and a FIXED thought's completion effects, and neither
+/// applies the other list - so a research effect lifts when its thought is finished.
+///
+/// # Panics
+///
+/// If the phase is not one of the two a thought's definition has.
+fn state_applying(phase: &str, thought: &str) -> &'static str {
+    match phase {
+        "research" => COOKING,
+        "completion" => FIXED,
+        other => panic!("{thought}: an effect in the '{other}' phase, which no thought has"),
+    }
+}
 
 /// What a save's thoughts do to its passive checks - see [`PassiveThoughts`].
 ///
@@ -579,22 +593,36 @@ pub fn passive_thoughts_in_save(save: &str) -> PassiveThoughts {
         })
         .collect();
 
+    passive_thoughts(&states, &ability_of, thought_effects())
+}
+
+/// What thoughts in `states` do to passive checks, given each skill's ability and the effects
+/// table.
+///
+/// Apart from [`passive_thoughts_in_save`] so a table the game does not ship can be held to
+/// the same rules.
+///
+/// # Panics
+///
+/// If an effect names a field, effect or phase this does not know.
+pub fn passive_thoughts(
+    states: &HashMap<String, String>,
+    ability_of: &HashMap<String, String>,
+    effects: &[serde_json::Value],
+) -> PassiveThoughts {
     let mut thoughts = PassiveThoughts {
         shifts: HashMap::new(),
         succeeding: HashSet::new(),
     };
-    for effect in thought_effects() {
+    for effect in effects {
         let text = |key: &str| {
             effect[key]
                 .as_str()
                 .unwrap_or_else(|| panic!("a thought effect has no '{key}': {effect}"))
         };
         let thought = text("thought");
-        match text("phase") {
-            "completion" => {}
-            other => panic!("{thought}: a passive effect in the '{other}' phase, never measured"),
-        }
-        if states.get(thought).map(String::as_str) != Some(COMPLETION_STATE) {
+        let wanted = state_applying(text("phase"), thought);
+        if states.get(thought).map(String::as_str) != Some(wanted) {
             continue;
         }
 
@@ -605,7 +633,7 @@ pub fn passive_thoughts_in_save(save: &str) -> PassiveThoughts {
                     .as_i64()
                     .unwrap_or_else(|| panic!("{thought}: a threshold modifier with no amount"))
                     as i32;
-                for (skill, owner) in &ability_of {
+                for (skill, owner) in ability_of {
                     if owner == ability {
                         *thoughts.shifts.entry(skill.clone()).or_default() += amount;
                     }
