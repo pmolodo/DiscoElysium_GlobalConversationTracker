@@ -327,7 +327,7 @@ fn the_driver_and_the_shipped_call_find_what_the_reference_walk_finds() {
             }
         };
 
-        let expected = walk.best_novelty(&novelty);
+        let expected = walk.best_novelty(novelty);
         // THE PRODUCT'S OWN LAYOUT, money included where the group reads it. A comparison
         // against a layout nothing ships would check an engine nobody runs.
         let layout = DataLayout::for_group(&graph, &world, COUNTER_CAP);

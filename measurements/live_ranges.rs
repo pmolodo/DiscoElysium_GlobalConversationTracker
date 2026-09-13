@@ -146,10 +146,10 @@ fn main() {
             let names = DataLayout::read_by_nodes(std::iter::once(node), &symbols);
             let mut read_here = HashSet::new();
             for name in &names {
-                if let Some(slot) = symbols.find(name) {
-                    if width.contains_key(&slot) {
-                        read_here.insert(slot);
-                    }
+                if let Some(slot) = symbols.find(name)
+                    && width.contains_key(&slot)
+                {
+                    read_here.insert(slot);
                 }
             }
 
@@ -182,10 +182,10 @@ fn main() {
                 node.seen_slot,
                 node.once_slot,
             ] {
-                if let Ok(slot) = usize::try_from(slot) {
-                    if width.contains_key(&slot) {
-                        killed.insert(slot);
-                    }
+                if let Ok(slot) = usize::try_from(slot)
+                    && width.contains_key(&slot)
+                {
+                    killed.insert(slot);
                 }
             }
 

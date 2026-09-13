@@ -265,10 +265,10 @@ impl LookAheadState {
         let mins = self.day_minutes % 60;
         parts.push(format!("clock={hours:02}:{mins:02}"));
         for (i, &v) in self.slots.iter().enumerate() {
-            if v != 0 {
-                if let Some(name) = symbols.name_of(i) {
-                    parts.push(format!("{name}={v}"));
-                }
+            if v != 0
+                && let Some(name) = symbols.name_of(i)
+            {
+                parts.push(format!("{name}={v}"));
             }
         }
         parts.join(", ")

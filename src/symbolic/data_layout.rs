@@ -790,10 +790,10 @@ impl DataLayout {
             Self::read_by_guard(&node.guard, &mut names);
 
             for slot in [node.flag_slot, node.failed_flag_slot] {
-                if let Ok(slot) = usize::try_from(slot) {
-                    if let Some(name) = symbols.name_of(slot) {
-                        names.insert(name.to_string());
-                    }
+                if let Ok(slot) = usize::try_from(slot)
+                    && let Some(name) = symbols.name_of(slot)
+                {
+                    names.insert(name.to_string());
                 }
             }
         }

@@ -541,10 +541,10 @@ impl ILookAheadWorld for SnapshotWorld {
 
     fn get_variable(&self, name: &str) -> GuardValue {
         let answered = self.snapshot.variables.get(name).map(GuardValue::from);
-        if let Some(value) = answered {
-            if value.kind() != GuardValueKind::Unknown {
-                return value;
-            }
+        if let Some(value) = answered
+            && value.kind() != GuardValueKind::Unknown
+        {
+            return value;
         }
 
         // The plugin could not read it. What the database says it starts as is a better

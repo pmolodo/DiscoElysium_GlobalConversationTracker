@@ -43,37 +43,37 @@ fn strip_comments(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
-        if c == '-' {
-            if let Some(&'-') = chars.peek() {
+        if c == '-'
+            && let Some(&'-') = chars.peek()
+        {
+            chars.next();
+            if let Some(&'[') = chars.peek() {
                 chars.next();
                 if let Some(&'[') = chars.peek() {
                     chars.next();
-                    if let Some(&'[') = chars.peek() {
-                        chars.next();
-                        // Block comment --[[ ... ]]
-                        let mut depth = 1;
-                        while let Some(c) = chars.next() {
-                            if c == ']' && chars.next() == Some(']') {
-                                depth -= 1;
-                                if depth == 0 {
-                                    break;
-                                }
-                            } else if c == '[' && chars.next() == Some('[') {
-                                depth += 1;
+                    // Block comment --[[ ... ]]
+                    let mut depth = 1;
+                    while let Some(c) = chars.next() {
+                        if c == ']' && chars.next() == Some(']') {
+                            depth -= 1;
+                            if depth == 0 {
+                                break;
                             }
+                        } else if c == '[' && chars.next() == Some('[') {
+                            depth += 1;
                         }
-                        out.push(' ');
-                        continue;
                     }
+                    out.push(' ');
+                    continue;
                 }
-                // Line comment -- ...
-                while let Some(c) = chars.next() {
-                    if c == '\n' {
-                        break;
-                    }
-                }
-                continue;
             }
+            // Line comment -- ...
+            for c in chars.by_ref() {
+                if c == '\n' {
+                    break;
+                }
+            }
+            continue;
         }
         out.push(c);
     }
@@ -657,7 +657,7 @@ fn tokenize(text: &str, _original: &str) -> Result<Vec<Token>, GuardParseError> 
             }),
             '"' => {
                 let mut s = String::new();
-                while let Some(c) = chars.next() {
+                for c in chars.by_ref() {
                     if c == '"' {
                         break;
                     }
@@ -716,7 +716,7 @@ fn tokenize(text: &str, _original: &str) -> Result<Vec<Token>, GuardParseError> 
                         }
                         if temp.next() == Some('"') {
                             let mut name = String::new();
-                            while let Some(c) = temp.next() {
+                            for c in temp.by_ref() {
                                 if c == '"' {
                                     break;
                                 }

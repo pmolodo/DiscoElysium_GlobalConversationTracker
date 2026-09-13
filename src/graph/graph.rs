@@ -169,10 +169,10 @@ impl LookAheadGraph {
             best == Some(Novelty::UnseenAnyGame)
         };
 
-        if let Some(node) = self.get(start) {
-            if consider(start, node) {
-                return best;
-            }
+        if let Some(node) = self.get(start)
+            && consider(start, node)
+        {
+            return best;
         }
 
         expanded.insert(start);

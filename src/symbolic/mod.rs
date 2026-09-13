@@ -264,12 +264,7 @@ impl StateEncoding {
     /// A caller that profiles and encodes the same sample never sees `None`.
     pub fn encode(&self, node: DialogueNodeId, state: &LookAheadState) -> Option<Vec<(u32, bool)>> {
         let mut bits = Vec::with_capacity(self.total_vars);
-        push_bits(
-            &mut bits,
-            0,
-            self.node_bits,
-            *self.node_index.get(&node)? as u32,
-        )?;
+        push_bits(&mut bits, 0, self.node_bits, *self.node_index.get(&node)?)?;
 
         for &(slot, at) in &self.slots {
             let value = state.get(slot);

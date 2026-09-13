@@ -105,7 +105,7 @@ fn place(value: &mut Value, bodies: &mut Map<String, Value>, defined: &mut Vec<S
                 return;
             };
 
-            if defined.iter().any(|seen| *seen == id) {
+            if defined.contains(&id) {
                 return;
             }
 

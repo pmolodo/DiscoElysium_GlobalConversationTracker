@@ -176,20 +176,20 @@ pub fn read_index_with_header(path: &Path) -> anyhow::Result<(Index, Option<Inde
             continue;
         }
 
-        if number == 0 {
-            if let Some(found) = parse_header(&line) {
-                if found.format != FORMAT_VERSION {
-                    anyhow::bail!(
-                        "{} is a version {} index; this build reads version {}",
-                        path.display(),
-                        found.format,
-                        FORMAT_VERSION,
-                    );
-                }
-
-                header = Some(found);
-                continue;
+        if number == 0
+            && let Some(found) = parse_header(&line)
+        {
+            if found.format != FORMAT_VERSION {
+                anyhow::bail!(
+                    "{} is a version {} index; this build reads version {}",
+                    path.display(),
+                    found.format,
+                    FORMAT_VERSION,
+                );
             }
+
+            header = Some(found);
+            continue;
         }
 
         let conversation: ConversationRecord = serde_json::from_str(&line)?;
@@ -505,10 +505,10 @@ fn keeping_only_read_slots(
     // cannot quietly reintroduce the same bug.
     let mut written = vec![false; symbols.count()];
     let mark = |slot: i32, written: &mut Vec<bool>| {
-        if let Ok(slot) = usize::try_from(slot) {
-            if slot < written.len() {
-                written[slot] = true;
-            }
+        if let Ok(slot) = usize::try_from(slot)
+            && slot < written.len()
+        {
+            written[slot] = true;
         }
     };
     for node in &nodes {

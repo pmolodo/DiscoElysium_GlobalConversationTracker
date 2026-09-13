@@ -301,7 +301,7 @@ fn main() {
 
         println!(
             "conversation {conversation}: {} counter slot(s) of {} slots\n\
-             {:>34}  {:>5}  {:>18}  {:>5}  {:>7}  {:>6}  {:>5}  {:>5}  {:>4}  {}",
+             {:>34}  {:>5}  {:>18}  {:>5}  {:>7}  {:>6}  {:>5}  {:>5}  {:>4}  win",
             counters.len(),
             symbols.count(),
             "slot",
@@ -313,7 +313,6 @@ fn main() {
             "value",
             "today",
             "best",
-            "win",
         );
 
         for (slot, counter) in &counters {

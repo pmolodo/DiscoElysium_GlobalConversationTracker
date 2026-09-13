@@ -328,11 +328,11 @@ fn translate_call(call: Invocation, symbols: &mut StateSymbols, actions: &mut Ve
             actions.push(DialogueAction::assign(slot, 1, call.name));
         }
         "GainItem" => {
-            let slot = symbols.item(&unquote(call.args.get(0).unwrap_or(&String::new())));
+            let slot = symbols.item(&unquote(call.args.first().unwrap_or(&String::new())));
             actions.push(DialogueAction::assign(slot, 1, call.name));
         }
         "LoseItem" => {
-            let slot = symbols.item(&unquote(call.args.get(0).unwrap_or(&String::new())));
+            let slot = symbols.item(&unquote(call.args.first().unwrap_or(&String::new())));
             actions.push(DialogueAction::assign(slot, 0, call.name));
         }
         // The only way dialogue writes the thought cabinet, and it writes exactly one
@@ -349,11 +349,11 @@ fn translate_call(call: Invocation, symbols: &mut StateSymbols, actions: &mut Ve
             actions.push(DialogueAction::assign(slot, 1, call.name));
         }
         "GainTask" => {
-            let slot = symbols.task(&unquote(call.args.get(0).unwrap_or(&String::new())));
+            let slot = symbols.task(&unquote(call.args.first().unwrap_or(&String::new())));
             actions.push(DialogueAction::assign(slot, 1, call.name));
         }
         "FinishTask" | "CancelTask" => {
-            let slot = symbols.task(&unquote(call.args.get(0).unwrap_or(&String::new())));
+            let slot = symbols.task(&unquote(call.args.first().unwrap_or(&String::new())));
             actions.push(DialogueAction::assign(slot, 0, call.name));
         }
         "GainMoneyOnce" | "GainMoneyAlways" | "LoseMoneyOnce" | "LoseMoneyAlways" => {
@@ -361,7 +361,7 @@ fn translate_call(call: Invocation, symbols: &mut StateSymbols, actions: &mut Ve
             let once = call.name.ends_with("Once");
             let amount = call
                 .args
-                .get(0)
+                .first()
                 .and_then(|s| s.trim().parse::<i32>().ok())
                 .unwrap_or(0);
             actions.push(DialogueAction::money(gain, amount, once, call.name));

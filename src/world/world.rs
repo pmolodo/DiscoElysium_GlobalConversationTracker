@@ -129,10 +129,10 @@ impl BoundContext<'_> {
             return self.world.query(name, arguments);
         };
 
-        if let Some(state) = self.state {
-            if let Some(slot) = self.symbols.find(&format!("{prefix}{subject}")) {
-                return GuardValue::from_boolean(state.is_set(slot));
-            }
+        if let Some(state) = self.state
+            && let Some(slot) = self.symbols.find(&format!("{prefix}{subject}"))
+        {
+            return GuardValue::from_boolean(state.is_set(slot));
         }
 
         GuardValue::from_boolean(from_world(self.world, subject))
@@ -141,16 +141,16 @@ impl BoundContext<'_> {
 
 impl IGuardContext for BoundContext<'_> {
     fn get_variable(&self, name: &str) -> GuardValue {
-        if let Some(slot) = self.symbols.find(name) {
-            if let Some(state) = self.state {
-                let value = state.get(slot);
-                // Check if the world has this as a number
-                let world_val = self.world.get_variable(name);
-                if world_val.kind() == GuardValueKind::Number {
-                    return GuardValue::from_number(value as f64);
-                }
-                return GuardValue::from_boolean(value != 0);
+        if let Some(slot) = self.symbols.find(name)
+            && let Some(state) = self.state
+        {
+            let value = state.get(slot);
+            // Check if the world has this as a number
+            let world_val = self.world.get_variable(name);
+            if world_val.kind() == GuardValueKind::Number {
+                return GuardValue::from_number(value as f64);
             }
+            return GuardValue::from_boolean(value != 0);
         }
         self.world.get_variable(name)
     }

@@ -107,12 +107,11 @@ fn is_any_xp_flag_both_written_and_read_inside_one_group() {
                 if action.kind() != DialogueActionKind::Assign {
                     continue;
                 }
-                if let Ok(slot) = usize::try_from(action.slot()) {
-                    if let Some(name) = symbols.name_of(slot) {
-                        if name.starts_with(XP_PREFIX) {
-                            written.insert(name.to_string());
-                        }
-                    }
+                if let Ok(slot) = usize::try_from(action.slot())
+                    && let Some(name) = symbols.name_of(slot)
+                    && name.starts_with(XP_PREFIX)
+                {
+                    written.insert(name.to_string());
                 }
             }
 

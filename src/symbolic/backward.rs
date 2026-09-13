@@ -375,10 +375,10 @@ impl<'a> Backward<'a> {
                     // at the target it is: whether what the search holds arriving there is a
                     // state the target's own guard admits is the whole question, and both
                     // halves of that are already in hand.
-                    if let Some(known) = meeting {
-                        if this.meets_known(known, target) {
-                            this.stats.met_at = Some(target);
-                        }
+                    if let Some(known) = meeting
+                        && this.meets_known(known, target)
+                    {
+                        this.stats.met_at = Some(target);
                     }
                     frontier.insert(target, fresh);
                     queue.push(target);
@@ -417,16 +417,17 @@ impl<'a> Backward<'a> {
             // on the sets are tiny and a step is nothing, and by the time one step is
             // minutes long a step count is either far too chatty or silent for an hour.
             // The clock is read every step regardless, one line above.
-            if let Some(report) = &budget.on_progress {
-                if !budget.report_gap.is_zero() && last_report.elapsed() >= budget.report_gap {
-                    last_report = std::time::Instant::now();
-                    report(
-                        this.stats.steps,
-                        this.sets.len(),
-                        queue.len(),
-                        vars.node_count(),
-                    );
-                }
+            if let Some(report) = &budget.on_progress
+                && !budget.report_gap.is_zero()
+                && last_report.elapsed() >= budget.report_gap
+            {
+                last_report = std::time::Instant::now();
+                report(
+                    this.stats.steps,
+                    this.sets.len(),
+                    queue.len(),
+                    vars.node_count(),
+                );
             }
 
             for &parent in parents.get(&id).into_iter().flatten() {
@@ -459,11 +460,11 @@ impl<'a> Backward<'a> {
                 // is already known can arrive at any growth of this entry's set, and
                 // checking only the first would turn a proof into a maybe for the sake of
                 // one conjunction.
-                if let Some(known) = meeting {
-                    if this.meets_known(known, parent) {
-                        this.stats.met_at = Some(parent);
-                        break 'search;
-                    }
+                if let Some(known) = meeting
+                    && this.meets_known(known, parent)
+                {
+                    this.stats.met_at = Some(parent);
+                    break 'search;
                 }
 
                 let pending = frontier

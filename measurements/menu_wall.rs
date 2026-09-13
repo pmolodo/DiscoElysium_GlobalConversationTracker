@@ -132,7 +132,6 @@ fn main() {
             },
             ..Default::default()
         };
-        let json = serde_json::to_string(&request).expect("a request serialises");
 
         // A SERVICE PER GROUP, so no group is answered by a workspace another group warmed.
         // Sharing one would make every row after the first cheaper for a reason that has

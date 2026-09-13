@@ -300,7 +300,7 @@ fn how_much_of_a_loaded_group_can_a_start_actually_reach() {
     );
 
     let mut buckets: BTreeMap<&str, (usize, usize, usize)> = BTreeMap::new();
-    for (&start, _) in &links {
+    for &start in links.keys() {
         let reached = reachable_from(&links, start).len();
         let held = *loaded.get(&start.0).unwrap_or(&reached);
         // Grouped by how big the loaded group is, because the whole question only matters

@@ -166,7 +166,7 @@ impl ClockTime {
             "IsMidnight" => GuardValue::from_boolean(daytime == Daytime::Midnight),
             "IsHour" => {
                 if let Some(h) = arguments
-                    .get(0)
+                    .first()
                     .filter(|v| v.kind() == GuardValueKind::Number)
                     .map(|v| v.number())
                 {

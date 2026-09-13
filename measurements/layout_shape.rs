@@ -392,10 +392,10 @@ fn writes_of(
             node.seen_slot,
             node.once_slot,
         ] {
-            if let Ok(slot) = usize::try_from(slot) {
-                if slot < slots {
-                    found[slot].written = true;
-                }
+            if let Ok(slot) = usize::try_from(slot)
+                && slot < slots
+            {
+                found[slot].written = true;
             }
         }
 
@@ -725,7 +725,7 @@ fn what_each_group_carries() {
             // the slot's ceiling - narrowing below it would encode a value the run cannot
             // hold. So the floor is the largest thing assigned, and the threshold only
             // decides how far below the cap the INCREMENTS may be squeezed.
-            let assigned = writes[slot].max_assigned.max(0) as u32;
+            let assigned = writes[slot].max_assigned;
             let wanted = if unreadable.contains(&slot) {
                 bits
             } else {

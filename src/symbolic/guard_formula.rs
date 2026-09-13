@@ -719,17 +719,17 @@ impl<'a> GuardCompiler<'a> {
             // value the guard is written about, so the comparison is rewritten around the
             // value the search started at. This has to come first: the paths below read the
             // slot's bits as the value itself, which for such a slot they are not.
-            if let Some(slot) = self.vars.slot_of(name) {
-                if let Some(delta) = self.vars.layout().delta_slot(slot) {
-                    return match self.rebased(slot, name, op, value as i64, delta) {
-                        Rebase::Formula(holds) => self.decided(holds),
-                        Rebase::NoRoom => self.no_room(Self::rendered(op, name, literal)),
-                        Rebase::Unknown => self.undecided(
-                            "comparison: a rebased slot, and no world to rebase it by",
-                            Self::rendered(op, name, literal),
-                        ),
-                    };
-                }
+            if let Some(slot) = self.vars.slot_of(name)
+                && let Some(delta) = self.vars.layout().delta_slot(slot)
+            {
+                return match self.rebased(slot, name, op, value as i64, delta) {
+                    Rebase::Formula(holds) => self.decided(holds),
+                    Rebase::NoRoom => self.no_room(Self::rendered(op, name, literal)),
+                    Rebase::Unknown => self.undecided(
+                        "comparison: a rebased slot, and no world to rebase it by",
+                        Self::rendered(op, name, literal),
+                    ),
+                };
             }
 
             if equality {
