@@ -508,3 +508,76 @@ def run_groups(groups, work, workers, reap):
                 traceback.print_exc()
                 continue
             reap(group, result)
+
+
+# How many settled groups in a row end a serial phase, and how far above the cheapest group so
+# far a group may cost and still count as settled. See `Settling`.
+SETTLE_GROUPS = 10
+SETTLE_FACTOR = 2
+
+
+class Settling:
+    """Watches a heaviest-first run for the point where its cost has bottomed out.
+
+    THE RULE BOTH MATRIX DRIVERS SHARE: measure the heavy groups one at a time, on an
+    uncontended machine, and hand the rest to parallel workers only once the cost has
+    flattened. `serial_phase` in tools/measure-matrix.py says why it is a rule rather than a
+    number of groups, why it has two time arms, and why it wants a run of groups.
+
+    A group counts as SETTLED when its cost is within `factor` of the cheapest group so far OR at
+    most `ms` outright, and it `fits` - a driver that checks what a worker can hold says so,
+    one that does not passes True. `groups` settled groups in a row end the watch; any other
+    group resets the count. So at least `groups` groups are always measured one at a time.
+
+    The absolute arm is the driver's to choose, because what "small" means depends on what one
+    group costs: a matrix group is many rows and bottoms out near two seconds, a menu near
+    twenty milliseconds.
+    """
+
+    def __init__(self, groups, factor, ms):
+        self.groups = groups
+        self.factor = factor
+        self.ms = ms
+        self.floor_ms = None
+        self.settled = 0
+        self.window_max_ms = 0
+        self.window_max_nodes = 0
+
+    @classmethod
+    def from_env(cls, ms_fallback):
+        """The rule, with DEGCT_SETTLE_GROUPS, DEGCT_SETTLE_FACTOR and DEGCT_SETTLE_MS applied."""
+        return cls(
+            env_int("SETTLE_GROUPS", SETTLE_GROUPS),
+            env_int("SETTLE_FACTOR", SETTLE_FACTOR),
+            env_int("SETTLE_MS", ms_fallback),
+        )
+
+    def reset(self):
+        """A group that is not evidence the cost has bottomed out: start counting again."""
+        self.settled = 0
+        self.window_max_ms = 0
+        self.window_max_nodes = 0
+
+    def observe(self, group_ms, group_nodes=0, fits=True):
+        """Folds in one measured group; returns whether the run has now bottomed out."""
+        if self.floor_ms is None or group_ms < self.floor_ms:
+            self.floor_ms = group_ms
+
+        cheap = group_ms <= self.floor_ms * self.factor
+        if self.ms > 0 and group_ms <= self.ms:
+            cheap = True
+
+        if cheap and fits:
+            self.settled += 1
+            self.window_max_ms = max(self.window_max_ms, group_ms)
+            self.window_max_nodes = max(self.window_max_nodes, group_nodes)
+        else:
+            self.reset()
+        return self.settled >= self.groups
+
+    def rule(self):
+        """What the watch is waiting for, in words."""
+        says = f"{self.groups} in a row within {self.factor}x the cheapest group so far"
+        if self.ms > 0:
+            says += f" or under {self.ms}ms"
+        return says

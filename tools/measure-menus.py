@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
-"""Measure a whole MENU per group, one group per process, several at a time.
+"""Measure a whole MENU per group, one group per process: the heavy groups one at a time, then
+the rest several at a time.
 
 A row of the option matrix is one search from one start. A request is a whole response menu
 answered against one manager, so the menu is what a player waits for and it is not the sum of
@@ -12,7 +13,7 @@ Usage:
 Examples:
     tools/measure-menus.py 368 631      # just these two
     tools/measure-menus.py all          # every group in the game, resumably
-    DEGCT_WORKERS=1 tools/measure-menus.py all   # one at a time, for timings worth trusting
+    DEGCT_WORKERS=1 tools/measure-menus.py all   # every group one at a time
 
 ONE PROCESS PER GROUP for the reason the other drivers give: a group can take its process
 down - conversation 28's deepest entries overflow the stack inside a recursive diagram
@@ -23,21 +24,32 @@ it. A crash here is a RESULT for that group, recorded as CRASHED, and costs noth
 list here. There is one enumeration in this repository and both drivers read it, so the two
 cannot come to disagree about what the game contains. 901 of the game's 1,422 groups reach
 nothing from their start and are recorded as NO-ROWS from the enumeration rather than by 901
-processes that each build a graph to find the same nothing.
+processes that each build a graph to find the same nothing. The enumeration arrives
+heaviest-first, which is what the serial phase below rests on.
 
-WORKERS AND TIMINGS PULL OPPOSITE WAYS, and this is the one thing to decide before running.
-Groups in parallel finish the run several times sooner and make every millisecond column a
-measurement of how busy the machine was. A BASELINE WANTS DEGCT_WORKERS=1. The default is
-several because most runs of this are looking for a group that behaves oddly rather than for
-a number to compare later, and the header of the output says which it was.
+THE HEAVY GROUPS ARE MEASURED ONE AT A TIME, because workers and timings pull opposite ways:
+groups in parallel finish the run several times sooner and make every millisecond column a
+measurement of how busy the machine was - and the heavy groups are the ones whose milliseconds
+anybody reads. So the run measures groups one at a time, heaviest first, until the cost has
+bottomed out, and only then hands the rest to DEGCT_WORKERS at once. It is the option matrix's
+rule, shared through `measurement_common.Settling`: DEGCT_SETTLE_GROUPS settled groups in a
+row, a group counting as settled when it is within DEGCT_SETTLE_FACTOR of the cheapest menu so
+far or under DEGCT_SETTLE_MS outright. At least DEGCT_SETTLE_GROUPS groups are always measured
+one at a time.
+
+WHAT COUNTS TOWARDS SETTLING. A measured menu counts by its `menu_ms`. A CRASHED or
+NOT-MEASURED group resets the count, since it is evidence that something did not measure
+rather than that measuring got cheap. A NO-MENU group neither counts nor resets: no start of it
+had anything worth hunting, which says nothing about what the next menu costs.
 
 RESUMING. Rows are written as they finish, and pointing a later run at the same folder makes
 it skip the groups already there:
 
     DEGCT_MENUS_OUT=measurements/logs/2026-09-09_menus tools/measure-menus.py all
 
-The same command is the start and the resume; there is no separate mode to remember. Without
-MENUS_OUT each run gets its own folder and resumes nothing.
+The same command is the start and the resume; there is no separate mode to remember. A resumed
+group still counts towards settling, by the row it left, so a resume switches where the
+original run would have. Without MENUS_OUT each run gets its own folder and resumes nothing.
 
 WHAT COUNTS AS DONE:
 
@@ -58,6 +70,7 @@ import measurement_common as common  # noqa: E402  (after the path is set)
 
 from measurement_common import (  # noqa: E402
     TAB,
+    Settling,
     build_measurement,
     default_workers,
     env,
@@ -79,6 +92,20 @@ MATRIX = "performance_matrix"
 # A verdict that means the row was never taken, so a resume takes it again.
 RETRY = "NOT-MEASURED"
 
+# The verdict for a group whose process died, written by this driver.
+CRASHED = "CRASHED"
+
+# The verdict for a group with no menu worth asking about.
+NO_MENU = "NO-MENU"
+
+# The column a menu's cost is in, and where a verdict goes instead for an unmeasured group.
+MENU_MS = "menu_ms"
+
+# The absolute arm of the settle rule for a menu. Menus bottom out near twenty milliseconds - a
+# matrix group, many rows long, near two seconds - so a menu under this is at the floor whatever
+# the relative arm says of it.
+SETTLE_MS = 100
+
 
 class Run:
     """One folder of rows, and what has already been written into it."""
@@ -91,23 +118,23 @@ class Run:
         self.menus = build_measurement(MENUS)
         self.matrix = build_measurement(MATRIX, quiet=True)
 
-    def done(self):
-        """The conversations already measured, so a resume can skip them.
+    def recorded(self):
+        """The rows already written, by conversation, so a resume can skip them.
 
         A ROW THAT SAYS NOT-MEASURED IS NOT DONE, because the machine could not supply the
-        budget and nothing about the menu was learned. Every other row is an answer, a
-        crash included.
+        budget and nothing about the menu was learned. Every other row is an answer, a crash
+        included.
         """
         if not self.rows.exists():
-            return set()
-        finished = set()
+            return {}
+        finished = {}
         for line in self.rows.read_text(encoding="utf-8", errors="replace").splitlines()[1:]:
             cells = line.split(TAB)
-            if len(cells) < 5 or not cells[0].isdigit():
+            if len(cells) < 2 or not cells[0].isdigit():
                 continue
             if RETRY in cells:
                 continue
-            finished.add(int(cells[0]))
+            finished[int(cells[0])] = cells
         return finished
 
     def header(self):
@@ -117,8 +144,12 @@ class Run:
         answer = common.ask(self.menus, {qualified("HEADER"): "1"})
         common.write_lf(self.rows, answer.stdout)
 
+    def columns(self):
+        """The column names, off the header this run's rows were written under."""
+        return self.rows.read_text(encoding="utf-8", errors="replace").splitlines()[0].split(TAB)
+
     def groups(self):
-        """Every group with something to measure, from the option matrix's enumeration."""
+        """Every group with something to measure, heaviest first, from the option matrix."""
         answer = common.ask(self.matrix, {qualified("GROUPS_ONLY"): "1"})
         if answer.returncode != 0:
             refuse(f"the group enumeration failed:\n{answer.stderr}", code=1)
@@ -146,12 +177,69 @@ class Run:
         if answer.returncode != 0 and not answer.stdout.strip():
             # A CRASH IS THIS GROUP'S ANSWER, written as a row so a resume does not take it
             # again and a reader can see which groups the engine cannot survive.
-            return f"{conversation}\tCRASHED\n", answer.stderr
+            return f"{conversation}\t{CRASHED}\n", answer.stderr
         return answer.stdout, answer.stderr
 
     def append(self, rows):
         with common.open_lf(self.rows) as handle:
             handle.write(rows)
+
+
+def menu_cost(cells, columns):
+    """What one group's row says about its cost: (ms, complete), or None for a NO-MENU group.
+
+    See the module doc for why a crash resets the settle count and a group with no menu does
+    not.
+    """
+    if CRASHED in cells:
+        return 0, False
+    at = columns.index(MENU_MS)
+    if at >= len(cells):
+        return 0, False
+    cell = cells[at]
+    if cell == NO_MENU:
+        return None
+    if not cell.isdigit():
+        return 0, False
+    return int(cell), True
+
+
+def serial_phase(run, conversations, recorded, workers, settle, reap):
+    """The heavy groups one at a time, until their cost has bottomed out.
+
+    Returns how many of `conversations`, in order, the phase covered. A group already recorded
+    is not measured again, but its row still counts towards settling.
+    """
+    columns = run.columns()
+    for position, conversation in enumerate(conversations, start=1):
+        if conversation in recorded:
+            cells = recorded[conversation]
+        else:
+            rows, errors = run.measure(conversation)
+            reap(conversation, (rows, errors))
+            first = rows.splitlines()[0] if rows.strip() else f"{conversation}\t{CRASHED}"
+            cells = first.split(TAB)
+
+        if workers <= 1:
+            continue
+
+        cost = menu_cost(cells, columns)
+        if cost is None:
+            continue
+        menu_ms, complete = cost
+        if not complete:
+            settle.reset()
+            continue
+
+        if settle.observe(menu_ms):
+            print(
+                f"  cost has bottomed out after {position} group(s): the last {settle.groups} "
+                f"took at most {settle.window_max_ms}ms against a floor of {settle.floor_ms}ms."
+            )
+            print(f"  The rest go {workers} at a time.")
+            return position
+
+    return len(conversations)
 
 
 def measure(out, conversations, workers):
@@ -162,21 +250,25 @@ def measure(out, conversations, workers):
         conversations, empty = run.groups()
         print(f"{len(conversations)} group(s) with rows; {empty} reach nothing and are skipped")
 
-    already = run.done()
-    todo = [c for c in conversations if c not in already]
-    if already:
-        print(f"{len(already)} already measured in {run.folder}; {len(todo)} to go")
+    recorded = run.recorded()
+    todo = [c for c in conversations if c not in recorded]
+    if recorded:
+        print(f"{len(recorded)} already measured in {run.folder}; {len(todo)} to go")
 
     if not todo:
         print("nothing to do.")
         return 0
 
-    print(f"{len(todo)} group(s), {workers} at a time -> {run.rows}")
+    settle = Settling.from_env(SETTLE_MS)
+    if workers <= 1:
+        print(f"{len(todo)} group(s), one at a time -> {run.rows}")
+    else:
+        print(
+            f"{len(todo)} group(s) -> {run.rows}: one at a time until the cost bottoms out "
+            f"({settle.rule()}), then {workers} at a time"
+        )
 
     state = {"done": 0}
-
-    def work(conversation):
-        return run.measure(conversation)
 
     def reap(conversation, result):
         rows, errors = result
@@ -188,7 +280,11 @@ def measure(out, conversations, workers):
         state["done"] += 1
         print(progress_line(state["done"], len(todo), f"conversation {conversation}"))
 
-    run_groups(todo, work, workers, reap)
+    serial_done = serial_phase(run, conversations, recorded, workers, settle, reap)
+
+    remaining = [c for c in conversations[serial_done:] if c not in recorded]
+    if remaining:
+        run_groups(remaining, run.measure, workers, reap)
 
     print(f"\n{state['done']} group(s) measured -> {run.rows}")
     if run.log.exists():

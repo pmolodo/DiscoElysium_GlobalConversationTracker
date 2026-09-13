@@ -1499,6 +1499,11 @@ class Run:
 ###############################################################################
 
 
+# The absolute arm of the settle rule for a matrix group, which is many rows long and bottoms out
+# near two seconds under the default grid. See `serial_phase`.
+SETTLE_MS = 2500
+
+
 def split_message(run, workers, serial_groups, fits_nodes, worker_nodes, worker_mb):
     """What the run is watching for, said before it starts watching.
 
@@ -1506,9 +1511,7 @@ def split_message(run, workers, serial_groups, fits_nodes, worker_nodes, worker_
     say at the start how many groups go each way. It says what it is watching for instead, and
     says the moment it switches.
     """
-    settle_groups = env_int("SETTLE_GROUPS", 10)
-    settle_factor = env_int("SETTLE_FACTOR", 2)
-    settle_ms = env_int("SETTLE_MS", 2500)
+    settle = common.Settling.from_env(SETTLE_MS)
     headroom = env_int("MEMORY_HEADROOM", 2)
 
     if workers <= 1:
@@ -1523,19 +1526,15 @@ def split_message(run, workers, serial_groups, fits_nodes, worker_nodes, worker_
         print("would fit a worker's share of the budget: every group one at a time. Name")
         print(f"{qualified('SERIAL_GROUPS')}=n to split anyway.")
     else:
-        cheap_says = f"within {settle_factor}x the cheapest group so far"
-        if settle_ms > 0:
-            cheap_says += f" or under {settle_ms}ms"
         print(
-            f"one group at a time until the cost bottoms out: {settle_groups} in a row "
-            f"{cheap_says}, each holding at most {fits_nodes} nodes"
+            f"one group at a time until the cost bottoms out: {settle.rule()}, each holding at most {fits_nodes} nodes"
         )
         print(
             f"  (1/{headroom} of the {worker_nodes} a worker's {worker_mb} MB share of the "
             f"{run.full_budget_mb} MB budget buys)"
         )
 
-    return settle_groups, settle_factor, settle_ms
+    return settle
 
 
 def serial_phase(run, workers, serial_groups, fits_nodes, settle):
@@ -1579,13 +1578,7 @@ def serial_phase(run, workers, serial_groups, fits_nodes, settle):
     row does not switch until group 35, after which the heaviest thing left in the game is 15s
     and 33 MB, or two per cent of a worker's cap.
     """
-    settle_groups, settle_factor, settle_ms = settle
-
     serial_done = 0
-    floor_ms = None
-    settled = 0
-    window_max_ms = 0
-    window_max_nodes = 0
 
     for conversation in run.conversations:
         tally = run.measure_group(conversation)
@@ -1612,38 +1605,21 @@ def serial_phase(run, workers, serial_groups, fits_nodes, settle):
         if not complete:
             # A group with a crashed, unmeasured or empty row in it is not evidence that the
             # measuring has got cheap - it is evidence that something did not measure.
-            settled = 0
-            window_max_ms = 0
-            window_max_nodes = 0
+            settle.reset()
             continue
 
-        if floor_ms is None or group_ms < floor_ms:
-            floor_ms = group_ms
-
         # CHEAP EITHER WAY ROUND - near the run's own floor, or small enough that the floor
-        # does not matter. The memory test is unchanged and still has to pass: time alone has
-        # never been what makes the switch safe.
-        cheap = group_ms <= floor_ms * settle_factor
-        if settle_ms > 0 and group_ms <= settle_ms:
-            cheap = True
-
-        if cheap and group_nodes <= fits_nodes:
-            settled += 1
-            window_max_ms = max(window_max_ms, group_ms)
-            window_max_nodes = max(window_max_nodes, group_nodes)
-        else:
-            settled = 0
-            window_max_ms = 0
-            window_max_nodes = 0
-
-        if settled >= settle_groups:
+        # does not matter - and the memory test still has to pass: time alone has never been
+        # what makes the switch safe.
+        if settle.observe(group_ms, group_nodes, fits=group_nodes <= fits_nodes):
             print(
                 f"  cost has bottomed out after {serial_done} group(s): the last "
-                f"{settle_groups} spent at most {window_max_ms}ms of search against a floor "
-                f"of {floor_ms}ms,"
+                f"{settle.groups} spent at most {settle.window_max_ms}ms of search against a floor "
+                f"of {settle.floor_ms}ms,"
             )
             print(
-                f"  and held at most {window_max_nodes} nodes of the worker's share. The rest go {workers} at a time."
+                f"  and held at most {settle.window_max_nodes} nodes of the worker's share. "
+                f"The rest go {workers} at a time."
             )
             break
 
