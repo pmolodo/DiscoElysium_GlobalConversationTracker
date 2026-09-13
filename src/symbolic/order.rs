@@ -63,7 +63,7 @@ use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
 use crate::core::types::DialogueNodeId;
-use crate::graph::graph::LookAheadGraph;
+use crate::graph::LookAheadGraph;
 
 /// A rank per entry, ordered so that a loop is finished before anything after it starts.
 ///

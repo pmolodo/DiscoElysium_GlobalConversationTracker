@@ -21,7 +21,7 @@ use super::known::GroupShape;
 use super::novelty_search::{StoppedBy, choice_bounds};
 use super::search::Search;
 use crate::core::types::{DialogueNodeId, Novelty};
-use crate::graph::graph::LookAheadGraph;
+use crate::graph::LookAheadGraph;
 
 pub struct Contestant {
     pub position: Position,

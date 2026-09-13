@@ -57,7 +57,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::core::types::DialogueNodeId;
-use crate::graph::graph::LookAheadGraph;
+use crate::graph::LookAheadGraph;
 
 /// The immediate dominator of every entry reachable from a set of starts.
 ///

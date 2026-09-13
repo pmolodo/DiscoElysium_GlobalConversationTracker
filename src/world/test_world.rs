@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 use crate::core::guard_value::GuardValue;
 use crate::core::types::{DialogueNodeId, Ternary};
-use crate::world::world::ILookAheadWorld;
+use crate::world::ILookAheadWorld;
 use std::collections::HashMap;
 
 /// Test implementation of ILookAheadWorld for unit tests.

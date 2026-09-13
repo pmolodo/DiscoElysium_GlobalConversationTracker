@@ -37,7 +37,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use lookahead_engine::bridge::{LookAheadRequest, NodeRef, answer_starts};
 use lookahead_engine::core::types::{DialogueNodeId, Novelty};
-use lookahead_engine::graph::graph::LookAheadGraph;
+use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::oracle::{self, Walk};
 use lookahead_engine::symbolic::backward::{Backward, Budget as BackwardBudget, SettledPass};
@@ -48,7 +48,7 @@ use lookahead_engine::symbolic::isolated::on_its_own_thread;
 use lookahead_engine::symbolic::known::{GroupShape, Known};
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
-use lookahead_engine::world::world::ILookAheadWorld;
+use lookahead_engine::world::ILookAheadWorld;
 
 mod common;
 

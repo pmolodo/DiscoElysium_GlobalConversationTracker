@@ -20,7 +20,7 @@ use crate::core::action::DialogueActionKind;
 use crate::core::guard::Guard;
 use crate::core::state::{ONCE_PREFIX, SEEN_PREFIX, StateSymbols};
 use crate::core::types::{DialogueCheckKind, DialogueNodeId};
-use crate::graph::graph::LookAheadGraph;
+use crate::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
 use crate::parser::action_parser::parse_actions;
 use crate::parser::guard_parser::parse_guard;

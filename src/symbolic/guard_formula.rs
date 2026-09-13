@@ -39,7 +39,7 @@ use crate::core::state::{ITEM_PREFIX, TASK_PREFIX, THOUGHT_PREFIX};
 use crate::core::types::{DialogueNodeId, Ternary};
 use crate::symbolic::data_layout::DeltaSlot;
 use crate::symbolic::vars::DataVars;
-use crate::world::world::{ILookAheadWorld, MONEY_QUERY};
+use crate::world::{ILookAheadWorld, MONEY_QUERY};
 
 /// What a comparison against a rebased slot came to.
 ///
@@ -1383,7 +1383,7 @@ mod tests {
     use crate::core::guard::Guard;
     use crate::core::state::StateSymbols;
     use crate::core::types::DialogueNodeId;
-    use crate::graph::graph::LookAheadGraph;
+    use crate::graph::LookAheadGraph;
     use crate::graph::node::LookAheadNode;
     use crate::symbolic::budget::DiagramBudget;
     use crate::symbolic::data_layout::DataLayout;

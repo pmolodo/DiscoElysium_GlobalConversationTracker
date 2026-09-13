@@ -30,9 +30,9 @@ use crate::core::state::{
     ITEM_PREFIX, ONCE_PREFIX, SEEN_PREFIX, StateSymbols, TASK_PREFIX, THOUGHT_PREFIX,
 };
 use crate::core::types::DialogueNodeId;
-use crate::graph::graph::LookAheadGraph;
+use crate::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
-use crate::world::world::MONEY_QUERY;
+use crate::world::MONEY_QUERY;
 
 /// Minutes in a day; the clock is wrapped into `0..MINUTES_IN_DAY`.
 const MINUTES_IN_DAY: u32 = 1440;
@@ -444,7 +444,7 @@ impl DataLayout {
     /// [`GuardCompiler::with_constant_clock`]: crate::symbolic::guard_formula::GuardCompiler::with_constant_clock
     pub fn for_group(
         graph: &LookAheadGraph,
-        world: &dyn crate::world::world::ILookAheadWorld,
+        world: &dyn crate::world::ILookAheadWorld,
         counter_cap: i32,
     ) -> Self {
         Self::for_group_entered_at(graph, world, counter_cap, None)
@@ -489,7 +489,7 @@ impl DataLayout {
     /// starts, which are entries of `entered_at`, so everything it can visit is in the set.
     pub fn for_group_entered_at(
         graph: &LookAheadGraph,
-        world: &dyn crate::world::world::ILookAheadWorld,
+        world: &dyn crate::world::ILookAheadWorld,
         counter_cap: i32,
         entered_at: Option<&[i32]>,
     ) -> Self {

@@ -13,8 +13,8 @@ use crate::core::guard::IGuardContext;
 use crate::core::guard_value::GuardValue;
 use crate::core::types::Ternary;
 use crate::parser::guard_parser::parse_guard;
+use crate::world::ILookAheadWorld;
 use crate::world::test_world::TestWorld;
-use crate::world::world::ILookAheadWorld;
 
 /// Adapts a world to the guard-evaluation interface, without a search state.
 struct WorldContext<'a>(&'a TestWorld);

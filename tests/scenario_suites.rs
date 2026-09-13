@@ -80,7 +80,7 @@ fn drawn(own: i32, answer: &LookAheadAnswer) -> &'static str {
 /// One scenario's world, staged from the same two files the in-game run loads.
 struct Staged {
     /// The group's graph, and every conversation in it.
-    graph: lookahead_engine::graph::graph::LookAheadGraph,
+    graph: lookahead_engine::graph::LookAheadGraph,
     /// What some other save has read, per the suite's global state fixture.
     recorded: HashSet<(i32, i32)>,
     /// What this save has read, per the save itself.

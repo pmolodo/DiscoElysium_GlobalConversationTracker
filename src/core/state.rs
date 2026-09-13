@@ -316,8 +316,8 @@ impl Default for LookAheadState {
 /// need an item the player does not have and reports entries no real search can reach; two
 /// searches only agree if they start together.
 pub fn seed_state(
-    graph: &crate::graph::graph::LookAheadGraph,
-    world: &dyn crate::world::world::ILookAheadWorld,
+    graph: &crate::graph::LookAheadGraph,
+    world: &dyn crate::world::ILookAheadWorld,
 ) -> LookAheadState {
     let symbols = graph.symbols();
     let mut state = LookAheadState::empty(symbols.count(), world.money(), world.day_minutes());

@@ -2,8 +2,8 @@
 //! What a symbolic walk over one group is asked against.
 
 use super::guard_formula::GuardCompiler;
-use crate::graph::graph::LookAheadGraph;
-use crate::world::world::ILookAheadWorld;
+use crate::graph::LookAheadGraph;
+use crate::world::ILookAheadWorld;
 
 /// What every symbolic walk over one group is asked against: the group, the compiler its
 /// guards go through, the world the search cannot change, and the cap its counters saturate

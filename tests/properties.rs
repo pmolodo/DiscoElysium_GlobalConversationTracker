@@ -29,7 +29,7 @@ use lookahead_engine::core::guard::Guard;
 use lookahead_engine::core::guard_value::GuardValue;
 use lookahead_engine::core::state::StateSymbols;
 use lookahead_engine::core::types::{DialogueCheckKind, DialogueNodeId};
-use lookahead_engine::graph::graph::LookAheadGraph;
+use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::graph::node::LookAheadNode;
 use lookahead_engine::oracle;
 use lookahead_engine::parser::guard_parser::parse_guard;

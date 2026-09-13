@@ -606,7 +606,7 @@ mod tests {
             ..crate::graph::node::LookAheadNode::new(crate::core::types::DialogueNodeId::new(1, 0))
         };
         let snapshot = symbols.clone();
-        let graph = crate::graph::graph::LookAheadGraph::new(vec![node], symbols).unwrap();
+        let graph = crate::graph::LookAheadGraph::new(vec![node], symbols).unwrap();
         let layout = DataLayout::for_graph(&graph, CAP as i32, None, false);
         let vars = DataVars::new(&layout, &snapshot, DiagramBudget::modest());
         let mut image = ActionImage::new(&vars, CAP);

@@ -37,10 +37,10 @@ use oxidd::BooleanFunction;
 use oxidd::bdd::BDDFunction;
 
 use crate::core::types::{DialogueNodeId, StartBranch};
-use crate::graph::graph::LookAheadGraph;
+use crate::graph::LookAheadGraph;
 use crate::symbolic::guard_formula::GuardCompiler;
 use crate::symbolic::reachability::{Reachability, never_displays};
-use crate::world::world::ILookAheadWorld;
+use crate::world::ILookAheadWorld;
 
 /// When to stop asking.
 pub struct Budget {

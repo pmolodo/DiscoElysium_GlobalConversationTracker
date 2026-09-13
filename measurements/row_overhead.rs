@@ -51,14 +51,14 @@
 use std::time::{Duration, Instant};
 
 use lookahead_engine::core::types::DialogueNodeId;
-use lookahead_engine::graph::graph::LookAheadGraph;
+use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
-use lookahead_engine::world::world::ILookAheadWorld;
+use lookahead_engine::world::ILookAheadWorld;
 
 #[path = "../tests/common/mod.rs"]
 mod common;

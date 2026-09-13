@@ -131,7 +131,7 @@ fn half(branch: &LookAheadAnswer) -> String {
 /// rather than exposed from the bridge because this is a tool's convenience: the bridge
 /// computes the same set for its baseline and does not need to hand it out.
 fn branch_destinations(
-    graph: &lookahead_engine::graph::graph::LookAheadGraph,
+    graph: &lookahead_engine::graph::LookAheadGraph,
     world: &TestWorld,
     start: DialogueNodeId,
     branch: StartBranch,

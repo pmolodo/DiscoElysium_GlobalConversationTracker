@@ -101,7 +101,7 @@ impl ClockTime {
     ///
     /// Answered here rather than left to each world, even though they are the host's
     /// facts, because they are a pure function of `day_counter`, which
-    /// [`crate::world::world::ILookAheadWorld`] already exposes. Left to the worlds, all
+    /// [`crate::world::ILookAheadWorld`] already exposes. Left to the worlds, all
     /// three would be reimplemented in every one of them and unanswered in most - and
     /// unanswered is what they were: 2 guards in conversation 631's group, 2 in 14's and
     /// 14 `DayCount` calls in 28's fell back for want of a comparison the search could

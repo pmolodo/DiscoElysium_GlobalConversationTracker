@@ -83,7 +83,7 @@ use oxidd::bdd::BDDFunction;
 use oxidd::{BooleanFunction, Function};
 
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, Ternary};
-use crate::graph::graph::LookAheadGraph;
+use crate::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
 use crate::symbolic::action_image::ActionImage;
 use crate::symbolic::guard_formula::GuardCompiler;
@@ -92,7 +92,7 @@ use crate::symbolic::order::{IterationOrder, Worklist};
 use crate::symbolic::reachability::{Reachability, never_displays};
 use crate::symbolic::search::Search;
 use crate::symbolic::vars::DataVars;
-use crate::world::world::ILookAheadWorld;
+use crate::world::ILookAheadWorld;
 
 /// What one backward fixed point cost.
 #[derive(Debug, Clone, Default)]

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 //! Compare greedy menu marking with exhaustive concrete-state distances.
 use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
-use lookahead_engine::graph::graph::LookAheadGraph;
+use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::oracle;
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
@@ -12,8 +12,8 @@ use lookahead_engine::symbolic::search::Search;
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::symbolic::{menu, novelty_search};
 use lookahead_engine::test_graph::{Entry, GraphBuilder, node};
+use lookahead_engine::world::ILookAheadWorld;
 use lookahead_engine::world::test_world::TestWorld;
-use lookahead_engine::world::world::ILookAheadWorld;
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 mod common;

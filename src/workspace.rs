@@ -82,7 +82,7 @@ use crate::bridge::{
     COUNTER_CAP, LookAheadAnswer, LookAheadRequest, SnapshotWorld, WorldSnapshot, answer_starts,
 };
 use crate::core::types::{DialogueNodeId, Novelty};
-use crate::graph::graph::LookAheadGraph;
+use crate::graph::LookAheadGraph;
 use crate::index::VariableTable;
 use crate::symbolic::budget::DiagramBudget;
 use crate::symbolic::data_layout::DataLayout;
@@ -91,7 +91,7 @@ use crate::symbolic::isolated;
 use crate::symbolic::known::GroupShape;
 use crate::symbolic::reachability::seed_of;
 use crate::symbolic::vars::DataVars;
-use crate::world::world::ILookAheadWorld;
+use crate::world::ILookAheadWorld;
 
 /// What a workspace is valid FOR. A request whose key differs needs a new one.
 ///

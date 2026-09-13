@@ -40,12 +40,12 @@ use oxidd::BooleanFunction;
 use oxidd::bdd::BDDFunction;
 
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, StartBranch, Ternary};
-use crate::graph::graph::LookAheadGraph;
+use crate::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
 use crate::symbolic::action_image::ActionImage;
 use crate::symbolic::guard_formula::GuardCompiler;
 use crate::symbolic::vars::DataVars;
-use crate::world::world::ILookAheadWorld;
+use crate::world::ILookAheadWorld;
 
 /// Whether the world has already decided this node's line can never be shown.
 ///

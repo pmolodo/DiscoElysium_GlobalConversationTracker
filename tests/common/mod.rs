@@ -46,7 +46,7 @@ use std::sync::Mutex;
 
 use lookahead_engine::core::guard_value::{GuardValue, GuardValueKind};
 use lookahead_engine::core::types::{DialogueNodeId, Ternary};
-use lookahead_engine::world::world::ILookAheadWorld;
+use lookahead_engine::world::ILookAheadWorld;
 
 /// Serialises regeneration across the tests in one binary.
 ///
@@ -516,7 +516,7 @@ pub fn measurement_save() -> SaveWorld {
 /// measurement that picked a different target per run would report a different number per
 /// run, and a real change would look like noise.
 pub fn heaviest_target(
-    graph: &lookahead_engine::graph::graph::LookAheadGraph,
+    graph: &lookahead_engine::graph::LookAheadGraph,
     start: DialogueNodeId,
 ) -> DialogueNodeId {
     use std::collections::{HashMap, HashSet, VecDeque};

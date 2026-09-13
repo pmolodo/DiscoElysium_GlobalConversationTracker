@@ -34,7 +34,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use lookahead_engine::core::types::DialogueNodeId;
-use lookahead_engine::graph::graph::LookAheadGraph;
+use lookahead_engine::graph::LookAheadGraph;
 
 /// A menu to ask about: which entries are unseen, and which starts to ask.
 pub struct MenuProfile {

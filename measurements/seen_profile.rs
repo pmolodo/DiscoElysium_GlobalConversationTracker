@@ -21,7 +21,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use lookahead_engine::core::types::DialogueNodeId;
-use lookahead_engine::graph::graph::LookAheadGraph;
+use lookahead_engine::graph::LookAheadGraph;
 
 /// How far each entry is from `start`, following links and ignoring guards.
 ///

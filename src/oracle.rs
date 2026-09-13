@@ -35,9 +35,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use crate::core::action::{CounterCaps, DialogueAction};
 use crate::core::state::{LookAheadState, seed_state};
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, Novelty, StartBranch, Ternary};
-use crate::graph::graph::LookAheadGraph;
+use crate::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
-use crate::world::world::{CrawlContext, ILookAheadWorld};
+use crate::world::{CrawlContext, ILookAheadWorld};
 
 /// The cap every search in this repository counts to, and so the one a comparison uses.
 ///

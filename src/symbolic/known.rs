@@ -50,7 +50,7 @@ use oxidd::BooleanFunction;
 use oxidd::bdd::BDDFunction;
 
 use crate::core::types::DialogueNodeId;
-use crate::graph::graph::LookAheadGraph;
+use crate::graph::LookAheadGraph;
 use crate::symbolic::order::IterationOrder;
 
 /// The group's shape, and where a search over it begins.

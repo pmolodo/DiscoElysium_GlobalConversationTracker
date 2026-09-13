@@ -45,7 +45,7 @@ use std::collections::{HashMap, HashSet};
 
 use lookahead_engine::core::action::DialogueActionKind;
 use lookahead_engine::core::types::DialogueNodeId;
-use lookahead_engine::graph::graph::LookAheadGraph;
+use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 

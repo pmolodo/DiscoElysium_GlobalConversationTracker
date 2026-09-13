@@ -186,7 +186,7 @@ use std::time::{Duration, Instant};
 
 use lookahead_engine::bridge::{SnapshotWorld, WorldSnapshot};
 use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
-use lookahead_engine::graph::graph::LookAheadGraph;
+use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::backward::{Backward, Budget as PassBudget};
 use lookahead_engine::symbolic::budget::DiagramBudget;

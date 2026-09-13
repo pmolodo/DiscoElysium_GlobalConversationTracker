@@ -28,7 +28,7 @@ use lookahead_engine::bridge::{
     WorldSnapshot, answer_starts, entered_at_of, questions_for,
 };
 use lookahead_engine::core::types::{DialogueNodeId, Novelty};
-use lookahead_engine::graph::graph::LookAheadGraph;
+use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;

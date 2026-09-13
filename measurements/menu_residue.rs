@@ -70,7 +70,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use lookahead_engine::bridge::{LookAheadRequest, NodeRef, SnapshotWorld, WorldSnapshot, answer};
 use lookahead_engine::core::types::DialogueNodeId;
-use lookahead_engine::graph::graph::LookAheadGraph;
+use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;

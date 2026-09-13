@@ -227,7 +227,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::core::action::DialogueAction;
     use crate::core::types::DialogueNodeId;
-    use crate::graph::graph::LookAheadGraph;
+    use crate::graph::LookAheadGraph;
     use crate::graph::node::LookAheadNode;
 
     /// A graph whose symbol table holds `names`, with `counter` incremented so it is wide.

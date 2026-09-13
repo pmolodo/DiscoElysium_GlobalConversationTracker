@@ -49,7 +49,7 @@ use crate::core::guard_value::{GuardValue, GuardValueKind};
 use crate::core::types::StartBranch;
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, Novelty, Ternary};
 use crate::formats::runs;
-use crate::graph::graph::LookAheadGraph;
+use crate::graph::LookAheadGraph;
 use crate::index::{Index, VariableTable, build_group_graph};
 use crate::symbolic::answer;
 use crate::symbolic::budget::DiagramBudget;
@@ -60,7 +60,7 @@ use crate::symbolic::known::GroupShape;
 use crate::symbolic::novelty_search;
 use crate::symbolic::reachability::seed_of;
 use crate::symbolic::vars::DataVars;
-use crate::world::world::ILookAheadWorld;
+use crate::world::ILookAheadWorld;
 use oxidd::bdd::BDDFunction;
 
 /// One entry, as it crosses.

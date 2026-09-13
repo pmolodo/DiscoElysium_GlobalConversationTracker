@@ -111,7 +111,7 @@ use std::collections::HashSet;
 use lookahead_engine::bridge::{SnapshotWorld, WorldSnapshot};
 use lookahead_engine::core::guard::GuardExpression;
 use lookahead_engine::core::types::{DialogueCheckKind, DialogueNodeId, Novelty, StartBranch};
-use lookahead_engine::graph::graph::LookAheadGraph;
+use lookahead_engine::graph::LookAheadGraph;
 use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::backward::Position;
 use lookahead_engine::symbolic::budget::DiagramBudget;

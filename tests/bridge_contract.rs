@@ -98,7 +98,7 @@ fn the_engine_names_questions_the_snapshot_can_answer() {
 fn answered_queries(guard: &lookahead_engine::core::guard::Guard, world: &SnapshotWorld) -> usize {
     use lookahead_engine::core::guard::GuardExpression as G;
     use lookahead_engine::core::guard_value::{GuardValue, GuardValueKind};
-    use lookahead_engine::world::world::ILookAheadWorld;
+    use lookahead_engine::world::ILookAheadWorld;
 
     let mut answered = 0;
     for node in guard.nodes() {
