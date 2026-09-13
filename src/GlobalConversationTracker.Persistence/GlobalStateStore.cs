@@ -195,9 +195,10 @@ namespace GlobalConversationTracker.Persistence
         /// <see cref="GlobalStateLoadOutcome.Missing"/> (a crash between the
         /// rotation and the promotion) or <see cref="GlobalStateLoadOutcome.Corrupt"/>.
         /// It is deliberately <b>not</b> consulted for
-        /// <see cref="GlobalStateLoadOutcome.UnsupportedVersion"/>: that file is
-        /// intact history written by a newer build, and silently reverting to an
-        /// older generation would be the same as throwing it away.
+        /// <see cref="GlobalStateLoadOutcome.UnsupportedVersion"/> or
+        /// <see cref="GlobalStateLoadOutcome.OutdatedVersion"/>: that file is intact
+        /// history this build will not read, and silently reverting to another
+        /// generation would be the same as throwing it away.
         /// <para>
         /// The temp file is never consulted, even though a crash can leave a complete
         /// one. Its name carries no proof of completeness, and a half-written payload
@@ -207,7 +208,7 @@ namespace GlobalConversationTracker.Persistence
         public GlobalStateRecovery LoadWithBackupFallback()
         {
             GlobalStateLoadResult live = Load();
-            if (live.IsLoaded || live.Outcome == GlobalStateLoadOutcome.UnsupportedVersion)
+            if (live.IsLoaded || live.IsRefusedFormat)
             {
                 return new GlobalStateRecovery(live, null);
             }

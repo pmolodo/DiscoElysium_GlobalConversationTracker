@@ -116,8 +116,14 @@ namespace GlobalConversationTracker.Persistence
         /// <summary>It will not parse, or leaves out what a state must say.</summary>
         internal const int OutcomeCorrupt = 1;
 
-        /// <summary>It is another kind of document, or another version of this one.</summary>
+        /// <summary>It is another kind of document, or a newer version of this one.</summary>
         internal const int OutcomeUnsupported = 2;
+
+        /// <summary>
+        /// It is this format from before the version this reads: no format named, no version,
+        /// or an older one.
+        /// </summary>
+        internal const int OutcomeOutdated = 3;
 
         [DllImport(LibraryName, EntryPoint = "gct_state_read")]
         internal static extern unsafe IntPtr Read(byte* json, nuint length);

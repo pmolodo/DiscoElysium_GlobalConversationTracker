@@ -369,11 +369,30 @@ namespace GlobalConversationTracker.Persistence.Tests
             store.Save(NewGeneration());
             File.WriteAllText(
                 store.LivePath,
-                $"{{\"version\":{GlobalStateJson.FormatVersion + 1},\"conversations\":{{}}}}");
+                $"{{\"_format\":\"global-state\",\"_formatVersion\":{GlobalStateJson.FormatVersion + 1},"
+                + "\"conversations\":{}}");
 
             GlobalStateRecovery recovery = store.LoadWithBackupFallback();
 
             Assert.Equal(GlobalStateLoadOutcome.UnsupportedVersion, recovery.Outcome);
+            Assert.Null(recovery.Backup);
+            Assert.False(recovery.RecoveredFromBackup);
+        }
+
+        [Fact]
+        public void LoadWithBackupFallback_OutdatedVersion_RefusesToFallBack()
+        {
+            // An older file is intact history too. Reverting to the backup would drop it,
+            // where converting it keeps everything.
+            using var temp = new TempDirectory();
+            GlobalStateStore store = temp.CreateStore();
+            store.Save(OldGeneration());
+            store.Save(NewGeneration());
+            File.WriteAllText(store.LivePath, "{\"version\":4,\"conversations\":{}}");
+
+            GlobalStateRecovery recovery = store.LoadWithBackupFallback();
+
+            Assert.Equal(GlobalStateLoadOutcome.OutdatedVersion, recovery.Outcome);
             Assert.Null(recovery.Backup);
             Assert.False(recovery.RecoveredFromBackup);
         }

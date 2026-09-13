@@ -281,7 +281,8 @@ namespace GlobalConversationTracker.Session
 
         /// <summary>
         /// False when writing would destroy something we cannot replace: currently
-        /// only when a file on disk was written by a newer build of the mod. Checked
+        /// only when a file on disk is a format this build will not read, written by an
+        /// older build that it must be converted from or by a newer one. Checked
         /// by <see cref="TrySave"/>, and worth checking before doing work whose only
         /// purpose is to be saved.
         /// </summary>
@@ -1007,12 +1008,12 @@ namespace GlobalConversationTracker.Session
         {
             GlobalStateRecovery recovery = _store.LoadWithBackupFallback();
 
-            // A newer format version is intact history this build cannot read.
+            // An older or newer format is intact history this build will not read.
             // LoadWithBackupFallback deliberately does not consult the backup for it,
             // so there is nothing else to try: leave both files alone.
-            if (recovery.Live.Outcome == GlobalStateLoadOutcome.UnsupportedVersion)
+            if (recovery.Live.IsRefusedFormat)
             {
-                RefuseNewerFormat(recovery.Live);
+                RefuseFormat(recovery.Live);
                 return;
             }
 
@@ -1046,13 +1047,12 @@ namespace GlobalConversationTracker.Session
             }
 
             // Nothing usable. Either a genuine first run, or both generations are gone.
-            if (recovery.Backup != null
-                && recovery.Backup.Outcome == GlobalStateLoadOutcome.UnsupportedVersion)
+            if (recovery.Backup != null && recovery.Backup.IsRefusedFormat)
             {
-                // The live file is unusable and the backup was written by a newer
-                // build. Saving would rotate the unusable live file over that backup
+                // The live file is unusable and the backup is a format this build will
+                // not read. Saving would rotate the unusable live file over that backup
                 // and destroy the only intact history left.
-                RefuseNewerFormat(recovery.Backup);
+                RefuseFormat(recovery.Backup);
                 return;
             }
 
@@ -1090,15 +1090,38 @@ namespace GlobalConversationTracker.Session
             Origin = GlobalStateOrigin.NoStateOnDisk;
         }
 
-        private void RefuseNewerFormat(GlobalStateLoadResult result)
+        /// <summary>
+        /// Leaves a file this build will not read completely alone, and says why in the
+        /// words that fit which way it is out of step.
+        /// </summary>
+        /// <remarks>
+        /// TWO MESSAGES, because the remedies are opposites. An older file is fixed by
+        /// converting it; a newer one by updating the mod. Telling a player with an old file
+        /// to update the mod sends them to do the one thing that does not help.
+        /// </remarks>
+        private void RefuseFormat(GlobalStateLoadResult result)
         {
-            Origin = GlobalStateOrigin.RefusedNewerFormat;
+            const string LeftAlone =
+                "so it is being left completely alone: nothing will be saved for the rest of this session.";
+            string detail = result.ErrorMessage ?? "unsupported format version";
             CanSave = false;
+
+            if (result.Outcome == GlobalStateLoadOutcome.OutdatedVersion)
+            {
+                Origin = GlobalStateOrigin.RefusedOutdatedFormat;
+                _log.Error(
+                    $"The global state file '{result.SourcePath}' was written by an older, out-of-date version "
+                    + $"of this mod ({detail}). It is not damaged and nothing in it is lost, but this build "
+                    + $"cannot read it until it is converted, {LeftAlone} Convert it with the engine host's "
+                    + "convert verb, then start the game again.");
+                return;
+            }
+
+            Origin = GlobalStateOrigin.RefusedNewerFormat;
             _log.Error(
                 $"The global state file '{result.SourcePath}' was written by a newer version of this mod "
-                + $"({result.ErrorMessage ?? "unsupported format version"}). It holds history this build "
-                + "cannot read, so it is being left completely alone: nothing will be saved for the rest of "
-                + "this session. Update the mod, or move that file aside if you want to start over.");
+                + $"({detail}). It holds history this build cannot read, {LeftAlone} Update the mod, or move "
+                + "that file aside if you want to start over.");
         }
 
         private void AdoptLoadedState(GlobalStateLoadResult result, GlobalStateOrigin origin)
@@ -1135,6 +1158,8 @@ namespace GlobalConversationTracker.Session
                 GlobalStateLoadOutcome.Corrupt => $"was unreadable ({result.ErrorMessage ?? "no detail"})",
                 GlobalStateLoadOutcome.UnsupportedVersion =>
                     $"is a newer format ({result.ErrorMessage ?? "no detail"})",
+                GlobalStateLoadOutcome.OutdatedVersion =>
+                    $"is an older format that needs converting ({result.ErrorMessage ?? "no detail"})",
                 _ => "loaded",
             };
         }

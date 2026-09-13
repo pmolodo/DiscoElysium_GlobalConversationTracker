@@ -274,7 +274,7 @@ namespace GlobalConversationTracker.Persistence.Tests
         {
             GlobalStateLoadResult result = Parse(json);
 
-            Assert.Equal(GlobalStateLoadOutcome.UnsupportedVersion, result.Outcome);
+            Assert.Equal(GlobalStateLoadOutcome.OutdatedVersion, result.Outcome);
             Assert.Null(result.State);
             Assert.Contains(
                 FormatStamp.Converter, result.ErrorMessage!, StringComparison.Ordinal);
@@ -353,7 +353,7 @@ namespace GlobalConversationTracker.Persistence.Tests
 
             // It does not even say what format it is: naming one is what version 5 added,
             // so every older file is refused for that before its version is looked at.
-            Assert.Equal(GlobalStateLoadOutcome.UnsupportedVersion, result.Outcome);
+            Assert.Equal(GlobalStateLoadOutcome.OutdatedVersion, result.Outcome);
             Assert.Null(result.State);
             Assert.Contains(
                 FormatStamp.Converter, result.ErrorMessage!, StringComparison.Ordinal);
@@ -384,13 +384,13 @@ namespace GlobalConversationTracker.Persistence.Tests
         [InlineData(2)]
         public void Deserialize_LegacyVersion_IsRefusedRatherThanRead(int version)
         {
-            // Refused as UnsupportedVersion, NOT Corrupt. The distinction is the whole
+            // Refused as OutdatedVersion, NOT Corrupt. The distinction is the whole
             // point: a caller that sees Corrupt may overwrite the file from a backup, and
             // this file is full of real history. It has to stop instead.
             GlobalStateLoadResult result = Parse(
                 "{\"version\":" + version + ",\"conversations\":{\"3\":{\"17\":\"WasDisplayed\"}}}");
 
-            Assert.Equal(GlobalStateLoadOutcome.UnsupportedVersion, result.Outcome);
+            Assert.Equal(GlobalStateLoadOutcome.OutdatedVersion, result.Outcome);
             Assert.Null(result.State);
             Assert.Contains(
                 FormatStamp.Converter, result.ErrorMessage!, StringComparison.Ordinal);

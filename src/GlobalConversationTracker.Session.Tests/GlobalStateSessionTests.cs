@@ -236,8 +236,15 @@ namespace GlobalConversationTracker.Session.Tests
         }
 
         // -------------------------------------------------------------------
-        // A newer format version is intact history: refuse to touch it.
+        // A newer or older format version is intact history: refuse to touch it.
         // -------------------------------------------------------------------
+
+        /// <summary>
+        /// A state stamped with a version from a build newer than any there is. Stamped, so
+        /// it reads as newer rather than as a file from before formats named themselves.
+        /// </summary>
+        private const string NewerFile =
+            "{\"_format\":\"global-state\",\"_formatVersion\":99,\"conversations\":{}}";
 
         [Fact]
         public void EnsureInitialized_WithANewerFormatVersion_RefusesToSaveAndDoesNotFallBack()
@@ -250,8 +257,7 @@ namespace GlobalConversationTracker.Session.Tests
             store.Save(StateWith((3, 17, SimStatus.WasOffered)));
             File.Move(store.LivePath, store.BackupPath, overwrite: true);
 
-            const string newerFile = "{\"version\":99,\"conversations\":{\"3\":{\"17\":\"WasDisplayed\"}}}";
-            File.WriteAllText(store.LivePath, newerFile);
+            File.WriteAllText(store.LivePath, NewerFile);
 
             var log = new RecordingLog();
             using var session = new GlobalStateSession(store, log);
@@ -268,7 +274,43 @@ namespace GlobalConversationTracker.Session.Tests
 
             // And the file itself is untouched, before and after a save attempt.
             Assert.False(session.TrySave());
-            Assert.Equal(newerFile, File.ReadAllText(store.LivePath));
+            Assert.Equal(NewerFile, File.ReadAllText(store.LivePath));
+        }
+
+        [Fact]
+        public void EnsureInitialized_WithAnOutdatedFormat_SaysItIsOlderAndNamesTheConverter()
+        {
+            using var dir = new TempDirectory();
+            GlobalStateStore store = dir.CreateStore();
+
+            // A good backup exists, and must be left alone just as it is for a newer file:
+            // falling back would drop the history the old file holds.
+            store.Save(StateWith((3, 17, SimStatus.WasOffered)));
+            File.Move(store.LivePath, store.BackupPath, overwrite: true);
+
+            const string olderFile = "{\"version\":4,\"conversations\":{\"WasDisplayed\":{\"3\":\"17\"}}}";
+            File.WriteAllText(store.LivePath, olderFile);
+
+            var log = new RecordingLog();
+            using var session = new GlobalStateSession(store, log);
+
+            GlobalConversationState state = session.EnsureInitialized();
+
+            Assert.Equal(GlobalStateOrigin.RefusedOutdatedFormat, session.Origin);
+            Assert.False(session.CanSave);
+            Assert.True(state.IsEmpty);
+
+            // THE WORDS ARE THE POINT. An old file told to update the mod sends the player to
+            // do the one thing that does not help.
+            Assert.Contains(log.Errors, line => line.Contains("older", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(log.Errors, line => line.Contains("convert", StringComparison.OrdinalIgnoreCase));
+            Assert.DoesNotContain(
+                log.Errors, line => line.Contains("newer version", StringComparison.OrdinalIgnoreCase));
+            Assert.DoesNotContain(
+                log.Errors, line => line.Contains("Update the mod", StringComparison.OrdinalIgnoreCase));
+
+            Assert.False(session.TrySave());
+            Assert.Equal(olderFile, File.ReadAllText(store.LivePath));
         }
 
         [Fact]
@@ -279,7 +321,7 @@ namespace GlobalConversationTracker.Session.Tests
             using var dir = new TempDirectory();
             GlobalStateStore store = dir.CreateStore();
             File.WriteAllText(store.LivePath, "{ not json");
-            File.WriteAllText(store.BackupPath, "{\"version\":99,\"conversations\":{}}");
+            File.WriteAllText(store.BackupPath, NewerFile);
 
             var log = new RecordingLog();
             using var session = new GlobalStateSession(store, log);
@@ -564,8 +606,7 @@ namespace GlobalConversationTracker.Session.Tests
         {
             using var dir = new TempDirectory();
             GlobalStateStore store = dir.CreateStore();
-            const string newerFile = "{\"version\":99,\"conversations\":{\"3\":{\"17\":\"WasDisplayed\"}}}";
-            File.WriteAllText(store.LivePath, newerFile);
+            File.WriteAllText(store.LivePath, NewerFile);
 
             var log = new RecordingLog();
             using var session = new GlobalStateSession(store, log);
@@ -575,7 +616,7 @@ namespace GlobalConversationTracker.Session.Tests
             // Refused on the marking side, so the background writer is never even
             // started and there is nothing pending for a flush to land.
             Assert.False(session.Flush());
-            Assert.Equal(newerFile, File.ReadAllText(store.LivePath));
+            Assert.Equal(NewerFile, File.ReadAllText(store.LivePath));
             Assert.False(File.Exists(store.BackupPath));
             Assert.Contains(log.Warnings, line => line.Contains("Not saving", StringComparison.Ordinal));
         }

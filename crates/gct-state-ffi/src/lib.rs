@@ -38,6 +38,7 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use gct_formats::global_state::{self, GlobalState, Loaded, StateFault, Status};
+use gct_formats::header::HeaderFault;
 use gct_formats::save_statuses;
 
 /// The document read, and everything that would not.
@@ -48,11 +49,19 @@ pub const OUTCOME_LOADED: i32 = 0;
 /// The caller may overwrite the file: nothing in it could be read.
 pub const OUTCOME_CORRUPT: i32 = 1;
 
-/// It is a document of another kind, or another version of this one.
+/// It is a document of another kind, or a newer version of this one.
 ///
 /// The caller MUST NOT overwrite the file. It is not damaged, and what it holds is real
 /// history that a build which cannot read it must leave alone.
 pub const OUTCOME_UNSUPPORTED: i32 = 2;
+
+/// It is this format from before the version this build reads: it names no format, carries
+/// no version, or carries an older one.
+///
+/// The caller MUST NOT overwrite the file, for the same reason as
+/// [`OUTCOME_UNSUPPORTED`]. The difference is the remedy - this one converts - and so the
+/// words a player is shown.
+pub const OUTCOME_OUTDATED: i32 = 3;
 
 /// One entry's status, as the game numbers it.
 const STATUSES: [Status; 3] = [Status::Untouched, Status::WasOffered, Status::WasDisplayed];
@@ -167,13 +176,23 @@ pub unsafe extern "C" fn gct_state_read_save(blob: *const u8, len: usize) -> *mu
     }
 }
 
-/// Which of the two refusals a fault is.
+/// Which refusal a fault is.
 ///
 /// The distinction is what the caller does next: a document this build cannot read is full
 /// of somebody's history and must be left alone, where one that will not parse at all holds
-/// nothing to lose.
+/// nothing to lose. Among the ones left alone, an older document is brought forward by the
+/// converter, and a newer one or another kind of document is not.
+///
+/// A DOCUMENT THAT NAMES NO FORMAT IS AN OLDER ONE. Naming itself is what every current
+/// format added, so silence is what a file from before that looks like.
 fn outcome_of(fault: &StateFault) -> i32 {
     match fault {
+        StateFault::Header(_, HeaderFault::Unnamed { .. } | HeaderFault::Unstamped { .. }) => {
+            OUTCOME_OUTDATED
+        }
+        StateFault::Header(_, HeaderFault::Version { found, current, .. }) if found < current => {
+            OUTCOME_OUTDATED
+        }
         StateFault::Header(_, _) => OUTCOME_UNSUPPORTED,
         StateFault::Unreadable(_, _) | StateFault::Incomplete(_, _) => OUTCOME_CORRUPT,
     }
@@ -631,6 +650,42 @@ mod tests {
         let mut len = 0;
         let message = text_at(unsafe { gct_state_message(read, &raw mut len) }, len);
         assert!(message.contains("json-diff"), "{message}");
+
+        unsafe { gct_state_read_free(read) };
+    }
+
+    /// A state from before the version this reads is outdated, and names the converter.
+    #[test]
+    fn an_older_state_is_outdated_rather_than_unsupported() {
+        for older in [
+            r#"{"version":4,"conversations":{}}"#,
+            r#"{"_format":"global-state","conversations":{}}"#,
+            r#"{"_format":"global-state","_formatVersion":0,"conversations":{}}"#,
+        ] {
+            let read = read_of(older);
+
+            assert_eq!(
+                unsafe { gct_state_outcome(read) },
+                OUTCOME_OUTDATED,
+                "{older}"
+            );
+            let mut len = 0;
+            let message = text_at(unsafe { gct_state_message(read, &raw mut len) }, len);
+            assert!(
+                message.contains(gct_formats::header::CONVERTER),
+                "{older}: {message}"
+            );
+
+            unsafe { gct_state_read_free(read) };
+        }
+    }
+
+    /// A state from a newer build is unsupported, which is not something to convert.
+    #[test]
+    fn a_newer_state_is_unsupported() {
+        let read = read_of(r#"{"_format":"global-state","_formatVersion":99,"conversations":{}}"#);
+
+        assert_eq!(unsafe { gct_state_outcome(read) }, OUTCOME_UNSUPPORTED);
 
         unsafe { gct_state_read_free(read) };
     }

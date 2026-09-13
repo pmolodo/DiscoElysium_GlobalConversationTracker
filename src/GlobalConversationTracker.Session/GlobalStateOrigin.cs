@@ -36,10 +36,17 @@ namespace GlobalConversationTracker.Session
         NoStateOnDisk = 3,
 
         /// <summary>
-        /// The live file was written by a newer build of the mod. The file is intact
-        /// history, so it is left completely alone: the state is empty and
-        /// <see cref="GlobalStateSession.CanSave"/> is false for the whole session.
+        /// The file was written by a newer build of the mod, or is not a state file at all.
+        /// The file is intact history, so it is left completely alone: the state is empty
+        /// and <see cref="GlobalStateSession.CanSave"/> is false for the whole session.
         /// </summary>
         RefusedNewerFormat = 4,
+
+        /// <summary>
+        /// The file was written by an older version of the mod and has to be converted
+        /// before this build can read it. Left alone exactly as
+        /// <see cref="RefusedNewerFormat"/> is; only the remedy the log names differs.
+        /// </summary>
+        RefusedOutdatedFormat = 5,
     }
 }

@@ -27,7 +27,7 @@ namespace GlobalConversationTracker.Core;
 /// <para>AND TWO WAYS OF REFUSING, which is the more interesting difference and is also
 /// deliberate. This THROWS, which is right for a tool: a command that cannot read its input
 /// should stop, loudly, before it writes anything. <c>GlobalStateJson</c> returns an
-/// <c>UnsupportedVersion</c> RESULT instead, because its reader runs inside the game and an
+/// <c>OutdatedVersion</c> or <c>UnsupportedVersion</c> RESULT instead, because its reader runs inside the game and an
 /// exception there is a player's session, not a message - and because the caller has a
 /// decision to make that a throw would take away: a file from a newer build is full of real
 /// history, so it must not be overwritten and must not be replaced from a stale backup

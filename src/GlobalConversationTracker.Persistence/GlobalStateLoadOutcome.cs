@@ -33,12 +33,21 @@ namespace GlobalConversationTracker.Persistence
         Corrupt = 2,
 
         /// <summary>
-        /// The file is well-formed JSON but carries a format version this build does
-        /// not understand, most likely written by a newer version of the mod.
+        /// The file is well-formed JSON but was written by a newer version of the mod,
+        /// or is another kind of document altogether.
         /// Distinct from <see cref="Corrupt"/> on purpose: the file is probably
         /// intact and full of real history, so overwriting it would destroy data.
         /// Callers should refuse to save rather than recover.
         /// </summary>
         UnsupportedVersion = 3,
+
+        /// <summary>
+        /// The file is a state from an older version of the mod: it names no format,
+        /// carries no version, or carries an older one. Refused exactly as
+        /// <see cref="UnsupportedVersion"/> is, and for the same reason - it is intact
+        /// history - but the remedy is the opposite one: convert the file, rather than
+        /// update the mod.
+        /// </summary>
+        OutdatedVersion = 4,
     }
 }

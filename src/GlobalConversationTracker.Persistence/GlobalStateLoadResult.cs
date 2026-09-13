@@ -64,6 +64,14 @@ namespace GlobalConversationTracker.Persistence
         public bool IsLoaded => Outcome == GlobalStateLoadOutcome.Loaded;
 
         /// <summary>
+        /// True when the file is intact history this build will not read, older or newer:
+        /// it must be left alone rather than recovered from a backup or saved over.
+        /// </summary>
+        public bool IsRefusedFormat =>
+            Outcome == GlobalStateLoadOutcome.UnsupportedVersion
+            || Outcome == GlobalStateLoadOutcome.OutdatedVersion;
+
+        /// <summary>
         /// The loaded state, throwing if the load did not succeed. For call sites
         /// that have already checked <see cref="IsLoaded"/>.
         /// </summary>
@@ -105,6 +113,12 @@ namespace GlobalConversationTracker.Persistence
         {
             return new GlobalStateLoadResult(
                 GlobalStateLoadOutcome.UnsupportedVersion, sourcePath, null, errorMessage, 0, NoWarnings);
+        }
+
+        internal static GlobalStateLoadResult OutdatedVersion(string sourcePath, string errorMessage)
+        {
+            return new GlobalStateLoadResult(
+                GlobalStateLoadOutcome.OutdatedVersion, sourcePath, null, errorMessage, 0, NoWarnings);
         }
 
         /// <inheritdoc />

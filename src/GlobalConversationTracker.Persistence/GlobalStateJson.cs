@@ -89,7 +89,7 @@ namespace GlobalConversationTracker.Persistence
         /// <remarks>
         /// Equal to <see cref="FormatVersion"/>, and this reader knows no other shape at
         /// all. An older file is refused loudly, as
-        /// <see cref="GlobalStateLoadOutcome.UnsupportedVersion"/>, rather than parsed by
+        /// <see cref="GlobalStateLoadOutcome.OutdatedVersion"/>, rather than parsed by
         /// a path nothing else exercises - and refused rather than treated as corrupt,
         /// because it is full of real history and the caller must not overwrite it. What an
         /// older shape looks like is written down in the engine host's convert verb, which is the only
@@ -222,8 +222,9 @@ namespace GlobalConversationTracker.Persistence
         /// <returns>
         /// A result whose <see cref="GlobalStateLoadResult.Outcome"/> is
         /// <see cref="GlobalStateLoadOutcome.Loaded"/>,
-        /// <see cref="GlobalStateLoadOutcome.Corrupt"/> or
-        /// <see cref="GlobalStateLoadOutcome.UnsupportedVersion"/>. This overload
+        /// <see cref="GlobalStateLoadOutcome.Corrupt"/>,
+        /// <see cref="GlobalStateLoadOutcome.UnsupportedVersion"/> or
+        /// <see cref="GlobalStateLoadOutcome.OutdatedVersion"/>. This overload
         /// never reports <see cref="GlobalStateLoadOutcome.Missing"/>; only
         /// <see cref="GlobalStateStore"/> knows whether a file exists.
         /// </returns>
@@ -284,12 +285,18 @@ namespace GlobalConversationTracker.Persistence
                 string why = GlobalStateNative.TextAt(
                     GlobalStateNative.Message(read, out nuint length), length);
 
-                // THE TWO REFUSALS MEAN DIFFERENT THINGS TO THE CALLER. A document this
-                // build cannot read is full of real history and must be left alone; one
-                // that will not parse at all holds nothing to lose.
-                return outcome == GlobalStateNative.OutcomeUnsupported
-                    ? GlobalStateLoadResult.UnsupportedVersion(sourcePath, why)
-                    : GlobalStateLoadResult.Corrupt(sourcePath, why);
+                // THE REFUSALS MEAN DIFFERENT THINGS TO THE CALLER. A document this build
+                // cannot read is full of real history and must be left alone - an older one
+                // to be converted, a newer one to be read by a newer build - and one that
+                // will not parse at all holds nothing to lose.
+                return outcome switch
+                {
+                    GlobalStateNative.OutcomeUnsupported =>
+                        GlobalStateLoadResult.UnsupportedVersion(sourcePath, why),
+                    GlobalStateNative.OutcomeOutdated =>
+                        GlobalStateLoadResult.OutdatedVersion(sourcePath, why),
+                    _ => GlobalStateLoadResult.Corrupt(sourcePath, why),
+                };
             }
 
             var state = new GlobalConversationState();
