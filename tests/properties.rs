@@ -167,19 +167,19 @@ proptest! {
         let _ = parse_guard(&text);
     }
 
-    /// Nesting deeper than anybody writes is answered rather than overflowing the stack.
+    /// Nesting deeper than anybody writes parses, rather than overflowing the stack.
     ///
     /// A recursive-descent parser's failure mode, and one no corpus can find: the deepest
-    /// guard in the shipped database is nothing like this. Either answer is acceptable -
-    /// what is not is going down with the process.
+    /// guard in the shipped database is nothing like this.
     #[test]
-    fn deep_nesting_is_answered_rather_than_overflowing(depth in 1usize..300) {
+    fn deep_nesting_parses_rather_than_overflowing(depth in 1usize..3000) {
         let text = format!(
             "{}Variable[\"x\"]{}",
             "not (".repeat(depth),
             ")".repeat(depth),
         );
-        let _ = parse_guard(&text);
+        let guard = parse_guard(&text);
+        prop_assert!(guard.is_ok(), "{depth} levels were refused: {:?}", guard.err());
     }
 }
 

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-//! How deep a guard can be before the one thing that still walks it recursively overflows.
+//! Whether anything that handles a guard still costs stack in proportion to its depth.
 //!
 //! ## Why this is worth measuring rather than guessing
 //!
 //! A guard comes out of a dialogue database that a game patch or another mod can change, so
-//! "this string is not a guard" has to be an error and never a crash. Making that true needs
-//! a depth limit, and a depth limit needs a number: high enough to accept everything real,
-//! low enough to be safe on the smallest stack this code can find itself on.
+//! no string may bring the process down. The parser accepts a guard of any depth, which is
+//! only safe while nothing that walks the result overflows the smallest stack this code can
+//! find itself on - and a stack overflow aborts the process rather than panicking.
 //!
 //! The deepest guard in the shipped database is ELEVEN levels, of 26,210
 //! (measurements/guard_depth.rs). What is not known without measuring is the other end -
@@ -64,7 +64,8 @@ impl IGuardContext for Nothing {
 /// could plausibly run.
 const STACK: usize = 1024 * 1024;
 
-/// Far enough past the old cliff of 2,875 levels that surviving it means something.
+/// Far enough past where a recursive walk overflows a one-megabyte stack - 2,875 levels in a
+/// release build - that surviving it means something.
 const WELL_PAST: usize = 40_000;
 
 /// A guard `depth` levels deep, built without recursing.

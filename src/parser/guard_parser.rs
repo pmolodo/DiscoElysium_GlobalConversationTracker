@@ -112,58 +112,6 @@ struct Token {
     value: String,
 }
 
-/// How deep a guard's expression tree may go before it is refused.
-///
-/// ## Why there is still a limit, when nothing about a guard recurses any more
-///
-/// The parser below is ITERATIVE (de-bnjy.4): nesting costs entries in a `Vec` and nothing
-/// on the stack, so no guard, however deep, can overflow while being read. What it produces
-/// is a FLAT TABLE (de-eyk8.2), so freeing one is a deallocation rather than a walk, and
-/// evaluating or rendering one is a sweep in index order rather than a descent.
-///
-/// One consumer still descends by choice: `GuardCompiler::compile` is demand-driven,
-/// because a comparison answers from its operands' SHAPE without compiling either, and a
-/// bottom-up sweep would build a decision diagram for every operand it never looks at. That
-/// recursion is what this limit bounds. An overflow is not a panic: the guard page is hit,
-/// Rust prints, the process ABORTS, and nothing can catch it. Inside the game that is the
-/// player's session.
-///
-/// ## It counts the TREE, which is what the old limit did not
-///
-/// The limit this replaces counted the parser's re-entries. That was twice the depth a
-/// reader counts - `not (` was two steps for one level - and needed the factor of two
-/// explained every time. It also missed the shape that matters most: `a and b and c` chained
-/// in a `while` loop, costing NO recursion to parse and producing a left-leaning tree as
-/// deep as the chain is long. Ten thousand `and`s were accepted by the old bound and would
-/// have overflowed whatever walked the result.
-///
-/// This is measured on the tree as it is built, so a long chain is bounded exactly as a deep
-/// nest is.
-///
-/// ## Why this number
-///
-/// Far above real content, and bounding nothing but what is plainly not content.
-///
-/// - THE DEEPEST GUARD IN THE SHIPPED DATABASE IS ELEVEN LEVELS, of 26,210 non-empty ones,
-///   and `tests/guard_depth.rs` re-parses all of them rather than arguing from the figure.
-///   This is twenty-three times that, so the limit is nowhere near real content.
-/// - IT IS NOT A STACK LIMIT. Nothing that walks a guard costs stack in proportion to its
-///   depth - `measurements/guard_stack.rs` builds, evaluates, renders and compiles forty
-///   thousand levels on a one-megabyte stack - so a guard past this is refused as a
-///   database that is not what the game ships, rather than as one that would crash.
-const MAX_DEPTH: usize = 256;
-
-/// A value the parser has read, carrying how deep the tree under it goes.
-///
-/// The depth travels WITH the value because [`MAX_DEPTH`] bounds the tree, and the parser's
-/// own stacks do not measure it: an operator is reduced as soon as one of equal or lower
-/// binding power arrives, so a chain of ten thousand `and`s never has more than one entry
-/// waiting while the tree under it grows ten thousand deep.
-struct Operand {
-    node: Guard,
-    depth: usize,
-}
-
 /// An operator that has been read but not yet built, because its operands are not all in.
 #[derive(Debug)]
 enum Pending {
@@ -196,11 +144,7 @@ enum FrameKind {
     /// `( ... )`, whose value is simply what is inside it.
     Group,
     /// `name( ... )`, gathering arguments until the closing parenthesis.
-    Call {
-        name: String,
-        args: Vec<Guard>,
-        deepest: usize,
-    },
+    Call { name: String, args: Vec<Guard> },
 }
 
 /// One open bracket, and where the work inside it starts.
@@ -224,7 +168,7 @@ struct Parser {
     pos: usize,
     source: String,
     /// Values read but not yet built into anything, innermost last.
-    operands: Vec<Operand>,
+    operands: Vec<Guard>,
     /// Operators waiting for their operands, innermost last.
     ops: Vec<Pending>,
     /// Brackets currently open, outermost first.
@@ -264,7 +208,7 @@ impl Parser {
             }
             break;
         }
-        Ok(self.pop_operand()?.node)
+        self.pop_operand()
     }
 
     /// The prefix position: any `not`s, then a value or an opening bracket.
@@ -300,7 +244,6 @@ impl Parser {
                 self.open(FrameKind::Call {
                     name,
                     args: Vec::new(),
-                    deepest: 0,
                 });
                 return Ok(true);
             }
@@ -325,7 +268,8 @@ impl Parser {
             let number = raw.parse::<f64>().map_err(|_| {
                 GuardParseError::new(format!("bad number '-{raw}'"), self.source.clone())
             })?;
-            self.push_leaf(Guard::literal(GuardValue::from_number(-number)))?;
+            self.operands
+                .push(Guard::literal(GuardValue::from_number(-number)));
             return Ok(false);
         }
 
@@ -361,7 +305,7 @@ impl Parser {
                 ));
             }
         };
-        self.push_leaf(leaf)?;
+        self.operands.push(leaf);
         Ok(false)
     }
 
@@ -436,26 +380,24 @@ impl Parser {
     }
 
     /// Pops the innermost frame, which must be a call, and pushes what it built.
-    fn close_call(&mut self, last: Option<Operand>) -> Result<(), GuardParseError> {
+    fn close_call(&mut self, last: Option<Guard>) -> Result<(), GuardParseError> {
         if let Some(argument) = last {
             self.add_argument(argument);
         }
         match self.frames.pop().map(|frame| frame.kind) {
-            Some(FrameKind::Call {
-                name,
-                args,
-                deepest,
-            }) => self.push_operand(Guard::call(name, args), deepest + 1),
+            Some(FrameKind::Call { name, args }) => {
+                self.operands.push(Guard::call(name, args));
+                Ok(())
+            }
             _ => Err(self.confused()),
         }
     }
 
-    fn add_argument(&mut self, argument: Operand) {
+    fn add_argument(&mut self, argument: Guard) {
         if let Some(frame) = self.frames.last_mut() {
             frame.compared = false;
-            if let FrameKind::Call { args, deepest, .. } = &mut frame.kind {
-                *deepest = (*deepest).max(argument.depth);
-                args.push(argument.node);
+            if let FrameKind::Call { args, .. } = &mut frame.kind {
+                args.push(argument);
             }
         }
     }
@@ -500,39 +442,17 @@ impl Parser {
     fn reduce(&mut self) -> Result<(), GuardParseError> {
         let op = self.ops.pop().ok_or_else(|| self.confused())?;
         let right = self.pop_operand()?;
-        if let Pending::Not = op {
-            let depth = right.depth;
-            return self.push_operand(Guard::not(right.node), depth + 1);
-        }
-
-        let left = self.pop_operand()?;
-        let depth = left.depth.max(right.depth);
-        let (left, right) = (left.node, right.node);
         let node = match op {
-            Pending::And => Guard::and(left, right),
-            Pending::Or => Guard::or(left, right),
-            Pending::Compare(name) => Guard::comparison(name, left, right),
-            Pending::Not => return Err(self.confused()),
+            Pending::Not => Guard::not(right),
+            Pending::And => Guard::and(self.pop_operand()?, right),
+            Pending::Or => Guard::or(self.pop_operand()?, right),
+            Pending::Compare(name) => Guard::comparison(name, self.pop_operand()?, right),
         };
-        self.push_operand(node, depth + 1)
-    }
-
-    fn push_leaf(&mut self, node: Guard) -> Result<(), GuardParseError> {
-        self.push_operand(node, 1)
-    }
-
-    fn push_operand(&mut self, node: Guard, depth: usize) -> Result<(), GuardParseError> {
-        if depth > MAX_DEPTH {
-            return Err(GuardParseError::new(
-                format!("nested more than {MAX_DEPTH} deep"),
-                self.source.clone(),
-            ));
-        }
-        self.operands.push(Operand { node, depth });
+        self.operands.push(node);
         Ok(())
     }
 
-    fn pop_operand(&mut self) -> Result<Operand, GuardParseError> {
+    fn pop_operand(&mut self) -> Result<Guard, GuardParseError> {
         self.operands.pop().ok_or_else(|| self.confused())
     }
 

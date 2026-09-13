@@ -2,15 +2,13 @@
 //! How deeply nested is the deepest guard the shipped database actually contains?
 //!
 //! The number behind a claim that was only ever a comment. `tests/properties.rs` says of its
-//! 300-level nesting case that "the deepest guard in the shipped database is nothing like
-//! this", and what rests on that being true is where `guard_parser::MAX_DEPTH` is set. So
-//! measure it.
+//! deep nesting case that "the deepest guard in the shipped database is nothing like this".
+//! So measure it.
 //!
-//! DEPTH IS WHAT BOUNDS THE ONE REMAINING RECURSION. A guard is a flat table, so building,
-//! freeing, evaluating and rendering one are all sweeps that cannot overflow whatever the
-//! nesting. `GuardCompiler::compile_node` still descends, because it is demand-driven and a
-//! sweep would compile operands that comparisons never read - and that descent is what this
-//! figure bounds.
+//! THE FIGURE DESCRIBES THE CONTENT; NOTHING DEPENDS ON IT. The parser holds its own stacks,
+//! a guard is a flat table, so building, freeing, evaluating and rendering one are sweeps in
+//! index order, and `GuardCompiler::compile_node` descends on a work stack of its own - so no
+//! depth overflows anything, and the parser accepts every depth.
 //!
 //! THE CHECK THAT KEEPS THIS TRUE IS ELSEWHERE. `tests/guard_depth.rs` walks the same
 //! guards with an assertion on the end, so a database or a parser that stopped accepting

@@ -260,87 +260,44 @@ fn input_that_stops_mid_expression_is_refused_rather_than_crashing() {
     }
 }
 
-/// Nesting far past anything real is REFUSED, and refusing is not crashing.
+/// How many operators deep the guards below go.
 ///
-/// ## The failure this replaces
-///
-/// A stack overflow. The parser used to be recursive descent, so nesting depth was stack
-/// depth, and until de-fpax there was no bound on it:
-/// `deep_nesting_is_answered_rather_than_overflowing` in tests/properties.rs - a test
-/// written to prove exactly this - brought the whole test binary down with
-/// STATUS_STACK_OVERFLOW on a clean tree. An overflow is not a panic. The guard page is hit,
-/// Rust prints, the process ABORTS, and nothing can catch it; inside the game that is the
-/// player's session.
-///
-/// The parser is iterative now (de-bnjy.4) and cannot overflow at all, but everything that
-/// USES what it returns still walks the tree by recursion - evaluate, Display, and the Drop
-/// that frees it - so the bound is still what keeps the abort out of reach.
-///
-/// ## The two ends it is pinned between
-///
-/// Both measured, both worth keeping honest:
-///
-/// - ELEVEN is the deepest guard in the shipped database, of 26,210, measured by
-///   measurements/guard_depth.rs - so everything real is accepted with room to spare. The
-///   whole database is re-parsed by tests/guard_depth.rs, which is what keeps saying so.
-/// - 800 is where walking a tree overflows a one-megabyte stack, the Windows main-thread
-///   default, in a debug build; 2,875 in a release one (measurements/guard_stack.rs). The limit is
-///   under a third of the pessimistic figure.
-#[test]
-fn nesting_deeper_than_anything_real_is_refused_rather_than_fatal() {
-    // Comfortably inside, and about ten times the deepest guard the game ships. The count
-    // is now the depth a reader sees: the limit is on the TREE, so `not (` is one level and
-    // not the two recursion steps the old bound charged for it.
-    let real = format!("{}Variable[\"x\"]{}", "not (".repeat(100), ")".repeat(100));
-    assert!(
-        parse_guard(&real).is_ok(),
-        "100 levels of not( should still parse"
-    );
+/// Nothing that handles a guard costs stack in proportion to its depth: the parser holds its
+/// own stacks, a parsed guard is a flat table evaluated, rendered and freed by sweeps in
+/// index order, and the compiler walks on a stack of its own (measurements/guard_stack.rs).
+/// So the parser accepts every depth, and these pin that. The deepest guard in the shipped
+/// database is eleven levels (measurements/guard_depth.rs); this is hundreds of times that.
+const FAR_PAST_ANYTHING_REAL: usize = 4_000;
 
-    // And past the limit, an ERROR - which is the whole point. The number is not asserted
-    // here; what matters is that there is one and that it answers.
-    let absurd = format!("{}Variable[\"x\"]{}", "not (".repeat(500), ")".repeat(500));
-    let refused = parse_guard(&absurd);
-    assert!(refused.is_err(), "500 levels should be refused");
-    assert!(
-        refused.unwrap_err().to_string().contains("nested"),
-        "the message should say what was wrong with it",
-    );
+/// Parses `text` and checks it is as deep as it was written and still answers `expected`.
+fn assert_parses_deep(text: &str, depth: usize, expected: Ternary) {
+    let guard = parse_guard(text).unwrap_or_else(|e| panic!("{depth} levels should parse: {e:?}"));
+    assert_eq!(guard.depth(), depth);
+    assert_eq!(guard.test(&WorldContext(&TestWorld::new())), expected);
 }
 
-/// The same, without a parenthesis in sight.
-///
-/// `not not not x` reaches the depth through a different part of the parser than
-/// `not (not (...))` does - a run of prefix operators waiting on the operator stack, rather
-/// than a run of open brackets waiting on the frame stack. Both end up as depth in the same
-/// tree, and both are bounded, so both are tested.
+/// A run of open brackets, each waiting on the parser's frame stack.
 #[test]
-fn unparenthesised_nesting_is_bounded_too() {
-    let absurd = format!("{}Variable[\"x\"]", "not ".repeat(500));
-    assert!(parse_guard(&absurd).is_err(), "500 nots should be refused");
+fn bracketed_nesting_of_any_depth_parses() {
+    let text = format!(
+        "{}true{}",
+        "not (".repeat(FAR_PAST_ANYTHING_REAL),
+        ")".repeat(FAR_PAST_ANYTHING_REAL),
+    );
+    assert_parses_deep(&text, FAR_PAST_ANYTHING_REAL + 1, Ternary::True);
 }
 
-/// A CHAIN is bounded too, which is the hole the old limit left open.
-///
-/// `a and b and c` never recursed in the recursive-descent parser - conjunctions were
-/// gathered by a `while` loop - so a guard with ten thousand `and`s cost nothing to parse
-/// and sailed past a limit that counted re-entries. What it produced was a tree ten thousand
-/// levels deep down its left side, and evaluating, printing or freeing that walks every one
-/// of them. The bound is on the tree now, so the shape that used to slip through does not.
+/// A run of prefix `not`s, each waiting on the parser's operator stack.
 #[test]
-fn a_long_chain_is_as_bounded_as_a_deep_nest() {
-    let chain = "true and ".repeat(500) + "true";
-    let refused = parse_guard(&chain);
-    assert!(refused.is_err(), "a 500-long and-chain should be refused");
-    assert!(
-        refused.unwrap_err().to_string().contains("nested"),
-        "the message should say what was wrong with it",
-    );
+fn unparenthesised_nesting_of_any_depth_parses() {
+    let text = "not ".repeat(FAR_PAST_ANYTHING_REAL + 1) + "true";
+    assert_parses_deep(&text, FAR_PAST_ANYTHING_REAL + 2, Ternary::False);
+}
 
-    // And a chain of ordinary length is untouched: real guards are full of these.
-    let short = "true and ".repeat(20) + "true";
-    assert!(
-        parse_guard(&short).is_ok(),
-        "a 20-long and-chain is ordinary content"
-    );
+/// A chain of `and`s, which is reduced as it is read - so nothing waits on either stack while
+/// the tree grows down its left side, as deep as the chain is long.
+#[test]
+fn a_chain_of_any_length_parses() {
+    let text = "true and ".repeat(FAR_PAST_ANYTHING_REAL) + "false";
+    assert_parses_deep(&text, FAR_PAST_ANYTHING_REAL + 1, Ternary::False);
 }

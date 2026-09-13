@@ -81,14 +81,14 @@ enum Node {
 ///
 /// Both are checked in the tests rather than only asserted here.
 ///
-/// ## WHAT STILL WALKS A GUARD RECURSIVELY, and why that is now a bounded choice
+/// ## WHAT STILL WALKS A GUARD TOP-DOWN, and why that costs no stack
 ///
 /// `GuardCompiler::compile_node` does, over [`GuardRef`] handles rather than over the data. It
-/// stays that way DELIBERATELY: a comparison compiles neither operand - it reads their
-/// shape and answers from the register - so a bottom-up sweep would build a decision
-/// diagram for every operand that comparisons never look at, which is work the recursion
-/// does not do. Demand-driven is the cheaper walk here, and the parser's depth limit bounds
-/// it at 256 against a shipped database whose deepest guard is eleven.
+/// is top-down DELIBERATELY: a comparison compiles neither operand - it reads their shape and
+/// answers from the register - so a bottom-up sweep would build a decision diagram for every
+/// operand that comparisons never look at, which is work the demand-driven walk does not do.
+/// It walks on a work stack of its own rather than the thread's, so no guard is too deep for
+/// it, and the parser accepts a guard of any depth.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Guard {
     /// Every node, children before parents, the root last.
@@ -210,7 +210,7 @@ impl Guard {
         self.as_ref().expression()
     }
 
-    /// How deeply the guard nests, which is what the parser's limit bounds.
+    /// How deeply the guard nests: one for a leaf, one more for each level above it.
     ///
     /// A forward sweep rather than a walk, for the reason the type doc gives: a node's
     /// children are always earlier than it is, so one pass in index order has every child's
