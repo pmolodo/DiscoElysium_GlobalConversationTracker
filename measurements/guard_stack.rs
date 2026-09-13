@@ -14,29 +14,22 @@
 //! generous. This code runs inside the game, on whatever thread the dialogue system calls
 //! it from.
 //!
-//! ## What is left to overflow, which is one thing rather than five
+//! ## What could overflow, and why nothing should
 //!
-//! It used to be five. The parser was recursive descent and gave out at about 260
-//! re-entries; it is iterative now (de-bnjy.4). What it returned was a tree of `Box`es, and
-//! `evaluate`, `Display` and the derived `Drop` all walked that; a guard is a flat table now
-//! (de-eyk8.2), so building, freeing, evaluating and rendering one are sweeps in index order
-//! that cannot overflow at any depth.
+//! Six things walk a guard. The parser holds its own stacks. A guard is a flat table, so
+//! building, freeing, evaluating and rendering one are sweeps in index order. And
+//! `GuardCompiler::compile_node`, which has to walk DOWN - a comparison answers from its
+//! operands' shape without compiling either, so a sweep would build diagrams nobody reads -
+//! does so on a work stack of its own rather than on the thread's.
 //!
-//! `GuardCompiler::compile_node` still descends, and by choice: a comparison answers from
-//! its operands' SHAPE without compiling either, so a bottom-up sweep would build a decision
-//! diagram for every operand a comparison never looks at. Demand-driven is the cheaper walk,
-//! and its depth is what `MAX_DEPTH` in src/parser/guard_parser.rs is chosen against.
+//! So none of them costs stack in proportion to depth, and this is the check that that is
+//! still true rather than a search for where it stops being.
 //!
 //! ## How
 //!
-//! Two phases, because the two halves now answer differently.
-//!
-//! FIRST, the flat consumers, at a depth two orders past the old cliff. Building, using and
-//! freeing a 40,000-level guard on a one-megabyte stack either survives or it does not, and
-//! it is one line of output rather than a walk.
-//!
-//! SECOND, the compiler, walking up until a thread dies. Every step prints before it tries,
-//! because an overflow takes the process with it: the last line printed is the answer.
+//! Two lines, one per half: build, use and free a guard two orders past the old cliff on a
+//! one-megabyte stack, then compile one. Each survives or it does not. A death is the
+//! process ending, so each prints what it is about to try before it tries it.
 //!
 //! Run it deliberately: `cargo run --release --example guard_stack`.
 
@@ -140,25 +133,16 @@ fn main() {
         }
     );
 
-    // EVERYTHING A READER NEEDS IS PRINTED BEFORE THE WALK, because nothing after it runs.
-    // A closing summary could never appear: the walk ends by taking the process down, so
-    // `deepest` and its arithmetic would be dead code that nonetheless implied the run
-    // finishes normally - two contradictory accounts of the output, one false (de-wy8q).
-    println!("\n  walking up on GuardCompiler::compile_node, the one walk that still descends:");
-    println!("  THE LAST 'trying N' LINE IS THE ANSWER: the process dies at that depth.");
-    println!("  the deepest guard in the shipped database is 11 levels, of 26,210");
-    println!("  MAX_DEPTH in src/parser/guard_parser.rs is 256, between those two\n");
-
-    for depth in (25..40_000).step_by(25) {
-        println!("  trying {depth}...");
-        if !compiling_survives(depth) {
-            // NOT THE OVERFLOW, which never reaches here - a stack overflow on Windows is
-            // STATUS_STACK_OVERFLOW rather than a panic, so the guard-page handler aborts
-            // the process and `join` never returns at all. This catches an ordinary panic
-            // inside the thread, which would otherwise look like the walk running out of
-            // range.
-            println!("  the thread at {depth} failed WITHOUT overflowing; that is a bug.");
-            break;
+    // THE COMPILER, the same way. What is printed first is what was being tried if the
+    // process ends here: an overflow on Windows is STATUS_STACK_OVERFLOW rather than a panic,
+    // so the guard-page handler aborts the process and nothing after this line runs.
+    println!("\n  compiling {WELL_PAST} levels...");
+    println!(
+        "  {}",
+        match compiling_survives(WELL_PAST) {
+            true => "survived - the compiler does not overflow at any depth",
+            // An ordinary panic, not an overflow - which would never have reached here.
+            false => "the thread failed WITHOUT overflowing, which is a bug",
         }
-    }
+    );
 }

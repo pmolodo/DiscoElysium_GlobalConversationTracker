@@ -142,16 +142,15 @@ struct Token {
 ///
 /// ## Why this number
 ///
-/// Between two measured ends, and clear of both.
+/// Far above real content, and bounding nothing but what is plainly not content.
 ///
 /// - THE DEEPEST GUARD IN THE SHIPPED DATABASE IS ELEVEN LEVELS, of 26,210 non-empty ones,
 ///   and `tests/guard_depth.rs` re-parses all of them rather than arguing from the figure.
 ///   This is twenty-three times that, so the limit is nowhere near real content.
-/// - THE CONSUMERS OVERFLOW A ONE-MEGABYTE STACK - the Windows main-thread default, and the
-///   smallest place this code could plausibly run - at 800 levels in a debug build and
-///   2,875 in a release one (`measurements/guard_stack.rs`; about 1.3 KB and 365 bytes a level).
-///   This is under a third of the pessimistic figure, leaving the rest of that megabyte for
-///   whatever called in.
+/// - IT IS NOT A STACK LIMIT. Nothing that walks a guard costs stack in proportion to its
+///   depth - `measurements/guard_stack.rs` builds, evaluates, renders and compiles forty
+///   thousand levels on a one-megabyte stack - so a guard past this is refused as a
+///   database that is not what the game ships, rather than as one that would crash.
 const MAX_DEPTH: usize = 256;
 
 /// A value the parser has read, carrying how deep the tree under it goes.

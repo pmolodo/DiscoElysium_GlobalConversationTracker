@@ -68,6 +68,35 @@ enum Distances {
     Exactly(i64),
 }
 
+/// What compiling one guard node takes, as [`GuardCompiler::plan`] decides it.
+enum Plan<'g> {
+    /// Its rails, worked out without compiling anything under it.
+    Settled(MayBe),
+    /// One operand's rails first, then this.
+    Unary(Combiner, GuardRef<'g>),
+    /// Two operands' rails first, left then right, then this.
+    Binary(Combiner, GuardRef<'g>, GuardRef<'g>),
+}
+
+/// How a node's rails are made from its operands'.
+#[derive(Clone, Copy)]
+enum Combiner {
+    Not,
+    And,
+    Or,
+    /// `expression == truth`: the operand's rails as they are against true, and swapped
+    /// against false.
+    AgainstBoolean(bool),
+}
+
+/// One thing left for [`GuardCompiler::compile_node`] to do.
+enum Step<'g> {
+    /// Plan this node, compiling it outright or asking for its operands.
+    Compile(GuardRef<'g>),
+    /// Join the operands just compiled for this node.
+    Combine(Combiner, GuardRef<'g>),
+}
+
 /// A guard as two sets of data states: where it may hold, and where it may fail.
 #[derive(Clone)]
 pub struct MayBe {
@@ -368,18 +397,58 @@ impl<'a> GuardCompiler<'a> {
 
     /// One node of a guard, and everything under it.
     ///
-    /// DEMAND-DRIVEN, WHICH IS WHY IT DESCENDS. A guard is a flat table whose children
-    /// always sit earlier than their parents, so a single forward sweep would compile the
-    /// whole of it - and that is the wrong walk here, because a comparison answers from its
-    /// operands' SHAPE and compiles neither. `MoneyAmount() >= 50` becomes one comparison
-    /// over the purse's bits; a sweep would first build a decision diagram for the call and
-    /// for the literal, and then throw both away.
+    /// DEMAND-DRIVEN, WHICH IS WHY IT WALKS DOWN rather than sweeping. A guard is a flat
+    /// table whose children always sit earlier than their parents, so a single forward sweep
+    /// would compile the whole of it - and that is the wrong walk here, because a comparison
+    /// answers from its operands' SHAPE and compiles neither. `MoneyAmount() >= 50` becomes
+    /// one comparison over the purse's bits; a sweep would first build a decision diagram for
+    /// the call and for the literal, and then throw both away.
     ///
-    /// So the descent is a choice about what work to avoid rather than something the data
-    /// forces, and what bounds it is `guard_parser::MAX_DEPTH` against a shipped database
-    /// whose deepest guard is eleven levels. See [`Guard`] for what stopped recursing.
-    fn compile_node(&mut self, guard: GuardRef<'_>) -> MayBe {
-        match guard.expression() {
+    /// ON A STACK OF ITS OWN, so no guard is too deep for the thread it runs on. Each node is
+    /// PLANNED - see [`Self::plan`] - and a node that needs its operands asks for them: they
+    /// are compiled first and then COMBINED by [`Self::combine`]. The work stack holds what is
+    /// still to do and the results stack what is done. Operands are pushed right first, so
+    /// they come off left first - the order a guard is written in, and the order its
+    /// fallbacks are recorded in.
+    fn compile_node(&mut self, root: GuardRef<'_>) -> MayBe {
+        let mut work = vec![Step::Compile(root)];
+        let mut results: Vec<MayBe> = Vec::new();
+        while let Some(step) = work.pop() {
+            match step {
+                Step::Compile(node) => match self.plan(node) {
+                    Plan::Settled(rails) => results.push(rails),
+                    Plan::Unary(combiner, operand) => {
+                        work.push(Step::Combine(combiner, node));
+                        work.push(Step::Compile(operand));
+                    }
+                    Plan::Binary(combiner, left, right) => {
+                        work.push(Step::Combine(combiner, node));
+                        work.push(Step::Compile(right));
+                        work.push(Step::Compile(left));
+                    }
+                },
+                Step::Combine(combiner, node) => {
+                    let combined = self.combine(combiner, node, &mut results);
+                    results.push(combined);
+                }
+            }
+        }
+        results
+            .pop()
+            .expect("a compiled guard leaves exactly one answer")
+    }
+
+    /// What compiling one node takes: its rails outright, or its operands' rails first.
+    ///
+    /// EVERY DECISION ABOUT A NODE IS MADE HERE, and [`Self::compile_node`] only moves
+    /// results between its stacks. Four shapes ask for operands - `not`, `and`, `or`, and a
+    /// comparison against a boolean - and everything else is settled on the spot, without
+    /// compiling what is under it.
+    ///
+    /// THE LIFETIME IS NAMED, and has to be: with `&mut self` in scope an elided output
+    /// lifetime would tie the plan to the borrow of the compiler rather than to the guard.
+    fn plan<'g>(&mut self, guard: GuardRef<'g>) -> Plan<'g> {
+        Plan::Settled(match guard.expression() {
             GuardExpression::Literal(value) => match value.as_condition() {
                 Ternary::True => {
                     let t = self.top();
@@ -411,48 +480,12 @@ impl<'a> GuardCompiler<'a> {
                 },
             },
 
-            GuardExpression::Not(inner) => {
-                let inner = self.compile_node(inner);
-                MayBe {
-                    may_be_true: inner.may_be_false,
-                    may_be_false: inner.may_be_true,
-                }
-            }
-
+            GuardExpression::Not(inner) => return Plan::Unary(Combiner::Not, inner),
             GuardExpression::And(left, right) => {
-                let a = self.compile_node(left);
-                let b = self.compile_node(right);
-                // Both may hold, so both rails must allow it; either failing is enough to
-                // fail the conjunction. BOTH OR NEITHER: a MayBe with one rail built and
-                // the other not is not a weaker answer, it is an inconsistent one.
-                match (
-                    a.may_be_true.and(&b.may_be_true),
-                    a.may_be_false.or(&b.may_be_false),
-                ) {
-                    (Ok(may_be_true), Ok(may_be_false)) => MayBe {
-                        may_be_true,
-                        may_be_false,
-                    },
-                    _ => self.no_room(guard.to_string()),
-                }
+                return Plan::Binary(Combiner::And, left, right);
             }
-
-            GuardExpression::Or(left, right) => {
-                let a = self.compile_node(left);
-                let b = self.compile_node(right);
-                match (
-                    a.may_be_true.or(&b.may_be_true),
-                    a.may_be_false.and(&b.may_be_false),
-                ) {
-                    (Ok(may_be_true), Ok(may_be_false)) => MayBe {
-                        may_be_true,
-                        may_be_false,
-                    },
-                    _ => self.no_room(guard.to_string()),
-                }
-            }
-
-            GuardExpression::Comparison(op, left, right) => self.compare(op, left, right),
+            GuardExpression::Or(left, right) => return Plan::Binary(Combiner::Or, left, right),
+            GuardExpression::Comparison(op, left, right) => return self.compare(op, left, right),
 
             // A world query - HasItem, IsTaskActive, MoneyAmount, the clock, and every
             // other thing the search asks the game rather than its own state. Undecided
@@ -589,6 +622,68 @@ impl<'a> GuardCompiler<'a> {
                 };
                 self.undecided(reason, guard.to_string())
             }
+        })
+    }
+
+    /// Joins the rails of a node's operands, which [`Self::compile_node`] has just compiled
+    /// and left on top of `results`, right above left.
+    fn combine(
+        &mut self,
+        combiner: Combiner,
+        node: GuardRef<'_>,
+        results: &mut Vec<MayBe>,
+    ) -> MayBe {
+        const COMPILED_FIRST: &str = "a combiner's operands are compiled before it";
+        match combiner {
+            Combiner::Not => {
+                let inner = results.pop().expect(COMPILED_FIRST);
+                MayBe {
+                    may_be_true: inner.may_be_false,
+                    may_be_false: inner.may_be_true,
+                }
+            }
+            Combiner::AgainstBoolean(truth) => {
+                let inner = results.pop().expect(COMPILED_FIRST);
+                if truth {
+                    inner
+                } else {
+                    MayBe {
+                        may_be_true: inner.may_be_false,
+                        may_be_false: inner.may_be_true,
+                    }
+                }
+            }
+            Combiner::And => {
+                let b = results.pop().expect(COMPILED_FIRST);
+                let a = results.pop().expect(COMPILED_FIRST);
+                // Both may hold, so both rails must allow it; either failing is enough to
+                // fail the conjunction. BOTH OR NEITHER: a MayBe with one rail built and
+                // the other not is not a weaker answer, it is an inconsistent one.
+                match (
+                    a.may_be_true.and(&b.may_be_true),
+                    a.may_be_false.or(&b.may_be_false),
+                ) {
+                    (Ok(may_be_true), Ok(may_be_false)) => MayBe {
+                        may_be_true,
+                        may_be_false,
+                    },
+                    _ => self.no_room(node.to_string()),
+                }
+            }
+            Combiner::Or => {
+                let b = results.pop().expect(COMPILED_FIRST);
+                let a = results.pop().expect(COMPILED_FIRST);
+                match (
+                    a.may_be_true.or(&b.may_be_true),
+                    a.may_be_false.and(&b.may_be_false),
+                ) {
+                    (Ok(may_be_true), Ok(may_be_false)) => MayBe {
+                        may_be_true,
+                        may_be_false,
+                    },
+                    _ => self.no_room(node.to_string()),
+                }
+            }
         }
     }
 
@@ -598,7 +693,7 @@ impl<'a> GuardCompiler<'a> {
     /// bits compared against a constant's, which is the arithmetic that makes decision
     /// diagrams blow up and is deliberately not attempted until something measures
     /// whether it is needed.
-    fn compare<'g>(&mut self, op: &str, left: GuardRef<'g>, right: GuardRef<'g>) -> MayBe {
+    fn compare<'g>(&mut self, op: &str, left: GuardRef<'g>, right: GuardRef<'g>) -> Plan<'g> {
         // `expr == false` is negation and `expr == true` is a no-op, and BOTH are
         // everywhere: 5,994 of the 13,059 distinct guards in the database end in
         // `== false` and another 1,582 in `== true`, because that is how the condition
@@ -609,10 +704,10 @@ impl<'a> GuardCompiler<'a> {
         if op == "==" || op == "~=" {
             let negated = op == "~=";
             if let Some(truth) = Self::boolean_of(right) {
-                return self.against_boolean(left, truth != negated);
+                return Plan::Unary(Combiner::AgainstBoolean(truth != negated), left);
             }
             if let Some(truth) = Self::boolean_of(left) {
-                return self.against_boolean(right, truth != negated);
+                return Plan::Unary(Combiner::AgainstBoolean(truth != negated), right);
             }
         }
 
@@ -621,14 +716,14 @@ impl<'a> GuardCompiler<'a> {
         // layout carries a register for one, this is the arithmetic de-sze named as the
         // likely blowup and never once ran.
         if let Some(compiled) = self.register_comparison(op, left, right) {
-            return compiled;
+            return Plan::Settled(compiled);
         }
 
         // A query the SEARCH cannot change is a constant, and a comparison against one is
         // arithmetic on two knowns. `DayCount() >= 2` is the shape, and it was the single
         // largest remaining fallback category in the corpus.
         if let Some(compiled) = self.constant_comparison(op, left, right) {
-            return compiled;
+            return Plan::Settled(compiled);
         }
 
         let (Some(name), Some(literal)) = (Self::variable_of(left), Self::literal_of(right)) else {
@@ -638,7 +733,7 @@ impl<'a> GuardCompiler<'a> {
             // two disagree.
             if let (Some(name), Some(literal)) = (Self::variable_of(right), Self::literal_of(left))
             {
-                return self.comparison(Self::mirrored(op), &name, literal);
+                return Plan::Settled(self.comparison(Self::mirrored(op), &name, literal));
             }
             // Money, where the layout does not carry it. It must NOT be answered from
             // the world: the search changes it - `BoundContext::query` reads it from search
@@ -647,19 +742,19 @@ impl<'a> GuardCompiler<'a> {
             // the shape of the expression, which is what it used to do and which sent
             // somebody looking at the parser.
             if Self::names_money(left) || Self::names_money(right) {
-                return self.undecided(
+                return Plan::Settled(self.undecided(
                     "comparison: money, which a search changes and this layout does not carry",
                     format!("({left} {op} {right})"),
-                );
+                ));
             }
 
-            return self.undecided(
+            return Plan::Settled(self.undecided(
                 "comparison: neither side a known variable",
                 format!("({left} {op} {right})"),
-            );
+            ));
         };
 
-        self.comparison(op, &name, literal)
+        Plan::Settled(self.comparison(op, &name, literal))
     }
 
     /// A comparison written out, for reporting one the compiler could not read.
@@ -681,20 +776,6 @@ impl<'a> GuardCompiler<'a> {
             ">=" => "<=",
             // Equality reads the same either way round.
             other => other,
-        }
-    }
-
-    /// `expression == truth`, compiled by compiling the expression and, when comparing
-    /// against false, swapping its rails.
-    fn against_boolean(&mut self, expression: GuardRef<'_>, truth: bool) -> MayBe {
-        let inner = self.compile_node(expression);
-        if truth {
-            inner
-        } else {
-            MayBe {
-                may_be_true: inner.may_be_false,
-                may_be_false: inner.may_be_true,
-            }
         }
     }
 
