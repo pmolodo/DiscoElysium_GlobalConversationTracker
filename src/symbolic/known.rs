@@ -110,6 +110,10 @@ pub struct Known {
 pub struct GroupShape {
     parents: Arc<HashMap<DialogueNodeId, Vec<DialogueNodeId>>>,
     order: IterationOrder,
+    /// What the group's links say about its hubs, worked out the first time a request asks.
+    ///
+    /// LAZILY, because only a request that says where the player has been needs them.
+    hubs: std::sync::OnceLock<crate::symbolic::hub::Hubs>,
 }
 
 impl GroupShape {
@@ -125,7 +129,17 @@ impl GroupShape {
         Self {
             parents: Arc::new(parents),
             order: IterationOrder::of(graph),
+            hubs: std::sync::OnceLock::new(),
         }
+    }
+
+    /// The group's hub candidates and which lies above which - see [`crate::symbolic::hub`].
+    ///
+    /// `graph` must be the graph this shape was worked out from, as for every other question
+    /// asked of it; the answer is kept from the first call.
+    pub fn hubs(&self, graph: &LookAheadGraph) -> &crate::symbolic::hub::Hubs {
+        self.hubs
+            .get_or_init(|| crate::symbolic::hub::Hubs::of(graph))
     }
 
     /// The order a search over this group should take its entries in.

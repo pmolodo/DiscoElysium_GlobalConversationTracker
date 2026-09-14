@@ -176,6 +176,7 @@ pub fn read_look_ahead(request: wire::LookAheadRequest) -> Result<LookAheadReque
         time_budget_ms: request.time_budget_ms,
         menu_time_budget_ms: request.menu_time_budget_ms,
         memory_budget_mb: usize::try_from(request.memory_budget_mb).unwrap_or(usize::MAX),
+        encountered: request.encountered.into_iter().map(NodeRef::from).collect(),
         world: read_snapshot(request.world)?,
     })
 }

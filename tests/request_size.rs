@@ -132,6 +132,7 @@ fn a_request_is_measured_and_the_entry_sets_have_a_shape() {
         time_budget_ms: 0,
         menu_time_budget_ms: 0,
         memory_budget_mb: 0,
+        encountered: Vec::new(),
         world,
     };
 

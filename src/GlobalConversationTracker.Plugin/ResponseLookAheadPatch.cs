@@ -261,6 +261,14 @@ namespace GlobalConversationTracker
         /// </remarks>
         private static LookAheadResponse? _menuAnswers;
 
+        /// <summary>What the conversation in progress has shown, sent with every request.</summary>
+        /// <remarks>
+        /// Recorded here and interpreted by the engine - see <see cref="ConversationWalk"/>. It
+        /// is cleared when a conversation starts and when it ends, so a walk always begins at a
+        /// conversation's start.
+        /// </remarks>
+        private static readonly ConversationWalk _walk = new ConversationWalk();
+
         /// <summary>What the engine asks about a group, cached because it cannot change.</summary>
         private static readonly Dictionary<int, LookAheadQuestions> _questions =
             new Dictionary<int, LookAheadQuestions>();
@@ -448,6 +456,13 @@ namespace GlobalConversationTracker
             // option's own string.
             _harmony.PatchAll(typeof(ResponseMenuPatch));
             _harmony.PatchAll(typeof(ChooseResponseTextPatch));
+
+            // AND FOUR THAT RECORD THE WALK every request carries: a line shown on either of
+            // the game's two dialogue interfaces, and a conversation starting or ending.
+            _harmony.PatchAll(typeof(ConversationLinePatch));
+            _harmony.PatchAll(typeof(PageConversationLinePatch));
+            _harmony.PatchAll(typeof(ConversationStartPatch));
+            _harmony.PatchAll(typeof(ConversationEndPatch));
         }
 
         /// <summary>Changes suite-scoped behavior without reinstalling the hook.</summary>
@@ -632,6 +647,13 @@ namespace GlobalConversationTracker
                 foreach (DialogueNodeId start in starts)
                 {
                     request.Starts.Add(new NodeRef(start.ConversationId, start.EntryId));
+                }
+
+                // WHERE THE PLAYER HAS BEEN, as recorded. The engine works out what it cuts, the
+                // same way it does for an offline walk.
+                foreach (NodeRef entry in _walk.Shown)
+                {
+                    request.Encountered.Add(entry);
                 }
 
                 // BEFORE IT IS ASKED, as the message that crosses rendered to text. What
@@ -1808,6 +1830,80 @@ namespace GlobalConversationTracker
                     failures.Report(ex);
                 }
             }
+        }
+
+        /// <summary>Adds a shown line to the walk.</summary>
+        /// <remarks>
+        /// NOTHING HERE MAY THROW INTO THE GAME. A line that cannot be read costs that line's
+        /// place in the walk, which at worst cuts less than a full walk would.
+        /// </remarks>
+        private static void RecordLine(Subtitle? subtitle)
+        {
+            HookFailureLimiter? failures = _failures;
+            if (failures == null || failures.HasGivenUp)
+            {
+                return;
+            }
+
+            try
+            {
+                DialogueEntry? entry = subtitle == null ? null : subtitle.dialogueEntry;
+                if (entry != null)
+                {
+                    _walk.Record(new NodeRef(entry.conversationID, entry.id));
+                }
+            }
+            catch (Exception ex)
+            {
+                failures.Report(ex);
+            }
+        }
+
+        /// <summary>A line going up on the game's classic dialogue interface.</summary>
+        [HarmonyPatch(
+            typeof(Sunshine.ConversationLogger),
+            nameof(Sunshine.ConversationLogger.OnConversationLine))]
+        private static class ConversationLinePatch
+        {
+            /// <summary>The parameter name has to stay <c>subtitle</c>.</summary>
+            [HarmonyPostfix]
+            private static void Postfix(Subtitle subtitle) => RecordLine(subtitle);
+        }
+
+        /// <summary>The same line, on the paged dialogue interface.</summary>
+        /// <remarks>
+        /// The game has two dialogue interfaces of the same shape and only one of them speaks.
+        /// Hooking both is cheaper than being sure which, and the walk keeps a line both report
+        /// once.
+        /// </remarks>
+        [HarmonyPatch(
+            typeof(DiscoPages.Elements.Dialogue.ConversationLoggerPageSystem),
+            nameof(DiscoPages.Elements.Dialogue.ConversationLoggerPageSystem.OnConversationLine))]
+        private static class PageConversationLinePatch
+        {
+            /// <summary>The parameter name has to stay <c>subtitle</c>.</summary>
+            [HarmonyPostfix]
+            private static void Postfix(Subtitle subtitle) => RecordLine(subtitle);
+        }
+
+        /// <summary>A conversation starting, which starts its walk.</summary>
+        [HarmonyPatch(
+            typeof(Sunshine.ConversationLogger),
+            nameof(Sunshine.ConversationLogger.OnConversationStart))]
+        private static class ConversationStartPatch
+        {
+            [HarmonyPostfix]
+            private static void Postfix() => _walk.Clear();
+        }
+
+        /// <summary>A conversation ending, after which nothing it showed bears on a menu.</summary>
+        [HarmonyPatch(
+            typeof(Sunshine.ConversationLogger),
+            nameof(Sunshine.ConversationLogger.OnConversationEnd))]
+        private static class ConversationEndPatch
+        {
+            [HarmonyPostfix]
+            private static void Postfix() => _walk.Clear();
         }
     }
 }

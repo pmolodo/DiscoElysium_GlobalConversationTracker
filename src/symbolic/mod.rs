@@ -30,6 +30,9 @@ pub mod data_layout;
 /// links and nothing else, and shares none of the diagram machinery.
 pub mod dominators;
 pub mod guard_formula;
+
+/// Which entry a conversation keeps returning to, read off links and dominance alone.
+pub mod hub;
 pub mod isolated;
 pub mod known;
 pub mod menu;

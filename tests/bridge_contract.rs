@@ -187,6 +187,7 @@ fn an_answer_survives_the_crossing() {
             time_budget_ms: 0,
             menu_time_budget_ms: 0,
             memory_budget_mb: 0,
+            encountered: Vec::new(),
             world: snapshot.clone(),
         };
 
@@ -269,6 +270,7 @@ fn a_menu_that_runs_out_of_its_wall_still_answers_every_option() {
         time_budget_ms: 1000,
         menu_time_budget_ms: 1,
         memory_budget_mb: 0,
+        encountered: Vec::new(),
         world: WorldSnapshot {
             money: 500,
             day_minutes: 12 * 60,

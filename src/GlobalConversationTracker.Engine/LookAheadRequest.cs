@@ -116,5 +116,18 @@ namespace GlobalConversationTracker.Engine
         /// unset value must not switch the protection off.</para>
         /// </remarks>
         public int MemoryBudgetMb { get; set; }
+
+        /// <summary>
+        /// What this conversation has shown the player since it started, oldest first: every
+        /// line displayed and every option chosen. It must begin at the conversation's start,
+        /// since the hubs are followed from there.
+        /// </summary>
+        /// <remarks>
+        /// WHERE THE PLAYER HAS BEEN, which the options alone cannot say. The engine follows
+        /// the hubs the player has passed through, and treats a route back through anything
+        /// passed since them as looping back rather than leading onward. Empty says nothing
+        /// about where the player is.
+        /// </remarks>
+        public IList<NodeRef> Encountered { get; } = new List<NodeRef>();
     }
 }

@@ -307,6 +307,7 @@ fn main() -> anyhow::Result<()> {
             time_budget_ms: args.time_budget_ms,
             menu_time_budget_ms: args.menu_time_budget_ms,
             memory_budget_mb: args.memory_budget_mb,
+            encountered: Vec::new(),
             world: WorldSnapshot::default(),
         },
     );

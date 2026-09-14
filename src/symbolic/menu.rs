@@ -79,11 +79,25 @@ pub struct Budget {
 ///
 /// ## The rule
 ///
-/// 1. Ask each option whether it reaches unread content with its SIBLINGS CUT. A route that
-///    had to return through another option of this menu cannot survive the cut, so a yes
-///    means the option leads onward and a no means it only gets there by looping back.
-/// 2. Where any option leads onward, those are the marks and nothing else runs.
-/// 3. Where none does and something is reachable, take the exact marking whole.
+/// Up to three steps, stopping at the first that stars anything:
+///
+/// 1. WALK AND SIBLINGS CUT. Ask each option whether it reaches unread content with its
+///    siblings cut and everything the player has passed since their hubs cut too. A route that
+///    had to return through another option of this menu, or back through a menu the player
+///    already left, cannot survive the cut, so a yes means the option leads onward. Where the
+///    walk cuts nothing beyond this menu's own options, this is step 2's question, and is
+///    skipped for it.
+/// 2. SIBLINGS CUT ONLY, asked where step 1 starred nothing. The walk can leave nothing onward
+///    at all - every route to unread content going back through the hub the menu hangs off -
+///    and the menu is then answered as though nothing had been walked.
+/// 3. EXACT MARKING, NOTHING CUT, where neither question starred anything and something is
+///    reachable. It keeps the routes the cuts cannot see, such as one that sets a variable and
+///    comes back through the hub to what the variable opens.
+///
+/// STEP 2 IS WHAT KEEPS THE EXACT MARKING RARE. Without it a walk cut that empties the onward
+/// question sends the menu straight to the exact marking, which knows nothing of the walk and
+/// is the costliest arrangement there is: measured on the whole-game matrix, 761's menu then
+/// fails to settle at 256 MB, and 640's takes three times as long to star what it did anyway.
 ///
 /// ## Why, from the whole game
 ///
@@ -116,16 +130,35 @@ pub fn mark_menu_hybrid<F: Fn(DialogueNodeId) -> Novelty>(
     contestants: &[Contestant],
     budget: &Budget,
     shape: &GroupShape,
+    returned: &HashSet<DialogueNodeId>,
 ) -> MenuAnswer {
-    let onward = mark_onward(search.reborrow(), novelty, contestants, budget, shape);
-    if onward.rounds > 0 {
-        return onward;
+    // STEP 1 ONLY WHERE THE WALK CUTS SOMETHING. An option of this menu is never cut on the
+    // walk's account, so a walk holding nothing else asks step 2's question, and would ask it
+    // twice.
+    let siblings_alone = HashSet::new();
+    let walk_cuts = returned
+        .iter()
+        .any(|id| !contestants.iter().any(|c| c.position.option == *id));
+    let cuts: Vec<&HashSet<DialogueNodeId>> = if walk_cuts {
+        vec![returned, &siblings_alone]
+    } else {
+        vec![&siblings_alone]
+    };
+
+    let mut passes = 0;
+    for cut in cuts {
+        let onward = mark_onward(search.reborrow(), novelty, contestants, budget, shape, cut);
+        passes += onward.passes;
+        if onward.rounds > 0 {
+            return MenuAnswer { passes, ..onward };
+        }
     }
+
     // NOTHING LED ONWARD. Either there is nothing to find - in which case the exact marking
     // settles on its own first pass and agrees - or every route loops back, which is the one
     // case the cheap question cannot answer and the expensive one can.
     let mut exact = mark_menu(search, novelty, contestants, budget, shape);
-    exact.passes += onward.passes;
+    exact.passes += passes;
     exact
 }
 
@@ -134,17 +167,24 @@ pub fn mark_menu_hybrid<F: Fn(DialogueNodeId) -> Novelty>(
 /// One worklist pass decides the whole menu before any option is asked about: where nothing
 /// of a class is reachable from ANY option, asking each of them separately would be eight
 /// passes to reach the same nothing.
+///
+/// `returned` is what the player has passed since the hubs they are inside - see
+/// [`crate::symbolic::hub::since_current_hub`]. It is cut beside the siblings, so a route back
+/// out through a menu the player already left counts as returning too. An option of this
+/// menu is never cut on its account.
 pub fn mark_onward<F: Fn(DialogueNodeId) -> Novelty>(
     mut search: Search<'_, '_>,
     novelty: &F,
     contestants: &[Contestant],
     budget: &Budget,
     shape: &GroupShape,
+    returned: &HashSet<DialogueNodeId>,
 ) -> MenuAnswer {
     let graph = search.graph;
     let began = Instant::now();
     let mut answer = blank(contestants);
     let options: HashSet<_> = contestants.iter().map(|c| c.position.option).collect();
+    let behind = returned_outside(returned, &options);
     let mut marked = HashSet::new();
     let mut failure = None;
 
@@ -165,10 +205,25 @@ pub fn mark_onward<F: Fn(DialogueNodeId) -> Novelty>(
                     .iter()
                     .any(|i| contestants[*i].position.option == *option)
             })
+            .chain(behind.iter().copied())
+            .collect();
+        // ONLY WHAT THE MENU REACHES ALONG LINKS WITH THE CUT IN PLACE. Guards can only remove
+        // a link route, never make one, so a target no uncut route reaches cannot be reached at
+        // all - and a backward pass asked about it spends a fixed point proving what one link
+        // walk already says. That is dearest where the cut takes out the hub every route loops
+        // through, and leaves most of the group's unread content behind it.
+        let reached_by_menu: HashSet<DialogueNodeId> = hunting
+            .iter()
+            .flat_map(|i| choice_bounds(graph, &contestants[*i].position, &refused).into_keys())
             .collect();
         let targets: Vec<_> = graph
             .nodes()
-            .filter(|n| !n.is_group && novelty(n.id) == class && !options.contains(&n.id))
+            .filter(|n| {
+                !n.is_group
+                    && novelty(n.id) == class
+                    && !options.contains(&n.id)
+                    && reached_by_menu.contains(&n.id)
+            })
             .map(|n| n.id)
             .collect();
         if targets.is_empty() {
@@ -219,6 +274,17 @@ pub fn mark_onward<F: Fn(DialogueNodeId) -> Novelty>(
                 }
             }
             let position = &contestants[i].position;
+            // THE SAME FILTER, for this option alone: a target its own uncut routes miss is one
+            // it cannot reach, and an option that reaches none of them is settled without a pass.
+            let reached = choice_bounds(graph, position, &cut);
+            let own_targets: Vec<DialogueNodeId> = targets
+                .iter()
+                .copied()
+                .filter(|id| reached.contains_key(id))
+                .collect();
+            if own_targets.is_empty() {
+                continue;
+            }
             let mut known = shape.known_from(graph, position.option);
             for &entry in &position.entries {
                 known = known.from(entry, &position.holding);
@@ -231,7 +297,7 @@ pub fn mark_onward<F: Fn(DialogueNodeId) -> Novelty>(
             answer.passes += 1;
             let alone = Backward::reaching_any_knowing(
                 search.reborrow(),
-                &targets,
+                &own_targets,
                 &cut,
                 &PassBudget {
                     time: budget.each.min(left),
@@ -292,6 +358,8 @@ pub fn mark_onward<F: Fn(DialogueNodeId) -> Novelty>(
 /// on. See `bridge::answer_starts`.
 ///
 /// `Err` says why a pass stopped before it could answer, and whether the manager filled.
+///
+/// `returned` is cut as [`mark_onward`] cuts it, so a star is asked about the way it was given.
 pub fn reached_onward(
     mut search: Search<'_, '_>,
     contestants: &[Contestant],
@@ -299,14 +367,21 @@ pub fn reached_onward(
     target: DialogueNodeId,
     budget: &Budget,
     shape: &GroupShape,
+    returned: &HashSet<DialogueNodeId>,
 ) -> Result<bool, (StoppedBy, bool)> {
     let graph = search.graph;
     let began = Instant::now();
     let options: HashSet<_> = contestants.iter().map(|c| c.position.option).collect();
+    let behind = returned_outside(returned, &options);
     for &i in onward {
         let position = &contestants[i].position;
         let mut cut = options.clone();
         cut.remove(&position.option);
+        cut.extend(behind.iter().copied());
+        // No uncut route along links, no route at all: skip the pass, as `mark_onward` does.
+        if !choice_bounds(graph, position, &cut).contains_key(&target) {
+            continue;
+        }
         let mut known = shape.known_from(graph, position.option);
         for &entry in &position.entries {
             known = known.from(entry, &position.holding);
@@ -334,6 +409,15 @@ pub fn reached_onward(
         }
     }
     Ok(false)
+}
+
+/// What the player passed since their hubs, less this menu's own options - which are what is
+/// being asked about, and so are never cut on that account.
+fn returned_outside(
+    returned: &HashSet<DialogueNodeId>,
+    options: &HashSet<DialogueNodeId>,
+) -> Vec<DialogueNodeId> {
+    returned.difference(options).copied().collect()
 }
 
 /// Whether this option could be improved on by the class being hunted.
@@ -683,6 +767,167 @@ mod tests {
         unread: &[i32],
         which: Which,
     ) -> MenuAnswer {
+        marking_returning(graph, options, unread, which, &HashSet::new())
+    }
+
+    use crate::symbolic::hub::tests::{
+        DEEPER_TOPIC_MENU, DEEPER_TOPIC_UNREAD, DEEPER_TOPIC_WALK, deeper_topic,
+    };
+    use crate::symbolic::hub::tests::{KITCHEN_MENU, KITCHEN_WALK, kitchen};
+    use crate::symbolic::hub::{Hubs, since_current_hub};
+
+    /// What a walk has passed since its hubs, as the bridge works it out.
+    fn returned_after(
+        graph: &LookAheadGraph,
+        walk: &[i32],
+        menu: &[i32],
+    ) -> HashSet<DialogueNodeId> {
+        let walk: Vec<DialogueNodeId> = walk.iter().map(|id| node(*id)).collect();
+        let menu: Vec<DialogueNodeId> = menu.iter().map(|id| node(*id)).collect();
+        since_current_hub(
+            graph,
+            &IterationOrder::of(graph),
+            &Hubs::of(graph),
+            &walk,
+            &menu,
+        )
+    }
+
+    /// Back at a sub-hub after going through a door and out again, the door keeps its star:
+    /// what lies behind it is the sub-hub's own topic, not a way back out.
+    ///
+    /// AND IT WOULD NOT, were everything since the outer hub cut - which is the second half, and
+    /// is what the hub stack exists to prevent. Cutting the whole walk leaves only the window.
+    #[test]
+    fn a_door_off_a_sub_hub_keeps_its_star_after_it_was_opened_once() {
+        let graph = deeper_topic();
+        let returned = returned_after(&graph, &DEEPER_TOPIC_WALK, &DEEPER_TOPIC_MENU);
+        let answer = marking_returning(
+            &graph,
+            &DEEPER_TOPIC_MENU,
+            &DEEPER_TOPIC_UNREAD,
+            Which::Hybrid,
+            &returned,
+        );
+        assert_eq!(
+            starred(&answer),
+            vec![false, false, true, true],
+            "topic one, back, the door, the window"
+        );
+
+        let everything: HashSet<DialogueNodeId> = [1, 2, 4, 5, 6, 8, 9, 11, 13, 14]
+            .iter()
+            .map(|id| node(*id))
+            .collect();
+        let answer = marking_returning(
+            &graph,
+            &DEEPER_TOPIC_MENU,
+            &DEEPER_TOPIC_UNREAD,
+            Which::Hybrid,
+            &everything,
+        );
+        assert_eq!(
+            starred(&answer),
+            vec![false, false, false, true],
+            "the door's route cut with the rest"
+        );
+    }
+
+    /// Where the walk's cut leaves nothing onward - the only unread line is the bird behind the
+    /// main hub, which every kitchen option reaches only by going back out - the menu is asked
+    /// again with the siblings alone, and that answers it without the exact marking.
+    #[test]
+    fn a_walk_that_leaves_nothing_onward_is_answered_with_the_siblings_alone() {
+        let graph = kitchen();
+        let returned = returned_after(&graph, &KITCHEN_WALK, &KITCHEN_MENU);
+        let bird_only = [3];
+
+        let hybrid = marking_returning(&graph, &KITCHEN_MENU, &bird_only, Which::Hybrid, &returned);
+        let siblings = marking(&graph, &KITCHEN_MENU, &bird_only, Which::Onward);
+
+        assert!(
+            hybrid.rounds > 0,
+            "the siblings-alone level stars something"
+        );
+        assert_eq!(starred(&hybrid), starred(&siblings));
+        assert_eq!(
+            hybrid.passes, siblings.passes,
+            "the walk's cut asked nothing, and the exact marking did not run"
+        );
+    }
+
+    /// A walk holding nothing but this menu's own options cuts nothing, so step 1 is skipped
+    /// for step 2's question rather than asking it twice. Where every route loops back, that
+    /// question stars nothing and the menu goes on to the exact marking - which is where a
+    /// repeated question would show, as a pass more than the menu asked without a walk.
+    #[test]
+    fn a_walk_of_only_the_menus_own_options_skips_step_one() {
+        let graph = every_route_loops_back();
+        let options_only: HashSet<DialogueNodeId> = [1, 2, 3].iter().map(|id| node(*id)).collect();
+
+        let walked = marking_returning(&graph, &[1, 2, 3], &[4], Which::Hybrid, &options_only);
+        let unwalked = marking(&graph, &[1, 2, 3], &[4], Which::Hybrid);
+
+        assert_eq!(starred(&walked), starred(&unwalked));
+        assert_eq!(
+            walked.passes, unwalked.passes,
+            "the siblings' question is asked once, not twice"
+        );
+    }
+    use crate::symbolic::order::IterationOrder;
+
+    /// The kitchen's unread content: the bird behind the main hub, and the line past the
+    /// warrant.
+    const KITCHEN_UNREAD: [i32; 2] = [3, 17];
+
+    /// Told nothing of where the player has been, the cheap question stars every kitchen
+    /// option: 11 and 13 reach the bird by going back out through the sub-hub and the main
+    /// hub, and neither of those is a sibling.
+    #[test]
+    fn without_the_walk_every_kitchen_option_is_starred() {
+        let answer = marking(&kitchen(), &KITCHEN_MENU, &KITCHEN_UNREAD, Which::Hybrid);
+
+        assert_eq!(
+            starred(&answer),
+            vec![true, true, true],
+            "cook, warrant, hungry"
+        );
+    }
+
+    /// Told the walk, the sub-hub and the main hub are behind the player, and only the option
+    /// that leads onward keeps its star.
+    #[test]
+    fn with_the_walk_only_the_onward_kitchen_option_is_starred() {
+        let graph = kitchen();
+        let returned = returned_after(&graph, &KITCHEN_WALK, &KITCHEN_MENU);
+
+        let answer = marking_returning(
+            &graph,
+            &KITCHEN_MENU,
+            &KITCHEN_UNREAD,
+            Which::Hybrid,
+            &returned,
+        );
+
+        assert_eq!(
+            starred(&answer),
+            vec![false, true, false],
+            "cook, warrant, hungry"
+        );
+        // THE GATE AND ONE PASS. The cook and the hungry reach nothing unread along links once
+        // the sub-hub is cut, so neither is asked; the bird behind the main hub is not hunted
+        // at all, since no uncut route from the menu reaches it.
+        assert_eq!(answer.passes, 2);
+    }
+
+    /// [`marking`], told what the player has passed since their hubs.
+    fn marking_returning(
+        graph: &LookAheadGraph,
+        options: &[i32],
+        unread: &[i32],
+        which: Which,
+        returned: &HashSet<DialogueNodeId>,
+    ) -> MenuAnswer {
         with_menu(graph, options, |compiler, world, contestants| {
             let novelty = |id: DialogueNodeId| {
                 if unread.contains(&id.entry_id) {
@@ -704,8 +949,12 @@ mod tests {
             };
             match which {
                 Which::Exact => mark_menu(search, &novelty, contestants, &budget, &shape),
-                Which::Onward => mark_onward(search, &novelty, contestants, &budget, &shape),
-                Which::Hybrid => mark_menu_hybrid(search, &novelty, contestants, &budget, &shape),
+                Which::Onward => {
+                    mark_onward(search, &novelty, contestants, &budget, &shape, returned)
+                }
+                Which::Hybrid => {
+                    mark_menu_hybrid(search, &novelty, contestants, &budget, &shape, returned)
+                }
             }
         })
     }

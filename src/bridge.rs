@@ -751,6 +751,19 @@ pub struct LookAheadRequest {
     #[serde(default)]
     pub memory_budget_mb: usize,
 
+    /// What this conversation has shown the player since it started, oldest first: every line
+    /// displayed and every option chosen. It must begin at the conversation's start, since the
+    /// hubs are followed from there.
+    ///
+    /// WHERE THE PLAYER HAS BEEN, which a menu's options cannot say. An option whose only
+    /// route to unread content runs back through what the player has passed since the hubs
+    /// they are inside is looping back rather than leading onward - see
+    /// [`crate::symbolic::hub`] for how the hubs are followed, and
+    /// [`crate::symbolic::menu::mark_onward`] for what is cut. Empty says nothing about where
+    /// the player is, and the onward question then cuts the menu's siblings alone.
+    #[serde(default)]
+    pub encountered: Vec<NodeRef>,
+
     pub world: WorldSnapshot,
 }
 
@@ -1464,6 +1477,31 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
             .overall
             .saturating_mul((contestants.len() + locked.len()) as u32),
     );
+    // WHERE THE PLAYER HAS BEEN, as far as it bears on this menu: what they passed since their
+    // current hub. Worked out only for a request that says where they have been; the shape
+    // keeps the group's hub candidates once found.
+    let returned = if request.encountered.is_empty() {
+        HashSet::new()
+    } else {
+        let encountered: Vec<DialogueNodeId> = request
+            .encountered
+            .iter()
+            .map(|entry| DialogueNodeId::from(*entry))
+            .collect();
+        let menu_entries: Vec<DialogueNodeId> = request
+            .starts
+            .iter()
+            .map(|start| DialogueNodeId::from(*start))
+            .collect();
+        crate::symbolic::hub::since_current_hub(
+            graph,
+            shape.order(),
+            shape.hubs(graph),
+            &encountered,
+            &menu_entries,
+        )
+    };
+
     // THE CHEAP QUESTION FIRST, AND THE EXACT MARKING WHERE IT MARKS NOTHING - see
     // [`mark_menu_as_shipped`], which the menu measurement calls too.
     let found = mark_menu_as_shipped(
@@ -1480,6 +1518,7 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
             each: ration.each,
         },
         shape,
+        &returned,
     );
     for (index, mark) in indices.into_iter().zip(&found.marks) {
         record(&mut answers[index], mark);
@@ -1576,6 +1615,7 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
                     each: ration.each,
                 },
                 shape,
+                &returned,
             ) {
                 Ok(false) => break alone,
                 Ok(true) => {
@@ -1628,14 +1668,18 @@ pub(crate) fn all_unanswered(request: &LookAheadRequest, stopped_by: &str) -> Ve
 /// asked first - which options lead to unread content without returning through the menu -
 /// and the exact marking runs only where that marks nothing, each of its rounds a branch and
 /// bound over single targets. See [`crate::symbolic::menu::mark_menu_hybrid`].
+///
+/// `returned` is what the player has passed since the hubs they are inside, cut beside the
+/// siblings by the cheap question; empty for a caller that does not know where the player is.
 pub fn mark_menu_as_shipped<F: Fn(DialogueNodeId) -> Novelty>(
     search: crate::symbolic::search::Search<'_, '_>,
     novelty: &F,
     contestants: &[crate::symbolic::menu::Contestant],
     budget: &crate::symbolic::menu::Budget,
     shape: &GroupShape,
+    returned: &HashSet<DialogueNodeId>,
 ) -> crate::symbolic::menu::MenuAnswer {
-    crate::symbolic::menu::mark_menu_hybrid(search, novelty, contestants, budget, shape)
+    crate::symbolic::menu::mark_menu_hybrid(search, novelty, contestants, budget, shape, returned)
 }
 
 /// Writes what a marking settled about one start onto its answer.
@@ -2754,6 +2798,10 @@ mod tests {
             time_budget_ms: 0,
             menu_time_budget_ms: 0,
             memory_budget_mb: 0,
+            encountered: vec![NodeRef {
+                conversation: 631,
+                entry: 2,
+            }],
             world,
         };
 
@@ -2762,6 +2810,13 @@ mod tests {
 
         assert_eq!(back.conversation, 631);
         assert_eq!(back.world.money, 250);
+        assert_eq!(
+            back.encountered,
+            vec![NodeRef {
+                conversation: 631,
+                entry: 2,
+            }]
+        );
         assert!(back.unseen_any_game.contains(&NodeRef {
             conversation: 631,
             entry: 9
@@ -2793,6 +2848,7 @@ mod tests {
             time_budget_ms: 0,
             menu_time_budget_ms: 0,
             memory_budget_mb: 64,
+            encountered: Vec::new(),
             world: WorldSnapshot::default(),
         };
 
@@ -2816,6 +2872,7 @@ mod tests {
             time_budget_ms: 0,
             menu_time_budget_ms: 0,
             memory_budget_mb: 0,
+            encountered: Vec::new(),
             world: WorldSnapshot::default(),
         };
 
@@ -2845,6 +2902,7 @@ mod tests {
             time_budget_ms: 250,
             menu_time_budget_ms: 0,
             memory_budget_mb: 0,
+            encountered: Vec::new(),
             world: WorldSnapshot::default(),
         };
 
@@ -2873,6 +2931,7 @@ mod tests {
             time_budget_ms: 0,
             menu_time_budget_ms: 0,
             memory_budget_mb: 0,
+            encountered: Vec::new(),
             world: WorldSnapshot::default(),
         };
 

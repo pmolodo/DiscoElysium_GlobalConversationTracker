@@ -169,6 +169,16 @@ message LookAheadRequest {
   uint64 memory_budget_mb = 8;
 
   WorldSnapshot world = 9;
+
+  // What this conversation has shown the player since it started, oldest first: every line
+  // displayed and every option chosen. It must begin at the conversation's start, since the
+  // hubs are followed from there.
+  //
+  // WHERE THE PLAYER HAS BEEN, which the options alone cannot say. The engine follows the
+  // hubs the player has passed through, and treats a route back through anything passed
+  // since them as looping back rather than leading onward. Empty says nothing about where
+  // the player is.
+  repeated NodeRef encountered = 10;
 }
 
 // ---------------------------------------------------------------------------

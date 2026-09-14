@@ -107,6 +107,7 @@ fn a_look_ahead_request_survives_the_wire() {
         menu_time_budget_ms: 4000,
         memory_budget_mb: 256,
         world: Some(full_snapshot()),
+        encountered: vec![node(631, 0), node(631, 2)],
     });
 }
 

@@ -102,6 +102,8 @@ namespace GlobalConversationTracker.LookAhead.Tests
             };
             request.Starts.Add(Node(631, 3));
             request.Starts.Add(Node(631, 7));
+            request.Encountered.Add(Node(631, 0));
+            request.Encountered.Add(Node(631, 2));
 
             RoundTrip(request, LookAheadRequest.Parser);
         }

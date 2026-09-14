@@ -199,6 +199,11 @@ namespace GlobalConversationTracker.Engine
                 written.Starts.Add(Write(start));
             }
 
+            foreach (NodeRef entry in request.Encountered)
+            {
+                written.Encountered.Add(Write(entry));
+            }
+
             return written;
         }
 
