@@ -1541,7 +1541,6 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
                 },
                 shape,
                 &blocked_here,
-                SHIPPED_ROUNDS,
             );
             passes += alone.passes;
 
@@ -1622,26 +1621,13 @@ pub(crate) fn all_unanswered(request: &LookAheadRequest, stopped_by: &str) -> Ve
         .collect()
 }
 
-/// How the product searches each round of the exact marking, for ordinary options and locked
-/// checks alike.
-///
-/// BRANCH AND BOUND, on two counts measured over the whole game. Where the exact marking runs
-/// it is the cheaper search - conversation 353 answers in 0.3 seconds against 2.6 for the
-/// pooled one, which pays about a second more for the same first round. And where several
-/// options tie for a round it credits the one nearest the content along the route: an option
-/// the others only reach that content through, which is the nearest to the player as well as
-/// by the count of choices, and whose star leaves the options behind it nothing more to claim.
-/// See [`crate::symbolic::menu::RoundSearch`].
-const SHIPPED_ROUNDS: crate::symbolic::menu::RoundSearch =
-    crate::symbolic::menu::RoundSearch::BranchAndBound;
-
 /// Marks a menu the way the product does.
 ///
 /// THE ONE PLACE THE CHOICE IS MADE, for [`answer_starts`] and the menu measurement alike, so
 /// a measurement taken by default measures what a player waits for. The cheap question is
 /// asked first - which options lead to unread content without returning through the menu -
-/// and the exact marking runs only where that marks nothing, its rounds searched by
-/// [`SHIPPED_ROUNDS`]. See [`crate::symbolic::menu::mark_menu_hybrid`].
+/// and the exact marking runs only where that marks nothing, each of its rounds a branch and
+/// bound over single targets. See [`crate::symbolic::menu::mark_menu_hybrid`].
 pub fn mark_menu_as_shipped<F: Fn(DialogueNodeId) -> Novelty>(
     search: crate::symbolic::search::Search<'_, '_>,
     novelty: &F,
@@ -1649,14 +1635,7 @@ pub fn mark_menu_as_shipped<F: Fn(DialogueNodeId) -> Novelty>(
     budget: &crate::symbolic::menu::Budget,
     shape: &GroupShape,
 ) -> crate::symbolic::menu::MenuAnswer {
-    crate::symbolic::menu::mark_menu_hybrid_by(
-        search,
-        novelty,
-        contestants,
-        budget,
-        shape,
-        SHIPPED_ROUNDS,
-    )
+    crate::symbolic::menu::mark_menu_hybrid(search, novelty, contestants, budget, shape)
 }
 
 /// Writes what a marking settled about one start onto its answer.

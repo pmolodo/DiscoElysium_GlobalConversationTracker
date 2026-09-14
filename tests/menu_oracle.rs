@@ -18,16 +18,11 @@ use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 mod common;
 
-/// Both round searches the exact marking can run, which must each agree with the walk.
-const ROUND_SEARCHES: [menu::RoundSearch; 2] =
-    [menu::RoundSearch::Pooled, menu::RoundSearch::BranchAndBound];
-
 fn compare(
     graph: &LookAheadGraph,
     options: &[DialogueNodeId],
     world: &dyn ILookAheadWorld,
     novelty: &impl Fn(DialogueNodeId) -> Novelty,
-    rounds: menu::RoundSearch,
 ) {
     let layout = DataLayout::for_group(graph, world, 16);
     let vars = DataVars::new(&layout, graph.symbols(), DiagramBudget::modest());
@@ -50,7 +45,7 @@ fn compare(
             landing: vec![id],
         })
         .collect();
-    let found = menu::mark_menu_by(
+    let found = menu::mark_menu(
         Search {
             graph,
             compiler: &mut compiler,
@@ -64,7 +59,6 @@ fn compare(
             each: Duration::from_secs(30),
         },
         &GroupShape::of(graph),
-        rounds,
     );
     assert!(found.marks.iter().all(|m| m.complete));
     let mut expected: Vec<_> = options.iter().map(|id| (novelty(*id), None)).collect();
@@ -132,7 +126,7 @@ fn compare(
         }
     }
     let actual: Vec<_> = found.marks.iter().map(|m| (m.best, m.distance)).collect();
-    assert_eq!(actual, expected, "menu {options:?} by {rounds:?}");
+    assert_eq!(actual, expected, "menu {options:?}");
 }
 
 #[test]
@@ -157,27 +151,24 @@ fn cyclic_menus_agree_for_every_assignment_of_novelty() {
         .add(Entry::new(7).player())
         .add(Entry::new(8))
         .build();
-    for rounds in ROUND_SEARCHES {
-        for assignment in 0usize..729 {
-            let novelty = |id: DialogueNodeId| {
-                let digit = assignment / 3usize.pow((id.entry_id - 1).clamp(0, 5) as u32) % 3;
-                if id.entry_id == 0 {
-                    return Novelty::SeenThisGame;
-                }
-                [
-                    Novelty::SeenThisGame,
-                    Novelty::UnseenThisGame,
-                    Novelty::UnseenAnyGame,
-                ][digit]
-            };
-            compare(
-                &graph,
-                &[node(1), node(2), node(3)],
-                &TestWorld::new(),
-                &novelty,
-                rounds,
-            );
-        }
+    for assignment in 0usize..729 {
+        let novelty = |id: DialogueNodeId| {
+            let digit = assignment / 3usize.pow((id.entry_id - 1).clamp(0, 5) as u32) % 3;
+            if id.entry_id == 0 {
+                return Novelty::SeenThisGame;
+            }
+            [
+                Novelty::SeenThisGame,
+                Novelty::UnseenThisGame,
+                Novelty::UnseenAnyGame,
+            ][digit]
+        };
+        compare(
+            &graph,
+            &[node(1), node(2), node(3)],
+            &TestWorld::new(),
+            &novelty,
+        );
     }
 }
 
@@ -195,25 +186,17 @@ fn real_conversations_agree_with_the_greedy_walk() {
             .map(|n| n.id)
             .collect();
         assert!(!options.is_empty(), "{conversation}: no choices detected");
-        for rounds in ROUND_SEARCHES {
-            lookahead_engine::symbolic::isolated::on_its_own_thread(|| {
-                compare(
-                    &graph,
-                    &options,
-                    &world,
-                    &|id| {
-                        if options.contains(&id) {
-                            Novelty::SeenThisGame
-                        } else if id.entry_id % 3 == 0 {
-                            Novelty::UnseenAnyGame
-                        } else {
-                            Novelty::UnseenThisGame
-                        }
-                    },
-                    rounds,
-                );
+        lookahead_engine::symbolic::isolated::on_its_own_thread(|| {
+            compare(&graph, &options, &world, &|id| {
+                if options.contains(&id) {
+                    Novelty::SeenThisGame
+                } else if id.entry_id % 3 == 0 {
+                    Novelty::UnseenAnyGame
+                } else {
+                    Novelty::UnseenThisGame
+                }
             });
-            println!("{conversation}: exact menu agreement by {rounds:?}");
-        }
+        });
+        println!("{conversation}: exact menu agreement");
     }
 }

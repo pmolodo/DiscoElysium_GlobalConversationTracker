@@ -7,20 +7,18 @@
 //!
 //! One worklist pass asks whether anything in play is still reachable. Where something is,
 //! the round finds the least distance over every option and every target, and which option
-//! owns it, in one of two ways - see [`RoundSearch`]:
-//!
-//! - POOLED: one pool of meeting crawls, a forward front over the menu and a backward front
-//!   per target. See [`Backward::nearest_choices`].
-//! - BRANCH AND BOUND: one single-target backward pass per target, in bound order, stopping
-//!   as soon as a target's bound cannot beat the best distance proven this round - ties
-//!   included, since a tie cannot change which distance is least. See [`Backward::nearest`].
+//! owns it, by branch and bound: one single-target backward pass per target, in bound order,
+//! stopping as soon as a target's bound cannot beat the best distance proven this round -
+//! ties included, since a tie cannot change which distance is least. See
+//! [`Backward::nearest`], which also says why a single pooled search over every target is not
+//! used instead.
 //!
 //! The structural choice distance, guards ignored and cut respected, drops a target no
-//! route reaches at all before either search spends anything on it.
+//! route reaches at all before the search spends anything on it.
 //!
 //! ## The bound
 //!
-//! Two things bound a target for the branch and bound, and the answer is the larger:
+//! Two things bound a target, and the answer is the larger:
 //!
 //! - the structural choice distance, which only ever removes routes and so can only be
 //!   optimistic;
@@ -36,7 +34,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
-use super::backward::{Backward, Budget as PassBudget, Nearest, Position, Round};
+use super::backward::{Backward, Budget as PassBudget, Nearest, Position};
 use super::known::GroupShape;
 use super::novelty_search::{StoppedBy, choice_bounds};
 use super::search::Search;
@@ -76,22 +74,6 @@ pub struct Budget {
     pub each: Duration,
 }
 
-/// How a round of the exact marking finds its nearest target.
-///
-/// Both answer the same question - the least choice distance over every option still
-/// hunting and every target still in play, and which option owns it - and share everything
-/// around it: the claims, the cut, the blocked entries and the worklist pass that asks
-/// whether anything is left to find. Only the search inside a round differs, so a
-/// measurement taken each way compares the two searches and nothing else.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RoundSearch {
-    /// One pool of meeting crawls for the whole round. See [`Backward::nearest_choices`].
-    Pooled,
-    /// One single-target backward pass per target, in bound order. See the module
-    /// documentation's section on the bound, and [`Backward::nearest`].
-    BranchAndBound,
-}
-
 /// Marks a menu by the cheap question, falling back to the exact one only where it answers
 /// nothing.
 ///
@@ -129,31 +111,11 @@ pub enum RoundSearch {
 /// An onward mark carries no distance, because none was computed. See de-0jsf.18 for the
 /// free structural bound that orders them when an ordering is wanted.
 pub fn mark_menu_hybrid<F: Fn(DialogueNodeId) -> Novelty>(
-    search: Search<'_, '_>,
-    novelty: &F,
-    contestants: &[Contestant],
-    budget: &Budget,
-    shape: &GroupShape,
-) -> MenuAnswer {
-    mark_menu_hybrid_by(
-        search,
-        novelty,
-        contestants,
-        budget,
-        shape,
-        RoundSearch::Pooled,
-    )
-}
-
-/// [`mark_menu_hybrid`], with the exact marking it falls back to running its rounds by
-/// `rounds`.
-pub fn mark_menu_hybrid_by<F: Fn(DialogueNodeId) -> Novelty>(
     mut search: Search<'_, '_>,
     novelty: &F,
     contestants: &[Contestant],
     budget: &Budget,
     shape: &GroupShape,
-    rounds: RoundSearch,
 ) -> MenuAnswer {
     let onward = mark_onward(search.reborrow(), novelty, contestants, budget, shape);
     if onward.rounds > 0 {
@@ -162,7 +124,7 @@ pub fn mark_menu_hybrid_by<F: Fn(DialogueNodeId) -> Novelty>(
     // NOTHING LED ONWARD. Either there is nothing to find - in which case the exact marking
     // settles on its own first pass and agrees - or every route loops back, which is the one
     // case the cheap question cannot answer and the expensive one can.
-    let mut exact = mark_menu_by(search, novelty, contestants, budget, shape, rounds);
+    let mut exact = mark_menu(search, novelty, contestants, budget, shape);
     exact.passes += onward.passes;
     exact
 }
@@ -424,7 +386,8 @@ fn blank(contestants: &[Contestant]) -> MenuAnswer {
     }
 }
 
-/// The exact marking, each round a pooled search. See [`RoundSearch::Pooled`].
+/// The exact marking: each round a branch and bound over single targets. See the module
+/// documentation's section on the bound, and [`Backward::nearest`].
 pub fn mark_menu<F: Fn(DialogueNodeId) -> Novelty>(
     search: Search<'_, '_>,
     novelty: &F,
@@ -432,64 +395,22 @@ pub fn mark_menu<F: Fn(DialogueNodeId) -> Novelty>(
     budget: &Budget,
     shape: &GroupShape,
 ) -> MenuAnswer {
-    mark_menu_by(
-        search,
-        novelty,
-        contestants,
-        budget,
-        shape,
-        RoundSearch::Pooled,
-    )
+    mark_menu_blocking(search, novelty, contestants, budget, shape, &HashSet::new())
 }
 
-/// The exact marking, each round searched by `rounds`.
-pub fn mark_menu_by<F: Fn(DialogueNodeId) -> Novelty>(
-    search: Search<'_, '_>,
-    novelty: &F,
-    contestants: &[Contestant],
-    budget: &Budget,
-    shape: &GroupShape,
-    rounds: RoundSearch,
-) -> MenuAnswer {
-    mark_rounds(
-        search,
-        novelty,
-        contestants,
-        budget,
-        shape,
-        &HashSet::new(),
-        rounds,
-    )
-}
-
-/// [`mark_menu_by`], with `blocked` entries neither walkable nor claimable.
+/// [`mark_menu`], with `blocked` entries neither walkable nor claimable.
 ///
 /// FOR A SEARCH ASKED AFTER THE MENU'S OWN: a locked check's halves are answered once every
 /// ordinary star is settled, with the menu's options and every entry those stars claimed
 /// blocked, so a half is starred only for content no other option reaches and without
 /// cycling back through the menu. See `bridge::answer_starts`.
 pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> Novelty>(
-    search: Search<'_, '_>,
-    novelty: &F,
-    contestants: &[Contestant],
-    budget: &Budget,
-    shape: &GroupShape,
-    blocked: &HashSet<DialogueNodeId>,
-    rounds: RoundSearch,
-) -> MenuAnswer {
-    mark_rounds(search, novelty, contestants, budget, shape, blocked, rounds)
-}
-
-/// The exact marking: `blocked` entries neither walkable nor claimable, and each round
-/// searched by `rounds`.
-fn mark_rounds<F: Fn(DialogueNodeId) -> Novelty>(
     mut search: Search<'_, '_>,
     novelty: &F,
     contestants: &[Contestant],
     budget: &Budget,
     shape: &GroupShape,
     blocked: &HashSet<DialogueNodeId>,
-    rounds: RoundSearch,
 ) -> MenuAnswer {
     let graph = search.graph;
     let began = Instant::now();
@@ -498,12 +419,10 @@ fn mark_rounds<F: Fn(DialogueNodeId) -> Novelty>(
     let mut claimed: HashSet<_> = options.union(blocked).copied().collect();
     let mut marked = HashSet::new();
     let mut failure = None;
-    // WHAT A ROUND PROVES, KEPT, for the branch and bound. A round only ever cuts an option,
-    // claims an entry and drops the winner from the contest, and each of those only removes
-    // routes, so no target ever comes closer than it was. Its last distance is therefore a
-    // bound on it from then on - see the module documentation - and a target found
-    // unreachable stays so. The pooled search proves nothing per target, and leaves both
-    // empty.
+    // WHAT A ROUND PROVES, KEPT. A round only ever cuts an option, claims an entry and drops
+    // the winner from the contest, and each of those only removes routes, so no target ever
+    // comes closer than it was. Its last distance is therefore a bound on it from then on -
+    // see the module documentation - and a target found unreachable stays so.
     let mut proven = HashMap::<DialogueNodeId, usize>::new();
     let mut unreachable = HashSet::new();
     'classes: for class in [Novelty::UnseenAnyGame, Novelty::UnseenThisGame] {
@@ -618,83 +537,45 @@ fn mark_rounds<F: Fn(DialogueNodeId) -> Novelty>(
                 break 'classes;
             }
             drop(pass);
-            let (distance, index, witness) = match rounds {
-                RoundSearch::Pooled => {
-                    // ONE POOL FOR THE WHOLE ROUND. The forward half of a meeting search is the
-                    // same walk for every target in the round - the same options, the same cut -
-                    // so it is walked once and raced by every target's backward crawl, and the
-                    // first meeting is the least distance over every option and every target
-                    // still in play. See [`Backward::nearest_choices`].
-                    let left = budget.wall.saturating_sub(began.elapsed());
-                    if left.is_zero() {
-                        failure = Some((StoppedBy::Time, false));
+            // IN BOUND ORDER, one target at a time, stopping at the first whose bound cannot
+            // beat the best distance proven this round - ties included, since a tie cannot
+            // change which distance is least.
+            let mut best: Option<(usize, usize, DialogueNodeId)> = None;
+            for &target in &in_play {
+                if best.is_some_and(|(nearest, _, _)| bounds[&target] >= nearest) {
+                    break;
+                }
+                let left = budget.wall.saturating_sub(began.elapsed());
+                if left.is_zero() {
+                    failure = Some((StoppedBy::Time, false));
+                    break 'classes;
+                }
+                answer.passes += 1;
+                match Backward::nearest(
+                    search.reborrow(),
+                    target,
+                    &cut,
+                    &pass_budget(left),
+                    &known,
+                    &positions,
+                ) {
+                    Nearest::Found { distance, winner } => {
+                        proven.insert(target, distance);
+                        if best.is_none_or(|(nearest, _, _)| distance < nearest) {
+                            best = Some((distance, hunting[winner], target));
+                        }
+                    }
+                    Nearest::Unreachable => {
+                        unreachable.insert(target);
+                    }
+                    Nearest::Unfinished { out_of_memory } => {
+                        failure = Some((StoppedBy::Incomplete, out_of_memory));
                         break 'classes;
                     }
-                    answer.passes += 1;
-                    match Backward::nearest_choices(
-                        search.reborrow(),
-                        &in_play,
-                        &cut,
-                        &pass_budget(left),
-                        &known,
-                        &positions,
-                    ) {
-                        Round::Found {
-                            distance,
-                            winner,
-                            target,
-                            ..
-                        } => (distance, hunting[winner], target),
-                        Round::Unreachable => break,
-                        Round::Unfinished { out_of_memory } => {
-                            failure = Some((StoppedBy::Incomplete, out_of_memory));
-                            break 'classes;
-                        }
-                    }
                 }
-                RoundSearch::BranchAndBound => {
-                    // IN BOUND ORDER, one target at a time, stopping at the first whose bound
-                    // cannot beat the best distance proven this round - ties included, since a
-                    // tie cannot change which distance is least.
-                    let mut best: Option<(usize, usize, DialogueNodeId)> = None;
-                    for &target in &in_play {
-                        if best.is_some_and(|(nearest, _, _)| bounds[&target] >= nearest) {
-                            break;
-                        }
-                        let left = budget.wall.saturating_sub(began.elapsed());
-                        if left.is_zero() {
-                            failure = Some((StoppedBy::Time, false));
-                            break 'classes;
-                        }
-                        answer.passes += 1;
-                        match Backward::nearest(
-                            search.reborrow(),
-                            target,
-                            &cut,
-                            &pass_budget(left),
-                            &known,
-                            &positions,
-                        ) {
-                            Nearest::Found { distance, winner } => {
-                                proven.insert(target, distance);
-                                if best.is_none_or(|(nearest, _, _)| distance < nearest) {
-                                    best = Some((distance, hunting[winner], target));
-                                }
-                            }
-                            Nearest::Unreachable => {
-                                unreachable.insert(target);
-                            }
-                            Nearest::Unfinished { out_of_memory } => {
-                                failure = Some((StoppedBy::Incomplete, out_of_memory));
-                                break 'classes;
-                            }
-                        }
-                    }
-                    match best {
-                        Some(found) => found,
-                        None => break,
-                    }
-                }
+            }
+            let Some((distance, index, witness)) = best else {
+                break;
             };
             answer.rounds += 1;
             answer.marks[index] = Marked {
@@ -753,40 +634,15 @@ mod tests {
     /// machinery than the thing it parameterises.
     #[derive(Clone, Copy)]
     enum Which {
-        /// The exact marking, each round a pooled search.
         Exact,
-        /// The exact marking, each round a branch and bound over single targets.
-        BranchAndBound,
         Onward,
         Hybrid,
     }
 
-    /// The exact marking, checked against the branch and bound on the same menu.
-    ///
-    /// The two round searches answer the same question, so they must find the same distance
-    /// in every round, whichever option breaks a tie.
     fn mark(graph: &LookAheadGraph, options: &[i32], unread: &[i32]) -> MenuAnswer {
         let answer = marking(graph, options, unread, Which::Exact);
         assert!(answer.marks.iter().all(|mark| mark.complete));
-        let bounded = marking(graph, options, unread, Which::BranchAndBound);
-        assert!(bounded.marks.iter().all(|mark| mark.complete));
-        assert_eq!(
-            distances_by_round(&bounded),
-            distances_by_round(&answer),
-            "the branch and bound and the pooled search disagree",
-        );
         answer
-    }
-
-    /// Each round's distance, in round order.
-    fn distances_by_round(answer: &MenuAnswer) -> Vec<Option<usize>> {
-        let mut rounds: Vec<_> = answer
-            .marks
-            .iter()
-            .filter_map(|mark| mark.round.map(|round| (round, mark.distance)))
-            .collect();
-        rounds.sort();
-        rounds.into_iter().map(|(_, distance)| distance).collect()
     }
 
     /// The apparatus a menu is answered with - world, manager, compiled guards and one
@@ -848,14 +704,6 @@ mod tests {
             };
             match which {
                 Which::Exact => mark_menu(search, &novelty, contestants, &budget, &shape),
-                Which::BranchAndBound => mark_menu_by(
-                    search,
-                    &novelty,
-                    contestants,
-                    &budget,
-                    &shape,
-                    RoundSearch::BranchAndBound,
-                ),
                 Which::Onward => mark_onward(search, &novelty, contestants, &budget, &shape),
                 Which::Hybrid => mark_menu_hybrid(search, &novelty, contestants, &budget, &shape),
             }
@@ -1087,35 +935,6 @@ mod tests {
         assert_eq!(answer.marks[4].distance, Some(1));
         assert_eq!(answer.marks[corridor].distance, Some(0));
         assert_eq!(answer.marks[3].distance, Some(0));
-    }
-
-    /// The branch and bound stars the E menu as the pooled search does.
-    ///
-    /// The menu is where a search that pruned on position alone would lose E, and a bound that
-    /// skipped a target it should not have would lose the round E wins. B and C are still a
-    /// tie, so which of them is starred is not compared - only that exactly one is.
-    #[test]
-    fn the_branch_and_bound_marks_the_e_menu_as_the_pooled_search_does() {
-        let graph = the_e_menu();
-        let pooled = marking(&graph, &E_MENU_OPTIONS, &E_MENU_UNREAD, Which::Exact);
-        let bounded = marking(
-            &graph,
-            &E_MENU_OPTIONS,
-            &E_MENU_UNREAD,
-            Which::BranchAndBound,
-        );
-        let (by_pool, by_bound) = (starred(&pooled), starred(&bounded));
-
-        assert_eq!(
-            [by_bound[0], by_bound[3], by_bound[4], by_bound[5]],
-            [by_pool[0], by_pool[3], by_pool[4], by_pool[5]],
-            "A, D, E, Z",
-        );
-        assert!(
-            by_bound[1] != by_bound[2],
-            "exactly one of B and C: {by_bound:?}"
-        );
-        assert_eq!(distances_by_round(&bounded), distances_by_round(&pooled));
     }
 
     /// The cheap question loses E, and stars B in its place.

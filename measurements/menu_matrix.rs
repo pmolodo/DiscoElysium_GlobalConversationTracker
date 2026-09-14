@@ -20,9 +20,9 @@
 //! One group per row. Builds the adversarial profile - `menu_profile`, shared with
 //! `menu_residue` and `menu_wall` - takes its starts as the menu, and marks the whole menu
 //! against one manager through `bridge::mark_menu_as_shipped`, so each group gets the marking
-//! the product chooses for it. `DEGCT_MARKING` set to `hybrid`, `nearest`, `bnb` or `hybrid-bnb`
-//! puts that one marking on every group instead; the last two run each round of the exact
-//! marking as a branch and bound over single targets rather than as one pooled search.
+//! the product gives it: the onward question first, and the exact marking by branch and bound
+//! only where that marks nothing. `DEGCT_MARKING=bnb` puts the exact marking on every group
+//! instead, and `DEGCT_MARKING=hybrid-bnb` names the default.
 //!
 //! EVERY START IS A CONTESTANT, because the marking is competitive: an option that has
 //! nothing to hunt for is refused against the class being hunted, by the baseline it
@@ -42,10 +42,10 @@
 //! and the seed rather than searching, so the searching is the difference.
 //!
 //! `asked` is passes run across the whole menu: one worklist pass per round to ask whether
-//! anything is still reachable, then one pooled search per round - or, for `bnb` and
-//! `hybrid-bnb`, one single-target pass per target the branch and bound did not skip. The
-//! hybrids add the sibling-cut passes they ask first. `rounds` is how many rounds ended in a
-//! marker, which is how many options the menu claimed content for.
+//! anything is still reachable, and one single-target pass per target the branch and bound
+//! did not skip. The default adds the sibling-cut passes the onward question asks first.
+//! `rounds` is how many rounds ended in a marker, which is how many options the menu claimed
+//! content for.
 //!
 //! `settled` and `partly` split the options by whether their answer is final. A menu that
 //! is mostly `partly` is one where the budget bound, and its milliseconds are a floor
@@ -166,8 +166,8 @@ const NOLIMIT_BUDGET_MB: usize = 6144;
 
 /// What `DEGCT_NOLIMIT` gives the menu, as a wall AND as each pass's ration.
 ///
-/// BOTH, because the pooled search spends a whole round in one pass, so a per-pass ration
-/// shorter than the wall would stop it where the wall would not. Five minutes, so that the
+/// BOTH, because one pass to a deep target can carry most of a round's work, so a per-pass
+/// ration shorter than the wall would stop it where the wall would not. Five minutes, so that the
 /// row says where the search stops rather than where a player's patience would.
 const NOLIMIT_TIME: Duration = Duration::from_secs(300);
 
@@ -180,30 +180,20 @@ fn nolimit() -> bool {
 /// Which menu marking a row is taken with. See [`marking`].
 #[derive(Clone, Copy)]
 enum Marking {
-    /// What the product marks with - see `bridge::mark_menu_as_shipped`.
-    Shipped,
-    /// The hybrid on every group: the sibling cut first, and the nearest-choice marking only
-    /// where that marks nothing - see `menu::mark_menu_hybrid`.
-    Hybrid,
-    /// The nearest-choice marking on every group, 761 included - see `menu::mark_menu`.
-    Nearest,
-    /// The exact marking on every group with a branch and bound over single targets for each
-    /// round in place of the pooled search - see `menu::RoundSearch::BranchAndBound`.
-    BranchAndBound,
-    /// The hybrid on every group, falling back to the branch and bound rather than the pooled
-    /// search - see `menu::mark_menu_hybrid_by`.
+    /// What the product marks with: the onward question first, and the exact marking by branch
+    /// and bound only where that marks nothing - see `bridge::mark_menu_as_shipped`.
     HybridBranchAndBound,
+    /// The exact marking by branch and bound on every group, with no onward question first -
+    /// see `menu::mark_menu`.
+    BranchAndBound,
 }
 
 /// What `DEGCT_MARKING` says for each marking.
-const SHIPPED: &str = "shipped";
-const HYBRID: &str = "hybrid";
-const NEAREST: &str = "nearest";
-const BRANCH_AND_BOUND: &str = "bnb";
 const HYBRID_BRANCH_AND_BOUND: &str = "hybrid-bnb";
+const BRANCH_AND_BOUND: &str = "bnb";
 
-/// The marking `DEGCT_MARKING` names: `shipped`, the default, or `hybrid`, `nearest`, `bnb` or
-/// `hybrid-bnb` to put one marking on every group, so row files can be taken each way and
+/// The marking `DEGCT_MARKING` names: `hybrid-bnb`, the default and what the product marks
+/// with, or `bnb` for the exact marking on every group, so row files can be taken both ways and
 /// compared on the same profile and the same allowance (de-0jsf.20).
 ///
 /// # Panics
@@ -214,14 +204,10 @@ fn marking() -> Marking {
         .unwrap_or_default()
         .as_str()
     {
-        "" | SHIPPED => Marking::Shipped,
-        HYBRID => Marking::Hybrid,
-        NEAREST => Marking::Nearest,
+        "" | HYBRID_BRANCH_AND_BOUND => Marking::HybridBranchAndBound,
         BRANCH_AND_BOUND => Marking::BranchAndBound,
-        HYBRID_BRANCH_AND_BOUND => Marking::HybridBranchAndBound,
         other => panic!(
-            "DEGCT_MARKING={other:?}: expected {SHIPPED}, {HYBRID}, {NEAREST}, \
-             {BRANCH_AND_BOUND} or {HYBRID_BRANCH_AND_BOUND}"
+            "DEGCT_MARKING={other:?}: expected {HYBRID_BRANCH_AND_BOUND} or {BRANCH_AND_BOUND}"
         ),
     }
 }
@@ -419,46 +405,23 @@ where
                 each: search.each,
             }
         };
-        // THE MARKING THE PRODUCT CHOOSES FOR THIS GROUP by default, through the one function
-        // that chooses it, so a default row measures what a player waits for; `DEGCT_MARKING`
-        // puts one marking on every group instead. See [`marking`].
+        // THE MARKING THE PRODUCT MARKS WITH by default, through the one function that chooses
+        // it, so a default row measures what a player waits for; `DEGCT_MARKING=bnb` puts the
+        // exact marking on every group instead. See [`marking`].
         let found = match marking() {
-            Marking::Shipped => lookahead_engine::bridge::mark_menu_as_shipped(
+            Marking::HybridBranchAndBound => lookahead_engine::bridge::mark_menu_as_shipped(
                 marking_search,
                 novelty,
                 &contestants,
                 &marking_budget,
                 &shape,
             ),
-            Marking::Hybrid => menu::mark_menu_hybrid(
+            Marking::BranchAndBound => menu::mark_menu(
                 marking_search,
                 novelty,
                 &contestants,
                 &marking_budget,
                 &shape,
-            ),
-            Marking::Nearest => menu::mark_menu(
-                marking_search,
-                novelty,
-                &contestants,
-                &marking_budget,
-                &shape,
-            ),
-            Marking::BranchAndBound => menu::mark_menu_by(
-                marking_search,
-                novelty,
-                &contestants,
-                &marking_budget,
-                &shape,
-                menu::RoundSearch::BranchAndBound,
-            ),
-            Marking::HybridBranchAndBound => menu::mark_menu_hybrid_by(
-                marking_search,
-                novelty,
-                &contestants,
-                &marking_budget,
-                &shape,
-                menu::RoundSearch::BranchAndBound,
             ),
         };
         counted.options = contestants.len();
