@@ -69,6 +69,12 @@ down costs that group and nothing else:
     tools/measure-menus.py 368 631                        # just these
     DEGCT_WORKERS=1 tools/measure-menus.py all            # every group, one at a time
     DEGCT_MENUS_OUT=measurements/logs/whole-game tools/measure-menus.py all
+    DEGCT_WORKERS=1 tools/measure-menus.py --runs 3 all   # three runs, combined
+
+`--runs N` takes N runs back to back, each in `run-1` ... `run-N` under the run's folder, and
+when N is more than one writes `combined.tsv` - each group's median, min and max `menu_ms` and
+whether its outcome agreed across runs - and `summary.txt`, the per-run totals and the
+costliest groups, beside them.
 
 `all` asks the measurement which groups exist - `DEGCT_GROUPS_ONLY=1`, one canonical start per
 distinct group, most reachable first - so nothing decides what is in the run except the

@@ -50,6 +50,15 @@ The same command is the start and the resume; there is no separate mode to remem
 group still counts towards settling, by the row it left, so a resume switches where the
 original run would have. Without MENUS_OUT each run gets its own folder and resumes nothing.
 
+SEVERAL RUNS. `--runs N` takes N runs of the same groups back to back, each in run-1 ... run-N
+under the one folder, because a single run's milliseconds are a reading of the machine as much
+as of the search. When N is more than one it then writes combined.tsv - each group's median,
+min and max menu_ms, its median nodes, and its rounds, settled and starred with a flag for
+whether every run agreed - and summary.txt, the per-run totals and the costliest groups, and
+prints the summary:
+
+    DEGCT_WORKERS=1 tools/measure-menus.py --runs 3 all
+
 WHAT COUNTS AS DONE:
 
     a row       measured, whatever it says. Done.
@@ -59,6 +68,7 @@ WHAT COUNTS AS DONE:
 """
 
 import argparse
+import statistics
 import sys
 
 from pathlib import Path
@@ -289,6 +299,139 @@ def measure(out, conversations, workers):
     return 0
 
 
+# Where each of several runs is written, under the folder the runs share.
+RUN_FOLDER = "run-{}"
+
+# What several runs are combined into, beside their folders.
+COMBINED = "combined.tsv"
+SUMMARY = "summary.txt"
+
+# How many of the costliest groups the summary lists.
+HARDEST = 10
+
+# What a run's outcome is judged steady on: columns that say what the marking decided rather
+# than what it cost, so they should not move between runs at all.
+OUTCOME = ("rounds", "settled", "starred")
+
+COMBINED_COLUMNS = [
+    "conv",
+    "runs",
+    "menu_ms_median",
+    "menu_ms_min",
+    "menu_ms_max",
+    "nodes_median",
+    "rounds",
+    "settled",
+    "starred",
+    "steady",
+]
+
+
+def read_rows(path):
+    """One run's rows, by conversation, each a dict keyed by the run's own header."""
+    if not path.exists():
+        return {}
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    header = lines[0].split(TAB)
+    rows = {}
+    for line in lines[1:]:
+        cells = line.split(TAB)
+        if cells and cells[0].isdigit():
+            rows[int(cells[0])] = dict(zip(header, cells))
+    return rows
+
+
+def verdict_of(row):
+    """What an unmeasured row says instead of a cost."""
+    if CRASHED in row.values():
+        return CRASHED
+    return row.get(MENU_MS) or "?"
+
+
+def number_text(value, grouped=False):
+    """A median as written: whole where it is whole, never in exponent form, and with thousands
+    separators only where a person rather than a table reads it."""
+    return f"{value:{',' if grouped else ''}.1f}".removesuffix(".0")
+
+
+def agreed(rows, column):
+    """One value where every run agrees on `column`, or every value seen joined by '|'."""
+    return "|".join(sorted({row.get(column, "-") for row in rows}))
+
+
+def combine(folders, out):
+    """Folds several runs of the same groups into one table and a summary, and prints it.
+
+    A GROUP IS COMBINED ON ITS MEDIAN, with the min and max beside it, because a single run's
+    milliseconds are a reading of the machine as much as of the search. Its outcome - rounds,
+    settled, starred - is shown as the one value every run agreed on, or every value seen
+    joined by '|', and `steady` says which.
+
+    A group any run did not measure - CRASHED, NO-MENU, NOT-MEASURED - is combined on its
+    verdicts rather than a cost, since there is no cost to take the median of.
+    """
+    runs = [read_rows(folder / "menus.tsv") for folder in folders]
+    conversations = sorted(set().union(*runs))
+
+    lines = [TAB.join(COMBINED_COLUMNS)]
+    measured = []
+    unsteady = []
+    for conversation in conversations:
+        rows = [run[conversation] for run in runs if conversation in run]
+        times = [int(row[MENU_MS]) for row in rows if row.get(MENU_MS, "").isdigit()]
+        if len(times) != len(rows):
+            verdicts = "/".join(sorted({verdict_of(row) for row in rows}))
+            cells = [str(conversation), str(len(rows)), verdicts]
+            lines.append(TAB.join(cells + [""] * (len(COMBINED_COLUMNS) - len(cells))))
+            continue
+
+        nodes = [int(row["nodes"]) for row in rows if row.get("nodes", "").isdigit()]
+        outcome = [agreed(rows, column) for column in OUTCOME]
+        steady = all("|" not in value for value in outcome)
+        if not steady:
+            unsteady.append(conversation)
+        median = statistics.median(times)
+        nodes_median = statistics.median(nodes) if nodes else ""
+        lines.append(
+            TAB.join(
+                [
+                    str(conversation),
+                    str(len(rows)),
+                    number_text(median),
+                    str(min(times)),
+                    str(max(times)),
+                    number_text(nodes_median) if nodes else "",
+                    *outcome,
+                    "yes" if steady else "no",
+                ]
+            )
+        )
+        measured.append((median, conversation, min(times), max(times), nodes_median, outcome))
+
+    common.write_lf(out / COMBINED, "\n".join(lines) + "\n")
+
+    totals = [sum(int(row[MENU_MS]) for row in run.values() if row.get(MENU_MS, "").isdigit()) for run in runs]
+    report = [
+        f"{len(runs)} runs over {len(conversations)} group(s), {len(measured)} measured in every run",
+        "total menu_ms by run: " + " / ".join(f"{total:,}" for total in totals),
+        f"sum of medians: {number_text(sum(m[0] for m in measured), grouped=True)} ms",
+        f"groups whose rounds, settled or starred differ between runs: {unsteady or 'none'}",
+        "",
+        f"the {HARDEST} costliest groups by median menu_ms:",
+        f"  {'conv':>6}  {'median':>8}  {'min-max':>13}  {'nodes':>10}  rounds  settled  starred",
+    ]
+    for median, conversation, low, high, nodes_median, outcome in sorted(measured, reverse=True)[:HARDEST]:
+        nodes_text = number_text(nodes_median, grouped=True) if nodes_median != "" else "-"
+        report.append(
+            f"  {conversation:>6}  {number_text(median, grouped=True):>8}  {f'{low}-{high}':>13}  {nodes_text:>10}  "
+            f"{outcome[0]:>6}  {outcome[1]:>7}  {outcome[2]}"
+        )
+    text = "\n".join(report) + "\n"
+    common.write_lf(out / SUMMARY, text)
+    print(f"\n{text}")
+    print(f"combined rows -> {out / COMBINED}; summary -> {out / SUMMARY}")
+
+
 ###############################################################################
 # CLI
 ###############################################################################
@@ -304,6 +447,12 @@ def get_parser():
         nargs="*",
         help="group ids, or 'all' for every group in the game",
     )
+    parser.add_argument(
+        "--runs",
+        type=int,
+        default=1,
+        help="how many runs to take back to back; more than one writes each under run-N and combines them",
+    )
     return parser
 
 
@@ -311,6 +460,8 @@ def main(argv=None):
     if argv is None:
         argv = sys.argv[1:]
     args = get_parser().parse_args(argv)
+    if args.runs < 1:
+        refuse(f"--runs {args.runs}: a run count is at least 1")
 
     named = args.conversations or ["all"]
     if named != ["all"]:
@@ -319,11 +470,23 @@ def main(argv=None):
     # NAMED, OR A FOLDER OF ITS OWN. A run told where to write resumes what is there; one
     # that is not gets a fresh folder and resumes nothing, which is the safe default - a
     # resume into a folder taken against different settings would mix two measurements.
-    out = env("MENUS_OUT") or common.run_folder("menus", "MENUS_OUT")
+    out = Path(env("MENUS_OUT") or common.run_folder("menus", "MENUS_OUT"))
 
     workers = env_int("WORKERS", default_workers())
     try:
-        return measure(out, named, workers)
+        if args.runs == 1:
+            return measure(out, named, workers)
+        # ONE RUN AFTER ANOTHER, never side by side: two runs at once would each be measuring
+        # how busy the other made the machine. Each keeps its own folder, so a resume picks up
+        # the run that was interrupted and leaves the finished ones alone.
+        folders = []
+        for number in range(1, args.runs + 1):
+            folder = out / RUN_FOLDER.format(number)
+            print(f"\n=== run {number} of {args.runs} -> {folder} ===")
+            measure(folder, named, workers)
+            folders.append(folder)
+        combine(folders, out)
+        return 0
     except KeyboardInterrupt:
         print("\ninterrupted; what finished is on disk and a re-run resumes it")
         return 130
