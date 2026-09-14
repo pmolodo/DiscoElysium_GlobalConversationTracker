@@ -180,7 +180,7 @@ fn nolimit() -> bool {
 /// Which menu marking a row is taken with. See [`marking`].
 #[derive(Clone, Copy)]
 enum Marking {
-    /// Whatever the product chooses for the group - see `bridge::mark_menu_as_shipped`.
+    /// What the product marks with - see `bridge::mark_menu_as_shipped`.
     Shipped,
     /// The hybrid on every group: the sibling cut first, and the nearest-choice marking only
     /// where that marks nothing - see `menu::mark_menu_hybrid`.

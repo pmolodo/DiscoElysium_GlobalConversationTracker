@@ -319,6 +319,61 @@ pub fn mark_onward<F: Fn(DialogueNodeId) -> Novelty>(
     answer
 }
 
+/// Whether any of the `onward` options reaches `target`, each asked the way the onward
+/// question asks it: with every other option of the menu cut.
+///
+/// FOR THE LOCKED OPTIONS ANSWERED AFTER A MENU. A star the exact marking gives names the entry
+/// it claims, and a locked option is kept off that entry; a star the onward question gives
+/// names none, since that question only establishes that an option leads somewhere. So where a
+/// locked option's search lands on an entry, this asks whether an onward star already leads
+/// there - one backward pass per star, and only for the entries a locked option actually lands
+/// on. See `bridge::answer_starts`.
+///
+/// `Err` says why a pass stopped before it could answer, and whether the manager filled.
+pub fn reached_onward(
+    mut search: Search<'_, '_>,
+    contestants: &[Contestant],
+    onward: &[usize],
+    target: DialogueNodeId,
+    budget: &Budget,
+    shape: &GroupShape,
+) -> Result<bool, (StoppedBy, bool)> {
+    let graph = search.graph;
+    let began = Instant::now();
+    let options: HashSet<_> = contestants.iter().map(|c| c.position.option).collect();
+    for &i in onward {
+        let position = &contestants[i].position;
+        let mut cut = options.clone();
+        cut.remove(&position.option);
+        let mut known = shape.known_from(graph, position.option);
+        for &entry in &position.entries {
+            known = known.from(entry, &position.holding);
+        }
+        let left = budget.wall.saturating_sub(began.elapsed());
+        if left.is_zero() {
+            return Err((StoppedBy::Time, false));
+        }
+        let pass = Backward::reaching_any_knowing(
+            search.reborrow(),
+            &[target],
+            &cut,
+            &PassBudget {
+                time: budget.each.min(left),
+                steps: usize::MAX,
+                ..Default::default()
+            },
+            Some(&known),
+        );
+        if pass.stats().met_at.is_some() {
+            return Ok(true);
+        }
+        if !pass.stats().reached_fixed_point {
+            return Err((StoppedBy::Incomplete, pass.stats().out_of_memory));
+        }
+    }
+    Ok(false)
+}
+
 /// Whether this option could be improved on by the class being hunted.
 ///
 /// TWO REFUSALS, AND THE SECOND IS THE ONE A BUDGET MUST NOT UNDO. The baseline says the
@@ -407,7 +462,7 @@ pub fn mark_menu_by<F: Fn(DialogueNodeId) -> Novelty>(
     )
 }
 
-/// [`mark_menu`], with `blocked` entries neither walkable nor claimable.
+/// [`mark_menu_by`], with `blocked` entries neither walkable nor claimable.
 ///
 /// FOR A SEARCH ASKED AFTER THE MENU'S OWN: a locked check's halves are answered once every
 /// ordinary star is settled, with the menu's options and every entry those stars claimed
@@ -420,16 +475,9 @@ pub fn mark_menu_blocking<F: Fn(DialogueNodeId) -> Novelty>(
     budget: &Budget,
     shape: &GroupShape,
     blocked: &HashSet<DialogueNodeId>,
+    rounds: RoundSearch,
 ) -> MenuAnswer {
-    mark_rounds(
-        search,
-        novelty,
-        contestants,
-        budget,
-        shape,
-        blocked,
-        RoundSearch::Pooled,
-    )
+    mark_rounds(search, novelty, contestants, budget, shape, blocked, rounds)
 }
 
 /// The exact marking: `blocked` entries neither walkable nor claimable, and each round

@@ -1464,7 +1464,7 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
             .overall
             .saturating_mul((contestants.len() + locked.len()) as u32),
     );
-    // THE EXACT MARKING, EXCEPT IN THE GROUPS THAT CANNOT AFFORD IT - see
+    // THE CHEAP QUESTION FIRST, AND THE EXACT MARKING WHERE IT MARKS NOTHING - see
     // [`mark_menu_as_shipped`], which the menu measurement calls too.
     let found = mark_menu_as_shipped(
         Search {
@@ -1496,6 +1496,16 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
         .map(|start| DialogueNodeId::from(*start))
         .collect();
     blocked.extend(found.marks.iter().filter_map(|mark| mark.witness));
+    // THE ONWARD STARS, which name no entry: the onward question only establishes that an
+    // option leads somewhere, so there is no witness to block. Each is kept with the class it
+    // was starred for, since a star claims nothing of a class it was not hunting.
+    let onward: Vec<(usize, Novelty)> = found
+        .marks
+        .iter()
+        .enumerate()
+        .filter(|(_, mark)| mark.round.is_some() && mark.witness.is_none())
+        .map(|(index, mark)| (index, mark.best))
+        .collect();
     let mut passes = found.passes;
     for (index, contestant, branch_locks) in locked {
         // AN OPTION ANSWERED WHOLE STARTS AT ITSELF, where a check's half starts past the
@@ -1515,23 +1525,78 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
             inner: world,
             locks: &branch_locks,
         };
-        let alone = menu::mark_menu_blocking(
-            Search {
-                graph,
-                compiler: &mut *compiler,
-                world: &lifted,
-                counter_cap: COUNTER_CAP as u32,
-            },
-            novelty,
-            std::slice::from_ref(&contestant),
-            &menu::Budget {
-                wall: wall.saturating_sub(began.elapsed()),
-                each: ration.each,
-            },
-            shape,
-            &blocked_here,
-        );
-        passes += alone.passes;
+        let alone = loop {
+            let mut alone = menu::mark_menu_blocking(
+                Search {
+                    graph,
+                    compiler: &mut *compiler,
+                    world: &lifted,
+                    counter_cap: COUNTER_CAP as u32,
+                },
+                novelty,
+                std::slice::from_ref(&contestant),
+                &menu::Budget {
+                    wall: wall.saturating_sub(began.elapsed()),
+                    each: ration.each,
+                },
+                shape,
+                &blocked_here,
+                SHIPPED_ROUNDS,
+            );
+            passes += alone.passes;
+
+            // KEPT OFF WHAT AN ONWARD STAR ALREADY LEADS TO, one entry at a time. Where the half
+            // lands on an entry an onward star of that class reaches - asked in the real world,
+            // locks and all, the way the star was - the entry is blocked and the half asked
+            // again, so it ends starred only for content no star leads to. The passes are spent
+            // only on entries a half actually lands on, and only in a menu with a locked option.
+            let Some(witness) = alone.marks[0].witness else {
+                break alone;
+            };
+            let class = novelty(witness);
+            let rivals: Vec<usize> = onward
+                .iter()
+                .filter(|(_, best)| *best == class)
+                .map(|(rival, _)| *rival)
+                .collect();
+            if rivals.is_empty() {
+                break alone;
+            }
+            match menu::reached_onward(
+                Search {
+                    graph,
+                    compiler: &mut *compiler,
+                    world,
+                    counter_cap: COUNTER_CAP as u32,
+                },
+                &contestants,
+                &rivals,
+                witness,
+                &menu::Budget {
+                    wall: wall.saturating_sub(began.elapsed()),
+                    each: ration.each,
+                },
+                shape,
+            ) {
+                Ok(false) => break alone,
+                Ok(true) => {
+                    blocked_here.insert(witness);
+                }
+                // NOT KNOWN WHETHER A STAR ALREADY LEADS THERE, so the half is not starred for
+                // it, and says its search gave up rather than that there is nothing to find.
+                Err((stopped_by, out_of_nodes)) => {
+                    let mark = &mut alone.marks[0];
+                    mark.best = contestant.baseline;
+                    mark.distance = None;
+                    mark.round = None;
+                    mark.witness = None;
+                    mark.complete = false;
+                    mark.stopped_by = stopped_by;
+                    mark.out_of_nodes = out_of_nodes;
+                    break alone;
+                }
+            }
+        };
         record(&mut answers[index], &alone.marks[0]);
     }
 
@@ -1557,22 +1622,26 @@ pub(crate) fn all_unanswered(request: &LookAheadRequest, stopped_by: &str) -> Ve
         .collect()
 }
 
-/// The groups whose menus are marked by the hybrid rather than by the exact marking alone.
+/// How the product searches each round of the exact marking, for ordinary options and locked
+/// checks alike.
 ///
-/// 761 ALONE, because it is the group the exact marking cannot afford at a player's
-/// allowance: the pool needs about 288 MB and ten seconds there. The hybrid's sibling cut
-/// answers it cheaply, and falls back to the exact marking only where that marks nothing.
-/// A group is in when its graph carries the named conversation, whichever one opened it.
-const HYBRID_GROUPS: [i32; 1] = [761];
+/// BRANCH AND BOUND, on two counts measured over the whole game. Where the exact marking runs
+/// it is the cheaper search - conversation 353 answers in 0.3 seconds against 2.6 for the
+/// pooled one, which pays about a second more for the same first round. And where several
+/// options tie for a round it credits the one nearest the content along the route: an option
+/// the others only reach that content through, which is the nearest to the player as well as
+/// by the count of choices, and whose star leaves the options behind it nothing more to claim.
+/// See [`crate::symbolic::menu::RoundSearch`].
+const SHIPPED_ROUNDS: crate::symbolic::menu::RoundSearch =
+    crate::symbolic::menu::RoundSearch::BranchAndBound;
 
-/// Marks a menu the way the product does, choosing the marking by the group.
+/// Marks a menu the way the product does.
 ///
 /// THE ONE PLACE THE CHOICE IS MADE, for [`answer_starts`] and the menu measurement alike, so
-/// a measurement taken by default measures what a player waits for. The exact marking stars
-/// each round's option nearest to unread content, meeting a forward front from the menu with
-/// a backward front from every target - see [`crate::symbolic::menu::mark_menu`]. In
-/// [`HYBRID_GROUPS`] the cheaper sibling-cut question is asked first, and the exact marking
-/// only where that marks nothing - see [`crate::symbolic::menu::mark_menu_hybrid`].
+/// a measurement taken by default measures what a player waits for. The cheap question is
+/// asked first - which options lead to unread content without returning through the menu -
+/// and the exact marking runs only where that marks nothing, its rounds searched by
+/// [`SHIPPED_ROUNDS`]. See [`crate::symbolic::menu::mark_menu_hybrid`].
 pub fn mark_menu_as_shipped<F: Fn(DialogueNodeId) -> Novelty>(
     search: crate::symbolic::search::Search<'_, '_>,
     novelty: &F,
@@ -1580,17 +1649,14 @@ pub fn mark_menu_as_shipped<F: Fn(DialogueNodeId) -> Novelty>(
     budget: &crate::symbolic::menu::Budget,
     shape: &GroupShape,
 ) -> crate::symbolic::menu::MenuAnswer {
-    use crate::symbolic::menu;
-
-    let graph = search.graph;
-    let hybrid = HYBRID_GROUPS
-        .iter()
-        .any(|conversation| graph.get(DialogueNodeId::new(*conversation, 0)).is_some());
-    if hybrid {
-        menu::mark_menu_hybrid(search, novelty, contestants, budget, shape)
-    } else {
-        menu::mark_menu(search, novelty, contestants, budget, shape)
-    }
+    crate::symbolic::menu::mark_menu_hybrid_by(
+        search,
+        novelty,
+        contestants,
+        budget,
+        shape,
+        SHIPPED_ROUNDS,
+    )
 }
 
 /// Writes what a marking settled about one start onto its answer.
@@ -2148,6 +2214,54 @@ mod branch_wire_tests {
             best_of(node(0)),
             Novelty::SeenThisGame as i32,
             "the unaffordable one would reach only what the free one already does"
+        );
+    }
+
+    /// But what no other option reaches is still the unaffordable one's to claim.
+    ///
+    /// 1 is free and opens 3; 0 is unaffordable and opens 2. Both lead somewhere nobody has
+    /// read and neither reaches the other's, so both are starred - the free one by the onward
+    /// question, the unaffordable one because no onward star leads where buying it would.
+    #[test]
+    fn an_unaffordable_option_is_starred_for_what_no_sibling_reaches() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).cost(PRICE).links(&[2]))
+            .add(Entry::new(1).links(&[3]))
+            .add(Entry::new(2))
+            .add(Entry::new(3))
+            .build();
+        let world = TestWorld::new().with_money(PRICE - 1);
+        let two_and_three_are_unread = |id: DialogueNodeId| {
+            if id == node(2) || id == node(3) {
+                Novelty::UnseenAnyGame
+            } else {
+                Novelty::SeenThisGame
+            }
+        };
+
+        let answers = answer_menu(
+            &graph,
+            &world,
+            &[node(0), node(1)],
+            two_and_three_are_unread,
+        );
+        let best_of = |id: DialogueNodeId| {
+            answers
+                .iter()
+                .find(|answer| answer.start == NodeRef::from(id))
+                .expect("every option is answered")
+                .best
+        };
+
+        assert_eq!(
+            best_of(node(1)),
+            Novelty::UnseenAnyGame as i32,
+            "the free option reaches 3"
+        );
+        assert_eq!(
+            best_of(node(0)),
+            Novelty::UnseenAnyGame as i32,
+            "buying 0 opens 2, which the free option does not reach"
         );
     }
 
