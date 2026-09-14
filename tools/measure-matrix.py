@@ -127,7 +127,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import measurement_common as common  # noqa: E402
 
-from measurement_common import env, env_for_child, qualified  # noqa: E402
+from measurement_common import env, env_for_child, env_int, env_list, qualified  # noqa: E402
 
 ###############################################################################
 # Where things are
@@ -176,24 +176,6 @@ def clock(seconds):
     """h:mm:ss. A run of this length is watched rather than read afterwards."""
     seconds = max(0, int(seconds))
     return f"{seconds // 3600}:{(seconds % 3600) // 60:02d}:{seconds % 60:02d}"
-
-
-def env_list(name):
-    """A comma or space separated environment list, or None where it is unset or empty."""
-    raw = os.environ.get(name, "").strip()
-    if not raw:
-        return None
-    return [piece for piece in re.split(r"[,\s]+", raw) if piece]
-
-
-def env_int(name, fallback):
-    raw = os.environ.get(name, "").strip()
-    if not raw:
-        return fallback
-    try:
-        return int(raw)
-    except ValueError:
-        refuse(f"{name}={raw!r} is not a number")
 
 
 ###############################################################################
@@ -491,7 +473,7 @@ class Run:
         if engines:
             self.child_env[qualified("ENGINES")] = engines
         else:
-            self.child_env.pop("ENGINES", None)
+            self.child_env.pop(qualified("ENGINES"), None)
 
         # THE CAP EACH ENGINE GETS, so that a row which will never finish still ends. The
         # measurement's own default is ten minutes and this passes whatever is set through
