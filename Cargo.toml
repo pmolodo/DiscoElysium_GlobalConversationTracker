@@ -157,10 +157,6 @@ name = "menu_wall"
 path = "measurements/menu_wall.rs"
 
 [[example]]
-name = "row_overhead"
-path = "measurements/row_overhead.rs"
-
-[[example]]
 name = "counter_widths"
 path = "measurements/counter_widths.rs"
 

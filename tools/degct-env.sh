@@ -4,8 +4,8 @@
 # Source it:
 #
 #     . "$(dirname "$0")/degct-env.sh"
-#     DEGCT_OUT="$(degct_env MATRIX_OUT measurements/logs/somewhere)"
-#     degct_env_is_set CENSUS && echo "census mode"
+#     DEGCT_OUT="$(degct_env MENUS_OUT measurements/logs/somewhere)"
+#     degct_env_is_set NOLIMIT && echo "limits off"
 #
 # WHY A HELPER RATHER THAN A CONVENTION. Every environment variable this project defines is
 # prefixed DEGCT_ - see CLAUDE.md for the rule and docs/environment.md for the list - and a
@@ -31,7 +31,7 @@ degct_env() {
 # Whether one of ours is set at all, whatever it is set to.
 #
 # The shape a flag takes here: several measurements switch on PRESENCE rather than value, so
-# DEGCT_CENSUS=1 and DEGCT_CENSUS= mean the same thing and neither has to be parsed.
+# DEGCT_NOLIMIT=1 and DEGCT_NOLIMIT= mean the same thing and neither has to be parsed.
 degct_env_is_set() {
     local degct_name="DEGCT_$1"
     [ -n "${!degct_name+set}" ]

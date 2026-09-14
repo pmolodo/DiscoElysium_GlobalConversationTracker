@@ -28,8 +28,7 @@
 //!
 //! One fixed point per candidate. That is what [`Budget`] exists for: a group with a long
 //! candidate list, every one of them unreachable, has to pay for every refusal separately,
-//! and it is the shape where this costs most. `measurements/performance_matrix.rs`'s
-//! percentage profiles are where that is measured rather than assumed.
+//! and it is the shape where this costs most.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 

@@ -42,7 +42,7 @@ namespace GlobalConversationTracker.Core
         /// <summary>Whether one of ours is set at all, whatever it is set to.</summary>
         /// <remarks>
         /// The shape a flag takes: several measurements switch on PRESENCE rather than value,
-        /// so <c>DEGCT_CENSUS=1</c> and <c>DEGCT_CENSUS=</c> mean the same thing and neither
+        /// so <c>DEGCT_NOLIMIT=1</c> and <c>DEGCT_NOLIMIT=</c> mean the same thing and neither
         /// has to be parsed.
         /// </remarks>
         /// <param name="name">The bare name, without the prefix.</param>

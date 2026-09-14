@@ -62,30 +62,15 @@ def refuse(message, code=2):
     raise SystemExit(code)
 
 
-# HOW LONG A THING HAS TO TAKE BEFORE IT IS WORTH A LINE OF ITS OWN.
-#
-# From the user, de-12wr.8. On the tail - which is most of a whole-game run - a row is a few
-# hundred milliseconds and five of them scroll past faster than anyone reads, while the group
-# line that follows says everything. A line printed for each is noise that buries the lines
-# that matter.
-#
-# IT ALSO SETTLES THE INTERLEAVING. A row that never printed its opening cannot have the
-# measurement's own progress lines land mid-line, so the one-line form is safe precisely where
-# it is used; a row slow enough to earn an opening is a row slow enough to want those progress
-# lines underneath it.
-WORTH_A_LINE = 2.0
-
-
 def progress_line(done, total, item, seconds=None, elapsed=None, estimate=None, note=""):
     """The one progress line every driver prints, in every phase.
 
     ## Why there is a function rather than four format strings
 
-    de-12wr.8. The matrix's serial phase, its parallel phase and the census each grew their own
-    layout, saying the same four things - where the run is, how far in, how long it has taken,
-    how long is left - in three different orders with three different punctuations. A reader
-    switching between a census log and a matrix log paid for that every time, and two separate
-    issues had already moved one of them a step closer to the others by hand.
+    de-12wr.8. A run's serial phase and its parallel phase say the same four things - where the
+    run is, how far in, how long it has taken, how long is left - and one layout says them the
+    same way in both, so a reader switching between two logs is not paying for three orders and
+    three punctuations.
 
     ## Fixed width, which is the whole point of printing hundreds of them
 
@@ -94,9 +79,9 @@ def progress_line(done, total, item, seconds=None, elapsed=None, estimate=None, 
     and right. That is what makes two adjacent lines comparable at a glance, which is the only
     reason a per-item duration is printed at all.
 
-    Returns the line rather than printing it, because the matrix's parallel phase buffers a
-    group's output and prints it whole when the group is reaped - so that several groups at
-    once do not interleave into something nobody can read.
+    Returns the line rather than printing it, because a parallel phase buffers a group's output
+    and prints it whole when the group is reaped - so that several groups at once do not
+    interleave into something nobody can read.
     """
     width = len(str(total))
     percent = done * 100 // max(1, total)
@@ -135,7 +120,7 @@ def qualified(name):
 
 
 def env(name, fallback=None, foreign=False):
-    """One of ours, by its BARE name: `env("MATRIX_OUT")` reads DEGCT_MATRIX_OUT.
+    """One of ours, by its BARE name: `env("MENUS_OUT")` reads DEGCT_MENUS_OUT.
 
     ## Why a helper rather than a convention
 
@@ -157,7 +142,7 @@ def env_is_set(name):
     """Whether one of ours is set at all, whatever it is set to.
 
     The shape a flag takes here: several measurements switch on PRESENCE rather than value, so
-    DEGCT_CENSUS=1 and DEGCT_CENSUS= mean the same and neither has to be parsed.
+    DEGCT_NOLIMIT=1 and DEGCT_NOLIMIT= mean the same and neither has to be parsed.
     """
     return qualified(name) in os.environ
 
@@ -183,7 +168,7 @@ def env_int(name, fallback):
 def env_for_child(**names):
     """An environment dict for a child process, with our names qualified.
 
-    Handed the BARE names - `env_for_child(CONVERSATION="631", NO_HEADER="1")` - so the same
+    Handed the BARE names - `env_for_child(CONVERSATION="631", HEADER="1")` - so the same
     rule that governs reading governs setting, and a driver cannot pass a child a variable the
     measurement will not recognise. Everything already in os.environ is carried through
     untouched, because a child needs PATH and the rest.
@@ -192,19 +177,6 @@ def env_for_child(**names):
     for name, value in names.items():
         child[qualified(name)] = str(value)
     return child
-
-
-def folders_newest_first():
-    """Every run folder under measurements/logs, newest first by MODIFICATION TIME.
-
-    By mtime rather than by name, because not every folder is date-stamped and a resumed run
-    is genuinely more recent than its name says.
-    """
-    try:
-        folders = [p for p in (OUT / "logs").iterdir() if p.is_dir()]
-    except OSError:
-        return []
-    return sorted(folders, key=lambda p: p.stat().st_mtime, reverse=True)
 
 
 def bash(hint=""):
@@ -328,27 +300,6 @@ def ask(binary, extra_env, base_env=None):
     env = dict(base_env if base_env is not None else os.environ)
     env.update(extra_env)
     return subprocess.run([str(binary)], capture_output=True, text=True, env=env, errors="replace")
-
-
-def read_constants(binary, base_env=None):
-    """The numbers a driver does arithmetic with, asked for rather than transcribed.
-
-    The memory budget and the bytes a diagram node costs both live in src/symbolic/budget.rs,
-    and the shell drivers kept their own copies - "the two numbers here that have to be kept in
-    step with the Rust by hand", as the matrix driver put it. A hand-kept copy of a constant is
-    wrong silently, and this one is wrong in the direction that manufactures rows: too large a
-    worker share and the workers race for memory the machine has not got.
-
-    AN OLDER BINARY SAYS NOTHING AND IS NOT AN ERROR. The caller falls back to the figures the
-    shell carried, which is exactly where it would have been anyway.
-    """
-    answer = ask(binary, {qualified("CONSTANTS_ONLY"): "1"}, base_env)
-    constants = {}
-    for line in answer.stdout.splitlines():
-        name, _, value = line.partition(TAB)
-        if value.strip().isdigit():
-            constants[name.strip()] = int(value.strip())
-    return constants
 
 
 # HOW MUCH OF THE MACHINE A RUN LEAVES ALONE.
@@ -519,10 +470,10 @@ SETTLE_FACTOR = 2
 class Settling:
     """Watches a heaviest-first run for the point where its cost has bottomed out.
 
-    THE RULE BOTH MATRIX DRIVERS SHARE: measure the heavy groups one at a time, on an
-    uncontended machine, and hand the rest to parallel workers only once the cost has
-    flattened. `serial_phase` in tools/measure-matrix.py says why it is a rule rather than a
-    number of groups, why it has two time arms, and why it wants a run of groups.
+    Measure the heavy groups one at a time, on an uncontended machine, and hand the rest to
+    parallel workers only once the cost has flattened. It is a rule rather than a number of
+    groups because the cost curve is not monotone - a cheap stretch can be followed by a heavy
+    group - which is also why it wants a run of settled groups rather than one.
 
     A group counts as SETTLED when its cost is within `factor` of the cheapest group so far OR at
     most `ms` outright, and it `fits` - a driver that checks what a worker can hold says so,

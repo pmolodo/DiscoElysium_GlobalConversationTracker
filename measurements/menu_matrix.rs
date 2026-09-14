@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 //! What a whole MENU costs, over every group in the game.
 //!
-//! ## Why a menu and not a row of the option matrix
+//! ## Why a whole menu and not one search
 //!
-//! `measurements/performance_matrix.rs` measures one search from one start. A request is a
+//! A search from one start is not what a player waits for. A request is a
 //! whole response menu: `bridge::answer_starts` runs every option against ONE manager and
 //! ONE compiler, three options in the ordinary case and twenty-four when every option is a
 //! rolled check. So a menu is not the sum of its options - the second option answers against
@@ -115,18 +115,24 @@
 //! `DEGCT_HEADER=1` prints the column names and measures nothing, which is how a driver
 //! writing one file out of many processes gets a header without parsing a row.
 //!
+//! `DEGCT_GROUPS_ONLY=1` prints one line per distinct group in the game - `start`,
+//! `conversations`, `entries`, `reachable`, most reachable first - and measures nothing. It is
+//! how `tools/measure-menus.py all` learns which groups there are, and a zero in `reachable` is
+//! how it skips a group with nothing to measure. See [`group_list`].
+//!
 //! `DEGCT_STARTS` sets the menu's width, `DEGCT_UNSEEN` how many of the deepest entries are
 //! unread, and `DEGCT_BUDGET_MB` what the manager is given.
 //!
 //! `DEGCT_NOLIMIT=1` takes the limits off: a 6144 MB manager and a five-minute wall, which is
 //! also each pass's ration.
 
+use std::collections::{BTreeSet, HashMap};
 use std::time::{Duration, Instant};
 
 use lookahead_engine::bridge::{SnapshotWorld, WorldSnapshot};
 use lookahead_engine::core::types::{DialogueNodeId, Novelty, StartBranch};
 use lookahead_engine::graph::LookAheadGraph;
-use lookahead_engine::index::{build_group_graph, read_index};
+use lookahead_engine::index::{build_group_graph, discover_group, read_index};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
@@ -142,6 +148,10 @@ mod common;
 #[path = "menu_profile.rs"]
 mod menu_profile;
 use menu_profile::MenuProfile;
+
+#[path = "seen_profile.rs"]
+mod seen_profile;
+use seen_profile::candidates;
 
 /// The columns, written down here and nowhere else.
 ///
@@ -267,6 +277,16 @@ fn main() {
     };
     let index = read_index(&path).expect("the shipped index reads");
 
+    // ASKED FOR ON ITS OWN, like the header, and for the same reason: a whole-game run has to
+    // know which groups there are before it measures any, and a list kept anywhere else can
+    // omit a group and never say so. See `group_list`.
+    if lookahead_engine::core::env::is_set("GROUPS_ONLY") {
+        for (start, conversations, entries, reachable) in group_list(&index) {
+            println!("{start}\t{conversations}\t{entries}\t{reachable}");
+        }
+        return;
+    }
+
     let budget = DiagramBudget::new(
         from_env(
             "BUDGET_MB",
@@ -321,6 +341,66 @@ fn main() {
             ),
         }
     }
+}
+
+/// Every distinct group in the game, most reachable first, as `(start, conversations,
+/// entries, reachable)`.
+///
+/// A CANONICAL START IS NOT SIMPLY THE SMALLEST MEMBER. `discover_group` is the FORWARD closure
+/// of a start, not an equivalence relation, so the smallest conversation in a group may reach
+/// only part of it - a group of {3, 5} where 5 leads to 3 and 3 leads nowhere has `closure(3) =
+/// {3}`. The start named is the smallest one whose own closure IS the whole set, which is the
+/// only kind of start that reproduces the group it came from.
+///
+/// `reachable` counts the entries a profile could be built from, and a zero is how a run skips
+/// a group with nothing to measure - see [`reachable_from`].
+///
+/// ORDERED BY WHAT A RUN CAN SEE, not by how big the group is: `entries` counts everything in a
+/// group's conversations whether anything can walk to it or not, and a group can hold 4,035
+/// entries and reach 32. Ties go by start, so the list is the same list every time it is asked
+/// for, which a resume depends on.
+fn group_list(index: &lookahead_engine::index::Index) -> Vec<(i32, usize, usize, usize)> {
+    let mut conversations: Vec<i32> = index.keys().copied().collect();
+    conversations.sort_unstable();
+
+    let mut canonical: HashMap<BTreeSet<i32>, i32> = HashMap::new();
+    for &conversation in &conversations {
+        let group: BTreeSet<i32> = discover_group(index, conversation).into_iter().collect();
+        // Ascending, so the first start to produce a set is the smallest that reaches it.
+        canonical.entry(group).or_insert(conversation);
+    }
+
+    let mut groups: Vec<(i32, usize, usize, usize)> = canonical
+        .into_iter()
+        .map(|(group, start)| {
+            let entries = group.iter().map(|id| index[id].entries.len()).sum();
+            (start, group.len(), entries, reachable_from(index, start))
+        })
+        .collect();
+    groups.sort_unstable_by(|a, b| b.3.cmp(&a.3).then(a.0.cmp(&b.0)));
+    groups
+}
+
+/// How many entries a profile could be built from in `start`'s group: reachable from entry 0,
+/// not the start, and not groups - see `seen_profile::candidates`.
+///
+/// ON STDERR, the reason a group has none, so the group list stays a clean TSV and a driver can
+/// still keep why each group was skipped.
+fn reachable_from(index: &lookahead_engine::index::Index, start: i32) -> usize {
+    let Ok((graph, _)) = build_group_graph(index, start) else {
+        eprintln!("conversation {start}: no group builds from it; skipping.");
+        return 0;
+    };
+    let root = DialogueNodeId::new(start, 0);
+    if graph.get(root).is_none() {
+        eprintln!("conversation {start}: no entry 0; skipping.");
+        return 0;
+    }
+    let reachable = candidates(&graph, root).len();
+    if reachable == 0 {
+        eprintln!("conversation {start}: nothing is reachable from its start; skipping.");
+    }
+    reachable
 }
 
 /// One menu: every option answered against one manager, warmed by the menu itself.

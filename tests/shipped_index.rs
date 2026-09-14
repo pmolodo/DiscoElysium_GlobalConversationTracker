@@ -245,16 +245,17 @@ fn a_group_built_from_the_trimmed_index_is_the_same_group() {
 ///
 /// ## Why the two tests above are not enough for a caller that measures every group
 ///
-/// They compare five groups, and `measurements/performance_matrix.rs` enumerates all 1,422
-/// of them before it measures any - `group_starts`, which is `discover_group` over every
+/// They compare five groups, and `measurements/menu_matrix.rs` enumerates all 1,422 of them
+/// before a whole-game run measures any - `group_list`, which is `discover_group` over every
 /// conversation in the index, canonicalised by the set of conversations it reaches. That
 /// list decides which rows a whole-game run HAS. A trim that dropped a cross-conversation
 /// link in a group nobody has measured would leave both tests above green and silently
 /// split one group into two, which is a different run rather than a slower one.
 ///
-/// It is also the last thing between the matrix and the trimmed index. A row is a function
-/// of the graph, the world, the budget, the cap and the profile, and only the first comes
-/// out of the index - so identical graphs and an identical group list is the whole argument.
+/// It is also the last thing between the menu matrix and the trimmed index. A row is a
+/// function of the graph, the world, the budget, the cap and the profile, and only the first
+/// comes out of the index - so identical graphs and an identical group list is the whole
+/// argument.
 #[test]
 fn the_whole_games_group_list_survives_the_trim() {
     let (Some(full), Some(trimmed)) = (common::conversation_index(), common::shipped_index())
@@ -283,7 +284,7 @@ fn the_whole_games_group_list_survives_the_trim() {
 
 /// Every conversation, and the set of conversations its group reaches.
 ///
-/// The same walk `performance_matrix::group_starts` makes, kept as a plain map rather than
+/// The same walk `menu_matrix::group_list` makes, kept as a plain map rather than
 /// canonicalised into starts: a map says WHICH conversation's group changed where a list of
 /// starts would only say that one did.
 fn groups_of(

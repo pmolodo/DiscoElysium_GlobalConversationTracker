@@ -6,16 +6,14 @@
 #   tools/stop-measurements.sh --list       # say what is running, kill nothing
 #
 # KILLING THE TERMINAL IS NOT ENOUGH, which is the whole reason this exists. The measurement
-# scripts run ONE PROCESS PER ROW - that is what keeps a crash costing one row rather than a
-# whole run - so killing the shell or the job leaves the loop spawning new ones. They then
-# hold target/release/examples/performance_matrix.exe open, and the next build fails with
-# LNK1104 from a run nobody thinks is still going.
+# drivers run ONE PROCESS PER GROUP - that is what keeps a crash costing one group rather than
+# a whole run - so killing the shell or the job leaves the loop spawning new ones. They then
+# hold target/release/examples/menu_matrix.exe open, and the next build fails with LNK1104
+# from a run nobody thinks is still going.
 #
-# tools/measure-matrix.py has documented the incantation for a while and it works. This is
-# the same thing as a command rather than a five-line quoted PowerShell block, because the
-# block has to be retyped correctly at the moment something is already going wrong, and its
-# escaping is exactly what gets mistyped then. It also covers measure-census.sh, which the
-# original pattern did not match.
+# This is the stopping incantation as a command rather than a five-line quoted PowerShell
+# block, because the block has to be retyped correctly at the moment something is already
+# going wrong, and its escaping is exactly what gets mistyped then.
 #
 # IT KILLS ONLY THIS REPOSITORY'S MEASUREMENTS: the driver scripts by name, and the
 # measurement binaries they run. It deliberately does NOT match on `cargo` or `bash` alone.
@@ -35,13 +33,13 @@ case "${1:-}" in
         ;;
 esac
 
-# The driver scripts, and the binaries a row runs. Matched on the COMMAND LINE for the
-# scripts - they are `bash tools/measure-...` and their process name is just bash - and on
-# the process NAME for the binaries, which is exact and cannot catch an editor that happens
-# to have the path in its title.
+# The driver scripts, and the binaries a group runs. Matched on the COMMAND LINE for the
+# scripts - they are `python tools/measure-...` or `bash tools/measure-...` and their process
+# name is just the interpreter - and on the process NAME for the binaries, which is exact and
+# cannot catch an editor that happens to have the path in its title.
 read -r -d '' FILTER <<'PS' || true
-$scripts = 'measure-matrix', 'measure-census', 'measure-symbolic'
-$binaries = 'performance_matrix.exe', 'performance_matrix'
+$scripts = 'measure-menus', 'measure-symbolic'
+$binaries = 'menu_matrix.exe', 'menu_matrix'
 Get-CimInstance Win32_Process | Where-Object {
     $cmd = $_.CommandLine
     if ($cmd -like '*stop-measurements*') { return $false }
@@ -72,9 +70,9 @@ powershell -NoProfile -Command "
     }
     "
 
-# SAID AFTERWARDS RATHER THAN ASSUMED. A run that was killed mid-row has lost that row and
+# SAID AFTERWARDS RATHER THAN ASSUMED. A run that was killed mid-group has lost that group and
 # nothing else: rows are appended as they finish, so everything before it is in the TSV and
 # the identical command resumes into the same folder.
 echo
 echo "rows already finished are in the run's folder; re-running the same command with the"
-echo "same MATRIX_OUT or CENSUS_OUT picks up where this stopped."
+echo "same MENUS_OUT picks up where this stopped."

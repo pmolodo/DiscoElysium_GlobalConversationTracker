@@ -1260,7 +1260,7 @@ pub fn answer(
 /// How high a counter is modelled before it saturates.
 ///
 /// SIXTEEN, AND EVERY MEASUREMENT IN THE REPOSITORY WAS MADE AT IT -
-/// `measurements/performance_matrix.rs` and the symbolic tests all use this number. Changing it
+/// `measurements/menu_matrix.rs` and the symbolic tests all use this number. Changing it
 /// changes which states a search can tell apart, so a run measured under one cap says
 /// nothing about a search under another.
 pub const COUNTER_CAP: i32 = 16;

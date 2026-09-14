@@ -3,8 +3,8 @@
 # Import it:
 #
 #     Import-Module "$PSScriptRoot/DegctEnv.psm1"
-#     $out = Get-DegctEnv MATRIX_OUT -Default 'measurements/logs/somewhere'
-#     if (Test-DegctEnv CENSUS) { 'census mode' }
+#     $out = Get-DegctEnv MENUS_OUT -Default 'measurements/logs/somewhere'
+#     if (Test-DegctEnv NOLIMIT) { 'limits off' }
 #
 # WHY A HELPER RATHER THAN A CONVENTION. Every environment variable this project defines is
 # prefixed DEGCT_ - see CLAUDE.md for the rule and docs/environment.md for the list - and a
@@ -38,7 +38,7 @@ function Get-DegctEnv {
 # Whether one of ours is set at all, whatever it is set to.
 #
 # The shape a flag takes here: several measurements switch on PRESENCE rather than value, so
-# DEGCT_CENSUS=1 and DEGCT_CENSUS= mean the same and neither has to be parsed.
+# DEGCT_NOLIMIT=1 and DEGCT_NOLIMIT= mean the same and neither has to be parsed.
 function Test-DegctEnv {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true, Position = 0)][string] $Name)

@@ -3,9 +3,9 @@
 """Measure a whole MENU per group, one group per process: the heavy groups one at a time, then
 the rest several at a time.
 
-A row of the option matrix is one search from one start. A request is a whole response menu
-answered against one manager, so the menu is what a player waits for and it is not the sum of
-its options. See measurements/menu_matrix.rs for what the columns mean.
+A request is a whole response menu answered against one manager, so the menu is what a player
+waits for and it is not the sum of its options. See measurements/menu_matrix.rs for what the
+columns mean.
 
 Usage:
     tools/measure-menus.py [conversation ...|all]
@@ -20,19 +20,18 @@ down - conversation 28's deepest entries overflow the stack inside a recursive d
 operation - and with every group in one process the first crash destroys every group after
 it. A crash here is a RESULT for that group, recorded as CRASHED, and costs nothing else.
 
-`all` ASKS THE OPTION MATRIX WHICH GROUPS EXIST, DEGCT_GROUPS_ONLY=1, rather than keeping a
-list here. There is one enumeration in this repository and both drivers read it, so the two
-cannot come to disagree about what the game contains. 901 of the game's 1,422 groups reach
-nothing from their start and are recorded as NO-ROWS from the enumeration rather than by 901
-processes that each build a graph to find the same nothing. The enumeration arrives
+`all` ASKS THE MENU MATRIX WHICH GROUPS EXIST, DEGCT_GROUPS_ONLY=1, rather than keeping a
+list here, so what is in a run is decided by the index and nothing else. 901 of the game's
+1,422 groups reach nothing from their start and are skipped from the enumeration rather than
+by 901 processes that each build a graph to find the same nothing. The enumeration arrives
 heaviest-first, which is what the serial phase below rests on.
 
 THE HEAVY GROUPS ARE MEASURED ONE AT A TIME, because workers and timings pull opposite ways:
 groups in parallel finish the run several times sooner and make every millisecond column a
 measurement of how busy the machine was - and the heavy groups are the ones whose milliseconds
 anybody reads. So the run measures groups one at a time, heaviest first, until the cost has
-bottomed out, and only then hands the rest to DEGCT_WORKERS at once. It is the option matrix's
-rule, shared through `measurement_common.Settling`: DEGCT_SETTLE_GROUPS settled groups in a
+bottomed out, and only then hands the rest to DEGCT_WORKERS at once. The rule lives in
+`measurement_common.Settling`: DEGCT_SETTLE_GROUPS settled groups in a
 row, a group counting as settled when it is within DEGCT_SETTLE_FACTOR of the cheapest menu so
 far or under DEGCT_SETTLE_MS outright. At least DEGCT_SETTLE_GROUPS groups are always measured
 one at a time.
@@ -85,9 +84,8 @@ from measurement_common import (  # noqa: E402
 # Core functions
 ###############################################################################
 
-# The example this drives, and the one it asks for the group list.
+# The example this drives, which is also what it asks for the group list.
 MENUS = "menu_matrix"
-MATRIX = "performance_matrix"
 
 # A verdict that means the row was never taken, so a resume takes it again.
 RETRY = "NOT-MEASURED"
@@ -116,7 +114,6 @@ class Run:
         self.rows = self.folder / "menus.tsv"
         self.log = self.folder / "menus.log"
         self.menus = build_measurement(MENUS)
-        self.matrix = build_measurement(MATRIX, quiet=True)
 
     def recorded(self):
         """The rows already written, by conversation, so a resume can skip them.
@@ -149,8 +146,8 @@ class Run:
         return self.rows.read_text(encoding="utf-8", errors="replace").splitlines()[0].split(TAB)
 
     def groups(self):
-        """Every group with something to measure, heaviest first, from the option matrix."""
-        answer = common.ask(self.matrix, {qualified("GROUPS_ONLY"): "1"})
+        """Every group with something to measure, heaviest first, from the menu matrix."""
+        answer = common.ask(self.menus, {qualified("GROUPS_ONLY"): "1"})
         if answer.returncode != 0:
             refuse(f"the group enumeration failed:\n{answer.stderr}", code=1)
 

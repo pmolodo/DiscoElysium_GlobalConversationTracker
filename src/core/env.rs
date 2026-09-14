@@ -31,7 +31,7 @@ pub fn var(name: &str) -> Result<String, std::env::VarError> {
 /// Whether one of ours is set at all, whatever it is set to.
 ///
 /// The shape a flag takes here: several measurements switch on PRESENCE rather than value, so
-/// that `DEGCT_CENSUS=1` and `DEGCT_CENSUS=` mean the same thing and neither has to be parsed.
+/// that `DEGCT_NOLIMIT=1` and `DEGCT_NOLIMIT=` mean the same thing and neither has to be parsed.
 pub fn is_set(name: &str) -> bool {
     std::env::var_os(qualified(name)).is_some()
 }

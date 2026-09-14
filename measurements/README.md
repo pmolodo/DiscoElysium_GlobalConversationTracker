@@ -12,8 +12,8 @@ when it is run, which is what invites that mistake. See de-18bo.
 
 They are Cargo EXAMPLES, named in `Cargo.toml` with an explicit `path` because Cargo looks
 for examples in `examples/` and these live beside their logs. Being examples also takes
-them out of `cargo test`, which used to compile and link every one of them on the way to
-running none of them.
+them out of `cargo test`, which would otherwise compile and link every one of them on the way
+to running none of them.
 
 **Not everything here produces a number**, and the directory's name undersells it. Two of
 its contents are a different kind of thing, and they are here because the split that
@@ -57,35 +57,53 @@ the very asks that last arm counts, over the same walk, so the two numbers multi
 `menu`, the shipped call over an adversarial menu - and those two can move opposite ways,
 which is the reason both are there.
 
+## The whole-game menu matrix
+
+`menu_matrix.rs` is the measurement a whole-game run is taken with: one group per row, a
+whole response menu marked against one manager the way the product marks it. Its module doc
+says what the columns mean and which settings it reads.
+
+`tools/measure-menus.py` drives it, ONE GROUP PER PROCESS, so a group that takes its process
+down costs that group and nothing else:
+
+    tools/measure-menus.py 368 631                        # just these
+    DEGCT_WORKERS=1 tools/measure-menus.py all            # every group, one at a time
+    DEGCT_MENUS_OUT=measurements/logs/whole-game tools/measure-menus.py all
+
+`all` asks the measurement which groups exist - `DEGCT_GROUPS_ONLY=1`, one canonical start per
+distinct group, most reachable first - so nothing decides what is in the run except the
+index. The groups that reach nothing from their start are skipped from that list rather than
+by a process each.
+
+The heavy groups are measured one at a time and the rest several at once, and the driver
+decides where that switch is from what it has just measured; see the driver's module doc and
+`Settling` in `tools/measurement_common.py`.
+
+`DEGCT_MENUS_OUT` names the folder instead of generating one, and THAT is the resume: run the
+same command again after a kill, a crash or a reboot and every group already in that folder
+is skipped. Rows are appended as they finish, so an interruption costs the group in flight and
+nothing else.
+
+`DEGCT_MARKING=bnb` puts the exact marking on every group instead of the shipped hybrid, so
+two row files can be compared on the same profile and the same allowance.
+
 ## Where a run's results are
 
-Under `logs/`, one folder per run, holding both the raw output and the summary drawn from
-it:
+Under `logs/`, one folder per run, holding the rows, the group list the run was built from,
+and what the groups said on stderr:
 
-    logs/2026-09-04_1e08319064b7bd9d115f26c3abf35145d3fb7d8e_measure_matrix/
-        matrix-1030-all-seen.log        <- one log per row
-        matrix-1030-deepest-1.log
-        ...
-        performance-matrix-1030.tsv     <- the rows for that conversation
-        performance-matrix-14.tsv
-        ...
+    logs/2026-09-13_menus-shipped-c74337d-1/
+        menus.tsv        <- one row per group
+        groups.tsv       <- the group list this run measured
+        menus.log        <- each group's stderr, headed by its conversation
 
-The folder is named the way every run log in this repo is named - the date, the commit it
-measured, the tool and the run - and carries `-dirty` when the tree had been changed since
-that commit. See "Run logs" in DEVELOPING.md.
-
-A WHOLE MATRIX RUN IS ONE MEASUREMENT, so its logs and its rows live or die together. The
-logs used to be flat files named for the row, which meant the next run overwrote them and
-every recorded TSV had nothing behind it except the newest one's.
+A folder the driver names itself is named the way every run log in this repo is named - the
+date, the commit it measured, the tool and the run - and carries `-dirty` when the tree had
+been changed since that commit. See "Run logs" in DEVELOPING.md.
 
 `tools/measure-symbolic.sh` writes here the same way, a folder per run named for the
-measurement it ran. It used to write under `target/`, where a `cargo clean` took the
-measurements with it.
+measurement it ran, and runs a symbolic measurement ONE CONVERSATION PER PROCESS:
 
-It runs a symbolic measurement ONE CONVERSATION PER PROCESS, which is what keeps a crash
-costing one row rather than every row after it:
-
-    tools/measure-symbolic.sh shared_symbolic 631
     tools/measure-symbolic.sh backward_support 368 631
     tools/measure-symbolic.sh layout_shape slots 14
 
@@ -95,163 +113,30 @@ so the stage can be left out.
 
 ## Why nothing here is committed
 
-The TSVs used to be, on the argument that the rows are small and worth diffing. They are
-not worth diffing: a row is a wall-clock time on one machine, and it moves whenever
-anything about the search moves - the memory allowance, the width of a state, which
-machine ran it, what else that machine was doing. A committed baseline like that is wrong
-far more often than it is right, and wrong SILENTLY, because nothing re-runs it to find
-out. A reader who trusts it is worse off than one who has nothing.
+A row is a wall-clock time on one machine, and it moves whenever anything about the search
+moves - the memory allowance, the width of a state, which machine ran it, what else that
+machine was doing. A committed baseline like that is wrong far more often than it is right,
+and wrong SILENTLY, because nothing re-runs it to find out. A reader who trusts it is worse off
+than one who has nothing.
 
-What replaces it is comparing two runs: two folders, each holding its own rows next to the
-logs those rows came from, each stamped with the commit it measured. That is the honest
+What stands in for one is comparing two runs: two folders, each holding its own rows next to
+the logs those rows came from, each stamped with the commit it measured. That is the honest
 shape of the comparison, and it makes the question "against what?" impossible to skip.
 
-## What a row says
+## A row that is not a measurement
 
-| column | meaning |
-|---|---|
-| `conv`, `entries` | the conversation group and its size |
-| `profile` | how much of the group the profile has read (see `measurements/performance_matrix.rs`) |
-| `unseen` | how many entries that leaves unread |
-| `ingame_verdict` | `found`, `not-there`, `gave-up`, plus `no-room` when the diagram filled its budget - the search the game runs, at the settings a player actually has |
-| `nolimit_verdict` | the same search with its limits off, walled at two minutes |
-| `*_ms` | what the column took, all in |
-| `*_setup` | how much of that `ms` went on building the layout, the manager, the compiled guards and the seed rather than on searching. `ms` still carries the whole of it, so the search is the difference |
-| `*_nodes` | manager nodes held at the end of the row |
-| `*_by` | how it was answered - `Backwards` where the driver settled, `AtTheStart` where the start already carried what was hunted, `Partly` where the driver did not settle and the answer is a lower bound, `Gated` where the game would not have searched at all |
-| `*_asked` | candidates asked about; one fixed point was paid per candidate |
-| any column `CRASHED` | that row took its process down; its log says how |
-| any column `NOT-MEASURED` | the row never ran; see below |
+Several verdicts look alike from outside - the row has no numbers in it - and they mean
+opposite things, so the run keeps them apart:
 
-### The two columns are one search under two allowances
+- `CRASHED` is a RESULT. The group took its process down; its stderr in `menus.log` says how,
+  and that is a fact about the search.
+- `NO-MENU` is a result about the GROUP: no start of it has anything worth hunting beyond it,
+  so there was never a menu to mark.
+- `NOT-MEASURED` is not a result at all. The machine could not supply the budget, so nothing
+  ran and there is nothing to learn - the group is taken again by the next run pointed at the
+  same folder.
 
-Both run the same thing: pre-images from a target, one candidate at a time, stopping at the
-first candidate proved reachable. What differs is what they may spend.
-
-`ingame` asks the product for its budgets rather than restating them, so it is what a player
-waits for. `nolimit` states its own - a two-minute wall on a measurement's manager - and is
-deliberately not the product's configuration. The two exist separately because one column
-cannot answer both of the questions asked of it, "what does a player wait for" and "where
-does this search actually stop", and a single column answered neither (de-xegj).
-
-MEASURED ON THE HEAVY GROUPS, and the gap is the point: on 631 the in-game column proves
-`not-there` in 80 ms holding 176,276 nodes where the unlimited one takes 22.4 seconds and
-30.1 million. Both agree; they disagree wildly about what it costs to be sure.
-
-### A row compares on its VERDICT
-
-The verdict is a settled fact about the search and compares between runs. `ms` and `setup`
-are clocks and nobody reads them as anything else. `nodes` looks like the first and behaves
-like the second whenever anything about the machine moves.
-
-**A driver change, an index change or a refactor is checked on verdicts**, which is what
-`tools/matrix-compare.py` reports first and why it reports it separately.
-
-`nodes` used to move between runs of the same binary, for a reason that was not inherent:
-the group graph yielded its entries in hash-map order, seeded per process, so the search
-followed a different order in every run - 126,106, 126,588 and 126,148 on one row across
-three processes, one of which overflowed a stack the others did not. `LookAheadGraph::nodes()`
-is ordered now, and **a run from before that change cannot have its `nodes` column compared
-with one after it**.
-
-Not every run holds both columns. `ENGINES` narrows the selection and the header follows it,
-so a narrowed run is a narrower row rather than a wide one with holes; read the header
-rather than assuming the columns. A recorded folder may also carry columns nothing produces
-now, from when a row held several search methods rather than one; a comparison pairs on the
-names above and finds nothing to pair the rest with.
-
-Both columns in a run get the same allowance where they are meant to, which is the only way
-verdicts mean anything against each other: see `DiagramBudget::measurement()`, de-e23q and
-de-z5sp.
-
-### `no-room`, `CRASHED`, `NO-ROWS`, `not-worth-hunting` and `NOT-MEASURED` differ
-
-They look alike from outside - the row has no numbers in it - and they mean opposite
-things, so the run keeps them apart.
-
-- `no-room` is a RESULT, and at six gigabytes an interesting one: the search was given
-  every byte it was allowed and still had no answer.
-- `CRASHED` is a result too. The row took its process down; the log says how, and that is
-  a fact about the search.
-- `NO-ROWS` is a result about the GROUP rather than the search: no group builds from this
-  start, or it has no entry 0, or nothing is reachable from it, so there was never
-  anything to measure. It matters at whole-game scale, where plenty of groups are like
-  this and reading them as `CRASHED` would fill a run with alarming rows that only mean
-  "no dialogue here". SINCE de-cziy IT IS NOT WRITTEN ANY MORE - such groups are skipped
-  and counted, and naming one on the command line stops the run - but folders recorded
-  before that hold these rows and are read as they always were.
-- `not-worth-hunting` is a result about the QUESTION rather than the search: nothing
-  link-reachable outranks where the option already lands, so the game refuses to search and
-  answers completely without doing any work. The
-  column exists to be what the game runs, so it has to refuse where the game refuses
-  (de-qh27). Do not read it as `not-there`: that one means a search ran and found nothing,
-  and telling the two apart is the whole reason it has its own word.
-- `NOT-MEASURED` is not a result at all. The machine could not supply the budget, so
-  nothing ran and there is nothing to learn - the row wants running again when the memory
-  is free. A run holding any of these is not yet a measurement, and the script says so at
-  the end rather than leaving it to be noticed.
-
-The distinction needs asking BEFORE the memory is spent, because spending it has no
+That last distinction has to be asked BEFORE the memory is spent, because spending it has no
 failure path: the diagram manager preallocates its node store with `Vec::with_capacity`,
 which aborts the process rather than returning an error. `DiagramBudget::can_be_supplied`
 reserves the same bytes fallibly first.
-
-## Regenerating
-
-    tools/measure-matrix.py              # the six heavy conversations
-    tools/measure-matrix.py 368 631      # just these
-
-One row per process, because a row can take the process down with it - see the script.
-Expect the better part of an hour for the whole set: the heavy groups spend the full time
-cap on several rows.
-
-### The whole game, resumably
-
-    DEGCT_MATRIX_OUT=measurements/logs/whole-game tools/measure-matrix.py all
-
-`all` asks the measurement which groups exist - `DEGCT_GROUPS_ONLY=1`, one canonical start per
-distinct closure, heaviest first - so nothing decides what is in the run except the index.
-It is 1,422 groups against the six a default run does, and it is a run of days rather than
-of an hour.
-
-The same enumeration says how many entries each group can reach from its start, and 901 of
-the 1,422 reach none - nearly all of them the two-entry `ORB` stubs the database is full
-of. Those are recorded as `NO-ROWS` straight from the enumeration, which answers for the
-whole game in about a third of a second, rather than by 9,010 processes that each read the
-index, build the same graph and find the same nothing. The folder still gets a TSV per
-group with a row per profile, so nothing downstream can tell the difference; the reason
-for each is in `groups.log` beside them. It is asked for and not cached, for the same
-reason the group list is: a committed list of empty groups is a second copy of the index's
-shape, and it would be wrong and silent the first time a group grew an entry.
-
-### Where the run stops measuring one group at a time
-
-The heavy groups are measured one at a time and the tail several at once, and the run
-decides where that is from what it has just measured rather than from a number written
-down. It switches when ten groups in a row have both settled within twice the cheapest
-group the run has seen and held at most half the nodes a parallel worker's share of the
-budget buys.
-
-Both halves matter. A group measured in parallel gets a DIVIDED budget - each worker is
-allowed `6144/WORKERS` MB, because the manager preallocates two thirds of its allowance up
-front and four of them at the full budget would commit four times it - so a group that
-would not have fitted that share produces a `no-room` that says the run rationed it rather
-than that the search ran out. And its clock is contended, which is the other way a row
-stops being comparable with one measured alone.
-
-Ten in a row rather than one, because the cost curve is not monotone: over the whole game
-the ten groups after the seven heavy ones look exactly like the tail, and then 825, 362,
-1030 and 625 arrive - the last of them 47s and a gigabyte, at group 26. A window of one
-hands all four to the workers. Ten does not switch until group 35, after which the
-heaviest group left in the game is 15s and 33 MB, or two per cent of a worker's cap.
-
-`SETTLE_GROUPS`, `SETTLE_FACTOR` and `MEMORY_HEADROOM` move the rule; `DEGCT_SERIAL_GROUPS=n`
-replaces it with a fixed count, which is how a run that has to be comparable with an
-existing folder asks for one; `DEGCT_WORKERS=1` never switches at all.
-
-`MATRIX_OUT` names the folder instead of generating one, and THAT is the resume: run the
-same command again after a kill, a crash or a reboot and every row already in that folder
-is skipped. There is no separate resume mode to remember and no flag to forget. Rows are
-appended as they finish, so an interruption costs the row in flight and nothing else; a
-retried `NOT-MEASURED` row leaves both lines, and the LAST row for a (conv, profile) is the
-one to read.

@@ -16,9 +16,9 @@ One line per menu that differs, naming what the second run added and what it dro
 totals. A menu present in one run and not the other is named rather than passed over: a
 group with a row in one folder and none in the other is a finding about the run.
 
-COLUMNS ARE MATCHED BY NAME, from each file's own header, for the reason matrix-compare.py
-gives - the matrix's columns have moved several times, and reading them by position across
-two runs compares unrelated numbers and produces a plausible table.
+COLUMNS ARE MATCHED BY NAME, from each file's own header: the matrix's columns have moved
+several times, and reading them by position across two runs compares unrelated numbers and
+produces a plausible table.
 """
 
 import argparse
