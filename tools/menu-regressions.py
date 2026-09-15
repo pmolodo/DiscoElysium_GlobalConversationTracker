@@ -52,7 +52,9 @@ the heaviest groups moved by under a tenth.
 
 So A GROUP is flagged only where all three hold:
 
-- its median rose by at least `GROUP_RELATIVE` of the baseline's median,
+- its median rose by at least `GROUP_RELATIVE` of the baseline's median, which sits above the under a
+  tenth the heaviest groups moved by on their own - set close to that deliberately, and to be loosened
+  if it proves noisy,
 - and by at least `GROUP_ABSOLUTE_MS`, which sits above the 13 ms a small group moved by on its own,
 - and its FASTEST run is slower than the baseline's SLOWEST, so the two sets of runs do not overlap.
 
@@ -117,7 +119,7 @@ COPIED = (COMBINED, RUN_RECORD, SUMMARY)
 MIN_RUNS = 3
 
 # A group's regression thresholds, and the whole run's. See the module note for the calibration.
-GROUP_RELATIVE = 0.25
+GROUP_RELATIVE = 0.15
 GROUP_ABSOLUTE_MS = 20.0
 TOTAL_RELATIVE = 0.10
 
