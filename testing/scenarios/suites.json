@@ -521,6 +521,30 @@
       "suite": "garte-kitchen",
       "what": "a route back through a hub the walk has passed is looping back, so only the option that leads on is starred",
       "why": "de-r2xf.5, from a real playthrough: talk to Garte, into his hub, on to the Whirling hub and from there to his menu about the kitchen. Asked about the menu alone, all four options are starred, because each can reach unread lines somehow - three of them only by going back out through the hubs the player just came through. The engine cuts what a walk has passed since its current hub, so the row WALKS from the conversation's start rather than naming the menu, and only 399 keeps its star. The global state is the player's own, which is what decides which lines no save has read."
+    },
+    {
+      "scenarios": [
+        {
+          "conversation": 607,
+          "inputs": [],
+          "markers": "named",
+          "options": [
+            { "entry": 249, "marker": "none", "why": "the only unread line behind it is Logic's success line 123, past the red check at 151 that this save has already failed" },
+            { "entry": 308, "marker": "none", "why": "asking where everyone is reaches nothing this save has not already had" },
+            { "entry": 289, "marker": "orange", "why": "asking whether he works here is the way on to lines no save has read" },
+            { "entry": 70, "marker": "none", "why": "unread in any game itself, so there is nothing above it to mark" },
+            { "entry": 24, "marker": "none", "why": "unread in any game itself, so there is nothing above it to mark" },
+            { "entry": 290, "marker": "none", "why": "leaving reaches nothing at all" }
+          ],
+          "save": "at-leo",
+          "what": "Leo's first menu, after a playthrough that failed his Logic red check"
+        }
+      ],
+      "settings": { "KeepLookAheadRequests": "true" },
+      "state": "global-state-at-leo.json",
+      "suite": "failed-red-check",
+      "what": "a red check the save has already failed is closed, so nothing past its success is reached",
+      "why": "de-5opi, from a real playthrough: Leo's first option, 249, was starred in game. Its only way to an unread line is through 151, a Logic red check whose FlagName is cargo.leo_logic_rc, to the success line 123; this save failed that check, so cargo.leo_logic_rc_failed is true and the fail line 83 is read. The engine closes a check whose failure slot is set, but seeds that slot from the world, and the slot is named by the check rather than by any guard - so it has to be among the questions the plugin answers, or it reads as untried and 123 looks reachable. The global state is the player's own."
     }
   ]
 }

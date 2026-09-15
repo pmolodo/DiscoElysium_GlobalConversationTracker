@@ -46,6 +46,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::guard::{Guard, GuardExpression};
 use crate::core::guard_value::{GuardValue, GuardValueKind};
+use crate::core::state::{ITEM_PREFIX, ONCE_PREFIX, SEEN_PREFIX, TASK_PREFIX, THOUGHT_PREFIX};
 use crate::core::types::StartBranch;
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, Novelty, Ternary};
 use crate::formats::runs;
@@ -645,15 +646,15 @@ pub fn query_key(name: &str, arguments: &[GuardValue]) -> String {
 pub struct Questions {
     /// The conversations the group covers, so the plugin knows what it committed to.
     pub conversations: Vec<i32>,
-    /// Dialogue variables read by some guard.
+    /// Dialogue variables some guard reads or the search is seeded from.
     pub variables: Vec<String>,
     /// World queries, by the key their answers must come back under.
     pub queries: Vec<String>,
-    /// Items some guard asks about.
+    /// Items some guard asks about or the search is seeded from.
     pub items: Vec<String>,
-    /// Journal tasks some guard asks about.
+    /// Journal tasks some guard asks about or the search is seeded from.
     pub tasks: Vec<String>,
-    /// Thoughts some guard asks about.
+    /// Thoughts some guard asks about or the search is seeded from.
     pub thoughts: Vec<String>,
     /// Entries carrying a skill check, whose outcome the world decides.
     pub checks: Vec<NodeRef>,
@@ -1027,6 +1028,25 @@ pub fn questions_of(graph: &LookAheadGraph, group: Vec<i32>) -> Questions {
         found.entries.push(NodeRef::from(node.id));
         if node.kind != DialogueCheckKind::None {
             found.checks.push(NodeRef::from(node.id));
+        }
+    }
+
+    // EVERY SLOT THE SEARCH IS SEEDED FROM, and not only what a guard names. `seed_state`
+    // reads each symbol in the table from the world before the first state exists, and the
+    // table holds names no guard mentions: a rolled check's flag and its failure slot, and
+    // whatever an action writes. One left out of the questions is never answered by the
+    // plugin, so a red check the save has failed seeds as untried and opens its success
+    // branch to every crawl (de-5opi). The seen and once slots come from the seen set.
+    let symbols = graph.symbols();
+    for name in (0..symbols.count()).filter_map(|slot| symbols.name_of(slot)) {
+        if let Some(item) = name.strip_prefix(ITEM_PREFIX) {
+            items.insert(item.to_string());
+        } else if let Some(task) = name.strip_prefix(TASK_PREFIX) {
+            tasks.insert(task.to_string());
+        } else if let Some(thought) = name.strip_prefix(THOUGHT_PREFIX) {
+            thoughts.insert(thought.to_string());
+        } else if !name.starts_with(ONCE_PREFIX) && !name.starts_with(SEEN_PREFIX) {
+            variables.insert(name.to_string());
         }
     }
 
@@ -2299,6 +2319,37 @@ mod branch_wire_tests {
             best_of(node(0)),
             Novelty::UnseenAnyGame as i32,
             "buying 0 opens 2, which the free option does not reach"
+        );
+    }
+
+    /// A rolled check's flag and failure slot are asked for, though no guard names the slot.
+    ///
+    /// The engine closes a check whose failure slot is set and seeds that slot from the world,
+    /// so the plugin has to answer it. Left out, a red check the save has failed reads as
+    /// untried and its success branch is open to every crawl.
+    #[test]
+    fn a_rolled_checks_flag_and_failure_slot_are_asked_for() {
+        let graph = GraphBuilder::new()
+            .add(
+                Entry::new(0)
+                    .kind(DialogueCheckKind::Red)
+                    .flag("roll")
+                    .links(&[1, 2]),
+            )
+            .add(Entry::new(1).guard(r#"Variable["roll"] == true"#))
+            .add(Entry::new(2).guard(r#"Variable["roll"] == false"#))
+            .build();
+
+        let asked = questions_of(&graph, Vec::new());
+        assert!(
+            asked.variables.contains(&"roll".to_string()),
+            "{:?}",
+            asked.variables
+        );
+        assert!(
+            asked.variables.contains(&"roll_failed".to_string()),
+            "{:?}",
+            asked.variables
         );
     }
 

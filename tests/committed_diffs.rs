@@ -197,10 +197,14 @@ fn collect_diffs(directory: &Path, found: &mut Vec<PathBuf>) {
     }
 }
 
+/// How many text-member diffs the scenarios carry: two made scenario saves, and at-garte-kitchen
+/// and at-leo, saves from real playthroughs.
+const TEXT_DIFFS: usize = 4;
+
 /// Every committed text diff is in a shape this build can read.
 ///
 /// COUNTED EXACTLY, so a walk that quietly found fewer than are committed fails rather than
-/// checking less: two made scenario saves and at-garte-kitchen, a save from a real playthrough.
+/// checking less - see [`TEXT_DIFFS`].
 ///
 /// NOT APPLIED TO THE REAL THING, because the text a diff was taken against is inside a
 /// packed save and getting it means resolving the base chain - which is de-xz48.6.2's
@@ -216,8 +220,8 @@ fn every_committed_text_diff_is_in_a_shape_this_build_reads() {
     let diffs = committed_text_diffs();
     assert_eq!(
         diffs.len(),
-        3,
-        "this repository carries three text-member diffs; found {}",
+        TEXT_DIFFS,
+        "this repository carries {TEXT_DIFFS} text-member diffs; found {}",
         diffs.len(),
     );
 

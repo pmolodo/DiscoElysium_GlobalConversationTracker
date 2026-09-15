@@ -444,7 +444,7 @@ namespace GlobalConversationTracker.Harness
             new[]
             {
                 Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff, AllSeen,
-                RedCheckMenu, KimCase, GarteKitchen,
+                RedCheckMenu, KimCase, GarteKitchen, FailedRedCheck,
             }.Concat(BranchShapes).Append(EngineRecovery).Append(EngineDeath).ToArray();
 
         /// <summary>
@@ -468,6 +468,17 @@ namespace GlobalConversationTracker.Harness
         /// way there rather than naming the menu.
         /// </remarks>
         public static LookAheadSuite GarteKitchen => FromDefinition("garte-kitchen");
+
+        /// <summary>
+        /// Leo's first menu, from a real playthrough that failed the Logic red check behind it.
+        /// </summary>
+        /// <remarks>
+        /// Declared in <c>testing/scenarios/suites.json</c>, which
+        /// <c>tests/scenario_suites.rs</c> runs too. What it checks is that a failed red check
+        /// stays closed in game: the check's failure slot is named by the check rather than by
+        /// any guard, so it reaches the engine only because the engine asks for it.
+        /// </remarks>
+        public static LookAheadSuite FailedRedCheck => FromDefinition("failed-red-check");
 
         /// <summary>The suites a run does when it is not told which to do.</summary>
         /// <remarks>
@@ -507,7 +518,7 @@ namespace GlobalConversationTracker.Harness
             new[]
             {
                 Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff, RedCheckMenu,
-                KimCase, GarteKitchen,
+                KimCase, GarteKitchen, FailedRedCheck,
             }.Concat(BranchShapes).Append(EngineRecovery).Append(EngineDeath).ToArray();
 
         /// <summary>

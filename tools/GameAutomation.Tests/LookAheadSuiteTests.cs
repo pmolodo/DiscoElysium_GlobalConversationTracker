@@ -45,6 +45,26 @@ namespace GlobalConversationTracker.Automation.Tests
                 LookAheadSuites.SelectMany(new[] { "all-seen" }));
         }
 
+        /// <summary>
+        /// Every suite the definition file switches on is one a run can name.
+        /// </summary>
+        /// <remarks>
+        /// The file is read on its own, but a run selects from <see cref="LookAheadSuites.All"/>,
+        /// which names its suites by hand - so a suite added to the file and not to the list
+        /// passes offline and is refused by name when the game run asks for it.
+        /// </remarks>
+        [Fact]
+        public void EverySuiteTheDefinitionSwitchesOnIsDeclared()
+        {
+            IEnumerable<string> switchedOn = ScenarioTable.Read(ScenarioRoot).Suites
+                .Where(definition => string.IsNullOrWhiteSpace(definition.Disabled))
+                .Select(definition => definition.Suite);
+
+            Assert.All(
+                switchedOn,
+                name => Assert.Contains(LookAheadSuites.FromDefinition(name), LookAheadSuites.All));
+        }
+
         [Fact]
         public void TheDefaultRunIsMadeOfDeclaredSuites()
         {
