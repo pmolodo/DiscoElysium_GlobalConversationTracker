@@ -129,6 +129,10 @@ namespace GlobalConversationTracker.Harness
         /// <param name="scenarioNames">
         /// Scenarios to keep, as save names or save:conversation pairs; empty for all.
         /// </param>
+        /// <param name="backupProfile">
+        /// How to move the player's profile aside, or null for the plain move. The harness
+        /// passes the one that clears what is holding the folder when --close-holders asks.
+        /// </param>
         /// <returns>0 when every check passed.</returns>
         public static int Run(
             string game,
@@ -140,7 +144,8 @@ namespace GlobalConversationTracker.Harness
             IReadOnlyList<string> suiteNames,
             int? memoryBudgetMb = null,
             int? timeBudgetMs = null,
-            IReadOnlyList<string>? scenarioNames = null)
+            IReadOnlyList<string>? scenarioNames = null,
+            Func<string, ProfileBackup>? backupProfile = null)
         {
             // FILTERED BEFORE ANYTHING ELSE READS THE LIST, and StagingOrder above all: it
             // packs the saves so that the FIRST scenario of the run is the newest on disk,
@@ -198,7 +203,15 @@ namespace GlobalConversationTracker.Harness
             }
 
             RunSuites(
-                suites, game, scenarioRoot, settingsFile, artifacts, timeout, keepOpen, report);
+                suites,
+                game,
+                scenarioRoot,
+                settingsFile,
+                artifacts,
+                timeout,
+                keepOpen,
+                report,
+                backupProfile);
 
             Console.WriteLine();
             Console.WriteLine($"{report.Passed}/{report.Total} checks passed");
@@ -253,7 +266,8 @@ namespace GlobalConversationTracker.Harness
             string artifacts,
             TimeSpan timeout,
             bool keepOpen,
-            Report report)
+            Report report,
+            Func<string, ProfileBackup>? backupProfile)
         {
             // A suite that kills the look-ahead engine leaves the launch without one for a
             // while, so it goes last whatever order it was asked for in. Said out loud,
@@ -304,6 +318,7 @@ namespace GlobalConversationTracker.Harness
                 settingsFile,
                 packed,
                 null,
+                backupProfile: backupProfile,
                 progress: message => Console.WriteLine($"staging:   {message}"));
 
             // THE COLOURS A RUN ASSERTS ARE THE COLOURS IT STAGES. Both of these are

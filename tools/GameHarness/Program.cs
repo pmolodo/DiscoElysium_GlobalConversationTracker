@@ -207,7 +207,8 @@ namespace GlobalConversationTracker.Harness
                             options.SuiteNames,
                             options.MemoryBudgetMb,
                             options.TimeBudgetMs,
-                            options.ScenarioNames);
+                            options.ScenarioNames,
+                            backupProfile: path => BackupProfile(path, options));
                     default:
                         PrintUsage();
                         return 2;
