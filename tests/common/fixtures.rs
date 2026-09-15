@@ -17,7 +17,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use lookahead_engine::bridge::{NodeRef, NodeSet, WireValue};
+use lookahead_engine::bridge::{NodeRef, NodeSet, Questions, WireValue};
 use lookahead_engine::core::passive_check;
 use lookahead_engine::core::types::Ternary;
 use lookahead_engine::formats::global_state::{self, GlobalState, Status};
@@ -273,17 +273,40 @@ pub fn variables_in_save(save: &str) -> HashMap<String, WireValue> {
         );
     }
 
-    // THE CHECKS THIS SAVE HAS FAILED, locked the way the game locks them. The game keeps a
-    // failed white check in its own failedWhiteChecksHolder rather than in any Lua variable,
-    // and refuses the check for as long as it stays there; the engine closes a check whose
-    // failure slot is set. Answering the slot is what makes a locked check neither an option
-    // nor a way through to somewhere else.
+    variables
+}
+
+/// The dialogue variables a look-ahead request over this save carries, as the plugin sends
+/// them.
+///
+/// ONLY WHAT THE ENGINE ASKED. The plugin answers `questions.variables` from Lua and nothing
+/// else, so a variable the engine reads without asking for it is Unknown in game. A world
+/// answering the whole of [`variables_in_save`] instead knows things the game never tells the
+/// engine, and a test over it passes where the game draws something else. A failed red
+/// check's slot is the case in point: read by the engine, and Unknown in game unless asked.
+///
+/// A name the save does not hold is left out, which reads as Unknown: the same answer the
+/// plugin sends for a variable Lua has no value for.
+///
+/// THE CHECKS THIS SAVE HAS FAILED, locked the way the game locks them. The game keeps a
+/// failed white check in its own failedWhiteChecksHolder rather than in any Lua variable, and
+/// refuses the check for as long as it stays there; the engine closes a check whose failure
+/// slot is set. The plugin sends those flags whatever was asked, and they become named slots
+/// on the way in, so they are added here the same way.
+pub fn variables_sent(save: &str, questions: &Questions) -> HashMap<String, WireValue> {
+    let loaded = variables_in_save(save);
+    let mut sent: HashMap<String, WireValue> = questions
+        .variables
+        .iter()
+        .filter_map(|name| Some((name.clone(), loaded.get(name)?.clone())))
+        .collect();
+
     lookahead_engine::bridge::lock_failed_white_checks(
-        &mut variables,
+        &mut sent,
         failed_white_checks_in_save(save),
     );
 
-    variables
+    sent
 }
 
 /// The flags of every white check this save holds as failed.

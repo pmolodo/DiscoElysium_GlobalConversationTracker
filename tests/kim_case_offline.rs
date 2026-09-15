@@ -213,7 +213,7 @@ fn the_kim_case_menu_as_the_engine_answers_it() {
             items: holdings.items,
             tasks: holdings.tasks,
             thoughts: holdings.thoughts,
-            variables: fixtures::variables_in_save(&scenario.save),
+            variables: fixtures::variables_sent(&scenario.save, &asked),
             // WHAT THIS SAVE HAS ALREADY SHOWN, which the engine seeds its seen slots from
             // and which no offline run has ever sent. The same set the novelty rungs are
             // built out of, put where a guard on having been shown can read it: without it

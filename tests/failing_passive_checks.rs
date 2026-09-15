@@ -122,7 +122,7 @@ fn menu_markers(consult_the_sheet: bool) -> Option<Vec<(i32, String)>> {
             // FROM THE SAVE. The hub is guarded on nothing here, but the world a scenario
             // means is the one the in-game run loads, and a fixture that quietly meant a
             // different one would agree with the game by accident.
-            variables: fixtures::variables_in_save(SAVE),
+            variables: fixtures::variables_sent(SAVE, &questions_of(&graph, group.clone())),
             checks_pass: checks.pass,
             checks_fail: checks.fail,
             ..Default::default()
@@ -206,7 +206,7 @@ const INVERTED: (i32, i32) = (PRIMER, 11);
 fn best_reachable(start: (i32, i32), candidate: (i32, i32)) -> Option<i32> {
     let path = common::shipped_index()?;
     let index = read_index(&path).expect("the shipped index reads");
-    let (_, group) = build_group_graph(&index, start.0).expect("the group builds");
+    let (graph, group) = build_group_graph(&index, start.0).expect("the group builds");
     let checks = fixtures::checks_in_save(SAVE, &group)?;
 
     let of = |(conversation, entry): (i32, i32)| NodeRef {
@@ -221,7 +221,7 @@ fn best_reachable(start: (i32, i32), candidate: (i32, i32)) -> Option<i32> {
         world: WorldSnapshot {
             day_minutes: DAY_MINUTES,
             day_counter: DAY_COUNTER,
-            variables: fixtures::variables_in_save(SAVE),
+            variables: fixtures::variables_sent(SAVE, &questions_of(&graph, group.clone())),
             checks_pass: checks.pass,
             checks_fail: checks.fail,
             ..Default::default()
