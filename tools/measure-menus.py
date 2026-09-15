@@ -437,6 +437,21 @@ def combine(folders, out):
 ###############################################################################
 
 
+def record_run(out, workers, runs, named):
+    """Writes what this run is - see `measurement_common.write_run_record` - into its folder.
+
+    PARALLELISM IS THE PART THAT CHANGES WHAT THE ROWS SAY: groups measured side by side pay a flat
+    cost in setup that groups measured alone do not - about ten milliseconds a small group,
+    measured 2026-09-14 - so `tools/menu-costs-diff.py` refuses to compare folders that disagree
+    about it, and a resume into a folder recorded at other parallelism is refused.
+    """
+    parallelism = {
+        "workers": workers,
+        "settle": Settling.from_env(SETTLE_MS).rule() if workers > 1 else None,
+    }
+    common.write_run_record(out, parallelism, runs=runs, groups=named)
+
+
 def get_parser():
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -473,6 +488,7 @@ def main(argv=None):
     out = Path(env("MENUS_OUT") or common.run_folder("menus", "MENUS_OUT"))
 
     workers = env_int("WORKERS", default_workers())
+    record_run(out, workers, args.runs, named)
     try:
         if args.runs == 1:
             return measure(out, named, workers)

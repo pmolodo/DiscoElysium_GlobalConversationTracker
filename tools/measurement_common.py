@@ -22,12 +22,17 @@ nothing to a census; the census's journals mean nothing to the matrix. Sharing t
 sharing a coincidence.
 """
 
+import csv
+import json
 import os
+import platform
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -254,6 +259,317 @@ def run_folder(verb, out_variable):
         check=True,
     ).stdout.strip()
     return Path(folder)
+
+
+# What a run writes about itself into its folder, beside its rows.
+RUN_RECORD = "run.json"
+
+
+def git(*arguments, environment=None):
+    """One git command run against this repository, its output as text."""
+    return subprocess.run(
+        ["git", "-C", str(ROOT), *arguments],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=environment,
+    ).stdout
+
+
+def git_state():
+    """The code a run was taken against: the revision, and for a dirty tree what it holds.
+
+    A REVISION ALONE DOES NOT NAME THE CODE when the tree has changes, and most measurements are
+    taken mid-change. So a dirty tree also records `tree`, the hash `git write-tree` gives the
+    whole working tree - untracked files git does not ignore included - and `changed`, each file
+    that differs with its two-letter `git status` code. Two runs with the same tree hash ran the
+    same code whatever their revisions say.
+
+    THE TREE IS HASHED THROUGH A COPY OF THE INDEX, so the index a person is staging a commit in
+    is never touched by a run reading it.
+
+    Where git cannot answer - no git, not a checkout - the revision is None and nothing else is
+    claimed.
+    """
+    try:
+        revision = git("rev-parse", "HEAD").strip()
+        status = git("status", "--porcelain=v1", "--untracked-files=all")
+    except (OSError, subprocess.CalledProcessError):
+        return {"revision": None}
+
+    changed = [{"status": line[:2], "path": line[3:]} for line in status.splitlines() if line.strip()]
+    state = {"revision": revision, "dirty": bool(changed)}
+    if not changed:
+        return state
+
+    index = Path(git("rev-parse", "--git-path", "index").strip())
+    if not index.is_absolute():
+        index = ROOT / index
+    with tempfile.TemporaryDirectory() as scratch:
+        copy = Path(scratch) / "index"
+        if index.exists():
+            shutil.copyfile(index, copy)
+        environment = dict(os.environ, GIT_INDEX_FILE=str(copy))
+        git("add", "--all", environment=environment)
+        state["tree"] = git("write-tree", environment=environment).strip()
+    state["changed"] = changed
+    return state
+
+
+def write_run_record(folder, parallelism, **details):
+    """Writes what a run is into its folder as run.json, so its rows can be read later for what they are.
+
+    WHAT IS RECORDED: when it started, the full command line and working directory, the code it
+    ran - see `git_state` - every DEGCT_ variable as it was set, how many groups were measured at a
+    time, whatever the driver adds in `details`, and the machine - its hostname, Python, platform,
+    cores, running processes, per-processor busy percentages, and total and available memory. A
+    row's milliseconds are a reading of all of that, and a folder that does not say is one whose
+    numbers cannot be compared with anything.
+
+    A RESUME MUST MATCH the settings, the algorithm and the machine, and each that does not is
+    refused by name: a folder resumed under any other would be half one measurement and half
+    another. Available memory, running processes and processor usage are not held to it - they
+    move between two sittings on the same machine. A resume that matches keeps the first record and
+    adds its own start, command line, code and environment under `resumed`, so the folder still says
+    every way it was written to.
+    """
+    invocation = {
+        "started": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "command": [sys.executable, *sys.argv],
+        "cwd": os.getcwd(),
+        "code": git_state(),
+        "environment": {name: os.environ[name] for name in sorted(os.environ) if name.startswith(ENV_PREFIX)},
+    }
+
+    memory = system_memory_mb()
+    record = {
+        **invocation,
+        "parallelism": parallelism,
+        "details": details,
+        "machine": {
+            "hostname": platform.node(),
+            "python": platform.python_version(),
+            "platform": platform.platform(),
+            "cpus": os.cpu_count(),
+            "processes": running_processes(),
+            "cpu_percent": cpu_busy_percent(),
+            "memory_mb": None if memory is None else {"total": memory[0], "available": memory[1]},
+        },
+    }
+
+    path = Path(folder) / RUN_RECORD
+    if path.exists():
+        was = json.loads(path.read_text(encoding="utf-8"))
+        # AVAILABLE MEMORY IS NOT HELD TO A RESUME: it moves between two sittings on the same machine,
+        # and a resume is one run finishing rather than a second run being compared with the first.
+        refusals = [
+            f"REFUSED ({kind}): these {kind} fields differ from the folder's record - {'; '.join(lines)}"
+            for kind, lines in (
+                ("settings", setting_differences(was, record)),
+                ("algorithm", algorithm_differences(was, record)),
+                ("hardware", hardware_differences(was, record, available_tolerance=None)),
+            )
+            if lines
+        ]
+        if refusals:
+            refuse(
+                f"{folder} cannot be resumed, since it would hold two measurements:\n"
+                + "\n".join(refusals)
+                + "\nMeasure into a new folder, or match them."
+            )
+        was.setdefault("resumed", []).append(invocation)
+        record = was
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_lf(path, json.dumps(record, indent=2) + "\n")
+
+
+# DEGCT_ variables KNOWN to change what a menu measurement measures, and so compared between runs:
+# the manager's memory, the limits being off, how many starts a menu has and how many entries are
+# hunted, and the rule that decides when groups start being measured side by side. Every DEGCT_
+# variable is RECORDED whatever it is; only these decide whether two runs' settings are mixed, so a
+# stray variable nothing reads cannot refuse a comparison.
+COMPARED_VARIABLES = frozenset(
+    qualified(name)
+    for name in (
+        "BUDGET_MB",
+        "NOLIMIT",
+        "STARTS",
+        "UNSEEN",
+        "SETTLE_GROUPS",
+        "SETTLE_FACTOR",
+        "SETTLE_MS",
+    )
+)
+
+# DEGCT_ variables that choose WHICH algorithm a run measures. Comparing two algorithms is often the
+# very point of a comparison, so a difference in these is reported rather than refused - see
+# `algorithm_differences`. A resume still refuses one: a folder must not hold two algorithms' rows.
+ALGORITHM_VARIABLES = frozenset({qualified("MARKING")})
+
+# Driver details that say WHICH groups were measured rather than how. A comparison takes the
+# groups both folders measured, so a different selection is not a different measurement.
+SELECTION_DETAILS = frozenset({"groups"})
+
+
+def settings_of(record):
+    """The part of a run record that changes what its rows measure.
+
+    PARALLELISM, which puts a flat cost on groups measured side by side; the DEGCT_ variables in
+    COMPARED_VARIABLES, as they were set or not; and the driver's details but the ones in
+    SELECTION_DETAILS. NOT the code or the algorithm, because comparing two of either is what a
+    comparison is often for - `algorithm_differences` reports the second; NOT the machine, which
+    `hardware_of` answers separately because it cannot be matched by re-running; and not the other
+    recorded variables, which nothing is known to read.
+
+    A record written before this existed has none of it, and reads as settings that are all None.
+    """
+    environment = record.get("environment") or {}
+    details = record.get("details") or {}
+    return {
+        "parallelism": record.get("parallelism"),
+        "environment": {name: environment.get(name) for name in sorted(COMPARED_VARIABLES)},
+        "details": {name: value for name, value in details.items() if name not in SELECTION_DETAILS},
+    }
+
+
+# How far apart two runs' available memory at the start may be, as a share of the larger, before
+# they count as measured on different hardware. Generous on purpose: available memory moves with
+# whatever else the machine is doing, and it matters to a run only where it is far short of what
+# the managers commit.
+AVAILABLE_MEMORY_TOLERANCE = 0.25
+
+
+def running_processes():
+    """How many processes Windows was running, as its process list reports it.
+
+    RECORDED AND NEVER COMPARED: it moves from one minute to the next with whatever else is open,
+    so holding two runs to it would refuse nearly every comparison. It is kept for a reader asking
+    afterwards why one run was noisier than another.
+
+    Raises where Windows refuses the list, rather than recording a count that is not its.
+    """
+    import ctypes
+
+    from ctypes import wintypes
+
+    size = 4096
+    while True:
+        ids = (wintypes.DWORD * size)()
+        returned = wintypes.DWORD()
+        if not ctypes.windll.psapi.EnumProcesses(ids, ctypes.sizeof(ids), ctypes.byref(returned)):
+            raise ctypes.WinError()
+        count = returned.value // ctypes.sizeof(wintypes.DWORD)
+        # A full buffer may have cut the list short, so it is asked again with more room.
+        if count < size:
+            return count
+        size *= 2
+
+
+# The Windows performance counter a run's processor usage is read from: one instance per logical
+# processor, and _Total.
+PROCESSOR_COUNTER = r"\Processor(*)\% Processor Time"
+
+
+def cpu_busy_percent():
+    """How busy each processor was as a run started, and all of them together, as Windows reports it.
+
+    FROM THE SYSTEM'S OWN PERFORMANCE COUNTER, through typeperf, which ships with Windows: one sample
+    of PROCESSOR_COUNTER, rather than a figure worked out here. PER PROCESSOR because an average
+    hides the case that matters to a measurement run one group at a time - one core pinned by
+    something else and the rest idle reads as a quiet machine overall.
+
+    RECORDED AND NEVER COMPARED, like `running_processes`: it is a reading of the moment, and a run
+    started a minute later reads differently on an unchanged machine. It is kept for a reader asking
+    afterwards why one run was noisier than another.
+
+    Raises where typeperf fails or answers in a shape this does not read, rather than recording a
+    figure that is not Windows'.
+    """
+    output = subprocess.run(
+        ["typeperf", PROCESSOR_COUNTER, "-sc", "1"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    header, values = list(csv.reader(line for line in output.splitlines() if line.startswith('"')))[:2]
+
+    total = None
+    per_cpu = []
+    for name, value in zip(header[1:], values[1:]):
+        found = re.search(r"\\Processor\(([^)]*)\)", name)
+        if found is None:
+            raise ValueError(f"typeperf answered with a column this does not read: {name!r}")
+        instance = found.group(1)
+        percent = round(float(value), 1)
+        if instance == "_Total":
+            total = percent
+        else:
+            per_cpu.append((int(instance), percent))
+
+    return {"total": total, "per_cpu": [percent for _, percent in sorted(per_cpu)]}
+
+
+def hardware_of(record):
+    """The machine a run record was taken on, as far as it is compared: name, cores and memory."""
+    machine = record.get("machine") or {}
+    memory = machine.get("memory_mb") or {}
+    return {
+        "hostname": machine.get("hostname"),
+        "cpus": machine.get("cpus"),
+        "memory_total_mb": memory.get("total"),
+        "memory_available_mb": memory.get("available"),
+    }
+
+
+def hardware_differences(first, second, available_tolerance=AVAILABLE_MEMORY_TOLERANCE):
+    """What two run records' machines disagree about, one readable line each; empty where they agree.
+
+    The hostname, cores and total memory must match exactly. Available memory at the start must be
+    within `available_tolerance` of the larger reading; None leaves it out, which is what a resume
+    asks for - the same machine a sitting later.
+    """
+    a, b = hardware_of(first), hardware_of(second)
+    differ = [
+        f"{name}: {a[name]!r} -> {b[name]!r}" for name in ("hostname", "cpus", "memory_total_mb") if a[name] != b[name]
+    ]
+    if available_tolerance is not None:
+        before, after = a["memory_available_mb"], b["memory_available_mb"]
+        if before is None or after is None:
+            if before != after:
+                differ.append(f"memory_available_mb: {before!r} -> {after!r}")
+        elif abs(before - after) > available_tolerance * max(before, after):
+            differ.append(f"memory_available_mb: {before} -> {after}, more than {available_tolerance:.0%} apart")
+    return differ
+
+
+def algorithm_differences(first, second):
+    """Which algorithm variables two run records disagree about, one `field: before -> after` line each.
+
+    An unset variable is the driver's default algorithm, and is shown as None.
+    """
+    a = (first.get("environment") or {}) if first else {}
+    b = (second.get("environment") or {}) if second else {}
+    return [
+        f"{name}: {a.get(name)!r} -> {b.get(name)!r}"
+        for name in sorted(ALGORITHM_VARIABLES)
+        if a.get(name) != b.get(name)
+    ]
+
+
+def setting_differences(first, second):
+    """What two run records' settings disagree about, one `field: before -> after` line each; empty
+    where they agree."""
+    a, b = settings_of(first), settings_of(second)
+    differ = []
+    for name in a:
+        if name in ("environment", "details"):
+            for key in sorted(set(a[name]) | set(b[name])):
+                if a[name].get(key) != b[name].get(key):
+                    differ.append(f"{key}: {a[name].get(key)!r} -> {b[name].get(key)!r}")
+        elif a[name] != b[name]:
+            differ.append(f"{name}: {json.dumps(a[name])} -> {json.dumps(b[name])}")
+    return differ
 
 
 def build_measurement(example, quiet=False):
