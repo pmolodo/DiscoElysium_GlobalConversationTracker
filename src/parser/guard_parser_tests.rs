@@ -21,7 +21,7 @@ struct WorldContext<'a>(&'a TestWorld);
 
 impl IGuardContext for WorldContext<'_> {
     fn get_variable(&self, name: &str) -> GuardValue {
-        self.0.get_variable(name)
+        self.0.variable(name)
     }
 
     fn query(&self, name: &str, arguments: &[GuardValue]) -> GuardValue {

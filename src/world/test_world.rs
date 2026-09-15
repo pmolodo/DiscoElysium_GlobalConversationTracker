@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 use crate::core::guard_value::GuardValue;
+use crate::core::state::VariableRef;
 use crate::core::types::{DialogueNodeId, Ternary};
 use crate::world::ILookAheadWorld;
 use std::collections::HashMap;
@@ -70,6 +71,14 @@ impl TestWorld {
         self
     }
 
+    /// A variable's value by name, for a caller with no symbol table to ask through.
+    pub fn variable(&self, name: &str) -> GuardValue {
+        self.variables
+            .get(name)
+            .cloned()
+            .unwrap_or(GuardValue::unknown())
+    }
+
     pub fn set_item(mut self, name: &str, has: bool) -> Self {
         self.items.insert(name.to_string(), has);
         self
@@ -120,11 +129,8 @@ impl ILookAheadWorld for TestWorld {
     fn is_clock_locked(&self) -> bool {
         self.clock_locked
     }
-    fn get_variable(&self, name: &str) -> GuardValue {
-        self.variables
-            .get(name)
-            .cloned()
-            .unwrap_or(GuardValue::unknown())
+    fn get_variable(&self, variable: VariableRef<'_>) -> GuardValue {
+        self.variable(variable.name())
     }
     fn initially_has_item(&self, name: &str) -> bool {
         self.items.get(name).copied().unwrap_or(false)

@@ -6,8 +6,8 @@ use crate::core::clock::ClockTime;
 use crate::core::guard::IGuardContext;
 use crate::core::guard_value::GuardValue;
 use crate::core::state::LookAheadState;
-use crate::core::state::StateSymbols;
 use crate::core::state::{ITEM_PREFIX, TASK_PREFIX, THOUGHT_PREFIX};
+use crate::core::state::{StateSymbols, VariableRef};
 use crate::core::types::{DialogueNodeId, Ternary};
 
 /// The guard-language call that asks what the player is carrying, in centimes.
@@ -18,13 +18,21 @@ use crate::core::types::{DialogueNodeId, Ternary};
 /// money where something asks. A fourth spelling would be a slot silently untracked.
 pub const MONEY_QUERY: &str = "MoneyAmount";
 
+/// The guard-language call that asks whether a flag is set, which is `Variable[name]` written
+/// another way and answered from the same place.
+pub const FLAG_SET_QUERY: &str = "FlagSet";
+
 /// Everything outside the dialogue graph that the look-ahead needs to know.
 pub trait ILookAheadWorld: Send + Sync {
     fn money(&self) -> i32;
     fn day_minutes(&self) -> i32;
     fn day_counter(&self) -> i32;
     fn is_clock_locked(&self) -> bool;
-    fn get_variable(&self, name: &str) -> GuardValue;
+    /// A dialogue variable's value.
+    ///
+    /// Taken as a [`VariableRef`] rather than a name, so only a variable the group declared
+    /// can be asked for - and those are exactly what the plugin is asked to answer.
+    fn get_variable(&self, variable: VariableRef<'_>) -> GuardValue;
     /// Whether the player holds an item WHEN THE SEARCH STARTS.
     ///
     /// Two callers, and the difference between them is the whole point of the name.
@@ -165,18 +173,22 @@ impl BoundContext<'_> {
 
 impl IGuardContext for BoundContext<'_> {
     fn get_variable(&self, name: &str) -> GuardValue {
+        let variable = self.symbols.variable_ref(name).unwrap_or_else(|| {
+            panic!("a guard reads '{name}', which the group does not declare as a variable")
+        });
+
         if let Some(slot) = self.symbols.find(name)
             && let Some(state) = self.state
         {
             let value = state.get(slot);
             // Check if the world has this as a number
-            let world_val = self.world.get_variable(name);
+            let world_val = self.world.get_variable(variable);
             if world_val.kind() == GuardValueKind::Number {
                 return GuardValue::from_number(value as f64);
             }
             return GuardValue::from_boolean(value != 0);
         }
-        self.world.get_variable(name)
+        self.world.get_variable(variable)
     }
 
     fn query(&self, name: &str, arguments: &[GuardValue]) -> GuardValue {
@@ -202,14 +214,20 @@ impl IGuardContext for BoundContext<'_> {
             // `FlagSet(name)` asks whether a flag is set, and a flag is a dialogue
             // variable - so this is `Variable[name]` written another way, and is answered
             // from the same place. Nine guards in the database use it.
-            "FlagSet" => {
+            //
+            // A FLAG THE GROUP DOES NOT DECLARE is one named by something other than a literal,
+            // which nothing asked the plugin for - so the world cannot have been told it, and
+            // it is asked as the query it is, which answers Unknown.
+            FLAG_SET_QUERY => {
                 match arguments
                     .first()
                     .filter(|v| v.kind() == GuardValueKind::Text)
                     .map(|v| v.text())
                 {
-                    Some(name) => self.get_variable(name),
-                    None => self.world.query(name, arguments),
+                    Some(flag) if self.symbols.variable_ref(flag).is_some() => {
+                        self.get_variable(flag)
+                    }
+                    _ => self.world.query(name, arguments),
                 }
             }
             MONEY_QUERY => {

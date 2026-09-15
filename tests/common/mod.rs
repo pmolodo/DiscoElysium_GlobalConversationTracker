@@ -405,7 +405,8 @@ impl ILookAheadWorld for SaveWorld {
         true
     }
 
-    fn get_variable(&self, name: &str) -> GuardValue {
+    fn get_variable(&self, variable: lookahead_engine::core::state::VariableRef<'_>) -> GuardValue {
+        let name = variable.name();
         // The declared type first, where the database has one. That is the whole of
         // de-sze.5.4: a counter answered as a boolean makes every ordering comparison over
         // it undecidable, and there is no way to tell a counter from a flag by looking at

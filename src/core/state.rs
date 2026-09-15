@@ -22,11 +22,56 @@ pub const THOUGHT_PREFIX: &str = "thought:";
 pub const ONCE_PREFIX: &str = "once:";
 pub const SEEN_PREFIX: &str = "seen:";
 
-/// Maps every named thing the search can read or write onto a slot index.
+/// The prefixes a slot's name carries when the slot is not a dialogue variable.
+const NOT_A_VARIABLE: [&str; 5] = [
+    ITEM_PREFIX,
+    TASK_PREFIX,
+    THOUGHT_PREFIX,
+    ONCE_PREFIX,
+    SEEN_PREFIX,
+];
+
+/// Whether a slot of this name holds a dialogue variable, rather than an item, a task, a
+/// thought or the engine's own bookkeeping.
+pub fn names_a_variable(name: &str) -> bool {
+    !NOT_A_VARIABLE.iter().any(|prefix| name.starts_with(prefix))
+}
+
+/// A dialogue variable the search may read from the world.
+///
+/// ONLY A SYMBOL TABLE HANDS THESE OUT, through [`StateSymbols::variable_ref`], and a table
+/// holds only the variables its group reads - which is the list the plugin is asked to
+/// answer. [`crate::world::ILookAheadWorld::get_variable`] takes one of these rather than a
+/// name, so reading a variable nobody asked for does not compile: there is no way to name
+/// one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VariableRef<'t> {
+    id: usize,
+    name: &'t str,
+}
+
+impl<'t> VariableRef<'t> {
+    /// Where the variable sits in its table, which is where its answer sits in the plugin's.
+    pub fn id(self) -> usize {
+        self.id
+    }
+
+    pub fn name(self) -> &'t str {
+        self.name
+    }
+}
+
+/// Maps every named thing the search can read or write onto a slot index, and names the
+/// dialogue variables it can read from the world.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateSymbols {
     indices: HashMap<String, usize, ahash::RandomState>,
     names: Vec<String>,
+    /// The dialogue variables the search may read from the world, sorted, which is the order
+    /// their ids number them in.
+    variables: Vec<String>,
+    /// Each of those variables' ids, by name.
+    variable_ids: HashMap<String, usize, ahash::RandomState>,
 }
 
 impl StateSymbols {
@@ -34,6 +79,8 @@ impl StateSymbols {
         Self {
             indices: HashMap::default(),
             names: Vec::new(),
+            variables: Vec::new(),
+            variable_ids: HashMap::default(),
         }
     }
 
@@ -89,6 +136,38 @@ impl StateSymbols {
         self.names.get(index).map(|s| s.as_str())
     }
 
+    /// The variable of this name, where the group reads one.
+    pub fn variable_ref(&self, name: &str) -> Option<VariableRef<'_>> {
+        let id = *self.variable_ids.get(name)?;
+        Some(VariableRef {
+            id,
+            name: &self.variables[id],
+        })
+    }
+
+    /// Every variable the group reads, in id order.
+    pub fn variables(&self) -> &[String] {
+        &self.variables
+    }
+
+    /// Fixes the variables the group reads.
+    ///
+    /// CRATE-PRIVATE, because this is the one way a name becomes readable from the world: the
+    /// graph declares what its slots and guards read when it is built, and nothing outside
+    /// the engine may add to that.
+    pub(crate) fn declare_variables(&mut self, names: impl IntoIterator<Item = String>) {
+        let mut variables: Vec<String> = names.into_iter().collect();
+        variables.sort();
+        variables.dedup();
+
+        self.variable_ids = variables
+            .iter()
+            .enumerate()
+            .map(|(id, name)| (name.clone(), id))
+            .collect();
+        self.variables = variables;
+    }
+
     /// The table with only the slots `keep` marks, plus the old-to-new index map.
     ///
     /// The map has one entry per slot of THIS table and holds `-1` where the slot has
@@ -109,6 +188,10 @@ impl StateSymbols {
                 map[index] = kept.intern(name.clone()) as i32;
             }
         }
+
+        // The variables are the group's, not the slots', so they survive a narrower layout.
+        kept.variables = self.variables.clone();
+        kept.variable_ids = self.variable_ids.clone();
 
         (kept, map)
     }
@@ -336,8 +419,11 @@ pub fn seed_state(
                 if world.initially_has_thought(stripped) {
                     state = state.with(slot, 1);
                 }
-            } else if !name.starts_with("once:") && !name.starts_with("seen:") {
-                let val = world.get_variable(name);
+            } else if names_a_variable(name) {
+                let variable = symbols.variable_ref(name).unwrap_or_else(|| {
+                    panic!("slot '{name}' is a variable the group does not declare")
+                });
+                let val = world.get_variable(variable);
                 if val.kind() == crate::core::guard_value::GuardValueKind::Boolean && val.boolean()
                 {
                     state = state.with(slot, 1);

@@ -178,11 +178,10 @@ impl GraphBuilder {
             nodes.push(built);
         }
 
-        let snapshot = symbols.clone();
-        (
-            LookAheadGraph::new(nodes, symbols).expect("a fixture should have distinct ids"),
-            snapshot,
-        )
+        let graph =
+            LookAheadGraph::new(nodes, symbols).expect("a fixture should have distinct ids");
+        let symbols = graph.symbols().clone();
+        (graph, symbols)
     }
 
     pub fn build(self) -> LookAheadGraph {

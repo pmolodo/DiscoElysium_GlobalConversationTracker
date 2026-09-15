@@ -89,6 +89,37 @@ impl LookAheadGraph {
             map.get_mut(&id).expect("offered entry exists").choice = true;
         }
 
+        // THE VARIABLES THE GROUP READS, fixed here with the slots and for the same reason: a
+        // search reads them and never adds one. Every plain slot, which the seed reads from
+        // the world, and every variable a guard names, a flag a `FlagSet` names by a literal
+        // included. Nothing else can be read - see `VariableRef`.
+        let mut variables: Vec<String> = (0..symbols.count())
+            .filter_map(|slot| symbols.name_of(slot))
+            .filter(|name| crate::core::state::names_a_variable(name))
+            .map(str::to_string)
+            .collect();
+        for node in map.values() {
+            for part in node.guard.nodes() {
+                match part.expression() {
+                    crate::core::guard::GuardExpression::Variable(name) => {
+                        variables.push(name.to_string());
+                    }
+                    crate::core::guard::GuardExpression::Call(function, arguments)
+                        if function == crate::world::FLAG_SET_QUERY =>
+                    {
+                        if let Some(crate::core::guard::GuardExpression::Literal(value)) =
+                            arguments.only().map(|only| only.expression())
+                            && value.kind() == crate::core::guard_value::GuardValueKind::Text
+                        {
+                            variables.push(value.text().to_string());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        symbols.declare_variables(variables);
+
         Ok(Self {
             nodes: map,
             order,

@@ -829,7 +829,7 @@ impl DataLayout {
                         "IsTaskActive" => Some(TASK_PREFIX),
                         "IsTHCPresent" => Some(THOUGHT_PREFIX),
                         // FlagSet(name) is Variable[name] written another way.
-                        "FlagSet" => Some(""),
+                        crate::world::FLAG_SET_QUERY => Some(""),
                         _ => None,
                     };
 

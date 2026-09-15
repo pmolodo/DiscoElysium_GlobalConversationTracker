@@ -222,11 +222,9 @@ fn graph_of(writes: &[Written]) -> (LookAheadGraph, StateSymbols) {
         ..LookAheadNode::new(DialogueNodeId::new(1, 0))
     };
 
-    let snapshot = symbols.clone();
-    (
-        LookAheadGraph::new(vec![node], symbols).expect("one node is a graph"),
-        snapshot,
-    )
+    let graph = LookAheadGraph::new(vec![node], symbols).expect("one node is a graph");
+    let snapshot = graph.symbols().clone();
+    (graph, snapshot)
 }
 
 proptest! {

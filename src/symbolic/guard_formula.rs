@@ -846,7 +846,7 @@ impl<'a> GuardCompiler<'a> {
             );
         };
 
-        let actual = world.get_variable(name);
+        let actual = world.get_variable(self.declared(name));
         if actual.kind() == GuardValueKind::Unknown {
             return self.undecided(
                 "comparison: variable untracked and world cannot say",
@@ -940,7 +940,7 @@ impl<'a> GuardCompiler<'a> {
         // WHAT `seed_state` WOULD HAVE PUT IN THE SLOT, read the same way it reads it: a
         // boolean is its truth, a number is itself, and anything else is nothing there.
         // `narrow_to_deltas` bars the slots that rule does not cover.
-        let held = world.get_variable(name);
+        let held = world.get_variable(self.declared(name));
         let base = match held.kind() {
             GuardValueKind::Boolean => i64::from(held.boolean()),
             GuardValueKind::Number => held.number() as i64,
@@ -1347,9 +1347,20 @@ impl<'a> GuardCompiler<'a> {
         matches!(expression.expression(), GuardExpression::Call(name, _) if name == MONEY_QUERY)
     }
 
+    /// The variable a guard names, as the group declares it.
+    ///
+    /// Every variable a guard names is declared when the graph is built, so a name that is
+    /// not is a compiler handed symbols from some other graph - loud rather than Unknown.
+    fn declared(&self, name: &str) -> crate::core::state::VariableRef<'a> {
+        let vars: &'a DataVars<'a> = self.vars;
+        vars.symbols().variable_ref(name).unwrap_or_else(|| {
+            panic!("a guard reads '{name}', which the group does not declare as a variable")
+        })
+    }
+
     /// What the world says an untracked variable is, as a condition.
     fn constant_truth(&self, name: &str) -> Option<bool> {
-        match self.world?.get_variable(name).as_condition() {
+        match self.world?.get_variable(self.declared(name)).as_condition() {
             Ternary::True => Some(true),
             Ternary::False => Some(false),
             Ternary::Unknown => None,
@@ -1410,8 +1421,9 @@ mod tests {
             links: vec![DialogueNodeId::new(1, 0)],
             ..LookAheadNode::new(DialogueNodeId::new(1, 0))
         };
-        let snapshot = symbols.clone();
-        (LookAheadGraph::new(vec![node], symbols).unwrap(), snapshot)
+        let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
+        let snapshot = graph.symbols().clone();
+        (graph, snapshot)
     }
 
     fn boolean(value: bool) -> Guard {
@@ -1748,7 +1760,9 @@ mod tests {
     /// world answers it - the same rule equality already followed.
     #[test]
     fn an_ordering_comparison_on_an_untracked_variable_is_answered_by_the_world() {
-        let (graph, symbols) = fixture(&["a"], None);
+        let (graph, mut symbols) = fixture(&["a"], None);
+        // Declared as a guard of the group would declare it; the fixture's entry has none.
+        symbols.declare_variables(["a".to_string(), "untracked".to_string()]);
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let world = crate::world::test_world::TestWorld::new()
             .set_variable("untracked", GuardValue::from_number(5.0));
@@ -1837,8 +1851,8 @@ mod tests {
             actions,
             ..LookAheadNode::new(DialogueNodeId::new(1, 0))
         };
-        let snapshot = symbols.clone();
         let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
+        let snapshot = graph.symbols().clone();
         let layout = DataLayout::for_graph(&graph, 16, None, false);
 
         let slot = snapshot
@@ -1905,8 +1919,8 @@ mod tests {
             actions,
             ..LookAheadNode::new(DialogueNodeId::new(1, 0))
         };
-        let snapshot = symbols.clone();
         let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
+        let snapshot = graph.symbols().clone();
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let base = layout
             .slot(snapshot.find("item:shoes_faln").unwrap())
@@ -1940,8 +1954,8 @@ mod tests {
             actions,
             ..LookAheadNode::new(DialogueNodeId::new(1, 0))
         };
-        let snapshot = symbols.clone();
         let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
+        let snapshot = graph.symbols().clone();
         let layout = DataLayout::for_graph(&graph, 16, None, false);
 
         let slot = snapshot
@@ -1980,8 +1994,8 @@ mod tests {
             actions,
             ..LookAheadNode::new(DialogueNodeId::new(1, 0))
         };
-        let snapshot = symbols.clone();
         let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
+        let snapshot = graph.symbols().clone();
         let layout = DataLayout::for_graph(&graph, 16, None, false);
 
         let slot = snapshot
@@ -2148,8 +2162,8 @@ mod tests {
             actions: actions.clone(),
             ..LookAheadNode::new(DialogueNodeId::new(1, 0))
         };
-        let snapshot = symbols.clone();
         let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
+        let snapshot = graph.symbols().clone();
         let layout = DataLayout::for_graph(&graph, 16, None, false);
         let vars = DataVars::new(&layout, &snapshot, DiagramBudget::modest());
 

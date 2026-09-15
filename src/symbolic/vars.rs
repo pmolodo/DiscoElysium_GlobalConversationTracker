@@ -251,8 +251,9 @@ pub(crate) mod tests {
             links: vec![DialogueNodeId::new(1, 0)],
             ..LookAheadNode::new(DialogueNodeId::new(1, 0))
         };
-        let snapshot = symbols.clone();
-        (LookAheadGraph::new(vec![node], symbols).unwrap(), snapshot)
+        let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
+        let snapshot = graph.symbols().clone();
+        (graph, snapshot)
     }
 
     #[test]

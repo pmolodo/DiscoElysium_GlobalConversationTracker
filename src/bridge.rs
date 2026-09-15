@@ -46,7 +46,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::guard::{Guard, GuardExpression};
 use crate::core::guard_value::{GuardValue, GuardValueKind};
-use crate::core::state::{ITEM_PREFIX, ONCE_PREFIX, SEEN_PREFIX, TASK_PREFIX, THOUGHT_PREFIX};
+use crate::core::state::{ITEM_PREFIX, TASK_PREFIX, THOUGHT_PREFIX, VariableRef};
 use crate::core::types::StartBranch;
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, Novelty, Ternary};
 use crate::formats::runs;
@@ -450,15 +450,15 @@ impl ILookAheadWorld for Unlocked<'_> {
         self.inner.is_clock_locked()
     }
 
-    fn get_variable(&self, name: &str) -> GuardValue {
+    fn get_variable(&self, variable: VariableRef<'_>) -> GuardValue {
         if self
             .locks
             .iter()
-            .any(|lock| matches!(lock, Lock::FailedCheck(failed) if *failed == name))
+            .any(|lock| matches!(lock, Lock::FailedCheck(failed) if *failed == variable.name()))
         {
             GuardValue::from_boolean(false)
         } else {
-            self.inner.get_variable(name)
+            self.inner.get_variable(variable)
         }
     }
 
@@ -574,7 +574,8 @@ impl ILookAheadWorld for SnapshotWorld {
         self.snapshot.clock_locked
     }
 
-    fn get_variable(&self, name: &str) -> GuardValue {
+    fn get_variable(&self, variable: VariableRef<'_>) -> GuardValue {
+        let name = variable.name();
         let answered = self.snapshot.variables.get(name).map(GuardValue::from);
         if let Some(value) = answered
             && value.kind() != GuardValueKind::Unknown
@@ -1009,7 +1010,6 @@ pub fn questions_of(graph: &LookAheadGraph, group: Vec<i32>) -> Questions {
         conversations: group,
         ..Default::default()
     };
-    let mut variables = HashSet::new();
     let mut queries = HashSet::new();
     let mut items = HashSet::new();
     let mut tasks = HashSet::new();
@@ -1018,7 +1018,6 @@ pub fn questions_of(graph: &LookAheadGraph, group: Vec<i32>) -> Questions {
     for node in graph.nodes() {
         collect(
             &node.guard,
-            &mut variables,
             &mut queries,
             &mut items,
             &mut tasks,
@@ -1031,12 +1030,10 @@ pub fn questions_of(graph: &LookAheadGraph, group: Vec<i32>) -> Questions {
         }
     }
 
-    // EVERY SLOT THE SEARCH IS SEEDED FROM, and not only what a guard names. `seed_state`
-    // reads each symbol in the table from the world before the first state exists, and the
-    // table holds names no guard mentions: a rolled check's flag and its failure slot, and
-    // whatever an action writes. One left out of the questions is never answered by the
-    // plugin, so a red check the save has failed seeds as untried and opens its success
-    // branch to every crawl (de-5opi). The seen and once slots come from the seen set.
+    // EVERY SUBJECT THE SEARCH IS SEEDED FROM, and not only what a guard names. `seed_state`
+    // reads each slot from the world before the first state exists, and an item, task or
+    // thought an action moves has a slot whether or not a guard mentions it. One left out
+    // of the questions is never answered by the plugin, and reads as not held.
     let symbols = graph.symbols();
     for name in (0..symbols.count()).filter_map(|slot| symbols.name_of(slot)) {
         if let Some(item) = name.strip_prefix(ITEM_PREFIX) {
@@ -1045,17 +1042,19 @@ pub fn questions_of(graph: &LookAheadGraph, group: Vec<i32>) -> Questions {
             tasks.insert(task.to_string());
         } else if let Some(thought) = name.strip_prefix(THOUGHT_PREFIX) {
             thoughts.insert(thought.to_string());
-        } else if !name.starts_with(ONCE_PREFIX) && !name.starts_with(SEEN_PREFIX) {
-            variables.insert(name.to_string());
         }
     }
+
+    // THE GROUP'S VARIABLES, which are the only names the engine can read from the world -
+    // see `VariableRef` - so asking for exactly these is asking for everything it reads.
+    // Already sorted, which is the order their ids number them in.
+    found.variables = symbols.variables().to_vec();
 
     // SORTED, and that is load-bearing rather than tidy. The plugin caches this list
     // against a conversation and answers it POSITIONALLY - see
     // `WorldSnapshot::variable_values` - so the order is the agreement between the two
     // sides, and a list that reordered itself between two calls would silently move every
     // answer onto the wrong question.
-    found.variables = sorted(variables);
     found.queries = sorted(queries);
     found.items = sorted(items);
     found.tasks = sorted(tasks);
@@ -1084,7 +1083,6 @@ fn sorted(names: HashSet<String>) -> Vec<String> {
 /// STARTING value for each, not an answer to the call.
 fn collect(
     guard: &Guard,
-    variables: &mut HashSet<String>,
     queries: &mut HashSet<String>,
     items: &mut HashSet<String>,
     tasks: &mut HashSet<String>,
@@ -1094,9 +1092,6 @@ fn collect(
     // the shape of one node at a time and never the shape between two.
     for node in guard.nodes() {
         match node.expression() {
-            GuardExpression::Variable(name) => {
-                variables.insert(name.to_string());
-            }
             GuardExpression::Call(name, args) => {
                 let subject = args.only().and_then(|only| match only.expression() {
                     GuardExpression::Literal(value) if value.kind() == GuardValueKind::Text => {
@@ -1115,11 +1110,10 @@ fn collect(
                     ("IsTHCPresent", Some(subject)) => {
                         thoughts.insert(subject);
                     }
-                    // `FlagSet(name)` is `Variable[name]` written another way, and the
-                    // engine answers it from the same place.
-                    ("FlagSet", Some(subject)) => {
-                        variables.insert(subject);
-                    }
+                    // `FlagSet(name)` is `Variable[name]` written another way, and a flag
+                    // named by a literal is one of the group's variables, which are asked
+                    // for whole rather than here.
+                    (crate::world::FLAG_SET_QUERY, Some(_)) => {}
                     _ => {
                         // Only literal arguments can be answered ahead of time. A computed
                         // argument would have to be evaluated per state, which is exactly
@@ -2421,33 +2415,19 @@ mod tests {
 
     use crate::core::state::StateSymbols;
     use crate::graph::node::LookAheadNode;
-    use crate::parser::guard_parser::parse_guard;
+    use crate::test_graph::{Entry, GraphBuilder};
 
-    /// A guard, walked for what it asks.
+    /// What a one-entry group guarded by `text` asks.
     fn asked(text: &str) -> Questions {
-        let guard = parse_guard(text).expect("the fixture parses");
-        let mut variables = HashSet::new();
-        let mut queries = HashSet::new();
-        let mut items = HashSet::new();
-        let mut tasks = HashSet::new();
-        let mut thoughts = HashSet::new();
-        collect(
-            &guard,
-            &mut variables,
-            &mut queries,
-            &mut items,
-            &mut tasks,
-            &mut thoughts,
-        );
+        let graph = GraphBuilder::new().add(Entry::new(0).guard(text)).build();
+        questions_of(&graph, Vec::new())
+    }
 
-        Questions {
-            variables: sorted(variables),
-            queries: sorted(queries),
-            items: sorted(items),
-            tasks: sorted(tasks),
-            thoughts: sorted(thoughts),
-            ..Default::default()
-        }
+    /// What `world` answers for the variable `name`, declared so it can be asked for.
+    fn read(world: &dyn ILookAheadWorld, name: &str) -> GuardValue {
+        let mut symbols = StateSymbols::new();
+        symbols.declare_variables([name.to_string()]);
+        world.get_variable(symbols.variable_ref(name).expect("it was just declared"))
     }
 
     #[test]
@@ -2548,18 +2528,13 @@ mod tests {
         let world = SnapshotWorld::declaring(snapshot, Some(Arc::new(table)));
 
         assert_eq!(
-            world
-                .get_variable("jam.lorrymans_questioned")
-                .try_as_number(),
+            read(&world, "jam.lorrymans_questioned").try_as_number(),
             Some(4.0)
         );
-        assert_eq!(
-            world.get_variable("church.done").kind(),
-            GuardValueKind::Boolean
-        );
+        assert_eq!(read(&world, "church.done").kind(), GuardValueKind::Boolean);
         // Never named at all, and the table does not declare it either.
         assert_eq!(
-            world.get_variable("nothing.declares.this").kind(),
+            read(&world, "nothing.declares.this").kind(),
             GuardValueKind::Unknown
         );
     }
@@ -2578,14 +2553,14 @@ mod tests {
         // the plugin never saw looks like.
         let world = SnapshotWorld::declaring(WorldSnapshot::default(), Some(Arc::new(table)));
         assert_eq!(
-            world.get_variable("pier.reporting_counter").try_as_number(),
+            read(&world, "pier.reporting_counter").try_as_number(),
             Some(0.0)
         );
 
         // And without the table it is Unknown, which is what it was before.
         let bare = SnapshotWorld::new(WorldSnapshot::default());
         assert_eq!(
-            bare.get_variable("pier.reporting_counter").kind(),
+            read(&bare, "pier.reporting_counter").kind(),
             GuardValueKind::Unknown
         );
     }
@@ -2612,8 +2587,8 @@ mod tests {
             .expect("the lists are the same length");
 
         let world = SnapshotWorld::new(snapshot);
-        assert_eq!(world.get_variable("a.first").try_as_number(), Some(4.0));
-        assert!(world.get_variable("b.second").boolean());
+        assert_eq!(read(&world, "a.first").try_as_number(), Some(4.0));
+        assert!(read(&world, "b.second").boolean());
         assert!(world.query("IsKimHere", &[]).boolean());
     }
 
@@ -2637,9 +2612,7 @@ mod tests {
             .expect("the lists are the same length");
 
         assert_eq!(
-            SnapshotWorld::new(snapshot)
-                .get_variable("a.first")
-                .try_as_number(),
+            read(&SnapshotWorld::new(snapshot), "a.first").try_as_number(),
             Some(9.0),
         );
     }
@@ -2676,7 +2649,7 @@ mod tests {
         let world = SnapshotWorld::new(WorldSnapshot::default());
 
         assert_eq!(
-            world.get_variable("never.mentioned").kind(),
+            read(&world, "never.mentioned").kind(),
             GuardValueKind::Unknown
         );
         assert_eq!(
