@@ -230,7 +230,8 @@ namespace GlobalConversationTracker.Harness
                     .ToArray(),
                 pluginSettings: settings.Count > 0 ? settings : null,
                 artefacts: artefacts.Count > 0 ? artefacts : null,
-                logExpectations: logs.Count > 0 ? logs : null);
+                logExpectations: logs.Count > 0 ? logs : null,
+                notInDefaultRun: InGame?.NotInDefaultRun);
         }
     }
 
@@ -250,6 +251,14 @@ namespace GlobalConversationTracker.Harness
         /// <summary>What the mod should, and should not, have logged.</summary>
         [JsonPropertyName("log")]
         public List<LogDefinition>? Log { get; set; }
+
+        /// <summary>Why the default in-game run leaves this suite out, or empty when it runs it.</summary>
+        /// <remarks>
+        /// IN-GAME ONLY, since the offline executor runs every suite the file switches on - it
+        /// costs milliseconds, and a launch does not. See <see cref="LookAheadSuite.NotInDefaultRun"/>.
+        /// </remarks>
+        [JsonPropertyName("notInDefaultRun")]
+        public string NotInDefaultRun { get; set; } = string.Empty;
     }
 
     /// <summary>A claim only a run without a game can make.</summary>

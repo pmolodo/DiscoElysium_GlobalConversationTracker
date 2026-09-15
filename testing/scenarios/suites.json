@@ -14,7 +14,7 @@
 
   "_offline_only": "A scenario marked offlineOnly is run by tests/scenario_suites.rs and skipped by the in-game harness. WHAT IT IS FOR, and the only thing it is for: a row that repeats another row of the same suite in the GAME while covering a different group OFFLINE. The offline executor asks a suite's claim of every entry in a group, so a second conversation is a second group covered and costs milliseconds; the in-game run loads a save for it, five or six seconds, to watch the same rule hold in a menu the first row already watched it hold in. A row that stages a different balance, a different recorded state, or a check where the first had none is NOT this - that is the feature, and both executors run it.",
 
-  "_executor_specific": "What only one side can run goes under a key naming the executor, offline or inGame, rather than in a scenario's own fields - a definition that reads as shared and is not is worse than two honest declarations. Two standing cases. inGame: the artefact and log checks, which read files the game wrote over a whole launch, are C# predicates, and are named here and resolved there. offline: a claim about EVERY entry in a group rather than about the options a menu happened to compose, which no in-game run can make because a menu is all it can see.",
+  "_executor_specific": "What only one side can run goes under a key naming the executor, offline or inGame, rather than in a scenario's own fields - a definition that reads as shared and is not is worse than two honest declarations. Two standing cases. inGame: the artefact and log checks, which read files the game wrote over a whole launch, are C# predicates, and are named here and resolved there; and notInDefaultRun, the reason a suite stays out of the default in-game run - every suite is in it unless it gives one, and the offline executor runs them all. offline: a claim about EVERY entry in a group rather than about the options a menu happened to compose, which no in-game run can make because a menu is all it can see.",
 
   "_what_is_not_here": "1. switched-off: What it stages is a MOD SETTING - MarkLookAhead=false - and there is no such thing to stage without a mod: the offline engine has no switch to turn off, so from the same fixture it answers what the money suite answers, one option marked. A row claiming every option is unmarked would be a definition only one side could execute. It stays declared in LookAheadSuites, honestly, and the remarks there say the same. 2. engine-recovery: tests in-game notification when the rust look-ahead process dies, and we respawn.  3. engine-death: tests in-game notification when the rust look-ahead process dies, and we give up.",
 
@@ -260,7 +260,8 @@
             "what": "and so no crawl spent a budget either",
             "check": "reportOverflows"
           }
-        ]
+        ],
+        "notInDefaultRun": "Its claim - that nothing is worth crawling once everything is recorded - is about the crawl algorithm rather than about the game, and tests/scenario_suites.rs asks it of every entry of all five groups in seconds. Repeating it in game costs a launch to learn the same thing. Worth running by name when the plumbing rather than the algorithm is in question, since the offline check cannot see whether the patch is wired up at all."
       },
       "offline": {
         "claim": "nothingIsWorthCrawling",

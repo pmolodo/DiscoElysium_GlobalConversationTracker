@@ -504,6 +504,9 @@ namespace GlobalConversationTracker.Harness
         /// <param name="pluginSettings">Mod settings to change for the run, or null.</param>
         /// <param name="artefacts">Files the run should leave behind, or null.</param>
         /// <param name="logExpectations">What the mod should have logged, or null.</param>
+        /// <param name="notInDefaultRun">
+        /// Why the default run leaves this suite out, or null for a suite it runs.
+        /// </param>
         /// <exception cref="ArgumentNullException">An argument is null.</exception>
         public LookAheadSuite(
             string name,
@@ -512,7 +515,8 @@ namespace GlobalConversationTracker.Harness
             IReadOnlyList<LookAheadScenario> scenarios,
             IReadOnlyDictionary<string, string>? pluginSettings = null,
             IReadOnlyList<SuiteArtefact>? artefacts = null,
-            IReadOnlyList<LogExpectation>? logExpectations = null)
+            IReadOnlyList<LogExpectation>? logExpectations = null,
+            string? notInDefaultRun = null)
         {
             Name = name ?? throw new ArgumentNullException(nameof(name));
             What = what ?? throw new ArgumentNullException(nameof(what));
@@ -522,10 +526,22 @@ namespace GlobalConversationTracker.Harness
             PluginSettings = pluginSettings ?? new Dictionary<string, string>();
             Artefacts = artefacts ?? Array.Empty<SuiteArtefact>();
             LogExpectations = logExpectations ?? Array.Empty<LogExpectation>();
+            NotInDefaultRun = notInDefaultRun ?? string.Empty;
         }
 
         /// <summary>What to call it on the command line.</summary>
         public string Name { get; }
+
+        /// <summary>Why the default run leaves this suite out, or empty when it runs it.</summary>
+        /// <remarks>
+        /// A SENTENCE RATHER THAN A FLAG, for the reason a disabled suite gives one: a suite left
+        /// out without saying why is one nobody can decide to put back. Every suite is in the
+        /// default run unless it says this - see <see cref="LookAheadSuites.Default"/>.
+        /// </remarks>
+        public string NotInDefaultRun { get; }
+
+        /// <summary>Whether the default run does this suite.</summary>
+        public bool InDefaultRun => string.IsNullOrWhiteSpace(NotInDefaultRun);
 
         /// <summary>What the suite is for.</summary>
         public string What { get; }
@@ -614,7 +630,13 @@ namespace GlobalConversationTracker.Harness
                 throw new ArgumentNullException(nameof(scenarios));
             }
 
-            return new LookAheadSuite(Name, What, GlobalStateFile, scenarios, PluginSettings)
+            return new LookAheadSuite(
+                Name,
+                What,
+                GlobalStateFile,
+                scenarios,
+                PluginSettings,
+                notInDefaultRun: NotInDefaultRun)
             {
                 Filtered = true,
             };

@@ -17,16 +17,19 @@ namespace GlobalConversationTracker.Harness
     /// </remarks>
     public static class LookAheadSuites
     {
-        /// <summary>The suites the definition file carries, read once.</summary>
+        /// <summary>The suites the definition file carries, read once, in the file's order.</summary>
         /// <remarks>
-        /// FIRST IN THE CLASS, and that is load-bearing rather than tidy. Static field
+        /// <para>FIRST IN THE CLASS, and that is load-bearing rather than tidy. Static field
         /// initialisers run in the order they are written, and the suites declared below read
         /// their expectations out of this table - so declaring it after them leaves it null
         /// while they are being built, which fails as a type initializer throwing a null
-        /// reference from somewhere with no obvious connection to ordering.
+        /// reference from somewhere with no obvious connection to ordering.</para>
+        ///
+        /// <para>A LIST RATHER THAN A MAP, because <see cref="All"/> takes its order from it and
+        /// a map promises no order at all.</para>
         /// </remarks>
-        private static readonly Lazy<IReadOnlyDictionary<string, LookAheadSuite>> _defined =
-            new Lazy<IReadOnlyDictionary<string, LookAheadSuite>>(BuildDefined);
+        private static readonly Lazy<IReadOnlyList<LookAheadSuite>> _defined =
+            new Lazy<IReadOnlyList<LookAheadSuite>>(BuildDefined);
 
         /// <summary>
         /// The look-ahead time budget every suite runs with, in milliseconds.
@@ -432,6 +435,11 @@ namespace GlobalConversationTracker.Harness
 
         /// <summary>Every suite that exists, in the order a full run would do them.</summary>
         /// <remarks>
+        /// <para>EVERY SUITE THE DEFINITION FILE SWITCHES ON, in the file's order, then the
+        /// suites only code can declare: the switched-off mod, one suite per branch-shape row,
+        /// and the two that kill an engine, last. Derived rather than listed, so a suite added
+        /// to the file is one a run can name, and runs by default, with nothing here touched.</para>
+        ///
         /// <para>Computed rather than stored: a static field would be initialised before
         /// the suites it names, and would quietly hold nulls.</para>
         ///
@@ -441,61 +449,23 @@ namespace GlobalConversationTracker.Harness
         /// covering all of them.</para>
         /// </remarks>
         public static IReadOnlyList<LookAheadSuite> All =>
-            new[]
-            {
-                Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff, AllSeen,
-                RedCheckMenu, KimCase, GarteKitchen, FailedRedCheck,
-            }.Concat(BranchShapes).Append(EngineRecovery).Append(EngineDeath).ToArray();
-
-        /// <summary>
-        /// Kim's first menu from the trash can, in the weathers and thought states that change
-        /// it, and the menu one choice behind it.
-        /// </summary>
-        /// <remarks>
-        /// Declared in <c>testing/scenarios/suites.json</c>, which
-        /// <c>tests/scenario_suites.rs</c> runs too; the argument for each save is there.
-        /// </remarks>
-        public static LookAheadSuite KimCase => FromDefinition("kim-case");
-
-        /// <summary>
-        /// Garte's kitchen menu, walked to from the start of a real playthrough's conversation.
-        /// </summary>
-        /// <remarks>
-        /// Declared in <c>testing/scenarios/suites.json</c>, which
-        /// <c>tests/scenario_suites.rs</c> runs too. The menu is three choices deep, and what it
-        /// checks - that options leading back through hubs the walk has passed are not starred
-        /// - only holds when the look-ahead is told what the walk showed, so the row presses its
-        /// way there rather than naming the menu.
-        /// </remarks>
-        public static LookAheadSuite GarteKitchen => FromDefinition("garte-kitchen");
-
-        /// <summary>
-        /// Leo's first menu, from a real playthrough that failed the Logic red check behind it.
-        /// </summary>
-        /// <remarks>
-        /// Declared in <c>testing/scenarios/suites.json</c>, which
-        /// <c>tests/scenario_suites.rs</c> runs too. What it checks is that a failed red check
-        /// stays closed in game: the check's failure slot is named by the check rather than by
-        /// any guard, so it reaches the engine only because the engine asks for it.
-        /// </remarks>
-        public static LookAheadSuite FailedRedCheck => FromDefinition("failed-red-check");
+            _defined.Value
+                .Append(SwitchedOff)
+                .Concat(BranchShapes)
+                .Append(EngineRecovery)
+                .Append(EngineDeath)
+                .ToArray();
 
         /// <summary>The suites a run does when it is not told which to do.</summary>
         /// <remarks>
-        /// <para><see cref="AllSeen"/> is deliberately not here. Its claim - that nothing
-        /// is worth crawling once everything is recorded - is about the crawl algorithm
-        /// rather than about the game, and it is checked without a game by
-        /// <c>AllSeenOfflineTests</c>, over the same state and the same conversations, in
-        /// about four seconds and under <c>dotnet test</c>. Repeating it here would cost
-        /// a launch and five save loads to learn the same thing.</para>
+        /// <para>EVERY SUITE IN <see cref="All"/> BUT THE ONES THAT SAY WHY NOT, in the same
+        /// order. A suite leaves the default run only by giving a reason - see
+        /// <see cref="LookAheadSuite.NotInDefaultRun"/>, which a definition sets under
+        /// <c>inGame</c> - so a new suite runs by default without anybody remembering to add
+        /// it, and one that does not says so where it is defined.</para>
         ///
-        /// <para>It stays available as <c>--suite all-seen</c>, and is worth running that
-        /// way when the plumbing rather than the algorithm is in question, since the
-        /// offline check cannot see whether the patch is wired up at all.</para>
-        /// </remarks>
-        /// <remarks>
-        /// <para><see cref="EngineDeath"/> IS LAST, and both lists say so rather than
-        /// leaving it to <see cref="InRunOrder"/>. It kills the look-ahead engine and tells
+        /// <para><see cref="EngineDeath"/> IS LAST, in <see cref="All"/> and so here, rather than
+        /// left to <see cref="InRunOrder"/>. It kills the look-ahead engine and tells
         /// the mod not to replace it, so every suite after it in the same launch sees a game
         /// with no look-ahead and fails every claim it makes about a marker or a line.
         /// Measured 2026-09-05: with it seventh, the eight branch-shape suites that follow
@@ -515,11 +485,7 @@ namespace GlobalConversationTracker.Harness
         /// where a reader expects it.</para>
         /// </remarks>
         public static IReadOnlyList<LookAheadSuite> Default =>
-            new[]
-            {
-                Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff, RedCheckMenu,
-                KimCase, GarteKitchen, FailedRedCheck,
-            }.Concat(BranchShapes).Append(EngineRecovery).Append(EngineDeath).ToArray();
+            All.Where(suite => suite.InDefaultRun).ToArray();
 
         /// <summary>
         /// The suites in the order they can actually be run: anything that ends the
@@ -1341,12 +1307,16 @@ namespace GlobalConversationTracker.Harness
         /// <exception cref="InvalidDataException">There is no such suite.</exception>
         public static LookAheadSuite FromDefinition(string name)
         {
-            if (!_defined.Value.TryGetValue(name, out LookAheadSuite? suite))
+            LookAheadSuite? suite = _defined.Value.FirstOrDefault(
+                defined => string.Equals(defined.Name, name, StringComparison.Ordinal));
+            if (suite is null)
             {
                 throw new InvalidDataException(
                     $"'{name}' is not a suite in {ScenarioTable.FileName}. The ones there "
                     + "are: "
-                    + string.Join(", ", _defined.Value.Keys.OrderBy(k => k, StringComparer.Ordinal))
+                    + string.Join(
+                        ", ",
+                        _defined.Value.Select(defined => defined.Name).OrderBy(k => k, StringComparer.Ordinal))
                     + ".");
             }
 
@@ -1363,9 +1333,9 @@ namespace GlobalConversationTracker.Harness
         /// reason it gives is printed, because a green run that quietly does less than it
         /// did is worse than a red one.
         /// </remarks>
-        private static IReadOnlyDictionary<string, LookAheadSuite> BuildDefined()
+        private static IReadOnlyList<LookAheadSuite> BuildDefined()
         {
-            var built = new Dictionary<string, LookAheadSuite>(StringComparer.Ordinal);
+            var built = new List<LookAheadSuite>();
             foreach (ScenarioSuiteDefinition definition in ScenarioTable.Read().Suites)
             {
                 if (!string.IsNullOrWhiteSpace(definition.Disabled))
@@ -1375,7 +1345,7 @@ namespace GlobalConversationTracker.Harness
                     continue;
                 }
 
-                built[definition.Suite] = definition.Build(ArtefactChecks);
+                built.Add(definition.Build(ArtefactChecks));
             }
 
             return built;

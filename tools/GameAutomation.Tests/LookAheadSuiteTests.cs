@@ -46,23 +46,29 @@ namespace GlobalConversationTracker.Automation.Tests
         }
 
         /// <summary>
-        /// Every suite the definition file switches on is one a run can name.
+        /// Every suite the definition file switches on can be named, and runs by default unless
+        /// it says why not.
         /// </summary>
         /// <remarks>
-        /// The file is read on its own, but a run selects from <see cref="LookAheadSuites.All"/>,
-        /// which names its suites by hand - so a suite added to the file and not to the list
-        /// passes offline and is refused by name when the game run asks for it.
+        /// A suite left out of the default run without a reason is a claim nobody is making in
+        /// game any more, with nothing to say whether that was meant.
         /// </remarks>
         [Fact]
-        public void EverySuiteTheDefinitionSwitchesOnIsDeclared()
+        public void EverySuiteRunsByDefaultUnlessItSaysWhyNot()
         {
             IEnumerable<string> switchedOn = ScenarioTable.Read(ScenarioRoot).Suites
                 .Where(definition => string.IsNullOrWhiteSpace(definition.Disabled))
                 .Select(definition => definition.Suite);
-
             Assert.All(
                 switchedOn,
                 name => Assert.Contains(LookAheadSuites.FromDefinition(name), LookAheadSuites.All));
+
+            Assert.All(
+                LookAheadSuites.All,
+                suite => Assert.Equal(suite.InDefaultRun, LookAheadSuites.Default.Contains(suite)));
+            Assert.All(
+                LookAheadSuites.All.Except(LookAheadSuites.Default),
+                suite => Assert.False(string.IsNullOrWhiteSpace(suite.NotInDefaultRun)));
         }
 
         [Fact]
