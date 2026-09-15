@@ -60,12 +60,23 @@ namespace GlobalConversationTracker.Automation
         public const string AdvanceToMenu = "advance-to-menu";
 
         /// <summary>
+        /// Wait until the open conversation has settled, and say whether a menu is up, a line
+        /// is waiting, or the conversation is ending.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="AdvanceToMenu"/> without the advancing, for a run that presses each
+        /// continue itself: a scenario's inputs name every one, so a line has to be known to
+        /// be waiting - and a menu known not to be arriving beside it - before one is sent.
+        /// </remarks>
+        public const string Settle = "settle";
+
+        /// <summary>
         /// Choose one option off the response menu that is up, by its destination entry.
         /// </summary>
         /// <remarks>
         /// Through the dialogue UI's own click handler, so what follows is what a player
-        /// choosing it would get. Follow it with <see cref="AdvanceToMenu"/> to reach the menu
-        /// behind the option.
+        /// choosing it would get. Follow it with <see cref="Settle"/> to learn what the option
+        /// led to.
         /// </remarks>
         public const string ChooseOption = "choose-option";
 
@@ -152,6 +163,13 @@ namespace GlobalConversationTracker.Automation
         public static void SendAdvanceToMenu(string saveGamesFolder)
         {
             Send(saveGamesFolder, AdvanceToMenu);
+        }
+
+        /// <summary>Asks the probe what the open conversation is waiting for, once settled.</summary>
+        /// <param name="saveGamesFolder">The profile's SaveGames folder.</param>
+        public static void SendSettle(string saveGamesFolder)
+        {
+            Send(saveGamesFolder, Settle);
         }
 
         /// <summary>Asks the probe to choose an option off the menu that is up.</summary>

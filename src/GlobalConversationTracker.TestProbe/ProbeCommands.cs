@@ -78,12 +78,28 @@ namespace GlobalConversationTracker.TestProbe
         internal const string AdvanceToMenuCommand = "advance-to-menu";
 
         /// <summary>
+        /// Wait until the interface has settled, and say what it is waiting for: a menu, a
+        /// line, or the end of the conversation.
+        /// </summary>
+        /// <remarks>
+        /// <para>THE SAME LOOP AS <see cref="AdvanceToMenuCommand"/>, stopped where that one
+        /// would press continue. A scenario's inputs name each continue itself, so the harness
+        /// has to know whether a line is waiting before it presses one, and the only honest
+        /// answer is the one that lets a line hold still first: the last line before a menu
+        /// reads exactly like any other until the menu arrives beside it.</para>
+        ///
+        /// <para>Answered as a <c>command-finished</c> whose outcome is <c>menu</c>,
+        /// <c>line</c> or <c>ends</c>.</para>
+        /// </remarks>
+        internal const string SettleCommand = "settle";
+
+        /// <summary>
         /// Choose one option off the response menu that is up, by its destination entry.
         /// </summary>
         /// <remarks>
         /// NOT AN ADVANCE, and the pair is how a run reaches a menu behind an option: choose,
-        /// then advance-to-menu again. The recorder reports the next menu the way it reports
-        /// every other, so this answers only whether the choice was taken.
+        /// then settle to learn what the option led to. The recorder reports the next menu the
+        /// way it reports every other, so this answers only whether the choice was taken.
         /// </remarks>
         internal const string ChooseOptionCommand = "choose-option";
 
@@ -110,7 +126,25 @@ namespace GlobalConversationTracker.TestProbe
         private const int MostPolls = 400;
 
         private static bool _advancing;
+
+        /// <summary>
+        /// Which of the two loop commands is running: <see cref="SettleCommand"/> stops where
+        /// <see cref="AdvanceToMenuCommand"/> would press continue.
+        /// </summary>
+        private static string _loopCommand = AdvanceToMenuCommand;
         private static int _advances;
+
+        /// <summary>
+        /// How many lines were up when an <see cref="AdvanceCommand"/> last answered one, or
+        /// -1 since a conversation started.
+        /// </summary>
+        /// <remarks>
+        /// What stops a settle sent straight after an advance from answering "line" about the
+        /// line just advanced: its continue can still read as offered for a few frames before
+        /// the next line arrives, and without this it would count as a line nobody has
+        /// answered.
+        /// </remarks>
+        private static int _advancedAt = -1;
         private static int _answered;
         private static int _advancePolls;
         private static int _settled;
@@ -430,14 +464,20 @@ namespace GlobalConversationTracker.TestProbe
                         ChooseOption(root);
                         break;
                     case AdvanceToMenuCommand:
+                    case SettleCommand:
                         ProbeLog.Write(
                             "command-started",
-                            "command", AdvanceToMenuCommand,
+                            "command", name,
                             "waiting", DialogueWaitProbe.WhatIsWaiting().ToString(),
                             "lines", TestProbePlugin.LinesShown);
+                        _loopCommand = name;
                         _advancing = true;
                         _advances = 0;
-                        _answered = TestProbePlugin.LinesShown - 1;
+                        // The line up now counts as unanswered, unless an advance has just
+                        // answered it and the next one has not arrived yet.
+                        _answered = _advancedAt == TestProbePlugin.LinesShown
+                            ? _advancedAt
+                            : TestProbePlugin.LinesShown - 1;
                         _advancePolls = 0;
                         _settled = 0;
                         break;
@@ -799,7 +839,15 @@ namespace GlobalConversationTracker.TestProbe
                 return true;
             }
 
-            // A line, still asking, with no menu behind it. Answered once.
+            // A line, still asking, with no menu behind it. A settle says so and stops: the
+            // harness presses the continue itself, when its inputs say to.
+            if (_loopCommand == SettleCommand)
+            {
+                FinishAdvance("line", null);
+                return false;
+            }
+
+            // Answered once.
             _settled = 0;
             _answered = TestProbePlugin.LinesShown;
             if (TestProbePlugin.Advance())
@@ -896,7 +944,7 @@ namespace GlobalConversationTracker.TestProbe
             _advancing = false;
             ProbeLog.Write(
                 "command-finished",
-                "command", AdvanceToMenuCommand,
+                "command", _loopCommand,
                 "outcome", outcome,
                 "advances", _advances,
                 "lines", TestProbePlugin.LinesShown,
@@ -921,6 +969,8 @@ namespace GlobalConversationTracker.TestProbe
                 throw new InvalidOperationException(
                     "No dialogue has been shown yet, so there is nothing to advance.");
             }
+
+            _advancedAt = TestProbePlugin.LinesShown;
 
             ProbeLog.Write(
                 "command-finished",
@@ -949,6 +999,7 @@ namespace GlobalConversationTracker.TestProbe
             // Zeroed here so "how many lines has this conversation put up" counts this
             // conversation's, and an advance-to-menu answers each of them once.
             TestProbePlugin.ForgetLines();
+            _advancedAt = -1;
             DialogueManager.StartConversation(resolved);
 
             // Whether it took is not obvious from the call: StartConversation returns

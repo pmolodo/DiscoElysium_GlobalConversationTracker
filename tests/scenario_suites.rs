@@ -44,9 +44,12 @@
 
 use std::collections::HashSet;
 
-use lookahead_engine::bridge::{LookAheadAnswer, LookAheadRequest, NodeRef, WorldSnapshot, answer};
+use lookahead_engine::bridge::{
+    LookAheadAnswer, LookAheadRequest, NodeRef, Questions, SnapshotWorld, WorldSnapshot, answer,
+};
 use lookahead_engine::core::types::{DialogueNodeId, Novelty};
-use lookahead_engine::index::{build_group_graph, read_index};
+use lookahead_engine::index::{Index, build_group_graph, read_index};
+use lookahead_engine::walkthrough::{Walkthrough, walk_inputs};
 
 mod common;
 
@@ -87,6 +90,8 @@ struct Staged {
     read_here: HashSet<(i32, i32)>,
     /// The request, with no starts on it yet.
     request: LookAheadRequest,
+    /// What the group asks the world, which the walk needs its answers put back onto.
+    questions: Questions,
 }
 
 impl Staged {
@@ -115,19 +120,61 @@ impl Staged {
         }
     }
 
-    /// The request for one scenario's options, asked as the menu they are.
+    /// The walk a scenario's inputs make from its conversation's start, in this world.
     ///
-    /// THIS ASKED ONE OPTION AT A TIME UNTIL 2026-09-11, down a second path a flag on the
-    /// request used to select. The plugin never selected it, so every scenario here was
-    /// green against code the game does not run, and two defects in the path it DOES run
-    /// survived until an in-game run found them. The flag is gone and the path with it - see
-    /// de-0jsf.21 - and this is now the only way to ask.
-    fn asking(&self, starts: Vec<NodeRef>) -> LookAheadRequest {
+    /// THE WORLD `answer` BUILDS, answers put back onto their names, so the walk and the
+    /// search it feeds decide every guard the same way.
+    fn walk(&self, scenario: &Scenario) -> Result<Walkthrough, String> {
+        let mut snapshot = self.request.world.clone();
+        snapshot.resolve(&self.questions)?;
+        walk_inputs(
+            &self.graph,
+            &SnapshotWorld::new(snapshot),
+            scenario.conversation,
+            scenario.inputs().as_deref(),
+        )
+    }
+
+    /// The request for the menu a walk ended at, with what the walk showed on the way.
+    ///
+    /// THE WHOLE MENU, as the plugin asks it, rather than the options a row names: which
+    /// siblings a menu has is part of what the engine is told, and a request of the named
+    /// options alone asks about a menu the game never draws.
+    fn asking(&self, walk: &Walkthrough) -> LookAheadRequest {
         LookAheadRequest {
-            starts,
+            starts: walk.menu.iter().copied().map(NodeRef::from).collect(),
+            encountered: walk
+                .encountered
+                .iter()
+                .copied()
+                .map(NodeRef::from)
+                .collect(),
             ..self.request.clone()
         }
     }
+}
+
+/// The entries a walk displayed that have no text, which the game may not put up as a line.
+///
+/// REFUSED RATHER THAN MODELLED. They are rare - 114 of some 46,000 NPC lines - and whether
+/// the game waits on one is unmeasured, so a walk through one is a walk that may disagree with
+/// the game about where the inputs land.
+fn silent(index: &Index, walk: &Walkthrough) -> Vec<DialogueNodeId> {
+    walk.encountered
+        .iter()
+        .copied()
+        .filter(|id| {
+            index
+                .get(&id.conversation_id)
+                .and_then(|record| record.entries.iter().find(|entry| entry.id == id.entry_id))
+                .is_some_and(|entry| {
+                    entry
+                        .fields
+                        .get("Dialogue Text")
+                        .is_none_or(|text| text.trim().is_empty())
+                })
+        })
+        .collect()
 }
 
 /// Stages one scenario.
@@ -222,6 +269,7 @@ fn stage(
             },
             ..Default::default()
         },
+        questions: asked,
     };
 
     // The three rungs, exactly as the plugin builds them.
@@ -260,6 +308,11 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
         return;
     }
     let index = read_index(&path).expect("the shipped index reads");
+    // THE FULL INDEX AS WELL, for one question the shipped one cannot answer: it carries no
+    // dialogue text, so whether a walked line has any can only be read here.
+    let texts =
+        read_index(&common::conversation_index().expect("the shipped index is built from it"))
+            .expect("the full index reads");
 
     let table = suites::table();
     let mut failures: Vec<String> = Vec::new();
@@ -282,13 +335,6 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
             if scenario.markers != "named" {
                 continue;
             }
-            // A MENU BEHIND A TAKEN OPTION IS NOT THE ONE THIS EXECUTOR ASKS ABOUT. Offline, a
-            // scenario's named options are put to the engine as the menu itself, and the menu
-            // the game draws after walking deeper is a composition only the game can make.
-            if !scenario.take.is_empty() {
-                continue;
-            }
-
             let conversation = scenario.conversation;
             let Some(staged) = stage(&index, suite, scenario) else {
                 failures.push(format!(
@@ -298,16 +344,54 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
                 continue;
             };
 
-            let request = staged.asking(
-                scenario
-                    .options
-                    .iter()
-                    .map(|option| NodeRef {
-                        conversation,
-                        entry: option.entry,
-                    })
-                    .collect(),
+            // WALKED FROM THE CONVERSATION'S START, by the inputs the in-game run presses, so
+            // the menu asked about is the one the game draws and the request carries what the
+            // game showed on the way, which is what the hub cut reads.
+            let walk = match staged.walk(scenario) {
+                Ok(walk) => walk,
+                Err(misfit) => {
+                    failures.push(format!(
+                        "{}/{} ({}): the walk to its menu fails: {misfit}",
+                        suite.suite, scenario.save, scenario.what,
+                    ));
+                    continue;
+                }
+            };
+            eprintln!(
+                "{}/{}: walked {:?} to the menu {:?}",
+                suite.suite, scenario.save, walk.encountered, walk.menu,
             );
+
+            let silent = silent(&texts, &walk);
+            if !silent.is_empty() {
+                failures.push(format!(
+                    "{}/{}: the walk displays {silent:?}, which have no text, and whether the \
+                     game waits on such a line is unmeasured",
+                    suite.suite, scenario.save,
+                ));
+                continue;
+            }
+
+            let unoffered: Vec<i32> = scenario
+                .options
+                .iter()
+                .map(|option| option.entry)
+                .filter(|entry| {
+                    !walk
+                        .menu
+                        .contains(&DialogueNodeId::new(conversation, *entry))
+                })
+                .collect();
+            if !unoffered.is_empty() {
+                failures.push(format!(
+                    "{}/{}: the row names {unoffered:?}, which the menu its inputs reach does \
+                     not offer: {:?}",
+                    suite.suite, scenario.save, walk.menu,
+                ));
+                continue;
+            }
+
+            let request = staged.asking(&walk);
             let response = answer(&index, None, &request);
             assert!(
                 response.error.is_none(),
@@ -484,7 +568,11 @@ fn every_offline_claim_holds_over_the_whole_group() {
                 // on the top rung, so the searches that would be expensive are the ones
                 // being refused.
                 "unseenAnywhereIsNeverCrawled" => {
-                    let response = answer(&index, None, &staged.asking(about.clone()));
+                    let request = LookAheadRequest {
+                        starts: about.clone(),
+                        ..staged.request.clone()
+                    };
+                    let response = answer(&index, None, &request);
                     assert!(
                         response.error.is_none(),
                         "{}/{}: {:?}",

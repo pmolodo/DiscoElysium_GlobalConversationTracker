@@ -152,7 +152,8 @@ namespace GlobalConversationTracker.Harness
         /// second is the one the menu appears beside, and a line with a menu behind it
         /// needs nothing.
         /// </remarks>
-        private const int SiilengAdvances = 1;
+        private static readonly IReadOnlyList<string> SiilengInputs =
+            new[] { ScenarioInput.EnterText };
 
         /// <summary>
         /// The entry only a speaker buyer reaches, left unseen so that reaching it is
@@ -233,16 +234,17 @@ namespace GlobalConversationTracker.Harness
             /// <param name="save">The save that stands in the right place.</param>
             /// <param name="conversation">The conversation to open from there.</param>
             /// <param name="what">Where it is and who is there.</param>
-            /// <param name="advances">
-            /// Lines of narration between opening it and its first menu, measured; null
-            /// where it has not been.
+            /// <param name="inputs">
+            /// What is pressed between opening it and its first menu, measured; null where it
+            /// has not been.
             /// </param>
-            public Somewhere(string save, int conversation, string what, int? advances = null)
+            public Somewhere(
+                string save, int conversation, string what, IReadOnlyList<string>? inputs = null)
             {
                 Save = save;
                 Conversation = conversation;
                 What = what;
-                Advances = advances;
+                Inputs = inputs;
             }
 
             /// <summary>The save that stands in the right place.</summary>
@@ -255,17 +257,17 @@ namespace GlobalConversationTracker.Harness
             public string What { get; }
 
             /// <summary>
-            /// How many lines of narration stand between opening the conversation and its
-            /// first menu, or null where nobody has measured it.
+            /// What is pressed between opening the conversation and its first menu, or null
+            /// where nobody has measured it.
             /// </summary>
             /// <remarks>
             /// A property of the place, not of the run: a conversation opens on however
-            /// much narration its writer put in front of it, and the harness answers one
-            /// line with one continue. Measured by running - the report names the count
-            /// it took - and checked from then on, because a conversation that suddenly
-            /// needs a different number is not the one the scenario was written against.
+            /// much narration its writer put in front of it, and each line that waits takes
+            /// one "enter". Measured by running - the report names the lines it advanced -
+            /// and checked from then on, because a conversation that suddenly needs a
+            /// different number is not the one the scenario was written against.
             /// </remarks>
-            public int? Advances { get; }
+            public IReadOnlyList<string>? Inputs { get; }
         }
 
         /// <summary>Siileng's stall on the canal, where the sneakers are.</summary>
@@ -274,15 +276,19 @@ namespace GlobalConversationTracker.Harness
 
         /// <summary>The player's own room, where a new game starts.</summary>
         public static Somewhere CeilingFan { get; } =
-            new Somewhere("at-the-fan", 9, "the ceiling fan, in the player's own room", 0);
+            new Somewhere(
+                "at-the-fan", 9, "the ceiling fan, in the player's own room", Array.Empty<string>());
 
         /// <summary>The cafeteria on the Whirling's ground floor.</summary>
         public static Somewhere Garte { get; } =
-            new Somewhere("at-garte", 28, "Garte, behind the cafeteria counter", 1);
+            new Somewhere(
+                "at-garte", 28, "Garte, behind the cafeteria counter",
+                new[] { ScenarioInput.EnterText });
 
         /// <summary>The balcony off the same floor.</summary>
         public static Somewhere Smoker { get; } =
-            new Somewhere("at-the-smoker", 892, "the smoker on the balcony", 0);
+            new Somewhere(
+                "at-the-smoker", 892, "the smoker on the balcony", Array.Empty<string>());
 
         /// <summary>Joyce's sloop, at the pier.</summary>
         public static Somewhere Joyce { get; } =
@@ -340,7 +346,9 @@ namespace GlobalConversationTracker.Harness
         /// is worth one run rather than an argument.
         /// </remarks>
         public static Somewhere KlaasjeFlower { get; } =
-            new Somewhere("at-klaasjes-flower", 656, "Klaasje's flower, off the Whirling's roof", 0);
+            new Somewhere(
+                "at-klaasjes-flower", 656, "Klaasje's flower, off the Whirling's roof",
+                Array.Empty<string>());
 
         /// <summary>
         /// A global state with nothing recorded in it, so everything is unseen anywhere.
@@ -436,11 +444,30 @@ namespace GlobalConversationTracker.Harness
             new[]
             {
                 Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff, AllSeen,
-                RedCheckMenu, KimCase,
+                RedCheckMenu, KimCase, GarteKitchen,
             }.Concat(BranchShapes).Append(EngineRecovery).Append(EngineDeath).ToArray();
 
-        /// <summary>TEMPORARY, for observation - remove with its row in the table.</summary>
+        /// <summary>
+        /// Kim's first menu from the trash can, in the weathers and thought states that change
+        /// it, and the menu one choice behind it.
+        /// </summary>
+        /// <remarks>
+        /// Declared in <c>testing/scenarios/suites.json</c>, which
+        /// <c>tests/scenario_suites.rs</c> runs too; the argument for each save is there.
+        /// </remarks>
         public static LookAheadSuite KimCase => FromDefinition("kim-case");
+
+        /// <summary>
+        /// Garte's kitchen menu, walked to from the start of a real playthrough's conversation.
+        /// </summary>
+        /// <remarks>
+        /// Declared in <c>testing/scenarios/suites.json</c>, which
+        /// <c>tests/scenario_suites.rs</c> runs too. The menu is three choices deep, and what it
+        /// checks - that options leading back through hubs the walk has passed are not starred
+        /// - only holds when the look-ahead is told what the walk showed, so the row presses its
+        /// way there rather than naming the menu.
+        /// </remarks>
+        public static LookAheadSuite GarteKitchen => FromDefinition("garte-kitchen");
 
         /// <summary>The suites a run does when it is not told which to do.</summary>
         /// <remarks>
@@ -479,7 +506,8 @@ namespace GlobalConversationTracker.Harness
         public static IReadOnlyList<LookAheadSuite> Default =>
             new[]
             {
-                Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff,
+                Money, SeenElsewhere, SeenHere, Pristine, Budget, SwitchedOff, RedCheckMenu,
+                KimCase, GarteKitchen,
             }.Concat(BranchShapes).Append(EngineRecovery).Append(EngineDeath).ToArray();
 
         /// <summary>
@@ -618,7 +646,7 @@ namespace GlobalConversationTracker.Harness
                     "the balance that marks one option, with the feature switched off",
                     AllUnmarked("look-ahead marking is disabled"),
                     money: 5100,
-                    advances: SiilengAdvances,
+                    inputs: SiilengInputs,
                     branchPolicy: BranchPolicy.NoneAnywhere),
                 // A SECOND CONVERSATION, and one that can offer a rolled check, because
                 // the switch has a second thing to turn off now: the Pass / Fail line.
@@ -630,7 +658,7 @@ namespace GlobalConversationTracker.Harness
                     $"{Smoker.What}, which can offer a check, with the feature switched off",
                     Array.Empty<OptionExpectation>(),
                     markers: MarkerPolicy.NoneAnywhere,
-                    advances: Smoker.Advances,
+                    inputs: Smoker.Inputs,
                     branchPolicy: BranchPolicy.NoneAnywhere),
             },
             pluginSettings: new Dictionary<string, string>
@@ -712,7 +740,7 @@ namespace GlobalConversationTracker.Harness
                     "with an engine, the balance that marks one option",
                     MarkedSiilengMenu,
                     money: 5100,
-                    advances: SiilengAdvances,
+                    inputs: SiilengInputs,
                     branchPolicy: BranchPolicy.NoneAnywhere),
                 new LookAheadScenario(
                     "afford-both",
@@ -720,7 +748,7 @@ namespace GlobalConversationTracker.Harness
                     "the same menu with the engine killed underneath it",
                     AllUnmarked("the look-ahead engine has gone"),
                     money: 5100,
-                    advances: SiilengAdvances,
+                    inputs: SiilengInputs,
                     branchPolicy: BranchPolicy.NoneAnywhere,
                     killEngineFirst: true),
             },
@@ -821,7 +849,7 @@ namespace GlobalConversationTracker.Harness
                     "with an engine, the balance that marks one option",
                     MarkedSiilengMenu,
                     money: 5100,
-                    advances: SiilengAdvances,
+                    inputs: SiilengInputs,
                     branchPolicy: BranchPolicy.NoneAnywhere),
                 new LookAheadScenario(
                     "afford-both",
@@ -829,7 +857,7 @@ namespace GlobalConversationTracker.Harness
                     "the menu drawn while the replacement is still coming up",
                     AllUncertain("a search ran here and the engine died before it answered"),
                     money: 5100,
-                    advances: SiilengAdvances,
+                    inputs: SiilengInputs,
                     branchPolicy: BranchPolicy.NoneAnywhere,
                     killEngineFirst: true,
                     expectsRecovery: true),
@@ -839,7 +867,7 @@ namespace GlobalConversationTracker.Harness
                     "and the same menu once it is, marked again",
                     MarkedSiilengMenu,
                     money: 5100,
-                    advances: SiilengAdvances,
+                    inputs: SiilengInputs,
                     branchPolicy: BranchPolicy.NoneAnywhere),
             },
             logExpectations: new[]
@@ -1378,7 +1406,7 @@ namespace GlobalConversationTracker.Harness
                             row.What,
                             Array.Empty<OptionExpectation>(),
                             markers: MarkerPolicy.NoneAnywhere,
-                            advances: PlaceOf(check.Conversation).Advances,
+                            inputs: PlaceOf(check.Conversation).Inputs,
                             branchPolicy: BranchPolicy.EveryCheck,
                             branches: new BranchExpectation(
                                 row.Pass.Expected(),
@@ -1397,9 +1425,9 @@ namespace GlobalConversationTracker.Harness
 
         /// <summary>The place a branch-shape check is opened from, by its conversation.</summary>
         /// <remarks>
-        /// WHAT THE DEFINITION CANNOT CARRY. A row names its conversation, and how many
-        /// lines of narration stand between opening that conversation and its first menu is
-        /// a MEASURED property of the place - see <see cref="Somewhere.Advances"/> - which
+        /// WHAT THE DEFINITION CANNOT CARRY. A row names its conversation, and what is
+        /// pressed between opening that conversation and its first menu is a MEASURED
+        /// property of the place - see <see cref="Somewhere.Inputs"/> - which
         /// already has one home. Looking it up here rather than repeating the number in
         /// <c>branch-shapes.json</c> keeps the two from disagreeing, and a conversation with
         /// no place behind it is refused when the table is read rather than when the run

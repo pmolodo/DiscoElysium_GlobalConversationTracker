@@ -370,18 +370,18 @@ namespace GlobalConversationTracker.Harness
         [JsonPropertyName("dayMinutes")]
         public int? DayMinutes { get; set; }
 
-        /// <summary>Lines of narration before the menu, or null where unmeasured.</summary>
-        [JsonPropertyName("advances")]
-        public int? Advances { get; set; }
-
-        /// <summary>Options to take, by entry, before the menu is read. Absent means none.</summary>
+        /// <summary>
+        /// What a player presses from the conversation's start to the menu the row is about,
+        /// or null to press "enter" to the first menu.
+        /// </summary>
         /// <remarks>
-        /// NOT NARRATION, which is what <see cref="Advances"/> counts. Each entry is chosen off
-        /// the menu in front of the run and the conversation is advanced to the next one, so
-        /// the menu the scenario is about is the one behind the last of them.
+        /// "enter" advances a waiting line or takes the only option of a menu of one; a number
+        /// chooses that option, counting from 1 in the order the game draws them, off a menu of
+        /// several. A step that does not fit what is on screen fails the scenario by name, in
+        /// game and offline alike.
         /// </remarks>
-        [JsonPropertyName("take")]
-        public List<int>? Take { get; set; }
+        [JsonPropertyName("inputs")]
+        public List<string>? Inputs { get; set; }
 
         /// <summary>How much the scenario claims about the markers. Absent means named.</summary>
         [JsonPropertyName("markers")]
@@ -453,8 +453,7 @@ namespace GlobalConversationTracker.Harness
                 markers: MarkerPolicyOf(suite),
                 branchPolicy: branches,
                 branches: expectation,
-                advances: Advances,
-                takes: Take);
+                inputs: Inputs);
         }
 
         private MarkerPolicy MarkerPolicyOf(string suite) => Markers switch

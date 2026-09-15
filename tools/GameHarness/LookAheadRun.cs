@@ -1030,7 +1030,9 @@ namespace GlobalConversationTracker.Harness
                 // completed one is tied to its conversation and its balance.
                 try
                 {
-                    return AdvanceToMenu(scenario, saveGames, watcher, perAttempt, what);
+                    return scenario.Inputs is IReadOnlyList<ScenarioInput> inputs
+                        ? WalkInputs(scenario, inputs, saveGames, watcher, perAttempt)
+                        : AdvanceToMenu(scenario, saveGames, watcher, perAttempt, what);
                 }
                 catch (TimeoutException stalled) when (!last)
                 {
@@ -1127,54 +1129,168 @@ namespace GlobalConversationTracker.Harness
         }
 
         /// <summary>
-        /// Chooses one option off the menu in front of the run, and advances to the menu
-        /// behind it.
+        /// Presses a scenario's inputs from the conversation's start, and returns the menu they
+        /// end at.
         /// </summary>
         /// <remarks>
-        /// <para>REFUSED BEFORE IT IS SENT when the menu does not offer the entry. The probe
-        /// refuses too, but only from here can the refusal name the menu the run was actually
-        /// at, which is the thing to know when a scenario has drifted.</para>
+        /// <para>ONE STEP PER SETTLE. The probe is asked what the interface is waiting for
+        /// once it has held still - a line, a menu, or the end - and the next input has to fit
+        /// it: "enter" at a waiting line or at a menu of one, a number at a menu of several.
+        /// Anything else fails by name, because a run that guessed would read markers off a
+        /// menu the scenario is not about. <c>src/walkthrough.rs</c> walks the same inputs
+        /// offline by the same rules.</para>
         ///
-        /// <para>CONSUMING, unlike the waits around it. The previous advance-to-menu's answer
-        /// is written after its menu, so it is still unread here and the advance below would
-        /// take it for its own. Nothing this wait passes over is wanted: the next menu is not
-        /// drawn until the conversation is advanced.</para>
+        /// <para>A NUMBER COUNTS IN DRAWN ORDER, top down as the screen reads, which is the
+        /// menu event's list read from its end - the event hears the options composed bottom up.
+        /// The option at that place is chosen by its entry, since the probe's choose-option is by
+        /// entry, so what it chooses cannot drift from what was counted.</para>
+        ///
+        /// <para>RETRIED ONLY BEFORE THE FIRST INPUT. A conversation that is open but reaches
+        /// nothing before anything was pressed is the world not yet being ready, which
+        /// <see cref="OpenConversation"/> settles and asks again about; a misfit after an input
+        /// is the scenario's, and asking again would press the same keys into the same
+        /// place.</para>
+        ///
+        /// <para>CONSUMING WAITS BETWEEN SETTLES. A settle's answer is written after the menu it
+        /// reports, so it is still unread when the next command goes out; the advance or choice
+        /// that follows is waited for with a consuming wait, which passes over it before the
+        /// next settle is asked for.</para>
         /// </remarks>
         /// <param name="scenario">The scenario being walked.</param>
-        /// <param name="menu">The menu the option is on.</param>
-        /// <param name="entry">The option's destination entry.</param>
+        /// <param name="inputs">What to press.</param>
         /// <param name="saveGames">The profile's SaveGames folder, for the probe.</param>
         /// <param name="watcher">The probe's events.</param>
         /// <param name="timeout">How long to wait for each step.</param>
-        /// <returns>The completed menu behind the option.</returns>
-        private static ProbeEvent TakeOption(
+        /// <returns>The completed menu the inputs end at.</returns>
+        /// <exception cref="TimeoutException">Nothing was reached before the first input.</exception>
+        /// <exception cref="InvalidOperationException">An input does not fit the screen.</exception>
+        private static ProbeEvent WalkInputs(
             LookAheadScenario scenario,
-            ProbeEvent menu,
-            int entry,
+            IReadOnlyList<ScenarioInput> inputs,
             string saveGames,
             ProbeWatcher watcher,
             TimeSpan timeout)
         {
-            string option = $"{scenario.ConversationId}:{entry}";
-            ProbeOption[] offered = menu.Options();
-            if (!offered.Any(o => o.EntryId == entry))
+            var clock = Stopwatch.StartNew();
+            int next = 0;
+            while (true)
             {
-                throw new InvalidOperationException(
-                    $"{scenario.SaveName}: the scenario takes {option}, and the menu in front of "
-                    + $"it offers {string.Join(", ", offered.Select(o => o.EntryId))}.");
+                ProbeCommand.SendSettle(saveGames);
+                ProbeEvent settled = WaitWithoutConsuming(
+                    watcher,
+                    e => e.Name == "command-finished"
+                        && e.Text("command") == ProbeCommand.Settle,
+                    timeout,
+                    "an answer to settle");
+                string outcome = settled.Text("outcome") ?? "?";
+
+                if (outcome == "line")
+                {
+                    if (next == inputs.Count)
+                    {
+                        throw Misfit(
+                            scenario, inputs, next,
+                            "the inputs end while a line is waiting for "
+                            + $"\"{ScenarioInput.EnterText}\", rather than at a menu");
+                    }
+
+                    ScenarioInput input = inputs[next];
+                    if (!input.IsEnter)
+                    {
+                        throw Misfit(
+                            scenario, inputs, next,
+                            $"input {next + 1} is \"{input}\", but a line is waiting for "
+                            + $"\"{ScenarioInput.EnterText}\"");
+                    }
+
+                    Console.WriteLine($"        input {next + 1} ({input}): advancing a line");
+                    next++;
+                    ProbeCommand.SendAdvance(saveGames);
+                    watcher.WaitFor(
+                        e => e.Name == "command-finished"
+                            && e.Text("command") == ProbeCommand.Advance,
+                        timeout,
+                        "an answer to advance",
+                        Log);
+                    continue;
+                }
+
+                if (outcome != "menu")
+                {
+                    string reached =
+                        $"the conversation reached {outcome} "
+                        + $"({settled.Text("message") ?? "no detail"}) rather than a menu";
+                    if (next == 0)
+                    {
+                        throw new TimeoutException($"{reached}, before any input was pressed.");
+                    }
+
+                    throw Misfit(scenario, inputs, next, reached);
+                }
+
+                ProbeEvent menu = watcher.WaitFor(
+                    e => e.Name == "menu" && e.Text("state") == "complete",
+                    timeout,
+                    $"the menu after {next} input(s)");
+                ProbeOption[] offered = menu.Options();
+                string drawn = string.Join(
+                    ", ", offered.Select(o => $"{o.ConversationId}:{o.EntryId}"));
+
+                if (next == inputs.Count)
+                {
+                    Console.WriteLine(
+                        $"        the menu after {inputs.Count} input(s), in "
+                        + $"{clock.Elapsed.TotalSeconds:N0}s: {drawn}");
+                    return menu;
+                }
+
+                ScenarioInput choice = inputs[next];
+                int place = choice.IsEnter ? 1 : choice.Number;
+                bool fits = choice.IsEnter
+                    ? offered.Length == 1
+                    : offered.Length > 1 && choice.Number <= offered.Length;
+                if (!fits)
+                {
+                    throw Misfit(
+                        scenario, inputs, next,
+                        $"input {next + 1} is \"{choice}\", and the menu offers "
+                        + $"{offered.Length} option(s) ({drawn}); a menu of one is taken with "
+                        + $"\"{ScenarioInput.EnterText}\" and one of several by its number");
+                }
+
+                // FROM THE END: the menu event lists options bottom up, as the game composes
+                // them, and a scenario counts them top down, as the screen reads.
+                ProbeOption chosen = offered[offered.Length - place];
+                string option = $"{chosen.ConversationId}:{chosen.EntryId}";
+                if (chosen.EntryId is not int entry)
+                {
+                    throw Misfit(
+                        scenario, inputs, next,
+                        $"input {next + 1} is \"{choice}\", and the option in that place has no "
+                        + "readable entry to choose it by");
+                }
+
+                Console.WriteLine($"        input {next + 1} ({choice}): choosing {option}");
+                next++;
+                ProbeCommand.SendChooseOption(saveGames, entry);
+                watcher.WaitFor(
+                    e => e.Name == "command-finished"
+                        && e.Text("command") == ProbeCommand.ChooseOption,
+                    timeout,
+                    $"an answer to choose-option {option}",
+                    Log);
             }
-
-            Console.WriteLine($"        taking {option}");
-            ProbeCommand.SendChooseOption(saveGames, entry);
-            watcher.WaitFor(
-                e => e.Name == "command-finished" && e.Text("command") == ProbeCommand.ChooseOption,
-                timeout,
-                $"an answer to choose-option {option}",
-                Log);
-
-            return AdvanceToMenu(
-                scenario, saveGames, watcher, AttemptTimeout(timeout), $"the menu behind {option}");
         }
+
+        /// <summary>A scenario's inputs not fitting what the game put on screen.</summary>
+        private static InvalidOperationException Misfit(
+            LookAheadScenario scenario,
+            IReadOnlyList<ScenarioInput> inputs,
+            int pressed,
+            string what) =>
+            new InvalidOperationException(
+                $"{scenario.SaveName}: its inputs [{string.Join(", ", inputs)}] do not fit "
+                + $"conversation {scenario.ConversationId} after {pressed} of them: {what}.");
 
         /// <summary>How many advances the last conversation opened with.</summary>
         /// <remarks>
@@ -1233,36 +1349,23 @@ namespace GlobalConversationTracker.Harness
             watcher.WaitForEvent("load-finished", timeout, Log);
 
             ProbeEvent menu = OpenConversation(scenario, saveGames, watcher, timeout);
-            int advances = LastAdvances;
 
-            // A SCENARIO THAT NEEDS A DIFFERENT NUMBER OF LINES IS NOT AT ITS OWN MENU.
-            // The count is a fixed property of a save and a conversation, so a change in
-            // it means the run arrived somewhere else - which used to happen silently and
-            // is the whole reason this is checked rather than merely reported.
-            if (scenario.Advances is int wanted)
+            // A SCENARIO WITH INPUTS HAS ALREADY BEEN HELD TO THEM, step by step, and a step
+            // that did not fit what was on screen threw by name - so the menu here is the one
+            // the scenario was written against. One without inputs is told what it took.
+            if (scenario.Inputs is IReadOnlyList<ScenarioInput> inputs)
             {
                 report.Check(
-                    advances == wanted,
-                    $"{scenario.SaveName}: its conversation opened after {wanted} "
-                        + "advance(s), as it always should",
-                    advances == wanted
-                        ? "it did"
-                        : $"it took {advances} this time - the menu it reached is not the "
-                            + "one this scenario was written against");
+                    true,
+                    $"{scenario.SaveName}: its inputs [{string.Join(", ", inputs)}] reached "
+                        + "its menu",
+                    "every step fit what was on screen");
             }
             else
             {
                 Console.WriteLine(
-                    $"        (this scenario does not say how many advances it needs; it "
-                    + $"took {advances})");
-            }
-
-            // THE MENU A SCENARIO IS ABOUT CAN BE BEHIND AN OPTION. The count above is the
-            // opening's; each of these chooses off the menu in front of the run and reads
-            // the one behind it, and everything below is about the last.
-            foreach (int entry in scenario.Takes)
-            {
-                menu = TakeOption(scenario, menu, entry, saveGames, watcher, timeout);
+                    "        (this scenario names no inputs; its menu took "
+                    + $"{LastAdvances} advance(s))");
             }
 
             // Taken from the menu rather than from load-finished, which is emitted when

@@ -197,7 +197,10 @@ fn collect_diffs(directory: &Path, found: &mut Vec<PathBuf>) {
     }
 }
 
-/// Both committed text diffs are in a shape this build can read.
+/// Every committed text diff is in a shape this build can read.
+///
+/// COUNTED EXACTLY, so a walk that quietly found fewer than are committed fails rather than
+/// checking less: two made scenario saves and at-garte-kitchen, a save from a real playthrough.
 ///
 /// NOT APPLIED TO THE REAL THING, because the text a diff was taken against is inside a
 /// packed save and getting it means resolving the base chain - which is de-xz48.6.2's
@@ -213,8 +216,8 @@ fn every_committed_text_diff_is_in_a_shape_this_build_reads() {
     let diffs = committed_text_diffs();
     assert_eq!(
         diffs.len(),
-        2,
-        "this repository carries two text-member diffs; found {}",
+        3,
+        "this repository carries three text-member diffs; found {}",
         diffs.len(),
     );
 

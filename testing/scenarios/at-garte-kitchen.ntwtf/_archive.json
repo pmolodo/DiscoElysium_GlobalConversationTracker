@@ -1,0 +1,31 @@
+{
+  "_format": "expanded-save-diff",
+  "_formatVersion": 1,
+  "base": "../../save_template.ntwtf",
+  "members": [
+    {
+      "diff": "at-garte-kitchen.states.lua.diff",
+      "kind": "text",
+      "name": "at-garte-kitchen.states.lua",
+      "suffix": ".states.lua"
+    },
+    {
+      "diff": "at-garte-kitchen.1st.ntwtf.json",
+      "kind": "json",
+      "name": "at-garte-kitchen.1st.ntwtf.json",
+      "suffix": ".1st.ntwtf.json"
+    },
+    {
+      "diff": "at-garte-kitchen.2nd.ntwtf.json",
+      "kind": "json",
+      "name": "at-garte-kitchen.2nd.ntwtf.json",
+      "suffix": ".2nd.ntwtf.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "at-garte-kitchen.FOW.json",
+      "suffix": ".FOW.json"
+    }
+  ]
+}

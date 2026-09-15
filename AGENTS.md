@@ -71,6 +71,26 @@ collision off the table rather than dodging them one at a time.
 
 See de-12wr.9 for the rename of the names that predate this rule.
 
+## Committed saves: never edit what the game wrote
+
+**A save that came from the game is never edited - above all one made in a real playthrough.**
+Not to make it agree with itself, not to match what the game would hold once it has loaded
+it, not to make a test pass. It is the record of a world the game was actually in, and an
+edited copy tests a world no run of the game was ever in. A scenario save built on purpose
+as a diff of another says what it changes in its diff; that is how it is made, not a licence
+to alter a save the game wrote.
+
+**Where the game always changes something on the way in, simulate that step in the reader**
+(`tests/common/fixtures.rs`), so the committed save stays the game's and the world a test
+builds is the loaded one. The case met so far: `WeatherController` rewrites
+`auto.is_raining` and `auto.is_snowing` from the weather preset on load, and a real save can
+be written with the two disagreeing.
+
+**Everything a fixture needs is in the save, because a save is the whole game state.** Where
+a fixture world cannot answer something, find where the save records it and read it - Kim's
+party membership is `partyState.isKimInParty` in the first blob - rather than assuming a value
+or stating one beside the scenario row.
+
 ## Git
 
 ### Top-level agent

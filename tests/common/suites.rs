@@ -105,10 +105,32 @@ pub struct Scenario {
     pub markers: String,
     #[serde(default)]
     pub options: Vec<OptionRow>,
-    /// Options the game takes, by entry, before it reads the menu. The menu such a row is
-    /// about is behind them, which only an executor that can choose can reach.
+    /// What a player presses from the conversation's start to the menu the row is about:
+    /// "enter" for a waiting line or a menu of one, an option's number for a menu of
+    /// several. Absent means pressing "enter" to the first menu.
     #[serde(default)]
-    pub take: Vec<i32>,
+    pub inputs: Option<Vec<String>>,
+}
+
+impl Scenario {
+    /// The inputs, parsed.
+    ///
+    /// # Panics
+    ///
+    /// If one is not an input. A row that misspells one describes a walk neither executor
+    /// can make.
+    pub fn inputs(&self) -> Option<Vec<lookahead_engine::walkthrough::Input>> {
+        self.inputs.as_ref().map(|inputs| {
+            inputs
+                .iter()
+                .map(|input| {
+                    input
+                        .parse()
+                        .unwrap_or_else(|error| panic!("{}: {error}", self.save))
+                })
+                .collect()
+        })
+    }
 }
 
 fn named() -> String {

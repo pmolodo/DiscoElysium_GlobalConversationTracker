@@ -195,6 +195,16 @@ fn changes(document: &serde_json::Value) -> Option<&serde_json::Map<String, serd
 /// reader should not depend on it.
 const NOT_A_VARIABLE: [&str; 4] = ["_format", "_formatVersion", "_base", "_derived_simx"];
 
+/// Where the game keeps the rain, in the table it keeps every dialogue variable in.
+const RAINING: &str = "auto.is_raining";
+
+/// And the snow.
+const SNOWING: &str = "auto.is_snowing";
+
+/// The preset types that set each of them, as the weather table names them.
+const RAIN: &str = "RAIN";
+const SNOW: &str = "SNOW";
+
 /// Every dialogue variable a save holds, with the bases it rests on merged in.
 ///
 /// ## Why this is read and not declared
@@ -245,6 +255,22 @@ pub fn variables_in_save(save: &str) -> HashMap<String, WireValue> {
                 }
             }
         }
+    }
+
+    // THE WEATHER AS THE GAME LOADS IT, not as the save last wrote it. `WeatherController`
+    // writes both weather variables from the preset's type whenever the weather changes, and
+    // loading a save changes it - measured 2026-09-12, scene-raining answered `IsRaining()`
+    // true mid-load and false by the time its menu went up. So a save whose variables and
+    // preset disagree is read as written and loaded here the way the game loads it:
+    // at-garte-kitchen was saved in the RAIN preset with `auto.is_raining` false.
+    let weather = weather_of(save);
+    for (variable, kind) in [(RAINING, RAIN), (SNOWING, SNOW)] {
+        variables.insert(
+            variable.to_string(),
+            WireValue::Bool {
+                value: weather == kind,
+            },
+        );
     }
 
     // THE CHECKS THIS SAVE HAS FAILED, locked the way the game locks them. The game keeps a
@@ -1006,12 +1032,6 @@ fn outdoor_scenes() -> &'static HashSet<String> {
 ///
 /// If the save records no area, or if its `Variable` table will not read.
 fn scene_in_save(save: &str) -> Scene {
-    /// Where the game keeps the rain, in the table it keeps every dialogue variable in.
-    const RAINING: &str = "auto.is_raining";
-
-    /// And the snow.
-    const SNOWING: &str = "auto.is_snowing";
-
     let area = scene_state(save, "areaId")
         .as_str()
         .unwrap_or_else(|| panic!("{save} records no area to be in"))
@@ -1173,6 +1193,8 @@ pub struct Holdings {
     pub day_counter: i32,
     /// Where the player is standing, and what the weather is doing there.
     pub scene: Scene,
+    /// Who is with them.
+    pub party: Party,
 }
 
 /// Minutes in an hour, for a clock the game answers to the hour.
@@ -1247,6 +1269,16 @@ impl Holdings {
             "IsSnowing" => Some(WireValue::Bool {
                 value: self.scene.snowing,
             }),
+            // WHO IS WITH THE PLAYER, which the save keeps in its party state.
+            "IsKimHere" => Some(WireValue::Bool {
+                value: self.party.kim_here,
+            }),
+            "IsKimInParty" => Some(WireValue::Bool {
+                value: self.party.kim_in_party,
+            }),
+            "IsCunoInParty" => Some(WireValue::Bool {
+                value: self.party.cuno_in_party,
+            }),
             _ => None,
         }
     }
@@ -1309,6 +1341,45 @@ pub fn holdings_in_save(save: &str) -> Holdings {
             * MINUTES_PER_HOUR,
         day_counter: whole(&clock["time"]["dayCounter"], save, "the day"),
         scene: scene_in_save(save),
+        party: party_in_save(save),
+    }
+}
+
+/// Who is with the player, as the save's `partyState` records it.
+///
+/// WRITTEN DOWN IN EVERY SAVE, beside the area, in the first blob. The game's `IsKimHere()`
+/// and `IsKimInParty()` are `PartyManager` methods whose bodies are stripped from every
+/// export, so which flags `IsKimHere` combines is read off the flags the save keeps beside
+/// `isKimInParty`: Kim left waiting outside, away until morning, or asleep in his room is in
+/// the party and not here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Party {
+    pub kim_in_party: bool,
+    pub kim_here: bool,
+    pub cuno_in_party: bool,
+}
+
+/// Reads [`Party`] out of a save.
+///
+/// # Panics
+///
+/// If the save's chain carries no party state, which the game writes into every save.
+fn party_in_save(save: &str) -> Party {
+    let party = scene_state(save, "partyState");
+    let flag = |name: &str| {
+        party[name]
+            .as_bool()
+            .unwrap_or_else(|| panic!("{save}'s party state has no {name}"))
+    };
+
+    let kim_in_party = flag("isKimInParty");
+    Party {
+        kim_in_party,
+        kim_here: kim_in_party
+            && !flag("isKimLeftOutside")
+            && !flag("isKimAwayUpToMorning")
+            && !flag("isKimSleepingInHisRoom"),
+        cuno_in_party: flag("isCunoInParty"),
     }
 }
 

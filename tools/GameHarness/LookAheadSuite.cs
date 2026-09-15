@@ -215,7 +215,6 @@ namespace GlobalConversationTracker.Harness
         /// <param name="markers">How much the scenario claims about the markers.</param>
         /// <param name="branchPolicy">How much it claims about the Pass / Fail lines.</param>
         /// <param name="branches">What every check's line should be, under EveryCheck.</param>
-        /// <param name="advances">Lines to advance before its menu, or null if unmeasured.</param>
         /// <param name="killEngineFirst">
         /// Kill the look-ahead engine before opening this scenario's conversation, so what
         /// the scenario expects is what the mod does WITHOUT one. See de-bnjy.1.2.4: a
@@ -228,12 +227,13 @@ namespace GlobalConversationTracker.Harness
         /// the shipped policy a kill produces a new engine and no notice at all, and a
         /// scenario that waited for the window would wait for ever.
         /// </param>
-        /// <param name="takes">
-        /// Options to choose, by destination entry and in order, before the menu is read; null
-        /// or empty for the menu the conversation opens on.
+        /// <param name="inputs">
+        /// What to press from the conversation's start to the menu under test, as a scenario
+        /// spells it; null to press "enter" to the first menu. See <see cref="ScenarioInput"/>.
         /// </param>
         /// <exception cref="ArgumentNullException">An argument is null.</exception>
         /// <exception cref="ArgumentException">The policy and the expectation disagree.</exception>
+        /// <exception cref="FormatException">An input is not one.</exception>
         public LookAheadScenario(
             string saveName,
             int conversationId,
@@ -244,10 +244,9 @@ namespace GlobalConversationTracker.Harness
             MarkerPolicy markers = MarkerPolicy.Named,
             BranchPolicy branchPolicy = BranchPolicy.Ignored,
             BranchExpectation? branches = null,
-            int? advances = null,
             bool killEngineFirst = false,
             bool expectsRecovery = false,
-            IReadOnlyList<int>? takes = null)
+            IReadOnlyList<string>? inputs = null)
         {
             if (expectsRecovery && !killEngineFirst)
             {
@@ -255,12 +254,6 @@ namespace GlobalConversationTracker.Harness
                     "A scenario that expects a recovery has to kill something first; "
                     + $"set {nameof(killEngineFirst)} as well.",
                     nameof(expectsRecovery));
-            }
-
-            if (advances < 0)
-            {
-                throw new ArgumentOutOfRangeException(
-                    nameof(advances), advances, "A conversation cannot advance backwards.");
             }
 
             if ((branchPolicy == BranchPolicy.EveryCheck) != (branches != null))
@@ -280,21 +273,24 @@ namespace GlobalConversationTracker.Harness
             Markers = markers;
             Branches = branches;
             BranchPolicy = branchPolicy;
-            Advances = advances;
             KillEngineFirst = killEngineFirst;
             ExpectsRecovery = expectsRecovery;
-            Takes = takes ?? Array.Empty<int>();
+            Inputs = ScenarioInput.ParseAll(inputs);
         }
 
         /// <summary>
-        /// The options to take, by destination entry and in order, before the menu is read.
+        /// What to press from the conversation's start to the menu under test, or null to
+        /// press "enter" to the first menu.
         /// </summary>
         /// <remarks>
-        /// Empty for a scenario about the menu a conversation opens on. Otherwise each is
-        /// chosen off the menu in front of the run and the conversation is advanced to the
-        /// next, so <see cref="Options"/> and the markers are about the menu behind the last.
+        /// A PROPERTY OF THE SCENARIO, and the thing that makes a run repeatable: a
+        /// conversation opens on however much narration its writer put there, so what reaches
+        /// a given menu is fixed for a given save and conversation. A step that does not fit
+        /// what is on screen - "enter" at a menu of several, a number while a line waits, the
+        /// inputs running out anywhere but at a menu - means the run has not arrived where the
+        /// scenario says it has, and fails by name.
         /// </remarks>
-        public IReadOnlyList<int> Takes { get; }
+        public IReadOnlyList<ScenarioInput>? Inputs { get; }
 
         /// <summary>The staged save's name, without extension.</summary>
         public string SaveName { get; }
@@ -345,20 +341,6 @@ namespace GlobalConversationTracker.Harness
 
         /// <summary>How much the scenario claims about those lines.</summary>
         public BranchPolicy BranchPolicy { get; }
-
-        /// <summary>
-        /// How many lines of narration stand between opening this conversation and its
-        /// first response menu, or null where it has not been measured yet.
-        /// </summary>
-        /// <remarks>
-        /// A PROPERTY OF THE SCENARIO, and the thing that makes a run repeatable. A
-        /// conversation opens on however much narration its writer put there, and the run
-        /// answers one line with one Enter - so this number is fixed for a given save and
-        /// conversation, and a run that needs a different one has not arrived where the
-        /// scenario says it has. Measure it by running: the report names the count it
-        /// actually took.
-        /// </remarks>
-        public int? Advances { get; }
 
         /// <summary>Whether the scenario says anything about an entry.</summary>
         /// <param name="entryId">The entry, which may be unreadable.</param>

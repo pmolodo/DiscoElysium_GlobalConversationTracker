@@ -1,0 +1,133 @@
+{
+  "_format": "sparse-diff",
+  "_formatVersion": 2,
+  "_base": "../../../save_template.ntwtf/save_template.ntwtf.lua.parts/Actor.json",
+  "_changes": {
+    "Cuno": {
+      "Bark_Index": 0
+    },
+    "Cunoesse": {
+      "Bark_Index": 0
+    },
+    "Racist_lorry_driver": {
+      "Bark_Index": 3
+    },
+    "Measurehead's_Babe": {
+      "Bark_Index": 0
+    },
+    "Tommy_Le_Homme": {
+      "Bark_Index": 0
+    },
+    "René_Arnoux": {
+      "Bark_Index": 0
+    },
+    "Gaston_Martin": {
+      "Bark_Index": 2
+    },
+    "Man_on_water_lock": {
+      "Bark_Index": 1
+    },
+    "Gary,_the_Cryptofascist": {
+      "Bark_Index": 6
+    },
+    "Rosemary": {
+      "Bark_Index": 0
+    },
+    "Glen": {
+      "Bark_Index": 0
+    },
+    "Shanky": {
+      "Bark_Index": 0
+    },
+    "Eugene": {
+      "Bark_Index": 0
+    },
+    "Alain": {
+      "Bark_Index": 0
+    },
+    "Barry_the_Butcher": {
+      "Bark_Index": 2
+    },
+    "Radio": {
+      "Bark_Index": 10
+    },
+    "Joyce_Messier": {
+      "Bark_Index": 0
+    },
+    "Kim_Kitsuragi": {
+      "Position_Whirling_int_f1": "-2.390439,0.00718362,-2.267574,0,0.9802712,0,-0.1976573,Whirling-int-f1",
+      "Position_Martinaise_ext": "104.9627,5.284892,-140.7806,0,0.9495419,0,0.3136403,Martinaise-ext",
+      "Position_Whirling_int_f2": "-7.714442,3.635526,-2.071526,0,0.6724472,0,0.7401451,Whirling-int-f2",
+      "Position_Kiosque_int": "7.48611,0.3796855,-6.136166,0,0,0,1,Kiosque-int",
+      "Position_Pawnshop_int": "-3.130887,0.108342,9.703771,0,0.9930319,0,0.1178456,Pawnshop-int",
+      "Position_Doomed_commerce_int_f1": "-6.267494,0.3346467,0.3390734,0,0.9982547,0,-0.05905676,Doomed-commerce-int-f1",
+      "Position_Capeside_apartments_int": "-10.05321,1.928598,20.23778,0,0.5913802,0,-0.806393,Capeside-apartments-int",
+      "Position_FV_house_int": "-4.634374,1.121056,13.35782,0,0.9875852,0,-0.1570844,FV-house-int"
+    },
+    "You": {
+      "Position_Whirling_int_f2": "9.31,3.634974,-0.57,0,0.4071351,0,-0.9133679,Whirling-int-f2",
+      "Position_Whirling_int_f1": "-4.160086,0.007747796,-2.626483,0,0.9498741,0,0.3126326,Whirling-int-f1",
+      "Position_Martinaise_ext": "106.2852,5.318527,-141.5751,0,0.9705247,0,-0.2410017,Martinaise-ext",
+      "Position_Kiosque_int": "6.779141,0.3798208,-6.522346,0,0.9606528,0,-0.2777521,Kiosque-int",
+      "Position_Pawnshop_int": "-3.780592,0.1083418,8.201941,0,0.9769982,0,0.2132476,Pawnshop-int",
+      "Position_Doomed_commerce_int_f1": "-6.982104,0.3346466,-0.2579026,0,0.9911324,0,-0.1328778,Doomed-commerce-int-f1",
+      "Position_Dream_2": "-19.84013,4.243996,-84.56187,0,0.5296972,0,0.8481868,Dream-2",
+      "Position_Capeside_apartments_int": "-8.599411,1.923557,22.72139,0,0.01857812,0,0.9998274,Capeside-apartments-int",
+      "Position_FV_house_int": "-5.182495,1.121056,14.20561,0,0.8585547,0,-0.512722,FV-house-int"
+    },
+    "Lena": {
+      "Bark_Index": 0
+    },
+    "gardener": {
+      "Bark_Index": 0
+    },
+    "tareDrunkess": {
+      "Bark_Index": 0
+    },
+    "siileng": {
+      "Bark_Index": 2
+    },
+    "Roy": {
+      "Bark_Index": 0
+    },
+    "Smoker": {
+      "Bark_Index": 0
+    },
+    "Cindy": {
+      "Bark_Index": 0
+    },
+    "gardenerTribunal": {
+      "Bark_Index": 0
+    },
+    "FatAngus": {
+      "Bark_Index": 0
+    },
+    "drunkWorker": {
+      "Bark_Index": 4
+    },
+    "Working_Woman": {
+      "Bark_Index": 7
+    },
+    "Minot": {
+      "Bark_Index": 0
+    },
+    "Netpicker's_Twin": {
+      "Bark_Index": 3
+    },
+    "washerwoman": {
+      "Bark_Index": 1
+    },
+    "Netpicker": {
+      "Bark_Index": 0
+    },
+    "Abigail": {
+      "Bark_Index": 0
+    },
+    "acele": {
+      "Bark_Index": 1
+    },
+    "trant_and_kid": {
+      "Bark_Index": 7
+    }
+  }
+}

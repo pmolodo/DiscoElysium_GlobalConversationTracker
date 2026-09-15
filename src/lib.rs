@@ -47,5 +47,11 @@ pub mod test_graph;
 /// an oracle independent of the searches they check (de-eonm).
 pub mod oracle;
 
+/// The walk a scenario's inputs make through a conversation, for the offline runner.
+///
+/// NOT SOMETHING THE PRODUCT RUNS: in game the game itself walks the conversation, and the
+/// harness presses the same inputs through the probe. Public for the reason `oracle` is.
+pub mod walkthrough;
+
 /// A manager that outlives one query, on the thread that owns it - de-2wtl.
 pub mod workspace;

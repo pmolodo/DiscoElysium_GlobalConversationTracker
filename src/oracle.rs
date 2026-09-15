@@ -417,12 +417,12 @@ pub(crate) fn can_afford(node: &LookAheadNode, state: &LookAheadState) -> bool {
     node.cost <= state.money()
 }
 
-fn has_been_seen(node: &LookAheadNode, state: &LookAheadState) -> bool {
+pub(crate) fn has_been_seen(node: &LookAheadNode, state: &LookAheadState) -> bool {
     node.seen_slot >= 0 && state.is_set(node.seen_slot as usize)
 }
 
 /// Pays for the entry, records having seen it, and applies its actions.
-fn charge(
+pub(crate) fn charge(
     node: &LookAheadNode,
     state: &LookAheadState,
     caps: &CounterCaps<'_>,

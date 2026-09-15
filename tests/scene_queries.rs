@@ -252,20 +252,19 @@ fn the_weather_saves_answer_the_weather_they_were_made_with() {
     }
 }
 
-/// Every save's preset agrees with the two variables the game derives from it.
+/// Every save is read with the weather variables its preset gives them on load.
 ///
-/// THE HALF A SAVE CAN GET WRONG WITHOUT ANYTHING NOTICING, until a run. The guards read the
-/// Lua variable and so does the offline world, but `WeatherController` writes both variables
-/// from the preset's type whenever the weather changes, and loading a save changes it. A
-/// save that sets only the variable is therefore overwritten on the way in: measured
-/// 2026-09-12, scene-raining answered `IsRaining()` true mid-load and false by the time its
-/// menu went up.
+/// THE STEP A SAVE DOES NOT RECORD, simulated rather than written into the save. The guards
+/// read the Lua variable and so does the offline world, but `WeatherController` writes both
+/// variables from the preset's type whenever the weather changes, and loading a save changes
+/// it: measured 2026-09-12, scene-raining answered `IsRaining()` true mid-load and false by
+/// the time its menu went up. A save can be written with the two disagreeing -
+/// at-garte-kitchen, from a real playthrough, is in the RAIN preset with `auto.is_raining`
+/// false - and the committed save keeps what the game wrote, so the reader does the load.
 ///
-/// Held over EVERY committed save, not only the four made wet on purpose, because the
-/// failure this guards against is a save whose two halves disagree - and a save that was
-/// never meant to be in weather can acquire that just as easily.
+/// Held over EVERY committed save, because any of them can be written that way.
 #[test]
-fn every_committed_save_agrees_with_itself_about_the_weather() {
+fn every_committed_save_is_read_with_the_weather_its_preset_loads() {
     for save in common::fixtures::committed_saves() {
         let scene = common::fixtures::holdings_in_save(&save).scene;
         let derived = match scene.weather.as_str() {
@@ -277,8 +276,7 @@ fn every_committed_save_agrees_with_itself_about_the_weather() {
         assert_eq!(
             (scene.raining, scene.snowing),
             derived,
-            "{save}'s variables disagree with its {} preset, which the game would \
-             overwrite them from: {scene:?}",
+            "{save} is not read with the weather its {} preset loads: {scene:?}",
             scene.weather,
         );
     }
