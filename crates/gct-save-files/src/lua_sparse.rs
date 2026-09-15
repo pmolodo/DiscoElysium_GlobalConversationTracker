@@ -343,6 +343,12 @@ fn try_encode_grouped(table: &LuaTable, grouping: &Grouping) -> Option<SparseMap
         }
     }
 
+    // IN THE ORDER OF EACH GROUP'S SMALLEST KEY, not the order the values were first met. A
+    // table read back from this form comes in ascending key order and one out of a save comes
+    // in whatever order the game stored it, so first-met order would spell one table two ways
+    // and a save expanded from the game would not be what writing it again produces.
+    by_value.sort_unstable_by_key(|(_, bucket)| bucket.iter().min().copied());
+
     let mut grouped = SparseMap::new();
     keys.sort_unstable();
     grouped.add(KEYS_KEY, SparseValue::Text(runs::pack(&keys)));
@@ -868,6 +874,39 @@ mod tests {
             ),
         );
         assert_eq!(round_trip(&table, path), table);
+    }
+
+    /// The order a table's entries arrive in makes no difference to how it is spelled.
+    ///
+    /// A save out of the game holds its entries in the game's own order, and one read back
+    /// from this form holds them ascending, so both have to come out the same or a save
+    /// expanded from the game is not what writing it again produces.
+    #[test]
+    fn a_grouped_table_is_spelled_the_same_whatever_order_its_entries_came_in() {
+        let path = "Conversation/8/Dialog";
+        let ascending = LuaTable {
+            list: Vec::new(),
+            dict: vec![
+                (LuaValue::Int(0), status("WasDisplayed")),
+                (LuaValue::Int(1), status(UNTOUCHED_STATUS)),
+                (LuaValue::Int(2), status("WasOffered")),
+                (LuaValue::Int(3), status("WasDisplayed")),
+            ],
+        };
+        let as_the_game_stored_it = LuaTable {
+            list: Vec::new(),
+            dict: vec![
+                (LuaValue::Int(2), status("WasOffered")),
+                (LuaValue::Int(3), status("WasDisplayed")),
+                (LuaValue::Int(1), status(UNTOUCHED_STATUS)),
+                (LuaValue::Int(0), status("WasDisplayed")),
+            ],
+        };
+
+        let spelled =
+            |table: &LuaTable| sparse::write(&encode(table, path, None).expect("it encodes"));
+
+        assert_eq!(spelled(&as_the_game_stored_it), spelled(&ascending));
     }
 
     /// A table the manifest names, which does not have the shape it claims, still writes.
