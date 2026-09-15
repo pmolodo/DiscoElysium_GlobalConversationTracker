@@ -71,6 +71,19 @@ collision off the table rather than dodging them one at a time.
 
 See de-12wr.9 for the rename of the names that predate this rule.
 
+## One algorithm by default, everywhere it runs
+
+**Performance measurements, in-game runs, and the in-game and offline test engines all use the
+algorithm the product ships, by default.** Whatever the plugin sends and the engine does with it -
+the walk a request carries and the hub cut it drives included - a default measurement row, a
+default in-game suite and a default offline test do the same.
+
+A different algorithm is for a comparison someone asked for, and is opt-in: a named arm such as
+`DEGCT_MARKING=bnb`, never the default. When the shipped algorithm changes, every default path
+changes with it in the same piece of work - otherwise a green test or a measured number describes
+code the game does not run. The case that made this a rule: the menu matrix kept measuring menus
+with no walk after the shipped marking started cutting by one (de-r2xf.11).
+
 ## Committed saves: never edit what the game wrote
 
 **A save that came from the game is never edited - above all one made in a real playthrough.**
