@@ -192,9 +192,11 @@ pub fn expansion(
 ) -> Result<Vec<Written>, ExpandFault> {
     let parts = lua_parts::encode(&lua_blob::read(&packed.lua)?, orders)?;
 
-    // NAMED AFTER THE BLOB INSIDE THE ARCHIVE rather than after the directory, because at
-    // this point they need not agree: a save comes out of the game carrying a timestamp in
-    // its name and is often expanded into a directory named without one.
+    // NAMED FOR THE DIRECTORY IT IS WRITTEN INTO, as a pack is named for its output. A save
+    // comes out of the game carrying a timestamp in its name and is expanded into a directory
+    // named without one, and what reads an expanded save back - a whole save with no manifest
+    // above all - finds its files by the directory's name.
+    let packed = &renamed(packed, &expanded_save::stem_of(directory))?;
     let tables = directory.join(format!("{}{EXPANDED_SUFFIX}{PARTS_SUFFIX}", packed.stem()));
 
     let Some(base) = base else {
@@ -344,6 +346,26 @@ fn members_of(packed: &Unpacked) -> Result<Members, ExpandFault> {
         .iter()
         .map(|entry| Ok((suffix_of(&entry.name, packed.stem())?, entry.bytes.clone())))
         .collect()
+}
+
+/// The same save, called `stem` on every entry instead of its own name.
+fn renamed(packed: &Unpacked, stem: &str) -> Result<Unpacked, ExpandFault> {
+    let members = packed
+        .members
+        .iter()
+        .map(|entry| {
+            Ok(packed_save::Entry {
+                name: format!("{stem}{}", suffix_of(&entry.name, packed.stem())?),
+                bytes: entry.bytes.clone(),
+            })
+        })
+        .collect::<Result<_, ExpandFault>>()?;
+
+    Ok(Unpacked {
+        lua_name: format!("{stem}{LUA_SUFFIX}"),
+        lua: packed.lua.clone(),
+        members,
+    })
 }
 
 /// What is left of a member's name once the save's own name is taken off it.

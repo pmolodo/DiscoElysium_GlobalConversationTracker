@@ -755,7 +755,7 @@ fn settled(path: &Path) -> PathBuf {
 }
 
 /// A whole save's own name, which is its directory's without the extension.
-fn stem_of(directory: &Path) -> String {
+pub(crate) fn stem_of(directory: &Path) -> String {
     directory
         .file_name()
         .map(|name| {

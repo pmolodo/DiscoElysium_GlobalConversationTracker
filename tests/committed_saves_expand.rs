@@ -183,13 +183,81 @@ fn rewrites(save: &Path, orders: &Orders) -> Result<(), ExpandFault> {
     Ok(())
 }
 
-#[test]
-fn every_committed_save_is_written_again_as_the_save_it_already_is() {
-    let Some(orders) = orders() else {
+/// The id map, or nothing with a line saying why nothing here is written.
+fn orders_or_say_why() -> Option<Orders> {
+    let found = orders();
+    if found.is_none() {
         println!(
             "no {} beside the repository, so nothing is written",
             lua_simx::ORDERS_FILE_NAME
         );
+    }
+
+    found
+}
+
+/// The same save, called `stem` on every entry instead of its own name.
+fn named(packed: &Unpacked, stem: &str) -> Unpacked {
+    let own = packed.stem();
+    let rename = |name: &str| {
+        let suffix = name
+            .strip_prefix(own)
+            .unwrap_or_else(|| panic!("{name} is not prefixed with {own}"));
+        format!("{stem}{suffix}")
+    };
+
+    Unpacked {
+        lua_name: rename(&packed.lua_name),
+        lua: packed.lua.clone(),
+        members: packed
+            .members
+            .iter()
+            .map(|entry| Entry {
+                name: rename(&entry.name),
+                bytes: entry.bytes.clone(),
+            })
+            .collect(),
+    }
+}
+
+/// A save named the way the game names one is expanded under its directory's name.
+///
+/// A save leaves the game with a timestamp in its name and is expanded into a directory named
+/// without one, and what reads the directory back finds its files by the directory's name. So
+/// the archive's own name has to make no difference to what is written.
+#[test]
+fn a_save_named_by_the_game_is_expanded_under_its_directorys_name() {
+    let Some(orders) = orders_or_say_why() else {
+        return;
+    };
+
+    let save = changed_saves()
+        .into_iter()
+        .next()
+        .expect("the repository carries a save written as a change");
+    let base = base_of(&save);
+    let packed = as_the_game_wrote_it(&save, &orders);
+    let from_the_game = named(&packed, "MARTINAISE, DAY 3, 13-22(9_15_2026 10-24-16 AM)");
+
+    let plan = |unpacked: &Unpacked| -> Vec<(PathBuf, Vec<u8>)> {
+        expand::expansion(&OnDisk, unpacked, &save, Some(&base), Some(&orders))
+            .unwrap_or_else(|why| panic!("{}: {why}", save.display()))
+            .into_iter()
+            .map(|file| (file.path, file.bytes))
+            .collect()
+    };
+
+    assert_eq!(
+        plan(&from_the_game),
+        plan(&packed),
+        "{}: an archive named by the game expands into different files",
+        save.display(),
+    );
+}
+
+#[test]
+fn every_committed_save_is_written_again_as_the_save_it_already_is() {
+    let Some(orders) = orders_or_say_why() else {
         return;
     };
 
