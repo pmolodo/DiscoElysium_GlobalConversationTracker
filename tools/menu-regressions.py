@@ -19,6 +19,11 @@ it needs of a run - `combined.tsv`, `run.json` and `summary.txt` - under
 `measurements/logs/baselines/`, which git ignores. It belongs to the machine it was measured on, and
 is refused on any other; the copy means a baseline survives its run folder being tidied away.
 
+WHAT GIT DOES GET is a tag: `mark` puts an annotated `perf-baseline/<run start>` tag, carrying the
+note, on the commit the baseline measured. It holds no numbers, so it cannot go stale the way a
+committed row would; it says which commits have stood as baselines, and a second mark of the same
+run is refused because its tag is already there.
+
 ## What a baseline has to be
 
 - SEVERAL RUNS, at least `MIN_RUNS`, because the rule below compares ranges and a single run has no
@@ -83,6 +88,7 @@ from measurement_common import (  # noqa: E402  (after the path is set)
     RUN_RECORD,
     SUMMARY,
     algorithm_differences,
+    git,
     hardware_differences,
     median_ms,
     read_combined,
@@ -100,6 +106,9 @@ BASELINES = OUT / "logs" / "baselines"
 
 # What marking a baseline records about itself, beside what it copied.
 BASELINE_RECORD = "baseline.json"
+
+# What every baseline's git tag starts with. See `tag_for`.
+TAG_PREFIX = "perf-baseline/"
 
 # What of a run a baseline keeps.
 COPIED = (COMBINED, RUN_RECORD, SUMMARY)
@@ -158,17 +167,38 @@ def mark(folder, baselines, note):
     if destination.exists():
         raise Refused(f"{folder.name} is already a baseline, at {destination}")
 
+    tag = tag_for(record)
+    if tag_exists(tag):
+        raise Refused(f"the tag {tag} already exists, so {folder} has been marked before")
+
     destination.mkdir(parents=True)
     for name in COPIED:
         if (folder / name).exists():
             shutil.copyfile(folder / name, destination / name)
+    git("tag", "-a", tag, code["revision"], "-m", f"Menu performance baseline: {note or folder.name}")
     marked = {
         "marked": datetime.now().astimezone().isoformat(timespec="seconds"),
         "note": note,
         "source": str(folder.resolve()),
+        "tag": tag,
     }
     write_lf(destination / BASELINE_RECORD, json.dumps(marked, indent=2) + "\n")
-    print(f"marked {folder} as a baseline, copied to {destination}")
+    print(f"marked {folder} as a baseline, copied to {destination}, tagged {tag}")
+
+
+def tag_for(record):
+    """The git tag a baseline is marked with: when its run started, to the second.
+
+    Nothing about the commit, which the tag points at already. The start, because two baselines
+    of one commit are two runs and need two names.
+    """
+    started = record["started"][: len("YYYY-MM-DDTHH:MM:SS")].replace("T", "_").replace(":", "-")
+    return f"{TAG_PREFIX}{started}"
+
+
+def tag_exists(tag):
+    """Whether this repository already has a tag of that name."""
+    return bool(git("tag", "--list", tag).strip())
 
 
 def marked_baselines(baselines):
@@ -187,7 +217,7 @@ def describe(path):
     code = (record.get("code") or {}).get("revision") or "?"
     note = f" - {marked['note']}" if marked.get("note") else ""
     return (
-        f"{path.name}: {code[:12]}, started {record.get('started')}, "
+        f"{path.name}: {code[:12]}, tag {marked['tag']}, started {record.get('started')}, "
         f"parallelism {record.get('parallelism')}, marked {marked.get('marked')}{note}"
     )
 
