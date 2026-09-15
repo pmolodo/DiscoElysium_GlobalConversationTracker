@@ -33,8 +33,9 @@ is refused on any other; the copy means a baseline survives its run folder being
 ## Which baseline a run is checked against
 
 The newest marked baseline, by when its run started, whose settings, algorithm and hardware match the
-run's - the checks `measurement_common` gives `tools/menu-costs-diff.py`. `--baseline` names one
-instead, and it is held to the same checks. With no match, the check is REFUSED and says what
+run's - the checks `measurement_common` gives `tools/menu-costs-diff.py`, except that memory free
+when the run started is not compared, since no run can be started to match it. `--baseline` names
+one instead, and it is held to the same checks. With no match, the check is REFUSED and says what
 differed for each baseline, rather than comparing against the nearest one.
 
 ## What counts as a regression
@@ -200,11 +201,16 @@ def list_baselines(baselines):
 
 
 def differences(baseline, record):
-    """Every way a baseline was measured differently from a run, one line each."""
+    """Every way a baseline was measured differently from a run, one line each.
+
+    AVAILABLE MEMORY IS NOT HELD TO IT, for the reason a resume does not hold it: it moves with
+    whatever else is open between two sittings on the same machine, so no run could be started
+    to match a baseline on it. The machine itself - its name, cores and total memory - still must.
+    """
     return (
         setting_differences(baseline, record)
         + algorithm_differences(baseline, record)
-        + hardware_differences(baseline, record)
+        + hardware_differences(baseline, record, available_tolerance=None)
     )
 
 
