@@ -125,7 +125,7 @@ fn main() {
     // one before a diagram is touched, and the whole measurement reads one millisecond a
     // request while measuring nothing at all. That is exactly the trap the first cut of
     // `menu_residue` fell into and the reason the profile is shared.
-    let mut menus: Vec<(i32, Vec<NodeRef>, Vec<NodeRef>)> = Vec::new();
+    let mut menus: Vec<(i32, Vec<NodeRef>, Vec<NodeRef>, Vec<NodeRef>)> = Vec::new();
     // THE FIRST ONE IS THE SESSION, since the kept arm stands in `menus[0]` throughout and
     // the rest are only there to defeat the workspace in the fresh arm. So
     // `DEGCT_CONVERSATION=14,368,631` measures a session in conversation 14.
@@ -144,6 +144,12 @@ fn main() {
             conversation,
             profile.starts.iter().map(|id| NodeRef::from(*id)).collect(),
             profile.unseen.iter().map(|id| NodeRef::from(*id)).collect(),
+            // WITH A WALK, as the product asks - see `hub::walk_to_menu` - worked out here with
+            // the rest of the menu, so neither arm pays for it.
+            lookahead_engine::symbolic::hub::walk_to_menu(&graph, conversation, &profile.starts)
+                .into_iter()
+                .map(NodeRef::from)
+                .collect(),
         ));
     }
 
@@ -187,7 +193,8 @@ fn main() {
     for round in 0..rounds {
         // ONE GROUP THROUGHOUT for the kept arm, which is a player standing in a
         // conversation; rotating for the fresh arm, which is what defeats the workspace.
-        let (conversation, starts, unseen) = &menus[if fresh { round % menus.len() } else { 0 }];
+        let (conversation, starts, unseen, walk) =
+            &menus[if fresh { round % menus.len() } else { 0 }];
 
         // A DIFFERENT WORLD EVERY ROUND, in the field that actually moves between menus.
         let seen: HashSet<NodeRef> = starts.iter().take(round % starts.len()).copied().collect();
@@ -202,6 +209,7 @@ fn main() {
         let request = LookAheadRequest {
             conversation: *conversation,
             starts: starts.clone(),
+            encountered: walk.clone(),
             unseen_any_game: hunting,
             world: WorldSnapshot {
                 day_minutes: 720,

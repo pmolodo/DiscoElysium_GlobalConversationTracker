@@ -159,9 +159,13 @@ impl Staged {
 /// REFUSED RATHER THAN MODELLED. They are rare - 114 of some 46,000 NPC lines - and whether
 /// the game waits on one is unmeasured, so a walk through one is a walk that may disagree with
 /// the game about where the inputs land.
+///
+/// NOT THE START, which leads every walk: the game reports it, but it is where the conversation
+/// begins rather than a line put up on the way, so nothing waits on it.
 fn silent(index: &Index, walk: &Walkthrough) -> Vec<DialogueNodeId> {
     walk.encountered
         .iter()
+        .skip(1)
         .copied()
         .filter(|id| {
             index

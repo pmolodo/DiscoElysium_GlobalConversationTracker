@@ -247,9 +247,16 @@ where
         // THE WHOLE MENU IN ONE CALL, which is what a request is. This asked the options one
         // at a time until the per-option path was deleted; the sweep is about what an
         // apply-cache split costs a MENU, so asking as a menu is what it meant all along.
+        // WITH A WALK, as the product asks: built before the clock starts, since it stands in for
+        // what the plugin records as a conversation plays - see `hub::walk_to_menu`.
+        let conversation = starts.first().map_or(0, |start| start.conversation_id);
         let request = LookAheadRequest {
-            conversation: starts.first().map_or(0, |start| start.conversation_id),
+            conversation,
             starts: starts.iter().copied().map(NodeRef::from).collect(),
+            encountered: lookahead_engine::symbolic::hub::walk_to_menu(graph, conversation, starts)
+                .into_iter()
+                .map(NodeRef::from)
+                .collect(),
             ..Default::default()
         };
         let began = Instant::now();

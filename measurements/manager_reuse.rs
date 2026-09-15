@@ -224,9 +224,20 @@ fn main() {
 
             // THE WHOLE MENU IN ONE CALL, which is what a request is. This asked the options
             // one at a time until the per-option path was deleted.
+            // WITH A WALK, as the product asks: built before the clock starts, since it stands in
+            // for what the plugin records as a conversation plays - see `hub::walk_to_menu`.
+            let conversation = profile.starts.first().map_or(0, |s| s.conversation_id);
             let request = LookAheadRequest {
-                conversation: profile.starts.first().map_or(0, |s| s.conversation_id),
+                conversation,
                 starts: profile.starts.iter().copied().map(NodeRef::from).collect(),
+                encountered: lookahead_engine::symbolic::hub::walk_to_menu(
+                    &graph,
+                    conversation,
+                    &profile.starts,
+                )
+                .into_iter()
+                .map(NodeRef::from)
+                .collect(),
                 ..Default::default()
             };
             let began = Instant::now();

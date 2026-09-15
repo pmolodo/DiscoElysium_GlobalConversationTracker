@@ -90,8 +90,13 @@ same command again after a kill, a crash or a reboot and every group already in 
 is skipped. Rows are appended as they finish, so an interruption costs the group in flight and
 nothing else.
 
-`DEGCT_MARKING=bnb` puts the exact marking on every group instead of the shipped hybrid, so
-two row files can be compared on the same profile and the same allowance.
+A default row is the shipped algorithm, walk included: each profile menu is asked with the walk
+a player would have been shown from the conversation's start (`hub::walk_to_menu`), and the hub
+cut it drives is worked out inside the timing, as a player's request has it worked out. Every
+driver that asks menus - `cache_split_menu`, `manager_reuse`, `menu_residue`, `menu_wall`,
+`nodes_repeat`, `workspace_menus` - asks with a walk the same way (de-r2xf.11).
+`DEGCT_MARKING=bnb` puts the exact marking on every group instead of the shipped hybrid, as an
+opt-in comparison, so two row files can be compared on the same profile and the same allowance.
 
 ## Where a run's results are
 

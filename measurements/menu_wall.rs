@@ -119,9 +119,19 @@ fn main() {
             continue;
         };
 
+        // WITH A WALK, as the product asks: built before the clock starts, since it stands in for
+        // what the plugin records as a conversation plays - see `hub::walk_to_menu`.
         let request = LookAheadRequest {
             conversation,
             starts: profile.starts.iter().map(|id| NodeRef::from(*id)).collect(),
+            encountered: lookahead_engine::symbolic::hub::walk_to_menu(
+                &graph,
+                conversation,
+                &profile.starts,
+            )
+            .into_iter()
+            .map(NodeRef::from)
+            .collect(),
             unseen_any_game: profile.unseen.iter().map(|id| NodeRef::from(*id)).collect(),
             time_budget_ms,
             menu_time_budget_ms: menu_budget_ms,

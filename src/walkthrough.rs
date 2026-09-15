@@ -92,7 +92,8 @@ impl fmt::Display for Input {
 /// Where a walk ended, and what it showed on the way.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Walkthrough {
-    /// Every entry the game displayed, in order: the lines said and the options chosen.
+    /// Every entry the game reported as shown, in order: the conversation's start, then the
+    /// lines said and the options chosen - what the plugin records and a request carries.
     pub encountered: Vec<DialogueNodeId>,
     /// The menu the walk ended at, in the order the game draws it.
     pub menu: Vec<DialogueNodeId>,
@@ -166,7 +167,11 @@ impl Walker<'_> {
         let mut at = start;
         // Whether `at` is a line, which waits for a continue unless a menu follows it.
         let mut line_up = false;
-        let mut encountered = Vec::new();
+        // THE START FIRST, because the game reports it: its line hook fires for entry 0 as a
+        // conversation opens - measured in game, 656:0 and 29:0 each ahead of the first line
+        // with text - so the plugin's walk begins there, and the engine follows the hubs from
+        // there. A walk without it loses every hub passed before the first line shown.
+        let mut encountered = vec![start];
 
         for _ in 0..MOST_STEPS {
             match self.next(at, &state)? {
@@ -457,7 +462,7 @@ mod tests {
     fn only_a_line_with_a_line_behind_it_waits_for_enter() {
         let world = TestWorld::new();
         let walk = walked(two_lines_then_a_menu(), &world, Some(&[Input::Enter])).unwrap();
-        assert_eq!(walk.encountered, nodes(&[1, 2]));
+        assert_eq!(walk.encountered, nodes(&[0, 1, 2]));
 
         let error = walked(two_lines_then_a_menu(), &world, Some(&[])).unwrap_err();
         assert!(error.contains("line waiting"), "{error}");
@@ -466,7 +471,7 @@ mod tests {
     #[test]
     fn no_inputs_presses_enter_to_the_first_menu() {
         let walk = walked(two_lines_then_a_menu(), &TestWorld::new(), None).unwrap();
-        assert_eq!(walk.encountered, nodes(&[1, 2]));
+        assert_eq!(walk.encountered, nodes(&[0, 1, 2]));
         assert_eq!(walk.menu, nodes(&[3, 4]));
     }
 
@@ -482,7 +487,7 @@ mod tests {
             Some(&[Input::Enter, Input::Choose(2)]),
         )
         .unwrap();
-        assert_eq!(walk.encountered, nodes(&[1, 2, 4, 5]));
+        assert_eq!(walk.encountered, nodes(&[0, 1, 2, 4, 5]));
         assert_eq!(walk.menu, nodes(&[6]));
     }
 
@@ -536,7 +541,7 @@ mod tests {
             Some(&[Input::Enter, Input::Enter]),
         )
         .unwrap();
-        assert_eq!(walk.encountered, nodes(&[1, 2, 3]));
+        assert_eq!(walk.encountered, nodes(&[0, 1, 2, 3]));
         assert_eq!(walk.menu, nodes(&[4, 5]));
     }
 
@@ -556,7 +561,7 @@ mod tests {
             Entry::new(6).player(),
         ];
         let walk = walked(entries, &world, None).unwrap();
-        assert_eq!(walk.encountered, nodes(&[5]));
+        assert_eq!(walk.encountered, nodes(&[0, 5]));
         assert_eq!(walk.menu, nodes(&[1, 6]));
     }
 
@@ -570,7 +575,7 @@ mod tests {
         ];
         let world = TestWorld::new();
         let walk = walked(entries, &world, None).unwrap();
-        assert_eq!(walk.encountered, nodes(&[2]));
+        assert_eq!(walk.encountered, nodes(&[0, 2]));
 
         let entries = vec![
             Entry::new(0).links(&[1, 2]),

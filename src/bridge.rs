@@ -1477,30 +1477,18 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
             .overall
             .saturating_mul((contestants.len() + locked.len()) as u32),
     );
-    // WHERE THE PLAYER HAS BEEN, as far as it bears on this menu: what they passed since their
-    // current hub. Worked out only for a request that says where they have been; the shape
-    // keeps the group's hub candidates once found.
-    let returned = if request.encountered.is_empty() {
-        HashSet::new()
-    } else {
-        let encountered: Vec<DialogueNodeId> = request
-            .encountered
-            .iter()
-            .map(|entry| DialogueNodeId::from(*entry))
-            .collect();
-        let menu_entries: Vec<DialogueNodeId> = request
-            .starts
-            .iter()
-            .map(|start| DialogueNodeId::from(*start))
-            .collect();
-        crate::symbolic::hub::since_current_hub(
-            graph,
-            shape.order(),
-            shape.hubs(graph),
-            &encountered,
-            &menu_entries,
-        )
-    };
+    // WHERE THE PLAYER HAS BEEN, as far as it bears on this menu - see [`passed_since_hub`].
+    let encountered: Vec<DialogueNodeId> = request
+        .encountered
+        .iter()
+        .map(|entry| DialogueNodeId::from(*entry))
+        .collect();
+    let menu_entries: Vec<DialogueNodeId> = request
+        .starts
+        .iter()
+        .map(|start| DialogueNodeId::from(*start))
+        .collect();
+    let returned = passed_since_hub(graph, shape, &encountered, &menu_entries);
 
     // THE CHEAP QUESTION FIRST, AND THE EXACT MARKING WHERE IT MARKS NOTHING - see
     // [`mark_menu_as_shipped`], which the menu measurement calls too.
@@ -1659,6 +1647,32 @@ pub(crate) fn all_unanswered(request: &LookAheadRequest, stopped_by: &str) -> Ve
         .iter()
         .map(|start| unanswered(*start, stopped_by))
         .collect()
+}
+
+/// What the player has passed since the hubs they are inside, which a menu's onward question cuts.
+///
+/// THE ONE PLACE A WALK BECOMES A CUT, for [`answer_starts`] and the menu measurement alike, so a
+/// measurement that carries a walk pays for and gets exactly what a player's request does: the
+/// group's hub candidates, kept by `shape` once found, and the stack followed along the walk - see
+/// [`crate::symbolic::hub`]. `encountered` is what the conversation showed, beginning at its
+/// start; `menu` is the options now on offer. An empty walk says nothing about where the player
+/// is, and cuts nothing.
+pub fn passed_since_hub(
+    graph: &LookAheadGraph,
+    shape: &crate::symbolic::known::GroupShape,
+    encountered: &[DialogueNodeId],
+    menu: &[DialogueNodeId],
+) -> HashSet<DialogueNodeId> {
+    if encountered.is_empty() {
+        return HashSet::new();
+    }
+    crate::symbolic::hub::since_current_hub(
+        graph,
+        shape.order(),
+        shape.hubs(graph),
+        encountered,
+        menu,
+    )
 }
 
 /// Marks a menu the way the product does.

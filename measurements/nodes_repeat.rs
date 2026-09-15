@@ -154,9 +154,19 @@ fn main() {
                     // A MENU OF ONE OPTION, which is the only kind of request there is. The
                     // question here is whether the nodes column is a fact about the search or
                     // about the process, and one option is enough to ask it.
+                    // WITH A WALK, as the product asks: built before the clock starts, since it
+                    // stands in for what the plugin records - see `hub::walk_to_menu`.
                     let request = LookAheadRequest {
                         conversation: start.conversation_id,
                         starts: vec![NodeRef::from(start)],
+                        encountered: lookahead_engine::symbolic::hub::walk_to_menu(
+                            &graph,
+                            start.conversation_id,
+                            &[start],
+                        )
+                        .into_iter()
+                        .map(NodeRef::from)
+                        .collect(),
                         ..Default::default()
                     };
                     let began = std::time::Instant::now();

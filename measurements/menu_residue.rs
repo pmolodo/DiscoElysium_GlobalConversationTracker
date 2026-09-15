@@ -199,8 +199,22 @@ fn main() {
     );
     println!("arm: {arm}\n");
 
+    // WITH A WALK, as the product asks, to whichever options the call carries - see
+    // `hub::walk_to_menu`. Every request is built before the clock starts, since the walk
+    // stands in for what the plugin records as a conversation plays.
     let ask = |starts: Vec<NodeRef>| LookAheadRequest {
         conversation: CONVERSATION,
+        encountered: lookahead_engine::symbolic::hub::walk_to_menu(
+            &graph,
+            CONVERSATION,
+            &starts
+                .iter()
+                .map(|start| DialogueNodeId::from(*start))
+                .collect::<Vec<_>>(),
+        )
+        .into_iter()
+        .map(NodeRef::from)
+        .collect(),
         starts,
         unseen_any_game: unseen.iter().copied().collect(),
         unseen_this_game: Default::default(),
@@ -213,6 +227,9 @@ fn main() {
         },
         ..Default::default()
     };
+
+    let whole_menu = ask(starts.clone());
+    let one_each: Vec<LookAheadRequest> = starts.iter().map(|start| ask(vec![*start])).collect();
 
     let began = std::time::Instant::now();
     let mut work = Work::default();
@@ -273,15 +290,15 @@ fn main() {
         println!("asking about all {} starts in one call...", starts.len());
         flush();
 
-        let response = answer(&index, None, &ask(starts.clone()));
+        let response = answer(&index, None, &whole_menu);
         assert!(response.error.is_none(), "{:?}", response.error);
         work.add(&response.answers);
     } else {
-        for (n, start) in starts.iter().enumerate() {
+        for (n, (start, request)) in starts.iter().zip(&one_each).enumerate() {
             println!("  start {:>2}/{}: {start:?}", n + 1, starts.len());
             flush();
 
-            let response = answer(&index, None, &ask(vec![*start]));
+            let response = answer(&index, None, request);
             assert!(response.error.is_none(), "{start:?}: {:?}", response.error);
             work.add(&response.answers);
         }

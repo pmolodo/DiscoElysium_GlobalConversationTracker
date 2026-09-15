@@ -224,6 +224,92 @@ pub fn since_current_hub(
     follow(order, hubs, &passage(graph, encountered, menu)).since()
 }
 
+/// What a player is taken to have been shown walking from a conversation's start to `menu`, for
+/// a request with no player behind it - a measurement's menu, which nobody navigated to.
+///
+/// THE SHAPE THE PLUGIN SENDS, so the engine does with it exactly what it does in game: the start
+/// entry, which the game reports as a line as a conversation opens, then every other non-group
+/// entry on the way, oldest first, and not the menu itself. The group entries between them are
+/// left for [`passage`] to recover from the links, as it does for a recorded walk.
+///
+/// THE ROUTE is the shortest along links from `conversation`'s entry 0 to an option of `menu`: to
+/// the nearest option arrived at with a hub current, since that is a walk the cut has something to
+/// say about, and to the nearest option of all where none is. Ties go to the lower entry, so the
+/// same menu always gets the same walk. Guards are ignored, as they are everywhere in this module.
+///
+/// Empty where the conversation has no entry 0 or no option can be reached from it, which asks
+/// the question a request with no walk asks.
+///
+/// WORKS OUT THE GROUP'S ORDER AND HUBS FOR ITSELF. A measurement builds this in place of a
+/// player's walk, before it starts timing; the engine finds the hubs again for the request, inside
+/// the timing, as it would in game.
+pub fn walk_to_menu(
+    graph: &LookAheadGraph,
+    conversation: i32,
+    menu: &[DialogueNodeId],
+) -> Vec<DialogueNodeId> {
+    let start = DialogueNodeId::new(conversation, 0);
+    if graph.get(start).is_none() {
+        return Vec::new();
+    }
+
+    let mut came_from: HashMap<DialogueNodeId, DialogueNodeId> = HashMap::new();
+    let mut queue = VecDeque::from([start]);
+    while let Some(id) = queue.pop_front() {
+        for &child in graph
+            .get(id)
+            .map(|node| node.links.as_slice())
+            .unwrap_or_default()
+        {
+            if child != start && graph.get(child).is_some() && !came_from.contains_key(&child) {
+                came_from.insert(child, id);
+                queue.push_back(child);
+            }
+        }
+    }
+
+    // Every entry from the start to just before `option`, groups included, oldest first.
+    let route_to = |option: DialogueNodeId| {
+        let mut route = Vec::new();
+        let mut at = option;
+        while let Some(&before) = came_from.get(&at) {
+            route.push(before);
+            at = before;
+        }
+        route.reverse();
+        route
+    };
+
+    let order = IterationOrder::of(graph);
+    let hubs = Hubs::of(graph);
+    let Some((.., route)) = menu
+        .iter()
+        .copied()
+        .filter(|option| came_from.contains_key(option))
+        .map(|option| {
+            let route = route_to(option);
+            let without_hub = follow(&order, &hubs, &route).innermost().is_none();
+            (
+                without_hub,
+                route.len(),
+                option.conversation_id,
+                option.entry_id,
+                route,
+            )
+        })
+        .min_by_key(|(without_hub, length, conversation, entry, _)| {
+            (*without_hub, *length, *conversation, *entry)
+        })
+    else {
+        return Vec::new();
+    };
+
+    route
+        .into_iter()
+        .filter(|id| *id == start || graph.get(*id).is_some_and(|node| !node.is_group))
+        .collect()
+}
+
 /// The group entries a route from `from` to any of `to` passes through, group entries alone,
 /// nearest to `from` first.
 fn passed_between(
@@ -411,6 +497,73 @@ pub(crate) mod tests {
     fn stack(graph: &LookAheadGraph, walk: &[i32], menu: &[i32]) -> HubStack {
         let walked = passage(graph, &nodes(walk), &nodes(menu));
         follow(&IterationOrder::of(graph), &Hubs::of(graph), &walked)
+    }
+
+    /// A menu nobody navigated to is walked to the way a player would have been shown it: the
+    /// start, then the lines and options on the shortest route, the groups left to `passage`.
+    #[test]
+    fn a_walk_to_a_menu_is_what_the_plugin_would_have_recorded() {
+        let graph = kitchen();
+        let walk = walk_to_menu(
+            &graph,
+            crate::test_graph::DEFAULT_CONVERSATION,
+            &nodes(&KITCHEN_MENU),
+        );
+
+        assert_eq!(walk, nodes(&KITCHEN_WALK));
+        assert_eq!(
+            since_current_hub(
+                &graph,
+                &IterationOrder::of(&graph),
+                &Hubs::of(&graph),
+                &walk,
+                &nodes(&KITCHEN_MENU),
+            ),
+            since_current_hub(
+                &graph,
+                &IterationOrder::of(&graph),
+                &Hubs::of(&graph),
+                &nodes(&KITCHEN_WALK),
+                &nodes(&KITCHEN_MENU),
+            ),
+        );
+    }
+
+    /// Of two options, the one arrived at with a hub current gets the walk, though another is
+    /// nearer: that is a walk the cut has something to say about.
+    #[test]
+    fn a_walk_prefers_an_option_behind_a_hub_to_a_nearer_one() {
+        // 13 is two links from the start with no hub; 11 is further, behind the main hub.
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1, 13]))
+            .add(Entry::new(1).group().links(&[2, 3]))
+            .add(Entry::new(2).player().links(&[4]))
+            .add(Entry::new(3).player().links(&[1]))
+            .add(Entry::new(4).links(&[1, 11]))
+            .add(Entry::new(11).player())
+            .add(Entry::new(13).player())
+            .build();
+
+        let walk = walk_to_menu(
+            &graph,
+            crate::test_graph::DEFAULT_CONVERSATION,
+            &nodes(&[13, 11]),
+        );
+
+        assert_eq!(walk, nodes(&[0, 2, 4]));
+    }
+
+    /// No option reachable from the start is no walk, which asks what a request without one asks.
+    #[test]
+    fn a_menu_no_route_reaches_gets_no_walk() {
+        let graph = kitchen();
+        let walk = walk_to_menu(
+            &graph,
+            crate::test_graph::DEFAULT_CONVERSATION,
+            &nodes(&[99]),
+        );
+
+        assert!(walk.is_empty());
     }
 
     /// Two loops, the second reached only through a one-way passage out of the first.

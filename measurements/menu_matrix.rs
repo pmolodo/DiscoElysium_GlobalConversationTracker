@@ -21,9 +21,14 @@
 //! `menu_residue` and `menu_wall` - takes its starts as the menu, and marks the whole menu
 //! against one manager through `bridge::mark_menu_as_shipped`, so each group gets the marking
 //! the product gives it: the onward question first, and the exact marking by branch and bound
-//! only where that marks nothing. `DEGCT_MARKING=bnb` puts the exact marking on every group
-//! instead, `DEGCT_MARKING=hybrid-hub` gives the product's marking the since-hub cut over a
-//! constructed walk (see `walked_from_start`), and `DEGCT_MARKING=hybrid-bnb` names the default.
+//! only where that marks nothing. `DEGCT_MARKING=hybrid-bnb` names that default, and
+//! `DEGCT_MARKING=bnb` puts the exact marking on every group instead, as an opt-in comparison.
+//!
+//! WITH THE WALK, because the product asks with one. A profile's menu has nobody behind it, so
+//! the walk a player would have been shown is built from the conversation's start before the
+//! clock starts - `hub::walk_to_menu` - and the cut it drives is worked out inside the timing by
+//! `bridge::passed_since_hub`, the call a player's request goes through. A default row is the
+//! shipped algorithm, walk and hub cut included (de-r2xf.11).
 //!
 //! EVERY START IS A CONTESTANT, because the marking is competitive: an option that has
 //! nothing to hunt for is refused against the class being hunted, by the baseline it
@@ -191,26 +196,27 @@ fn nolimit() -> bool {
 /// Which menu marking a row is taken with. See [`marking`].
 #[derive(Clone, Copy)]
 enum Marking {
-    /// What the product marks with: the onward question first, and the exact marking by branch
-    /// and bound only where that marks nothing - see `bridge::mark_menu_as_shipped`.
+    /// What the product marks with, told where the player walked from - see `hub::walk_to_menu`
+    /// for the walk - so the onward question cuts what they passed since their current hub, and
+    /// the exact marking by branch and bound only answers where that marks nothing. See
+    /// `bridge::mark_menu_as_shipped`, which the plugin's requests reach too.
     HybridBranchAndBound,
     /// The exact marking by branch and bound on every group, with no onward question first -
-    /// see `menu::mark_menu`.
+    /// see `menu::mark_menu`. An opt-in comparison: it takes no cut and no walk.
     BranchAndBound,
-    /// The product's marking, told the player walked here from the start of the conversation -
-    /// see [`walked_from_start`] for what that walk is taken to be.
-    HybridSinceHub,
 }
 
 /// What `DEGCT_MARKING` says for each marking.
 const HYBRID_BRANCH_AND_BOUND: &str = "hybrid-bnb";
 const BRANCH_AND_BOUND: &str = "bnb";
-const HYBRID_SINCE_HUB: &str = "hybrid-hub";
 
 /// The marking `DEGCT_MARKING` names: `hybrid-bnb`, the default and what the product marks
-/// with; `bnb` for the exact marking on every group; or `hybrid-hub` for the product's marking
-/// with the since-hub cut (de-r2xf.4). Row files can be taken each way and compared on the
-/// same profile and the same allowance (de-0jsf.20).
+/// with, walk and all; or `bnb` for the exact marking on every group. Row files can be taken
+/// each way and compared on the same profile and the same allowance (de-0jsf.20).
+///
+/// THE DEFAULT IS THE SHIPPED ALGORITHM, walk included, because a measurement that is not the
+/// game's algorithm describes code no player runs (de-r2xf.11). There is no default without the
+/// walk to fall back to.
 ///
 /// # Panics
 ///
@@ -222,83 +228,10 @@ fn marking() -> Marking {
     {
         "" | HYBRID_BRANCH_AND_BOUND => Marking::HybridBranchAndBound,
         BRANCH_AND_BOUND => Marking::BranchAndBound,
-        HYBRID_SINCE_HUB => Marking::HybridSinceHub,
         other => panic!(
-            "DEGCT_MARKING={other:?}: expected {HYBRID_BRANCH_AND_BOUND}, {BRANCH_AND_BOUND} \
-             or {HYBRID_SINCE_HUB}"
+            "DEGCT_MARKING={other:?}: expected {HYBRID_BRANCH_AND_BOUND} or {BRANCH_AND_BOUND}"
         ),
     }
-}
-
-/// What a player is taken to have passed since their current hub, for the `hybrid-hub` marking.
-///
-/// A PROFILE MENU HAS NO WALK BEHIND IT: its options are the group's shallowest entries that
-/// reach the unread ones, not a menu anybody navigated to. So the walk is constructed - the
-/// shortest route along links from the conversation's start to an option, the option left out
-/// - and followed the way a request's walk is, through `hub::follow`.
-///
-/// THE NEAREST OPTION WITH A HUB CURRENT ON ARRIVAL. The profile's options are shallow and many
-/// sit in a conversation's introduction, before any hub, where the rule cuts nothing; of the
-/// options that are behind a hub, the nearest gives the shortest walk and so the smallest cut
-/// the rule would ever apply to this menu.
-///
-/// `None` where no option is reached with a hub current, and the row is then the shipped
-/// marking's; stderr says which.
-fn walked_from_start(
-    graph: &LookAheadGraph,
-    shape: &GroupShape,
-    conversation: i32,
-    options: &[DialogueNodeId],
-) -> Option<std::collections::HashSet<DialogueNodeId>> {
-    let start = DialogueNodeId::new(conversation, 0);
-    let mut came_from: HashMap<DialogueNodeId, DialogueNodeId> = HashMap::new();
-    let mut queue = std::collections::VecDeque::from([start]);
-    while let Some(id) = queue.pop_front() {
-        for &child in graph
-            .get(id)
-            .map(|node| node.links.as_slice())
-            .unwrap_or_default()
-        {
-            if child != start && !came_from.contains_key(&child) {
-                came_from.insert(child, id);
-                queue.push_back(child);
-            }
-        }
-    }
-
-    let walk_to = |option: DialogueNodeId| {
-        let mut walk = Vec::new();
-        let mut at = option;
-        while let Some(&before) = came_from.get(&at) {
-            walk.push(before);
-            at = before;
-        }
-        walk.reverse();
-        walk
-    };
-    let nearest = options
-        .iter()
-        .filter(|option| came_from.contains_key(option))
-        .map(|&option| (option, walk_to(option)))
-        .filter_map(|(option, walk)| {
-            let current =
-                lookahead_engine::symbolic::hub::follow(shape.order(), shape.hubs(graph), &walk);
-            current
-                .innermost()
-                .map(|hub| (option, walk.len(), hub, current.since()))
-        })
-        .min_by_key(|(option, length, _, _)| (*length, option.entry_id));
-
-    let Some((option, length, hub, since)) = nearest else {
-        eprintln!("conversation {conversation}: no option is reached with a hub current");
-        return None;
-    };
-    eprintln!(
-        "conversation {conversation}: hub {hub} current after {length} entries walked to \
-         {option}; {} cut",
-        since.len()
-    );
-    Some(since)
 }
 
 /// How many options the menu asks about.
@@ -498,6 +431,11 @@ where
     F: Fn(DialogueNodeId) -> Novelty + Sync,
 {
     isolated::on_its_own_thread(|| {
+        // WHERE A PLAYER WOULD HAVE WALKED FROM, built before the clock starts: it stands in for
+        // the walk the plugin records as the conversation plays, which costs the engine nothing.
+        // What the engine does with it - the group's hubs, the cut - is inside the timing below.
+        let walk = lookahead_engine::symbolic::hub::walk_to_menu(graph, conversation, starts);
+
         let began = Instant::now();
         let symbols = graph.symbols().clone();
         let world = SnapshotWorld::declaring(
@@ -571,13 +509,16 @@ where
         // it, so a default row measures what a player waits for; `DEGCT_MARKING=bnb` puts the
         // exact marking on every group instead. See [`marking`].
         let found = match marking() {
+            // INSIDE THE TIMED REGION, the group's hubs included: what the player passed since
+            // their current hub, from the walk, through the one call a request carrying a walk
+            // goes through in the bridge - so this row pays what a player's menu pays.
             Marking::HybridBranchAndBound => lookahead_engine::bridge::mark_menu_as_shipped(
                 marking_search,
                 novelty,
                 &contestants,
                 &marking_budget,
                 &shape,
-                &std::collections::HashSet::new(),
+                &lookahead_engine::bridge::passed_since_hub(graph, &shape, &walk, starts),
             ),
             Marking::BranchAndBound => menu::mark_menu(
                 marking_search,
@@ -585,16 +526,6 @@ where
                 &contestants,
                 &marking_budget,
                 &shape,
-            ),
-            // INSIDE THE TIMED REGION, finding the hub included: a request that says where the
-            // player has been pays for the hubs once, and this row is what that costs.
-            Marking::HybridSinceHub => lookahead_engine::bridge::mark_menu_as_shipped(
-                marking_search,
-                novelty,
-                &contestants,
-                &marking_budget,
-                &shape,
-                &walked_from_start(graph, &shape, conversation, starts).unwrap_or_default(),
             ),
         };
         counted.options = contestants.len();
