@@ -58,8 +58,6 @@ Usage:
 """
 
 import argparse
-import csv
-import json
 import sys
 import traceback
 
@@ -71,14 +69,15 @@ from measurement_common import (  # noqa: E402  (after the path is set)
     RUN_RECORD,
     algorithm_differences,
     hardware_differences,
+    median_ms as median,
+    read_combined as read,
+    read_run_record as run_record,
     setting_differences,
 )
 
 ###############################################################################
 # Core functions
 ###############################################################################
-
-COMBINED = "combined.tsv"
 
 # The flags that allow a comparison across what would otherwise refuse it.
 ALLOW_MIXED_SETTINGS = "--allow-mixed-settings"
@@ -101,20 +100,6 @@ class Refused(Exception):
     def __init__(self, messages):
         super().__init__("\n".join(messages))
         self.messages = messages
-
-
-def read(folder):
-    path = Path(folder) / COMBINED
-    with path.open(newline="") as handle:
-        return {row["conv"]: row for row in csv.DictReader(handle, delimiter="\t")}
-
-
-def run_record(folder):
-    """The folder's run record, or None where it has none."""
-    path = Path(folder) / RUN_RECORD
-    if not path.exists():
-        return None
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def allowed_or_refused(what, differences, flag, allowed):
@@ -163,18 +148,6 @@ def check_records(before_folder, after_folder, allow_settings, allow_hardware):
 
     if refusals:
         raise Refused(refusals)
-
-
-def median(row):
-    """The median menu_ms, or None where the group did not measure.
-
-    A group that did not measure carries the driver's word for why in place of a number -
-    NO-MENU, CRASHED, NOT-MEASURED - and is compared by that word rather than by a cost.
-    """
-    try:
-        return float(row["menu_ms_median"])
-    except ValueError:
-        return None
 
 
 def compare(before_folder, after_folder, allow_settings=False, allow_hardware=False):

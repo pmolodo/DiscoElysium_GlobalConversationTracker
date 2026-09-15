@@ -264,6 +264,41 @@ def run_folder(verb, out_variable):
 # What a run writes about itself into its folder, beside its rows.
 RUN_RECORD = "run.json"
 
+# What several runs of the menu measurement are combined into, beside their folders.
+COMBINED = "combined.tsv"
+SUMMARY = "summary.txt"
+
+
+def read_run_record(folder):
+    """A folder's run record, or None where it has none."""
+    path = Path(folder) / RUN_RECORD
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def read_combined(folder):
+    """A several-run folder's combined rows, by conversation, each keyed by the file's own header.
+
+    COLUMNS ARE MATCHED BY NAME, because the matrix's columns have moved, and reading them by position
+    across two runs compares unrelated numbers.
+    """
+    path = Path(folder) / COMBINED
+    with path.open(newline="") as handle:
+        return {row["conv"]: row for row in csv.DictReader(handle, delimiter=TAB)}
+
+
+def median_ms(row):
+    """A combined row's median menu_ms, or None where the group did not measure.
+
+    A group that did not measure carries the driver's word for why in place of a number - NO-MENU,
+    CRASHED, NOT-MEASURED - and is compared by that word rather than by a cost.
+    """
+    try:
+        return float(row["menu_ms_median"])
+    except ValueError:
+        return None
+
 
 def git(*arguments, environment=None):
     """One git command run against this repository, its output as text."""

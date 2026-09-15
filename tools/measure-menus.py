@@ -78,6 +78,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import measurement_common as common  # noqa: E402  (after the path is set)
 
 from measurement_common import (  # noqa: E402
+    COMBINED,
+    SUMMARY,
     TAB,
     Settling,
     build_measurement,
@@ -301,10 +303,6 @@ def measure(out, conversations, workers):
 
 # Where each of several runs is written, under the folder the runs share.
 RUN_FOLDER = "run-{}"
-
-# What several runs are combined into, beside their folders.
-COMBINED = "combined.tsv"
-SUMMARY = "summary.txt"
 
 # How many of the costliest groups the summary lists.
 HARDEST = 10

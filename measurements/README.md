@@ -134,6 +134,12 @@ What stands in for one is comparing two runs: two folders, each holding its own 
 the logs those rows came from, each stamped with the commit it measured. That is the honest
 shape of the comparison, and it makes the question "against what?" impossible to skip.
 
+`tools/menu-regressions.py` keeps that shape for regression checks. A person marks a clean,
+several-run menu measurement of the shipped algorithm as a baseline, which copies it under
+`logs/baselines/` - so it is still one machine's and still not committed - and a later run is
+checked against the newest baseline measured under the same settings, algorithm and hardware,
+and refused where there is none.
+
 ## A row that is not a measurement
 
 Several verdicts look alike from outside - the row has no numbers in it - and they mean
