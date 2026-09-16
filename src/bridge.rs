@@ -775,7 +775,12 @@ impl ILookAheadWorld for SnapshotWorld {
             [value] if value.kind() == GuardValueKind::Text => Some(value.text()),
             _ => None,
         };
-        if let Some(worn) = equipment::answer(name, argument, |slot| self.in_slot(slot)) {
+        if let Some(worn) = equipment::answer(
+            name,
+            argument,
+            |slot| self.in_slot(slot),
+            |group| self.items_in_group(group),
+        ) {
             return worn.map_or_else(GuardValue::unknown, GuardValue::from_boolean);
         }
 
@@ -1477,12 +1482,18 @@ fn collect(
                         data.insert(DataRequest::about(DataKind::HeldItemsInGroup, &group));
                     }
                     (item_group::CHECK_ITEM_GROUP, None) => {}
-                    (name, _) if !equipment::slots_read_by(name).is_empty() => {
+                    (name, subject)
+                        if !equipment::slots_read_by(name, subject.as_deref()).is_empty() =>
+                    {
+                        let argument = subject.as_deref();
                         data.extend(
-                            equipment::slots_read_by(name)
-                                .iter()
+                            equipment::slots_read_by(name, argument)
+                                .into_iter()
                                 .map(|slot| DataRequest::about(DataKind::EquippedInSlot, slot)),
                         );
+                        if let Some(group) = equipment::group_read_by(name, argument) {
+                            data.insert(DataRequest::about(DataKind::ItemsInGroup, group));
+                        }
                     }
                     _ => {
                         // Only literal arguments can be answered ahead of time. A computed
@@ -2908,6 +2919,24 @@ mod tests {
             found.queries.is_empty(),
             "answered from the variables, not asked as a call: {:?}",
             found.queries
+        );
+    }
+
+    /// A held-group question reads its hand and the group's members, and is never run.
+    #[test]
+    fn a_held_group_question_reads_its_hand_and_the_group() {
+        let found = asked(r#"CheckHeldRightGroup("smokes")"#);
+        assert!(
+            found.queries.is_empty(),
+            "asked as a call: {:?}",
+            found.queries
+        );
+        assert_eq!(
+            found.data,
+            vec![
+                DataRequest::about(DataKind::EquippedInSlot, "HELDRIGHT"),
+                DataRequest::about(DataKind::ItemsInGroup, "smokes"),
+            ]
         );
     }
 
