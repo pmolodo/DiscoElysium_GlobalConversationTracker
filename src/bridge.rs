@@ -1404,15 +1404,15 @@ fn collect(
                     // ENUMERATES rather than from a call per thought. Asked as calls these
                     // were three Lua runs per subject; asked as data they are at most two
                     // reads for the whole group, and the same two the save already records.
-                    ("IsTHCCooking", _) => {
-                        data.insert(DataRequest::set(DataKind::ThoughtsCooking));
-                    }
-                    ("IsTHCFixed", _) => {
-                        data.insert(DataRequest::set(DataKind::ThoughtsFixed));
-                    }
-                    ("IsTHCCookingOrFixed", _) => {
-                        data.insert(DataRequest::set(DataKind::ThoughtsCooking));
-                        data.insert(DataRequest::set(DataKind::ThoughtsFixed));
+                    //
+                    // THE SUBJECT IS ASKED ABOUT TOO, because the plugin cannot walk the
+                    // cabinet whole and builds each set over the group's named thoughts. A
+                    // thought left off that list is never looked at, and reads as not in
+                    // the set - which closes a route the game opens.
+                    (name, subject) if thought_state_kinds(name).is_some() => {
+                        let kinds = thought_state_kinds(name).expect("just matched");
+                        data.extend(kinds.iter().copied().map(DataRequest::set));
+                        thoughts.extend(subject);
                     }
                     // WHAT IS WORN, read slot by slot rather than asked as a call per item:
                     // the answer is the equipment table itself, and the same few reads serve
@@ -2747,6 +2747,31 @@ mod tests {
         assert!(
             found.queries.is_empty(),
             "these must not also be asked as calls"
+        );
+    }
+
+    /// A thought asked about only by a cabinet-state question is still named to the plugin,
+    /// which builds the cooking and fixed sets over the thoughts it is given.
+    #[test]
+    fn a_cabinet_state_question_names_its_thought() {
+        let found = asked(
+            r#"IsTHCFixed("aces_high") or IsTHCCooking("jamais_vu") or IsTHCCookingOrFixed("honour")"#,
+        );
+
+        assert_eq!(
+            found.thoughts,
+            vec![
+                "aces_high".to_string(),
+                "honour".to_string(),
+                "jamais_vu".to_string()
+            ]
+        );
+        assert_eq!(
+            found.data,
+            vec![
+                DataRequest::set(DataKind::ThoughtsCooking),
+                DataRequest::set(DataKind::ThoughtsFixed)
+            ]
         );
     }
 
