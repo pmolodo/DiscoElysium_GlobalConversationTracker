@@ -1335,6 +1335,33 @@ mod tests {
         agree(shape(), &failing(), 3, false);
     }
 
+    /// A failing Volition check is carried both ways only where the group's healing can make up
+    /// its shortfall - the same fixture as the reference walk's.
+    #[test]
+    fn healing_unsettles_a_passive_check_only_within_its_margin() {
+        let shape = || {
+            vec![
+                Entry::new(0).links(&[1]),
+                Entry::new(1).script("HealVolition(1)").links(&[2]),
+                Entry::new(2)
+                    .kind(DialogueCheckKind::Passive)
+                    .script(r#"SetVariableValue("fired", true)"#)
+                    .links(&[3]),
+                Entry::new(3).guard(r#"Variable["fired"]"#),
+            ]
+        };
+        let short_by = |shortfall: i32| {
+            TestWorld::new()
+                .set_variable("fired", GuardValue::from_boolean(false))
+                .set_damage("VOLITION", -3.0)
+                .set_check_result(node(2), Ternary::False)
+                .set_check_margin(node(2), "VOLITION", -shortfall)
+        };
+
+        agree(shape(), &short_by(1), 3, true);
+        agree(shape(), &short_by(2), 3, false);
+    }
+
     /// A check's result pays out only while its thought is fixed - the same fixtures as the
     /// reference walk's.
     #[test]

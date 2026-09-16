@@ -360,7 +360,7 @@ impl DataLayout {
     /// A strongly connected component of more than one entry is a cycle by definition, and
     /// an entry that links to itself is a cycle of one - which Tarjan puts in a component by
     /// itself, so it has to be caught separately rather than by the size.
-    fn entries_on_a_cycle(
+    pub(crate) fn entries_on_a_cycle(
         graph: &LookAheadGraph,
         order: &super::order::IterationOrder,
     ) -> HashSet<DialogueNodeId> {

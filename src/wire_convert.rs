@@ -161,6 +161,17 @@ pub fn read_snapshot(snapshot: Option<wire::WorldSnapshot>) -> Result<WorldSnaps
         // moves these onto their requests and refuses a list of the wrong length.
         data: HashMap::new(),
         data_values: read_data(snapshot.data_values),
+        check_margins: snapshot
+            .check_margins
+            .into_iter()
+            .filter_map(|margin| {
+                Some(crate::bridge::CheckMargin {
+                    node: margin.node?.into(),
+                    skill: margin.skill,
+                    margin: margin.margin,
+                })
+            })
+            .collect(),
     })
 }
 

@@ -187,6 +187,16 @@ namespace GlobalConversationTracker.Engine
             written.Items.AddRange(world.Items);
             written.Thoughts.AddRange(world.Thoughts);
             written.FailedWhiteChecks.AddRange(world.FailedWhiteChecks);
+            foreach (CheckMargin margin in world.CheckMargins)
+            {
+                written.CheckMargins.Add(new Wire.CheckMargin
+                {
+                    Node = Write(margin.Node),
+                    Skill = margin.Skill,
+                    Margin = margin.Margin,
+                });
+            }
+
             return written;
         }
 

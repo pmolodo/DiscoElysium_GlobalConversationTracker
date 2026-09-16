@@ -132,6 +132,13 @@ pub trait ILookAheadWorld: Send + Sync {
 
     fn query(&self, name: &str, arguments: &[GuardValue]) -> GuardValue;
     fn check_passes(&self, node: DialogueNodeId) -> Ternary;
+
+    /// A passive check's skill and margin - its skill value plus the check's bonus, minus its
+    /// threshold after thoughts - where damage can move it, or `None`. See
+    /// [`crate::core::skill_movers`].
+    fn check_margin(&self, _node: DialogueNodeId) -> Option<(String, i32)> {
+        None
+    }
     fn is_seen(&self, node: DialogueNodeId) -> bool;
 
     /// Whether a red check's roll may succeed at this entry.

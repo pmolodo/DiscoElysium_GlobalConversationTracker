@@ -76,6 +76,12 @@ namespace GlobalConversationTracker.LookAhead.Tests
             snapshot.QueryValues.Add(Text("raining"));
             snapshot.Items.Add("FALN_sneakers");
             snapshot.Thoughts.Add("the_precarious_world");
+            snapshot.CheckMargins.Add(new CheckMargin
+            {
+                Node = Node(29, 221),
+                Skill = "VOLITION",
+                Margin = -2,
+            });
             return snapshot;
         }
 

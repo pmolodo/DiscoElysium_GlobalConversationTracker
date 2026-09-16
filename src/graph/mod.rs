@@ -21,6 +21,9 @@ pub struct Fitting {
     /// Whether the group can take off an item the world has on, which moves skill values - see
     /// [`crate::core::skill_movers`]. A slot the world could not read counts as holding one.
     pub lost_worn: bool,
+    /// The passive checks whose margin the group's damage or healing can cross - see
+    /// [`crate::core::skill_movers`].
+    pub damage_unsettled: HashSet<DialogueNodeId>,
 }
 
 impl Fitting {
@@ -35,14 +38,16 @@ impl Fitting {
                     Some(item) => lost.contains(item.as_str()),
                     None => true,
                 });
+        let fixed: BTreeSet<String> = graph
+            .thoughts_deciding_actions()
+            .into_iter()
+            .filter(|thought| crate::core::thought_effects::is_fixed(world, thought))
+            .map(str::to_string)
+            .collect();
         Self {
             hardcore: graph.prices_by_mode() && crate::core::game_mode::is_hardcore(world),
-            fixed: graph
-                .thoughts_deciding_actions()
-                .into_iter()
-                .filter(|thought| crate::core::thought_effects::is_fixed(world, thought))
-                .map(str::to_string)
-                .collect(),
+            damage_unsettled: graph.checks_damage_can_flip(world, &fixed),
+            fixed,
             lost_worn,
         }
     }
@@ -244,11 +249,77 @@ impl LookAheadGraph {
             .collect()
     }
 
+    /// The skills the group deals damage or healing to, where it also holds a passive check that
+    /// could flip. Empty otherwise.
+    pub fn skills_damage_moves_near_passive_checks(&self) -> BTreeSet<&str> {
+        if !self
+            .nodes()
+            .any(|node| node.kind == DialogueCheckKind::Passive)
+        {
+            return BTreeSet::new();
+        }
+        self.nodes()
+            .flat_map(|node| &node.skill_moves.damage)
+            .map(|damage| damage.skill.as_str())
+            .collect()
+    }
+
+    /// Whether the group both deals damage or healing and holds a passive check it could flip.
+    fn damages_near_passive_checks(&self) -> bool {
+        !self.skills_damage_moves_near_passive_checks().is_empty()
+    }
+
+    /// The passive checks whose margin in `world` the group's damage or healing can cross, with
+    /// the thoughts in `fixed` held fixed - see [`crate::core::skill_movers`].
+    pub fn checks_damage_can_flip(
+        &self,
+        world: &dyn crate::world::ILookAheadWorld,
+        fixed: &BTreeSet<String>,
+    ) -> HashSet<DialogueNodeId> {
+        if !self.damages_near_passive_checks() {
+            return HashSet::new();
+        }
+        let order = crate::symbolic::order::IterationOrder::of(self);
+        let cyclic = crate::symbolic::data_layout::DataLayout::entries_on_a_cycle(self, &order);
+        let mut reach: HashMap<&str, crate::core::skill_movers::DamageReach> = HashMap::new();
+        for node in self.nodes() {
+            let fires = |damage: &&crate::core::skill_movers::DamageMove| {
+                damage
+                    .fixed_thought
+                    .as_ref()
+                    .is_none_or(|thought| fixed.contains(thought))
+            };
+            for damage in node.skill_moves.damage.iter().filter(fires) {
+                let repeatable = !damage.once && cyclic.contains(&node.id);
+                reach
+                    .entry(damage.skill.as_str())
+                    .or_default()
+                    .add(damage, repeatable);
+            }
+        }
+        self.nodes()
+            .filter(|node| node.kind == DialogueCheckKind::Passive)
+            .filter(|node| {
+                world.check_margin(node.id).is_some_and(|(skill, margin)| {
+                    // The damage a skill carries is a negative damage value.
+                    let damaged = world
+                        .initial_damage(&skill)
+                        .map(|value| (-value).max(0.0) as i64);
+                    reach
+                        .get(skill.as_str())
+                        .is_some_and(|reach| reach.can_flip(margin, damaged))
+                })
+            })
+            .map(|node| node.id)
+            .collect()
+    }
+
     /// Whether anything in the graph depends on a [`Fitting`].
     pub fn needs_fitting(&self) -> bool {
         self.prices_by_mode()
             || !self.thoughts_deciding_actions().is_empty()
             || !self.items_lost_near_passive_checks().is_empty()
+            || self.damages_near_passive_checks()
     }
 
     /// Fits the graph to a world: every price to the game mode - see [`crate::core::price`] -
@@ -262,7 +333,8 @@ impl LookAheadGraph {
     pub fn fit(&mut self, fitting: &Fitting) {
         let unsettled = fitting.lost_worn || self.nodes().any(|node| node.skill_moves.puts_on);
         for node in self.nodes.values_mut() {
-            node.check_settled = node.kind != DialogueCheckKind::Passive || !unsettled;
+            node.check_settled = node.kind != DialogueCheckKind::Passive
+                || !(unsettled || fitting.damage_unsettled.contains(&node.id));
             node.cost =
                 crate::core::price::price(node.click_cost, node.price_scale, fitting.hardcore);
             for action in node.actions.iter_mut().chain(&mut node.failure_actions) {

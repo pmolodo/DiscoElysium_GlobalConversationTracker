@@ -100,6 +100,14 @@ fn full_snapshot() -> wire::WorldSnapshot {
                 read: true,
             },
         ],
+        check_margins: vec![wire::CheckMargin {
+            node: Some(wire::NodeRef {
+                conversation: 29,
+                entry: 221,
+            }),
+            skill: "VOLITION".to_string(),
+            margin: -2,
+        }],
     }
 }
 

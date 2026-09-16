@@ -80,6 +80,7 @@ fn request_in(index: &Index, save: &str) -> LookAheadRequest {
             variables: fixtures::variables_sent(save, &asked),
             checks_pass: checks.pass,
             checks_fail: checks.fail,
+            check_margins: checks.margins,
             red_checks_fail: fixtures::passive_thoughts_in_save(save).red_checks_fail,
             ..Default::default()
         },

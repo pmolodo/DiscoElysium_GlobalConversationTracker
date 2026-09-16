@@ -23,6 +23,8 @@ pub struct TestWorld {
     /// What each equipment slot holds, by `EquipmentSlotType` name.
     pub equipment: HashMap<String, String>,
     pub check_results: HashMap<DialogueNodeId, Ternary>,
+    /// Each passive check's skill and margin, where damage can move it.
+    pub check_margins: HashMap<DialogueNodeId, (String, i32)>,
     pub seen: HashMap<DialogueNodeId, bool>,
     /// Answers to named world queries, keyed by function name.
     ///
@@ -102,6 +104,12 @@ impl TestWorld {
         self
     }
 
+    /// A passive check's skill and margin - see [`ILookAheadWorld::check_margin`].
+    pub fn set_check_margin(mut self, node: DialogueNodeId, skill: &str, margin: i32) -> Self {
+        self.check_margins.insert(node, (skill.to_string(), margin));
+        self
+    }
+
     pub fn set_seen(mut self, node: DialogueNodeId, seen: bool) -> Self {
         self.seen.insert(node, seen);
         self
@@ -170,5 +178,8 @@ impl ILookAheadWorld for TestWorld {
     }
     fn red_check_may_pass(&self, _node: DialogueNodeId) -> bool {
         !self.red_checks_fail
+    }
+    fn check_margin(&self, node: DialogueNodeId) -> Option<(String, i32)> {
+        self.check_margins.get(&node).cloned()
     }
 }

@@ -368,6 +368,20 @@ pub struct WorldSnapshot {
     /// outright by [`Self::resolve`].
     #[serde(default)]
     pub data_values: Vec<DataAnswer>,
+    /// How far each passive check on a skill damage moves is from flipping - see
+    /// [`CheckMargin`] and [`crate::core::skill_movers`].
+    #[serde(default)]
+    pub check_margins: Vec<CheckMargin>,
+}
+
+/// A passive check's margin, as it crosses: the skill value plus the check's bonus, minus its
+/// threshold after thoughts. Zero or more clears the check.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CheckMargin {
+    pub node: NodeRef,
+    /// The skill the check tests, by `SkillType` name.
+    pub skill: String,
+    pub margin: i32,
 }
 
 impl WorldSnapshot {
@@ -541,6 +555,10 @@ impl ILookAheadWorld for Unlocked<'_> {
 
     fn check_passes(&self, node: DialogueNodeId) -> Ternary {
         self.inner.check_passes(node)
+    }
+
+    fn check_margin(&self, node: DialogueNodeId) -> Option<(String, i32)> {
+        self.inner.check_margin(node)
     }
 
     fn is_seen(&self, node: DialogueNodeId) -> bool {
@@ -848,6 +866,15 @@ impl ILookAheadWorld for SnapshotWorld {
 
     fn red_check_may_pass(&self, _node: DialogueNodeId) -> bool {
         !self.snapshot.red_checks_fail
+    }
+
+    fn check_margin(&self, node: DialogueNodeId) -> Option<(String, i32)> {
+        let node = NodeRef::from(node);
+        self.snapshot
+            .check_margins
+            .iter()
+            .find(|margin| margin.node == node)
+            .map(|margin| (margin.skill.clone(), margin.margin))
     }
 }
 
@@ -1433,6 +1460,13 @@ pub fn questions_of(graph: &LookAheadGraph, group: Vec<i32>) -> Questions {
                 .map(|slot| DataRequest::about(DataKind::EquippedInSlot, slot)),
         );
     }
+    // THE DAMAGE A SKILL ALREADY CARRIES, which bounds what healing can do to a passive check.
+    data.extend(
+        graph
+            .skills_damage_moves_near_passive_checks()
+            .into_iter()
+            .map(|skill| DataRequest::about(DataKind::SkillDamage, skill)),
+    );
     let deciding = graph.thoughts_deciding_actions();
     if !deciding.is_empty() {
         data.insert(DataRequest::set(DataKind::ThoughtsFixed));

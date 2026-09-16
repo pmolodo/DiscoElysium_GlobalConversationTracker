@@ -33,6 +33,14 @@ namespace GlobalConversationTracker.Engine
             return skillValue + SkillBonus >= threshold;
         }
 
+        /// <summary>How far the check is from flipping: zero or more clears it.</summary>
+        /// <param name="skillValue">The character's value in the relevant skill.</param>
+        /// <param name="threshold">The adjusted difficulty threshold.</param>
+        public static int Margin(int skillValue, int threshold)
+        {
+            return skillValue + SkillBonus - threshold;
+        }
+
         /// <summary>Whether the entry fires.</summary>
         /// <remarks>
         /// An antipassive entry is the mirror of an ordinary one: it is the line that

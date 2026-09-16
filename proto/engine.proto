@@ -234,6 +234,20 @@ message WorldSnapshot {
   // a group and the plugin already holds them, so sending them back would be sending back
   // what the engine itself said. A list of the wrong length is refused outright.
   repeated DataAnswer data_values = 17;
+
+  // How far each passive check on a skill damage moves - Volition, Endurance - is from
+  // flipping, for the checks the plugin evaluated. An entry with no margin is one no damage
+  // can move: another skill, or a check a thought forces through.
+  repeated CheckMargin check_margins = 18;
+}
+
+// A passive check's margin: the skill value plus the check's bonus, minus its threshold after
+// thoughts. Zero or more clears the check; damage lowers the skill value and healing raises it.
+message CheckMargin {
+  NodeRef node = 1;
+  // The skill the check tests, by SkillType name.
+  string skill = 2;
+  int32 margin = 3;
 }
 
 // What the plugin asks for one response menu.

@@ -113,5 +113,12 @@ namespace GlobalConversationTracker.Engine
         /// </remarks>
         public bool RedChecksFail { get; set; }
 
+        /// <summary>Each Volition or Endurance passive check's margin.</summary>
+        /// <remarks>
+        /// Damage and healing in dialogue move those skills, so a check the plugin evaluated can
+        /// flip on the way; the margin says how far it is from doing so. See
+        /// <see cref="CheckMargin"/>.
+        /// </remarks>
+        public IList<CheckMargin> CheckMargins { get; } = new List<CheckMargin>();
     }
 }

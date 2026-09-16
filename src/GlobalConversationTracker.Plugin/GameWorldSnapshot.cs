@@ -451,6 +451,11 @@ namespace GlobalConversationTracker
                         ? null
                         : database.GetDialogueEntry(node.Conversation, node.Entry);
                     outcome = PassiveCheckRule.Evaluate(entry);
+                    CheckMargin? margin = PassiveCheckRule.MarginOf(entry, node);
+                    if (margin != null)
+                    {
+                        world.CheckMargins.Add(margin);
+                    }
                 }
                 catch (System.Exception)
                 {

@@ -47,33 +47,12 @@ namespace GlobalConversationTracker
         /// </returns>
         internal static Ternary Evaluate(DialogueEntry? entry)
         {
-            if (entry == null)
+            if (!TryRead(entry, out _, out int skillValue, out int threshold) || entry == null)
             {
                 return Ternary.Unknown;
             }
-
-            SkillType skill = ArticyBridge.ActorIdToSkillType(entry.ActorID);
-            if (skill == SkillType.NONE)
-            {
-                // The game logs an error here. We are speculating about a node the player
-                // may never reach, so an Unknown is the honest answer and a quiet one.
-                return Ternary.Unknown;
-            }
-
-            CharacterSheet? character = PlayerSheet();
-            if (character == null)
-            {
-                return Ternary.Unknown;
-            }
-
-            int threshold = ThoughtAlterant.ModifyPassiveTargetValue(
-                ArticyBridge.DifficultyIdToThreshold(
-                    Field.LookupInt(entry.fields, DifficultyPassField)),
-                entry,
-                skill);
 
             bool antipassive = Field.FieldExists(entry.fields, AntipassiveField);
-            int skillValue = character.GetSkillValue(skill);
 
             // A thought can force a passive through regardless of the numbers, so it is
             // applied to the comparison's result rather than folded into the threshold.
@@ -83,6 +62,86 @@ namespace GlobalConversationTracker
             }
 
             return PassiveCheck.Outcome(skillValue, threshold, antipassive);
+        }
+
+        /// <summary>
+        /// This entry's margin, where it is a check on a skill damage moves and no thought
+        /// forces it through; otherwise null. See <see cref="CheckMargin"/>.
+        /// </summary>
+        /// <param name="entry">The entry carrying the check.</param>
+        /// <param name="node">The entry's id, as the margin names it.</param>
+        internal static CheckMargin? MarginOf(DialogueEntry? entry, NodeRef node)
+        {
+            if (!TryRead(entry, out SkillType skill, out int skillValue, out int threshold)
+                || entry == null
+                || ThoughtAlterant.PassiveSuccess(false, entry))
+            {
+                return null;
+            }
+
+            string? damaged = DamagedSkillName(skill);
+            return damaged == null
+                ? null
+                : new CheckMargin(node, damaged, PassiveCheck.Margin(skillValue, threshold));
+        }
+
+        /// <summary>
+        /// The skill a check tests, the character's value in it, and its threshold after
+        /// thoughts - or false where any of them cannot be resolved.
+        /// </summary>
+        private static bool TryRead(
+            DialogueEntry? entry,
+            out SkillType skill,
+            out int skillValue,
+            out int threshold)
+        {
+            skill = SkillType.NONE;
+            skillValue = 0;
+            threshold = 0;
+            if (entry == null)
+            {
+                return false;
+            }
+
+            skill = ArticyBridge.ActorIdToSkillType(entry.ActorID);
+            if (skill == SkillType.NONE)
+            {
+                // The game logs an error here. We are speculating about a node the player
+                // may never reach, so an Unknown is the honest answer and a quiet one.
+                return false;
+            }
+
+            CharacterSheet? character = PlayerSheet();
+            if (character == null)
+            {
+                return false;
+            }
+
+            threshold = ThoughtAlterant.ModifyPassiveTargetValue(
+                ArticyBridge.DifficultyIdToThreshold(
+                    Field.LookupInt(entry.fields, DifficultyPassField)),
+                entry,
+                skill);
+            skillValue = character.GetSkillValue(skill);
+            return true;
+        }
+
+        /// <summary>
+        /// The name the engine's damage slots use for a skill damage moves, or null for any
+        /// other skill. <c>CharacterSheet.GetSkill</c> answers Convalescence with Endurance.
+        /// </summary>
+        private static string? DamagedSkillName(SkillType skill)
+        {
+            switch (skill)
+            {
+                case SkillType.VOLITION:
+                    return "VOLITION";
+                case SkillType.ENDURANCE:
+                case SkillType.CONVALESCENCE:
+                    return "ENDURANCE";
+                default:
+                    return null;
+            }
         }
 
         /// <summary>

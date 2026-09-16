@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use lookahead_engine::bridge::{
-    DataAnswer, DataKind, DataRequest, NodeRef, NodeSet, Questions, WireValue,
+    CheckMargin, DataAnswer, DataKind, DataRequest, NodeRef, NodeSet, Questions, WireValue,
 };
 use lookahead_engine::core::passive_check;
 use lookahead_engine::core::types::Ternary;
@@ -566,6 +566,13 @@ pub fn checks_in_save(save: &str, conversations: &[i32]) -> Option<Checks> {
                 !antipassive
             } else {
                 let moved = threshold + thoughts.threshold_shift(skill);
+                if DAMAGEABLE_SKILLS.contains(&skill) {
+                    found.margins.push(CheckMargin {
+                        node,
+                        skill: skill.to_string(),
+                        margin: value + passive_check::SKILL_BONUS - moved,
+                    });
+                }
                 passive_check::outcome(value, moved, antipassive) == Ternary::True
             };
             if fires {
@@ -737,7 +744,13 @@ pub struct Checks {
     pub pass: NodeSet,
     /// Entries whose check does not, so the line is one they never will be.
     pub fail: NodeSet,
+    /// Each Volition or Endurance check's margin, as the plugin sends it - see
+    /// `core::skill_movers`.
+    pub margins: Vec<CheckMargin>,
 }
+
+/// The skills damage moves, whose checks carry a margin.
+const DAMAGEABLE_SKILLS: [&str; 2] = ["VOLITION", "ENDURANCE"];
 
 /// The field whose presence makes an entry a passive check.
 const PASSIVE_FIELD: &str = "DifficultyPass";

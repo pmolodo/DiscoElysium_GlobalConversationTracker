@@ -531,6 +531,33 @@ mod tests {
         assert!(!walked(shape(), &failing()).reached(node(3)));
     }
 
+    /// A failing Volition check one short is carried both ways after a heal of one, and a check
+    /// two short is not.
+    #[test]
+    fn healing_unsettles_a_passive_check_only_within_its_margin() {
+        let shape = || {
+            vec![
+                Entry::new(0).links(&[1]),
+                Entry::new(1).script("HealVolition(1)").links(&[2]),
+                Entry::new(2)
+                    .kind(DialogueCheckKind::Passive)
+                    .script(r#"SetVariableValue("fired", true)"#)
+                    .links(&[3]),
+                Entry::new(3).guard(r#"Variable["fired"]"#),
+            ]
+        };
+        let short_by = |shortfall: i32| {
+            TestWorld::new()
+                .set_variable("fired", GuardValue::from_boolean(false))
+                .set_damage("VOLITION", -3.0)
+                .set_check_result(node(2), Ternary::False)
+                .set_check_margin(node(2), "VOLITION", -shortfall)
+        };
+
+        assert!(walked(shape(), &short_by(1)).reached(node(3)));
+        assert!(!walked(shape(), &short_by(2)).reached(node(3)));
+    }
+
     /// A failed Logic check pays out with Return on Investment fixed, and an Encyclopedia passive
     /// pays out on success with Trant Heidelstam fixed - each only while its thought is fixed.
     #[test]

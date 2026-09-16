@@ -125,6 +125,7 @@ fn menu_markers(consult_the_sheet: bool) -> Option<Vec<(i32, String)>> {
             variables: fixtures::variables_sent(SAVE, &questions_of(&graph, group.clone())),
             checks_pass: checks.pass,
             checks_fail: checks.fail,
+            check_margins: checks.margins,
             ..Default::default()
         },
         ..Default::default()
@@ -224,6 +225,7 @@ fn best_reachable(start: (i32, i32), candidate: (i32, i32)) -> Option<i32> {
             variables: fixtures::variables_sent(SAVE, &questions_of(&graph, group.clone())),
             checks_pass: checks.pass,
             checks_fail: checks.fail,
+            check_margins: checks.margins,
             ..Default::default()
         },
         ..Default::default()
