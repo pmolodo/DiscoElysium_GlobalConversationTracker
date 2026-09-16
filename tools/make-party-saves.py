@@ -27,24 +27,36 @@ settles it.
 These saves settle it by measurement instead. Load each in Final Cut, evaluate
 `IsKimHere()`, and the truth table says which flags it reads.
 
-## EVERY COMBINATION, INCLUDING THE ONES THAT LOOK INCOHERENT
+## TWENTY-FOUR COMBINATIONS, BECAUSE THE OTHER EIGHT WERE MEASURED AND ARE INVALID
 
-All five flags vary independently, so thirty-two saves. Nothing is excluded, and that is
-deliberate.
-
-The tempting exclusion is `isKimInParty` false with `isKimAbandoned` false, because
-pre-final-cut `PartyPersister.Deserialize` reads:
+All five flags vary independently, which would be thirty-two saves. Eight are skipped: the
+ones with `isKimInParty` false AND `isKimAbandoned` false. `PartyPersister.Deserialize`
+reads:
 
     if (partyState.isKimInParty)        PartyManager.ReturnKitsuragiToParty();
     else if (partyState.isKimAbandoned) PartyManager.RemoveKitsuragiFromParty();
     else                                Debug.LogError("Kim should either be in party or abandoned");
 
-- with both false it calls neither, so the pair looks like a state the game refuses. BUT
-FINAL CUT'S `Deserialize` IS ITSELF A STUB - an empty body in the export - so that reasoning
-comes from the one build we have already established cannot speak for the other. Excluding
-rows on it would bake a pre-final-cut assumption into the instrument built to escape
-pre-final-cut assumptions, which is the exact mistake that produced the finding this exists
-to settle.
+    RestoreReturnState(partyState.isKimAwayUpToMorning);
+    Kim.IsLeftOutside = partyState.isKimLeftOutside;   // unconditional
+
+With both false it takes the `else`, which only logs - so party membership is never assigned
+and keeps whatever the previously loaded save left, while `IsLeftOutside` is assigned anyway.
+A PARTIAL load, and the game itself calls it invalid: that `LogError` is the game saying so.
+
+THIS WAS NOT ASSUMED, IT WAS MEASURED, and the distinction is the whole history of this file.
+The first version of this script derived `isKimAbandoned` and excluded those rows on exactly
+the reasoning above - which came from the pre-final-cut body, the one source already
+established as unable to speak for Final Cut. That exclusion was removed, all thirty-two were
+run, and the shipped build then showed the eight failing in two distinct ways that one
+mechanism explains, with no other save failing. Only now that it is a finding rather than a
+guess is it encoded here.
+
+WHY SKIPPING THEM MATTERS beyond tidiness: loading an invalid save leaves the game in a state
+nothing intended, and the run that measured this had those loads INTERLEAVED with the good
+ones. Every good row was control-verified, so the table stands - but a run that never enters
+the invalid state cannot be contaminated by it at all. Pass `--include-invalid` to write all
+thirty-two, which is what re-measuring the constraint would need.
 
 ## WHICH MAKES LOAD ORDER A VARIABLE
 
@@ -197,13 +209,27 @@ def write_json(path, document):
         handle.write("\n")
 
 
-def combinations():
+def valid(flags):
+    """Whether the game's own loader has a branch for this combination.
+
+    MEASURED, not assumed - see the module docstring. Deserialize restores party membership
+    only when isKimInParty is true or isKimAbandoned is true; with both false it logs
+    "Kim should either be in party or abandoned" and assigns neither, so the save loads only
+    partly. Confirmed on the shipped build by de-h0f1.33, where all eight such saves failed
+    their checks and no other save did.
+    """
+    return flags["isKimInParty"] or flags["isKimAbandoned"]
+
+
+def combinations(include_invalid=False):
     """Every combination of the varying flags, as dictionaries."""
     for values in itertools.product([False, True], repeat=len(VARYING)):
-        yield dict(zip(VARYING, values))
+        flags = dict(zip(VARYING, values))
+        if include_invalid or valid(flags):
+            yield flags
 
 
-def make(repo, out_dir):
+def make(repo, out_dir, include_invalid=False):
     repo = pathlib.Path(repo).resolve()
     template = repo / "testing" / f"{TEMPLATE}{EXPANDED_SUFFIX}"
     if not template.is_dir():
@@ -214,9 +240,19 @@ def make(repo, out_dir):
         out = repo / out
     out.mkdir(parents=True, exist_ok=True)
 
+    # A STALE SAVE IS A TRAP, not clutter. A run loads every expanded save it finds in the
+    # folder, so one left behind by an earlier generation would be loaded as though it had
+    # been asked for - and the whole point of skipping the invalid pair is that the game
+    # never enters it. So the folder is made to match exactly what was asked for.
+    wanted = {name_for(flags) for flags in combinations(include_invalid)}
+    for existing in sorted(out.glob(f"{NAME_PREFIX}-*{EXPANDED_SUFFIX}")):
+        if existing.is_dir() and existing.name[: -len(EXPANDED_SUFFIX)] not in wanted:
+            shutil.rmtree(existing)
+            print(f"  removed stale {existing.name}")
+
     written = []
     first_control = {}
-    for flags in combinations():
+    for flags in combinations(include_invalid):
         name = name_for(flags)
         save = out / f"{name}{EXPANDED_SUFFIX}"
 
@@ -275,6 +311,14 @@ def get_parser():
         default=".build/party-saves",
         help="where the saves go, relative to the repository root unless absolute",
     )
+    parser.add_argument(
+        "--include-invalid",
+        action="store_true",
+        help=(
+            "also write the eight combinations the game's loader has no branch for, "
+            "which load only partly and leave it in a state nothing intended"
+        ),
+    )
     return parser
 
 
@@ -283,7 +327,7 @@ def main(argv=None):
         argv = sys.argv[1:]
     args = get_parser().parse_args(argv)
     try:
-        make(args.repo, args.out_dir)
+        make(args.repo, args.out_dir, args.include_invalid)
     except Exception:  # pylint: disable=broad-except
         traceback.print_exc()
         return 1
