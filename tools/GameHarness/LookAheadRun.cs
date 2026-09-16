@@ -1045,7 +1045,7 @@ namespace GlobalConversationTracker.Harness
                 // completed one is tied to its conversation and its balance.
                 try
                 {
-                    return scenario.Inputs is IReadOnlyList<ScenarioInput> inputs
+                    return scenario.Stops[0].Inputs is IReadOnlyList<ScenarioInput> inputs
                         ? WalkInputs(scenario, inputs, saveGames, watcher, perAttempt)
                         : AdvanceToMenu(scenario, saveGames, watcher, perAttempt, what);
                 }
@@ -1170,12 +1170,23 @@ namespace GlobalConversationTracker.Harness
         /// reports, so it is still unread when the next command goes out; the advance or choice
         /// that follows is waited for with a consuming wait, which passes over it before the
         /// next settle is asked for.</para>
+        ///
+        /// <para>A MENU IN HAND IS PASSED IN RATHER THAN WAITED FOR, and it has to be: the
+        /// watcher only reports events that arrive after the last one it gave out, and a menu a
+        /// previous stop already consumed is not composed again because something else wants to
+        /// look at it. Waiting for one hangs the run against a menu that is on screen the whole
+        /// time - measured, on the first scenario to name two stops.</para>
         /// </remarks>
         /// <param name="scenario">The scenario being walked.</param>
         /// <param name="inputs">What to press.</param>
         /// <param name="saveGames">The profile's SaveGames folder, for the probe.</param>
         /// <param name="watcher">The probe's events.</param>
         /// <param name="timeout">How long to wait for each step.</param>
+        /// <param name="inHand">
+        /// The menu already on screen, where the walk begins at one: a later stop carries on
+        /// from the menu the stop before it was checked at. Null where the walk has to wait for
+        /// the next menu the game composes.
+        /// </param>
         /// <returns>The completed menu the inputs end at.</returns>
         /// <exception cref="TimeoutException">Nothing was reached before the first input.</exception>
         /// <exception cref="InvalidOperationException">An input does not fit the screen.</exception>
@@ -1184,13 +1195,28 @@ namespace GlobalConversationTracker.Harness
             IReadOnlyList<ScenarioInput> inputs,
             string saveGames,
             ProbeWatcher watcher,
-            TimeSpan timeout)
+            TimeSpan timeout,
+            ProbeEvent? inHand = null)
         {
             var clock = Stopwatch.StartNew();
             int next = 0;
+            ProbeEvent? current = inHand;
+
+            // A WALK THAT BEGINS AT A MENU BEGINS WITH A CLEAN SLATE. The stop before this one
+            // left its own answers in the log - a settle's answer is written after the menu it
+            // reports, so it outlives the wait that read the menu - and a scan that found one
+            // would report a step this stop never took. Marking here is what makes the first
+            // settle below answer for THIS stop: without it the run read the previous stop's
+            // answer in 0.0s and sent the next command on top of one the probe had not taken.
+            if (current != null)
+            {
+                watcher.Mark();
+            }
+
             while (true)
             {
                 ProbeCommand.SendSettle(saveGames);
+                ProbeCommand.WaitUntilTaken(saveGames, timeout);
                 ProbeEvent settled = WaitWithoutConsuming(
                     watcher,
                     e => e.Name == "command-finished"
@@ -1220,6 +1246,8 @@ namespace GlobalConversationTracker.Harness
 
                     Console.WriteLine($"        input {next + 1} ({input}): advancing a line");
                     next++;
+                    // WHATEVER WAS IN HAND IS BEHIND US the moment anything is pressed.
+                    current = null;
                     ProbeCommand.SendAdvance(saveGames);
                     watcher.WaitFor(
                         e => e.Name == "command-finished"
@@ -1243,7 +1271,7 @@ namespace GlobalConversationTracker.Harness
                     throw Misfit(scenario, inputs, next, reached);
                 }
 
-                ProbeEvent menu = watcher.WaitFor(
+                ProbeEvent menu = current ?? watcher.WaitFor(
                     e => e.Name == "menu" && e.Text("state") == "complete",
                     timeout,
                     $"the menu after {next} input(s)");
@@ -1287,7 +1315,10 @@ namespace GlobalConversationTracker.Harness
 
                 Console.WriteLine($"        input {next + 1} ({choice}): choosing {option}");
                 next++;
+                // CHOSEN FROM, so the next menu is one the game has yet to compose.
+                current = null;
                 ProbeCommand.SendChooseOption(saveGames, entry);
+                ProbeCommand.WaitUntilTaken(saveGames, timeout);
                 watcher.WaitFor(
                     e => e.Name == "command-finished"
                         && e.Text("command") == ProbeCommand.ChooseOption,
@@ -1365,15 +1396,68 @@ namespace GlobalConversationTracker.Harness
 
             ProbeEvent menu = OpenConversation(scenario, saveGames, watcher, timeout);
 
-            // A SCENARIO WITH INPUTS HAS ALREADY BEEN HELD TO THEM, step by step, and a step
+            // EVERY STOP ALONG ONE WALK, the first being the menu the conversation was opened
+            // to. A later stop presses on from where the last one was checked rather than
+            // loading the save again, which is what lets a scenario hold the same menu to its
+            // answer on two routes in - see ScenarioStop.
+            for (int at = 0; at < scenario.Stops.Count; at++)
+            {
+                ScenarioStop stop = scenario.Stops[at];
+                if (at > 0)
+                {
+                    Console.WriteLine($"      -- {stop.What}");
+                    // THE MENU THE LAST STOP ENDED AT IS WHERE THIS ONE STARTS, handed over
+                    // rather than waited for: it is on screen already and will not be composed
+                    // again. See WalkInputs.
+                    menu = WalkInputs(
+                        scenario,
+                        stop.Inputs ?? Array.Empty<ScenarioInput>(),
+                        saveGames,
+                        watcher,
+                        AttemptTimeout(timeout),
+                        menu);
+                }
+
+                CheckStop(
+                    scenario, stop, at, menu, saveGames, watcher, timeout, report, window,
+                    artifacts, suiteName);
+            }
+        }
+
+        /// <summary>Checks one menu along a scenario's walk.</summary>
+        /// <param name="scenario">The scenario being run.</param>
+        /// <param name="stop">The stop this menu is.</param>
+        /// <param name="at">Which stop it is, counting from zero.</param>
+        /// <param name="menu">The menu event the walk arrived at.</param>
+        /// <param name="saveGames">The profile's SaveGames folder.</param>
+        /// <param name="watcher">The probe's events.</param>
+        /// <param name="timeout">How long to wait for anything.</param>
+        /// <param name="report">Where the checks are recorded.</param>
+        /// <param name="window">The game window, for a photograph.</param>
+        /// <param name="artifacts">Where the run's own output goes.</param>
+        /// <param name="suiteName">The suite, for a picture's name.</param>
+        private static void CheckStop(
+            LookAheadScenario scenario,
+            ScenarioStop stop,
+            int at,
+            ProbeEvent menu,
+            string saveGames,
+            ProbeWatcher watcher,
+            TimeSpan timeout,
+            Report report,
+            GameWindow window,
+            string artifacts,
+            string suiteName)
+        {
+            // A STOP WITH INPUTS HAS ALREADY BEEN HELD TO THEM, step by step, and a step
             // that did not fit what was on screen threw by name - so the menu here is the one
-            // the scenario was written against. One without inputs is told what it took.
-            if (scenario.Inputs is IReadOnlyList<ScenarioInput> inputs)
+            // the stop was written against. One without inputs is told what it took.
+            if (stop.Inputs is IReadOnlyList<ScenarioInput> inputs)
             {
                 report.Check(
                     true,
                     $"{scenario.SaveName}: its inputs [{string.Join(", ", inputs)}] reached "
-                        + "its menu",
+                        + $"{stop.What}",
                     "every step fit what was on screen");
             }
             else
@@ -1387,7 +1471,10 @@ namespace GlobalConversationTracker.Harness
             // the game's IsLoading flag falls - a poll boundary earlier than the loaded
             // save's world state reaching Lua. The menu's reading is the one the
             // look-ahead actually crawled from.
-            if (scenario.Money is int money)
+            //
+            // AT THE FIRST STOP ONLY: it is the balance the save was loaded with, and a walk
+            // that has since bought something has moved it on purpose.
+            if (at == 0 && scenario.Money is int money)
             {
                 report.Check(
                     menu.Number("money") == money,
@@ -1398,7 +1485,7 @@ namespace GlobalConversationTracker.Harness
             ProbeOption[] options = menu.Options();
             report.Check(
                 options.Length > 0,
-                $"{scenario.SaveName}: the response menu was drawn",
+                $"{scenario.SaveName}: the response menu was drawn at {stop.What}",
                 $"{options.Length} option(s)");
 
             foreach (ProbeOption option in options)
@@ -1418,7 +1505,7 @@ namespace GlobalConversationTracker.Harness
                 }
             }
 
-            CaptureMenu(scenario, options, window, artifacts, suiteName);
+            CaptureMenu(scenario, at, options, window, artifacts, suiteName);
 
             // BOTH OF THESE ARE "WHAT TO DO ABOUT A KILLED ENGINE ONCE ITS MENU HAS BEEN
             // DRAWN", and which one applies is the scenario's ExpectsRecovery. They are
@@ -1426,22 +1513,29 @@ namespace GlobalConversationTracker.Harness
             // DIED UNTIL SOMETHING ASKS IT ONE - the death surfaces as a failed request
             // while this menu was being prepared, and nothing before that has either raised
             // a notice or started a replacement.
-            DismissTheNotice(scenario, saveGames, watcher, timeout, report);
-            WaitForTheReplacement(scenario, saveGames, watcher, timeout);
+            //
+            // AT THE FIRST STOP ONLY, which is the menu the kill was aimed at; by the next one
+            // the notice has been dismissed and the replacement is up.
+            if (at == 0)
+            {
+                DismissTheNotice(scenario, saveGames, watcher, timeout, report);
+                WaitForTheReplacement(scenario, saveGames, watcher, timeout);
+            }
 
-            if (scenario.Markers == MarkerPolicy.Ignored)
+            if (stop.Markers == MarkerPolicy.Ignored)
             {
                 return;
             }
 
-            foreach (OptionExpectation expected in scenario.Options)
+            foreach (OptionExpectation expected in stop.Options)
             {
                 ProbeOption? option = options.FirstOrDefault(o => o.EntryId == expected.EntryId);
                 if (option == null)
                 {
                     report.Check(
                         false,
-                        $"{scenario.SaveName}: entry {expected.EntryId} is offered",
+                        $"{scenario.SaveName}: entry {expected.EntryId} is offered at "
+                            + $"{stop.What}",
                         $"the menu offered {string.Join(", ", options.Select(o => o.EntryId))}");
                     continue;
                 }
@@ -1450,16 +1544,15 @@ namespace GlobalConversationTracker.Harness
                 report.Check(
                     actual == expected.Marker,
                     $"{scenario.SaveName}: entry {expected.EntryId} is "
-                        + $"{Describe(expected.Marker)}",
+                        + $"{Describe(expected.Marker)} at {stop.What}",
                     $"it is {Describe(actual)} - {expected.Why}");
             }
 
-            // An option the scenario says nothing about must not be marked either.
-            // Without this a scan that marked everything would satisfy every expectation
-            // a scenario happened to name.
+            // An option the stop says nothing about must not be marked either. Without this a
+            // scan that marked everything would satisfy every expectation it happened to name.
             foreach (ProbeOption option in options)
             {
-                if (scenario.Names(option.EntryId))
+                if (stop.Names(option.EntryId))
                 {
                     continue;
                 }
@@ -1467,7 +1560,7 @@ namespace GlobalConversationTracker.Harness
                 report.Check(
                     MarkerOn(option) == Marker.None,
                     $"{scenario.SaveName}: entry {option.EntryId}, which the scenario does "
-                        + "not name, is unmarked",
+                        + $"not name, is unmarked at {stop.What}",
                     $"it is {Describe(MarkerOn(option))}");
             }
 
@@ -1557,8 +1650,15 @@ namespace GlobalConversationTracker.Harness
         /// two lines were drawn, so a failed capture is reported and the run carries on -
         /// the markers are what pass or fail a run, and they have already been read.</para>
         /// </remarks>
+        /// <param name="scenario">The scenario being run.</param>
+        /// <param name="at">Which stop of it this menu is, counting from zero.</param>
+        /// <param name="options">What the menu offered.</param>
+        /// <param name="window">The game window.</param>
+        /// <param name="artifacts">Where the run's own output goes.</param>
+        /// <param name="suiteName">The suite, for the name.</param>
         private static void CaptureMenu(
             LookAheadScenario scenario,
+            int at,
             ProbeOption[] options,
             GameWindow window,
             string artifacts,
@@ -1577,10 +1677,13 @@ namespace GlobalConversationTracker.Harness
                 return;
             }
 
+            // THE STOP IS IN THE NAME where a scenario has several, so the second picture does
+            // not land on the first. A scenario of one stop keeps the name it always had.
+            string stop = scenario.Stops.Count > 1 ? $"-stop{at + 1}" : string.Empty;
             string folder = Path.Combine(artifacts, MenuPictures);
             string path = Path.Combine(
                 folder,
-                $"{suiteName}-{scenario.SaveName}-{scenario.ConversationId}.png");
+                $"{suiteName}-{scenario.SaveName}-{scenario.ConversationId}{stop}.png");
             try
             {
                 Directory.CreateDirectory(folder);

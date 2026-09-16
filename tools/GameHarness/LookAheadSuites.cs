@@ -197,9 +197,13 @@ namespace GlobalConversationTracker.Harness
 
         /// <summary>One scenario's option expectations, out of the shared table.</summary>
         /// <remarks>
-        /// Loud on a miss rather than quietly empty: a scenario that has been renamed would
-        /// otherwise turn every expectation into no expectation, and a suite that checks
-        /// nothing passes.
+        /// <para>Loud on a miss rather than quietly empty: a scenario that has been renamed
+        /// would otherwise turn every expectation into no expectation, and a suite that checks
+        /// nothing passes.</para>
+        ///
+        /// <para>THE FIRST STOP'S, which is the menu the scenario walks to. A borrowed
+        /// expectation is about that menu; a suite wanting a later stop's would be borrowing
+        /// the answer to a different question.</para>
         /// </remarks>
         private static IReadOnlyList<OptionExpectation> ExpectationsFrom(string suite, string save)
         {
@@ -212,7 +216,7 @@ namespace GlobalConversationTracker.Harness
                     + $"'{save}', which a harness-declared suite is built out of.");
             }
 
-            return scenario.Options;
+            return scenario.Stops[0].Options;
         }
 
         /// <summary>The option that leaves, reaching nothing.</summary>
@@ -620,10 +624,15 @@ namespace GlobalConversationTracker.Harness
                 new LookAheadScenario(
                     "afford-both",
                     SiilengConversation,
-                    "the balance that marks one option, with the feature switched off",
-                    AllUnmarked("look-ahead marking is disabled"),
+                    new[]
+                    {
+                        new ScenarioStop(
+                            "the balance that marks one option, with the feature switched off",
+                            ScenarioInput.ParseAll(SiilengInputs),
+                            AllUnmarked("look-ahead marking is disabled"),
+                            MarkerPolicy.Named),
+                    },
                     money: 5100,
-                    inputs: SiilengInputs,
                     branchPolicy: BranchPolicy.NoneAnywhere),
                 // A SECOND CONVERSATION, and one that can offer a rolled check, because
                 // the switch has a second thing to turn off now: the Pass / Fail line.
@@ -632,10 +641,15 @@ namespace GlobalConversationTracker.Harness
                 new LookAheadScenario(
                     Smoker.Save,
                     Smoker.Conversation,
-                    $"{Smoker.What}, which can offer a check, with the feature switched off",
-                    Array.Empty<OptionExpectation>(),
-                    markers: MarkerPolicy.NoneAnywhere,
-                    inputs: Smoker.Inputs,
+                    new[]
+                    {
+                        new ScenarioStop(
+                            $"{Smoker.What}, which can offer a check, with the feature "
+                                + "switched off",
+                            ScenarioInput.ParseAll(Smoker.Inputs),
+                            Array.Empty<OptionExpectation>(),
+                            MarkerPolicy.NoneAnywhere),
+                    },
                     branchPolicy: BranchPolicy.NoneAnywhere),
             },
             pluginSettings: new Dictionary<string, string>
@@ -714,18 +728,28 @@ namespace GlobalConversationTracker.Harness
                 new LookAheadScenario(
                     "afford-both",
                     SiilengConversation,
-                    "with an engine, the balance that marks one option",
-                    MarkedSiilengMenu,
+                    new[]
+                    {
+                        new ScenarioStop(
+                            "with an engine, the balance that marks one option",
+                            ScenarioInput.ParseAll(SiilengInputs),
+                            MarkedSiilengMenu,
+                            MarkerPolicy.Named),
+                    },
                     money: 5100,
-                    inputs: SiilengInputs,
                     branchPolicy: BranchPolicy.NoneAnywhere),
                 new LookAheadScenario(
                     "afford-both",
                     SiilengConversation,
-                    "the same menu with the engine killed underneath it",
-                    AllUnmarked("the look-ahead engine has gone"),
+                    new[]
+                    {
+                        new ScenarioStop(
+                            "the same menu with the engine killed underneath it",
+                            ScenarioInput.ParseAll(SiilengInputs),
+                            AllUnmarked("the look-ahead engine has gone"),
+                            MarkerPolicy.Named),
+                    },
                     money: 5100,
-                    inputs: SiilengInputs,
                     branchPolicy: BranchPolicy.NoneAnywhere,
                     killEngineFirst: true),
             },
@@ -823,28 +847,44 @@ namespace GlobalConversationTracker.Harness
                 new LookAheadScenario(
                     "afford-both",
                     SiilengConversation,
-                    "with an engine, the balance that marks one option",
-                    MarkedSiilengMenu,
+                    new[]
+                    {
+                        new ScenarioStop(
+                            "with an engine, the balance that marks one option",
+                            ScenarioInput.ParseAll(SiilengInputs),
+                            MarkedSiilengMenu,
+                            MarkerPolicy.Named),
+                    },
                     money: 5100,
-                    inputs: SiilengInputs,
                     branchPolicy: BranchPolicy.NoneAnywhere),
                 new LookAheadScenario(
                     "afford-both",
                     SiilengConversation,
-                    "the menu drawn while the replacement is still coming up",
-                    AllUncertain("a search ran here and the engine died before it answered"),
+                    new[]
+                    {
+                        new ScenarioStop(
+                            "the menu drawn while the replacement is still coming up",
+                            ScenarioInput.ParseAll(SiilengInputs),
+                            AllUncertain(
+                                "a search ran here and the engine died before it answered"),
+                            MarkerPolicy.Named),
+                    },
                     money: 5100,
-                    inputs: SiilengInputs,
                     branchPolicy: BranchPolicy.NoneAnywhere,
                     killEngineFirst: true,
                     expectsRecovery: true),
                 new LookAheadScenario(
                     "afford-both",
                     SiilengConversation,
-                    "and the same menu once it is, marked again",
-                    MarkedSiilengMenu,
+                    new[]
+                    {
+                        new ScenarioStop(
+                            "and the same menu once it is, marked again",
+                            ScenarioInput.ParseAll(SiilengInputs),
+                            MarkedSiilengMenu,
+                            MarkerPolicy.Named),
+                    },
                     money: 5100,
-                    inputs: SiilengInputs,
                     branchPolicy: BranchPolicy.NoneAnywhere),
             },
             logExpectations: new[]
@@ -1384,10 +1424,15 @@ namespace GlobalConversationTracker.Harness
                         new LookAheadScenario(
                             row.Save,
                             check.Conversation,
-                            row.What,
-                            Array.Empty<OptionExpectation>(),
-                            markers: MarkerPolicy.NoneAnywhere,
-                            inputs: PlaceOf(check.Conversation).Inputs,
+                            new[]
+                            {
+                                new ScenarioStop(
+                                    row.What,
+                                    ScenarioInput.ParseAll(
+                                        PlaceOf(check.Conversation).Inputs),
+                                    Array.Empty<OptionExpectation>(),
+                                    MarkerPolicy.NoneAnywhere),
+                            },
                             branchPolicy: BranchPolicy.EveryCheck,
                             branches: new BranchExpectation(
                                 row.Pass.Expected(),

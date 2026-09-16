@@ -261,7 +261,9 @@ namespace GlobalConversationTracker
         /// </remarks>
         private static LookAheadResponse? _menuAnswers;
 
-        /// <summary>What the conversation in progress has shown, sent with every request.</summary>
+        /// <summary>
+        /// Every entry the conversation in progress has stepped through, sent with every request.
+        /// </summary>
         /// <remarks>
         /// Recorded here and interpreted by the engine - see <see cref="ConversationWalk"/>. It
         /// is cleared when a conversation starts and when it ends, so a walk always begins at a
@@ -457,10 +459,11 @@ namespace GlobalConversationTracker
             _harmony.PatchAll(typeof(ResponseMenuPatch));
             _harmony.PatchAll(typeof(ChooseResponseTextPatch));
 
-            // AND FOUR THAT RECORD THE WALK every request carries: a line shown on either of
-            // the game's two dialogue interfaces, and a conversation starting or ending.
-            _harmony.PatchAll(typeof(ConversationLinePatch));
-            _harmony.PatchAll(typeof(PageConversationLinePatch));
+            // AND FOUR THAT RECORD THE WALK every request carries: the two places the game steps
+            // through an entry - the state it is about to display, and the links it follows past
+            // the entries it displays nothing for - and a conversation starting or ending.
+            _harmony.PatchAll(typeof(ConversationStatePatch));
+            _harmony.PatchAll(typeof(EvaluateLinksAtPriorityPatch));
             _harmony.PatchAll(typeof(ConversationStartPatch));
             _harmony.PatchAll(typeof(ConversationEndPatch));
         }
@@ -1832,12 +1835,12 @@ namespace GlobalConversationTracker
             }
         }
 
-        /// <summary>Adds a shown line to the walk.</summary>
+        /// <summary>Adds an entry the conversation stepped through to the walk.</summary>
         /// <remarks>
-        /// NOTHING HERE MAY THROW INTO THE GAME. A line that cannot be read costs that line's
-        /// place in the walk, which at worst cuts less than a full walk would.
+        /// NOTHING HERE MAY THROW INTO THE GAME. An entry that cannot be read costs that
+        /// entry's place in the walk, which at worst cuts less than a whole walk would.
         /// </remarks>
-        private static void RecordLine(Subtitle? subtitle)
+        private static void RecordEntry(DialogueEntry? entry)
         {
             HookFailureLimiter? failures = _failures;
             if (failures == null || failures.HasGivenUp)
@@ -1847,7 +1850,6 @@ namespace GlobalConversationTracker
 
             try
             {
-                DialogueEntry? entry = subtitle == null ? null : subtitle.dialogueEntry;
                 if (entry != null)
                 {
                     _walk.Record(new NodeRef(entry.conversationID, entry.id));
@@ -1859,31 +1861,61 @@ namespace GlobalConversationTracker
             }
         }
 
-        /// <summary>A line going up on the game's classic dialogue interface.</summary>
-        [HarmonyPatch(
-            typeof(Sunshine.ConversationLogger),
-            nameof(Sunshine.ConversationLogger.OnConversationLine))]
-        private static class ConversationLinePatch
-        {
-            /// <summary>The parameter name has to stay <c>subtitle</c>.</summary>
-            [HarmonyPostfix]
-            private static void Postfix(Subtitle subtitle) => RecordLine(subtitle);
-        }
-
-        /// <summary>The same line, on the paged dialogue interface.</summary>
+        /// <summary>
+        /// THE WALK IS READ OFF THE GAME'S OWN TRAVERSAL, in the three places below, rather than
+        /// off the lines it displays.
+        /// </summary>
         /// <remarks>
-        /// The game has two dialogue interfaces of the same shape and only one of them speaks.
-        /// Hooking both is cheaper than being sure which, and the walk keeps a line both report
-        /// once.
+        /// <para>WHAT A DISPLAYED LINE CANNOT SAY. A conversation steps through entries it never
+        /// shows: a GROUP entry, which is what a hub is, and an entry whose condition failed onto
+        /// a passthrough link - which is what a passive skill check becomes when it does not fire,
+        /// since <c>PassiveNode.CheckSuccess</c> writes Passthrough onto the entry before
+        /// answering. Recovering those from the links between two displayed lines works only
+        /// while every step between them is a group entry, and stops dead at the first one that
+        /// is not.</para>
+        ///
+        /// <para>MEASURED, in conversation 379: Rhetoric's check on entry 672 did not fire, so the
+        /// game passed over it into strikehub and displayed neither. The hub never reached the
+        /// walk, nothing was cut, and every option that led back out through that hub was
+        /// recommended as leading onward.</para>
+        ///
+        /// <para>So the recording follows what the dialogue system itself walks.
+        /// <c>EvaluateLinksAtPriority</c> is where an entry's links are followed: it expands a
+        /// group entry in place and is where the recursion into a passthrough entry arrives, so
+        /// it names every entry stepped over. <c>GetState</c> is hooked beside it for the entry
+        /// the game is about to display, which is the one case links are not always evaluated
+        /// for - a forced link composes the next state without them.</para>
+        ///
+        /// <para><c>EvaluateLinks</c> itself is NOT hooked. It calls straight into
+        /// <c>EvaluateLinksAtPriority</c> for each condition priority, so everything it sees
+        /// arrives there anyway; the only entry it would add is one already walked in the same
+        /// evaluation, which is a repeat rather than a step.</para>
+        ///
+        /// <para>Each hook is a PREFIX, so entries arrive in the order they are walked rather
+        /// than in the order the recursion unwinds, and <see cref="ConversationWalk.Record"/>
+        /// drops the repeats the priority loop asks for.</para>
         /// </remarks>
         [HarmonyPatch(
-            typeof(DiscoPages.Elements.Dialogue.ConversationLoggerPageSystem),
-            nameof(DiscoPages.Elements.Dialogue.ConversationLoggerPageSystem.OnConversationLine))]
-        private static class PageConversationLinePatch
+            typeof(ConversationModel),
+            "GetState",
+            new Type[] { typeof(DialogueEntry), typeof(bool), typeof(bool), typeof(bool) })]
+        private static class ConversationStatePatch
         {
-            /// <summary>The parameter name has to stay <c>subtitle</c>.</summary>
-            [HarmonyPostfix]
-            private static void Postfix(Subtitle subtitle) => RecordLine(subtitle);
+            /// <summary>The parameter name has to stay <c>entry</c>.</summary>
+            [HarmonyPrefix]
+            private static void Prefix(DialogueEntry entry) => RecordEntry(entry);
+        }
+
+        /// <summary>
+        /// An entry the game follows the links of: a group entry expanded in place, or a
+        /// passthrough one recursed into.
+        /// </summary>
+        [HarmonyPatch(typeof(ConversationModel), "EvaluateLinksAtPriority")]
+        private static class EvaluateLinksAtPriorityPatch
+        {
+            /// <summary>The parameter name has to stay <c>entry</c>.</summary>
+            [HarmonyPrefix]
+            private static void Prefix(DialogueEntry entry) => RecordEntry(entry);
         }
 
         /// <summary>A conversation starting, which starts its walk.</summary>

@@ -1,24 +1,50 @@
 {
   "_format": "scenario-suites",
   "_formatVersion": 1,
-
   "_what": "Every look-ahead scenario that is not a check's Pass / Fail shape, as the fixture that makes it and the markers that must come out. THE DEFINITION, not a description of one: tools/GameHarness turns each suite into an in-game run, and tests/scenario_suites.rs puts the same scenarios to the engine over the shipped index. Adding a suite adds a test to both; neither side declares anything of its own.",
-
   "_why_a_suite_and_not_a_row": "A suite is what fixes a launch. The mod reads the global state file once, when it first needs it, and BepInEx reads its configuration at chainload - so scenarios that disagree about either cannot share a game, however much else they have in common. What can vary inside a suite is the save, which the probe loads in place, and the conversation, which it opens on command.",
-
   "_markers": "none = nothing reachable outranks the option itself, orange = it can still reach a line no save has read, red = it can still reach a line this save has not read, gaveUp = the search ran out before it could say. The mod's own rule, which both executors apply: an option that is itself unseen anywhere is never marked, since nothing outranks the top rung.",
-
   "_policies": "markers is one of named - the listed options must match and every other option in the menu must be unmarked - noneAnywhere, for a menu whose option ids are not known until it has been opened, and ignored, where the markers are not the subject. branches is ignored, noneAnywhere, or everyCheck with a pass and a fail half; see branch-shapes.json for what a half may hold.",
-
+  "_stops": "Every menu a scenario is held to is a stop: what to press to reach it, and what it must show. A scenario of one menu names one stop, and nothing about a menu is said outside the list - there is one shape rather than a first menu written one way and the rest another. A second stop presses on from where the last was checked: in game the conversation carries on in place with no reload, and offline the stop is walked from the conversation's start with every earlier stop's inputs in front of its own, which is the same walk. FOR ONE WALK PASSING THE SAME GROUND, and nothing else: a later stop sees a world the earlier stops moved, so two claims that each want the same known starting world are two scenarios, whatever the second load costs. The pair this exists for is manana-commuhub, where the question IS whether a menu answers the same on first arrival as it does after a loop back to it.",
   "_two_files": "This one and branch-shapes.json, and the split is by SHAPE rather than by executor. A branch shape varies along one axis - what the two outcomes of one check land on - so its definition is a table with the conversation and entry named once and eight rows under them, and the eight-shape coverage argument is only readable in that form. Everything else varies along all of them at once, so it is written out. Both are shared definitions and both build the same in-game suite type.",
-
   "_offline_only": "A scenario marked offlineOnly is run by tests/scenario_suites.rs and skipped by the in-game harness. WHAT IT IS FOR, and the only thing it is for: a row that repeats another row of the same suite in the GAME while covering a different group OFFLINE. The offline executor asks a suite's claim of every entry in a group, so a second conversation is a second group covered and costs milliseconds; the in-game run loads a save for it, five or six seconds, to watch the same rule hold in a menu the first row already watched it hold in. A row that stages a different balance, a different recorded state, or a check where the first had none is NOT this - that is the feature, and both executors run it.",
-
   "_executor_specific": "What only one side can run goes under a key naming the executor, offline or inGame, rather than in a scenario's own fields - a definition that reads as shared and is not is worse than two honest declarations. Two standing cases. inGame: the artefact and log checks, which read files the game wrote over a whole launch, are C# predicates, and are named here and resolved there; and notInDefaultRun, the reason a suite stays out of the default in-game run - every suite is in it unless it gives one, and the offline executor runs them all. offline: a claim about EVERY entry in a group rather than about the options a menu happened to compose, which no in-game run can make because a menu is all it can see.",
-
   "_what_is_not_here": "1. switched-off: What it stages is a MOD SETTING - MarkLookAhead=false - and there is no such thing to stage without a mod: the offline engine has no switch to turn off, so from the same fixture it answers what the money suite answers, one option marked. A row claiming every option is unmarked would be a definition only one side could execute. It stays declared in LookAheadSuites, honestly, and the remarks there say the same. 2. engine-recovery: tests in-game notification when the rust look-ahead process dies, and we respawn.  3. engine-death: tests in-game notification when the rust look-ahead process dies, and we give up.",
-
   "suites": [
+    {
+      "suite": "manana-commuhub",
+      "what": "a hub the player was never shown is still behind them, whichever way they reached the menu",
+      "why": "Manana's commuhub (379:392) hangs off strikehub (379:14), and the only route in passes Rhetoric's passive check on 672. A passive check that does not fire displays nothing and passes straight through - PassiveNode.CheckSuccess writes Passthrough onto the entry - so the game steps over 672 into strikehub with neither on screen. A walk recorded from displayed lines alone therefore has no strikehub in it, and a hub the cut never hears about closes nothing: 491, 850 and 645 each go back out through strikehub and reach unread content among its other topics, so all three read as leading onward. Only 877 goes on without turning round. THE TWO STOPS ARE THE POINT: the first arrives through the passive check, where the hidden steps are invisible unless the walk records the game's own traversal, and the second comes back to the same menu through 710 and the jump on 306, whose hidden steps are all group entries. The menu must answer the same both times; where the two disagree, what differs is what the walk carried rather than what the player can reach.",
+      "state": "global-state-at-manana.json",
+      "scenarios": [
+        {
+          "save": "at-manana",
+          "conversation": 379,
+          "stops": [
+            {
+              "what": "commuhub on first arrival, reached through strikehub's communist question",
+              "inputs": ["2", "enter", "2", "1", "enter"],
+              "options": [
+                { "entry": 877, "marker": "orange", "why": "it leads on to a menu holding a line no save has read, without returning through the hub" },
+                { "entry": 491, "marker": "none", "why": "its route to unread content goes back out through strikehub, which is where the player is standing" },
+                { "entry": 850, "marker": "none", "why": "and so does this one, through 446" },
+                { "entry": 645, "marker": "none", "why": "and this one, through 515" }
+              ]
+            },
+            {
+              "what": "commuhub again, after right on brother takes the loop back through strikehub",
+              "inputs": ["2", "1", "enter"],
+              "options": [
+                { "entry": 877, "marker": "orange", "why": "it still leads on to the menu holding the unread line" },
+                { "entry": 491, "marker": "none", "why": "read on the way round, and its route on is still back out through strikehub" },
+                { "entry": 850, "marker": "none", "why": "still returns through the hub, through 446" },
+                { "entry": 645, "marker": "none", "why": "and still through 515" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
     {
       "suite": "money",
       "what": "a path spends as it walks, and the look-ahead has to spend with it",
@@ -38,47 +64,58 @@
         {
           "save": "afford-both",
           "conversation": 451,
-          "what": "100 centimes left after the sneakers, so the speakers are still affordable",
-          "money": 5100,
-          "inputs": ["enter"],
-          "options": [
-            { "entry": 86, "marker": "orange", "why": "buying the sneakers leads on to the speakers" },
-            { "entry": 33, "marker": "none", "why": "looking at them reaches the speakers only by coming back to the stall, where buying is still on offer - so it is not the way on, and the option beside it is" },
-            { "entry": 67, "marker": "none", "why": "and so is looking at the other: both send the player round the loop that the purchase goes straight through" },
-            { "entry": 85, "marker": "none", "why": "leaving reaches nothing at all" }
+          "stops": [
+            {
+              "what": "100 centimes left after the sneakers, so the speakers are still affordable",
+              "inputs": ["enter"],
+              "options": [
+                { "entry": 86, "marker": "orange", "why": "buying the sneakers leads on to the speakers" },
+                { "entry": 33, "marker": "none", "why": "looking at them reaches the speakers only by coming back to the stall, where buying is still on offer - so it is not the way on, and the option beside it is" },
+                { "entry": 67, "marker": "none", "why": "and so is looking at the other: both send the player round the loop that the purchase goes straight through" },
+                { "entry": 85, "marker": "none", "why": "leaving reaches nothing at all" }
+              ]
+            }
           ],
+          "money": 5100,
           "branches": "noneAnywhere",
           "branchesWhy": "Nothing in this conversation rolls anything, so nothing in it may carry a Pass / Fail line - including the option that leads to a purchase, which is a choice with two outcomes in every sense except the one the line is about."
         },
         {
           "save": "afford-only-sneakers",
           "conversation": 451,
-          "what": "25 centimes left after the sneakers, so the speakers are not affordable",
-          "money": 5025,
-          "inputs": ["enter"],
-          "options": [
-            { "entry": 86, "marker": "none", "why": "the speakers are out of reach once the sneakers are paid for" },
-            { "entry": 33, "marker": "none", "why": "the speakers are out of reach once the sneakers are paid for" },
-            { "entry": 67, "marker": "none", "why": "the speakers are out of reach once the sneakers are paid for" },
-            { "entry": 85, "marker": "none", "why": "the speakers are out of reach once the sneakers are paid for" }
-          ]
+          "stops": [
+            {
+              "what": "25 centimes left after the sneakers, so the speakers are not affordable",
+              "inputs": ["enter"],
+              "options": [
+                { "entry": 86, "marker": "none", "why": "the speakers are out of reach once the sneakers are paid for" },
+                { "entry": 33, "marker": "none", "why": "the speakers are out of reach once the sneakers are paid for" },
+                { "entry": 67, "marker": "none", "why": "the speakers are out of reach once the sneakers are paid for" },
+                { "entry": 85, "marker": "none", "why": "the speakers are out of reach once the sneakers are paid for" }
+              ]
+            }
+          ],
+          "money": 5025
         },
         {
           "save": "afford-neither",
           "conversation": 451,
-          "what": "the sneakers cannot be bought at all",
-          "money": 4900,
-          "inputs": ["enter"],
-          "options": [
-            { "entry": 86, "marker": "none", "why": "nothing on the path is affordable" },
-            { "entry": 33, "marker": "none", "why": "nothing on the path is affordable" },
-            { "entry": 67, "marker": "none", "why": "nothing on the path is affordable" },
-            { "entry": 85, "marker": "none", "why": "nothing on the path is affordable" }
-          ]
+          "stops": [
+            {
+              "what": "the sneakers cannot be bought at all",
+              "inputs": ["enter"],
+              "options": [
+                { "entry": 86, "marker": "none", "why": "nothing on the path is affordable" },
+                { "entry": 33, "marker": "none", "why": "nothing on the path is affordable" },
+                { "entry": 67, "marker": "none", "why": "nothing on the path is affordable" },
+                { "entry": 85, "marker": "none", "why": "nothing on the path is affordable" }
+              ]
+            }
+          ],
+          "money": 4900
         }
       ]
     },
-
     {
       "suite": "seen-elsewhere",
       "what": "an option this save has read, leading somewhere only another save has, is red",
@@ -88,19 +125,22 @@
         {
           "save": "seen-here-some",
           "conversation": 451,
-          "what": "two options read in this save, everything recorded in another",
-          "money": 5100,
-          "inputs": ["enter"],
-          "options": [
-            { "entry": 33, "marker": "red", "why": "read here, and it leads on to lines only another save has read" },
-            { "entry": 67, "marker": "red", "why": "and so does the other" },
-            { "entry": 86, "marker": "none", "why": "not read here, so it already ranks as high as anything it reaches" },
-            { "entry": 85, "marker": "none", "why": "leaving reaches nothing at all" }
-          ]
+          "stops": [
+            {
+              "what": "two options read in this save, everything recorded in another",
+              "inputs": ["enter"],
+              "options": [
+                { "entry": 33, "marker": "red", "why": "read here, and it leads on to lines only another save has read" },
+                { "entry": 67, "marker": "red", "why": "and so does the other" },
+                { "entry": 86, "marker": "none", "why": "not read here, so it already ranks as high as anything it reaches" },
+                { "entry": 85, "marker": "none", "why": "leaving reaches nothing at all" }
+              ]
+            }
+          ],
+          "money": 5100
         }
       ]
     },
-
     {
       "suite": "seen-here",
       "what": "a conversation read to the end earns no marker and needs no crawl",
@@ -120,19 +160,22 @@
         {
           "save": "seen-here-all",
           "conversation": 451,
-          "what": "every entry read in this save",
-          "money": 5100,
-          "inputs": ["enter"],
-          "options": [
-            { "entry": 86, "marker": "none", "why": "there is nothing here this save has not read" },
-            { "entry": 33, "marker": "none", "why": "there is nothing here this save has not read" },
-            { "entry": 67, "marker": "none", "why": "there is nothing here this save has not read" },
-            { "entry": 85, "marker": "none", "why": "there is nothing here this save has not read" }
-          ]
+          "stops": [
+            {
+              "what": "every entry read in this save",
+              "inputs": ["enter"],
+              "options": [
+                { "entry": 86, "marker": "none", "why": "there is nothing here this save has not read" },
+                { "entry": 33, "marker": "none", "why": "there is nothing here this save has not read" },
+                { "entry": 67, "marker": "none", "why": "there is nothing here this save has not read" },
+                { "entry": 85, "marker": "none", "why": "there is nothing here this save has not read" }
+              ]
+            }
+          ],
+          "money": 5100
         }
       ]
     },
-
     {
       "suite": "budget",
       "what": "a crawl that runs out of budget shows nothing and says where",
@@ -154,19 +197,22 @@
         {
           "save": "afford-both",
           "conversation": 451,
-          "what": "the balance that marks one option, with a budget of one",
-          "money": 5100,
-          "inputs": ["enter"],
-          "options": [
-            { "entry": 86, "marker": "gaveUp", "why": "the crawl gave up before it could look" },
-            { "entry": 33, "marker": "gaveUp", "why": "and before it could look here" },
-            { "entry": 67, "marker": "gaveUp", "why": "and here" },
-            { "entry": 85, "marker": "none", "why": "LEAVING IS NOT UNCERTAIN, and that is the point rather than an oversight. The engine refuses a search it can prove cannot find anything, and that refusal builds no state, so no budget can cut it short - nothing this option reaches outranks it, which is established as firmly at a budget of one as at any other. It draws plain, which is what there is nothing down there looks like." }
-          ]
+          "stops": [
+            {
+              "what": "the balance that marks one option, with a budget of one",
+              "inputs": ["enter"],
+              "options": [
+                { "entry": 86, "marker": "gaveUp", "why": "the crawl gave up before it could look" },
+                { "entry": 33, "marker": "gaveUp", "why": "and before it could look here" },
+                { "entry": 67, "marker": "gaveUp", "why": "and here" },
+                { "entry": 85, "marker": "none", "why": "LEAVING IS NOT UNCERTAIN, and that is the point rather than an oversight. The engine refuses a search it can prove cannot find anything, and that refusal builds no state, so no budget can cut it short - nothing this option reaches outranks it, which is established as firmly at a budget of one as at any other. It draws plain, which is what there is nothing down there looks like." }
+              ]
+            }
+          ],
+          "money": 5100
         }
       ]
     },
-
     {
       "suite": "pristine",
       "what": "an option that is itself unread anywhere is never marked, and never crawled",
@@ -191,8 +237,12 @@
           "save": "at-the-fan",
           "offlineOnly": true,
           "conversation": 9,
-          "what": "the ceiling fan, in the player's own room, on a profile that has recorded nothing",
-          "inputs": [],
+          "stops": [
+            {
+              "what": "the ceiling fan, in the player's own room, on a profile that has recorded nothing",
+              "inputs": []
+            }
+          ],
           "markers": "noneAnywhere",
           "branches": "everyCheck",
           "pass": { "colour": "orange" },
@@ -203,8 +253,12 @@
           "save": "at-klaasjes-note",
           "offlineOnly": true,
           "conversation": 717,
-          "what": "Klaasje's note, in her room, on a profile that has recorded nothing",
-          "inputs": ["enter"],
+          "stops": [
+            {
+              "what": "Klaasje's note, in her room, on a profile that has recorded nothing",
+              "inputs": ["enter"]
+            }
+          ],
           "markers": "noneAnywhere",
           "branches": "everyCheck",
           "pass": { "colour": "orange" },
@@ -215,8 +269,12 @@
           "save": "at-the-smoker",
           "offlineOnly": true,
           "conversation": 892,
-          "what": "the smoker on the balcony, on a profile that has recorded nothing",
-          "inputs": [],
+          "stops": [
+            {
+              "what": "the smoker on the balcony, on a profile that has recorded nothing",
+              "inputs": []
+            }
+          ],
           "markers": "noneAnywhere",
           "branches": "everyCheck",
           "pass": { "colour": "orange" },
@@ -226,8 +284,12 @@
         {
           "save": "at-garte",
           "conversation": 28,
-          "what": "Garte, behind the cafeteria counter, on a profile that has recorded nothing",
-          "inputs": ["enter"],
+          "stops": [
+            {
+              "what": "Garte, behind the cafeteria counter, on a profile that has recorded nothing",
+              "inputs": ["enter"]
+            }
+          ],
           "markers": "noneAnywhere",
           "branches": "everyCheck",
           "pass": { "colour": "orange" },
@@ -236,17 +298,13 @@
         }
       ]
     },
-
     {
       "suite": "all-seen",
       "what": "the biggest conversations cost nothing when every entry is already recorded",
       "why": "This suite used to be called headroom and used to be a measurement: the staged global state records every entry of every conversation, which was once the most expensive shape a crawl could take, because no option's own novelty is unseen-anywhere - so the early exit did not fire - and nothing reachable is unseen-anywhere either, so a crawl could not stop the instant it found something and had to explore everything. The no-potential-improvement short-circuit ended that: when every entry is recorded, nothing can outrank the option being asked about, so no walk can produce a marker and the crawl is skipped before any state is built. The expensive shape is now the near-opposite - a group with one unseen node, or a handful - and is measured elsewhere. What these five conversations are for now is the strongest available statement of the cheap case: they are the largest in the game, so if a crawl were going to run anywhere it would run here, and the claim is that not one does. FIVE OFFLINE AND ONE IN GAME. The claim is asked of every entry of all five groups by tests/scenario_suites.rs, which is where it is worth having five; the suite says nothing about markers - its policy is ignored - so the game has only one thing to show, and Joyce, the largest of them, shows it.",
       "_size": "The five are ranks two to six of the game's 1,501 conversations by entry count - 368, 14, 631, 28 and 1030, from 1,770 entries down to 1,476 - and tests/all_seen.rs holds them to that against the shipped index rather than taking it on trust. The largest, 362, is not among them. ENTRY COUNT IS NOT THE COST: the budget counts entry-and-state pairs, so what blows up is the state slots a conversation touches multiplied by its reachable entries, and the count turns out to be a poor proxy - 1030 is the sixth largest and its crawls peak at 201 states, a thousandth of Joyce's. It is still the only ordering available without running them.",
       "state": "global-state-worst-case.json",
-      "settings": {
-        "KeepLookAheadStates": "true",
-        "LogLookAheadBudgetExceeded": "true"
-      },
+      "settings": { "KeepLookAheadStates": "true", "LogLookAheadBudgetExceeded": "true" },
       "settingsWhy": "Kept on so that a crawl WOULD leave a trace. The claim is that the files say nothing happened; that means nothing unless the run was configured to write them.",
       "inGame": {
         "artefacts": [
@@ -272,34 +330,54 @@
           "save": "at-noid",
           "offlineOnly": true,
           "conversation": 368,
-          "what": "Noid, under the mural",
+          "stops": [
+            {
+              "what": "Noid, under the mural"
+            }
+          ],
           "markers": "ignored"
         },
         {
           "save": "at-the-hanged-man",
           "offlineOnly": true,
           "conversation": 14,
-          "what": "the hanged man, in the yard",
+          "stops": [
+            {
+              "what": "the hanged man, in the yard"
+            }
+          ],
           "markers": "ignored"
         },
         {
           "save": "at-joyce",
           "conversation": 631,
-          "what": "Joyce, on her sloop at the pier",
+          "stops": [
+            {
+              "what": "Joyce, on her sloop at the pier"
+            }
+          ],
           "markers": "ignored"
         },
         {
           "save": "at-garte",
           "offlineOnly": true,
           "conversation": 28,
-          "what": "Garte, behind the cafeteria counter",
+          "stops": [
+            {
+              "what": "Garte, behind the cafeteria counter"
+            }
+          ],
           "markers": "ignored"
         },
         {
           "save": "at-the-doom-spiral",
           "offlineOnly": true,
           "conversation": 1030,
-          "what": "the doom spiral, in the village",
+          "stops": [
+            {
+              "what": "the doom spiral, in the village"
+            }
+          ],
           "markers": "ignored"
         }
       ]
@@ -313,21 +391,17 @@
         {
           "save": "at-klaasjes-flower",
           "conversation": 656,
-          "what": "Klaasje's flower, off the Whirling's roof",
-          "inputs": [],
-          "markers": "named",
-          "options": [
+          "stops": [
             {
-              "entry": 3,
-              "marker": "none",
-              "why": "a rolled check draws no marker of its own; its line carries what it found"
-            },
-            {
-              "entry": 7,
-              "marker": "none",
-              "why": "declining ends the conversation, so there is nothing beyond it to mark"
+              "what": "Klaasje's flower, off the Whirling's roof",
+              "inputs": [],
+              "options": [
+                { "entry": 3, "marker": "none", "why": "a rolled check draws no marker of its own; its line carries what it found" },
+                { "entry": 7, "marker": "none", "why": "declining ends the conversation, so there is nothing beyond it to mark" }
+              ]
             }
           ],
+          "markers": "named",
           "branches": "everyCheck",
           "pass": { "colour": "orange" },
           "fail": { "colour": "orange" },
@@ -335,7 +409,6 @@
         }
       ]
     },
-
     {
       "suite": "kim-case",
       "what": "what Kim's own conversation looks like from the trash can save",
@@ -350,15 +423,19 @@
         {
           "save": "at-trashcan",
           "conversation": 29,
-          "what": "Kim's main conversation, as it opens from the trash can",
-          "inputs": [],
-          "options": [
-            { "entry": 582, "marker": "none", "why": "going over the case again returns to the hub it was reached from, and everything that way has been read in this save" },
-            { "entry": 1008, "marker": "none", "why": "a rolled check draws no marker of its own; its two outcomes carry what they found" },
-            { "entry": 90, "marker": "red", "why": "admitting the amnesia leads on to lines this save has not shown and another save has" },
-            { "entry": 221, "marker": "none", "why": "asking about Kim himself reaches nothing this save has not already had" },
-            { "entry": 697, "marker": "red", "why": "accusing him of following leads on the same way the amnesia does" },
-            { "entry": 882, "marker": "none", "why": "leaving reaches nothing at all" }
+          "stops": [
+            {
+              "what": "Kim's main conversation, as it opens from the trash can",
+              "inputs": [],
+              "options": [
+                { "entry": 582, "marker": "none", "why": "going over the case again returns to the hub it was reached from, and everything that way has been read in this save" },
+                { "entry": 1008, "marker": "none", "why": "a rolled check draws no marker of its own; its two outcomes carry what they found" },
+                { "entry": 90, "marker": "red", "why": "admitting the amnesia leads on to lines this save has not shown and another save has" },
+                { "entry": 221, "marker": "none", "why": "asking about Kim himself reaches nothing this save has not already had" },
+                { "entry": 697, "marker": "red", "why": "accusing him of following leads on the same way the amnesia does" },
+                { "entry": 882, "marker": "none", "why": "leaving reaches nothing at all" }
+              ]
+            }
           ],
           "branches": "everyCheck",
           "pass": { "colour": "orange" },
@@ -368,17 +445,21 @@
         {
           "save": "scene-indoors",
           "conversation": 29,
-          "what": "the same conversation opened indoors, where IsExterior answers the other way",
-          "why": "THE OTHER HALF OF THE PAIR, and the world rather than the menu. Conversation 29's scene guards are a chain: 226 routes on IsExterior to 227 or to 228, and the weather is only ever asked below 227. The trash can save exercises one side of that and nothing exercised the other. This save is the same hour of the same day one door away, so what a run finds different between the two is the door. THE SIX MARKERS ARE THE SAME AS THE TRASH CAN'S, which is stated rather than hidden: the guarded entries sit well below any option, so the menu does not discriminate and this row is not pretending to. What it holds is that the GAME answers IsExterior the way the offline world does, which the captured look-ahead request carries and no offline test can claim.",
-          "inputs": [],
-          "options": [
-            { "entry": 582, "marker": "none", "why": "going over the case again returns to the hub it was reached from, and everything that way has been read in this save" },
-            { "entry": 1008, "marker": "none", "why": "a rolled check draws no marker of its own; its two outcomes carry what they found" },
-            { "entry": 90, "marker": "red", "why": "admitting the amnesia leads on to lines this save has not shown, on either side of the door" },
-            { "entry": 221, "marker": "none", "why": "asking about Kim himself reaches nothing this save has not already had" },
-            { "entry": 697, "marker": "red", "why": "accusing him of following leads on the same way the amnesia does" },
-            { "entry": 882, "marker": "none", "why": "leaving reaches nothing at all" }
+          "stops": [
+            {
+              "what": "the same conversation opened indoors, where IsExterior answers the other way",
+              "inputs": [],
+              "options": [
+                { "entry": 582, "marker": "none", "why": "going over the case again returns to the hub it was reached from, and everything that way has been read in this save" },
+                { "entry": 1008, "marker": "none", "why": "a rolled check draws no marker of its own; its two outcomes carry what they found" },
+                { "entry": 90, "marker": "red", "why": "admitting the amnesia leads on to lines this save has not shown, on either side of the door" },
+                { "entry": 221, "marker": "none", "why": "asking about Kim himself reaches nothing this save has not already had" },
+                { "entry": 697, "marker": "red", "why": "accusing him of following leads on the same way the amnesia does" },
+                { "entry": 882, "marker": "none", "why": "leaving reaches nothing at all" }
+              ]
+            }
           ],
+          "why": "THE OTHER HALF OF THE PAIR, and the world rather than the menu. Conversation 29's scene guards are a chain: 226 routes on IsExterior to 227 or to 228, and the weather is only ever asked below 227. The trash can save exercises one side of that and nothing exercised the other. This save is the same hour of the same day one door away, so what a run finds different between the two is the door. THE SIX MARKERS ARE THE SAME AS THE TRASH CAN'S, which is stated rather than hidden: the guarded entries sit well below any option, so the menu does not discriminate and this row is not pretending to. What it holds is that the GAME answers IsExterior the way the offline world does, which the captured look-ahead request carries and no offline test can claim.",
           "branches": "everyCheck",
           "pass": { "colour": "orange" },
           "fail": { "colour": "darkRed" },
@@ -387,17 +468,21 @@
         {
           "save": "scene-raining",
           "conversation": 29,
-          "what": "the same conversation in the rain, where IsRaining answers true",
-          "why": "THE MEASUREMENT THE OFFLINE WORLD RESTS ON, and it took two goes to make. IsExterior is read out of a committed game asset and is as certain as an export can make it; that IsRaining reads auto.is_raining was an INFERENCE, because FELDLuaFunctions is IL2CPP and AssetRipper emits a body that returns false. It is measured now, and so is the thing that nearly made it unmeasurable: this save first set only the variable, and WeatherController rewrites both weather variables from the scene's preset whenever the weather changes - which loading a save does. Mid-load the save read as raining and by the time its menu went up it was dry again. It sets the preset as well now, and the game answers IsRaining() true where the save says it should.",
-          "inputs": [],
-          "options": [
-            { "entry": 582, "marker": "none", "why": "going over the case again returns to the hub it was reached from, and everything that way has been read in this save" },
-            { "entry": 1008, "marker": "none", "why": "a rolled check draws no marker of its own; its two outcomes carry what they found" },
-            { "entry": 90, "marker": "red", "why": "admitting the amnesia leads on to lines this save has not shown, wet or dry" },
-            { "entry": 221, "marker": "none", "why": "asking about Kim himself reaches nothing this save has not already had" },
-            { "entry": 697, "marker": "red", "why": "accusing him of following leads on the same way the amnesia does" },
-            { "entry": 882, "marker": "none", "why": "leaving reaches nothing at all" }
+          "stops": [
+            {
+              "what": "the same conversation in the rain, where IsRaining answers true",
+              "inputs": [],
+              "options": [
+                { "entry": 582, "marker": "none", "why": "going over the case again returns to the hub it was reached from, and everything that way has been read in this save" },
+                { "entry": 1008, "marker": "none", "why": "a rolled check draws no marker of its own; its two outcomes carry what they found" },
+                { "entry": 90, "marker": "red", "why": "admitting the amnesia leads on to lines this save has not shown, wet or dry" },
+                { "entry": 221, "marker": "none", "why": "asking about Kim himself reaches nothing this save has not already had" },
+                { "entry": 697, "marker": "red", "why": "accusing him of following leads on the same way the amnesia does" },
+                { "entry": 882, "marker": "none", "why": "leaving reaches nothing at all" }
+              ]
+            }
           ],
+          "why": "THE MEASUREMENT THE OFFLINE WORLD RESTS ON, and it took two goes to make. IsExterior is read out of a committed game asset and is as certain as an export can make it; that IsRaining reads auto.is_raining was an INFERENCE, because FELDLuaFunctions is IL2CPP and AssetRipper emits a body that returns false. It is measured now, and so is the thing that nearly made it unmeasurable: this save first set only the variable, and WeatherController rewrites both weather variables from the scene's preset whenever the weather changes - which loading a save does. Mid-load the save read as raining and by the time its menu went up it was dry again. It sets the preset as well now, and the game answers IsRaining() true where the save says it should.",
           "branches": "everyCheck",
           "pass": { "colour": "orange" },
           "fail": { "colour": "darkRed" },
@@ -406,17 +491,21 @@
         {
           "save": "scene-snowing",
           "conversation": 29,
-          "what": "and in the snow, where IsSnowing answers true",
-          "why": "The other weather query, on the same footing and for the same reason - and the pair of them together is what says the two variables are read separately rather than one standing in for the sky. Snow is also the query ArcticSwimmerEasterEgg actually watches, so this is the half of the inference with a witness in the game's own C#.",
-          "inputs": [],
-          "options": [
-            { "entry": 582, "marker": "none", "why": "going over the case again returns to the hub it was reached from, and everything that way has been read in this save" },
-            { "entry": 1008, "marker": "none", "why": "a rolled check draws no marker of its own; its two outcomes carry what they found" },
-            { "entry": 90, "marker": "red", "why": "admitting the amnesia leads on to lines this save has not shown, whatever the sky is doing" },
-            { "entry": 221, "marker": "none", "why": "asking about Kim himself reaches nothing this save has not already had" },
-            { "entry": 697, "marker": "red", "why": "accusing him of following leads on the same way the amnesia does" },
-            { "entry": 882, "marker": "none", "why": "leaving reaches nothing at all" }
+          "stops": [
+            {
+              "what": "and in the snow, where IsSnowing answers true",
+              "inputs": [],
+              "options": [
+                { "entry": 582, "marker": "none", "why": "going over the case again returns to the hub it was reached from, and everything that way has been read in this save" },
+                { "entry": 1008, "marker": "none", "why": "a rolled check draws no marker of its own; its two outcomes carry what they found" },
+                { "entry": 90, "marker": "red", "why": "admitting the amnesia leads on to lines this save has not shown, whatever the sky is doing" },
+                { "entry": 221, "marker": "none", "why": "asking about Kim himself reaches nothing this save has not already had" },
+                { "entry": 697, "marker": "red", "why": "accusing him of following leads on the same way the amnesia does" },
+                { "entry": 882, "marker": "none", "why": "leaving reaches nothing at all" }
+              ]
+            }
           ],
+          "why": "The other weather query, on the same footing and for the same reason - and the pair of them together is what says the two variables are read separately rather than one standing in for the sky. Snow is also the query ArcticSwimmerEasterEgg actually watches, so this is the half of the inference with a witness in the game's own C#.",
           "branches": "everyCheck",
           "pass": { "colour": "orange" },
           "fail": { "colour": "darkRed" },
@@ -425,17 +514,21 @@
         {
           "save": "scene-indoors-raining",
           "conversation": 29,
-          "what": "indoors and raining, where the rain is set and never asked about",
-          "why": "THE CLAIM THE OUTDOOR ROWS CANNOT MAKE. Conversation 29's scene guards are a chain - 226 routes on IsExterior to 227 or to 228, and 114 and 115 hang off 113, which only 227 reaches - so the weather is asked on the outdoor side and NOWHERE ELSE. An engine that answered all three correctly and routed wrongly would pass every row above this one. This save is indoors and raining, one field away from the indoor row that is neither, and it has to draw exactly what that row draws. What makes it a measurement rather than an assertion is that the game really is in that weather: the save sets the preset WeatherController derives auto.is_raining from, and not only the variable, which a load would overwrite.",
-          "inputs": [],
-          "options": [
-            { "entry": 582, "marker": "none", "why": "going over the case again returns to the hub it was reached from, and everything that way has been read in this save" },
-            { "entry": 1008, "marker": "none", "why": "a rolled check draws no marker of its own; its two outcomes carry what they found" },
-            { "entry": 90, "marker": "red", "why": "admitting the amnesia leads on to lines this save has not shown, and the rain is not on the way" },
-            { "entry": 221, "marker": "none", "why": "asking about Kim himself reaches nothing this save has not already had" },
-            { "entry": 697, "marker": "red", "why": "accusing him of following leads on the same way the amnesia does" },
-            { "entry": 882, "marker": "none", "why": "leaving reaches nothing at all" }
+          "stops": [
+            {
+              "what": "indoors and raining, where the rain is set and never asked about",
+              "inputs": [],
+              "options": [
+                { "entry": 582, "marker": "none", "why": "going over the case again returns to the hub it was reached from, and everything that way has been read in this save" },
+                { "entry": 1008, "marker": "none", "why": "a rolled check draws no marker of its own; its two outcomes carry what they found" },
+                { "entry": 90, "marker": "red", "why": "admitting the amnesia leads on to lines this save has not shown, and the rain is not on the way" },
+                { "entry": 221, "marker": "none", "why": "asking about Kim himself reaches nothing this save has not already had" },
+                { "entry": 697, "marker": "red", "why": "accusing him of following leads on the same way the amnesia does" },
+                { "entry": 882, "marker": "none", "why": "leaving reaches nothing at all" }
+              ]
+            }
           ],
+          "why": "THE CLAIM THE OUTDOOR ROWS CANNOT MAKE. Conversation 29's scene guards are a chain - 226 routes on IsExterior to 227 or to 228, and 114 and 115 hang off 113, which only 227 reaches - so the weather is asked on the outdoor side and NOWHERE ELSE. An engine that answered all three correctly and routed wrongly would pass every row above this one. This save is indoors and raining, one field away from the indoor row that is neither, and it has to draw exactly what that row draws. What makes it a measurement rather than an assertion is that the game really is in that weather: the save sets the preset WeatherController derives auto.is_raining from, and not only the variable, which a load would overwrite.",
           "branches": "everyCheck",
           "pass": { "colour": "orange" },
           "fail": { "colour": "darkRed" },
@@ -444,17 +537,21 @@
         {
           "save": "scene-indoors-snowing",
           "conversation": 29,
-          "what": "and indoors in the snow, the other half of the same claim",
-          "why": "The snow half, and it is not a duplicate: the two variables are read apart, and an engine that let one stand in for the sky would answer this row from the wrong one. Same shape as the row above - indoors, one field away from the dry indoor row, and required to draw what that row draws.",
-          "inputs": [],
-          "options": [
-            { "entry": 582, "marker": "none", "why": "going over the case again returns to the hub it was reached from, and everything that way has been read in this save" },
-            { "entry": 1008, "marker": "none", "why": "a rolled check draws no marker of its own; its two outcomes carry what they found" },
-            { "entry": 90, "marker": "red", "why": "admitting the amnesia leads on to lines this save has not shown, and the snow is not on the way" },
-            { "entry": 221, "marker": "none", "why": "asking about Kim himself reaches nothing this save has not already had" },
-            { "entry": 697, "marker": "red", "why": "accusing him of following leads on the same way the amnesia does" },
-            { "entry": 882, "marker": "none", "why": "leaving reaches nothing at all" }
+          "stops": [
+            {
+              "what": "and indoors in the snow, the other half of the same claim",
+              "inputs": [],
+              "options": [
+                { "entry": 582, "marker": "none", "why": "going over the case again returns to the hub it was reached from, and everything that way has been read in this save" },
+                { "entry": 1008, "marker": "none", "why": "a rolled check draws no marker of its own; its two outcomes carry what they found" },
+                { "entry": 90, "marker": "red", "why": "admitting the amnesia leads on to lines this save has not shown, and the snow is not on the way" },
+                { "entry": 221, "marker": "none", "why": "asking about Kim himself reaches nothing this save has not already had" },
+                { "entry": 697, "marker": "red", "why": "accusing him of following leads on the same way the amnesia does" },
+                { "entry": 882, "marker": "none", "why": "leaving reaches nothing at all" }
+              ]
+            }
           ],
+          "why": "The snow half, and it is not a duplicate: the two variables are read apart, and an engine that let one stand in for the sky would answer this row from the wrong one. Same shape as the row above - indoors, one field away from the dry indoor row, and required to draw what that row draws.",
           "branches": "everyCheck",
           "pass": { "colour": "orange" },
           "fail": { "colour": "darkRed" },
@@ -463,17 +560,21 @@
         {
           "save": "scene-unlocked",
           "conversation": 29,
-          "what": "the trash can save with the white check 29:1008 never failed, so it is offered open",
-          "why": "THE OTHER HALF OF THE LOCK. The trash can save holds 1008 as a failed white check, and the engine closes it: no option can route through it. This save is the same save with 1008 taken out of failedWhiteChecksHolder and nothing else changed. Going over the case again still must not be starred: its only way to 1008's content is back out through the hub and into the check, and taking the check directly is nearer, so the check's Pass claims that content first. THE SIX MARKERS ARE THE LOCKED SAVE'S, which is the claim: opening the check changes what its own two words say about unlocking nothing, and moves no star onto a sibling.",
-          "inputs": [],
-          "options": [
-            { "entry": 582, "marker": "none", "why": "its only way to the check's content is back out through the hub and into the check, and the check's Pass lands on that content directly, so it is claimed before any round runs" },
-            { "entry": 1008, "marker": "none", "why": "a rolled check draws no marker of its own; its two outcomes carry what they found" },
-            { "entry": 90, "marker": "red", "why": "admitting the amnesia leads on to lines this save has not shown and another save has" },
-            { "entry": 221, "marker": "none", "why": "asking about Kim himself reaches nothing this save has not already had" },
-            { "entry": 697, "marker": "red", "why": "accusing him of following leads on the same way the amnesia does" },
-            { "entry": 882, "marker": "none", "why": "leaving reaches nothing at all" }
+          "stops": [
+            {
+              "what": "the trash can save with the white check 29:1008 never failed, so it is offered open",
+              "inputs": [],
+              "options": [
+                { "entry": 582, "marker": "none", "why": "its only way to the check's content is back out through the hub and into the check, and the check's Pass lands on that content directly, so it is claimed before any round runs" },
+                { "entry": 1008, "marker": "none", "why": "a rolled check draws no marker of its own; its two outcomes carry what they found" },
+                { "entry": 90, "marker": "red", "why": "admitting the amnesia leads on to lines this save has not shown and another save has" },
+                { "entry": 221, "marker": "none", "why": "asking about Kim himself reaches nothing this save has not already had" },
+                { "entry": 697, "marker": "red", "why": "accusing him of following leads on the same way the amnesia does" },
+                { "entry": 882, "marker": "none", "why": "leaving reaches nothing at all" }
+              ]
+            }
           ],
+          "why": "THE OTHER HALF OF THE LOCK. The trash can save holds 1008 as a failed white check, and the engine closes it: no option can route through it. This save is the same save with 1008 taken out of failedWhiteChecksHolder and nothing else changed. Going over the case again still must not be starred: its only way to 1008's content is back out through the hub and into the check, and taking the check directly is nearer, so the check's Pass claims that content first. THE SIX MARKERS ARE THE LOCKED SAVE'S, which is the claim: opening the check changes what its own two words say about unlocking nothing, and moves no star onto a sibling.",
           "branches": "everyCheck",
           "pass": { "colour": "orange" },
           "fail": { "colour": "darkRed" },
@@ -482,23 +583,31 @@
         {
           "save": "scene-thoughts",
           "conversation": 29,
-          "what": "the trash can save with the three thoughts that change passive checks internalised",
+          "stops": [
+            {
+              "what": "the trash can save with the three thoughts that change passive checks internalised",
+              "inputs": []
+            }
+          ],
           "why": "WHAT THE GAME DOES WITH A PASSIVE-CHECK THOUGHT, which nothing offline can read: lawbringer's PASSIVES_SUCCEED and the PASSIVE_TARGET_MODIFIER of remote_viewer and age_bracket are applied by the game's own ThoughtAlterant hooks, and the fixture decides checks from the character sheet alone. This save is at-trashcan with those three thoughts FIXED and slotted and nothing else changed, so the checks the game sends for it, set beside the ones it sends for at-trashcan, are exactly what the three effects do. The markers are not what this row is for. See de-2jlj.",
-          "inputs": [],
           "markers": "ignored"
         },
         {
           "save": "at-trashcan",
           "conversation": 29,
-          "what": "the menu behind going over the case again, from the trash can",
+          "stops": [
+            {
+              "what": "the menu behind going over the case again, from the trash can",
+              "inputs": ["1"],
+              "options": [
+                { "entry": 707, "marker": "red", "why": "going back out to the main hub is the nearest way to lines this save has not shown and another save has" },
+                { "entry": 1053, "marker": "none", "why": "asking whether it is a mysterious case reaches nothing this save has not already had" },
+                { "entry": 74, "marker": "none", "why": "going over the preliminary info again reaches nothing this save has not already had" }
+              ]
+            }
+          ],
           "why": "ONE MENU DEEPER THAN ANY OTHER ROW REACHES, and it is where de-2p8j.2's complaint was seen: Kim's first menu starred going over the case again, and behind it the only starred option led straight back out. WHAT IS STARRED HERE IS RIGHT, and was looked at in game: standing at the case hub, going back out to the main hub is the nearest way to anything this save has not shown, so the way out carries the star. The complaint was that 582 was starred on the menu BEFORE this one, which came of a locked check being walked through.",
-          "inputs": ["1"],
-          "markers": "named",
-          "options": [
-            { "entry": 707, "marker": "red", "why": "going back out to the main hub is the nearest way to lines this save has not shown and another save has" },
-            { "entry": 1053, "marker": "none", "why": "asking whether it is a mysterious case reaches nothing this save has not already had" },
-            { "entry": 74, "marker": "none", "why": "going over the preliminary info again reaches nothing this save has not already had" }
-          ]
+          "markers": "named"
         }
       ]
     },
@@ -506,16 +615,20 @@
       "scenarios": [
         {
           "conversation": 28,
-          "inputs": ["2", "1"],
-          "markers": "named",
-          "options": [
-            { "entry": 399, "marker": "orange", "why": "the one way on from here to lines no save has read" },
-            { "entry": 219, "marker": "none", "why": "what it reaches is only reached back through a hub this walk has already passed, and going on is nearer" },
-            { "entry": 40, "marker": "none", "why": "the same: its way to anything unread runs back through the hubs behind this menu" },
-            { "entry": 1475, "marker": "none", "why": "and so does this one" }
+          "stops": [
+            {
+              "what": "Garte's kitchen menu, walked to through his hub and the Whirling hub",
+              "inputs": ["2", "1"],
+              "options": [
+                { "entry": 399, "marker": "orange", "why": "the one way on from here to lines no save has read" },
+                { "entry": 219, "marker": "none", "why": "what it reaches is only reached back through a hub this walk has already passed, and going on is nearer" },
+                { "entry": 40, "marker": "none", "why": "the same: its way to anything unread runs back through the hubs behind this menu" },
+                { "entry": 1475, "marker": "none", "why": "and so does this one" }
+              ]
+            }
           ],
-          "save": "at-garte-kitchen",
-          "what": "Garte's kitchen menu, walked to through his hub and the Whirling hub"
+          "markers": "named",
+          "save": "at-garte-kitchen"
         }
       ],
       "state": "global-state-garte-kitchen.json",
@@ -527,18 +640,22 @@
       "scenarios": [
         {
           "conversation": 607,
-          "inputs": [],
-          "markers": "named",
-          "options": [
-            { "entry": 249, "marker": "none", "why": "the only unread line behind it is Logic's success line 123, past the red check at 151 that this save has already failed" },
-            { "entry": 308, "marker": "none", "why": "asking where everyone is reaches nothing this save has not already had" },
-            { "entry": 289, "marker": "orange", "why": "asking whether he works here is the way on to lines no save has read" },
-            { "entry": 70, "marker": "none", "why": "unread in any game itself, so there is nothing above it to mark" },
-            { "entry": 24, "marker": "none", "why": "unread in any game itself, so there is nothing above it to mark" },
-            { "entry": 290, "marker": "none", "why": "leaving reaches nothing at all" }
+          "stops": [
+            {
+              "what": "Leo's first menu, after a playthrough that failed his Logic red check",
+              "inputs": [],
+              "options": [
+                { "entry": 249, "marker": "none", "why": "the only unread line behind it is Logic's success line 123, past the red check at 151 that this save has already failed" },
+                { "entry": 308, "marker": "none", "why": "asking where everyone is reaches nothing this save has not already had" },
+                { "entry": 289, "marker": "orange", "why": "asking whether he works here is the way on to lines no save has read" },
+                { "entry": 70, "marker": "none", "why": "unread in any game itself, so there is nothing above it to mark" },
+                { "entry": 24, "marker": "none", "why": "unread in any game itself, so there is nothing above it to mark" },
+                { "entry": 290, "marker": "none", "why": "leaving reaches nothing at all" }
+              ]
+            }
           ],
-          "save": "at-leo",
-          "what": "Leo's first menu, after a playthrough that failed his Logic red check"
+          "markers": "named",
+          "save": "at-leo"
         }
       ],
       "settings": { "KeepLookAheadRequests": "true" },

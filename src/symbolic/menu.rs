@@ -777,20 +777,9 @@ mod tests {
     use crate::symbolic::hub::{Hubs, since_current_hub};
 
     /// What a walk has passed since its hubs, as the bridge works it out.
-    fn returned_after(
-        graph: &LookAheadGraph,
-        walk: &[i32],
-        menu: &[i32],
-    ) -> HashSet<DialogueNodeId> {
+    fn returned_after(graph: &LookAheadGraph, walk: &[i32]) -> HashSet<DialogueNodeId> {
         let walk: Vec<DialogueNodeId> = walk.iter().map(|id| node(*id)).collect();
-        let menu: Vec<DialogueNodeId> = menu.iter().map(|id| node(*id)).collect();
-        since_current_hub(
-            graph,
-            &IterationOrder::of(graph),
-            &Hubs::of(graph),
-            &walk,
-            &menu,
-        )
+        since_current_hub(&IterationOrder::of(graph), &Hubs::of(graph), &walk)
     }
 
     /// Back at a sub-hub after going through a door and out again, the door keeps its star:
@@ -801,7 +790,7 @@ mod tests {
     #[test]
     fn a_door_off_a_sub_hub_keeps_its_star_after_it_was_opened_once() {
         let graph = deeper_topic();
-        let returned = returned_after(&graph, &DEEPER_TOPIC_WALK, &DEEPER_TOPIC_MENU);
+        let returned = returned_after(&graph, &DEEPER_TOPIC_WALK);
         let answer = marking_returning(
             &graph,
             &DEEPER_TOPIC_MENU,
@@ -839,7 +828,7 @@ mod tests {
     #[test]
     fn a_walk_that_leaves_nothing_onward_is_answered_with_the_siblings_alone() {
         let graph = kitchen();
-        let returned = returned_after(&graph, &KITCHEN_WALK, &KITCHEN_MENU);
+        let returned = returned_after(&graph, &KITCHEN_WALK);
         let bird_only = [3];
 
         let hybrid = marking_returning(&graph, &KITCHEN_MENU, &bird_only, Which::Hybrid, &returned);
@@ -899,7 +888,7 @@ mod tests {
     #[test]
     fn with_the_walk_only_the_onward_kitchen_option_is_starred() {
         let graph = kitchen();
-        let returned = returned_after(&graph, &KITCHEN_WALK, &KITCHEN_MENU);
+        let returned = returned_after(&graph, &KITCHEN_WALK);
 
         let answer = marking_returning(
             &graph,

@@ -95,7 +95,6 @@ pub struct OfflineClaim {
 pub struct Scenario {
     pub save: String,
     pub conversation: i32,
-    pub what: String,
     #[serde(default)]
     pub money: Option<i32>,
     #[serde(default, rename = "dayMinutes")]
@@ -103,34 +102,87 @@ pub struct Scenario {
     /// How much the scenario claims about the markers: named, noneAnywhere or ignored.
     #[serde(default = "named")]
     pub markers: String,
-    #[serde(default)]
-    pub options: Vec<OptionRow>,
-    /// What a player presses from the conversation's start to the menu the row is about:
-    /// "enter" for a waiting line or a menu of one, an option's number for a menu of
-    /// several. Absent means pressing "enter" to the first menu.
-    #[serde(default)]
-    pub inputs: Option<Vec<String>>,
+    /// The menus this scenario is held to, in the order its walk reaches them.
+    ///
+    /// ONE SHAPE RATHER THAN TWO. A scenario of one menu writes one stop; a scenario that
+    /// passes the same ground twice writes two, the second pressing on from where the first
+    /// was checked. Nothing about a menu is said outside this list.
+    pub stops: Vec<StopRow>,
+}
+
+/// One menu a scenario is held to: what to press to reach it, and what it must look like.
+///
+/// A scenario's own inputs and options are its FIRST stop, and `stops` carries the rest, so
+/// both executors work from a list rather than from two shapes.
+pub struct Stop<'a> {
+    /// What this stop is for, for a failure to name.
+    pub what: &'a str,
+    /// What to press from the conversation's START to this menu, earlier stops included.
+    pub inputs: Option<Vec<lookahead_engine::walkthrough::Input>>,
+    /// What each named option must carry here.
+    pub options: &'a [OptionRow],
 }
 
 impl Scenario {
-    /// The inputs, parsed.
+    /// Every menu this scenario is held to, in the order it reaches them.
+    ///
+    /// EACH ONE'S INPUTS ARE WHOLE, counted from the conversation's start: a stop presses on
+    /// from where the last check happened, and the offline executor walks from the start every
+    /// time, so what it walks is every earlier stop's inputs followed by this one's. In game
+    /// the conversation carries on in place instead, which is the same walk.
     ///
     /// # Panics
     ///
-    /// If one is not an input. A row that misspells one describes a walk neither executor
-    /// can make.
-    pub fn inputs(&self) -> Option<Vec<lookahead_engine::walkthrough::Input>> {
-        self.inputs.as_ref().map(|inputs| {
-            inputs
-                .iter()
-                .map(|input| {
-                    input
-                        .parse()
-                        .unwrap_or_else(|error| panic!("{}: {error}", self.save))
-                })
-                .collect()
-        })
+    /// If an input is not one. A row that misspells one describes a walk neither executor can
+    /// make.
+    pub fn stops(&self) -> Vec<Stop<'_>> {
+        let parse = |inputs: &Option<Vec<String>>| {
+            inputs.as_ref().map(|inputs| {
+                inputs
+                    .iter()
+                    .map(|input| {
+                        input
+                            .parse()
+                            .unwrap_or_else(|error| panic!("{}: {error}", self.save))
+                    })
+                    .collect::<Vec<_>>()
+            })
+        };
+
+        let mut pressed: Option<Vec<lookahead_engine::walkthrough::Input>> = None;
+        let mut stops = Vec::new();
+        for (at, stop) in self.stops.iter().enumerate() {
+            // A STOP PRESSES ON, so what reaches it is everything pressed so far. The first
+            // names what reaches it from the conversation's start, and a stop after one that
+            // named no inputs presses on from the first menu, which is where pressing "enter"
+            // to it left the conversation.
+            let inputs = if at == 0 {
+                parse(&stop.inputs)
+            } else {
+                let mut so_far = pressed.clone().unwrap_or_default();
+                so_far.extend(parse(&stop.inputs).unwrap_or_default());
+                Some(so_far)
+            };
+            pressed = inputs.clone();
+            stops.push(Stop {
+                what: &stop.what,
+                inputs,
+                options: &stop.options,
+            });
+        }
+        stops
     }
+}
+
+/// One more menu along a scenario's walk, as the definition spells it.
+#[derive(Debug, Deserialize)]
+pub struct StopRow {
+    pub what: String,
+    /// What to press on from the last check to this menu.
+    #[serde(default)]
+    pub inputs: Option<Vec<String>>,
+    #[serde(default)]
+    pub options: Vec<OptionRow>,
 }
 
 fn named() -> String {

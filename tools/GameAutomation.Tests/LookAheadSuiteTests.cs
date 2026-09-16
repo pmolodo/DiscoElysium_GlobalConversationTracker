@@ -252,10 +252,13 @@ namespace GlobalConversationTracker.Automation.Tests
             {
                 foreach (LookAheadScenario scenario in suite.Scenarios)
                 {
-                    Assert.True(
-                        scenario.Options.Count > 0
-                            || scenario.Markers != MarkerPolicy.Named,
-                        $"{suite.Name}/{scenario.SaveName} asserts nothing at all");
+                    foreach (ScenarioStop stop in scenario.Stops)
+                    {
+                        Assert.True(
+                            stop.Options.Count > 0 || stop.Markers != MarkerPolicy.Named,
+                            $"{suite.Name}/{scenario.SaveName} ({stop.What}) asserts nothing "
+                                + "at all");
+                    }
                 }
             }
         }
@@ -337,7 +340,7 @@ namespace GlobalConversationTracker.Automation.Tests
 
             Assert.Equal("global-state-all-seen-elsewhere.json", suite.GlobalStateFile);
             Assert.Equal("seen-here-all", scenario.SaveName);
-            Assert.Equal(MarkerPolicy.Named, scenario.Markers);
+            Assert.Equal(MarkerPolicy.Named, Assert.Single(scenario.Stops).Markers);
             Assert.Equal("true", suite.PluginSettings["KeepLookAheadStates"]);
             Assert.Null(statistics.Check(null));
             Assert.NotNull(statistics.Check(Statistics(crawls: 1, states: 1)));
@@ -350,10 +353,16 @@ namespace GlobalConversationTracker.Automation.Tests
             {
                 foreach (LookAheadScenario scenario in suite.Scenarios)
                 {
-                    int[] entries = scenario.Options.Select(o => o.EntryId).ToArray();
-                    Assert.Equal(
-                        entries.Length,
-                        entries.Distinct().Count());
+                    // PER STOP, because a scenario that passes the same menu twice names the
+                    // same entries at each - which is the point of the second stop, not a
+                    // duplicate. What must not repeat is an entry within one menu's claim.
+                    foreach (ScenarioStop stop in scenario.Stops)
+                    {
+                        int[] entries = stop.Options.Select(o => o.EntryId).ToArray();
+                        Assert.Equal(
+                            entries.Length,
+                            entries.Distinct().Count());
+                    }
                 }
             }
         }
@@ -456,27 +465,27 @@ namespace GlobalConversationTracker.Automation.Tests
         }
 
         [Fact]
-        public void AScenarioKnowsWhichEntriesItNames()
+        public void AStopKnowsWhichEntriesItNames()
         {
             // BUILT HERE RATHER THAN TAKEN FROM A SUITE. What is being checked is what a
-            // scenario says about the entries it named, which is true of any scenario - and
-            // reading it out of whichever suite happens to be enabled made this test fail
-            // when the money suite was switched off, over nothing to do with naming.
-            var scenario = new LookAheadScenario(
-                "afford-both",
-                451,
+            // stop says about the entries it named, which is true of any stop - and reading
+            // it out of whichever suite happens to be enabled made this test fail when the
+            // money suite was switched off, over nothing to do with naming.
+            var stop = new ScenarioStop(
                 "one option named and one not",
+                null,
                 new[]
                 {
                     new OptionExpectation(
                         LookAheadSuites.BuySneakersEntry, Marker.Orange, "named"),
-                });
+                },
+                MarkerPolicy.Named);
 
-            Assert.True(scenario.Names(LookAheadSuites.BuySneakersEntry));
-            Assert.False(scenario.Names(LookAheadSuites.SpeakersOnlyEntry));
+            Assert.True(stop.Names(LookAheadSuites.BuySneakersEntry));
+            Assert.False(stop.Names(LookAheadSuites.SpeakersOnlyEntry));
 
             // An option whose entry the probe could not read is named by nothing.
-            Assert.False(scenario.Names(null));
+            Assert.False(stop.Names(null));
         }
 
         [Fact]

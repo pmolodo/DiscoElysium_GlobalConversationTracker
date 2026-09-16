@@ -170,14 +170,21 @@ message LookAheadRequest {
 
   WorldSnapshot world = 9;
 
-  // What this conversation has shown the player since it started, oldest first: every line
-  // displayed and every option chosen. It must begin at the conversation's start, since the
-  // hubs are followed from there.
+  // Every entry this conversation has stepped through since it started, oldest first: the
+  // lines displayed, the options chosen, and the entries the game passed over without
+  // displaying - group entries, and entries whose condition failed onto a passthrough link,
+  // which is what a passive check that did not fire becomes. It must begin at the
+  // conversation's start, since the hubs are followed from there.
   //
   // WHERE THE PLAYER HAS BEEN, which the options alone cannot say. The engine follows the
   // hubs the player has passed through, and treats a route back through anything passed
   // since them as looping back rather than leading onward. Empty says nothing about where
   // the player is.
+  //
+  // THE WHOLE CHAIN, RECORDED RATHER THAN RECONSTRUCTED. Recovering the entries between two
+  // displayed lines from the links cannot cross one the game stepped over silently, and a hub
+  // behind such a step is then missing from the walk - which is how a menu came to recommend
+  // every option that looped back through the hub the player was standing in.
   repeated NodeRef encountered = 10;
 }
 

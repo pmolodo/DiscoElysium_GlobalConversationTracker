@@ -16,6 +16,10 @@
 //! - From where the conversation stands, links are evaluated in order and a group whose
 //!   guard passes is expanded in place. The first NPC line on offer is said next; player
 //!   lines are offered as a menu only when no NPC line is.
+//! - A passive check that does not fire is stepped over rather than blocking the way: the
+//!   game writes Passthrough onto such an entry as it decides it, so its links are evaluated
+//!   in its place and nothing is displayed for it. The entries gone over this way are on the
+//!   walk, because a hub can sit behind one.
 //! - A line with another line behind it waits for a continue, which is one [`Input::Enter`].
 //!   A line with a menu behind it does not wait: the menu comes up beside it. A chosen
 //!   option never waits. Measured in game: Siileng's stall puts up two lines and needs one
@@ -89,12 +93,21 @@ impl fmt::Display for Input {
     }
 }
 
-/// Where a walk ended, and what it showed on the way.
+/// Where a walk ended, and what it stepped through on the way.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Walkthrough {
-    /// Every entry the game reported as shown, in order: the conversation's start, then the
-    /// lines said and the options chosen - what the plugin records and a request carries.
+    /// Every entry the walk stepped through, in order: the conversation's start, the lines
+    /// said and the options chosen, and the entries the game goes over without displaying -
+    /// the group entries it expands in place and the passive checks that do not fire.
+    ///
+    /// WHAT THE PLUGIN RECORDS AND A REQUEST CARRIES, so a hub is on the walk however the
+    /// player reached it, and nothing downstream has to recover one from the links.
     pub encountered: Vec<DialogueNodeId>,
+    /// The ones the game put on screen: the lines said and the options chosen.
+    ///
+    /// What the walk's own rules are about - a line waits for a continue, a menu is chosen
+    /// from - and what a reader comparing a walk against the game's own log should read.
+    pub displayed: Vec<DialogueNodeId>,
     /// The menu the walk ended at, in the order the game draws it.
     pub menu: Vec<DialogueNodeId>,
 }
@@ -172,6 +185,7 @@ impl Walker<'_> {
         // with text - so the plugin's walk begins there, and the engine follows the hubs from
         // there. A walk without it loses every hub passed before the first line shown.
         let mut encountered = vec![start];
+        let mut displayed = vec![start];
 
         for _ in 0..MOST_STEPS {
             match self.next(at, &state)? {
@@ -196,15 +210,33 @@ impl Walker<'_> {
                         }
                     }
                     state = self.take(&line, &state);
+                    // THE ENTRIES GONE OVER FIRST, then the line itself: the game walks the
+                    // groups and passed-over checks on the way to a line before it says it.
+                    encountered.extend(line.via.iter().copied());
                     encountered.push(line.id);
+                    displayed.push(line.id);
                     at = line.id;
                     line_up = true;
                 }
                 Next::Menu(options) => {
                     let drawn: Vec<DialogueNodeId> = options.iter().map(|o| o.id).collect();
                     let Some((index, key)) = keys.next() else {
+                        // THE MENU'S OWN HUBS ARE ON THE WALK. Composing it expands the groups
+                        // between here and the options, so the hub a menu hangs off is passed
+                        // whether or not anything is chosen from it - which is what the game
+                        // records, and what tells the cut where the player is standing. The
+                        // options share their way in, so a repeat of the entry just added is
+                        // the same step rather than a second one.
+                        for option in &options {
+                            for &id in &option.via {
+                                if encountered.last() != Some(&id) {
+                                    encountered.push(id);
+                                }
+                            }
+                        }
                         return Ok(Walkthrough {
                             encountered,
+                            displayed,
                             menu: drawn,
                         });
                     };
@@ -256,7 +288,9 @@ impl Walker<'_> {
                         ));
                     }
                     state = self.take(chosen, &state);
+                    encountered.extend(chosen.via.iter().copied());
                     encountered.push(chosen.id);
+                    displayed.push(chosen.id);
                     at = chosen.id;
                     line_up = false;
                 }
@@ -350,6 +384,25 @@ impl Walker<'_> {
             let Some(child) = self.graph.get(id) else {
                 continue;
             };
+            // A PASSIVE CHECK THAT DOES NOT FIRE IS STEPPED OVER RATHER THAN BLOCKING THE WAY.
+            // The game's PassiveNode.CheckSuccess writes Passthrough onto the entry before it
+            // answers, so a failed check leaves the link evaluated in the entry's place and
+            // nothing displayed for it. That is how a player walks past a skill line their
+            // character never says - and, in conversation 379, into the hub behind it.
+            //
+            // THE GUARD DECIDES FIRST, as it does in the game: the validator is only consulted
+            // where the Lua condition passed, so an entry whose guard is false is blocked
+            // whatever its check would have said.
+            if child.kind == DialogueCheckKind::Passive
+                && child.guard.test(&self.context.bound(state)) == Ternary::True
+                && self.world.check_passes(child.id) == Ternary::False
+            {
+                let deeper: Vec<DialogueNodeId> =
+                    via.iter().copied().chain(std::iter::once(id)).collect();
+                self.offer(id, state, &deeper, visited, candidates);
+                continue;
+            }
+
             match self.shows(child, state) {
                 Err(why) => candidates.push(Candidate::Undecided {
                     id,
@@ -561,7 +614,11 @@ mod tests {
             Entry::new(6).player(),
         ];
         let walk = walked(entries, &world, None).unwrap();
-        assert_eq!(walk.encountered, nodes(&[0, 5]));
+        // THE GROUP IT OPENED IN PLACE IS ON THE WALK, and the line it led to is what was
+        // displayed: 3 is never put on screen, and a cut that never heard of it would let a
+        // route back through it count as leading onward.
+        assert_eq!(walk.encountered, nodes(&[0, 3, 5]));
+        assert_eq!(walk.displayed, nodes(&[0, 5]));
         assert_eq!(walk.menu, nodes(&[1, 6]));
     }
 

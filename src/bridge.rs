@@ -1497,12 +1497,7 @@ pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
         .iter()
         .map(|entry| DialogueNodeId::from(*entry))
         .collect();
-    let menu_entries: Vec<DialogueNodeId> = request
-        .starts
-        .iter()
-        .map(|start| DialogueNodeId::from(*start))
-        .collect();
-    let returned = passed_since_hub(graph, shape, &encountered, &menu_entries);
+    let returned = passed_since_hub(graph, shape, &encountered);
 
     // THE CHEAP QUESTION FIRST, AND THE EXACT MARKING WHERE IT MARKS NOTHING - see
     // [`mark_menu_as_shipped`], which the menu measurement calls too.
@@ -1668,25 +1663,18 @@ pub(crate) fn all_unanswered(request: &LookAheadRequest, stopped_by: &str) -> Ve
 /// THE ONE PLACE A WALK BECOMES A CUT, for [`answer_starts`] and the menu measurement alike, so a
 /// measurement that carries a walk pays for and gets exactly what a player's request does: the
 /// group's hub candidates, kept by `shape` once found, and the stack followed along the walk - see
-/// [`crate::symbolic::hub`]. `encountered` is what the conversation showed, beginning at its
-/// start; `menu` is the options now on offer. An empty walk says nothing about where the player
-/// is, and cuts nothing.
+/// [`crate::symbolic::hub`]. `encountered` is every entry the conversation stepped through,
+/// beginning at its start and including the ones it never displayed. An empty walk says nothing
+/// about where the player is, and cuts nothing.
 pub fn passed_since_hub(
     graph: &LookAheadGraph,
     shape: &crate::symbolic::known::GroupShape,
     encountered: &[DialogueNodeId],
-    menu: &[DialogueNodeId],
 ) -> HashSet<DialogueNodeId> {
     if encountered.is_empty() {
         return HashSet::new();
     }
-    crate::symbolic::hub::since_current_hub(
-        graph,
-        shape.order(),
-        shape.hubs(graph),
-        encountered,
-        menu,
-    )
+    crate::symbolic::hub::since_current_hub(shape.order(), shape.hubs(graph), encountered)
 }
 
 /// Marks a menu the way the product does.

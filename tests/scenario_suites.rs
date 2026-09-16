@@ -120,18 +120,26 @@ impl Staged {
         }
     }
 
-    /// The walk a scenario's inputs make from its conversation's start, in this world.
+    /// The walk `inputs` make from a conversation's start, in this world.
     ///
     /// THE WORLD `answer` BUILDS, answers put back onto their names, so the walk and the
     /// search it feeds decide every guard the same way.
-    fn walk(&self, scenario: &Scenario) -> Result<Walkthrough, String> {
+    ///
+    /// FROM THE START EVERY TIME, including for a scenario's later stops: a stop's inputs
+    /// carry every earlier stop's in front of them, so walking from the start reaches the same
+    /// menu the game reaches by carrying on in place.
+    fn walk(
+        &self,
+        conversation: i32,
+        inputs: Option<&[lookahead_engine::walkthrough::Input]>,
+    ) -> Result<Walkthrough, String> {
         let mut snapshot = self.request.world.clone();
         snapshot.resolve(&self.questions)?;
         walk_inputs(
             &self.graph,
             &SnapshotWorld::new(snapshot),
-            scenario.conversation,
-            scenario.inputs().as_deref(),
+            conversation,
+            inputs,
         )
     }
 
@@ -163,7 +171,7 @@ impl Staged {
 /// NOT THE START, which leads every walk: the game reports it, but it is where the conversation
 /// begins rather than a line put up on the way, so nothing waits on it.
 fn silent(index: &Index, walk: &Walkthrough) -> Vec<DialogueNodeId> {
-    walk.encountered
+    walk.displayed
         .iter()
         .skip(1)
         .copied()
@@ -348,106 +356,112 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
                 continue;
             };
 
-            // WALKED FROM THE CONVERSATION'S START, by the inputs the in-game run presses, so
-            // the menu asked about is the one the game draws and the request carries what the
-            // game showed on the way, which is what the hub cut reads.
-            let walk = match staged.walk(scenario) {
-                Ok(walk) => walk,
-                Err(misfit) => {
+            // ONE WALK PER STOP, each from the conversation's START by every input pressed up
+            // to it - see `Scenario::stops`. In game the conversation carries on in place from
+            // one stop to the next; walking the whole thing again reaches the same menu, and
+            // costs milliseconds.
+            for stop in scenario.stops() {
+                // WALKED BY THE INPUTS THE IN-GAME RUN PRESSES, so the menu asked about is the
+                // one the game draws and the request carries what the game stepped through on
+                // the way, which is what the hub cut reads.
+                let walk = match staged.walk(conversation, stop.inputs.as_deref()) {
+                    Ok(walk) => walk,
+                    Err(misfit) => {
+                        failures.push(format!(
+                            "{}/{} ({}): the walk to its menu fails: {misfit}",
+                            suite.suite, scenario.save, stop.what,
+                        ));
+                        continue;
+                    }
+                };
+                eprintln!(
+                    "{}/{} ({}): walked {:?} to the menu {:?}",
+                    suite.suite, scenario.save, stop.what, walk.encountered, walk.menu,
+                );
+
+                let silent = silent(&texts, &walk);
+                if !silent.is_empty() {
                     failures.push(format!(
-                        "{}/{} ({}): the walk to its menu fails: {misfit}",
-                        suite.suite, scenario.save, scenario.what,
+                        "{}/{}: the walk displays {silent:?}, which have no text, and whether \
+                         the game waits on such a line is unmeasured",
+                        suite.suite, scenario.save,
                     ));
                     continue;
                 }
-            };
-            eprintln!(
-                "{}/{}: walked {:?} to the menu {:?}",
-                suite.suite, scenario.save, walk.encountered, walk.menu,
-            );
 
-            let silent = silent(&texts, &walk);
-            if !silent.is_empty() {
-                failures.push(format!(
-                    "{}/{}: the walk displays {silent:?}, which have no text, and whether the \
-                     game waits on such a line is unmeasured",
-                    suite.suite, scenario.save,
-                ));
-                continue;
-            }
-
-            let unoffered: Vec<i32> = scenario
-                .options
-                .iter()
-                .map(|option| option.entry)
-                .filter(|entry| {
-                    !walk
-                        .menu
-                        .contains(&DialogueNodeId::new(conversation, *entry))
-                })
-                .collect();
-            if !unoffered.is_empty() {
-                failures.push(format!(
-                    "{}/{}: the row names {unoffered:?}, which the menu its inputs reach does \
-                     not offer: {:?}",
-                    suite.suite, scenario.save, walk.menu,
-                ));
-                continue;
-            }
-
-            let request = staged.asking(&walk);
-            let response = answer(&index, None, &request);
-            assert!(
-                response.error.is_none(),
-                "{}/{}: {:?}",
-                suite.suite,
-                scenario.save,
-                response.error,
-            );
-
-            let by_start: std::collections::HashMap<i32, &LookAheadAnswer> = response
-                .answers
-                .iter()
-                .map(|reply| (reply.start.entry, reply))
-                .collect();
-
-            for option in &scenario.options {
-                let Some(reply) = by_start.get(&option.entry) else {
+                let unoffered: Vec<i32> = stop
+                    .options
+                    .iter()
+                    .map(|option| option.entry)
+                    .filter(|entry| {
+                        !walk
+                            .menu
+                            .contains(&DialogueNodeId::new(conversation, *entry))
+                    })
+                    .collect();
+                if !unoffered.is_empty() {
                     failures.push(format!(
-                        "{}/{}: nothing came back for {conversation}:{}",
-                        suite.suite, scenario.save, option.entry,
+                        "{}/{} ({}): the row names {unoffered:?}, which the menu its inputs \
+                         reach does not offer: {:?}",
+                        suite.suite, scenario.save, stop.what, walk.menu,
                     ));
                     continue;
-                };
+                }
 
-                let own = staged.novelty_of(NodeRef {
-                    conversation,
-                    entry: option.entry,
-                });
-                let got = drawn(own, reply);
-                checked += 1;
+                let request = staged.asking(&walk);
+                let response = answer(&index, None, &request);
+                assert!(
+                    response.error.is_none(),
+                    "{}/{}: {:?}",
+                    suite.suite,
+                    scenario.save,
+                    response.error,
+                );
 
-                if got != option.marker {
-                    failures.push(format!(
-                        "{}/{} ({}): {conversation}:{} should be {} - {} - and the engine \
-                         draws {got}: own {own}, best {}, {}, {} states over {} entries \
-                         - run it in game with --suite {}",
-                        suite.suite,
-                        scenario.save,
-                        scenario.what,
-                        option.entry,
-                        option.marker,
-                        option.why,
-                        reply.best,
-                        if reply.complete {
-                            "finished"
-                        } else {
-                            "gave up"
-                        },
-                        reply.states_explored,
-                        reply.nodes_reached,
-                        suite.suite,
-                    ));
+                let by_start: std::collections::HashMap<i32, &LookAheadAnswer> = response
+                    .answers
+                    .iter()
+                    .map(|reply| (reply.start.entry, reply))
+                    .collect();
+
+                for option in stop.options {
+                    let Some(reply) = by_start.get(&option.entry) else {
+                        failures.push(format!(
+                            "{}/{}: nothing came back for {conversation}:{}",
+                            suite.suite, scenario.save, option.entry,
+                        ));
+                        continue;
+                    };
+
+                    let own = staged.novelty_of(NodeRef {
+                        conversation,
+                        entry: option.entry,
+                    });
+                    let got = drawn(own, reply);
+                    checked += 1;
+
+                    if got != option.marker {
+                        failures.push(format!(
+                            "{}/{} ({}): {conversation}:{} should be {} - {} - and the engine \
+                             draws {got}: own {own}, best {}, {}, {} states over {} entries \
+                             - run it in game with --suite {}",
+                            suite.suite,
+                            scenario.save,
+                            stop.what,
+                            option.entry,
+                            option.marker,
+                            option.why,
+                            reply.best,
+                            if reply.complete {
+                                "finished"
+                            } else {
+                                "gave up"
+                            },
+                            reply.states_explored,
+                            reply.nodes_reached,
+                            suite.suite,
+                        ));
+                    }
                 }
             }
         }
@@ -695,19 +709,28 @@ fn the_definition_names_markers_that_can_be_drawn() {
         }
 
         for scenario in &suite.scenarios {
-            if scenario.markers == "named" && scenario.options.is_empty() {
+            if scenario.stops.is_empty() {
                 wrong.push(format!(
-                    "{}/{}: claims its markers are named and names none",
+                    "{}/{}: names no stop, so it walks to no menu and claims nothing",
                     suite.suite, scenario.save,
                 ));
             }
 
-            for option in &scenario.options {
-                if !allowed.contains(&option.marker.as_str()) {
+            for stop in &scenario.stops {
+                if scenario.markers == "named" && stop.options.is_empty() {
                     wrong.push(format!(
-                        "{}/{}: '{}' is not a marker an option can carry",
-                        suite.suite, scenario.save, option.marker,
+                        "{}/{} ({}): claims its markers are named and names none",
+                        suite.suite, scenario.save, stop.what,
                     ));
+                }
+
+                for option in &stop.options {
+                    if !allowed.contains(&option.marker.as_str()) {
+                        wrong.push(format!(
+                            "{}/{}: '{}' is not a marker an option can carry",
+                            suite.suite, scenario.save, option.marker,
+                        ));
+                    }
                 }
             }
         }

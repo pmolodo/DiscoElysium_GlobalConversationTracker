@@ -518,7 +518,7 @@ where
                 &contestants,
                 &marking_budget,
                 &shape,
-                &lookahead_engine::bridge::passed_since_hub(graph, &shape, &walk, starts),
+                &lookahead_engine::bridge::passed_since_hub(graph, &shape, &walk),
             ),
             Marking::BranchAndBound => menu::mark_menu(
                 marking_search,

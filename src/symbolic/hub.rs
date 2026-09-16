@@ -188,49 +188,29 @@ pub fn follow(order: &IterationOrder, hubs: &Hubs, passed: &[DialogueNodeId]) ->
     stack
 }
 
-/// What a request's walk passed through, in order: each shown entry, then the group entries
-/// routed through on the way to the next one, and last those on the way to the menu.
-///
-/// `encountered` is what the conversation has shown since it started, oldest first - lines
-/// displayed and options chosen - and `menu` is the options now on offer. Group entries are
-/// never shown, so they are recovered from the LINKS between one shown entry and the next.
-pub fn passage(
-    graph: &LookAheadGraph,
-    encountered: &[DialogueNodeId],
-    menu: &[DialogueNodeId],
-) -> Vec<DialogueNodeId> {
-    let mut walked = Vec::new();
-    for (at, &from) in encountered.iter().enumerate() {
-        walked.push(from);
-        let next = match encountered.get(at + 1) {
-            Some(next) => std::slice::from_ref(next),
-            None => menu,
-        };
-        walked.extend(passed_between(graph, from, next));
-    }
-    walked
-}
-
 /// Everything on the hub stack at the end of a request's walk.
+///
+/// `encountered` is every entry the conversation stepped through since it started, oldest
+/// first, group entries and silently passed entries included. THE WHOLE CHAIN AS RECORDED:
+/// the plugin reads it off the game's own link traversal, so nothing here recovers a hub from
+/// the links - which could never cross an entry the game stepped over without displaying it,
+/// such as a passive check that did not fire.
 ///
 /// Empty where no hub is on it, which is also the answer in a group with no candidates.
 pub fn since_current_hub(
-    graph: &LookAheadGraph,
     order: &IterationOrder,
     hubs: &Hubs,
     encountered: &[DialogueNodeId],
-    menu: &[DialogueNodeId],
 ) -> HashSet<DialogueNodeId> {
-    follow(order, hubs, &passage(graph, encountered, menu)).since()
+    follow(order, hubs, encountered).since()
 }
 
 /// What a player is taken to have been shown walking from a conversation's start to `menu`, for
 /// a request with no player behind it - a measurement's menu, which nobody navigated to.
 ///
-/// THE SHAPE THE PLUGIN SENDS, so the engine does with it exactly what it does in game: the start
-/// entry, which the game reports as a line as a conversation opens, then every other non-group
-/// entry on the way, oldest first, and not the menu itself. The group entries between them are
-/// left for [`passage`] to recover from the links, as it does for a recorded walk.
+/// THE SHAPE THE PLUGIN SENDS, so the engine does with it exactly what it does in game: every
+/// entry on the way from the start, oldest first, group entries included and the menu itself left
+/// off. What the plugin records is the game's own traversal, which is a whole chain too.
 ///
 /// THE ROUTE is the shortest along links from `conversation`'s entry 0 to an option of `menu`: to
 /// the nearest option arrived at with a hub current, since that is a walk the cut has something to
@@ -305,75 +285,6 @@ pub fn walk_to_menu(
     };
 
     route
-        .into_iter()
-        .filter(|id| *id == start || graph.get(*id).is_some_and(|node| !node.is_group))
-        .collect()
-}
-
-/// The group entries a route from `from` to any of `to` passes through, group entries alone,
-/// nearest to `from` first.
-fn passed_between(
-    graph: &LookAheadGraph,
-    from: DialogueNodeId,
-    to: &[DialogueNodeId],
-) -> Vec<DialogueNodeId> {
-    let is_group = |id: &DialogueNodeId| graph.get(*id).is_some_and(|node| node.is_group);
-    let links = |id: DialogueNodeId| {
-        graph
-            .get(id)
-            .map(|node| node.links.as_slice())
-            .unwrap_or_default()
-    };
-
-    let mut reached = HashSet::new();
-    let mut pending: Vec<DialogueNodeId> = links(from).iter().copied().filter(is_group).collect();
-    while let Some(id) = pending.pop() {
-        if reached.insert(id) {
-            pending.extend(links(id).iter().copied().filter(is_group));
-        }
-    }
-
-    // BACK FROM THE DESTINATION, so a group entry the step could have wandered into and out of
-    // again is not counted as passed.
-    let targets: HashSet<DialogueNodeId> = to.iter().copied().collect();
-    let mut on_route: HashSet<DialogueNodeId> = reached
-        .iter()
-        .copied()
-        .filter(|id| links(*id).iter().any(|child| targets.contains(child)))
-        .collect();
-    loop {
-        let more: Vec<DialogueNodeId> = reached
-            .iter()
-            .copied()
-            .filter(|id| !on_route.contains(id))
-            .filter(|id| links(*id).iter().any(|child| on_route.contains(child)))
-            .collect();
-        if more.is_empty() {
-            break;
-        }
-        on_route.extend(more);
-    }
-
-    // IN THE ORDER THEY ARE WALKED, because which candidate comes first decides the stack.
-    let mut ordered = Vec::new();
-    let mut seen = HashSet::new();
-    let mut queue: VecDeque<DialogueNodeId> = links(from)
-        .iter()
-        .copied()
-        .filter(|id| on_route.contains(id))
-        .collect();
-    while let Some(id) = queue.pop_front() {
-        if seen.insert(id) {
-            ordered.push(id);
-            queue.extend(
-                links(id)
-                    .iter()
-                    .copied()
-                    .filter(|child| on_route.contains(child)),
-            );
-        }
-    }
-    ordered
 }
 
 #[cfg(test)]
@@ -431,9 +342,9 @@ pub(crate) mod tests {
             .build()
     }
 
-    /// The kitchen menu's options, and what the player was shown on the way to it.
+    /// The kitchen menu's options, and the chain the game stepped through on the way to it.
     pub(crate) const KITCHEN_MENU: [i32; 3] = [11, 12, 13];
-    pub(crate) const KITCHEN_WALK: [i32; 5] = [0, 2, 5, 7, 10];
+    pub(crate) const KITCHEN_WALK: [i32; 7] = [0, 1, 2, 5, 6, 7, 10];
 
     /// A sub-hub whose new content is one choice further in, behind a door already opened once.
     ///
@@ -482,7 +393,7 @@ pub(crate) mod tests {
 
     /// B's menu, the walk that came back to it, and the two unread lines.
     pub(crate) const DEEPER_TOPIC_MENU: [i32; 4] = [6, 7, 8, 15];
-    pub(crate) const DEEPER_TOPIC_WALK: [i32; 9] = [0, 2, 4, 6, 9, 8, 11, 13, 14];
+    pub(crate) const DEEPER_TOPIC_WALK: [i32; 13] = [0, 1, 2, 4, 5, 6, 9, 5, 8, 11, 13, 14, 5];
     pub(crate) const DEEPER_TOPIC_UNREAD: [i32; 2] = [12, 17];
 
     fn nodes(ids: &[i32]) -> Vec<DialogueNodeId> {
@@ -494,13 +405,12 @@ pub(crate) mod tests {
     }
 
     /// The hub stack at the end of a request's walk.
-    fn stack(graph: &LookAheadGraph, walk: &[i32], menu: &[i32]) -> HubStack {
-        let walked = passage(graph, &nodes(walk), &nodes(menu));
-        follow(&IterationOrder::of(graph), &Hubs::of(graph), &walked)
+    fn stack(graph: &LookAheadGraph, walk: &[i32]) -> HubStack {
+        follow(&IterationOrder::of(graph), &Hubs::of(graph), &nodes(walk))
     }
 
-    /// A menu nobody navigated to is walked to the way a player would have been shown it: the
-    /// start, then the lines and options on the shortest route, the groups left to `passage`.
+    /// A menu nobody navigated to is walked to the way the plugin would have recorded it: the
+    /// start, then every entry on the shortest route, group entries included.
     #[test]
     fn a_walk_to_a_menu_is_what_the_plugin_would_have_recorded() {
         let graph = kitchen();
@@ -511,22 +421,6 @@ pub(crate) mod tests {
         );
 
         assert_eq!(walk, nodes(&KITCHEN_WALK));
-        assert_eq!(
-            since_current_hub(
-                &graph,
-                &IterationOrder::of(&graph),
-                &Hubs::of(&graph),
-                &walk,
-                &nodes(&KITCHEN_MENU),
-            ),
-            since_current_hub(
-                &graph,
-                &IterationOrder::of(&graph),
-                &Hubs::of(&graph),
-                &nodes(&KITCHEN_WALK),
-                &nodes(&KITCHEN_MENU),
-            ),
-        );
     }
 
     /// Of two options, the one arrived at with a hub current gets the walk, though another is
@@ -550,7 +444,7 @@ pub(crate) mod tests {
             &nodes(&[13, 11]),
         );
 
-        assert_eq!(walk, nodes(&[0, 2, 4]));
+        assert_eq!(walk, nodes(&[0, 1, 2, 4]));
     }
 
     /// No option reachable from the start is no walk, which asks what a request without one asks.
@@ -606,7 +500,7 @@ pub(crate) mod tests {
             .build();
 
         assert!(Hubs::of(&graph).candidates().is_empty());
-        assert_eq!(stack(&graph, &[0, 2], &[2, 3]), HubStack::default());
+        assert_eq!(stack(&graph, &[0, 1, 2]), HubStack::default());
     }
 
     /// Both hubs are passed on the way to the kitchen, so everything from the main hub on is
@@ -615,11 +509,9 @@ pub(crate) mod tests {
     fn what_was_passed_since_the_hub_is_everything_after_it() {
         let graph = kitchen();
         let since = since_current_hub(
-            &graph,
             &IterationOrder::of(&graph),
             &Hubs::of(&graph),
             &nodes(&KITCHEN_WALK),
-            &nodes(&KITCHEN_MENU),
         );
 
         assert_eq!(since, set(&[1, 2, 5, 6, 7, 10]));
@@ -628,7 +520,7 @@ pub(crate) mod tests {
     /// The sub-hub is passed inside the main hub's loop, so it goes on top of it.
     #[test]
     fn a_sub_hub_is_stacked_on_its_hub() {
-        let reached = stack(&kitchen(), &KITCHEN_WALK, &KITCHEN_MENU);
+        let reached = stack(&kitchen(), &KITCHEN_WALK);
 
         assert_eq!(reached.hubs(), nodes(&[1, 6]));
         assert_eq!(reached.innermost(), Some(node(6)));
@@ -637,7 +529,7 @@ pub(crate) mod tests {
     /// Going back to the main hub drops the sub-hub and starts the list again.
     #[test]
     fn returning_to_the_hub_starts_again() {
-        let reached = stack(&kitchen(), &[0, 2, 5, 9], &[2, 3, 4]);
+        let reached = stack(&kitchen(), &[0, 1, 2, 5, 6, 9, 1]);
 
         assert_eq!(reached.hubs(), nodes(&[1]));
         assert_eq!(reached.since(), set(&[1]));
@@ -647,7 +539,7 @@ pub(crate) mod tests {
     /// keeps the way down from the outer hub behind the player.
     #[test]
     fn returning_to_a_sub_hub_gives_its_topics_back() {
-        let reached = stack(&deeper_topic(), &DEEPER_TOPIC_WALK, &DEEPER_TOPIC_MENU);
+        let reached = stack(&deeper_topic(), &DEEPER_TOPIC_WALK);
 
         assert_eq!(reached.hubs(), nodes(&[1, 5]));
         assert_eq!(reached.since(), set(&[1, 2, 4, 5]));
@@ -657,7 +549,7 @@ pub(crate) mod tests {
     /// loop's hub starts it again.
     #[test]
     fn a_point_of_no_return_empties_the_stack() {
-        let reached = stack(&two_loops(), &[0, 2, 4, 3, 5, 7, 9], &[7, 8]);
+        let reached = stack(&two_loops(), &[0, 1, 2, 4, 1, 3, 5, 6, 7, 9, 6]);
 
         assert_eq!(reached.hubs(), nodes(&[6]));
         assert_eq!(reached.since(), set(&[6]));

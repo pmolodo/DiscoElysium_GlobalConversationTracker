@@ -1,0 +1,14 @@
+{
+  "_base": "../at-garte-kitchen.ntwtf/at-garte-kitchen.1st.ntwtf.json",
+  "_changes": {
+    "areaId": "Martinaise-ext",
+    "fowUnrevealersStatusCache": {
+      "fog-evrart-office": "ACTIVE"
+    },
+    "partyState": {
+      "kimLastArrivalLocation": 3
+    }
+  },
+  "_format": "json-diff",
+  "_formatVersion": 1
+}

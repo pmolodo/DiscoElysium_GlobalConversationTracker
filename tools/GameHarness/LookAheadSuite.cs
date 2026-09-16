@@ -208,11 +208,13 @@ namespace GlobalConversationTracker.Harness
         /// <summary>Creates a scenario.</summary>
         /// <param name="saveName">The staged save's name, without extension.</param>
         /// <param name="conversationId">The conversation to open.</param>
-        /// <param name="why">What this scenario is for, in one line.</param>
-        /// <param name="options">What each named option should carry.</param>
+        /// <param name="stops">
+        /// The menus it is held to, in the order its walk reaches them: what to press to reach
+        /// each, and what each must show. Never empty - a scenario of one menu names one stop.
+        /// See <see cref="ScenarioStop"/>.
+        /// </param>
         /// <param name="money">The balance to assert, or null not to.</param>
         /// <param name="dayMinutes">The clock to assert, or null not to.</param>
-        /// <param name="markers">How much the scenario claims about the markers.</param>
         /// <param name="branchPolicy">How much it claims about the Pass / Fail lines.</param>
         /// <param name="branches">What every check's line should be, under EveryCheck.</param>
         /// <param name="killEngineFirst">
@@ -227,26 +229,19 @@ namespace GlobalConversationTracker.Harness
         /// the shipped policy a kill produces a new engine and no notice at all, and a
         /// scenario that waited for the window would wait for ever.
         /// </param>
-        /// <param name="inputs">
-        /// What to press from the conversation's start to the menu under test, as a scenario
-        /// spells it; null to press "enter" to the first menu. See <see cref="ScenarioInput"/>.
-        /// </param>
         /// <exception cref="ArgumentNullException">An argument is null.</exception>
         /// <exception cref="ArgumentException">The policy and the expectation disagree.</exception>
         /// <exception cref="FormatException">An input is not one.</exception>
         public LookAheadScenario(
             string saveName,
             int conversationId,
-            string why,
-            IReadOnlyList<OptionExpectation> options,
+            IReadOnlyList<ScenarioStop> stops,
             int? money = null,
             int? dayMinutes = null,
-            MarkerPolicy markers = MarkerPolicy.Named,
             BranchPolicy branchPolicy = BranchPolicy.Ignored,
             BranchExpectation? branches = null,
             bool killEngineFirst = false,
-            bool expectsRecovery = false,
-            IReadOnlyList<string>? inputs = null)
+            bool expectsRecovery = false)
         {
             if (expectsRecovery && !killEngineFirst)
             {
@@ -266,31 +261,32 @@ namespace GlobalConversationTracker.Harness
 
             SaveName = saveName ?? throw new ArgumentNullException(nameof(saveName));
             ConversationId = conversationId;
-            Why = why ?? throw new ArgumentNullException(nameof(why));
-            Options = options ?? throw new ArgumentNullException(nameof(options));
             Money = money;
             DayMinutes = dayMinutes;
-            Markers = markers;
             Branches = branches;
             BranchPolicy = branchPolicy;
             KillEngineFirst = killEngineFirst;
             ExpectsRecovery = expectsRecovery;
-            Inputs = ScenarioInput.ParseAll(inputs);
+            Stops = stops ?? throw new ArgumentNullException(nameof(stops));
+
+            if (Stops.Count == 0)
+            {
+                throw new ArgumentException(
+                    "A scenario walks to a menu and says what it shows, so it names at least "
+                    + "one stop.",
+                    nameof(stops));
+            }
         }
 
         /// <summary>
-        /// What to press from the conversation's start to the menu under test, or null to
-        /// press "enter" to the first menu.
+        /// The menus this scenario is held to, in the order the walk reaches them.
         /// </summary>
         /// <remarks>
-        /// A PROPERTY OF THE SCENARIO, and the thing that makes a run repeatable: a
-        /// conversation opens on however much narration its writer put there, so what reaches
-        /// a given menu is fixed for a given save and conversation. A step that does not fit
-        /// what is on screen - "enter" at a menu of several, a number while a line waits, the
-        /// inputs running out anywhere but at a menu - means the run has not arrived where the
-        /// scenario says it has, and fails by name.
+        /// ALWAYS AT LEAST ONE, and the first is the scenario's own inputs and options: a
+        /// scenario walks to a menu and says what it must look like, and a scenario that names
+        /// stops goes on walking and says so again.
         /// </remarks>
-        public IReadOnlyList<ScenarioInput>? Inputs { get; }
+        public IReadOnlyList<ScenarioStop> Stops { get; }
 
         /// <summary>The staged save's name, without extension.</summary>
         public string SaveName { get; }
@@ -298,11 +294,8 @@ namespace GlobalConversationTracker.Harness
         /// <summary>The conversation to open.</summary>
         public int ConversationId { get; }
 
-        /// <summary>What this scenario is for.</summary>
-        public string Why { get; }
-
-        /// <summary>What each named option should carry.</summary>
-        public IReadOnlyList<OptionExpectation> Options { get; }
+        /// <summary>What this scenario is for, which is what its first stop is for.</summary>
+        public string Why => Stops[0].What;
 
         /// <summary>
         /// Whether to kill the look-ahead engine before opening this conversation.
@@ -333,16 +326,66 @@ namespace GlobalConversationTracker.Harness
         /// <summary>The clock to assert, in minutes past midnight, or null not to.</summary>
         public int? DayMinutes { get; }
 
-        /// <summary>How much the scenario claims about the markers.</summary>
-        public MarkerPolicy Markers { get; }
-
         /// <summary>What every rolled check's line should be, or null when nothing is claimed.</summary>
         public BranchExpectation? Branches { get; }
 
         /// <summary>How much the scenario claims about those lines.</summary>
         public BranchPolicy BranchPolicy { get; }
+    }
 
-        /// <summary>Whether the scenario says anything about an entry.</summary>
+    /// <summary>One menu a scenario is held to: what to press to reach it, and what it shows.</summary>
+    /// <remarks>
+    /// A scenario's own inputs and options are its first stop; anything it names in
+    /// <c>stops</c> presses on from where the last check happened. Both executors work from
+    /// the list rather than from two shapes. See the <c>_stops</c> note in
+    /// <c>testing/scenarios/suites.json</c> for when a second stop is the right thing and when
+    /// a second scenario is.
+    /// </remarks>
+    public sealed class ScenarioStop
+    {
+        /// <summary>Creates a stop.</summary>
+        /// <param name="what">What this stop is for, in one line.</param>
+        /// <param name="inputs">
+        /// What to press to reach it from where the last check happened, or null to press
+        /// "enter" to the first menu.
+        /// </param>
+        /// <param name="options">What each named option should carry here.</param>
+        /// <param name="markers">How much is claimed about the markers.</param>
+        /// <exception cref="ArgumentNullException">An argument is null.</exception>
+        public ScenarioStop(
+            string what,
+            IReadOnlyList<ScenarioInput>? inputs,
+            IReadOnlyList<OptionExpectation> options,
+            MarkerPolicy markers)
+        {
+            What = what ?? throw new ArgumentNullException(nameof(what));
+            Inputs = inputs;
+            Options = options ?? throw new ArgumentNullException(nameof(options));
+            Markers = markers;
+        }
+
+        /// <summary>What this stop is for.</summary>
+        public string What { get; }
+
+        /// <summary>
+        /// What to press to reach this menu, or null to press "enter" to the first one.
+        /// </summary>
+        /// <remarks>
+        /// WHAT MAKES A RUN REPEATABLE: a conversation opens on however much narration its
+        /// writer put there, so what reaches a given menu is fixed for a given save and
+        /// conversation. A step that does not fit what is on screen - "enter" at a menu of
+        /// several, a number while a line waits, the inputs running out anywhere but at a menu
+        /// - means the run has not arrived where the scenario says it has, and fails by name.
+        /// </remarks>
+        public IReadOnlyList<ScenarioInput>? Inputs { get; }
+
+        /// <summary>What each named option should carry.</summary>
+        public IReadOnlyList<OptionExpectation> Options { get; }
+
+        /// <summary>How much this stop claims about the markers.</summary>
+        public MarkerPolicy Markers { get; }
+
+        /// <summary>Whether the stop says anything about an entry.</summary>
         /// <param name="entryId">The entry, which may be unreadable.</param>
         public bool Names(int? entryId) =>
             entryId is int id && Options.Any(o => o.EntryId == id);

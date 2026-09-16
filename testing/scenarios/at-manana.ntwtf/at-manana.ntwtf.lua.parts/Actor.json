@@ -1,0 +1,45 @@
+{
+  "_format": "sparse-diff",
+  "_formatVersion": 2,
+  "_base": "../../at-garte-kitchen.ntwtf/at-garte-kitchen.ntwtf.lua.parts/Actor.json",
+  "_changes": {
+    "Easy_Leo": {
+      "Bark_Index": 1
+    },
+    "Glen": {
+      "Bark_Index": 1
+    },
+    "Kim_Kitsuragi": {
+      "Position_Whirling_int_f1": "-2.468246,0.007195961,-2.224216,0,0.9802712,0,-0.1976573,Whirling-int-f1",
+      "Position_Martinaise_ext": "-47.05226,7.339243,-99.08949,0,0.3372166,0,-0.9414271,Martinaise-ext",
+      "Position_Secretary_int": "3.826307,0.427,-6.303395,0,0.9922206,0,0.1244922,Secretary-int",
+      "Position_Union_boss_int": "4.651808,3.568795,4.533106,0,0.9680296,0,-0.2508361,Union-boss-int"
+    },
+    "You": {
+      "Position_Whirling_int_f1": "-4.160086,0.007744782,-2.626483,0,0.9498741,0,0.3126326,Whirling-int-f1",
+      "Position_Martinaise_ext": "-48.58234,7.340919,-100.7593,0,0.1193931,0,0.9928471,Martinaise-ext",
+      "Position_Tent_int": "7.588,-0.009617683,-6.92,0,0.8384233,0,0.5450196,Tent-int",
+      "Position_Second_home_int": "4.983875,0.44,-4.0184,0,0.9879392,0,0.1548424,Second-home-int",
+      "Position_Secretary_int": "3.665,0.427,-7.54,0,0.9107383,0,0.4129838,Secretary-int",
+      "Position_Union_boss_int": "4.40371,3.568795,3.806273,0,0.9834033,0,-0.1814331,Union-boss-int"
+    },
+    "gardenerTribunal": {
+      "Bark_Index": 1
+    },
+    "Netpicker": {
+      "Bark_Index": 1
+    },
+    "acele": {
+      "Bark_Index": 0
+    },
+    "egghead": {
+      "Bark_Index": 1
+    },
+    "andre": {
+      "Bark_Index": 0
+    },
+    "noid": {
+      "Bark_Index": 0
+    }
+  }
+}

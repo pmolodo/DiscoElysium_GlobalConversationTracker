@@ -1,0 +1,31 @@
+{
+  "_format": "expanded-save-diff",
+  "_formatVersion": 1,
+  "base": "../at-garte-kitchen.ntwtf",
+  "members": [
+    {
+      "diff": "at-manana.states.lua.diff",
+      "kind": "text",
+      "name": "at-manana.states.lua",
+      "suffix": ".states.lua"
+    },
+    {
+      "diff": "at-manana.1st.ntwtf.json",
+      "kind": "json",
+      "name": "at-manana.1st.ntwtf.json",
+      "suffix": ".1st.ntwtf.json"
+    },
+    {
+      "diff": "at-manana.2nd.ntwtf.json",
+      "kind": "json",
+      "name": "at-manana.2nd.ntwtf.json",
+      "suffix": ".2nd.ntwtf.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "at-manana.FOW.json",
+      "suffix": ".FOW.json"
+    }
+  ]
+}

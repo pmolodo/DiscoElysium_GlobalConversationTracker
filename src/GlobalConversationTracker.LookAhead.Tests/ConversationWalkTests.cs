@@ -25,7 +25,8 @@ namespace GlobalConversationTracker.LookAhead.Tests
         }
 
         /// <summary>
-        /// Both dialogue interfaces report a line, so the same entry twice in a row is one line.
+        /// The game asks an entry's links once per condition priority, so the same entry twice in
+        /// a row is one step.
         /// </summary>
         [Fact]
         public void AnEntryReportedTwiceInARowIsKeptOnce()

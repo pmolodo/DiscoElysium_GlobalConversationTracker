@@ -279,6 +279,36 @@ namespace GlobalConversationTracker.Harness
         public string Why { get; set; } = string.Empty;
     }
 
+    /// <summary>One more menu along a scenario's walk, and what it must look like.</summary>
+    public sealed class StopDefinition
+    {
+        /// <summary>What this stop is for, in one line.</summary>
+        [JsonPropertyName("what")]
+        public string What { get; set; } = string.Empty;
+
+        /// <summary>What to press on from the last check to this menu.</summary>
+        [JsonPropertyName("inputs")]
+        public List<string>? Inputs { get; set; }
+
+        /// <summary>What each named option should carry here.</summary>
+        [JsonPropertyName("options")]
+        public List<OptionDefinition>? Options { get; set; }
+
+        /// <summary>This stop as the harness checks it.</summary>
+        /// <param name="suite">Which suite it belongs to, for the message.</param>
+        /// <param name="save">Which save it walks, for the message.</param>
+        /// <param name="markers">The scenario's marker policy, which its stops share.</param>
+        /// <returns>The stop.</returns>
+        public ScenarioStop Build(string suite, string save, MarkerPolicy markers) =>
+            new ScenarioStop(
+                What,
+                ScenarioInput.ParseAll(Inputs),
+                (Options ?? new List<OptionDefinition>())
+                    .Select(option => option.Build(suite, save))
+                    .ToArray(),
+                markers);
+    }
+
     /// <summary>A file the run should leave behind, and the predicate that reads it.</summary>
     public sealed class ArtefactDefinition
     {
@@ -367,10 +397,6 @@ namespace GlobalConversationTracker.Harness
         [JsonPropertyName("offlineOnly")]
         public bool OfflineOnly { get; set; }
 
-        /// <summary>What this scenario is for, in one line.</summary>
-        [JsonPropertyName("what")]
-        public string What { get; set; } = string.Empty;
-
         /// <summary>The balance to assert, or null not to.</summary>
         [JsonPropertyName("money")]
         public int? Money { get; set; }
@@ -379,26 +405,26 @@ namespace GlobalConversationTracker.Harness
         [JsonPropertyName("dayMinutes")]
         public int? DayMinutes { get; set; }
 
-        /// <summary>
-        /// What a player presses from the conversation's start to the menu the row is about,
-        /// or null to press "enter" to the first menu.
-        /// </summary>
-        /// <remarks>
-        /// "enter" advances a waiting line or takes the only option of a menu of one; a number
-        /// chooses that option, counting from 1 in the order the game draws them, off a menu of
-        /// several. A step that does not fit what is on screen fails the scenario by name, in
-        /// game and offline alike.
-        /// </remarks>
-        [JsonPropertyName("inputs")]
-        public List<string>? Inputs { get; set; }
-
         /// <summary>How much the scenario claims about the markers. Absent means named.</summary>
         [JsonPropertyName("markers")]
         public string Markers { get; set; } = "named";
 
-        /// <summary>What each named option should carry.</summary>
-        [JsonPropertyName("options")]
-        public List<OptionDefinition>? Options { get; set; }
+        /// <summary>The menus it is held to, in the order its walk reaches them.</summary>
+        /// <remarks>
+        /// <para>ONE SHAPE RATHER THAN TWO. A scenario of one menu names one stop; a scenario
+        /// that passes the same ground twice names two, the second pressing on from where the
+        /// first was checked. Nothing about a menu is said outside this list.</para>
+        ///
+        /// <para>In game the conversation carries on in place from one stop to the next;
+        /// offline a stop is walked from the conversation's start with every earlier stop's
+        /// inputs in front of its own, which is the same walk.</para>
+        ///
+        /// <para>FOR ONE WALK PASSING THE SAME GROUND. A later stop sees a world the earlier
+        /// stops moved, so two claims that each want the same known starting world are two
+        /// scenarios rather than two stops, whatever the second load costs.</para>
+        /// </remarks>
+        [JsonPropertyName("stops")]
+        public List<StopDefinition>? Stops { get; set; }
 
         /// <summary>How much it claims about the Pass / Fail lines. Absent means ignored.</summary>
         [JsonPropertyName("branches")]
@@ -422,6 +448,17 @@ namespace GlobalConversationTracker.Harness
         /// <exception cref="InvalidDataException">A policy is not one, or disagrees.</exception>
         public LookAheadScenario Build(string suite)
         {
+            MarkerPolicy markers = MarkerPolicyOf(suite);
+            IReadOnlyList<ScenarioStop> stops = (Stops ?? new List<StopDefinition>())
+                .Select(stop => stop.Build(suite, Save, markers))
+                .ToArray();
+            if (stops.Count == 0)
+            {
+                throw new InvalidDataException(
+                    $"{suite}/{Save}: names no stop, so it walks to no menu and claims "
+                    + "nothing.");
+            }
+
             BranchPolicy branches = BranchPolicyOf(suite);
             BranchExpectation? expectation = null;
 
@@ -440,7 +477,7 @@ namespace GlobalConversationTracker.Harness
                     Fail.Expected(),
                     BranchesWhy.Length > 0
                         ? BranchesWhy
-                        : $"{What} - so Pass is {Pass} and Fail is {Fail}");
+                        : $"{stops[0].What} - so Pass is {Pass} and Fail is {Fail}");
             }
             else if (Pass != null || Fail != null)
             {
@@ -453,16 +490,11 @@ namespace GlobalConversationTracker.Harness
             return new LookAheadScenario(
                 Save,
                 Conversation,
-                What,
-                (Options ?? new List<OptionDefinition>())
-                    .Select(option => option.Build(suite, Save))
-                    .ToArray(),
+                stops,
                 money: Money,
                 dayMinutes: DayMinutes,
-                markers: MarkerPolicyOf(suite),
                 branchPolicy: branches,
-                branches: expectation,
-                inputs: Inputs);
+                branches: expectation);
         }
 
         private MarkerPolicy MarkerPolicyOf(string suite) => Markers switch
