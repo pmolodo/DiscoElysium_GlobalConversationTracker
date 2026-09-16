@@ -16,6 +16,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::core::action::DialogueAction;
 use crate::core::guard::Guard;
 use crate::core::state::{ONCE_PREFIX, SEEN_PREFIX, StateSymbols};
 use crate::core::types::{DialogueCheckKind, DialogueNodeId};
@@ -26,11 +27,17 @@ use crate::parser::guard_parser::parse_guard;
 use crate::symbolic::data_layout::DataLayout;
 
 /// Field names as the asset spells them.
-const ACTOR_FIELD: &str = "Actor";
+pub(crate) const ACTOR_FIELD: &str = "Actor";
 const PASSIVE_FIELD: &str = "DifficultyPass";
+/// Marks a passive check that fires when it FAILS.
+const ANTIPASSIVE_FIELD: &str = "Antipassive";
+/// The articy id of the skill a rolled or fake check tests (`CheckNodeUtil.GetSkillType`).
+pub(crate) const SKILL_TYPE_FIELD: &str = "SkillType";
 const RED_FIELD: &str = "DifficultyRed";
 const WHITE_FIELD: &str = "DifficultyWhite";
 const FAKE_FIELD: &str = "DifficultyAtmo";
+/// Whether a fake check's forced roll succeeds (`FakeCheckNode.TransformCheck`).
+const ALWAYS_SUCCEED_FIELD: &str = "AlwaysSucceed";
 const TEST_FIELD: &str = "HiddenTest";
 const KIM_WATCH_FIELD: &str = "kim_watch";
 const BOOLEAN_ONLY_FIELD: &str = "boolean_only";
@@ -70,16 +77,19 @@ pub const PLAYER_ACTOR: &str = "396";
 /// The extractor is C# and cannot share a constant with this, so `tests/shipped_index.rs`
 /// checks the two against each other instead: for every name here, an entry that has it in
 /// the full index must still have it in the trimmed one.
-pub const ENTRY_FIELDS_READ: [&str; 12] = [
+pub const ENTRY_FIELDS_READ: [&str; 15] = [
     ACTOR_FIELD,
     PASSIVE_FIELD,
+    ANTIPASSIVE_FIELD,
     RED_FIELD,
     WHITE_FIELD,
     FAKE_FIELD,
+    ALWAYS_SUCCEED_FIELD,
     TEST_FIELD,
     KIM_WATCH_FIELD,
     BOOLEAN_ONLY_FIELD,
     FLAG_NAME_FIELD,
+    SKILL_TYPE_FIELD,
     CLICK_COST_FIELD,
     COST_ONCE_FIELD,
     HIDDEN_NOT_ENOUGH_FIELD,
@@ -96,7 +106,7 @@ pub const FORMAT_PROPERTY: &str = "format";
 /// game"; this answers "is this an index this engine can read" - and an index from an
 /// older build would pass its content hash while missing fields the engine has since
 /// started reading, which is a cache hit on a file that cannot answer the question.
-pub const FORMAT_VERSION: i32 = 3;
+pub const FORMAT_VERSION: i32 = 4;
 
 /// A shipped index's header, which is its first line.
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
@@ -187,7 +197,7 @@ pub fn read_index(path: &Path) -> anyhow::Result<Index> {
 
 /// The same, keeping what the header said.
 ///
-/// A shipped index opens with `{"format":3}`; the full index has no header at all, and
+/// A shipped index opens with `{"format":4}`; the full index has no header at all, and
 /// then there is no version and no per-conversation hash, so nothing can be validated
 /// against it. That is not an error - it is the mod shipping a build intermediate, and it
 /// works exactly as well as it did before there was such a thing as validation.
@@ -429,9 +439,11 @@ pub fn build_group_graph(index: &Index, start: i32) -> Result<(LookAheadGraph, V
             let guard = parse_guard(&entry.guard)
                 .map(|guard| journal.with_tasks_as_variables(&guard))
                 .unwrap_or_else(|_| Guard::always_true());
-            let actions = parse_actions_with_journal(&entry.script, &mut symbols, &journal);
+            let mut actions = parse_actions_with_journal(&entry.script, &mut symbols, &journal);
 
             let kind = determine_kind(&entry.fields);
+            actions.extend(passive_success_actions(&entry.fields, kind, &mut symbols));
+            let failure_actions = check_failure_actions(&entry.fields, kind, &mut symbols);
             let (cost, cost_once, hidden_when_unaffordable) = parse_cost(&entry.fields);
             let cost = cost.max(0);
             let price_scale = if cost > 0 {
@@ -454,6 +466,7 @@ pub fn build_group_graph(index: &Index, start: i32) -> Result<(LookAheadGraph, V
                 kind,
                 guard,
                 actions,
+                failure_actions,
                 links: links_of(entry, conversation_id),
                 cost,
                 click_cost: cost,
@@ -558,7 +571,7 @@ fn keeping_only_read_slots(
         mark(node.failed_flag_slot, &mut written);
         mark(node.seen_slot, &mut written);
         mark(node.once_slot, &mut written);
-        for action in &node.actions {
+        for action in node.all_actions() {
             // Money, clock and unmodelled actions carry no slot.
             if action.writes_slot() {
                 mark(action.slot(), &mut written);
@@ -605,11 +618,14 @@ fn keeping_only_read_slots(
             // An action whose slot has gone is REMOVED rather than renumbered - see
             // `DialogueAction::renumbered` for why writing -1 would be a different thing
             // entirely.
-            node.actions = node
-                .actions
-                .into_iter()
-                .filter_map(|action| action.renumbered(&map))
-                .collect();
+            let renumbered = |actions: Vec<DialogueAction>| {
+                actions
+                    .into_iter()
+                    .filter_map(|action| action.renumbered(&map))
+                    .collect()
+            };
+            node.actions = renumbered(node.actions);
+            node.failure_actions = renumbered(node.failure_actions);
             node
         })
         .collect();
@@ -681,6 +697,61 @@ pub fn parse_cost(fields: &HashMap<String, String>) -> (i32, bool, bool) {
         read_boolean(fields, HIDDEN_NOT_ENOUGH_FIELD),
     )
 }
+
+/// What a passive check's success adds while a thought is fixed, as once actions on the entry -
+/// see [`crate::core::thought_effects`]. Empty for anything that is not a passive check paying
+/// that price.
+pub(crate) fn passive_success_actions(
+    fields: &HashMap<String, String>,
+    kind: DialogueCheckKind,
+    symbols: &mut StateSymbols,
+) -> Vec<DialogueAction> {
+    use crate::core::thought_effects::passive_success_effect;
+
+    if kind != DialogueCheckKind::Passive || fields.contains_key(ANTIPASSIVE_FIELD) {
+        return Vec::new();
+    }
+    fields
+        .get(ACTOR_FIELD)
+        .and_then(|actor| passive_success_effect(actor))
+        .map(|(thought, effect)| effect.action(thought, symbols, PASSIVE_PRICE.to_string()))
+        .into_iter()
+        .collect()
+}
+
+/// What a check's failing branch adds while a thought is fixed - see
+/// [`crate::core::thought_effects`]. Empty for a check whose skill names no ability, for a fake
+/// check forced to succeed, and for anything that is not a rolled or fake check.
+pub(crate) fn check_failure_actions(
+    fields: &HashMap<String, String>,
+    kind: DialogueCheckKind,
+    symbols: &mut StateSymbols,
+) -> Vec<DialogueAction> {
+    use crate::core::thought_effects::{RolledKind, ability_of_skill_id, failure_effects};
+
+    let rolled = match kind {
+        DialogueCheckKind::White => RolledKind::White,
+        DialogueCheckKind::Red => RolledKind::Red,
+        DialogueCheckKind::Fake if !read_boolean(fields, ALWAYS_SUCCEED_FIELD) => RolledKind::Red,
+        _ => return Vec::new(),
+    };
+    let Some(ability) = fields
+        .get(SKILL_TYPE_FIELD)
+        .and_then(|id| ability_of_skill_id(id))
+    else {
+        return Vec::new();
+    };
+    // Built as once actions like every thought effect; a failing branch applies them with no
+    // once slot, since a check fails at most once and its flag already says so.
+    failure_effects(rolled, ability)
+        .into_iter()
+        .map(|(thought, effect)| effect.action(thought, symbols, CHECK_RESULT.to_string()))
+        .collect()
+}
+
+/// What the actions a check's result adds are named in reports.
+const PASSIVE_PRICE: &str = "CheckAlterant.PassiveCheckSuccessPrice";
+const CHECK_RESULT: &str = "CheckAlterant";
 
 /// The success and failure flag slots of a rolled check, or -1 for anything else.
 pub fn parse_flags(

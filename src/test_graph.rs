@@ -6,6 +6,8 @@
 //! tests exercise the parsers on the same syntax the game ships and a fixture can be
 //! pasted straight out of the asset.
 
+use std::collections::HashMap;
+
 use crate::core::price::PriceScale;
 use crate::core::state::StateSymbols;
 use crate::core::types::{DialogueCheckKind, DialogueNodeId};
@@ -36,6 +38,9 @@ pub struct Entry {
     pub cost: i32,
     pub price_scale: Option<PriceScale>,
     pub cost_once: bool,
+    /// Any other entry fields, as the database spells them - a check's `SkillType`, a passive
+    /// check's `Actor` - read by the same helpers the real builder uses.
+    pub fields: HashMap<String, String>,
 }
 
 impl Entry {
@@ -53,7 +58,14 @@ impl Entry {
             cost: 0,
             price_scale: None,
             cost_once: false,
+            fields: HashMap::new(),
         }
+    }
+
+    /// An entry field the database carries, as it spells it.
+    pub fn field(mut self, name: &str, value: &str) -> Self {
+        self.fields.insert(name.to_string(), value.to_string());
+        self
     }
 
     pub fn guard(mut self, text: &str) -> Self {
@@ -148,7 +160,14 @@ impl GraphBuilder {
             let id = node(entry.id);
             let guard = parse_guard(entry.guard.as_deref().unwrap_or(""))
                 .expect("a fixture's guard should parse");
-            let actions = parse_actions(entry.script.as_deref().unwrap_or(""), &mut symbols);
+            let mut actions = parse_actions(entry.script.as_deref().unwrap_or(""), &mut symbols);
+            actions.extend(crate::index::passive_success_actions(
+                &entry.fields,
+                entry.kind,
+                &mut symbols,
+            ));
+            let failure_actions =
+                crate::index::check_failure_actions(&entry.fields, entry.kind, &mut symbols);
 
             // A rolled check's success and failure flags, matching the real builder.
             let (flag_slot, failed_flag_slot) = match &entry.flag {
@@ -174,6 +193,7 @@ impl GraphBuilder {
                 kind: entry.kind,
                 guard,
                 actions,
+                failure_actions,
                 links,
                 cost: entry.cost,
                 click_cost: entry.cost,

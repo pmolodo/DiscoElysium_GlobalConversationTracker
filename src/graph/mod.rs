@@ -212,7 +212,7 @@ impl LookAheadGraph {
     /// Every thought whose being fixed decides whether an action fires, sorted.
     pub fn thoughts_deciding_actions(&self) -> BTreeSet<&str> {
         self.nodes()
-            .flat_map(|node| &node.actions)
+            .flat_map(|node| node.all_actions())
             .filter_map(|action| action.fixed_thought())
             .collect()
     }
@@ -233,7 +233,7 @@ impl LookAheadGraph {
         for node in self.nodes.values_mut() {
             node.cost =
                 crate::core::price::price(node.click_cost, node.price_scale, fitting.hardcore);
-            for action in &mut node.actions {
+            for action in node.actions.iter_mut().chain(&mut node.failure_actions) {
                 action.fit(|thought| fitting.fixed.contains(thought));
             }
         }

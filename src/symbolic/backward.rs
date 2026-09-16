@@ -564,7 +564,8 @@ impl<'a> Backward<'a> {
             DialogueCheckKind::Test => return self.vars.bottom(),
 
             DialogueCheckKind::Fake => {
-                let charged = self.pre_charge(node, onward, image);
+                let unfailed = self.pre_fail(node, onward, image);
+                let charged = self.pre_charge(node, &unfailed, image);
                 self.unseen(node, &charged)
             }
 
@@ -643,9 +644,10 @@ impl<'a> Backward<'a> {
         // `Reachability::rolled`, which this has to mirror exactly or the two engines
         // answer different questions.
         let failing = if node.failed_flag_slot >= 0 {
-            image.pre_assign(onward, node.failed_flag_slot as usize, 1)
+            let unfailed = self.pre_fail(node, onward, image);
+            image.pre_assign(&unfailed, node.failed_flag_slot as usize, 1)
         } else if node.kind == DialogueCheckKind::White {
-            onward.clone()
+            self.pre_fail(node, onward, image)
         } else {
             self.vars.bottom()
         };
@@ -665,6 +667,17 @@ impl<'a> Backward<'a> {
         }
 
         open
+    }
+
+    /// A check's failing branch beyond the failure flag, undone - the mirror of
+    /// `Reachability::fail`.
+    fn pre_fail(
+        &mut self,
+        node: &LookAheadNode,
+        onward: &BDDFunction,
+        image: &mut ActionImage<'a>,
+    ) -> BDDFunction {
+        image.pre_apply(onward, &node.failure_actions, &self.vars.bottom())
     }
 
     /// Paying, marking seen and acting, undone - in the reverse of the order they happen.
@@ -1288,6 +1301,41 @@ mod tests {
 
         agree(shape(), &counter(), 2, true);
         agree(shape(), &counter().set_seen(node(1), true), 2, false);
+    }
+
+    /// A check's result pays out only while its thought is fixed - the same fixtures as the
+    /// reference walk's.
+    #[test]
+    fn a_fixed_thought_pays_out_on_a_check_result() {
+        let fixed = |world: TestWorld| world.set_query_bool("IsTHCFixed", true);
+        let purse = || TestWorld::new().with_money(100);
+
+        let failed_logic = || {
+            vec![
+                Entry::new(0).links(&[1]),
+                Entry::new(1)
+                    .kind(DialogueCheckKind::White)
+                    .flag("logic_check")
+                    .field("SkillType", "0x0100000400000767")
+                    .links(&[2]),
+                Entry::new(2).cost(150),
+            ]
+        };
+        agree(failed_logic(), &purse(), 2, false);
+        agree(failed_logic(), &fixed(purse()), 2, true);
+
+        let encyclopedia = || {
+            vec![
+                Entry::new(0).links(&[1]),
+                Entry::new(1)
+                    .kind(DialogueCheckKind::Passive)
+                    .field("Actor", "399")
+                    .links(&[2]),
+                Entry::new(2).cost(250),
+            ]
+        };
+        agree(encyclopedia(), &purse(), 2, false);
+        agree(encyclopedia(), &fixed(purse()), 2, true);
     }
 
     /// A reputation action pays out or hurts only while its thought is fixed - the same

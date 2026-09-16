@@ -103,7 +103,7 @@ impl DataLayout {
 
         for node in graph.nodes() {
             // A cost charged once records that in its own slot, which is boolean.
-            for action in &node.actions {
+            for action in node.all_actions() {
                 let slot = action.slot();
                 if slot < 0 || slot as usize >= slot_count {
                     continue;
@@ -288,7 +288,7 @@ impl DataLayout {
         let mut reach: HashMap<usize, Reach> = HashMap::new();
         for node in graph.nodes() {
             let repeatable = cyclic.contains(&node.id);
-            for action in &node.actions {
+            for action in node.all_actions() {
                 let slot = action.slot();
                 if slot < 0 || slot as usize >= widths.len() {
                     continue;
@@ -733,7 +733,7 @@ impl DataLayout {
 
         let gained: i64 = graph
             .nodes()
-            .flat_map(|node| &node.actions)
+            .flat_map(|node| node.all_actions())
             .filter(|action| action.kind() == DialogueActionKind::GainMoney)
             .map(|action| i64::from(action.value().max(0)))
             .sum();

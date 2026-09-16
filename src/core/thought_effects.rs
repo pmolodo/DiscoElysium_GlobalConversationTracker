@@ -32,10 +32,38 @@
 //! as well as a raising - only a zero amount skips it - and inside the same `Once` as the
 //! reputation itself.
 //!
+//! A check's result runs `CheckAlterant` (pre-final-cut export):
+//!
+//! ```text
+//! WhiteCheckResult(result):                       // WhiteCheckNode.CheckSuccess
+//!     if (result.IsSuccess) return;
+//!     INT: if (IsThoughtFixed("return_on_investment")) Money += 100
+//!     MOT: if (IsThoughtFixed("superstar_cop"))        DamageVolition(1)
+//!     if (IsThoughtFixed("kras_mazov"))                HealVolition(99)
+//!
+//! RedCheckResult(result):                         // RedCheckNode and FakeCheckNode.CheckSuccess
+//!     if (result.IsSuccess) return;
+//!     FYS, MOT: if (IsThoughtFixed("sorry_cop")) HealEndurance(1)
+//!     INT, PSY: if (IsThoughtFixed("sorry_cop")) HealVolition(1)
+//!
+//! PassiveCheckSuccessPrice(skillType):            // PassiveNode.HandleEntry, applyPassiveSuccessBonus
+//!     CONCEPTUALIZATION: if (IsThoughtFixed("art_cop"))          HealVolition(1)
+//!     ENCYCLOPEDIA:      if (IsThoughtFixed("trant_heidelstam")) Money += 200
+//! ```
+//!
+//! The ability is `Skill.GetAbility`, by `SkillType` range. A rolled or fake check's skill is its
+//! `SkillType` field, an articy id `ArticyBridge.SkillIdToSkillType` looks up; a passive check's
+//! is its speaker's (`ActorIdToSkillType`). `PassiveNode.HandleEntry` pays the passive price only
+//! for a success - an antipassive never is one - on an entry not yet seen.
+//!
 //! ## What the engine does
 //!
 //! The parser follows a reputation action with the effect, marked once like the reputation and
-//! conditioned on the thought being fixed (`DialogueAction::when_thought_fixed`). A graph is
+//! conditioned on the thought being fixed (`DialogueAction::when_thought_fixed`). The graph
+//! builder gives a failing rolled or fake check its failure effects as
+//! `LookAheadNode::failure_actions`, applied on the failing branch after the failure flag, and a
+//! passive check its success effects as once actions on the entry, since a passive's success is
+//! the entry being charged. A graph is
 //! fitted to its world before a search (`crate::graph::Fitting`), which switches each such action
 //! on or off by whether the world holds the thought fixed. Only `PassTime` bakes a thought, and
 //! the plugin sends the clock locked, so the answer holds for the whole search. A thought whose
@@ -98,6 +126,179 @@ pub fn of_reputation(reputation: &str) -> Option<(&'static str, ThoughtEffect)> 
         .iter()
         .find(|(name, _)| *name == reputation)
         .map(|(name, effect)| (*name, *effect))
+}
+
+/// A skill's ability, `Skill.GetAbility`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ability {
+    Int,
+    Psy,
+    Fys,
+    Mot,
+}
+
+/// `ArticyBridge.ARTICY_ID_TO_SKILL_TYPE`, with each skill's ability from its `SkillType` range.
+const SKILLS: [(&str, &str, Ability); 28] = [
+    ("0x0100000400000767", "LOGIC", Ability::Int),
+    ("0x010000040000076B", "ENCYCLOPEDIA", Ability::Int),
+    ("0x0100000A00000016", "RHETORIC", Ability::Int),
+    ("0x0100000A0000001A", "DRAMA", Ability::Int),
+    ("0x0100000400000918", "CONCEPTUALIZATION", Ability::Int),
+    ("0x0100000A0000001E", "VISUAL_CALCULUS", Ability::Int),
+    ("0x0100000A0000003E", "VOLITION", Ability::Psy),
+    ("0x010000040000076F", "INLAND_EMPIRE", Ability::Psy),
+    ("0x0100000400000773", "EMPATHY", Ability::Psy),
+    ("0x0100000A00000042", "AUTHORITY", Ability::Psy),
+    ("0x0100000A00000046", "SUGGESTION", Ability::Psy),
+    ("0x0100000A0000004A", "ESPRIT_DE_CORPS", Ability::Psy),
+    ("0x0100000400000B11", "PHYSICAL_INSTRUMENT", Ability::Fys),
+    ("0x0100000A00000026", "ELECTROCHEMISTRY", Ability::Fys),
+    ("0x01000004000009A7", "ENDURANCE", Ability::Fys),
+    ("0x01000011000010D8", "HALF_LIGHT", Ability::Fys),
+    ("0x0100000A00000022", "PAIN_THRESHOLD", Ability::Fys),
+    ("0x0100000400000BC7", "SHIVERS", Ability::Fys),
+    ("0x0100000A0000002A", "HE_COORDINATION", Ability::Mot),
+    ("0x0100000400000BC3", "PERCEPTION", Ability::Mot),
+    ("0x0100000800000BB0", "HEARING", Ability::Mot),
+    ("0x0100000800000BBC", "SIGHT", Ability::Mot),
+    ("0x0100000800000BAC", "SMELL", Ability::Mot),
+    ("0x0100000800000BB8", "TASTE", Ability::Mot),
+    ("0x0100000A0000002E", "REACTION", Ability::Mot),
+    ("0x0100000A00000032", "SAVOIR_FAIRE", Ability::Mot),
+    ("0x0100000A00000036", "INTERFACING", Ability::Mot),
+    ("0x0100000A0000003A", "COMPOSURE", Ability::Mot),
+];
+
+/// The ability of the skill an articy id names, or `None` for an id that names no skill.
+pub fn ability_of_skill_id(articy_id: &str) -> Option<Ability> {
+    SKILLS
+        .iter()
+        .find(|(id, _, _)| *id == articy_id)
+        .map(|(_, _, ability)| *ability)
+}
+
+/// The skills a passive check's price is paid for, by the speaker's actor id in the shipped
+/// database - Conceptualization is actor 397 and Encyclopedia 399, which
+/// `tests/shipped_index.rs` pins against the actor table.
+pub const PASSIVE_PRICE_ACTORS: [(&str, &str); 2] =
+    [("397", "CONCEPTUALIZATION"), ("399", "ENCYCLOPEDIA")];
+
+/// The literal amounts `CheckAlterant` pays out.
+const RETURN_ON_INVESTMENT_MONEY: i32 = 100;
+const TRANT_HEIDELSTAM_MONEY: i32 = 200;
+
+/// A heal of one, the size every `CheckAlterant` heal but `kras_mazov`'s is.
+const HEAL_ONE: i32 = -1;
+
+/// What a failed white check adds, by the check's ability: (ability or any, thought, effect).
+const WHITE_FAILURE_EFFECTS: [(Option<Ability>, &str, ThoughtEffect); 3] = [
+    (
+        Some(Ability::Int),
+        "return_on_investment",
+        ThoughtEffect::Money(RETURN_ON_INVESTMENT_MONEY),
+    ),
+    (
+        Some(Ability::Mot),
+        "superstar_cop",
+        ThoughtEffect::Damage {
+            skill: "VOLITION",
+            amount: 1,
+        },
+    ),
+    (
+        None,
+        "kras_mazov",
+        ThoughtEffect::Damage {
+            skill: "VOLITION",
+            amount: -99,
+        },
+    ),
+];
+
+/// What a failed red or fake check adds, by the check's ability.
+const RED_FAILURE_EFFECTS: [(Option<Ability>, &str, ThoughtEffect); 4] = [
+    (
+        Some(Ability::Fys),
+        "sorry_cop",
+        ThoughtEffect::Damage {
+            skill: "ENDURANCE",
+            amount: HEAL_ONE,
+        },
+    ),
+    (
+        Some(Ability::Mot),
+        "sorry_cop",
+        ThoughtEffect::Damage {
+            skill: "ENDURANCE",
+            amount: HEAL_ONE,
+        },
+    ),
+    (
+        Some(Ability::Int),
+        "sorry_cop",
+        ThoughtEffect::Damage {
+            skill: "VOLITION",
+            amount: HEAL_ONE,
+        },
+    ),
+    (
+        Some(Ability::Psy),
+        "sorry_cop",
+        ThoughtEffect::Damage {
+            skill: "VOLITION",
+            amount: HEAL_ONE,
+        },
+    ),
+];
+
+/// What a passive check's success adds, by the skill it tests.
+const PASSIVE_SUCCESS_EFFECTS: [(&str, &str, ThoughtEffect); 2] = [
+    (
+        "CONCEPTUALIZATION",
+        "art_cop",
+        ThoughtEffect::Damage {
+            skill: "VOLITION",
+            amount: HEAL_ONE,
+        },
+    ),
+    (
+        "ENCYCLOPEDIA",
+        "trant_heidelstam",
+        ThoughtEffect::Money(TRANT_HEIDELSTAM_MONEY),
+    ),
+];
+
+/// Which rolled check failed, for [`failure_effects`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RolledKind {
+    White,
+    /// A red check, or a fake one - both report through `RedCheckResult`.
+    Red,
+}
+
+/// The (thought, effect) pairs a failed check of this kind and ability adds, in the game's order.
+pub fn failure_effects(kind: RolledKind, ability: Ability) -> Vec<(&'static str, ThoughtEffect)> {
+    let table: &[(Option<Ability>, &str, ThoughtEffect)] = match kind {
+        RolledKind::White => &WHITE_FAILURE_EFFECTS,
+        RolledKind::Red => &RED_FAILURE_EFFECTS,
+    };
+    table
+        .iter()
+        .filter(|(wanted, _, _)| wanted.is_none_or(|wanted| wanted == ability))
+        .map(|(_, thought, effect)| (*thought, *effect))
+        .collect()
+}
+
+/// The (thought, effect) a passive check spoken by `actor` adds on success, if any.
+pub fn passive_success_effect(actor: &str) -> Option<(&'static str, ThoughtEffect)> {
+    let skill = PASSIVE_PRICE_ACTORS
+        .iter()
+        .find(|(id, _)| *id == actor)
+        .map(|(_, skill)| *skill)?;
+    PASSIVE_SUCCESS_EFFECTS
+        .iter()
+        .find(|(name, _, _)| *name == skill)
+        .map(|(_, thought, effect)| (*thought, *effect))
 }
 
 impl ThoughtEffect {

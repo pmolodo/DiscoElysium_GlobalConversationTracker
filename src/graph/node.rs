@@ -18,6 +18,10 @@ pub struct LookAheadNode {
     pub kind: DialogueCheckKind,
     pub guard: Guard,
     pub actions: Vec<DialogueAction>,
+    /// What a rolled or fake check's FAILING branch does beyond recording the failure, applied
+    /// after the failure flag - see [`crate::core::thought_effects`]. Empty for anything else.
+    #[serde(default)]
+    pub failure_actions: Vec<DialogueAction>,
     pub links: Vec<DialogueNodeId>,
     /// The price a search charges and checks the purse against: [`Self::click_cost`] as
     /// [`crate::graph::LookAheadGraph::fit`] last priced it for a game mode.
@@ -63,6 +67,7 @@ impl LookAheadNode {
             kind: DialogueCheckKind::None,
             guard: Guard::always_true(),
             actions: Vec::new(),
+            failure_actions: Vec::new(),
             links: Vec::new(),
             cost: 0,
             click_cost: 0,
@@ -84,6 +89,12 @@ impl LookAheadNode {
     /// conversation group - to answer a question almost none of them ask.
     pub fn needs_once_slot(&self) -> bool {
         self.cost_once || self.actions.iter().any(|action| action.is_once())
+    }
+
+    /// Every action the entry can take, on entering and on a failing branch alike - for what
+    /// asks which slots, thoughts or money an entry can touch rather than when.
+    pub fn all_actions(&self) -> impl Iterator<Item = &DialogueAction> {
+        self.actions.iter().chain(&self.failure_actions)
     }
 
     pub fn closes_once_seen(&self) -> bool {

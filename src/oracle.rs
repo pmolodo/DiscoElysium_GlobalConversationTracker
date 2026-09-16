@@ -314,8 +314,11 @@ fn enter(
         DialogueCheckKind::Test => {}
 
         DialogueCheckKind::Fake => {
+            // A fake check's roll is forced, so entering one is its one branch - and the graph
+            // gives it failure actions only where that is a failure.
             if !has_been_seen(node, state) {
-                results.push(charge(node, state, caps, context.world));
+                let entered = charge(node, state, caps, context.world);
+                results.push(fail(node, entered, caps, context.world));
             }
         }
 
@@ -389,11 +392,12 @@ fn enter_rolled(
     }
 
     if node.failed_flag_slot >= 0 {
-        results.push(entered.with(node.failed_flag_slot as usize, 1));
+        let failed = entered.with(node.failed_flag_slot as usize, 1);
+        results.push(fail(node, failed, caps, world));
     } else if node.kind == DialogueCheckKind::White {
         // No flag to record the failure with, so it stays retryable and the ceiling is what
         // bounds the loop.
-        results.push(entered);
+        results.push(fail(node, entered, caps, world));
     }
 
     results
@@ -448,6 +452,25 @@ pub(crate) fn charge(
     )
 }
 
+/// What a check's failing branch does beyond recording the failure - see
+/// [`LookAheadNode::failure_actions`]. Not once: a failure only happens once per check, which
+/// the failure flag already records.
+fn fail(
+    node: &LookAheadNode,
+    state: LookAheadState,
+    caps: &CounterCaps<'_>,
+    world: &dyn ILookAheadWorld,
+) -> LookAheadState {
+    DialogueAction::apply(
+        &node.failure_actions,
+        &state,
+        -1,
+        caps,
+        world.is_clock_locked(),
+        world.day_counter(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -477,6 +500,40 @@ mod tests {
             "a fixture this small should be exhaustible"
         );
         walk
+    }
+
+    /// A failed Logic check pays out with Return on Investment fixed, and an Encyclopedia passive
+    /// pays out on success with Trant Heidelstam fixed - each only while its thought is fixed.
+    #[test]
+    fn a_fixed_thought_pays_out_on_a_check_result() {
+        let fixed = |world: TestWorld| world.set_query_bool("IsTHCFixed", true);
+        let purse = || TestWorld::new().with_money(100);
+
+        let failed_logic = || {
+            vec![
+                Entry::new(0).links(&[1]),
+                white(Entry::new(1))
+                    .flag("logic_check")
+                    .field("SkillType", "0x0100000400000767")
+                    .links(&[2]),
+                Entry::new(2).cost(150),
+            ]
+        };
+        assert!(!walked(failed_logic(), &purse()).reached(node(2)));
+        assert!(walked(failed_logic(), &fixed(purse())).reached(node(2)));
+
+        let encyclopedia = || {
+            vec![
+                Entry::new(0).links(&[1]),
+                Entry::new(1)
+                    .kind(DialogueCheckKind::Passive)
+                    .field("Actor", "399")
+                    .links(&[2]),
+                Entry::new(2).cost(250),
+            ]
+        };
+        assert!(!walked(encyclopedia(), &purse()).reached(node(2)));
+        assert!(walked(encyclopedia(), &fixed(purse())).reached(node(2)));
     }
 
     /// A reputation action pays out or hurts only while its thought is fixed.

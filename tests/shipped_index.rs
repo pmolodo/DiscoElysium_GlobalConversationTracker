@@ -46,6 +46,31 @@ fn the_player_actor_is_you() {
     assert_eq!(actor["name"], "You");
 }
 
+/// The speakers whose passive checks pay a thought's price are the skills they are named for.
+#[test]
+fn the_passive_price_actors_are_their_skills() {
+    let path = common::actors().expect("actor table is required");
+    let text = std::fs::read_to_string(path).unwrap();
+    let names: HashMap<String, String> = text
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .map(|actor| {
+            (
+                actor["id"].as_i64().unwrap().to_string(),
+                actor["name"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+
+    for (actor, skill) in lookahead_engine::core::thought_effects::PASSIVE_PRICE_ACTORS {
+        assert_eq!(
+            names.get(actor).map(|name| name.to_uppercase()).as_deref(),
+            Some(skill),
+            "actor {actor}",
+        );
+    }
+}
+
 #[test]
 fn the_trimmed_index_keeps_every_field_the_engine_reads() {
     let (Some(full), Some(trimmed)) = (common::conversation_index(), common::shipped_index())

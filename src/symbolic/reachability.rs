@@ -286,7 +286,8 @@ impl<'a> Reachability<'a> {
             // Closes once seen, so only states that have not seen it may enter.
             DialogueCheckKind::Fake => {
                 let fresh = self.unseen(node, &allowed);
-                self.charge(node, &fresh, image)
+                let entered = self.charge(node, &fresh, image);
+                self.fail(node, &entered, image)
             }
 
             DialogueCheckKind::KimSwitch => {
@@ -381,14 +382,26 @@ impl<'a> Reachability<'a> {
         // Failure: both kinds record it where there is a flag to record it with, and a
         // white check without one leaves the state alone, so only that case is retryable.
         let failure = if node.failed_flag_slot >= 0 {
-            image.assign(&entered, node.failed_flag_slot as usize, 1)
+            let failed = image.assign(&entered, node.failed_flag_slot as usize, 1);
+            self.fail(node, &failed, image)
         } else if node.kind == DialogueCheckKind::White {
-            entered
+            self.fail(node, &entered, image)
         } else {
             self.vars.bottom()
         };
 
         (success, failure)
+    }
+
+    /// A check's failing branch beyond the failure flag - see `LookAheadNode::failure_actions`,
+    /// and `oracle::fail`, which this mirrors.
+    fn fail(
+        &mut self,
+        node: &LookAheadNode,
+        states: &BDDFunction,
+        image: &mut ActionImage<'a>,
+    ) -> BDDFunction {
+        image.apply(states, &node.failure_actions, &self.vars.bottom())
     }
 
     /// Paying the cost, marking the entry seen, and applying its actions.
