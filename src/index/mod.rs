@@ -21,7 +21,7 @@ use crate::core::state::{ONCE_PREFIX, SEEN_PREFIX, StateSymbols};
 use crate::core::types::{DialogueCheckKind, DialogueNodeId};
 use crate::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
-use crate::parser::action_parser::parse_actions;
+use crate::parser::action_parser::parse_actions_with_journal;
 use crate::parser::guard_parser::parse_guard;
 use crate::symbolic::data_layout::DataLayout;
 
@@ -415,6 +415,9 @@ pub fn build_group_graph(index: &Index, start: i32) -> Result<(LookAheadGraph, V
     let group = discover_group(index, start);
     let mut symbols = StateSymbols::new();
     let mut nodes = Vec::new();
+    // THE JOURNAL, which lives in task conversations that are no part of any group - so it is
+    // read from the whole index, for every group. A scan of the conversation fields only.
+    let journal = journal::Journal::from_index(index);
 
     for &conversation_id in &group {
         for entry in &index[&conversation_id].entries {
@@ -422,8 +425,10 @@ pub fn build_group_graph(index: &Index, start: i32) -> Result<(LookAheadGraph, V
             // restart at 0 in every conversation.
             let node_id = DialogueNodeId::new(conversation_id, entry.id);
 
-            let guard = parse_guard(&entry.guard).unwrap_or_else(|_| Guard::always_true());
-            let actions = parse_actions(&entry.script, &mut symbols);
+            let guard = parse_guard(&entry.guard)
+                .map(|guard| journal.with_tasks_as_variables(&guard))
+                .unwrap_or_else(|_| Guard::always_true());
+            let actions = parse_actions_with_journal(&entry.script, &mut symbols, &journal);
 
             let kind = determine_kind(&entry.fields);
             let (cost, cost_once, hidden_when_unaffordable) = parse_cost(&entry.fields);
@@ -552,11 +557,19 @@ fn keeping_only_read_slots(
         }
     }
 
+    // WHAT A CONDITIONAL WRITE TESTS, kept whether or not anything writes it: the seed puts
+    // the world's value there, and the action has no other way to ask it.
+    let tested: HashSet<String> = nodes
+        .iter()
+        .flat_map(|node| DataLayout::tested_by_actions(node, &symbols))
+        .collect();
+
     let keep: Vec<bool> = (0..symbols.count())
         .map(|slot| match symbols.name_of(slot) {
             Some(name) => {
                 name.starts_with(SEEN_PREFIX)
                     || name.starts_with(ONCE_PREFIX)
+                    || tested.contains(name)
                     || (reads.contains(name) && written[slot])
             }
             // A slot with no name is one this table never interned, so there is nothing

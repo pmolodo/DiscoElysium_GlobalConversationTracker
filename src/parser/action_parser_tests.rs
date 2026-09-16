@@ -12,7 +12,9 @@
 use crate::core::action::{CounterCaps, DialogueAction, DialogueActionKind};
 use crate::core::state::{LookAheadState, StateSymbols};
 use crate::core::types::DialogueNodeId;
-use crate::parser::action_parser::parse_actions;
+use crate::index::journal::Journal;
+use crate::index::{ConversationRecord, Index};
+use crate::parser::action_parser::{parse_actions, parse_actions_with_journal};
 
 const COUNTER_CAP: i32 = 16;
 
@@ -32,6 +34,41 @@ fn run(
 ) -> LookAheadState {
     let actions = parse_actions(script, symbols);
     DialogueAction::apply(&actions, state, once_slot, &caps(), false, DAY)
+}
+
+/// A journal of the tasks these tests name, each with show, done and cancel variables.
+fn journal() -> Journal {
+    let mut index = Index::new();
+    for (id, task) in [
+        "TASK.x",
+        "TASK.advanced_ballistics_analysis",
+        "TASK.locate_the_firearm",
+        "TASK.find_the_body",
+        "TASK.become_man_of_plenty",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let id = id as i32;
+        let condition = |suffix: &str| format!("Variable[\"{task}{suffix}\"]");
+        index.insert(
+            id,
+            ConversationRecord {
+                id,
+                hash: String::new(),
+                fields: [
+                    ("display_condition_main", condition("")),
+                    ("done_condition_main", condition("_done")),
+                    ("cancel_condition_main", condition("_cancelled")),
+                ]
+                .into_iter()
+                .map(|(name, value)| (name.to_string(), value))
+                .collect(),
+                entries: Vec::new(),
+            },
+        );
+    }
+    Journal::from_index(&index)
 }
 
 /// An empty state wide enough for every slot interned so far.
@@ -88,20 +125,45 @@ fn lose_item_clears_the_slot() {
     assert!(!state.is_set(slot));
 }
 
+/// A journal action writes the variables the game's journal writes, and refuses where it
+/// refuses: no revealing a cancelled task, no cancelling a done one.
 #[test]
-fn task_calls_set_and_clear() {
-    for (script, expected) in [
-        (r#"GainTask("TASK.x")"#, true),
-        (r#"FinishTask("TASK.x")"#, false),
-        (r#"CancelTask("TASK.x")"#, false),
-    ] {
+fn journal_calls_write_the_variables_the_game_writes() {
+    // (script, show, done, cancel set before, show, done, cancel after)
+    let cases = [
+        (r#"GainTask("TASK.x")"#, [0, 0, 0], [1, 0, 0]),
+        (r#"GainTask("TASK.x")"#, [0, 0, 1], [0, 0, 1]),
+        (r#"FinishTask("TASK.x_done")"#, [0, 0, 0], [1, 1, 0]),
+        (r#"FinishTask("TASK.x")"#, [1, 0, 0], [1, 1, 0]),
+        (r#"CancelTask("TASK.x_cancelled")"#, [1, 0, 0], [1, 0, 1]),
+        (r#"CancelTask("TASK.x")"#, [1, 1, 0], [1, 1, 0]),
+    ];
+    let journal = journal();
+    for (script, before, after) in cases {
         let mut symbols = StateSymbols::new();
-        let slot = symbols.task("TASK.x");
-        let start = empty(&symbols, 0).with(slot, 1);
+        let slots = ["TASK.x", "TASK.x_done", "TASK.x_cancelled"].map(|v| symbols.variable(v));
+        let actions = parse_actions_with_journal(script, &mut symbols, &journal);
 
-        let state = run(script, &mut symbols, &start, -1);
-        assert_eq!(state.is_set(slot), expected, "{script}");
+        let mut start = empty(&symbols, 0);
+        for (slot, value) in slots.iter().zip(before) {
+            start = start.with(*slot, value);
+        }
+        let state = DialogueAction::apply(&actions, &start, -1, &caps(), false, DAY);
+        let held = slots.map(|slot| state.get(slot));
+        assert_eq!(held, after, "{script} from {before:?}");
     }
+}
+
+/// An action naming no task writes nothing, as the game logs and returns.
+#[test]
+fn a_journal_action_naming_no_task_writes_nothing() {
+    let mut symbols = StateSymbols::new();
+    let actions = parse_actions_with_journal(
+        r#"FinishTask("TASK.nowhere_done")"#,
+        &mut symbols,
+        &journal(),
+    );
+    assert!(actions.is_empty(), "got {actions:?}");
 }
 
 /// The counter idiom from conversation 825, verbatim.
@@ -413,14 +475,16 @@ fn an_empty_script_produces_no_actions() {
 #[test]
 fn every_statement_after_the_first_is_read() {
     let mut symbols = StateSymbols::new();
-    let actions = parse_actions(
+    let actions = parse_actions_with_journal(
         "FinishTask(\"TASK.advanced_ballistics_analysis_done\");\
          \\nGainTask(\"TASK.locate_the_firearm\");\
          \\nSetVariableValue(\"tc.belle_magrave\", true) --[[ Variable[ ]]",
         &mut symbols,
+        &journal(),
     );
 
-    assert_eq!(actions.len(), 3);
+    // FinishTask is two writes - reveal, then done - and the other two are one each.
+    assert_eq!(actions.len(), 4, "got {actions:?}");
     assert!(
         actions.iter().all(|a| !matches!(
             a.kind(),
@@ -430,16 +494,14 @@ fn every_statement_after_the_first_is_read() {
     );
 
     let done = symbols
-        .find("task:TASK.advanced_ballistics_analysis_done")
+        .find("TASK.advanced_ballistics_analysis_done")
         .unwrap();
-    let firearm = symbols.find("task:TASK.locate_the_firearm").unwrap();
+    let firearm = symbols.find("TASK.locate_the_firearm").unwrap();
     let belle = symbols.find("tc.belle_magrave").unwrap();
 
-    // The task the entry finishes starts active, so clearing it is visible.
-    let before = empty(&symbols, 0).with(done, 1);
-    let after = DialogueAction::apply(&actions, &before, -1, &caps(), false, DAY);
+    let after = DialogueAction::apply(&actions, &empty(&symbols, 0), -1, &caps(), false, DAY);
 
-    assert_eq!(after.get(done), 0);
+    assert_eq!(after.get(done), 1);
     assert_eq!(after.get(firearm), 1);
     assert_eq!(after.get(belle), 1);
 }
@@ -478,14 +540,15 @@ fn an_escaped_quote_does_not_end_a_string() {
 #[test]
 fn a_line_comment_ends_at_the_separator() {
     let mut symbols = StateSymbols::new();
-    let actions = parse_actions(
+    let actions = parse_actions_with_journal(
         "GainItem(\"badge\") -- he kept it after all\\nGainTask(\"TASK.find_the_body\")",
         &mut symbols,
+        &journal(),
     );
 
     assert_eq!(actions.len(), 2, "got {actions:?}");
     let badge = symbols.find("item:badge").unwrap();
-    let body = symbols.find("task:TASK.find_the_body").unwrap();
+    let body = symbols.find("TASK.find_the_body").unwrap();
     let after = DialogueAction::apply(&actions, &empty(&symbols, 0), -1, &caps(), false, DAY);
 
     assert_eq!(after.get(badge), 1);
@@ -561,12 +624,13 @@ fn a_value_that_is_not_one_number_is_unmodelled() {
 #[test]
 fn a_write_inside_a_value_is_applied() {
     let mut symbols = StateSymbols::new();
-    let actions = parse_actions(
+    let actions = parse_actions_with_journal(
         r#"SetVariableValue("x", true  and  CancelTask("TASK.become_man_of_plenty_cancelled"))"#,
         &mut symbols,
+        &journal(),
     );
-    let task = symbols
-        .find("task:TASK.become_man_of_plenty_cancelled")
+    let cancel = symbols
+        .find("TASK.become_man_of_plenty_cancelled")
         .expect("the nested call is read");
-    assert_eq!(actions[0].slot(), task as i32);
+    assert_eq!(actions[0].slot(), cancel as i32);
 }

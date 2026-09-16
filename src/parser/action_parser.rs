@@ -2,6 +2,7 @@
 use crate::core::action::{DialogueAction, DialogueActionKind};
 use crate::core::clock::ClockReading;
 use crate::core::state::StateSymbols;
+use crate::index::journal::Journal;
 
 const ONCE_FN: &str = "once";
 
@@ -19,8 +20,20 @@ const REPUTATION_PREFIX: &str = "reputation.";
 /// `SetVariableValue`, is named in reports.
 const DIRECT_ASSIGNMENT: &str = "Variable[] =";
 
-/// Parse a userScript into DialogueActions.
+/// Parse a userScript into DialogueActions, with no journal to resolve a task against.
+///
+/// For a script that names no task, and for tests: a journal action here resolves to nothing
+/// and writes nothing. A graph built from the index uses [`parse_actions_with_journal`].
 pub fn parse_actions(script: &str, symbols: &mut StateSymbols) -> Vec<DialogueAction> {
+    parse_actions_with_journal(script, symbols, &Journal::default())
+}
+
+/// Parse a userScript into DialogueActions, resolving journal actions through `journal`.
+pub fn parse_actions_with_journal(
+    script: &str,
+    symbols: &mut StateSymbols,
+    journal: &Journal,
+) -> Vec<DialogueAction> {
     let stripped = normalize(script);
     let mut actions = Vec::new();
     for statement in statements(&stripped) {
@@ -33,7 +46,7 @@ pub fn parse_actions(script: &str, symbols: &mut StateSymbols) -> Vec<DialogueAc
             continue;
         }
         for call in invocations(statement) {
-            translate_call(call, symbols, &mut actions);
+            translate_call(call, symbols, journal, &mut actions);
         }
     }
     actions
@@ -378,11 +391,16 @@ fn read_clock_value(value: &str) -> Option<(ClockReading, i32)> {
 /// `SetVariableValue(..., true and CancelTask("TASK.become_man_of_plenty_cancelled"))`. Only
 /// calls this parser models as writes are kept - a nested read such as `TotalHourCount()` or
 /// `IsHighestCopotype(...)` is part of the value, not an action.
-fn nested_writes(call: &Invocation, symbols: &mut StateSymbols, actions: &mut Vec<DialogueAction>) {
+fn nested_writes(
+    call: &Invocation,
+    symbols: &mut StateSymbols,
+    journal: &Journal,
+    actions: &mut Vec<DialogueAction>,
+) {
     for arg in &call.args {
         for nested in invocations(&code_of(arg)) {
             let mut found = Vec::new();
-            translate_call(nested, symbols, &mut found);
+            translate_call(nested, symbols, journal, &mut found);
             actions.extend(found.into_iter().filter(|action| {
                 !matches!(
                     action.kind(),
@@ -426,8 +444,13 @@ fn code_of(arg: &str) -> String {
     out
 }
 
-fn translate_call(call: Invocation, symbols: &mut StateSymbols, actions: &mut Vec<DialogueAction>) {
-    nested_writes(&call, symbols, actions);
+fn translate_call(
+    call: Invocation,
+    symbols: &mut StateSymbols,
+    journal: &Journal,
+    actions: &mut Vec<DialogueAction>,
+) {
+    nested_writes(&call, symbols, journal, actions);
     match call.name.as_str() {
         "SetVariableValue" => {
             if call.args.len() < 2 {
@@ -529,13 +552,48 @@ fn translate_call(call: Invocation, symbols: &mut StateSymbols, actions: &mut Ve
             let slot = symbols.thought(&unquote(call.args.first().unwrap_or(&String::new())));
             actions.push(DialogueAction::assign(slot, 1, call.name));
         }
-        "GainTask" => {
-            let slot = symbols.task(&unquote(call.args.first().unwrap_or(&String::new())));
-            actions.push(DialogueAction::assign(slot, 1, call.name));
-        }
-        "FinishTask" | "CancelTask" => {
-            let slot = symbols.task(&unquote(call.args.first().unwrap_or(&String::new())));
-            actions.push(DialogueAction::assign(slot, 0, call.name));
+        // THE JOURNAL, as writes to the variables that ARE its state - see
+        // `index::journal`. `JournalModel` resolves the argument to a task or subtask by any of
+        // its three variables and, from the pre-final-cut export:
+        //
+        //     GainTask:   if (IsVisible || IsCanceled) return;  Reveal()  -> show = true
+        //     FinishTask: if (IsDone) return;  if (!IsVisible) Reveal();  -> show = true
+        //                 MarkDone()                                      -> done = true
+        //     CancelTask: if (IsDone) return false;                       -> cancel = true
+        //
+        // A shown part is already true in its show variable, so "unless visible" needs no test
+        // of its own. An argument naming no part writes nothing, as the game logs and returns.
+        "GainTask" | "FinishTask" | "CancelTask" => {
+            let named = unquote(call.args.first().unwrap_or(&String::new()));
+            let Some((_, part)) = journal.part_named(&named) else {
+                return;
+            };
+            let show = symbols.variable(&part.show);
+            let done = symbols.variable(&part.done);
+            match call.name.as_str() {
+                "GainTask" => actions.push(match &part.cancel {
+                    Some(cancel) => {
+                        let cancel = symbols.variable(cancel);
+                        DialogueAction::assign_unless(show, 1, cancel, call.name)
+                    }
+                    None => DialogueAction::assign(show, 1, call.name),
+                }),
+                "FinishTask" => {
+                    actions.push(DialogueAction::assign_unless(
+                        show,
+                        1,
+                        done,
+                        call.name.clone(),
+                    ));
+                    actions.push(DialogueAction::assign(done, 1, call.name));
+                }
+                _ => {
+                    if let Some(cancel) = &part.cancel {
+                        let cancel = symbols.variable(cancel);
+                        actions.push(DialogueAction::assign_unless(cancel, 1, done, call.name));
+                    }
+                }
+            }
         }
         "GainMoneyOnce" | "GainMoneyAlways" | "LoseMoneyOnce" | "LoseMoneyAlways" => {
             let gain = call.name.starts_with("Gain");

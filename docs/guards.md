@@ -41,57 +41,57 @@ walks - see [What the search can move](#what-the-search-can-move):
 - `held` - a dialogue action can change it, and the engine answers from the crawl's starting
   value anyway, by a recorded decision or an approximation named in the family's section.
 
-| function                    | family       | guards | entries | mechanism | during a search                               |
-| --------------------------- | ------------ | -----: | ------: | --------- | --------------------------------------------- |
-| IsKimHere                   | party        |    323 |   4,687 | data      | held - de-70eo.8                              |
-| CheckItem                   | inventory    |    493 |     835 | set       | tracked                                       |
-| IsTHCPresent                | cabinet      |    213 |     731 | set       | tracked                                       |
-| CheckEquipped               | equipment    |    199 |     514 | data      | held - de-70eo.7                              |
-| IsCunoInParty               | party        |     22 |     358 | data      | held - de-70eo.8                              |
-| IsTaskActive                | journal      |    204 |     341 | set       | tracked, wrongly for some actions - de-70eo.3 |
-| DayCount                    | clock        |     66 |     111 | port      | constant                                      |
-| IsHourBetween               | clock        |     63 |     108 | port      | held - clock locked                           |
-| IsHighestPolitical          | reputation   |     17 |      75 | slot      | tracked                                       |
-| IsEvening                   | clock        |      6 |      69 | port      | held - clock locked                           |
-| IsTHCFixed                  | cabinet      |     47 |      65 | data      | constant while the clock is locked            |
-| IsMorning                   | clock        |      7 |      60 | port      | held - clock locked                           |
-| IsNight                     | clock        |      4 |      54 | port      | held - clock locked                           |
-| IsAfternoon                 | clock        |      5 |      44 | port      | held - clock locked                           |
-| IsHighestCopotype           | reputation   |     12 |      43 | slot      | tracked                                       |
-| IsTHCCookingOrFixed         | cabinet      |     32 |      42 | data      | constant while the clock is locked            |
-| SubstanceUsedOnce           | substances   |     24 |      41 | slot      | tracked                                       |
-| MoneyAmount                 | money        |     31 |      37 | slot      | tracked                                       |
-| IsDayFrom                   | clock        |     16 |      36 | port      | constant                                      |
-| IsDaytime                   | clock        |      3 |      33 | port      | held - clock locked                           |
-| IsNighttime                 | clock        |      3 |      29 | port      | held - clock locked                           |
-| CheckItemGroup              | inventory    |     23 |      28 | set       | tracked                                       |
-| CheckEquippedGroup          | equipment    |     13 |      25 | data      | held - de-70eo.7                              |
-| SubstanceUsedMore           | substances   |     11 |      19 | slot      | tracked                                       |
-| IsExterior                  | scene        |      4 |      14 | data      | held by decision                              |
-| HasJacket                   | equipment    |     10 |      12 | data      | held - de-70eo.7                              |
-| HasVolitionDamage           | damage       |      4 |      12 | data      | held - de-70eo.6                              |
-| CheckHeldRightGroup         | equipment    |      8 |      12 | data      | held - de-70eo.7                              |
-| HasShirt                    | equipment    |      9 |      11 | data      | held - de-70eo.7                              |
-| IsDayUntil                  | clock        |      4 |      11 | port      | constant                                      |
-| FlagSet                     | flags        |      9 |      10 | slot      | tracked                                       |
-| HasEnduranceDamage          | damage       |      2 |       6 | data      | held - de-70eo.6                              |
-| HasShoes                    | equipment    |      4 |       6 | data      | held - de-70eo.7                              |
-| IsHardcoreModeActive        | game mode    |      2 |       6 | data      | constant                                      |
-| WasGameBeatenInHardcoreMode | game mode    |      2 |       6 | data      | constant                                      |
-| HasHat                      | equipment    |      2 |       5 | data      | held - de-70eo.7                              |
-| TotalHourCount              | clock        |      5 |       5 | port      | held - clock locked                           |
-| FlagNotSet                  | flags        |      3 |       3 | slot      | tracked                                       |
-| IsTHCCooking                | cabinet      |      3 |       3 | data      | constant while the clock is locked            |
-| IsKimInParty                | party        |      2 |       3 | data      | held - de-70eo.8                              |
-| HourCount                   | clock        |      2 |       2 | port      | held - clock locked                           |
-| IsDusk                      | clock        |      2 |       2 | port      | held - clock locked                           |
-| IsNoon                      | clock        |      2 |       2 | port      | held - clock locked                           |
-| IsRaining                   | scene        |      2 |       2 | slot      | tracked                                       |
-| IsSnowing                   | scene        |      2 |       2 | slot      | tracked                                       |
-| WeirdClothing               | equipment    |      2 |       2 | data      | held - de-70eo.7                              |
-| XPStandardSetBool           | guard action |      2 |       2 | answered  | not applicable                                |
-| FinishTask                  | guard action |      1 |       1 | answered  | not applicable                                |
-| HasPawnablesInInventory     | inventory    |      1 |       1 | data      | held - tab read at the start                  |
+| function                    | family       | guards | entries | mechanism | during a search                    |
+| --------------------------- | ------------ | -----: | ------: | --------- | ---------------------------------- |
+| IsKimHere                   | party        |    323 |   4,687 | data      | held - de-70eo.8                   |
+| CheckItem                   | inventory    |    493 |     835 | set       | tracked                            |
+| IsTHCPresent                | cabinet      |    213 |     731 | set       | tracked                            |
+| CheckEquipped               | equipment    |    199 |     514 | data      | held - de-70eo.7                   |
+| IsCunoInParty               | party        |     22 |     358 | data      | held - de-70eo.8                   |
+| IsTaskActive                | journal      |    204 |     341 | slot      | tracked                            |
+| DayCount                    | clock        |     66 |     111 | port      | constant                           |
+| IsHourBetween               | clock        |     63 |     108 | port      | held - clock locked                |
+| IsHighestPolitical          | reputation   |     17 |      75 | slot      | tracked                            |
+| IsEvening                   | clock        |      6 |      69 | port      | held - clock locked                |
+| IsTHCFixed                  | cabinet      |     47 |      65 | data      | constant while the clock is locked |
+| IsMorning                   | clock        |      7 |      60 | port      | held - clock locked                |
+| IsNight                     | clock        |      4 |      54 | port      | held - clock locked                |
+| IsAfternoon                 | clock        |      5 |      44 | port      | held - clock locked                |
+| IsHighestCopotype           | reputation   |     12 |      43 | slot      | tracked                            |
+| IsTHCCookingOrFixed         | cabinet      |     32 |      42 | data      | constant while the clock is locked |
+| SubstanceUsedOnce           | substances   |     24 |      41 | slot      | tracked                            |
+| MoneyAmount                 | money        |     31 |      37 | slot      | tracked                            |
+| IsDayFrom                   | clock        |     16 |      36 | port      | constant                           |
+| IsDaytime                   | clock        |      3 |      33 | port      | held - clock locked                |
+| IsNighttime                 | clock        |      3 |      29 | port      | held - clock locked                |
+| CheckItemGroup              | inventory    |     23 |      28 | set       | tracked                            |
+| CheckEquippedGroup          | equipment    |     13 |      25 | data      | held - de-70eo.7                   |
+| SubstanceUsedMore           | substances   |     11 |      19 | slot      | tracked                            |
+| IsExterior                  | scene        |      4 |      14 | data      | held by decision                   |
+| HasJacket                   | equipment    |     10 |      12 | data      | held - de-70eo.7                   |
+| HasVolitionDamage           | damage       |      4 |      12 | data      | held - de-70eo.6                   |
+| CheckHeldRightGroup         | equipment    |      8 |      12 | data      | held - de-70eo.7                   |
+| HasShirt                    | equipment    |      9 |      11 | data      | held - de-70eo.7                   |
+| IsDayUntil                  | clock        |      4 |      11 | port      | constant                           |
+| FlagSet                     | flags        |      9 |      10 | slot      | tracked                            |
+| HasEnduranceDamage          | damage       |      2 |       6 | data      | held - de-70eo.6                   |
+| HasShoes                    | equipment    |      4 |       6 | data      | held - de-70eo.7                   |
+| IsHardcoreModeActive        | game mode    |      2 |       6 | data      | constant                           |
+| WasGameBeatenInHardcoreMode | game mode    |      2 |       6 | data      | constant                           |
+| HasHat                      | equipment    |      2 |       5 | data      | held - de-70eo.7                   |
+| TotalHourCount              | clock        |      5 |       5 | port      | held - clock locked                |
+| FlagNotSet                  | flags        |      3 |       3 | slot      | tracked                            |
+| IsTHCCooking                | cabinet      |      3 |       3 | data      | constant while the clock is locked |
+| IsKimInParty                | party        |      2 |       3 | data      | held - de-70eo.8                   |
+| HourCount                   | clock        |      2 |       2 | port      | held - clock locked                |
+| IsDusk                      | clock        |      2 |       2 | port      | held - clock locked                |
+| IsNoon                      | clock        |      2 |       2 | port      | held - clock locked                |
+| IsRaining                   | scene        |      2 |       2 | slot      | tracked                            |
+| IsSnowing                   | scene        |      2 |       2 | slot      | tracked                            |
+| WeirdClothing               | equipment    |      2 |       2 | data      | held - de-70eo.7                   |
+| XPStandardSetBool           | guard action |      2 |       2 | answered  | not applicable                     |
+| FinishTask                  | guard action |      1 |       1 | answered  | not applicable                     |
+| HasPawnablesInInventory     | inventory    |      1 |       1 | data      | held - tab read at the start       |
 
 ## How a question is answered
 
@@ -190,12 +190,11 @@ and `a_clock_question_is_undecided_without_the_approximation` in `guard_formula.
 
 `IsHour` and `IsMidnight` are ported too and appear in no guard.
 
-### Inventory, journal and cabinet: the slot-backed sets
+### Inventory and cabinet: the slot-backed sets
 
 Answered in `BoundContext::query` through `tracked_or_world`: a subject the group's actions
-move has an `item:`, `task:` or `thought:` slot and is read from search state; any other
-subject is answered from the world's starting set (`initially_has_item`,
-`initially_task_active`, `initially_has_thought`).
+move has an `item:` or `thought:` slot and is read from search state; any other subject is
+answered from the world's starting set (`initially_has_item`, `initially_has_thought`).
 
 The plugin fills the starting sets in `GameWorldSnapshot.FillMembers` by calling the game's own
 predicate once per named subject - a pure read, kept as Lua because re-implementing
@@ -206,10 +205,24 @@ fixture reads them from the save.
 | ------------ | -----: | ------: | --------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | CheckItem    |    493 |     835 | set       | PFC `CharacterItems.IsItemGained`                                 | bag and equipment, the key pocket for `key_ring` stacks, the count for `bullets` | `a_tracked_item_compiles_against_its_slot`, `an_untracked_item_is_answered_from_the_worlds_inventory`, `a_tracked_item_ignores_the_worlds_starting_inventory` |
 | IsTHCPresent |    213 |     731 | set       | PFC `CharacterThoughts.ThoughtGained` (`gainedThoughts.Contains`) | every cabinet state except `UNKNOWN` and `FORGOTTEN`                             | `a_gained_thought_compiles_against_its_slot`, `an_ungained_thought_is_answered_from_the_save`                                                                 |
-| IsTaskActive |    204 |     341 | set       | PFC `JournalModel.IsTaskActive`                                   | acquired and not resolved                                                        | `a_task_question_reads_the_task_slot`                                                                                                                         |
 
-`bridge.rs` `the_slot_backed_queries_are_asked_for_by_subject` checks all three are asked for
-by name rather than as calls.
+`bridge.rs` `the_slot_backed_queries_are_asked_for_by_subject` checks both are asked for by
+name rather than as calls.
+
+### Journal
+
+| function     | guards | entries | mechanism | game source                     | tests                                                                |
+| ------------ | -----: | ------: | --------- | ------------------------------- | -------------------------------------------------------------------- |
+| IsTaskActive |    204 |     341 | slot      | PFC `JournalModel.IsTaskActive` | `a_task_question_is_rewritten_over_its_variables` (`index::journal`) |
+
+A task's state is its three condition variables - show, done and cancel - which the journal
+actions write and `JournalWatchman` keeps the game's own flags in step with on load. So
+`IsTaskActive("x")` is REWRITTEN when the graph is built, by `Journal::with_tasks_as_variables`,
+into `show and not done and not cancel` over the part `x` names, and for a subtask also its
+parent's done and cancel. From there it is a guard over dialogue variables like any other: the
+graph declares them, the plugin sends their values, the search reads its own slots for the ones
+the group writes, and the compiler decides it. A name the journal does not know is `false`, as
+the game answers. See `docs/actions.md` for the writes.
 
 `FORGOTTEN` is not present because `CharacterThoughts.ForgetThought` removes the thought from
 `gainedThoughts` as it sets that state.
@@ -431,11 +444,10 @@ it reads. Three positions, per function above:
   locked clock: party, damage, equipment, the clock, the pawnables tab, the scene.
 
 Which actions write what, and whether any of them reaches a guard that reads it, is in
-[actions.md](actions.md). Two of its findings bear on this document. Equipment is held rather
-than constant: `LoseItem` unequips what it deletes (`Inventory.DeleteItem`) and 26 call sites
+[actions.md](actions.md). One of its findings bears on this document: equipment is held rather
+than constant. `LoseItem` unequips what it deletes (`Inventory.DeleteItem`) and 26 call sites
 have an equipment question downstream, although `core::modelling` still lists the equipment
-questions as constant by construction (de-70eo.7). And tracked is not the same as right for the
-journal: the engine's journal actions write the wrong subjects (de-70eo.3).
+questions as constant by construction (de-70eo.7).
 
 `UseSubstanceInHand` does write `stats.uses_<group>` (`HudHeldPanelController.OnSubstanceUse`),
 though `core::substance` says no dialogue script does; no call site has a substance question

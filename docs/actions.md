@@ -53,11 +53,11 @@ today; `verdict` is how that compares with the game for the writes a downstream 
 | ---------------------------------- | --------------- | ----: | ----: | ----------------------------------------- | -------------------------------------- |
 | SetVariableValue                   | variables       | 9,829 | 5,582 | assign, increment or clock reading        | ported; 2 shapes unmodelled, none live |
 | ReputationGrows                    | reputation      | 1,106 |   101 | once-increment `reputation.<name>`        | ported                                 |
-| GainTask                           | journal         |   810 |   222 | `task:<argument>` = 1                     | divergent - de-70eo.3                  |
-| FinishTask                         | journal         |   744 |   367 | `task:<argument>` = 0                     | divergent - de-70eo.3                  |
+| GainTask                           | journal         |   810 |   222 | show unless cancelled                     | ported                                 |
+| FinishTask                         | journal         |   744 |   367 | show unless done, then done               | ported                                 |
 | XPPicoSetBool                      | variables       |   486 |    10 | assign the variable 1                     | ported                                 |
 | XPTinySetBool                      | variables       |   390 |    31 | assign the variable 1                     | ported                                 |
-| CancelTask                         | journal         |   280 |    39 | `task:<argument>` = 0                     | divergent - de-70eo.3                  |
+| CancelTask                         | journal         |   280 |    39 | cancel unless done                        | ported                                 |
 | GainItem                           | items           |   242 |    92 | `item:<name>` = 1                         | ported for the item; see Items         |
 | DamageVolition                     | damage          |   220 |    32 | held by decision                          | not applied - de-70eo.6                |
 | PassTime                           | clock           |   207 |    72 | clock +15 min unless locked; plugin locks | held - de-70eo.8                       |
@@ -214,11 +214,24 @@ subtask (`JournalImporter.Populate`).
 `JournalModel.IsTaskActive` is: gained, not cancelled, not done - and for a subtask, its parent
 neither done nor cancelled.
 
-**ENGINE.** The literal argument is interned as a `task:` slot and set to 1 (`GainTask`) or 0
-(`FinishTask`, `CancelTask`). Scripts mostly finish a task by its done variable -
-`FinishTask("TASK.x_done")` - so the engine clears `task:TASK.x_done`, which nothing reads, while
-`IsTaskActive("TASK.x")` stays active. No condition variable is written, though guards read them
-far more than they call `IsTaskActive`, and the no-op orderings are ignored.
+**ENGINE.** The journal is its variables. `index::journal::Journal` is read from the task
+conversations' fields, which the index carries (format 3), and resolves an argument by any of a
+part's three variables. The parser turns each action into writes to that part's variables:
+
+| action     | writes                                                            |
+| ---------- | ----------------------------------------------------------------- |
+| GainTask   | show := 1 unless cancel is set                                    |
+| FinishTask | show := 1 unless done is set; then done := 1                      |
+| CancelTask | cancel := 1 unless done is set; nothing without a cancel variable |
+
+"Unless" is `DialogueActionKind::AssignUnless`, applied by the reference walk and split on the
+tested slot in the symbolic image and pre-image. A tested slot is kept however little else reads
+it, since the action has no world to ask. An argument naming no part writes nothing, as the game
+logs and returns.
+
+`IsTaskActive("x")` is rewritten when the graph is built into the guard it means over those
+variables - `show and not done and not cancel`, and the parent's done and cancel for a subtask -
+so it is declared, asked for and decided like any other variable read.
 
 | action     | calls | live | live via a variable | live via IsTaskActive |
 | ---------- | ----: | ---: | ------------------: | --------------------: |
@@ -226,8 +239,11 @@ far more than they call `IsTaskActive`, and the no-op orderings are ignored.
 | FinishTask |   744 |  367 |                 425 |                   149 |
 | CancelTask |   280 |   39 |                   7 |                    42 |
 
-A call site can be live through several keys, so the last two columns can sum past `live`. This
-is the largest gap the audit found. de-70eo.3.
+A call site can be live through several keys, so the last two columns can sum past `live`.
+
+Two scripts set a task's cancel variable with `SetVariableValue` rather than `CancelTask`
+(`TASK.communist_dream_quest_cancelled`, `TASK.find_smokes_cancelled`). The game does not cancel
+the task until a load syncs it from the variable; read as variables, it is cancelled at once.
 
 ## Items
 

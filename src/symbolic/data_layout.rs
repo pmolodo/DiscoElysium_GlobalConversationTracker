@@ -111,7 +111,7 @@ impl DataLayout {
                 let slot = slot as usize;
                 let needed = match action.kind() {
                     DialogueActionKind::Increment => bits_for(counter_cap.max(0) as u32),
-                    DialogueActionKind::Assign => {
+                    DialogueActionKind::Assign | DialogueActionKind::AssignUnless => {
                         let bits = bits_for(action.value().max(0) as u32);
                         assigned[slot] = assigned[slot].max(bits);
                         bits
@@ -302,7 +302,9 @@ impl DataLayout {
                         }
                         entry.sum = entry.sum.saturating_add(amount.max(0) as u32);
                     }
-                    DialogueActionKind::Assign | DialogueActionKind::AssignClock => {
+                    DialogueActionKind::Assign
+                    | DialogueActionKind::AssignClock
+                    | DialogueActionKind::AssignUnless => {
                         reach.entry(slot).or_default().barred = true
                     }
                     _ => {}
@@ -817,9 +819,27 @@ impl DataLayout {
                     names.insert(name.to_string());
                 }
             }
+
+            names.extend(Self::tested_by_actions(node, symbols));
         }
 
         names
+    }
+
+    /// The names a node's conditional writes TEST, which an action reads as surely as a guard.
+    ///
+    /// Kept apart from the guard reads because it needs keeping on a stronger rule: a slot a
+    /// guard reads and nothing writes may be dropped, since the guard can then be answered from
+    /// the world; a condition is decided inside an action, where there is no world to ask.
+    pub fn tested_by_actions<'a>(
+        node: &'a LookAheadNode,
+        symbols: &'a StateSymbols,
+    ) -> impl Iterator<Item = String> + 'a {
+        node.actions
+            .iter()
+            .filter_map(|action| action.unless())
+            .filter_map(|slot| symbols.name_of(slot))
+            .map(str::to_string)
     }
 
     /// The names one guard reads, including the subjects of the queries answered from

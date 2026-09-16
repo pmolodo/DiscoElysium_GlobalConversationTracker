@@ -50,7 +50,12 @@ pub const COUNTER_CAP: i32 = 16;
 /// A CEILING AND NOT A BUDGET: nothing about it is meant to be tuned, and a walk that hits
 /// it has failed to be an oracle rather than produced a smaller answer. It is here so a
 /// fixture that turns out to be unbounded fails a test instead of hanging one.
-pub const CEILING: usize = 400_000;
+///
+/// Sized above the largest real group a test walks. Conversation 640's option 12 reaches
+/// 434,666 states now that the journal is tracked as its variables - a task's progress in
+/// the Hardie conversations moves independently of the others' - and a walk that size takes
+/// under two seconds.
+pub const CEILING: usize = 2_000_000;
 
 /// What a reference walk found.
 #[derive(Debug, Clone, Default)]

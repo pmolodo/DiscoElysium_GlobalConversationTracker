@@ -117,6 +117,53 @@ impl<'a> ActionImage<'a> {
         }
     }
 
+    /// `slot := value unless`, in either direction, by splitting the set on the tested slot.
+    ///
+    /// Forward, the states with the tested slot set pass through and the rest are assigned.
+    /// Backward, a state lands in `states` either by holding the tested slot and already being
+    /// there, or by not holding it and being assigned there - the same two cases, disjoint on
+    /// the tested slot. Where the layout does not carry the tested slot, both cases are taken,
+    /// which keeps every state the write could leave.
+    fn conditional_write(
+        &mut self,
+        states: &BDDFunction,
+        action: &DialogueAction,
+        slot: usize,
+        pre: bool,
+    ) -> BDDFunction {
+        if self.vars.slot_ceiling(slot).is_none() {
+            self.ignored += 1;
+            return states.clone();
+        }
+        let value = action.value().max(0) as u32;
+        let tested = action
+            .unless()
+            .expect("a conditional write carries the slot it tests");
+
+        if self.vars.slot_ceiling(tested).is_none() {
+            let written = if pre {
+                self.pre_assign(states, slot, value)
+            } else {
+                self.assign(states, slot, value)
+            };
+            return self.or_no_room(written.or(states), states);
+        }
+        let Some(held) = self.in_layout(self.vars.slot_is_set(tested)) else {
+            return states.clone();
+        };
+        let free = self.or_no_room(held.not(), states);
+        let stayed = self.or_no_room(states.and(&held), states);
+
+        let assigned = if pre {
+            let written = self.pre_assign(states, slot, value);
+            self.or_no_room(written.and(&free), states)
+        } else {
+            let unheld = self.or_no_room(states.and(&free), states);
+            self.assign(&unheld, slot, value)
+        };
+        self.or_no_room(stayed.or(&assigned), states)
+    }
+
     /// The value an increment on this slot stops at.
     ///
     /// The counter cap, held down to what the slot can hold, because a value the slot is too
@@ -294,6 +341,7 @@ impl<'a> ActionImage<'a> {
                 self.pre_assign(states, slot, value)
             }
             DialogueActionKind::AssignClock => self.clock_write(states, action, slot, true),
+            DialogueActionKind::AssignUnless => self.conditional_write(states, action, slot, true),
             DialogueActionKind::Increment => self.pre_increment(states, slot, action.value()),
             _ => {
                 self.ignored += 1;
@@ -407,6 +455,7 @@ impl<'a> ActionImage<'a> {
                 self.assign(states, slot, value)
             }
             DialogueActionKind::AssignClock => self.clock_write(states, action, slot, false),
+            DialogueActionKind::AssignUnless => self.conditional_write(states, action, slot, false),
             DialogueActionKind::Increment => self.increment(states, slot, action.value()),
             _ => {
                 self.ignored += 1;
@@ -577,6 +626,45 @@ mod tests {
                 set.and(&holding).unwrap().satisfiable()
             })
             .collect()
+    }
+
+    /// A conditional write assigns where its tested slot is clear and leaves the rest alone -
+    /// and its pre-image is exactly the states that land there, in both cases.
+    #[test]
+    fn a_conditional_write_splits_on_the_slot_it_tests() {
+        let (graph, symbols) = fixture(&["shown", "cancelled"], None);
+        let layout = DataLayout::for_graph(&graph, CAP as i32, None, false);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
+        let shown = symbols.find("shown").unwrap();
+        let cancelled = symbols.find("cancelled").unwrap();
+        let reveal = DialogueAction::assign_unless(shown, 1, cancelled, "GainTask".to_string());
+        let mut image = ActionImage::new(&vars, CAP);
+        let never = vars.bottom();
+        let when = |set: &BDDFunction, slot: usize, value: u32| {
+            set.and(&vars.slot_equals(slot, value).unwrap()).unwrap()
+        };
+
+        let after = image.apply(&vars.top(), std::slice::from_ref(&reveal), &never);
+        assert_eq!(
+            values_of(&vars, &when(&after, cancelled, 0), shown),
+            vec![1]
+        );
+        assert_eq!(
+            values_of(&vars, &when(&after, cancelled, 1), shown),
+            vec![0, 1]
+        );
+
+        let shown_now = vars.slot_equals(shown, 1).unwrap();
+        let before = image.pre_apply(&shown_now, std::slice::from_ref(&reveal), &never);
+        assert_eq!(
+            values_of(&vars, &when(&before, cancelled, 0), shown),
+            vec![0, 1]
+        );
+        assert_eq!(
+            values_of(&vars, &when(&before, cancelled, 1), shown),
+            vec![1]
+        );
+        assert!(!image.out_of_memory());
     }
 
     #[test]

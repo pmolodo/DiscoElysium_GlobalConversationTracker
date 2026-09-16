@@ -2145,39 +2145,6 @@ mod tests {
         assert!(!compiled.may_be_true.eval([(base, false)]));
     }
 
-    #[test]
-    fn a_task_question_reads_the_task_slot() {
-        let mut symbols = StateSymbols::new();
-        let actions = crate::parser::action_parser::parse_actions(
-            r#"GainTask("TASK.find_ruby")"#,
-            &mut symbols,
-        );
-        let node = LookAheadNode {
-            actions,
-            ..LookAheadNode::new(DialogueNodeId::new(1, 0))
-        };
-        let graph = LookAheadGraph::new(vec![node], symbols).unwrap();
-        let snapshot = graph.symbols().clone();
-        let layout = DataLayout::for_graph(&graph, 16, None, false);
-
-        let slot = snapshot
-            .find("task:TASK.find_ruby")
-            .expect("GainTask interns a task slot");
-        let base = layout.slot(slot).unwrap().0;
-
-        let vars = DataVars::new(&layout, &snapshot, DiagramBudget::modest());
-        let mut compiler = GuardCompiler::new(&vars);
-        let compiled = compiler.compile(&Guard::call(
-            "IsTaskActive".to_string(),
-            vec![Guard::literal(GuardValue::from_text(
-                "TASK.find_ruby".to_string(),
-            ))],
-        ));
-
-        assert!(compiled.may_be_true.eval([(base, true)]));
-        assert_eq!(compiler.fallbacks(), 0);
-    }
-
     /// A thought the group gains is tracked, and the guard reads its slot rather than the
     /// save.
     ///

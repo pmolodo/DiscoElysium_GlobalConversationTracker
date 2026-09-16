@@ -23,6 +23,9 @@ pub enum DialogueActionKind {
     /// `slot := reading + value`, a number read off the clock when the action runs - see
     /// [`ClockReading`].
     AssignClock = 7,
+    /// `slot := value` unless the slot [`DialogueAction::unless`] names is set, and nothing
+    /// otherwise - how the journal refuses to reveal a cancelled task or cancel a done one.
+    AssignUnless = 8,
 }
 
 /// One state change a dialogue entry's userScript makes.
@@ -36,6 +39,10 @@ pub struct DialogueAction {
     /// What an [`DialogueActionKind::AssignClock`] reads, and `None` for every other kind.
     #[serde(default)]
     reading: Option<ClockReading>,
+    /// The slot whose being set stops an [`DialogueActionKind::AssignUnless`], and `None` for
+    /// every other kind.
+    #[serde(default)]
+    unless: Option<i32>,
 }
 
 /// How high a counter may climb before it stops moving.
@@ -97,6 +104,7 @@ impl DialogueAction {
             once: false,
             name,
             reading: None,
+            unless: None,
         }
     }
 
@@ -108,6 +116,7 @@ impl DialogueAction {
             once,
             name,
             reading: None,
+            unless: None,
         }
     }
 
@@ -123,6 +132,7 @@ impl DialogueAction {
             once,
             name,
             reading: None,
+            unless: None,
         }
     }
 
@@ -134,6 +144,7 @@ impl DialogueAction {
             once: false,
             name,
             reading: None,
+            unless: None,
         }
     }
 
@@ -146,6 +157,20 @@ impl DialogueAction {
             once: false,
             name,
             reading: Some(reading),
+            unless: None,
+        }
+    }
+
+    /// `slot := value`, unless `unless` is set when the action runs.
+    pub fn assign_unless(slot: usize, value: i32, unless: usize, name: String) -> Self {
+        Self {
+            kind: DialogueActionKind::AssignUnless,
+            slot: slot as i32,
+            value,
+            once: false,
+            name,
+            reading: None,
+            unless: Some(unless as i32),
         }
     }
 
@@ -157,6 +182,7 @@ impl DialogueAction {
             once: false,
             name,
             reading: None,
+            unless: None,
         }
     }
 
@@ -176,6 +202,7 @@ impl DialogueAction {
             once: false,
             name,
             reading: None,
+            unless: None,
         }
     }
 
@@ -189,7 +216,7 @@ impl DialogueAction {
 
     /// Whether this action's `slot` names a slot at all.
     ///
-    /// Only the three that write one do. For every other kind `slot` is `-1`, which is a
+    /// Only the four that write one do. For every other kind `slot` is `-1`, which is a
     /// marker rather than an index - see the field.
     pub fn writes_slot(&self) -> bool {
         matches!(
@@ -197,7 +224,13 @@ impl DialogueAction {
             DialogueActionKind::Assign
                 | DialogueActionKind::Increment
                 | DialogueActionKind::AssignClock
+                | DialogueActionKind::AssignUnless
         )
+    }
+
+    /// The slot an [`DialogueActionKind::AssignUnless`] tests, which it READS rather than writes.
+    pub fn unless(&self) -> Option<usize> {
+        self.unless.and_then(|slot| usize::try_from(slot).ok())
     }
 
     /// What an [`DialogueActionKind::AssignClock`] reads off the clock.
@@ -234,6 +267,18 @@ impl DialogueAction {
         }
 
         self.slot = moved;
+
+        // THE SLOT A CONDITIONAL WRITE TESTS IS READ, and the retention that builds `map` keeps
+        // every slot a condition reads - so one that has gone is a caller that renumbered
+        // against some other rule, and the condition would silently stop holding.
+        if let Some(unless) = self.unless {
+            let kept = usize::try_from(unless)
+                .ok()
+                .and_then(|slot| map.get(slot).copied())
+                .filter(|slot| *slot >= 0)
+                .expect("the slot a conditional write tests was dropped");
+            self.unless = Some(kept);
+        }
         Some(self)
     }
 
@@ -289,6 +334,22 @@ impl DialogueAction {
             match action.kind {
                 DialogueActionKind::Assign => {
                     changes.push((action.slot as usize, action.value));
+                }
+                // THE CONDITION AS IT STANDS WHEN THE ACTION RUNS, an earlier write in the same
+                // script included: `FinishTask` reveals unless done and then marks done.
+                DialogueActionKind::AssignUnless => {
+                    let unless = action
+                        .unless()
+                        .expect("a conditional write carries the slot it tests");
+                    let held = changes
+                        .iter()
+                        .rev()
+                        .find(|(i, _)| *i == unless)
+                        .map(|(_, v)| *v)
+                        .unwrap_or_else(|| state.get(unless));
+                    if held == 0 {
+                        changes.push((action.slot as usize, action.value));
+                    }
                 }
                 // READ AT THE TIME IT RUNS, a PassTime earlier in the same script included -
                 // the game evaluates the call as it reaches the statement.
@@ -379,6 +440,14 @@ impl fmt::Display for DialogueAction {
                 self.reading
                     .expect("a clock assignment carries its reading"),
                 self.value
+            ),
+            DialogueActionKind::AssignUnless => write!(
+                f,
+                "{}: slot {} = {} unless slot {} is set",
+                self.name,
+                self.slot,
+                self.value,
+                self.unless.unwrap_or(-1)
             ),
             DialogueActionKind::PassTime => write!(f, "{}: clock += {}m", self.name, self.value),
             DialogueActionKind::Unmodelled => write!(f, "{}: not modelled", self.name),
