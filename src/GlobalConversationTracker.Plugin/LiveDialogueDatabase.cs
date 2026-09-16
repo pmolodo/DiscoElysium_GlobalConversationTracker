@@ -107,6 +107,11 @@ namespace GlobalConversationTracker
         internal static IndexConversation Read(Conversation conversation)
         {
             var built = new IndexConversation(conversation.id);
+            foreach (KeyValuePair<string, string> field in FieldsOf(conversation.fields))
+            {
+                built.Fields.Add(field);
+            }
+
             foreach (DialogueEntry entry in Entries(conversation))
             {
                 var line = new IndexEntry
@@ -184,7 +189,13 @@ namespace GlobalConversationTracker
         /// <summary>Its fields, by title. The hasher keeps only the ones it reads.</summary>
         private static IEnumerable<KeyValuePair<string, string>> FieldsOf(DialogueEntry entry)
         {
-            Il2CppSystem.Collections.Generic.List<Field> fields = entry.fields;
+            return FieldsOf(entry.fields);
+        }
+
+        /// <summary>A field list's titled fields, as name and value.</summary>
+        private static IEnumerable<KeyValuePair<string, string>> FieldsOf(
+            Il2CppSystem.Collections.Generic.List<Field>? fields)
+        {
             if (fields == null)
             {
                 yield break;

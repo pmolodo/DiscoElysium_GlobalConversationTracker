@@ -96,7 +96,7 @@ pub const FORMAT_PROPERTY: &str = "format";
 /// game"; this answers "is this an index this engine can read" - and an index from an
 /// older build would pass its content hash while missing fields the engine has since
 /// started reading, which is a cache hit on a file that cannot answer the question.
-pub const FORMAT_VERSION: i32 = 2;
+pub const FORMAT_VERSION: i32 = 3;
 
 /// A shipped index's header, which is its first line.
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
@@ -119,9 +119,38 @@ pub struct ConversationRecord {
     /// third writer of.
     #[serde(default)]
     pub hash: String,
+    /// The conversation's own fields the engine reads - a journal task's conditions, named in
+    /// [`conversation_fields_read`] - and empty for every other conversation.
+    #[serde(default)]
+    pub fields: HashMap<String, String>,
     #[serde(default)]
     pub entries: Vec<EntryRecord>,
 }
+
+/// How many subtasks a journal task can have: `JournalImporter.MAX_NR_OF_SUBTASKS`.
+pub const JOURNAL_SUBTASK_LIMIT: usize = 12;
+
+/// Every CONVERSATION field the engine reads, which is a journal task's conditions: the main
+/// task's display, done and cancel, then the same for each subtask in order.
+///
+/// Must match `IndexFields.ConversationRead`, which builds the same list the same way;
+/// `tests/shipped_index.rs` checks the trimmed index keeps every one.
+pub fn conversation_fields_read() -> Vec<String> {
+    let mut names: Vec<String> = journal::JOURNAL_ROLES
+        .iter()
+        .map(|role| format!("{role}_condition_main"))
+        .collect();
+    for subtask in 1..=JOURNAL_SUBTASK_LIMIT {
+        names.extend(
+            journal::JOURNAL_ROLES
+                .iter()
+                .map(|role| format!("{role}_subtask_{subtask:02}")),
+        );
+    }
+    names
+}
+
+pub mod journal;
 
 /// One dialogue entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -157,7 +186,7 @@ pub fn read_index(path: &Path) -> anyhow::Result<Index> {
 
 /// The same, keeping what the header said.
 ///
-/// A shipped index opens with `{"format":2}`; the full index has no header at all, and
+/// A shipped index opens with `{"format":3}`; the full index has no header at all, and
 /// then there is no version and no per-conversation hash, so nothing can be validated
 /// against it. That is not an error - it is the mod shipping a build intermediate, and it
 /// works exactly as well as it did before there was such a thing as validation.
@@ -671,6 +700,7 @@ mod tests {
         ConversationRecord {
             id,
             hash: String::new(),
+            fields: HashMap::new(),
             entries,
         }
     }
@@ -761,9 +791,8 @@ mod tests {
     /// A file with a header reads as its conversations, and says what version it was.
     #[test]
     fn a_shipped_index_reports_its_format() {
-        let path = written(concat!(
-            "{\"format\":2}\n",
-            "{\"id\":7,\"hash\":\"abc\",\"entries\":[]}\n",
+        let path = written(&format!(
+            "{{\"format\":{FORMAT_VERSION}}}\n{{\"id\":7,\"hash\":\"abc\",\"entries\":[]}}\n"
         ));
 
         let (index, header) = read_index_with_header(path.path()).expect("it reads");
@@ -801,7 +830,9 @@ mod tests {
     /// and no entries, which looks like a real, empty conversation.
     #[test]
     fn a_header_is_never_mistaken_for_a_conversation() {
-        let path = written("{\"format\":2}\n{\"id\":7,\"entries\":[]}\n");
+        let path = written(&format!(
+            "{{\"format\":{FORMAT_VERSION}}}\n{{\"id\":7,\"entries\":[]}}\n"
+        ));
         let (index, _) = read_index_with_header(path.path()).expect("it reads");
 
         assert!(!index.contains_key(&0), "the header became conversation 0");

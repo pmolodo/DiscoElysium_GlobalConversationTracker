@@ -183,6 +183,36 @@ namespace GlobalConversationTracker.LookAhead.Tests
             }
         }
 
+        /// <summary>A journal task's conditions change the hash; its other fields do not.</summary>
+        /// <remarks>
+        /// A conversation with none of them reduces exactly as it did before conversations
+        /// carried fields, so a database that is not a task does not change its hash at all.
+        /// </remarks>
+        [Fact]
+        public void AJournalConditionChangesTheHashAndNothingElseOfTheConversationDoes()
+        {
+            string Hash(params (string Name, string Value)[] fields)
+            {
+                var hasher = new ConversationHasher(3);
+                hasher.AddConversationFields(Fields(fields));
+                hasher.Add(0, false, "a", "b", Links(), Fields());
+                return hasher.Finish();
+            }
+
+            var untouched = new ConversationHasher(3);
+            untouched.Add(0, false, "a", "b", Links(), Fields());
+
+            Assert.Equal(untouched.Finish(), Hash());
+            Assert.Equal(Hash(), Hash(("Title", "A task"), ("Articy Id", "0x01")));
+
+            foreach (string field in IndexFields.ConversationRead)
+            {
+                Assert.True(
+                    Hash() != Hash((field, "Variable[\"TASK.x\"]")),
+                    $"adding {field} did not change the hash");
+            }
+        }
+
         /// <summary>Anything a crawl can observe changes the hash.</summary>
         [Theory]
         [InlineData("a different guard")]

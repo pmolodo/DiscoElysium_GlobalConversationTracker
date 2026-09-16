@@ -61,10 +61,19 @@ namespace GlobalConversationTracker.Engine
         /// <summary>Its dialogue entries.</summary>
         public IList<IndexEntry> Entries { get; } = new List<IndexEntry>();
 
+        /// <summary>Its own fields, by name.</summary>
+        /// <remarks>
+        /// Only the ones in <see cref="IndexFields.ConversationRead"/> survive into an index; a
+        /// caller may put everything it has here and let the writer drop the rest.
+        /// </remarks>
+        public IList<KeyValuePair<string, string>> Fields { get; } =
+            new List<KeyValuePair<string, string>>();
+
         /// <summary>What its content reduces to, for validating a cache of it.</summary>
         public string Hash()
         {
             var hasher = new ConversationHasher(Id);
+            hasher.AddConversationFields(Fields);
             foreach (IndexEntry entry in Entries)
             {
                 hasher.Add(entry.Id, entry.Group, entry.Guard, entry.Script, entry.Links, entry.Fields);

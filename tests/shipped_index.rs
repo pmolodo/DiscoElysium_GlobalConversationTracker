@@ -21,7 +21,10 @@
 
 use std::collections::HashMap;
 
-use lookahead_engine::index::{ENTRY_FIELDS_READ, build_group_graph, discover_group, read_index};
+use lookahead_engine::index::journal::Journal;
+use lookahead_engine::index::{
+    ENTRY_FIELDS_READ, build_group_graph, conversation_fields_read, discover_group, read_index,
+};
 
 mod common;
 
@@ -70,6 +73,10 @@ fn the_trimmed_index_keeps_every_field_the_engine_reads() {
             conversation.entries.len(),
             other.entries.len(),
             "conversation {id} lost entries",
+        );
+        assert_eq!(
+            conversation.fields, other.fields,
+            "conversation {id} changed the journal fields the engine reads",
         );
 
         for (entry, slim) in conversation.entries.iter().zip(&other.entries) {
@@ -137,6 +144,50 @@ fn the_trimmed_index_keeps_every_field_the_engine_reads() {
         kept.len(),
     );
 }
+
+/// The shipped index carries the whole journal, and only the fields the engine reads for it.
+///
+/// A task's conditions are CONVERSATION fields, which an index long carried none of - so an
+/// index missing them reads as a game with no journal at all, and every journal action would
+/// resolve to nothing without a word. 337 parts, 139 of them tasks, in the database this was
+/// written against.
+#[test]
+fn the_shipped_index_carries_the_journal() {
+    let Some(trimmed) = common::shipped_index() else {
+        return;
+    };
+    let trimmed = read_index(&trimmed).expect("the trimmed index reads");
+
+    let read = conversation_fields_read();
+    for (id, conversation) in &trimmed {
+        for name in conversation.fields.keys() {
+            assert!(
+                read.contains(name),
+                "conversation {id} carries '{name}', which the engine does not read",
+            );
+        }
+    }
+
+    let journal = Journal::from_index(&trimmed);
+    let tasks = journal
+        .parts()
+        .iter()
+        .filter(|p| p.parent.is_none())
+        .count();
+    println!(
+        "{} journal parts, {tasks} of them tasks",
+        journal.parts().len()
+    );
+    assert!(
+        journal.parts().len() >= JOURNAL_PARTS_AT_LEAST,
+        "only {} journal parts; is the index carrying the task conditions?",
+        journal.parts().len(),
+    );
+}
+
+/// A floor well under the 337 parts the database has, so a content update that drops a few
+/// does not fail the check while an index that carries none still does.
+const JOURNAL_PARTS_AT_LEAST: usize = 300;
 
 /// And the graph built from the trimmed index is the graph built from the full one.
 ///

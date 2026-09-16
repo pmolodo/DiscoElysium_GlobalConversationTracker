@@ -149,6 +149,13 @@ namespace GlobalConversationTracker.DialogueAsset
                 AppendString(json, conversation.Hash);
             }
 
+            if (conversation.IndexedFields != null)
+            {
+                // A journal task's conditions, written only where the conversation is one.
+                json.Append(",\"fields\":");
+                AppendFields(json, conversation.IndexedFields);
+            }
+
             json.Append(",\"entries\":[");
             for (int i = 0; i < conversation.Entries.Count; i++)
             {
@@ -176,9 +183,22 @@ namespace GlobalConversationTracker.DialogueAsset
             AppendInts(json, entry.To);
             json.Append(",\"title\":");
             AppendString(json, entry.Title);
-            json.Append(",\"fields\":{");
+            json.Append(",\"fields\":");
+            AppendFields(json, entry.Fields);
+            if (entry.ToConversation != null)
+            {
+                json.Append(",\"to_conversation\":");
+                AppendInts(json, entry.ToConversation);
+            }
+
+            json.Append('}');
+        }
+
+        private static void AppendFields(StringBuilder json, OrderedDictionary<string, string> fields)
+        {
+            json.Append('{');
             bool first = true;
-            foreach (KeyValuePair<string, string> field in entry.Fields)
+            foreach (KeyValuePair<string, string> field in fields)
             {
                 if (!first)
                 {
@@ -189,13 +209,6 @@ namespace GlobalConversationTracker.DialogueAsset
                 AppendString(json, field.Key);
                 json.Append(':');
                 AppendString(json, field.Value);
-            }
-
-            json.Append('}');
-            if (entry.ToConversation != null)
-            {
-                json.Append(",\"to_conversation\":");
-                AppendInts(json, entry.ToConversation);
             }
 
             json.Append('}');

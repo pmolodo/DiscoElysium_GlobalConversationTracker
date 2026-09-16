@@ -153,6 +153,48 @@ namespace GlobalConversationTracker.DialogueAsset.Tests
             }
         }
 
+        /// <summary>
+        /// A journal task's conditions travel on its line, identically from both writers, and
+        /// nothing else of the conversation's own fields does.
+        /// </summary>
+        [Fact]
+        public void ATasksConditionsAreWrittenTheSameByBothWriters()
+        {
+            var task = new ConversationRecord { Id = 3 };
+            task.Fields["Title"] = "Add even more beauty to the wall";
+            task.Fields["display_condition_main"] = "Variable[\"TASK.wall\"]";
+            task.Fields["done_condition_main"] = "Variable[\"TASK.wall_done\"]";
+            task.Fields["display_subtask_01"] = "Variable[\"TASK.oil\"]";
+            task.Fields["done_subtask_01"] = "Variable[\"TASK.oil_done\"]";
+            task.IndexedFields = new OrderedDictionary<string, string>();
+            foreach (KeyValuePair<string, string> field in task.Fields)
+            {
+                if (Array.IndexOf(IndexFields.ConversationRead, field.Key) >= 0)
+                {
+                    task.IndexedFields[field.Key] = field.Value;
+                }
+            }
+
+            string extractor = ConversationIndexFile.ToJson(ShippedIndex.Trim(task));
+            string plugin = ShippedIndexWriter.ToJson(AsIndexConversation(task));
+
+            Assert.Equal(extractor, plugin);
+            Assert.Contains("\"fields\":{\"display_condition_main\":", plugin);
+            Assert.DoesNotContain("beauty", plugin);
+        }
+
+        /// <summary>A conversation that is not a task writes no fields key at all.</summary>
+        [Fact]
+        public void AConversationThatIsNotATaskHasNoFieldsKey()
+        {
+            foreach (ConversationRecord full in Fixture().Where(c => c.IndexedFields == null))
+            {
+                string line = ShippedIndexWriter.ToJson(AsIndexConversation(full));
+                string beforeEntries = line.Substring(0, line.IndexOf("\"entries\"", StringComparison.Ordinal));
+                Assert.DoesNotContain("\"fields\"", beforeEntries);
+            }
+        }
+
         /// <summary>The two headers are the same line too.</summary>
         [Fact]
         public void TheTwoWritersOpenAFileTheSameWay()
@@ -172,6 +214,11 @@ namespace GlobalConversationTracker.DialogueAsset.Tests
         private static IndexConversation AsIndexConversation(ConversationRecord record)
         {
             var conversation = new IndexConversation(record.Id);
+            foreach (KeyValuePair<string, string> field in record.Fields)
+            {
+                conversation.Fields.Add(field);
+            }
+
             foreach (EntryRecord entry in record.Entries)
             {
                 var built = new IndexEntry

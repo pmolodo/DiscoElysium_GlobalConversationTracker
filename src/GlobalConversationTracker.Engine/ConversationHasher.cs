@@ -24,9 +24,10 @@ namespace GlobalConversationTracker.Engine
     /// would make it a certainty. Rust never hashes at all - it stores what the extractor
     /// wrote and hands it back - so there is no third writer.</para>
     ///
-    /// <para>WHAT IS COMPARED is what the engine reads: a conversation's id, and per entry
-    /// its id, group flag, guard, script, links and the fields in
-    /// <see cref="IndexFields.Read"/>. Nothing else. A patch that rewrites dialogue text
+    /// <para>WHAT IS COMPARED is what the engine reads: a conversation's id, its fields in
+    /// <see cref="IndexFields.ConversationRead"/> where it has any, and per entry its id, group
+    /// flag, guard, script, links and the fields in <see cref="IndexFields.Read"/>. Nothing
+    /// else. A patch that rewrites dialogue text
     /// changes nothing a crawl can observe, and a cache check that rebuilt the index over
     /// it would be reporting a difference that does not exist.</para>
     ///
@@ -56,6 +57,8 @@ namespace GlobalConversationTracker.Engine
 
         private readonly int _conversation;
         private readonly SortedDictionary<int, string> _entries = new SortedDictionary<int, string>();
+        private readonly SortedDictionary<string, string> _fields =
+            new SortedDictionary<string, string>(StringComparer.Ordinal);
 
         /// <summary>Begins a conversation.</summary>
         /// <param name="conversation">Its id.</param>
@@ -153,6 +156,28 @@ namespace GlobalConversationTracker.Engine
             _entries[id] = canonical.ToString();
         }
 
+        /// <summary>Adds the conversation's own fields.</summary>
+        /// <param name="fields">
+        /// Its fields. Anything outside <see cref="IndexFields.ConversationRead"/> is ignored, so a
+        /// caller may hand over everything it has.
+        /// </param>
+        /// <exception cref="ArgumentNullException">The fields are null.</exception>
+        public void AddConversationFields(IEnumerable<KeyValuePair<string, string>> fields)
+        {
+            if (fields == null)
+            {
+                throw new ArgumentNullException(nameof(fields));
+            }
+
+            foreach (KeyValuePair<string, string> field in fields)
+            {
+                if (Array.IndexOf(IndexFields.ConversationRead, field.Key) >= 0)
+                {
+                    _fields[field.Key] = field.Value ?? string.Empty;
+                }
+            }
+        }
+
         /// <summary>
         /// The hash of everything added, as lower-case hex.
         /// </summary>
@@ -187,6 +212,18 @@ namespace GlobalConversationTracker.Engine
             foreach (KeyValuePair<int, string> entry in _entries)
             {
                 canonical.Append(entry.Value);
+            }
+
+            // ONLY WHERE THERE ARE ANY, so a conversation that is not a journal task reduces to
+            // exactly what it did before conversations carried fields at all.
+            if (_fields.Count > 0)
+            {
+                Append(canonical, _fields.Count.ToString(CultureInfo.InvariantCulture));
+                foreach (KeyValuePair<string, string> field in _fields)
+                {
+                    Append(canonical, field.Key);
+                    Append(canonical, field.Value);
+                }
             }
 
             return canonical.ToString();

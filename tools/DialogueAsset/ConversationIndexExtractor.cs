@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 using System.Collections.Generic;
 using System.IO;
+using GlobalConversationTracker.Engine;
 
 namespace GlobalConversationTracker.DialogueAsset
 {
@@ -70,6 +71,11 @@ namespace GlobalConversationTracker.DialogueAsset
                             // out by name, because the line carries those.
                             string value = DialogueScalar.Decode(item.Text);
                             conversation!.Fields[name] = value;
+                            if (System.Array.IndexOf(IndexFields.ConversationRead, name) >= 0)
+                            {
+                                (conversation.IndexedFields ??= new OrderedDictionary<string, string>())[name] = value;
+                            }
+
                             switch (name)
                             {
                                 case TitleField:

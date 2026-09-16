@@ -45,7 +45,7 @@ namespace GlobalConversationTracker.DialogueAsset
         /// engine has since started reading. That is a cache hit on a file that cannot
         /// answer the question, which is worse than a miss.
         /// </remarks>
-        public const int FormatVersion = 2;
+        public const int FormatVersion = 3;
 
         /// <summary>The header line's version property.</summary>
         /// <remarks>
@@ -93,6 +93,11 @@ namespace GlobalConversationTracker.DialogueAsset
             }
 
             var hasher = new ConversationHasher(conversation.Id);
+            if (conversation.IndexedFields != null)
+            {
+                hasher.AddConversationFields(conversation.IndexedFields);
+            }
+
             foreach (EntryRecord entry in conversation.Entries)
             {
                 hasher.Add(
@@ -166,12 +171,25 @@ namespace GlobalConversationTracker.DialogueAsset
                 });
             }
 
+            OrderedDictionary<string, string>? journal = null;
+            if (conversation.IndexedFields != null)
+            {
+                foreach (KeyValuePair<string, string> field in conversation.IndexedFields)
+                {
+                    if (Array.IndexOf(IndexFields.ConversationRead, field.Key) >= 0)
+                    {
+                        (journal ??= new OrderedDictionary<string, string>())[field.Key] = field.Value;
+                    }
+                }
+            }
+
             var trimmed = new ConversationRecord
             {
                 Id = conversation.Id,
                 Title = null,
                 Actor = null,
                 Conversant = null,
+                IndexedFields = journal,
                 Entries = entries,
             };
             trimmed.Hash = HashOf(trimmed);

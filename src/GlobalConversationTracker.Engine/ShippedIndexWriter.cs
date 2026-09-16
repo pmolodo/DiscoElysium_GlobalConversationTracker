@@ -32,7 +32,7 @@ namespace GlobalConversationTracker.Engine
         /// <c>lookahead_engine::index::FORMAT_VERSION</c>, which write and read the same
         /// line.
         /// </remarks>
-        public const int FormatVersion = 2;
+        public const int FormatVersion = 3;
 
         private const char LastPrintableAscii = '~';
 
@@ -106,6 +106,24 @@ namespace GlobalConversationTracker.Engine
             json.Append(",\"title\":null,\"actor\":null,\"conversant\":null");
             json.Append(",\"hash\":");
             AppendString(json, conversation.Hash());
+
+            // A journal task's conditions, and nothing at all for any other conversation - the
+            // extractor writes the key only where it has something to put in it.
+            var kept = new List<KeyValuePair<string, string>>();
+            foreach (KeyValuePair<string, string> field in conversation.Fields)
+            {
+                if (Array.IndexOf(IndexFields.ConversationRead, field.Key) >= 0)
+                {
+                    kept.Add(field);
+                }
+            }
+
+            if (kept.Count > 0)
+            {
+                json.Append(",\"fields\":");
+                AppendFields(json, kept);
+            }
+
             json.Append(",\"entries\":[");
 
             bool firstEntry = true;
@@ -143,27 +161,17 @@ namespace GlobalConversationTracker.Engine
                 json.Append(Number(entry.Links[index].Value));
             }
 
-            json.Append("],\"title\":null,\"fields\":{");
-            bool firstField = true;
+            json.Append("],\"title\":null,\"fields\":");
+            var kept = new List<KeyValuePair<string, string>>();
             foreach (KeyValuePair<string, string> field in entry.Fields)
             {
-                if (Array.IndexOf(IndexFields.Read, field.Key) < 0)
+                if (Array.IndexOf(IndexFields.Read, field.Key) >= 0)
                 {
-                    continue;
+                    kept.Add(field);
                 }
-
-                if (!firstField)
-                {
-                    json.Append(',');
-                }
-
-                firstField = false;
-                AppendString(json, field.Key);
-                json.Append(':');
-                AppendString(json, field.Value ?? string.Empty);
             }
 
-            json.Append('}');
+            AppendFields(json, kept);
 
             // Absent where the entry has no links at all, which is what the extractor
             // writes and what the reader's "a missing element means this conversation"
@@ -182,6 +190,25 @@ namespace GlobalConversationTracker.Engine
                 }
 
                 json.Append(']');
+            }
+
+            json.Append('}');
+        }
+
+        /// <summary>A fields object, in the order given.</summary>
+        private static void AppendFields(StringBuilder json, List<KeyValuePair<string, string>> fields)
+        {
+            json.Append('{');
+            for (int index = 0; index < fields.Count; index++)
+            {
+                if (index > 0)
+                {
+                    json.Append(',');
+                }
+
+                AppendString(json, fields[index].Key);
+                json.Append(':');
+                AppendString(json, fields[index].Value ?? string.Empty);
             }
 
             json.Append('}');

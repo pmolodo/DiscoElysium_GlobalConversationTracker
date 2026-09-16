@@ -32,13 +32,14 @@ variables and item properties, which the derived index does not carry):
     tools/survey-action-readers.py
     tools/survey-action-readers.py --detail FinishTask
 
-| quantity                           |   count |
-| ---------------------------------- | ------: |
-| dialogue entries                   | 112,962 |
-| distinct scripts                   |   8,339 |
-| script functions called            |      81 |
-| journal parts (tasks and subtasks) |   1,012 |
-| items in the database              |     206 |
+| quantity                          |   count |
+| --------------------------------- | ------: |
+| dialogue entries                  | 112,962 |
+| distinct scripts                  |   8,339 |
+| script functions called           |      81 |
+| journal parts: tasks and subtasks |     337 |
+| journal condition variables       |   1,012 |
+| items in the database             |     206 |
 
 `calls` below is the number of call sites across all entries. `live` is how many of those have a
 downstream guard reading something the call writes.

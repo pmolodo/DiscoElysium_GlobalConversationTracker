@@ -500,7 +500,7 @@ def survey(derived, asset, detail):
     reverse = reversed_links(edges)
     reach = {key: reaching(readers[key], reverse) for key in wanted if key in readers}
 
-    print(f"journal parts: {len(parts)}, items: {len(items)}, entries: {len(nodes)}\n")
+    print(f"journal condition variables: {len(parts)}, items: {len(items)}, entries: {len(nodes)}\n")
     header = f"{'function':<36} {'calls':>6} {'live':>6}  keys read downstream"
     print(header)
     for name in sorted(instances, key=lambda n: (-len(instances[n]), n)):

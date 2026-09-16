@@ -34,6 +34,17 @@ namespace GlobalConversationTracker.DialogueAsset
         public OrderedDictionary<string, string> Fields { get; set; } = new OrderedDictionary<string, string>();
 
         /// <summary>
+        /// The conversation fields the engine reads - a journal task's conditions, named in
+        /// <c>IndexFields.ConversationRead</c> - or null where it has none.
+        /// </summary>
+        /// <remarks>
+        /// Written to the index as <c>fields</c>, and only where it is not null, so every line
+        /// of a conversation that is not a journal task is what it was before.
+        /// </remarks>
+        [JsonPropertyName("fields")]
+        public OrderedDictionary<string, string>? IndexedFields { get; set; }
+
+        /// <summary>
         /// What this conversation's content reduces to, or null where nothing computed it.
         /// </summary>
         /// <remarks>
