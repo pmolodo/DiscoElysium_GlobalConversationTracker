@@ -7,6 +7,7 @@ pub mod guard;
 pub mod guard_value;
 pub mod modelling;
 pub mod passive_check;
+pub mod reputation;
 pub mod state;
 pub mod types;
 

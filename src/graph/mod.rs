@@ -114,6 +114,13 @@ impl LookAheadGraph {
                             variables.push(value.text().to_string());
                         }
                     }
+                    // A reputation question reads a WHOLE RANGE of reputations rather than
+                    // the one it names, so the group declares all of them - see
+                    // `core::reputation`. Named by the query rather than by its argument for
+                    // that reason: the argument is what the answer is COMPARED to.
+                    crate::core::guard::GuardExpression::Call(function, _) => {
+                        variables.extend(crate::core::reputation::variables_read_by(function));
+                    }
                     _ => {}
                 }
             }

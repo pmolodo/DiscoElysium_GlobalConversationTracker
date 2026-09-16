@@ -298,6 +298,41 @@ impl IGuardContext for BoundContext<'_> {
             other if crate::core::modelling::is_action_used_as_guard(other) => {
                 GuardValue::from_boolean(false)
             }
+            // WHICH REPUTATION IS WINNING, decided here rather than asked of the world.
+            //
+            // The amounts are dialogue variables, so each is read through `get_variable` -
+            // which takes the search's own slot where the group moves one and the world's
+            // value where it does not. That is the whole fix: `ReputationGrows` is a
+            // modelled write, and answering this from the world reported whoever was ahead
+            // when the crawl STARTED.
+            //
+            // The comparison itself is the game's, tie rule and all, and lives in
+            // `core::reputation` rather than here because it is nothing like a maximum.
+            other if crate::core::reputation::range_of(other).is_some() => {
+                let range = crate::core::reputation::range_of(other).expect("just matched");
+                let Some(wanted) = arguments
+                    .first()
+                    .filter(|v| v.kind() == GuardValueKind::Text)
+                    .map(|v| v.text())
+                else {
+                    return GuardValue::unknown();
+                };
+
+                let winner = crate::core::reputation::highest(range, |name| {
+                    let variable = crate::core::reputation::variable_of(name);
+                    self.symbols.variable_ref(&variable)?;
+                    self.get_variable(&variable)
+                        .try_as_number()
+                        .map(|n| n as i32)
+                });
+
+                match winner {
+                    // NOTHING WINNING IS AN ANSWER, not an absence: the game returns the
+                    // empty string, which equals no reputation's name.
+                    Some(winner) => GuardValue::from_boolean(winner == Some(wanted)),
+                    None => GuardValue::unknown(),
+                }
+            }
             _ => self.world.query(name, arguments),
         }
     }

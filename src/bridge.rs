@@ -1120,6 +1120,12 @@ fn collect(
                     // instead by `BoundContext::query`; see
                     // `modelling::ACTIONS_USED_AS_GUARDS`.
                     (other, _) if crate::core::modelling::is_action_used_as_guard(other) => {}
+                    // A reputation question, answered from the reputation VARIABLES rather
+                    // than asked as a call - the group declares the whole range it compares,
+                    // so the plugin is already sending every amount it needs. Asked as a
+                    // call it would be answered once from the world and go stale the moment
+                    // the group's own ReputationGrows moved one.
+                    (other, _) if crate::core::reputation::range_of(other).is_some() => {}
                     _ => {
                         // Only literal arguments can be answered ahead of time. A computed
                         // argument would have to be evaluated per state, which is exactly
@@ -2491,6 +2497,33 @@ mod tests {
         assert!(
             found.queries.is_empty(),
             "answered from the variable, not asked as a query: {:?}",
+            found.queries
+        );
+    }
+
+    /// A reputation question declares the WHOLE RANGE it compares, and is not asked as a
+    /// call.
+    ///
+    /// The argument names what the answer is compared to, not what is read - the game walks
+    /// four reputations and returns whichever is winning. A range member left undeclared is
+    /// one the comparison cannot see, and asking the plugin for the call instead would
+    /// answer it once from the world, where `ReputationGrows` is a modelled write.
+    #[test]
+    fn a_reputation_question_declares_the_range_it_compares() {
+        let found = asked(r#"IsHighestPolitical("communist")"#);
+        assert_eq!(
+            found.variables,
+            vec![
+                "reputation.communist".to_string(),
+                "reputation.moralist".to_string(),
+                "reputation.revacholian_nationhood".to_string(),
+                "reputation.ultraliberal".to_string(),
+            ],
+            "all four political reputations, sorted as the group declares them"
+        );
+        assert!(
+            found.queries.is_empty(),
+            "answered from the variables, not asked as a call: {:?}",
             found.queries
         );
     }

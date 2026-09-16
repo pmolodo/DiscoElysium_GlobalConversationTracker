@@ -1221,10 +1221,17 @@ impl<'a> GuardCompiler<'a> {
     /// Mirrors the interception list in `BoundContext::query`. Anything here is answered
     /// from search state and so varies between states; anything else is answered by the
     /// world and is the same at every state.
+    /// A reputation question is here because `ReputationGrows` writes the variables it
+    /// compares, so the search really can change the answer. The compiler does not BUILD it
+    /// - comparing four slots against each other is arithmetic this deliberately does not
+    /// attempt - so it falls through to undecided, which is permissive. Less decisive than
+    /// the engine is the safe direction; more decisive is the one that prunes branches the
+    /// search walks.
     fn search_can_change(name: &str) -> bool {
         matches!(name, MONEY_QUERY)
             || Self::slot_backed_query(name).is_some()
             || crate::world::flag_query(name).is_some()
+            || crate::core::reputation::range_of(name).is_some()
             || crate::core::clock::ClockTime::owns(name)
     }
 

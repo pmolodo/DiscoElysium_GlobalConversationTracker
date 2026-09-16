@@ -82,9 +82,10 @@ fn the_engine_names_questions_the_snapshot_can_answer() {
         // Asked through the graph's own guards rather than by re-rendering the keys here,
         // which would just be this test agreeing with itself.
         let (graph, _) = build_group_graph(&index, conversation).expect("the group builds");
+        let handed_out: HashSet<&str> = questions.queries.iter().map(String::as_str).collect();
         let mut asked = 0;
         for node in graph.nodes() {
-            asked += answered_queries(&node.guard, &filled);
+            asked += answered_queries(&node.guard, &filled, &handed_out);
         }
         println!("  {asked} query answers came back under the keys given");
     }
@@ -95,7 +96,30 @@ fn the_engine_names_questions_the_snapshot_can_answer() {
 /// Walks the parsed guard and asks the world exactly what the engine would ask it, so a
 /// key that does not match shows up as an unanswered question rather than as a passing
 /// test.
-fn answered_queries(guard: &lookahead_engine::core::guard::Guard, world: &SnapshotWorld) -> usize {
+///
+/// ## What is skipped, and why it is not a list
+///
+/// Plenty of calls are answered from somewhere other than the query map: the subject-taking
+/// three from items, tasks and thoughts, a flag from its variable, a reputation question
+/// from the whole range it compares, and an action called from a guard from nothing at all,
+/// because running it would write to the player's save.
+///
+/// Naming them here is what this used to do, and the list went stale without failing: it
+/// still said CheckItem, IsTaskActive, IsTHCPresent and FlagSet after FlagNotSet, FinishTask
+/// and XPStandardSetBool had also stopped being query keys, and the only reason nothing
+/// broke is that no group listed above happens to contain those calls. A test that passes
+/// because of which conversations it was pointed at is not checking anything.
+///
+/// So the question asked is the one the contract is actually about: FOR EVERY KEY THE ENGINE
+/// HANDED OUT, does the snapshot answer under it? A call the engine never asked for is not
+/// this test's business, and needs no name here - which is why adding a query to
+/// `bridge::collect` can no longer quietly leave this behind.
+fn answered_queries(
+    guard: &lookahead_engine::core::guard::Guard,
+    world: &SnapshotWorld,
+    handed_out: &HashSet<&str>,
+) -> usize {
+    use lookahead_engine::bridge::query_key;
     use lookahead_engine::core::guard::GuardExpression as G;
     use lookahead_engine::core::guard_value::{GuardValue, GuardValueKind};
     use lookahead_engine::world::ILookAheadWorld;
@@ -105,14 +129,6 @@ fn answered_queries(guard: &lookahead_engine::core::guard::Guard, world: &Snapsh
         let G::Call(name, args) = node.expression() else {
             continue;
         };
-        // The subject-taking three are answered from items/tasks/thoughts instead, and
-        // a flag is a variable, so none of those is a query key.
-        if matches!(
-            name,
-            "CheckItem" | "IsTaskActive" | "IsTHCPresent" | "FlagSet"
-        ) {
-            continue;
-        }
 
         let values: Option<Vec<GuardValue>> = args
             .iter()
@@ -123,6 +139,10 @@ fn answered_queries(guard: &lookahead_engine::core::guard::Guard, world: &Snapsh
             .collect();
 
         let Some(values) = values else { continue };
+        if !handed_out.contains(query_key(name, &values).as_str()) {
+            continue;
+        }
+
         let answer = world.query(name, &values);
         assert_ne!(
             answer.kind(),
