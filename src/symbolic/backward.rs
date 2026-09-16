@@ -789,15 +789,7 @@ impl<'a> Backward<'a> {
             self.stats.out_of_memory = true;
             return self.vars.bottom();
         };
-        let enough = self.or_no_room(states.and(&price));
-
-        match self.already_paid(node) {
-            Some(paid) => {
-                let free = self.or_no_room(states.and(&paid));
-                self.or_no_room(enough.or(&free))
-            }
-            None => enough,
-        }
+        self.or_no_room(states.and(&price))
     }
 
     /// "This entry's price has already been paid", where it is one that is paid once.
@@ -1724,13 +1716,15 @@ mod tests {
         agree(entries(), &TestWorld::new().with_money(12), 3, true);
     }
 
-    /// A price paid once is free the second time round, however empty the purse is by then.
+    /// A price paid once is not charged again, but the purse must still cover it.
     ///
-    /// The shop door a path comes back through. Entry 1 costs everything the player has, so
-    /// a second visit is affordable only because the once slot says it has been paid for -
-    /// and the counter behind it needs that second visit to reach three.
+    /// The shop door a path comes back through, three times over to count to three. With
+    /// twelve in hand and a price of six charged once, every visit is affordable and only the
+    /// first is paid. Charged every time, the third visit finds the purse empty. And with only
+    /// six in hand, the second visit is refused although it would take nothing - the game
+    /// disables an option priced above the purse whether or not it has been paid.
     #[test]
-    fn a_price_paid_once_is_free_the_second_time() {
+    fn a_price_paid_once_is_not_charged_again_but_still_needs_the_purse() {
         let entries = || {
             vec![
                 Entry::new(0).links(&[1]),
@@ -1745,19 +1739,20 @@ mod tests {
             ]
         };
 
-        let broke = TestWorld::new()
-            .with_money(6)
-            .set_variable("rounds", GuardValue::from_number(0.0));
-        agree(entries(), &broke, 4, true);
+        let purse = |money: i32| {
+            TestWorld::new()
+                .with_money(money)
+                .set_variable("rounds", GuardValue::from_number(0.0))
+        };
+        agree(entries(), &purse(12), 4, true);
 
-        // And the same shape with the price payable every time is closed after the first,
-        // which is what says the test above is about the once slot rather than about the
-        // loop.
         let every_time = |mut entries: Vec<Entry>| {
             entries[1] = Entry::new(1).cost(6).links(&[2]);
             entries
         };
-        agree(every_time(entries()), &broke, 4, false);
+        agree(every_time(entries()), &purse(12), 4, false);
+
+        agree(entries(), &purse(6), 4, false);
     }
 
     /// The awkward shape, against the REFERENCE WALK rather than against the forward

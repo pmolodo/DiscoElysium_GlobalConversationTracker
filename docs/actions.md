@@ -299,6 +299,13 @@ regained, and no crawl can forget one. 9 live call sites.
 record - see
 [Once](#once).
 
+A priced entry (`ClickCost`) is not a script call, but it moves the same register.
+`CostOptionNode.HandleEntry` charges the price on entry, except for a `CostOnce` entry already
+seen. `HandleResponseText` disables the option whenever the price is above the purse, and makes
+no exception for one already paid. The engine does the same: a paid once-cost is not charged
+again, but still needs the price in hand. `CostOptionNode.GetCost` also scales the price of
+healing and drug purchases in hardcore mode, which the engine does not yet follow - de-70eo.11.
+
 ## Damage
 
 **GAME.** `CharacterManipulations.DamageVolition(n)` adds `-n` to the skill's single `DAMAGE`

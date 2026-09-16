@@ -400,14 +400,15 @@ fn enter_rolled(
 }
 
 /// Whether the player could pay for this entry out of the state's own purse.
+///
+/// A COST CHARGED ONCE IS STILL PRICED THE SECOND TIME. Entering it again takes nothing from
+/// the purse (`CostOptionNode.HandleEntry` skips the charge for a seen once-cost entry), but
+/// the option is disabled whenever the price is above the purse
+/// (`CostOptionNode.HandleResponseText`, with no exception for having paid) - so a path back
+/// through a shop door it has paid at still needs the price in hand. The same in the
+/// pre-final-cut export and Final Cut's ISIL dump.
 pub(crate) fn can_afford(node: &LookAheadNode, state: &LookAheadState) -> bool {
-    if !node.is_cost_option() {
-        return true;
-    }
-    if node.cost_once && node.once_slot >= 0 && state.is_set(node.once_slot as usize) {
-        return true;
-    }
-    node.cost <= state.money()
+    !node.is_cost_option() || node.cost <= state.money()
 }
 
 pub(crate) fn has_been_seen(node: &LookAheadNode, state: &LookAheadState) -> bool {

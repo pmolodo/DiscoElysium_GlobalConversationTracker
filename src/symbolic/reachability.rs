@@ -517,9 +517,12 @@ impl<'a> Reachability<'a> {
     /// anything, and the permissive answer is the only safe one there: refusing would prune
     /// a branch a richer path opens, and this may only over-approximate.
     ///
-    /// A COST CHARGED ONCE IS FREE THE SECOND TIME. Its once slot records that it has been
-    /// paid, and a state carrying that slot enters however empty the purse is - which is
-    /// the rule that lets a path come back through a shop door it has already paid at.
+    /// A COST CHARGED ONCE IS STILL PRICED THE SECOND TIME. Entering it again takes nothing from
+    /// the purse (`CostOptionNode.HandleEntry` skips the charge for a seen once-cost entry), but
+    /// the option is disabled whenever the price is above the purse
+    /// (`CostOptionNode.HandleResponseText`, with no exception for having paid) - so a path back
+    /// through a shop door it has paid at still needs the price in hand. The same in the
+    /// pre-final-cut export and Final Cut's ISIL dump.
     fn affordable(&mut self, node: &LookAheadNode, states: &BDDFunction) -> BDDFunction {
         if !node.is_cost_option() {
             return states.clone();
@@ -536,15 +539,7 @@ impl<'a> Reachability<'a> {
             self.out_of_memory = true;
             return self.vars.bottom();
         };
-        let enough = self.or_no_room(states.and(&price));
-
-        match self.already_paid(node) {
-            Some(paid) => {
-                let free = self.or_no_room(states.and(&paid));
-                self.or_no_room(enough.or(&free))
-            }
-            None => enough,
-        }
+        self.or_no_room(states.and(&price))
     }
 
     /// "This entry's price has already been paid", where it is one that is paid once.
