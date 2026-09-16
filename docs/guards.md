@@ -371,7 +371,30 @@ everyone is.
 `src/core/reputation.rs`. PFC `ReputationAlterant.GetHighestReputationString`. The amounts are
 the dialogue variables `reputation.<name>`, which `ReputationGrows`, `ReputationLowers` and
 `Reputation` write, so the group declares the whole range compared and each amount is read
-through `get_variable` - from the search's slot where the group moves it.
+through `get_variable` - from the search's slot where the group moves it. The layout counts a
+reputation question as reading every amount in its range, so those slots are kept and never
+narrowed to a threshold: the amounts are compared with each other, not with a constant.
+
+The symbolic compiler (`GuardCompiler::highest_reputation`) runs the same loop over sets of
+states. It carries each possible pair of (reputation ahead, amount it is ahead by) together
+with the states where the loop reaches that pair, and splits each pair by the amounts the next
+reputation can hold in the state. Each amount is read the way the search reads it.
+
+The compiler skips that work where no search from the request's starts can change the winner
+(`GuardCompiler::with_starts`), and answers the question from the world. The game's loop has a
+winner exactly where one amount is above zero and strictly above every other amount in the
+range, so raises cannot change the winner if no other reputation can reach the winner's amount.
+A raise is left out of the sum in two cases:
+
+- it sits behind a guard, on every link path to it, that requires its own reputation to be
+  winning;
+- it sits behind a guard that holds in no state.
+
+Evrart's folder (785) is the case: every copotype raise is behind its own "is winning" guard.
+The at-evart save also has raises elsewhere in Evrart's group. Those either can't reach
+apocalypse_cop's lead, like 789:262's boring_cop, or sit behind a guard the save keeps shut,
+like 605:169's superstar_cop. Any other write to the range - a lowering, or a raise that
+could close the gap - leaves the question to the per-state comparison.
 
 | function           | guards | entries | mechanism | range               |
 | ------------------ | -----: | ------: | --------- | ------------------- |
@@ -382,6 +405,9 @@ through `get_variable` - from the search's slot where the group moves it.
 
 - `IsHighestPolitical`: `the_political_range_is_its_own_four`; `bridge.rs` `a_reputation_question_declares_the_range_it_compares`
 - `IsHighestCopotype`: `nothing_is_winning_when_everything_is_zero`, `the_only_one_above_zero_wins`, `a_leading_zero_does_not_prevent_a_winner`, `a_tie_leaves_nothing_winning`, `a_later_higher_one_wins_back_a_cleared_tie`, `one_unreadable_reputation_makes_the_answer_unknown`, `a_query_names_every_variable_its_range_reads`
+- Raised during a search, over conversation 767: `tests/reputation_writes.rs` `raising_a_tied_reputation_makes_it_win`, `a_tie_left_alone_wins_nothing`, `a_reputation_already_winning_stays_winning`
+- The `reputation-branch` suite over `at-evart`: Evrart's 785:24 and its two replies are unmarked where apocalypse_cop is winning
+- Answered from the world: `tests/reputation_writes.rs` `a_raise_to_the_winner_is_answered_from_the_world`, `a_raise_that_can_change_the_winner_is_left_to_the_search`; `tests/scenario_suites.rs` `evarts_copotype_split_is_answered_from_the_world`
 
 The game's loop is not a maximum: a tie clears the winner, the running best starts at zero, and
 a later higher entry wins back a cleared tie. The module's doc works through both.

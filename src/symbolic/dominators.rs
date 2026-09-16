@@ -173,6 +173,11 @@ impl Dominators {
         self.above(id).any(|node| node == cut)
     }
 
+    /// Whether `id` is reachable from the starts along links.
+    pub fn reaches(&self, id: DialogueNodeId) -> bool {
+        self.at.contains_key(&id)
+    }
+
     /// How many entries the tree covers, which is what was reachable from the starts.
     pub fn len(&self) -> usize {
         self.order.len()

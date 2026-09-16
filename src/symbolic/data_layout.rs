@@ -417,6 +417,18 @@ impl DataLayout {
                         *seen = (*seen).max(number as u32);
                     }
                 }
+                // A REPUTATION QUESTION compares its range's amounts with EACH OTHER, not with
+                // a constant, so no threshold says where the amounts stop mattering: raising
+                // 20 to 21 overtakes a rival at 20.
+                GuardExpression::Call(function, _)
+                    if crate::core::reputation::range_of(function).is_some() =>
+                {
+                    for variable in crate::core::reputation::variables_read_by(function) {
+                        if let Some(slot) = symbols.find(&variable) {
+                            unreadable.insert(slot);
+                        }
+                    }
+                }
                 // A SLOT HANDED TO A QUERY is not something this can reason about at all.
                 GuardExpression::Call(_, arguments) => {
                     for argument in arguments.iter() {
@@ -878,6 +890,12 @@ impl DataLayout {
                     if crate::core::party::reads_kim_removal(function) =>
                 {
                     names.insert(crate::core::party::KIM_REMOVED_SLOT.to_string());
+                }
+                // Every amount the question compares, none of which its text names.
+                GuardExpression::Call(function, _)
+                    if crate::core::reputation::range_of(function).is_some() =>
+                {
+                    names.extend(crate::core::reputation::variables_read_by(function));
                 }
                 GuardExpression::Call(function, arguments)
                     if crate::core::equipment::reads_equipment(function) =>

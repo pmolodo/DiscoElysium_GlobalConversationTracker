@@ -663,6 +663,41 @@
       "suite": "failed-red-check",
       "what": "a red check the save has already failed is closed, so nothing past its success is reached",
       "why": "de-5opi, from a real playthrough: Leo's first option, 249, was starred in game. Its only way to an unread line is through 151, a Logic red check whose FlagName is cargo.leo_logic_rc, to the success line 123; this save failed that check, so cargo.leo_logic_rc_failed is true and the fail line 83 is read. The engine closes a check whose failure slot is set, but seeds that slot from the world, and the slot is named by the check rather than by any guard - so it has to be among the questions the plugin answers, or it reads as untried and 123 looks reachable. The global state is the player's own."
+    },
+    {
+      "scenarios": [
+        {
+          "conversation": 605,
+          "stops": [
+            {
+              "what": "Evrart's menu about himself, after asking him about Harry",
+              "inputs": ["1"],
+              "options": [
+                { "entry": 127, "marker": "none", "why": "asking his full name reaches nothing this save has not already had" },
+                { "entry": 185, "marker": "none", "why": "asking where he lives reaches nothing this save has not already had" },
+                { "entry": 76, "marker": "none", "why": "asking about family reaches nothing this save has not already had" },
+                { "entry": 24, "marker": "none", "why": "apocalypse_cop is winning, so only 31's branch is open, and both its replies fail Reaction Speed at 84 and return to this hub; the unread sorry, boring and superstar branches are behind 32, which this save cannot take" },
+                { "entry": 163, "marker": "none", "why": "asking where the folder came from reaches nothing this save has not already had" },
+                { "entry": 107, "marker": "none", "why": "talking of other matters reaches nothing this save has not already had" }
+              ]
+            },
+            {
+              "what": "the two replies to what kind of cop the folder says Harry is",
+              "inputs": ["4"],
+              "options": [
+                { "entry": 161, "marker": "none", "why": "its only way on fails Reaction Speed at 84 and returns to Evrart's hub, from where nothing this save can take is unread" },
+                { "entry": 64, "marker": "none", "why": "the same way back as 161" }
+              ]
+            }
+          ],
+          "markers": "named",
+          "save": "at-evart"
+        }
+      ],
+      "state": "global-state-at-evart.json",
+      "suite": "reputation-branch",
+      "what": "a branch on which reputation is winning is closed where the save's amounts close it",
+      "why": "de-4riz and de-a55g, from a real playthrough: Evrart's option 4, 785:24, was starred in game, and choosing it offered two starred replies that both led straight back. 785:30 splits on IsHighestCopotype(\"apocalypse_cop\"); this save holds apocalypse_cop 9, superstar_cop 8, sorry_cop 7 and boring_cop 3, so only the apocalypse branch is open. The unread lines are all behind the other side, and a reputation question left undecided opened it. The global state is the player's own."
     }
   ]
 }

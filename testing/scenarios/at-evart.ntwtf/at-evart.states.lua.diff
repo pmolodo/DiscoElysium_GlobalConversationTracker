@@ -1,0 +1,23 @@
+--- ../at-leo.ntwtf/at-leo.states.lua.diff
++++ at-evart.states.lua
+@@ -48,3 +48,3 @@
+ AreaState["HARBOUR_CLOAK"]={LocationState=0};
+-AreaState["HARBOUR_CONTAINER"]={LocationState=0};
++AreaState["HARBOUR_CONTAINER"]={LocationState=1};
+ AreaState["JOYCE"]={LocationState=0};
+@@ -252,2 +252,5 @@
+ AreaState["Harbour Table"]={emptied=true};
++AreaState["Scenes/Union-boss-int"]={HasEntered=true};
++AreaState["Yard Bucket"]={emptied=true};
++AreaState["Yard Box"]={emptied=true};
+ ShownOrbs["WHIRLING F2 ORB / locked door"]={OrbSeen=1};
+@@ -448 +451,9 @@
+ ShownOrbs["CONTAINERYARD ORB / unionlogo"]={OrbSeen=1};
++ShownOrbs["EVRART ORB / coffeeday"]={OrbSeen=1};
++ShownOrbs["EVRART ORB / stairsup"]={OrbSeen=1};
++ShownOrbs["EVART ORB / swordfishclock"]={OrbSeen=1};
++ShownOrbs["BACKYARD ORB / cigarettestash"]={OrbSeen=1};
++ShownOrbs["APT ORB / comebacklater"]={OrbSeen=1};
++ShownOrbs["BACKYARD ORB / cactus"]={OrbSeen=1};
++ShownOrbs["BACKYARD ORB / balconydoornumber"]={OrbSeen=1};
++ShownOrbs["BACKYARD ORB / anotherbalconydoornumber"]={OrbSeen=1};

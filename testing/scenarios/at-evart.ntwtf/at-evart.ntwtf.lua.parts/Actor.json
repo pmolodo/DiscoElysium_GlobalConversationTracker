@@ -1,0 +1,25 @@
+{
+  "_format": "sparse-diff",
+  "_formatVersion": 2,
+  "_base": "../../at-leo.ntwtf/at-leo.ntwtf.lua.parts/Actor.json",
+  "_changes": {
+    "Gaston_Martin": {
+      "Bark_Index": 1
+    },
+    "Easy_Leo": {
+      "Bark_Index": 1
+    },
+    "Kim_Kitsuragi": {
+      "Position_Martinaise_ext": "-57.60495,11.34368,-100.1645,0,0.8669269,0,0.4984353,Martinaise-ext",
+      "Position_Doomed_commerce_int_f1": "1.326406,0.02321695,1.537984,0,0.4257326,0,-0.9048491,Doomed-commerce-int-f1",
+      "Position_Secretary_int": "3.826307,0.427,-6.303395,0,0.9922206,0,0.1244922,Secretary-int",
+      "Position_Union_boss_int": "5.264943,3.568795,3.444114,0,0.505819,0,-0.8626397,Union-boss-int"
+    },
+    "You": {
+      "Position_Martinaise_ext": "-57.42951,11.48424,-99.83465,0,0.6352024,0,0.7723457,Martinaise-ext",
+      "Position_Doomed_commerce_int_f1": "0.6137111,0.02321731,3.528859,0,0.9901453,0,-0.1400442,Doomed-commerce-int-f1",
+      "Position_Secretary_int": "3.665,0.427,-7.54,0,0.9107383,0,0.4129838,Secretary-int",
+      "Position_Union_boss_int": "4.40371,3.568795,3.806273,0,0.9834033,0,-0.1814331,Union-boss-int"
+    }
+  }
+}

@@ -37,6 +37,7 @@ use crate::core::guard::{Arguments, Guard, GuardExpression, GuardRef};
 use crate::core::guard_value::{GuardValue, GuardValueKind};
 use crate::core::state::{ITEM_PREFIX, THOUGHT_PREFIX};
 use crate::core::types::{DialogueNodeId, Ternary};
+use crate::graph::LookAheadGraph;
 use crate::symbolic::data_layout::DeltaSlot;
 use crate::symbolic::vars::DataVars;
 use crate::world::{ILookAheadWorld, MONEY_QUERY};
@@ -66,6 +67,14 @@ enum Distances {
     None,
     AtLeast(i64),
     Exactly(i64),
+}
+
+/// Why [`GuardCompiler::amounts_of`] could not say what a variable reads as.
+enum Amounts {
+    /// The world cannot give the number the search starts from.
+    Unknown,
+    /// The manager had no room for a formula.
+    NoRoom,
 }
 
 /// What compiling one guard node takes, as [`GuardCompiler::plan`] decides it.
@@ -179,6 +188,12 @@ pub struct GuardCompiler<'a> {
     /// [`Self::forget_guards`] is the way out for a caller that would rather have the room.
     guards: HashMap<DialogueNodeId, MayBe>,
     guard_cache_hits: usize,
+    /// The reputation ranges no search from this compiler's starts can change the winner of,
+    /// keyed by the range's first index, each with the world's winner. See
+    /// [`Self::with_starts`].
+    settled_reputation: HashMap<usize, Option<&'static str>>,
+    /// How many reputation questions were answered from [`Self::settled_reputation`].
+    reputation_from_world: usize,
 }
 
 impl<'a> GuardCompiler<'a> {
@@ -197,6 +212,223 @@ impl<'a> GuardCompiler<'a> {
             declared_constants: Vec::new(),
             guards: HashMap::new(),
             guard_cache_hits: 0,
+            settled_reputation: HashMap::new(),
+            reputation_from_world: 0,
+        }
+    }
+
+    /// Settles the reputation ranges whose winner no search from `starts` can change, so their
+    /// questions are answered from the world. Needs [`Self::with_world`] first.
+    ///
+    /// ## When nothing can change the winner
+    ///
+    /// Raising the reputation that is winning never changes the winner: it was ahead of every
+    /// reputation before it in the loop and strictly above every one after, and a larger amount
+    /// is still both. So the winner holds for a whole search if every write to the range that
+    /// the starts can reach is a raise, and each raise is to a reputation that is winning when
+    /// it happens. A raise is known to be to the winner if its reputation is the world's winner,
+    /// or if some entry on EVERY link path from the starts to it - a dominator, other than a
+    /// start - has a guard that requires that reputation to be winning.
+    ///
+    /// By induction along any route: before the first write that changed the winner, the winner
+    /// was the world's; that write is dominated by a guard passed earlier on the route, which
+    /// required its reputation to be winning then, and so it still was. Contradiction.
+    ///
+    /// ## Why this is worth having beside the tracked comparison
+    ///
+    /// The comparison in [`Self::highest_reputation`] is exact already. A settled range is
+    /// exact too, and it costs nothing per state. It is also the common shape: Evrart's folder
+    /// (785) raises each copotype only behind the guard that it is winning.
+    ///
+    /// ## Why the starts, and why not a start as the dominator
+    ///
+    /// A request's searches all begin at its starts or at the entries one outcome of a rolled
+    /// start opens, and every route from those is the tail of a route from the start. A start's
+    /// own guard is not passed by a route that begins below it, so a start does not count as a
+    /// dominator here - the world's winner covers the menu the player is standing at.
+    pub fn with_starts(mut self, graph: &LookAheadGraph, starts: &[DialogueNodeId]) -> Self {
+        let Some(world) = self.world else {
+            return self;
+        };
+        let asked: Vec<std::ops::Range<usize>> = [
+            crate::core::reputation::COPOTYPE,
+            crate::core::reputation::POLITICAL,
+        ]
+        .into_iter()
+        .filter(|range| {
+            graph
+                .nodes()
+                .any(|node| Self::asks_about_range(&node.guard, range))
+        })
+        .collect();
+        if asked.is_empty() {
+            return self;
+        }
+
+        let dominators = super::dominators::Dominators::of(graph, starts);
+        let symbols = self.vars.symbols();
+        for range in asked {
+            let amounts: Option<HashMap<&'static str, i64>> =
+                crate::core::reputation::IN_ENUM_ORDER[range.clone()]
+                    .iter()
+                    .map(|&name| {
+                        let variable =
+                            symbols.variable_ref(&crate::core::reputation::variable_of(name))?;
+                        let amount = world.get_variable(variable).try_as_number()?;
+                        Some((name, i64::from(amount as i32)))
+                    })
+                    .collect();
+            let Some(amounts) = amounts else {
+                continue;
+            };
+            let winner = crate::core::reputation::highest(range.clone(), |name| {
+                amounts.get(name).map(|&amount| amount as i32)
+            })
+            .expect("every amount in the range was read");
+
+            if self.no_write_changes_winner(graph, starts, &dominators, &range, winner, &amounts) {
+                self.settled_reputation.insert(range.start, winner);
+            }
+        }
+        self
+    }
+
+    /// Whether every write to `range` the starts can reach leaves `winner` winning. See
+    /// [`Self::with_starts`].
+    ///
+    /// ## Which raises cannot matter
+    ///
+    /// The game's loop has a winner exactly where one reputation's amount is above zero and
+    /// strictly above every other in the range: an equal amount earlier or later clears it, and
+    /// a larger one takes over. So with raises only, the winner stays the winner while every
+    /// other reputation stays below it. A raise is left out of that count where it cannot
+    /// happen while the winner holds:
+    ///
+    /// - behind a guard that requires its own reputation to be winning, which only the winner
+    ///   is - so it raises the winner, or never runs;
+    /// - behind a guard that holds in no state at all. The link walk ignores guards, so a write
+    ///   behind a door this world keeps shut counts as reachable until a guard says otherwise.
+    ///
+    /// Every other reachable raise is summed per reputation, and the range is settled where
+    /// no reputation but the winner can get to the winner's amount. With nothing winning, any
+    /// such raise could break the tie, so none may be left.
+    ///
+    /// ONLY AN ORDINARY ENTRY'S GUARD CLOSES A ROUTE. A passive check whose condition fails is
+    /// stepped over onto its links rather than refusing them.
+    fn no_write_changes_winner(
+        &mut self,
+        graph: &LookAheadGraph,
+        starts: &[DialogueNodeId],
+        dominators: &super::dominators::Dominators,
+        range: &std::ops::Range<usize>,
+        winner: Option<&'static str>,
+        amounts: &HashMap<&'static str, i64>,
+    ) -> bool {
+        let symbols = self.vars.symbols();
+        let mut reachable_raises: HashMap<&'static str, i64> = HashMap::new();
+        for node in graph.nodes().filter(|node| dominators.reaches(node.id)) {
+            for action in node.all_actions() {
+                let Some(raised) = Self::reputation_written(action, symbols, range) else {
+                    continue;
+                };
+                if action.kind() != crate::core::action::DialogueActionKind::Increment
+                    || action.value() <= 0
+                {
+                    return false;
+                }
+                if winner == Some(raised) {
+                    continue;
+                }
+
+                let gates: Vec<&crate::graph::node::LookAheadNode> = std::iter::once(node.id)
+                    .chain(dominators.above(node.id))
+                    .filter(|id| !starts.contains(id))
+                    .filter_map(|id| graph.get(id))
+                    .filter(|gate| gate.kind == crate::core::types::DialogueCheckKind::None)
+                    .collect();
+                if gates
+                    .iter()
+                    .any(|gate| Self::requires_winning(gate.guard.as_ref(), range, raised))
+                {
+                    continue;
+                }
+                let shut = gates.iter().any(|gate| {
+                    // NOT A GUARD THAT ASKS THIS RANGE, which would be compiled and kept before
+                    // the range is settled.
+                    !Self::asks_about_range(&gate.guard, range)
+                        && !self
+                            .compile_for(gate.id, &gate.guard)
+                            .may_be_true
+                            .satisfiable()
+                });
+                if !shut {
+                    *reachable_raises.entry(raised).or_default() += i64::from(action.value());
+                }
+            }
+        }
+
+        let Some(winner) = winner else {
+            return reachable_raises.is_empty();
+        };
+        let leading = amounts[winner];
+        reachable_raises
+            .iter()
+            .all(|(reputation, raises)| amounts[reputation] + raises < leading)
+    }
+
+    /// How many reputation questions were answered from the world because no search could
+    /// change their winner.
+    pub fn reputation_from_world(&self) -> usize {
+        self.reputation_from_world
+    }
+
+    /// Whether a guard asks a reputation question over `range`.
+    fn asks_about_range(guard: &Guard, range: &std::ops::Range<usize>) -> bool {
+        guard.nodes().any(|node| match node.expression() {
+            GuardExpression::Call(name, _) => {
+                crate::core::reputation::range_of(name).as_ref() == Some(range)
+            }
+            _ => false,
+        })
+    }
+
+    /// The reputation in `range` an action writes, if it writes one.
+    fn reputation_written(
+        action: &crate::core::action::DialogueAction,
+        symbols: &crate::core::state::StateSymbols,
+        range: &std::ops::Range<usize>,
+    ) -> Option<&'static str> {
+        let name = symbols.name_of(usize::try_from(action.slot()).ok()?)?;
+        crate::core::reputation::IN_ENUM_ORDER[range.clone()]
+            .iter()
+            .copied()
+            .find(|reputation| crate::core::reputation::variable_of(reputation) == name)
+    }
+
+    /// Whether a guard can only hold where `reputation` is winning `range`: the question
+    /// itself, compared against true, or a conjunction with it on either side.
+    fn requires_winning(
+        guard: GuardRef<'_>,
+        range: &std::ops::Range<usize>,
+        reputation: &str,
+    ) -> bool {
+        match guard.expression() {
+            GuardExpression::Call(name, args) => {
+                crate::core::reputation::range_of(name).as_ref() == Some(range)
+                    && Self::text_argument(args).as_deref() == Some(reputation)
+            }
+            GuardExpression::And(left, right) => {
+                Self::requires_winning(left, range, reputation)
+                    || Self::requires_winning(right, range, reputation)
+            }
+            GuardExpression::Comparison("==", left, right) => {
+                match (Self::boolean_of(left), Self::boolean_of(right)) {
+                    (None, Some(true)) => Self::requires_winning(left, range, reputation),
+                    (Some(true), None) => Self::requires_winning(right, range, reputation),
+                    _ => false,
+                }
+            }
+            _ => false,
         }
     }
 
@@ -736,6 +968,14 @@ impl<'a> GuardCompiler<'a> {
                         }
                     }
                 }
+            }
+
+            // WHICH REPUTATION IS WINNING, from the amounts as they stand in each state - the
+            // group's own reputation actions move them. See `Self::highest_reputation`.
+            GuardExpression::Call(name, args)
+                if crate::core::reputation::range_of(name).is_some() =>
+            {
+                self.highest_reputation(name, args, guard.to_string())
             }
 
             // A query the SEARCH cannot change is a constant, and the engine says which
@@ -1446,6 +1686,167 @@ impl<'a> GuardCompiler<'a> {
         }
     }
 
+    /// `IsHighestCopotype(wanted)` or `IsHighestPolitical(wanted)`, over the amounts each state
+    /// holds.
+    ///
+    /// ## The game's loop, run over sets of states
+    ///
+    /// The answer is `core::reputation::highest`, which is not a maximum: a tie clears the
+    /// winner, the running best starts at zero, and a later higher amount wins it back. So it
+    /// is computed the way the game computes it, one reputation at a time in enum order, with
+    /// the loop's two variables - which reputation is ahead, and by what amount - carried as a
+    /// map from each possible pair to the states in which the loop reaches it. Each
+    /// reputation's step splits every entry by the amounts that reputation can hold. What is
+    /// left under a winner of `wanted` is where the question holds.
+    ///
+    /// It stays small because the amounts do: an untracked reputation has one, a rebased one
+    /// as many as the group's own raises plus one, and a wide slot at most what its bits hold.
+    ///
+    /// ## Why not compare the slots directly
+    ///
+    /// A comparator between two registers is exactly the arithmetic the rest of this compiler
+    /// avoids, and the tie rule would need one per pair on top. Splitting by value costs a
+    /// handful of conjunctions and states the rule once, in the order the game states it.
+    fn highest_reputation(&mut self, name: &str, args: Arguments<'_>, rendered: String) -> MayBe {
+        let range = crate::core::reputation::range_of(name).expect("the caller matched");
+        let Some(wanted) = Self::text_argument(args) else {
+            return self.undecided("reputation: the argument is not a literal name", rendered);
+        };
+
+        if let Some(winner) = self.settled_reputation.get(&range.start).copied() {
+            self.reputation_from_world += 1;
+            let holds = if winner == Some(wanted.as_str()) {
+                self.top()
+            } else {
+                self.bottom()
+            };
+            return self.decided(holds);
+        }
+
+        // (index of the reputation ahead, the amount it is ahead by) -> where the loop is there.
+        let mut ahead: HashMap<(Option<usize>, i64), BDDFunction> = HashMap::new();
+        ahead.insert((None, 0), self.top());
+
+        for index in range {
+            let variable =
+                crate::core::reputation::variable_of(crate::core::reputation::IN_ENUM_ORDER[index]);
+            let amounts = match self.amounts_of(&variable) {
+                Ok(amounts) => amounts,
+                Err(Amounts::Unknown) => {
+                    return self.undecided("reputation: world cannot say an amount", rendered);
+                }
+                Err(Amounts::NoRoom) => return self.no_room(rendered),
+            };
+
+            let mut next: HashMap<(Option<usize>, i64), BDDFunction> = HashMap::new();
+            for (&(best, best_amount), reached) in &ahead {
+                for (amount, holding) in &amounts {
+                    let Ok(both) = reached.and(holding) else {
+                        return self.no_room(rendered);
+                    };
+                    let step = if *amount == best_amount {
+                        (None, best_amount)
+                    } else if *amount > best_amount {
+                        (Some(index), *amount)
+                    } else {
+                        (best, best_amount)
+                    };
+                    let joined = match next.remove(&step) {
+                        Some(already) => already.or(&both),
+                        None => Ok(both),
+                    };
+                    let Ok(joined) = joined else {
+                        return self.no_room(rendered);
+                    };
+                    next.insert(step, joined);
+                }
+            }
+            ahead = next;
+        }
+
+        let mut holds = self.bottom();
+        for ((best, _), reached) in ahead {
+            let wins = best.is_some_and(|index| {
+                crate::core::reputation::IN_ENUM_ORDER[index] == wanted.as_str()
+            });
+            if !wins {
+                continue;
+            }
+            let Ok(joined) = holds.or(&reached) else {
+                return self.no_room(rendered);
+            };
+            holds = joined;
+        }
+        self.decided(holds)
+    }
+
+    /// Every amount a variable can read as, each with the states in which it does.
+    ///
+    /// READ THE WAY THE SEARCH READS IT, so the answer is the one `BoundContext::query` gives
+    /// state by state:
+    ///
+    /// - a variable the layout carries no slot for is the world's number everywhere;
+    /// - a slot held as a delta is the world's number (clamped into the slot's ceiling) where
+    ///   the search has not moved it, and that number plus the distance, saturated at the cap,
+    ///   where it has - the same reading [`Self::rebased`] rewrites a comparison around;
+    /// - any other slot is its own bits.
+    ///
+    /// A number the world cannot give makes the whole question unknown, as it does for the
+    /// search: a zero invented in its place is a participant in the comparison and can clear
+    /// a winner.
+    fn amounts_of(&self, variable: &str) -> Result<Vec<(i64, BDDFunction)>, Amounts> {
+        let slot = self
+            .vars
+            .slot_of(variable)
+            .filter(|slot| self.vars.layout().slot(*slot).is_some());
+
+        let Some(slot) = slot else {
+            let world = self.world.ok_or(Amounts::Unknown)?;
+            let declared = self
+                .vars
+                .symbols()
+                .variable_ref(variable)
+                .ok_or(Amounts::Unknown)?;
+            let amount = world
+                .get_variable(declared)
+                .try_as_number()
+                .ok_or(Amounts::Unknown)?;
+            return Ok(vec![(amount as i32 as i64, self.top())]);
+        };
+
+        let top = self.vars.slot_ceiling(slot).ok_or(Amounts::NoRoom)?;
+        let delta = self.vars.layout().delta_slot(slot);
+        let base = match delta {
+            Some(delta) => {
+                let world = self.world.ok_or(Amounts::Unknown)?;
+                let held = world.get_variable(self.declared(variable));
+                let base = match held.kind() {
+                    GuardValueKind::Boolean => i64::from(held.boolean()),
+                    GuardValueKind::Number => held.number() as i64,
+                    _ => 0,
+                };
+                Some((base.clamp(0, delta.ceiling as i64), delta.cap as i64))
+            }
+            None => None,
+        };
+
+        let mut by_amount: HashMap<i64, BDDFunction> = HashMap::new();
+        for held in 0..=top {
+            let amount = match base {
+                Some((base, _)) if held == 0 => base,
+                Some((base, cap)) => (base + held as i64).min(cap),
+                None => held as i64,
+            };
+            let at = self.vars.slot_equals(slot, held).ok_or(Amounts::NoRoom)?;
+            let joined = match by_amount.remove(&amount) {
+                Some(already) => already.or(&at).map_err(|_| Amounts::NoRoom)?,
+                None => at,
+            };
+            by_amount.insert(amount, joined);
+        }
+        Ok(by_amount.into_iter().collect())
+    }
+
     /// The single text argument a query names its subject with, if that is its shape.
     fn text_argument(args: Arguments<'_>) -> Option<String> {
         let GuardExpression::Literal(value) = args.only()?.expression() else {
@@ -1463,11 +1864,8 @@ impl<'a> GuardCompiler<'a> {
     /// from search state and so varies between states; anything else is answered by the
     /// world and is the same at every state.
     /// A reputation question is here because `ReputationGrows` writes the variables it
-    /// compares, so the search really can change the answer. The compiler does not BUILD it
-    /// - comparing four slots against each other is arithmetic this deliberately does not
-    /// attempt - so it falls through to undecided, which is permissive. Less decisive than
-    /// the engine is the safe direction; more decisive is the one that prunes branches the
-    /// search walks.
+    /// compares, so the search really can change the answer; it is built from the amounts
+    /// each state holds, by [`Self::highest_reputation`].
     fn search_can_change(name: &str) -> bool {
         matches!(name, MONEY_QUERY)
             || Self::slot_backed_query(name).is_some()

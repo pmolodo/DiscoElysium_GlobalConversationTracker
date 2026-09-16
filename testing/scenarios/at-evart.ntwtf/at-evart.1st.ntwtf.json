@@ -1,0 +1,11 @@
+{
+  "_base": "../at-leo.ntwtf/at-leo.1st.ntwtf.json",
+  "_changes": {
+    "areaId": "Union-boss-int",
+    "fowUnrevealersStatusCache": {
+      "fog-evrart-office": "ACTIVE"
+    }
+  },
+  "_format": "json-diff",
+  "_formatVersion": 1
+}

@@ -480,15 +480,35 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
                     continue;
                 }
 
+                // BY ENTRY ALONE, as the in-game run matches them: a walk can cross into another
+                // conversation of the group, so the menu's own ids say where each option lives.
+                let offered = |entry: i32| -> Vec<NodeRef> {
+                    walk.menu
+                        .iter()
+                        .filter(|id| id.entry_id == entry)
+                        .map(|id| NodeRef::from(*id))
+                        .collect()
+                };
+                let ambiguous: Vec<i32> = stop
+                    .options
+                    .iter()
+                    .map(|option| option.entry)
+                    .filter(|entry| offered(*entry).len() > 1)
+                    .collect();
+                assert!(
+                    ambiguous.is_empty(),
+                    "{}/{} ({}): the menu {:?} offers {ambiguous:?} from more than one \
+                     conversation, so a row naming entries alone cannot say which",
+                    suite.suite,
+                    scenario.save,
+                    stop.what,
+                    walk.menu,
+                );
                 let unoffered: Vec<i32> = stop
                     .options
                     .iter()
                     .map(|option| option.entry)
-                    .filter(|entry| {
-                        !walk
-                            .menu
-                            .contains(&DialogueNodeId::new(conversation, *entry))
-                    })
+                    .filter(|entry| offered(*entry).is_empty())
                     .collect();
                 if !unoffered.is_empty() {
                     failures.push(format!(
@@ -509,37 +529,36 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
                     response.error,
                 );
 
-                let by_start: std::collections::HashMap<i32, &LookAheadAnswer> = response
+                let by_start: std::collections::HashMap<NodeRef, &LookAheadAnswer> = response
                     .answers
                     .iter()
-                    .map(|reply| (reply.start.entry, reply))
+                    .map(|reply| (reply.start, reply))
                     .collect();
 
                 for option in stop.options {
-                    let Some(reply) = by_start.get(&option.entry) else {
+                    let start = offered(option.entry)[0];
+                    let Some(reply) = by_start.get(&start) else {
                         failures.push(format!(
-                            "{}/{}: nothing came back for {conversation}:{}",
-                            suite.suite, scenario.save, option.entry,
+                            "{}/{}: nothing came back for {}:{}",
+                            suite.suite, scenario.save, start.conversation, start.entry,
                         ));
                         continue;
                     };
 
-                    let own = staged.novelty_of(NodeRef {
-                        conversation,
-                        entry: option.entry,
-                    });
+                    let own = staged.novelty_of(start);
                     let got = drawn(own, reply);
                     checked += 1;
 
                     if got != option.marker {
                         failures.push(format!(
-                            "{}/{} ({}): {conversation}:{} should be {} - {} - and the engine \
+                            "{}/{} ({}): {}:{} should be {} - {} - and the engine \
                              draws {got}: own {own}, best {}, {}, {} states over {} entries \
                              - run it in game with --suite {}",
                             suite.suite,
                             scenario.save,
                             stop.what,
-                            option.entry,
+                            start.conversation,
+                            start.entry,
                             option.marker,
                             option.why,
                             reply.best,
@@ -561,6 +580,45 @@ fn every_marker_the_suites_arrange_is_reached_offline() {
     assert!(failures.is_empty(), "\n{}", failures.join("\n"));
     assert!(checked > 0, "{TABLE} named no option for any scenario");
     eprintln!("{checked} markers reached offline");
+}
+
+/// Evrart's folder never has to carry the copotype amounts: it raises each one only behind the
+/// guard that it is winning, so from either of the `reputation-branch` menus the whole split is
+/// answered from the world.
+#[test]
+fn evarts_copotype_split_is_answered_from_the_world() {
+    const FOLDER: i32 = 785;
+    /// Every guard on the split under "What kind of a cop does it say I am?".
+    const SPLIT: [i32; 8] = [31, 32, 124, 125, 149, 150, 3, 4];
+
+    let Some(path) = common::shipped_index() else {
+        eprintln!("no shipped index; skipping.");
+        return;
+    };
+    if common::actors().is_none() {
+        eprintln!("no actor table; skipping.");
+        return;
+    }
+    let index = read_index(&path).expect("the shipped index reads");
+    let table = suites::table();
+    let suite = table.suite("reputation-branch");
+    let scenario = &suite.scenarios[0];
+    let staged = stage(&index, suite, scenario).expect("Evrart's group builds");
+    let split = SPLIT.map(|entry| DialogueNodeId::new(FOLDER, entry));
+
+    for stop in scenario.stops() {
+        let walk = staged
+            .walk(scenario.conversation, stop.inputs.as_deref())
+            .unwrap_or_else(|misfit| panic!("{}: {misfit}", stop.what));
+        let compiled = common::compiled_guards(&index, &staged.asking(&walk), &split);
+        assert_eq!(
+            compiled.reputation_from_world,
+            SPLIT.len(),
+            "{}: every question on the split is answered from the world",
+            stop.what
+        );
+        assert_eq!(compiled.fallbacks, 0, "{}", stop.what);
+    }
 }
 
 /// The claims a suite makes about every entry in a group, rather than about a menu.

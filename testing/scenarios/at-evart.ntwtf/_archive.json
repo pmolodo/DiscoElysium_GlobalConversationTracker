@@ -1,0 +1,31 @@
+{
+  "_format": "expanded-save-diff",
+  "_formatVersion": 1,
+  "base": "../at-leo.ntwtf",
+  "members": [
+    {
+      "diff": "at-evart.states.lua.diff",
+      "kind": "text",
+      "name": "at-evart.states.lua",
+      "suffix": ".states.lua"
+    },
+    {
+      "diff": "at-evart.1st.ntwtf.json",
+      "kind": "json",
+      "name": "at-evart.1st.ntwtf.json",
+      "suffix": ".1st.ntwtf.json"
+    },
+    {
+      "diff": "at-evart.2nd.ntwtf.json",
+      "kind": "json",
+      "name": "at-evart.2nd.ntwtf.json",
+      "suffix": ".2nd.ntwtf.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "at-evart.FOW.json",
+      "suffix": ".FOW.json"
+    }
+  ]
+}

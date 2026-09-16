@@ -677,3 +677,62 @@ pub fn committed_saves_to_check(saves: Vec<PathBuf>) -> Vec<PathBuf> {
     );
     selected
 }
+
+/// What the guard compiler a request builds does with some entries' guards.
+pub struct CompiledGuards {
+    /// How many reputation questions it answered from the world, because no search from the
+    /// request's starts could change their winner.
+    pub reputation_from_world: usize,
+    /// How many guards it could not decide.
+    pub fallbacks: usize,
+}
+
+/// Compiles `entries`' guards with the compiler `bridge::answer` builds for `request`: the
+/// group fitted to the world, the layout narrowed to the request, and the request's starts.
+pub fn compiled_guards(
+    index: &lookahead_engine::index::Index,
+    request: &lookahead_engine::bridge::LookAheadRequest,
+    entries: &[DialogueNodeId],
+) -> CompiledGuards {
+    use lookahead_engine::bridge::{
+        COUNTER_CAP, SnapshotWorld, entered_at_of, questions_of, starts_of,
+    };
+    use lookahead_engine::symbolic::data_layout::DataLayout;
+    use lookahead_engine::symbolic::guard_formula::GuardCompiler;
+    use lookahead_engine::symbolic::vars::DataVars;
+
+    let (mut graph, group) =
+        lookahead_engine::index::build_group_graph(index, request.conversation)
+            .expect("the request's group builds");
+    let mut snapshot = request.world.clone();
+    snapshot
+        .resolve(&questions_of(&graph, group))
+        .expect("the world answers the group's questions");
+    let world = SnapshotWorld::new(snapshot);
+    graph.fit(&lookahead_engine::graph::Fitting::read(&graph, &world));
+
+    let symbols = graph.symbols().clone();
+    let layout = DataLayout::for_group_entered_at(
+        &graph,
+        &world,
+        COUNTER_CAP,
+        Some(&entered_at_of(request)),
+    );
+    let vars = DataVars::try_new(&layout, &symbols, request.diagram_budget())
+        .expect("the manager fits the budget");
+    let mut compiler = GuardCompiler::new(&vars)
+        .with_world(&world)
+        .with_constant_clock(DataLayout::group_passes_time(&graph))
+        .with_starts(&graph, &starts_of(request));
+
+    for &entry in entries {
+        let node = graph
+            .get(entry)
+            .unwrap_or_else(|| panic!("{entry:?} is not in the group"));
+        compiler.compile_for(entry, &node.guard);
+    }
+    CompiledGuards {
+        reputation_from_world: compiler.reputation_from_world(),
+        fallbacks: compiler.fallbacks(),
+    }
+}

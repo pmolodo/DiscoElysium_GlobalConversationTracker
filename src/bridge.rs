@@ -1651,6 +1651,16 @@ fn collect(
     }
 }
 
+/// A request's starts, as the engine names entries.
+pub fn starts_of(request: &LookAheadRequest) -> Vec<DialogueNodeId> {
+    request
+        .starts
+        .iter()
+        .copied()
+        .map(DialogueNodeId::from)
+        .collect()
+}
+
 /// Answers one request, from the symbolic search.
 ///
 /// THE CROSSING IS TRUSTED, which is why the answer can be built here rather than checked
@@ -1832,7 +1842,8 @@ where
     let vars = DataVars::try_new(&layout, &symbols, request.diagram_budget())?;
     let mut compiler = GuardCompiler::new(&vars)
         .with_world(world)
-        .with_constant_clock(DataLayout::group_passes_time(graph));
+        .with_constant_clock(DataLayout::group_passes_time(graph))
+        .with_starts(graph, &starts_of(request));
     let seed = seed_of(graph, world, &vars)?;
 
     // ONCE FOR THE MENU, like the manager and the compiler above. The parent map and the
