@@ -297,11 +297,9 @@ namespace GlobalConversationTracker.Harness
                 watcher.WaitForEvent("ready", timeout, Log);
                 report.Check(true, "the probe loaded", $"reading {logPath}");
 
-                // THE FIRST SAVE CANNOT COME FROM THE PROBE. Loading from the main menu
-                // that way dies in HudToggle.FixForDreamScene, with the HUD views that
-                // path expects not yet built - so one Continue press gets a save in, and
-                // only then can the rest be loaded by name.
-                FirstSave.Get(watcher, timeout, report, Log);
+                // THE FIRST SAVE COMES IN THROUGH THE MENU'S CONTINUE, not a load by name -
+                // see FirstSave - and only then can the rest be loaded by name.
+                FirstSave.Get(watcher, timeout, saveGames);
 
                 string previous = LoadedByContinue;
 

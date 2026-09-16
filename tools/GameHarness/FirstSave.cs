@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 using System;
 using System.Diagnostics;
-using System.IO;
 using System.Threading;
 using GlobalConversationTracker.Automation;
 
@@ -9,199 +8,78 @@ namespace GlobalConversationTracker.Harness
 {
     /// <summary>Getting the first save of a run into a game that has just launched.</summary>
     /// <remarks>
-    /// Shared by every in-game run rather than written out per run. The awkward part is not
-    /// the keypress but knowing WHEN to send it, and a second copy of that judgement would
-    /// be the one that pressed blind.
+    /// Shared by every in-game run rather than written out per run. The awkward part is
+    /// knowing WHEN the menu can be pressed, and a second copy of that judgement would be
+    /// the one that pressed too early.
     /// </remarks>
     internal static class FirstSave
     {
-        /// <summary>
-        /// How long to give one Enter before pressing it again. Short enough to walk
-        /// through a splash screen or a run of dialogue briskly, long enough that a
-        /// loading screen is not hammered.
-        /// </summary>
-        private static readonly TimeSpan BetweenPresses = TimeSpan.FromSeconds(2);
+        /// <summary>How long to wait after a refusal before asking again.</summary>
+        private static readonly TimeSpan BetweenAsks = TimeSpan.FromSeconds(2);
 
         /// <summary>
-        /// Gets the first save of a run in, by waiting for the main menu and pressing
-        /// Continue.
+        /// Gets the first save of a run in, by asking the probe to press the main menu's
+        /// Continue from inside the game.
         /// </summary>
         /// <remarks>
-        /// <para>Continue rather than a named load, because loading from the menu through
-        /// the probe dies in HudToggle.FixForDreamScene - the HUD views that path expects
-        /// are not built yet - and Continue takes the newest save, which is what the
-        /// caller's staging order arranges. Once a save is in and the HUD exists the probe
-        /// can load the rest by name.</para>
+        /// <para>NO WINDOW IN FRONT. A keypress goes to whatever window has the focus, so a
+        /// run that pressed Enter at the menu had to raise the game first and failed whenever
+        /// something else held on to the foreground. The probe calls the menu's own
+        /// <c>GameLevelCommand.ContinueGame</c> instead, which is what the button runs.</para>
         ///
-        /// <para>Waiting for the menu by looking at it, rather than pressing Enter every
-        /// two seconds and hoping, is what makes the press land somewhere known. The
-        /// watcher also skips the logo deliberately, and refuses to send anything at a
-        /// window that is not in front - a keypress goes to whatever IS in front, so
-        /// pressing blind types into somebody else's window and reports nothing.</para>
+        /// <para>CONTINUE RATHER THAN A LOAD BY NAME. Loading by name while the startup
+        /// screens are up applies the save's data without taking the player out of the menu
+        /// scene - the HUD comes up over the menu's world and no conversation can open. The
+        /// menu's command does what the menu does around the load, and Continue takes the
+        /// newest save, which is what the caller's staging order arranges. Once a save is in,
+        /// the probe loads the rest by name.</para>
         ///
-        /// <para>Without a phase file there is nothing to look at, so it falls back to
-        /// the old blind pressing. That is a worse way to do it, not a broken one.</para>
+        /// <para>The probe refuses until the main menu is showing and offers Continue, so
+        /// this asks again after each refusal - and only then. A press it accepted starts a
+        /// load that is under way before it is applied, and a second press would start
+        /// another on top of it.</para>
         /// </remarks>
         /// <param name="watcher">The probe watcher to wait on.</param>
-        /// <param name="timeout">How long any single wait may take.</param>
-        /// <param name="report">Where the main-menu check is recorded.</param>
-        /// <param name="progress">Called with each step, for verbose output.</param>
-        public static void Get(
-            ProbeWatcher watcher, TimeSpan timeout, Report report, Action<string> progress)
+        /// <param name="timeout">How long to keep asking.</param>
+        /// <param name="saveGames">The profile's SaveGames folder.</param>
+        public static void Get(ProbeWatcher watcher, TimeSpan timeout, string saveGames)
         {
-            StartupWatcher? startup = LoadStartupWatcher(progress);
-            if (startup == null)
-            {
-                PressEnterUntil(
-                    watcher,
-                    e => e.Name == "save-applied",
-                    timeout,
-                    "a save starts loading",
-                    "still on a splash screen");
-                return;
-            }
-
-            WaitResult atMenu = startup.WaitForMenu(timeout);
-            report.Check(
-                atMenu.Succeeded,
-                "the main menu is on screen",
-                atMenu.ToString());
-
-            if (!atMenu.Succeeded)
-            {
-                throw new TimeoutException(
-                    $"The main menu never appeared: {atMenu}. Nothing can be loaded from a "
-                    + "screen the run cannot identify.");
-            }
-
-            // One press, at a screen known to be the menu, on a window known to be in
-            // front. Retried only if the save does not start, since a single lost
-            // keypress should not cost the whole run.
-            PressEnterUntil(
-                watcher,
-                e => e.Name == "save-applied",
-                timeout,
-                "a save starts loading",
-                "waiting at the main menu");
-        }
-
-        /// <summary>
-        /// The watcher that recognises the main menu, or null when it cannot be built.
-        /// </summary>
-        private static StartupWatcher? LoadStartupWatcher(Action<string> progress)
-        {
-            string phasePath = Path.Combine(
-                GameInstall.RepoRoot(), "testing", StartupPhases.DefaultFileName);
-            StartupPhase[] phases;
-            try
-            {
-                phases = StartupPhases.Load(phasePath);
-            }
-            catch (Exception error)
-            {
-                Console.WriteLine(
-                    $"        (no startup phases at {phasePath}, so pressing Enter blindly: "
-                    + $"{error.Message})");
-                return null;
-            }
-
-            StartupPhase? menu = Array.Find(
-                phases, phase => phase.Name == StartupWatcher.MenuPhaseName);
-            if (menu == null)
-            {
-                Console.WriteLine(
-                    $"        (no '{StartupWatcher.MenuPhaseName}' phase, so pressing Enter "
-                    + "blindly)");
-                return null;
-            }
-
-            return new StartupWatcher(
-                "disco",
-                phases,
-                menu.Fingerprint,
-                menu.Region,
-                menu.Threshold,
-                progress: progress);
-        }
-
-        /// <summary>
-        /// Presses Enter until the probe reports what is being waited for.
-        /// </summary>
-        /// <remarks>
-        /// <para>Two places need this and neither can be timed. Nothing says when the main
-        /// menu is actually on screen - both events that sound like it fire about ten
-        /// seconds in, while the legal notice and the logo still have twenty-five seconds
-        /// to run - and nothing says when a conversation has finished showing the lines
-        /// that precede its first response menu.</para>
-        ///
-        /// <para>An Enter that lands on a splash screen skips it, one that lands on the
-        /// menu starts the newest save, and one that lands on a line of dialogue advances
-        /// it. So pressing until the awaited thing happens is both the simplest thing that
-        /// works and the fastest way through.</para>
-        ///
-        /// <para>The last press can race the menu it was waiting for and pick an option.
-        /// That is harmless: the menu has already been reported by then, with every
-        /// option's text, and the next scenario loads a save over whatever it chose.</para>
-        /// </remarks>
-        private static ProbeEvent PressEnterUntil(
-            ProbeWatcher watcher,
-            Func<ProbeEvent, bool> matches,
-            TimeSpan timeout,
-            string what,
-            string whileWaiting)
-        {
-            GameWindow window = GameSession.WaitForWindow("disco", TimeSpan.FromSeconds(60));
             var clock = Stopwatch.StartNew();
-            var raiser = new ForegroundRaiser();
-            string reported = string.Empty;
-
+            string lastRefusal = string.Empty;
             while (true)
             {
-                // Not sent unless the game is in front. A keypress goes to the foreground
-                // window, so pressing anyway types Enter into whatever that is - and the
-                // run then reports that the game never answered, which is true and
-                // completely misleading.
-                if (!raiser.Ensure(window.Handle))
+                ProbeCommand.SendContinueGame(saveGames);
+                ProbeEvent found = watcher.WaitFor(
+                    e => e.Name == "save-applied"
+                        || (e.Name == "command-failed"
+                            && e.Text("command") == ProbeCommand.ContinueGame),
+                    timeout,
+                    "the probe to press Continue or say why it cannot");
+                if (found.Name == "save-applied")
                 {
-                    string state = raiser.Describe();
-                    if (reported != state)
-                    {
-                        reported = state;
-                        Console.Error.WriteLine(
-                            $"        not pressing Enter: the game is {state}");
-                    }
-
-                    if (clock.Elapsed >= timeout)
-                    {
-                        throw new TimeoutException(
-                            $"Waited {timeout.TotalSeconds:N0}s for {what} and never got the "
-                            + "game in front to ask for it. Something else is holding focus.");
-                    }
-
-                    Thread.Sleep(BetweenPresses);
-                    continue;
-                }
-
-                GameSession.SendKey("Enter");
-
-                try
-                {
-                    ProbeEvent found = watcher.WaitFor(matches, BetweenPresses, what);
-                    Console.WriteLine($"        {what} after {clock.Elapsed.TotalSeconds:N0}s");
-                    return found;
-                }
-                catch (TimeoutException)
-                {
-                    if (clock.Elapsed >= timeout)
-                    {
-                        throw new TimeoutException(
-                            $"Pressed Enter for {timeout.TotalSeconds:N0}s and {what} never "
-                            + "happened. The keypresses may be going to another window.");
-                    }
-
                     Console.WriteLine(
-                        $"        {whileWaiting} ({clock.Elapsed.TotalSeconds:N0}s)");
+                        $"        a save starts loading after {clock.Elapsed.TotalSeconds:N0}s");
+                    return;
                 }
+
+                // Said once per reason rather than once per ask: the menu takes half a
+                // minute to come up, and the same refusal every two seconds says nothing.
+                string refusal = found.Text("message") ?? string.Empty;
+                if (refusal != lastRefusal)
+                {
+                    lastRefusal = refusal;
+                    Console.WriteLine(
+                        $"        not yet at {clock.Elapsed.TotalSeconds:N0}s: {refusal}");
+                }
+
+                if (clock.Elapsed >= timeout)
+                {
+                    throw new TimeoutException(
+                        $"Asked the probe to press Continue for {timeout.TotalSeconds:N0}s and "
+                        + $"no save was applied. The last refusal was: {refusal}");
+                }
+
+                Thread.Sleep(BetweenAsks);
             }
         }
     }

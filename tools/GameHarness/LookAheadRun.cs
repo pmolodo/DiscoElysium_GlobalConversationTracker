@@ -487,7 +487,7 @@ namespace GlobalConversationTracker.Harness
                         watcher.Mark();
                         if (firstScenario)
                         {
-                            FirstSave.Get(watcher, timeout, report, Log);
+                            FirstSave.Get(watcher, timeout, saveGames);
                             firstScenario = false;
                         }
                         else

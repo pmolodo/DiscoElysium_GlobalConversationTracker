@@ -39,6 +39,15 @@ namespace GlobalConversationTracker.TestProbe
         /// <summary>Load a savegame by name.</summary>
         internal const string LoadSaveCommand = "load-save";
 
+        /// <summary>Press the main menu's Continue, by calling the command it runs.</summary>
+        /// <remarks>
+        /// THE MENU'S OWN COMMAND rather than a load by name, because a load by name from
+        /// the startup screens applies the save's data without taking the player out of the
+        /// menu scene - the HUD comes up over the menu's world. The command does whatever the
+        /// menu does around the load, and calling it needs no window in front.
+        /// </remarks>
+        internal const string ContinueGameCommand = "continue-game";
+
         /// <summary>Open a conversation by id, with no walking and no clicking.</summary>
         internal const string StartConversationCommand = "start-conversation";
 
@@ -427,6 +436,9 @@ namespace GlobalConversationTracker.TestProbe
                     case LoadSaveCommand:
                         LoadSave(Member(root, "save"));
                         break;
+                    case ContinueGameCommand:
+                        ContinueGame();
+                        break;
                     case StartConversationCommand:
                         StartConversation(root);
                         break;
@@ -555,6 +567,41 @@ namespace GlobalConversationTracker.TestProbe
             // the tests already hook rather than a private shortcut. Not bundled: these
             // are ordinary saves staged into the profile's SaveGames folder.
             persistence.Load(save!, false);
+        }
+
+        /// <summary>Presses the main menu's Continue, or says why it cannot yet.</summary>
+        private static void ContinueGame()
+        {
+            ProbeLog.Write("command-started", "command", ContinueGameCommand);
+
+            bool menuShowing = false;
+            foreach (MainMenuList list in UnityEngine.Object.FindObjectsOfType<MainMenuList>())
+            {
+                if (list != null && list.isActiveAndEnabled)
+                {
+                    menuShowing = true;
+                    break;
+                }
+            }
+
+            if (!menuShowing)
+            {
+                throw new InvalidOperationException(
+                    "The main menu is not showing yet; the game is still starting.");
+            }
+
+            if (!MainMenuList.IsContinueShown())
+            {
+                throw new InvalidOperationException(
+                    "The main menu is showing but offers no Continue yet.");
+            }
+
+            GameLevelCommand commands = UnityEngine.Object.FindObjectOfType<GameLevelCommand>()
+                ?? throw new InvalidOperationException(
+                    "The main menu is showing but its commands object is not there.");
+
+            commands.ContinueGame();
+            ProbeLog.Write("command-finished", "command", ContinueGameCommand);
         }
 
         /// <summary>Asks the mod to compare its two worlds over one conversation group.</summary>

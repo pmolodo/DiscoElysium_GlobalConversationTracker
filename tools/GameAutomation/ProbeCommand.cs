@@ -30,6 +30,9 @@ namespace GlobalConversationTracker.Automation
         /// <summary>Load a savegame by name.</summary>
         public const string LoadSave = "load-save";
 
+        /// <summary>Press the main menu's Continue button, from inside the game.</summary>
+        public const string ContinueGame = "continue-game";
+
         /// <summary>Open a conversation, with no walking and no clicking.</summary>
         public const string StartConversation = "start-conversation";
 
@@ -149,6 +152,13 @@ namespace GlobalConversationTracker.Automation
             }
 
             Send(saveGamesFolder, LoadSave, "save", saveName);
+        }
+
+        /// <summary>Asks the probe to press the main menu's Continue button.</summary>
+        /// <param name="saveGamesFolder">The profile's SaveGames folder.</param>
+        public static void SendContinueGame(string saveGamesFolder)
+        {
+            Send(saveGamesFolder, ContinueGame);
         }
 
         /// <summary>Asks the probe to start a conversation by id.</summary>
