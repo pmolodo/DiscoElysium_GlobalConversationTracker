@@ -25,7 +25,14 @@ and is reported as unusable rather than folded into the table.
 IT ALSO CHECKS THE LOAD INDEPENDENTLY, where `IsKimInParty()` was asked. That one is a raw
 flag end to end - the Lua function returns `KimKitsuragi.IsInParty`, which the save records
 as `partyState.isKimInParty` - so an answer disagreeing with the save's own flag means the
-load did not take, whatever the controls said.
+save's state did not fully arrive, whatever the controls said.
+
+AND THAT IS A DIFFERENT FAILURE FROM THE ONE ABOVE, which is why both checks exist.
+Measured on the shipped build: `Deserialize` assigns `IsLeftOutside` unconditionally, but
+only touches `IsInParty` when one of its two branches is taken - so a save carrying neither
+ends up mixing its own left-outside flag with the PREVIOUS save's party membership. Such a
+row diverges from its control quite happily, because the state really did change; it just
+changed into something no save ever described. The control cannot catch that and this can.
 
 ## HOW IT DECIDES WHICH FLAGS MATTER
 
@@ -129,9 +136,13 @@ def shared_flags(saves, flags_of):
     """The flag settings every one of these saves has in common.
 
     WHY THIS IS WORTH COMPUTING. A save whose state never took is not simply a lost row.
-    If every such save shares a flag setting, that setting is what the game's loader
-    refuses - which is a finding about the loader rather than a gap in the run, and the
-    only way to tell those apart is to look at what the failures have in common.
+    If every such save shares a flag setting, that setting is a LEAD about what the loader
+    does with it - a finding about the game rather than a gap in the run.
+
+    A LEAD AND NOT A VERDICT, though. A run with a fixed processing order groups saves by
+    name, so a setting shared by every failure may be shared only because those saves ran
+    together; position is confounded with it, and only re-running in another order tells
+    the two apart.
     """
     common = None
     for save in saves:
@@ -217,14 +228,34 @@ def report(answers_path, index_path):
     elif wrong:
         print(
             f"CONTRADICTED: {len(wrong)} of {checked} save(s) answered {IN_PARTY} against "
-            f"their own {IN_PARTY_FLAG}, so the load did not take:"
+            f"their own {IN_PARTY_FLAG}, so their state only PARTLY restored:"
         )
         for save in wrong:
             print(f"             {save}")
+
+        # THE LOAD HAPPENED. What these rows show is a PARTIAL restore: measured on the
+        # shipped build, Deserialize assigns IsLeftOutside unconditionally and only touches
+        # IsInParty when one of its two branches is taken - so a save with neither can end
+        # up mixing its own left-outside flag with the previous save's party membership.
+        # Such a row DIVERGES from its control while describing a state no save asked for,
+        # which is why the control check cannot catch it and this one can.
+        shared = shared_flags(wrong, flags_of)
+        if shared:
+            spelled = ", ".join(f"{flag}={value}" for flag, value in sorted(shared.items()))
+            print(f"             every one of them carries {spelled}")
     else:
         print(f"load check: all {checked} save(s) answered {IN_PARTY} as their own flag")
 
-    evidence, by_key = flag_evidence(answers, flags_of, varying)
+    # EXCLUDED FROM THE TABLE, not merely reported. A row that contradicts its own flag was
+    # only PARTLY restored, so its answer describes a state no save ever asked for - and it
+    # can still DIVERGE from its control, which is why the control check alone cannot catch
+    # it. Measured: party-01000 answered IsKimInParty true while carrying isKimInParty
+    # false, because Deserialize restores IsLeftOutside unconditionally and IsInParty only
+    # when one of its two branches is taken. Believing that row would put a combination in
+    # the table that the game was never in.
+    trusted = {save: got for save, got in answers.items() if save not in set(wrong)}
+
+    evidence, by_key = flag_evidence(trusted, flags_of, varying)
     reads = [flag for flag in varying if evidence[flag][1]]
     print()
     print(f"{HERE} depends on: {', '.join(reads) or 'nothing measurable'}")
