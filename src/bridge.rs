@@ -1420,6 +1420,12 @@ pub fn questions_of(graph: &LookAheadGraph, group: Vec<i32>) -> Questions {
     // `WorldSnapshot::variable_values` - so the order is the agreement between the two
     // sides, and a list that reordered itself between two calls would silently move every
     // answer onto the wrong question.
+    // THE GAME MODE WHERE A PRICE DEPENDS ON IT, which no guard need name - see
+    // `LookAheadGraph::price_for`.
+    if graph.prices_by_mode() {
+        data.insert(DataRequest::set(DataKind::GameMode));
+    }
+
     found.queries = sorted(queries);
     found.items = sorted(items);
     found.thoughts = sorted(thoughts);
@@ -1649,7 +1655,7 @@ pub fn answer(
     declared: Option<Arc<VariableTable>>,
     request: &LookAheadRequest,
 ) -> LookAheadResponse {
-    let (graph, group) = match build_group_graph(index, request.conversation) {
+    let (mut graph, group) = match build_group_graph(index, request.conversation) {
         Ok(built) => built,
         Err(reason) => return LookAheadResponse::failed(reason),
     };
@@ -1663,6 +1669,7 @@ pub fn answer(
     }
 
     let world = SnapshotWorld::declaring(snapshot, declared);
+    graph.price_for(crate::core::game_mode::is_hardcore(&world));
     let novelty = |id: DialogueNodeId| {
         let node = NodeRef::from(id);
         if request.unseen_any_game.contains(&node) {

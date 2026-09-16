@@ -79,7 +79,8 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::thread::JoinHandle;
 
 use crate::bridge::{
-    COUNTER_CAP, LookAheadAnswer, LookAheadRequest, SnapshotWorld, WorldSnapshot, answer_starts,
+    COUNTER_CAP, LookAheadAnswer, LookAheadRequest, Questions, SnapshotWorld, WorldSnapshot,
+    answer_starts,
 };
 use crate::core::types::{DialogueNodeId, Novelty};
 use crate::graph::LookAheadGraph;
@@ -101,6 +102,7 @@ use crate::world::ILookAheadWorld;
 /// - `money_ceiling`: the ONLY way the world reaches the layout, through
 ///   `DataLayout::for_group`. Held rather than the money itself, so spending change that
 ///   does not move the ceiling does not throw the manager away.
+/// - `hardcore`: the graph's prices, which the layout's ceiling and every search read.
 /// - `memory` and `cache_split`: the manager is preallocated from both, so neither can move
 ///   under it.
 ///
@@ -122,6 +124,9 @@ struct Key {
     /// menu and hand back more than the smaller layout saves.
     entered_at: Vec<i32>,
     money_ceiling: Option<u32>,
+    /// Whether the graph is priced for hardcore mode, which moves the prices the layout and
+    /// every search read - see [`hardcore_prices`].
+    hardcore: bool,
     memory: usize,
     cache_split: usize,
 }
@@ -160,6 +165,9 @@ pub struct Workspace {
     /// partly here to save. The graph is plain data - parsed guards, actions, links, a
     /// symbol table - and the thread only ever reads it.
     graph: Arc<LookAheadGraph>,
+    /// The questions the graph asks, which [`Self::serves`] resolves a world against to read
+    /// its game mode.
+    questions: Arc<Questions>,
     jobs: Sender<Job>,
     /// Joined on drop, so a replaced workspace's thread and manager are gone before the
     /// next one allocates its own - which matters at six gigabytes.
@@ -170,24 +178,28 @@ impl Workspace {
     /// Starts an owner thread holding a manager for `graph`, or `None` where the machine
     /// could not supply one.
     ///
-    /// `world` is used ONLY for the money ceiling that sizes the layout; every request
-    /// carries its own world for the compiler and the seed.
+    /// `world` is used ONLY for the money ceiling that sizes the layout and the game mode the
+    /// graph is priced for; every request carries its own world for the compiler and the seed.
     ///
     /// `entered_at` is the conversation the requests will start in, which narrows the
     /// layout - see [`Key::entered_at`].
     pub fn open(
-        graph: LookAheadGraph,
+        mut graph: LookAheadGraph,
         group: Vec<i32>,
         entered_at: Vec<i32>,
         world: WorldSnapshot,
         declared: Option<Arc<VariableTable>>,
         budget: DiagramBudget,
     ) -> Option<Self> {
+        let questions = Arc::new(crate::bridge::questions_of(&graph, group.clone()));
+        let hardcore = hardcore_prices(&graph, &questions, &world, declared.clone());
+        graph.price_for(hardcore);
         let graph = Arc::new(graph);
         let key = Key {
-            group: group.clone(),
+            group,
             entered_at: entered_at.clone(),
             money_ceiling: ceiling_of(&graph, &world, declared.clone()),
+            hardcore,
             memory: budget.memory(),
             cache_split: budget.cache_split(),
         };
@@ -199,13 +211,14 @@ impl Workspace {
         // thread has to outlive it, so everything it touches is owned or shared - the graph
         // by handle, because the caller needs it too.
         let owned = Arc::clone(&graph);
+        let asked = Arc::clone(&questions);
         let thread = std::thread::Builder::new()
             .stack_size(isolated::STACK)
             .spawn(move || {
                 own(
                     Opening {
                         graph: owned,
-                        group,
+                        questions: asked,
                         entered_at,
                         layout_world: world,
                         declared,
@@ -224,6 +237,7 @@ impl Workspace {
             Ok(true) => Some(Self {
                 key,
                 graph,
+                questions,
                 jobs,
                 thread: Some(thread),
             }),
@@ -251,6 +265,8 @@ impl Workspace {
             && self.key.entered_at == entered_at
             && self.key.memory == budget.memory()
             && self.key.cache_split == budget.cache_split()
+            && self.key.hardcore
+                == hardcore_prices(&self.graph, &self.questions, world, declared.clone())
             && self.key.money_ceiling == ceiling_of(&self.graph, world, declared)
     }
 
@@ -313,7 +329,9 @@ impl Drop for Workspace {
 /// outlives the call that starts it.
 struct Opening {
     graph: Arc<LookAheadGraph>,
-    group: Vec<i32>,
+    /// Worked out once: the questions a group can ask depend on the graph and on nothing a
+    /// request carries.
+    questions: Arc<Questions>,
     entered_at: Vec<i32>,
     /// The world the layout is sized from, and nothing else - every request brings its own.
     layout_world: WorldSnapshot,
@@ -328,7 +346,7 @@ struct Opening {
 fn own(opening: Opening, inbox: Receiver<Job>, ready: Sender<bool>) {
     let Opening {
         graph,
-        group,
+        questions,
         entered_at,
         layout_world,
         declared,
@@ -348,9 +366,6 @@ fn own(opening: Opening, inbox: Receiver<Job>, ready: Sender<bool>) {
         return;
     };
     let shape = GroupShape::of(&graph);
-    // ONCE, like everything else here: the questions a group can ask depend on the graph
-    // and on nothing a request carries.
-    let questions = crate::bridge::questions_of(&graph, group);
     if ready.send(true).is_err() {
         return;
     }
@@ -432,6 +447,26 @@ fn own(opening: Opening, inbox: Receiver<Job>, ready: Sender<bool>) {
 /// Through the same `DataLayout::money_ceiling` the layout uses, rather than comparing the
 /// money itself: a purchase that does not move the ceiling must not throw a manager away,
 /// and the ceiling saturates well below the range money actually takes.
+/// Whether a world prices `graph` as hardcore - see [`LookAheadGraph::price_for`].
+///
+/// False for a graph with no price the mode moves, so a mode change does not throw away a
+/// manager whose group has nothing to scale. A world whose answers do not line up with the
+/// questions reads as normal mode here; the request it came with is refused when it is
+/// answered.
+fn hardcore_prices(
+    graph: &LookAheadGraph,
+    questions: &Questions,
+    world: &WorldSnapshot,
+    declared: Option<Arc<VariableTable>>,
+) -> bool {
+    if !graph.prices_by_mode() {
+        return false;
+    }
+    let mut snapshot = world.clone();
+    snapshot.resolve(questions).is_ok()
+        && crate::core::game_mode::is_hardcore(&SnapshotWorld::declaring(snapshot, declared))
+}
+
 fn ceiling_of(
     graph: &LookAheadGraph,
     world: &WorldSnapshot,

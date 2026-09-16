@@ -1,0 +1,31 @@
+{
+  "_format": "expanded-save-diff",
+  "_formatVersion": 1,
+  "base": "../at-trashcan.ntwtf",
+  "members": [
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "at-trashcan-normal-mode.1st.ntwtf.json",
+      "suffix": ".1st.ntwtf.json"
+    },
+    {
+      "diff": "at-trashcan-normal-mode.2nd.ntwtf.json",
+      "kind": "json",
+      "name": "at-trashcan-normal-mode.2nd.ntwtf.json",
+      "suffix": ".2nd.ntwtf.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "at-trashcan-normal-mode.FOW.json",
+      "suffix": ".FOW.json"
+    },
+    {
+      "diff": null,
+      "kind": "inherit",
+      "name": "at-trashcan-normal-mode.states.lua",
+      "suffix": ".states.lua"
+    }
+  ]
+}

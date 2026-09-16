@@ -151,6 +151,7 @@ pub fn conversation_fields_read() -> Vec<String> {
 }
 
 pub mod journal;
+pub mod price;
 
 /// One dialogue entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -432,6 +433,12 @@ pub fn build_group_graph(index: &Index, start: i32) -> Result<(LookAheadGraph, V
 
             let kind = determine_kind(&entry.fields);
             let (cost, cost_once, hidden_when_unaffordable) = parse_cost(&entry.fields);
+            let cost = cost.max(0);
+            let price_scale = if cost > 0 {
+                price::scale_of(&index[&conversation_id].entries, entry)
+            } else {
+                None
+            };
             let (flag_slot, failed_flag_slot) = parse_flags(&entry.fields, &mut symbols, kind);
             let boolean_only = read_boolean(&entry.fields, BOOLEAN_ONLY_FIELD);
             let closes_once_seen = kind == DialogueCheckKind::Fake
@@ -448,7 +455,9 @@ pub fn build_group_graph(index: &Index, start: i32) -> Result<(LookAheadGraph, V
                 guard,
                 actions,
                 links: links_of(entry, conversation_id),
-                cost: cost.max(0),
+                cost,
+                click_cost: cost,
+                price_scale,
                 cost_once,
                 hidden_when_unaffordable,
                 flag_slot,

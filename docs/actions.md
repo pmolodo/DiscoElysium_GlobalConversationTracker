@@ -303,8 +303,16 @@ A priced entry (`ClickCost`) is not a script call, but it moves the same registe
 `CostOptionNode.HandleEntry` charges the price on entry, except for a `CostOnce` entry already
 seen. `HandleResponseText` disables the option whenever the price is above the purse, and makes
 no exception for one already paid. The engine does the same: a paid once-cost is not charged
-again, but still needs the price in hand. `CostOptionNode.GetCost` also scales the price of
-healing and drug purchases in hardcore mode, which the engine does not yet follow - de-70eo.11.
+again, but still needs the price in hand.
+
+`CostOptionNode.GetCost` doubles the price of healing and drug purchases in hardcore mode. It
+finds the item bought by walking from the priced entry to the first `GainItem`, evaluating
+conditions on the way. The engine replays that walk when it builds a group, and scales an
+entry's price when its world is in hardcore mode (`src/core/price.rs`, `src/index/price.rs`).
+Nine purchases are scaled. Where the walk meets a guard, the item found could depend on the
+world, so the entry keeps its `ClickCost`. That is the cheaper price, so the engine can only show
+a purchase the game refuses, never hide one it allows. Conversation 28's room at 20 real is the
+one case in the corpus.
 
 ## Damage
 

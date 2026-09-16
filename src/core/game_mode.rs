@@ -45,5 +45,14 @@ pub const IS_HARDCORE_MODE_ACTIVE: &str = "IsHardcoreModeActive";
 /// The `GameModeController.GameMode` name that answers true.
 pub const HARDCORE: &str = "HARDCORE";
 
+/// Whether `world` is in hardcore mode, where Unknown reads as not.
+///
+/// For [`crate::core::price`], whose multipliers are at least one in either mode, so normal
+/// mode is the cheaper and therefore permissive reading of a mode nobody could read.
+pub fn is_hardcore(world: &dyn crate::world::ILookAheadWorld) -> bool {
+    let answer = world.query(IS_HARDCORE_MODE_ACTIVE, &[]);
+    answer.kind() == crate::core::guard_value::GuardValueKind::Boolean && answer.boolean()
+}
+
 /// The question answered from the finished-in-hardcore stat.
 pub const WAS_GAME_BEATEN_IN_HARDCORE_MODE: &str = "WasGameBeatenInHardcoreMode";

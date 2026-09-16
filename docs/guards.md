@@ -436,10 +436,15 @@ Not guard functions, but they decide whether an entry can be taken the same way.
 | `FakeCheckNode.IsFakeCheckDone`     | `Fake`                               | the seen set                       | `closes_once_seen`                                       |
 | `TestOptionNode.IsHidden`           | `Test`                               | not applicable - goes nowhere      | not applicable                                           |
 | `KimSwitchNode.IsAvailable`         | `KimSwitch`                          | the seen set unless `boolean_only` | the same                                                 |
-| `CostOptionNode.IsHidden`           | not a kind; `ClickCost` / `CostOnce` | money                              | money                                                    |
+| `CostOptionNode.IsHidden`           | not a kind; `ClickCost` / `CostOnce` | money, and `GameMode`              | money, and the save's `gameModeState.gameMode`           |
 
 The passive row shares its arithmetic as well as its shape: the offline side calls the plugin's
 own comparison rather than repeating it.
+
+The cost row reads the game mode as well as money: in hardcore mode `CostOptionNode.GetCost`
+doubles the price of healing and drug purchases. A group with a scaled purchase asks for
+`GameMode` even where no guard calls `IsHardcoreModeActive` - see
+[Money in actions.md](actions.md#money).
 
 ## What the search can move
 

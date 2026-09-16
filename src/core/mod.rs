@@ -13,6 +13,7 @@ pub mod item_group;
 pub mod modelling;
 pub mod party;
 pub mod passive_check;
+pub mod price;
 pub mod reputation;
 pub mod scene;
 pub mod state;

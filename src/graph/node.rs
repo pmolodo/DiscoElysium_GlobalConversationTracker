@@ -4,6 +4,7 @@ use std::fmt;
 
 use crate::core::action::DialogueAction;
 use crate::core::guard::Guard;
+use crate::core::price::PriceScale;
 use crate::core::types::{DialogueCheckKind, DialogueNodeId};
 
 /// One dialogue entry as the look-ahead needs it.
@@ -18,7 +19,13 @@ pub struct LookAheadNode {
     pub guard: Guard,
     pub actions: Vec<DialogueAction>,
     pub links: Vec<DialogueNodeId>,
+    /// The price a search charges and checks the purse against: [`Self::click_cost`] as
+    /// [`crate::graph::LookAheadGraph::price_for`] last priced it for a game mode.
     pub cost: i32,
+    /// The entry's own `ClickCost`, before any game mode scales it.
+    pub click_cost: i32,
+    /// Which hardcore multiplier the price takes, if any - see [`crate::core::price`].
+    pub price_scale: Option<PriceScale>,
     pub cost_once: bool,
     pub hidden_when_unaffordable: bool,
     pub flag_slot: i32,        // -1 if none
@@ -58,6 +65,8 @@ impl LookAheadNode {
             actions: Vec::new(),
             links: Vec::new(),
             cost: 0,
+            click_cost: 0,
+            price_scale: None,
             cost_once: false,
             hidden_when_unaffordable: false,
             flag_slot: -1,

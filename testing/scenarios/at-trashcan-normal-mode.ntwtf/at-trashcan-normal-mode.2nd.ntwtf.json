@@ -1,0 +1,10 @@
+{
+  "_base": "../at-trashcan.ntwtf/at-trashcan.2nd.ntwtf.json",
+  "_changes": {
+    "gameModeState": {
+      "gameMode": "NORMAL"
+    }
+  },
+  "_format": "json-diff",
+  "_formatVersion": 1
+}

@@ -6,6 +6,7 @@
 //! tests exercise the parsers on the same syntax the game ships and a fixture can be
 //! pasted straight out of the asset.
 
+use crate::core::price::PriceScale;
 use crate::core::state::StateSymbols;
 use crate::core::types::{DialogueCheckKind, DialogueNodeId};
 use crate::graph::LookAheadGraph;
@@ -33,6 +34,7 @@ pub struct Entry {
     pub flag: Option<String>,
     pub boolean_only: bool,
     pub cost: i32,
+    pub price_scale: Option<PriceScale>,
     pub cost_once: bool,
 }
 
@@ -49,6 +51,7 @@ impl Entry {
             flag: None,
             boolean_only: false,
             cost: 0,
+            price_scale: None,
             cost_once: false,
         }
     }
@@ -95,6 +98,12 @@ impl Entry {
 
     pub fn cost(mut self, cost: i32) -> Self {
         self.cost = cost;
+        self
+    }
+
+    /// A price scaled in hardcore mode, as buying a healing or drug item is.
+    pub fn price_scale(mut self, scale: PriceScale) -> Self {
+        self.price_scale = Some(scale);
         self
     }
 
@@ -167,6 +176,8 @@ impl GraphBuilder {
                 actions,
                 links,
                 cost: entry.cost,
+                click_cost: entry.cost,
+                price_scale: entry.price_scale,
                 cost_once: entry.cost_once,
                 flag_slot,
                 failed_flag_slot,

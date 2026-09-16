@@ -178,6 +178,23 @@ impl LookAheadGraph {
         self.nodes.get(&id)
     }
 
+    /// Whether any entry's price depends on the game mode.
+    pub fn prices_by_mode(&self) -> bool {
+        self.nodes().any(|node| node.price_scale.is_some())
+    }
+
+    /// Sets every entry's price to what the game charges in normal or hardcore mode - see
+    /// [`crate::core::price`].
+    ///
+    /// A graph is built priced as in normal mode. Pricing starts from
+    /// [`LookAheadNode::click_cost`] each time, so a graph can be priced for one mode and then
+    /// the other.
+    pub fn price_for(&mut self, hardcore: bool) {
+        for node in self.nodes.values_mut() {
+            node.cost = crate::core::price::price(node.click_cost, node.price_scale, hardcore);
+        }
+    }
+
     /// The best novelty class carried by anything LINK-REACHABLE beyond `start`.
     ///
     /// GUARDS ARE IGNORED, which is the whole point: this is a few thousand pointer-follows
