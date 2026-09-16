@@ -163,22 +163,39 @@ The plugin reads the clock to the hour (`GameFacts.ReadClock`, from `HourCount()
 `owns` covers the hour questions, answered from the state's `day_minutes`; `owns_day` covers the
 day questions, which no action within a conversation changes.
 
-| function       | guards | entries | mechanism | tests                                                                                             |
-| -------------- | -----: | ------: | --------- | ------------------------------------------------------------------------------------------------- |
-| DayCount       |     66 |     111 | port      | `the_day_questions_answer_from_the_day_counter`, `hour_count_and_total_hour_count`                |
-| IsHourBetween  |     63 |     108 | port      | `is_hour_between_is_inclusive_at_both_ends`, `is_hour_between_wraps_when_first_exceeds_second`    |
-| IsDayFrom      |     16 |      36 | port      | `the_day_questions_answer_from_the_day_counter`, `a_day_question_without_its_argument_is_unknown` |
-| IsMorning      |      7 |      60 | port      | `is_morning_includes_dawn`                                                                        |
-| IsEvening      |      6 |      69 | port      | `is_evening_includes_dusk`                                                                        |
-| IsAfternoon    |      5 |      44 | port      | `is_afternoon_includes_noon`                                                                      |
-| TotalHourCount |      5 |       5 | port      | `hour_count_and_total_hour_count`                                                                 |
-| IsDayUntil     |      4 |      11 | port      | `the_day_questions_answer_from_the_day_counter`                                                   |
-| IsNight        |      4 |      54 | port      | `night_predicates_are_different_sets`, `advance_wraps_past_midnight`                              |
-| IsDaytime      |      3 |      33 | port      | `midnight_is_neither_day_nor_night`                                                               |
-| IsNighttime    |      3 |      29 | port      | `night_predicates_are_different_sets`, `midnight_is_neither_day_nor_night`                        |
-| HourCount      |      2 |       2 | port      | `hour_count_and_total_hour_count`                                                                 |
-| IsDusk         |      2 |       2 | port      | `daytime_of_matches_the_games_buckets` (the bucket, not the name)                                 |
-| IsNoon         |      2 |       2 | port      | `daytime_of_matches_the_games_buckets` (the bucket, not the name)                                 |
+| function       | guards | entries | mechanism |
+| -------------- | -----: | ------: | --------- |
+| DayCount       |     66 |     111 | port      |
+| IsHourBetween  |     63 |     108 | port      |
+| IsDayFrom      |     16 |      36 | port      |
+| IsMorning      |      7 |      60 | port      |
+| IsEvening      |      6 |      69 | port      |
+| IsAfternoon    |      5 |      44 | port      |
+| TotalHourCount |      5 |       5 | port      |
+| IsDayUntil     |      4 |      11 | port      |
+| IsNight        |      4 |      54 | port      |
+| IsDaytime      |      3 |      33 | port      |
+| IsNighttime    |      3 |      29 | port      |
+| HourCount      |      2 |       2 | port      |
+| IsDusk         |      2 |       2 | port      |
+| IsNoon         |      2 |       2 | port      |
+
+#### Tests
+
+- `DayCount`: `the_day_questions_answer_from_the_day_counter`, `hour_count_and_total_hour_count`
+- `IsHourBetween`: `is_hour_between_is_inclusive_at_both_ends`, `is_hour_between_wraps_when_first_exceeds_second`
+- `IsDayFrom`: `the_day_questions_answer_from_the_day_counter`, `a_day_question_without_its_argument_is_unknown`
+- `IsMorning`: `is_morning_includes_dawn`
+- `IsEvening`: `is_evening_includes_dusk`
+- `IsAfternoon`: `is_afternoon_includes_noon`
+- `TotalHourCount`: `hour_count_and_total_hour_count`
+- `IsDayUntil`: `the_day_questions_answer_from_the_day_counter`
+- `IsNight`: `night_predicates_are_different_sets`, `advance_wraps_past_midnight`
+- `IsDaytime`: `midnight_is_neither_day_nor_night`
+- `IsNighttime`: `night_predicates_are_different_sets`, `midnight_is_neither_day_nor_night`
+- `HourCount`: `hour_count_and_total_hour_count`
+- `IsDusk`: `daytime_of_matches_the_games_buckets` (the bucket, not the name)
+- `IsNoon`: `daytime_of_matches_the_games_buckets` (the bucket, not the name)
 
 The compiler holds the clock at the world's time too (`GuardCompiler::with_constant_clock`), for
 the numbers as well as the conditions: `TotalHourCount() >= 30` is decided against the world's
@@ -202,19 +219,28 @@ predicate once per named subject - a pure read, kept as Lua because re-implement
 `CharacterItems.IsItemGained` in C# would be a second copy that can drift (de-m7t2). The
 fixture reads them from the save.
 
-| function     | guards | entries | mechanism | game source                                                       | offline, from the save                                                           | tests                                                                                                                                                         |
-| ------------ | -----: | ------: | --------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CheckItem    |    493 |     835 | set       | PFC `CharacterItems.IsItemGained`                                 | bag and equipment, the key pocket for `key_ring` stacks, the count for `bullets` | `a_tracked_item_compiles_against_its_slot`, `an_untracked_item_is_answered_from_the_worlds_inventory`, `a_tracked_item_ignores_the_worlds_starting_inventory` |
-| IsTHCPresent |    213 |     731 | set       | PFC `CharacterThoughts.ThoughtGained` (`gainedThoughts.Contains`) | every cabinet state except `UNKNOWN` and `FORGOTTEN`                             | `a_gained_thought_compiles_against_its_slot`, `an_ungained_thought_is_answered_from_the_save`                                                                 |
+| function     | guards | entries | mechanism | game source                                                       | offline, from the save                                                           |
+| ------------ | -----: | ------: | --------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| CheckItem    |    493 |     835 | set       | PFC `CharacterItems.IsItemGained`                                 | bag and equipment, the key pocket for `key_ring` stacks, the count for `bullets` |
+| IsTHCPresent |    213 |     731 | set       | PFC `CharacterThoughts.ThoughtGained` (`gainedThoughts.Contains`) | every cabinet state except `UNKNOWN` and `FORGOTTEN`                             |
+
+#### Tests
+
+- `CheckItem`: `a_tracked_item_compiles_against_its_slot`, `an_untracked_item_is_answered_from_the_worlds_inventory`, `a_tracked_item_ignores_the_worlds_starting_inventory`
+- `IsTHCPresent`: `a_gained_thought_compiles_against_its_slot`, `an_ungained_thought_is_answered_from_the_save`
 
 `bridge.rs` `the_slot_backed_queries_are_asked_for_by_subject` checks both are asked for by
 name rather than as calls.
 
 ### Journal
 
-| function     | guards | entries | mechanism | game source                     | tests                                                                |
-| ------------ | -----: | ------: | --------- | ------------------------------- | -------------------------------------------------------------------- |
-| IsTaskActive |    204 |     341 | slot      | PFC `JournalModel.IsTaskActive` | `a_task_question_is_rewritten_over_its_variables` (`index::journal`) |
+| function     | guards | entries | mechanism | game source                     |
+| ------------ | -----: | ------: | --------- | ------------------------------- |
+| IsTaskActive |    204 |     341 | slot      | PFC `JournalModel.IsTaskActive` |
+
+#### Tests
+
+- `IsTaskActive`: `a_task_question_is_rewritten_over_its_variables` (`index::journal`)
 
 A task's state is its three condition variables - show, done and cancel - which the journal
 actions write and `JournalWatchman` keeps the game's own flags in step with on load. So
@@ -237,11 +263,17 @@ group's named thoughts. The plugin builds each set by asking the game's predicat
 (`ThoughtsWhere`), because those dictionaries do not project through Il2CppInterop; the fixture
 reads the save's cabinet states.
 
-| function            | guards | entries | mechanism | game source                             | tests                                        |
-| ------------------- | -----: | ------: | --------- | --------------------------------------- | -------------------------------------------- |
-| IsTHCFixed          |     47 |      65 | data      | PFC `CharacterThoughts.ThoughtFixed`    | `a_cabinet_state_question_names_its_thought` |
-| IsTHCCookingOrFixed |     32 |      42 | data      | PFC: `ThoughtCooking` or `ThoughtFixed` | `a_cabinet_state_question_names_its_thought` |
-| IsTHCCooking        |      3 |       3 | data      | PFC `CharacterThoughts.ThoughtCooking`  | `a_cabinet_state_question_names_its_thought` |
+| function            | guards | entries | mechanism | game source                             |
+| ------------------- | -----: | ------: | --------- | --------------------------------------- |
+| IsTHCFixed          |     47 |      65 | data      | PFC `CharacterThoughts.ThoughtFixed`    |
+| IsTHCCookingOrFixed |     32 |      42 | data      | PFC: `ThoughtCooking` or `ThoughtFixed` |
+| IsTHCCooking        |      3 |       3 | data      | PFC `CharacterThoughts.ThoughtCooking`  |
+
+#### Tests
+
+- `IsTHCFixed`: `a_cabinet_state_question_names_its_thought`
+- `IsTHCCookingOrFixed`: `a_cabinet_state_question_names_its_thought`
+- `IsTHCCooking`: `a_cabinet_state_question_names_its_thought`
 
 ### Equipment and clothing
 
@@ -258,25 +290,41 @@ Where the group loses an item (`LoseItem`), a slot holding it at the start reads
 its `unequipped:` slot is set - see `docs/actions.md`. Tested by
 `losing_a_worn_item_takes_it_off`.
 
-| function            | guards | entries | mechanism | tests                                                                                                                                                                                                                                                                                                       |
-| ------------------- | -----: | ------: | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CheckEquipped       |    199 |     514 | data      | `an_item_in_any_slot_is_equipped`, `an_item_in_no_slot_is_not_equipped`, `an_unread_slot_leaves_a_missing_item_unknowable`, `an_unread_slot_does_not_unmake_an_item_found_elsewhere`; `bridge.rs` `check_equipped_is_answered_from_the_slots`, `check_equipped_reads_every_slot_rather_than_running_a_call` |
-| CheckEquippedGroup  |     13 |      25 | data      | `equipped_group_takes_a_slot_name_as_well_as_a_group`                                                                                                                                                                                                                                                       |
-| HasJacket           |     10 |      12 | data      | `a_clothing_question_asks_whether_its_slot_is_filled`                                                                                                                                                                                                                                                       |
-| HasShirt            |      9 |      11 | data      | none by name; the `WeirdClothing` tests read its slot                                                                                                                                                                                                                                                       |
-| CheckHeldRightGroup |      8 |      12 | data      | `a_hand_holding_a_member_holds_the_group`, `a_held_item_of_unknown_group_membership_is_unknowable`; `bridge.rs` `a_held_group_question_reads_its_hand_and_the_group`                                                                                                                                        |
-| HasShoes            |      4 |       6 | data      | `a_clothing_question_asks_whether_its_slot_is_filled`                                                                                                                                                                                                                                                       |
-| HasHat              |      2 |       5 | data      | `a_clothing_question_asks_whether_its_slot_is_filled`; `bridge.rs` `a_clothing_question_reads_its_slots_rather_than_running_a_call`                                                                                                                                                                         |
-| WeirdClothing       |      2 |       2 | data      | `weird_clothing_is_true_without_a_shirt_whatever_the_shoes`, `weird_clothing_with_shirt_and_trousers_is_whether_barefoot`, `weird_clothing_is_settled_by_a_missing_shirt_even_with_other_slots_unread`                                                                                                      |
+| function            | guards | entries | mechanism |
+| ------------------- | -----: | ------: | --------- |
+| CheckEquipped       |    199 |     514 | data      |
+| CheckEquippedGroup  |     13 |      25 | data      |
+| HasJacket           |     10 |      12 | data      |
+| HasShirt            |      9 |      11 | data      |
+| CheckHeldRightGroup |      8 |      12 | data      |
+| HasShoes            |      4 |       6 | data      |
+| HasHat              |      2 |       5 | data      |
+| WeirdClothing       |      2 |       2 | data      |
+
+#### Tests
+
+- `CheckEquipped`: `an_item_in_any_slot_is_equipped`, `an_item_in_no_slot_is_not_equipped`, `an_unread_slot_leaves_a_missing_item_unknowable`, `an_unread_slot_does_not_unmake_an_item_found_elsewhere`; `bridge.rs` `check_equipped_is_answered_from_the_slots`, `check_equipped_reads_every_slot_rather_than_running_a_call`
+- `CheckEquippedGroup`: `equipped_group_takes_a_slot_name_as_well_as_a_group`
+- `HasJacket`: `a_clothing_question_asks_whether_its_slot_is_filled`
+- `HasShirt`: none by name; the `WeirdClothing` tests read its slot
+- `CheckHeldRightGroup`: `a_hand_holding_a_member_holds_the_group`, `a_held_item_of_unknown_group_membership_is_unknowable`; `bridge.rs` `a_held_group_question_reads_its_hand_and_the_group`
+- `HasShoes`: `a_clothing_question_asks_whether_its_slot_is_filled`
+- `HasHat`: `a_clothing_question_asks_whether_its_slot_is_filled`; `bridge.rs` `a_clothing_question_reads_its_slots_rather_than_running_a_call`
+- `WeirdClothing`: `weird_clothing_is_true_without_a_shirt_whatever_the_shoes`, `weird_clothing_with_shirt_and_trousers_is_whether_barefoot`, `weird_clothing_is_settled_by_a_missing_shirt_even_with_other_slots_unread`
 
 Also ported, and in no guard: `HasNecktie`, `HasPants`, `CheckHeldLeftGroup`.
 
 ### Item groups and inventory tabs
 
-| function                | guards | entries | mechanism | Rust                                                  | data                               | game source                                             | tests                                                                                                                                                                                                                                                                                    |
-| ----------------------- | -----: | ------: | --------- | ----------------------------------------------------- | ---------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CheckItemGroup          |     23 |      28 | set       | `core::item_group`, answered in `BoundContext::query` | `ItemsInGroup`, `HeldItemsInGroup` | PFC `Inventory.CheckItemGroup`, `ItemUtil.GetItemGroup` | `a_member_held_from_the_start_holds_the_group`, `a_member_the_search_gained_holds_the_group`, `a_member_the_search_lost_does_not_hold_it`, `unread_members_leave_it_unknowable`, `a_group_with_no_members_is_never_held`; `bridge.rs` `an_item_group_and_a_tab_are_read_rather_than_run` |
-| HasPawnablesInInventory |      1 |       1 | data      | `core::inventory_tabs`                                | `TabHoldsItems`                    | PFC `InventoryViewData.IsTabEmpty(PAWNABLES)`           | `pawnables_is_the_pawnables_tab`; `bridge.rs` `an_item_group_and_a_tab_are_read_rather_than_run`                                                                                                                                                                                         |
+| function                | guards | entries | mechanism | Rust                                                  | data                               | game source                                             |
+| ----------------------- | -----: | ------: | --------- | ----------------------------------------------------- | ---------------------------------- | ------------------------------------------------------- |
+| CheckItemGroup          |     23 |      28 | set       | `core::item_group`, answered in `BoundContext::query` | `ItemsInGroup`, `HeldItemsInGroup` | PFC `Inventory.CheckItemGroup`, `ItemUtil.GetItemGroup` |
+| HasPawnablesInInventory |      1 |       1 | data      | `core::inventory_tabs`                                | `TabHoldsItems`                    | PFC `InventoryViewData.IsTabEmpty(PAWNABLES)`           |
+
+#### Tests
+
+- `CheckItemGroup`: `a_member_held_from_the_start_holds_the_group`, `a_member_the_search_gained_holds_the_group`, `a_member_the_search_lost_does_not_hold_it`, `unread_members_leave_it_unknowable`, `a_group_with_no_members_is_never_held`; `bridge.rs` `an_item_group_and_a_tab_are_read_rather_than_run`
+- `HasPawnablesInInventory`: `pawnables_is_the_pawnables_tab`; `bridge.rs` `an_item_group_and_a_tab_are_read_rather_than_run`
 
 `CheckItemGroup` is turned round: the game walks what is held and asks each item its group, but
 what is held changes during a search, so the engine reads the group's MEMBERS and answers each
@@ -295,11 +343,17 @@ An inventory TAB (`ItemTabGroup`: TOOLS, CLOTHES, PAWNABLES, READING) is not an 
 `IsLeftOutside` off the party members, found by type because the generic singleton answers null
 through the interop layer; the fixture reads the save's `partyState`.
 
-| function      | guards | entries | mechanism | game source                                                                | tests                                                                                                                                                             |
-| ------------- | -----: | ------: | --------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| IsKimHere     |    323 |   4,687 | data      | PFC `PartyManager.IsKimHere`, confirmed by ISIL and measured over 24 saves | `kim_is_here_when_in_the_party_and_not_left_outside`, `a_kim_out_of_the_party_is_not_here_whatever_else_is_unread`, `an_unread_flag_leaves_the_answer_unknowable` |
-| IsCunoInParty |     22 |     358 | data      | PFC `PartyManager.IsCunoInParty`                                           | `an_unread_flag_leaves_the_answer_unknowable`                                                                                                                     |
-| IsKimInParty  |      2 |       3 | data      | PFC `PartyManager.IsKimInParty`                                            | `a_kim_out_of_the_party_is_not_here_whatever_else_is_unread`                                                                                                      |
+| function      | guards | entries | mechanism | game source                                                                |
+| ------------- | -----: | ------: | --------- | -------------------------------------------------------------------------- |
+| IsKimHere     |    323 |   4,687 | data      | PFC `PartyManager.IsKimHere`, confirmed by ISIL and measured over 24 saves |
+| IsCunoInParty |     22 |     358 | data      | PFC `PartyManager.IsCunoInParty`                                           |
+| IsKimInParty  |      2 |       3 | data      | PFC `PartyManager.IsKimInParty`                                            |
+
+#### Tests
+
+- `IsKimHere`: `kim_is_here_when_in_the_party_and_not_left_outside`, `a_kim_out_of_the_party_is_not_here_whatever_else_is_unread`, `an_unread_flag_leaves_the_answer_unknowable`
+- `IsCunoInParty`: `an_unread_flag_leaves_the_answer_unknowable`
+- `IsKimInParty`: `a_kim_out_of_the_party_is_not_here_whatever_else_is_unread`
 
 `IsKimHere` is `isKimInParty && !isKimLeftOutside`. The measurement found it reads no other
 party flag: not `isKimAbandoned`, `isKimAwayUpToMorning` or `isKimSleepingInHisRoom`.
@@ -319,29 +373,43 @@ the dialogue variables `reputation.<name>`, which `ReputationGrows`, `Reputation
 `Reputation` write, so the group declares the whole range compared and each amount is read
 through `get_variable` - from the search's slot where the group moves it.
 
-| function           | guards | entries | mechanism | range               | tests                                                                                                                                                                                                                                                                                                        |
-| ------------------ | -----: | ------: | --------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| IsHighestPolitical |     17 |      75 | slot      | enum indices 4 to 8 | `the_political_range_is_its_own_four`; `bridge.rs` `a_reputation_question_declares_the_range_it_compares`                                                                                                                                                                                                    |
-| IsHighestCopotype  |     12 |      43 | slot      | enum indices 0 to 4 | `nothing_is_winning_when_everything_is_zero`, `the_only_one_above_zero_wins`, `a_leading_zero_does_not_prevent_a_winner`, `a_tie_leaves_nothing_winning`, `a_later_higher_one_wins_back_a_cleared_tie`, `one_unreadable_reputation_makes_the_answer_unknown`, `a_query_names_every_variable_its_range_reads` |
+| function           | guards | entries | mechanism | range               |
+| ------------------ | -----: | ------: | --------- | ------------------- |
+| IsHighestPolitical |     17 |      75 | slot      | enum indices 4 to 8 |
+| IsHighestCopotype  |     12 |      43 | slot      | enum indices 0 to 4 |
+
+#### Tests
+
+- `IsHighestPolitical`: `the_political_range_is_its_own_four`; `bridge.rs` `a_reputation_question_declares_the_range_it_compares`
+- `IsHighestCopotype`: `nothing_is_winning_when_everything_is_zero`, `the_only_one_above_zero_wins`, `a_leading_zero_does_not_prevent_a_winner`, `a_tie_leaves_nothing_winning`, `a_later_higher_one_wins_back_a_cleared_tie`, `one_unreadable_reputation_makes_the_answer_unknown`, `a_query_names_every_variable_its_range_reads`
 
 The game's loop is not a maximum: a tie clears the winner, the running best starts at zero, and
 a later higher entry wins back a cleared tie. The module's doc works through both.
 
 ### Money
 
-| function    | guards | entries | mechanism | Rust                                                                                  | tests                                                                                                                   |
-| ----------- | -----: | ------: | --------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| MoneyAmount |     31 |      37 | slot      | `world::MONEY_QUERY`, from the state's money register or the balance the plugin sends | `a_money_comparison_is_undecided_and_says_it_is_about_money`, `a_money_comparison_is_decided_once_money_has_a_register` |
+| function    | guards | entries | mechanism | Rust                                                                                  |
+| ----------- | -----: | ------: | --------- | ------------------------------------------------------------------------------------- |
+| MoneyAmount |     31 |      37 | slot      | `world::MONEY_QUERY`, from the state's money register or the balance the plugin sends |
+
+#### Tests
+
+- `MoneyAmount`: `a_money_comparison_is_undecided_and_says_it_is_about_money`, `a_money_comparison_is_decided_once_money_has_a_register`
 
 PFC `MoneyLuaFunctions.MoneyAmount` is `PlayerCharacter.Money`. The `GainMoney*` and
 `LoseMoney*` actions move the register.
 
 ### Flags
 
-| function   | guards | entries | mechanism | game source                            | tests                                                                                                                              |
-| ---------- | -----: | ------: | --------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| FlagSet    |      9 |      10 | slot      | ISIL: `LuaHelper.GetVariable`          | `a_flag_is_decided_against_its_slot_either_way_round`; `bridge.rs` `a_flag_is_asked_for_as_a_variable`                             |
-| FlagNotSet |      3 |       3 | slot      | ISIL: `LuaHelper.GetVariable`, negated | `a_flag_is_decided_against_its_slot_either_way_round`; `bridge.rs` `a_flag_asked_about_negatively_is_also_asked_for_as_a_variable` |
+| function   | guards | entries | mechanism | game source                            |
+| ---------- | -----: | ------: | --------- | -------------------------------------- |
+| FlagSet    |      9 |      10 | slot      | ISIL: `LuaHelper.GetVariable`          |
+| FlagNotSet |      3 |       3 | slot      | ISIL: `LuaHelper.GetVariable`, negated |
+
+#### Tests
+
+- `FlagSet`: `a_flag_is_decided_against_its_slot_either_way_round`; `bridge.rs` `a_flag_is_asked_for_as_a_variable`
+- `FlagNotSet`: `a_flag_is_decided_against_its_slot_either_way_round`; `bridge.rs` `a_flag_asked_about_negatively_is_also_asked_for_as_a_variable`
 
 A flag is a dialogue variable, and `world::flag_query` is the one place that says so. `SetFlag`
 and `UnsetFlag` write the same variable.
@@ -351,10 +419,15 @@ and `UnsetFlag` write the same variable.
 `src/core/substance.rs`. PFC `InventoryLuaFunctions` and `HudHeldPanelController`: the count is
 the dialogue variable `stats.uses_<substance>`, read like any other variable.
 
-| function          | guards | entries | mechanism | threshold | tests                                                                                                                  |
-| ----------------- | -----: | ------: | --------- | --------- | ---------------------------------------------------------------------------------------------------------------------- |
-| SubstanceUsedOnce |     24 |      41 | slot      | count > 0 | `once_is_any_use_at_all`, `an_unread_count_is_unknown`; `bridge.rs` `a_substance_question_asks_for_its_count_variable` |
-| SubstanceUsedMore |     11 |      19 | slot      | count > 3 | `more_is_more_than_three`; `bridge.rs` `a_substance_question_asks_for_its_count_variable`                              |
+| function          | guards | entries | mechanism | threshold |
+| ----------------- | -----: | ------: | --------- | --------- |
+| SubstanceUsedOnce |     24 |      41 | slot      | count > 0 |
+| SubstanceUsedMore |     11 |      19 | slot      | count > 3 |
+
+#### Tests
+
+- `SubstanceUsedOnce`: `once_is_any_use_at_all`, `an_unread_count_is_unknown`; `bridge.rs` `a_substance_question_asks_for_its_count_variable`
+- `SubstanceUsedMore`: `more_is_more_than_three`; `bridge.rs` `a_substance_question_asks_for_its_count_variable`
 
 ### Damage
 
@@ -364,10 +437,15 @@ fixture sums the skill's `DAMAGE` modifiers from the save's character sheet. Whe
 damages or heals the skill, the answer comes from its `damage:` slot instead - see
 `docs/actions.md`.
 
-| function           | guards | entries | mechanism | tests                                                                                                 |
-| ------------------ | -----: | ------: | --------- | ----------------------------------------------------------------------------------------------------- |
-| HasVolitionDamage  |      4 |      12 | data      | `damage_is_a_negative_value`; `bridge.rs` `a_damage_question_reads_the_skill_and_compares_below_zero` |
-| HasEnduranceDamage |      2 |       6 | data      | `damage_is_a_negative_value`                                                                          |
+| function           | guards | entries | mechanism |
+| ------------------ | -----: | ------: | --------- |
+| HasVolitionDamage  |      4 |      12 | data      |
+| HasEnduranceDamage |      2 |       6 | data      |
+
+#### Tests
+
+- `HasVolitionDamage`: `damage_is_a_negative_value`; `bridge.rs` `a_damage_question_reads_the_skill_and_compares_below_zero`
+- `HasEnduranceDamage`: `damage_is_a_negative_value`
 
 Tested as moved by the search in `damage_and_healing_move_the_damage_question`, in both
 `oracle.rs` and `backward.rs`.
@@ -376,11 +454,17 @@ Tested as moved by the search in `damage_and_healing_move_the_damage_question`, 
 
 `src/core/scene.rs`, tested in `tests/scene_queries.rs` against the committed `scene-*` saves.
 
-| function   | guards | entries | mechanism | data                                                                          | game source                      | tests                                                                                                              |
-| ---------- | -----: | ------: | --------- | ----------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| IsExterior |      4 |      14 | data      | `SceneIsOutside`; offline, the save's area looked up in `testing/scenes.json` | PFC `MapLuaFunctions.IsExterior` | `the_engine_asks_about_the_scene_where_the_guards_do`, `every_conversation_that_guards_on_the_scene_asks_about_it` |
-| IsRaining  |      2 |       2 | slot      | the variable `auto.is_raining`                                                | ISIL, and measured               | `the_weather_is_its_variable`, `the_weather_saves_answer_the_weather_they_were_made_with`                          |
-| IsSnowing  |      2 |       2 | slot      | the variable `auto.is_snowing`                                                | ISIL                             | `the_weather_is_its_variable`, `the_engine_asks_about_the_scene_where_the_guards_do`                               |
+| function   | guards | entries | mechanism | data                                                                          | game source                      |
+| ---------- | -----: | ------: | --------- | ----------------------------------------------------------------------------- | -------------------------------- |
+| IsExterior |      4 |      14 | data      | `SceneIsOutside`; offline, the save's area looked up in `testing/scenes.json` | PFC `MapLuaFunctions.IsExterior` |
+| IsRaining  |      2 |       2 | slot      | the variable `auto.is_raining`                                                | ISIL, and measured               |
+| IsSnowing  |      2 |       2 | slot      | the variable `auto.is_snowing`                                                | ISIL                             |
+
+#### Tests
+
+- `IsExterior`: `the_engine_asks_about_the_scene_where_the_guards_do`, `every_conversation_that_guards_on_the_scene_asks_about_it`
+- `IsRaining`: `the_weather_is_its_variable`, `the_weather_saves_answer_the_weather_they_were_made_with`
+- `IsSnowing`: `the_weather_is_its_variable`, `the_engine_asks_about_the_scene_where_the_guards_do`
 
 `WeatherController` rewrites both weather variables from the preset on load, and the offline
 reader simulates that step rather than editing the committed saves.
@@ -389,10 +473,15 @@ reader simulates that step rather than editing the committed saves.
 
 `src/core/game_mode.rs`. Both functions exist only in Final Cut.
 
-| function                    | guards | entries | mechanism | data                                                                     | game source                                                          | tests                                                   |
-| --------------------------- | -----: | ------: | --------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------- | ------------------------------------------------------- |
-| IsHardcoreModeActive        |      2 |       6 | data      | `GameMode`; offline, the save's `gameModeState.gameMode`                 | ISIL `GameModeController.IsHardcoreOn`, and measured over four saves | `bridge.rs` `the_hardcore_question_reads_the_game_mode` |
-| WasGameBeatenInHardcoreMode |      2 |       6 | data      | `HardcorePlaythroughCompleted`; offline, a fixed value, false by default | ISIL `GameStatsManager.HardcorePlaythroughCompleted`                 | `bridge.rs` `the_hardcore_question_reads_the_game_mode` |
+| function                    | guards | entries | mechanism | data                                                                     | game source                                                          |
+| --------------------------- | -----: | ------: | --------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| IsHardcoreModeActive        |      2 |       6 | data      | `GameMode`; offline, the save's `gameModeState.gameMode`                 | ISIL `GameModeController.IsHardcoreOn`, and measured over four saves |
+| WasGameBeatenInHardcoreMode |      2 |       6 | data      | `HardcorePlaythroughCompleted`; offline, a fixed value, false by default | ISIL `GameStatsManager.HardcorePlaythroughCompleted`                 |
+
+#### Tests
+
+- `IsHardcoreModeActive`: `bridge.rs` `the_hardcore_question_reads_the_game_mode`
+- `WasGameBeatenInHardcoreMode`: `bridge.rs` `the_hardcore_question_reads_the_game_mode`
 
 `WasGameBeatenInHardcoreMode` is profile state, not save state, so no save records it. The
 offline worlds answer `fixtures::HARDCORE_PLAYTHROUGH_COMPLETED`, which is false, and a scenario
@@ -400,10 +489,15 @@ row fixes it otherwise with `hardcorePlaythroughCompleted`.
 
 ### Actions called from a guard
 
-| function          | guards | entries | mechanism | game source                                                               | tests                                                          |
-| ----------------- | -----: | ------: | --------- | ------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| XPStandardSetBool |      2 |       2 | answered  | PFC `TaskLuaFunctions.XPSetBool`: sets the variable and awards experience | `bridge.rs` `an_action_called_from_a_guard_is_never_asked_for` |
-| FinishTask        |      1 |       1 | answered  | PFC `JournalModel.FinishTask`: closes the task                            | `bridge.rs` `an_action_called_from_a_guard_is_never_asked_for` |
+| function          | guards | entries | mechanism | game source                                                               |
+| ----------------- | -----: | ------: | --------- | ------------------------------------------------------------------------- |
+| XPStandardSetBool |      2 |       2 | answered  | PFC `TaskLuaFunctions.XPSetBool`: sets the variable and awards experience |
+| FinishTask        |      1 |       1 | answered  | PFC `JournalModel.FinishTask`: closes the task                            |
+
+#### Tests
+
+- `XPStandardSetBool`: `bridge.rs` `an_action_called_from_a_guard_is_never_asked_for`
+- `FinishTask`: `bridge.rs` `an_action_called_from_a_guard_is_never_asked_for`
 
 Two functions that return nothing and exist for their effect appear where a condition is
 expected: conversation 369 entry 94 (`FinishTask`), and conversation 850 entries 109 and 110
