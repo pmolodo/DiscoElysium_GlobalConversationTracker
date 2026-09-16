@@ -288,10 +288,15 @@ pub const DECISIONS: &[Decision] = &[
             "TequilaPutOnBodysuit",
             "TequilaRemoveBodysuit",
         ],
-        readers: &[],
+        readers: &["IsExterior"],
         why: "Moving the player and rearranging the scenery. The search holds no location \
-              and no object state, and the only spatial guard in the database, \
-              IsExterior, is answered from the world like any other constant.",
+              and no object state, so both are held at what the world says. IsExterior is \
+              the one reader, and it pairs with the MOVEMENT writers rather than the \
+              scenery ones: GoTo, GoToDestination, SetAreaState and SkipToDebriefLocation \
+              change where the player stands, while nothing in the database reads back \
+              whether a fan is on or a door is shut. Measured rather than assumed - no \
+              conversation both moves the player and asks IsExterior, so the staleness \
+              this admits to is theoretical in the shipped content.",
     },
     Decision {
         writers: &["IsTHCPresent"],
