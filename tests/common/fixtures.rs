@@ -1493,10 +1493,17 @@ pub fn holdings_in_save(save: &str) -> Holdings {
 /// in Final Cut's beside a `timeSinceKimWentSleepingInHisRoom` counter - so the build that
 /// has the flag is the build whose `IsKimHere` is stripped, and reading gets no further.
 /// Saves covering every combination of the party flags were loaded in the shipped game and
-/// `IsKimHere()` evaluated in each (de-h0f1.33). Across the sixteen with Kim in the party,
-/// eight pairs differ in `isKimSleepingInHisRoom` alone and all eight agree; the same holds
-/// for `isKimAwayUpToMorning` and `isKimAbandoned`, and only `isKimLeftOutside` ever flips
-/// the answer. Final Cut computes what the pre-final-cut body reads.
+/// `IsKimHere()` evaluated in each (de-h0f1.33). Twenty-four of the thirty-two answered, and
+/// over them `IsKimHere` depends on `isKimInParty` and `isKimLeftOutside` and on nothing
+/// else: twelve pairs differ in `isKimSleepingInHisRoom` alone and all twelve agree, twelve
+/// likewise for `isKimAwayUpToMorning`, eight for `isKimAbandoned`. Every one of the
+/// twenty-four matches the pre-final-cut body.
+///
+/// THE OTHER EIGHT CANNOT BE MEASURED, and that is the game's doing rather than the run's.
+/// All eight carry `isKimInParty` and `isKimAbandoned` both false, which is the one case
+/// `PartyPersister.Deserialize` has no branch for: it calls neither restore, so the party
+/// state stays as the previously loaded save left it. They discriminate nothing in any
+/// case - with Kim not in the party, every candidate formula answers false.
 ///
 /// Both are state the game keeps to decide WHERE Kim is and when he wakes, rather than terms
 /// in "is he standing next to you". Reading them here would also panic on a pre-final-cut
