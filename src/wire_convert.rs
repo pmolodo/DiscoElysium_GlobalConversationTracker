@@ -180,6 +180,8 @@ fn written_kind(kind: DataKind) -> wire::DataKind {
         DataKind::HeldItemsInGroup => wire::DataKind::HeldItemsInGroup,
         DataKind::SceneIsOutside => wire::DataKind::SceneIsOutside,
         DataKind::SkillDamage => wire::DataKind::SkillDamage,
+        DataKind::GameMode => wire::DataKind::GameMode,
+        DataKind::HardcorePlaythroughCompleted => wire::DataKind::HardcorePlaythroughCompleted,
     }
 }
 

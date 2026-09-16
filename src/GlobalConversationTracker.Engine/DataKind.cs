@@ -67,5 +67,18 @@ namespace GlobalConversationTracker.Engine
         /// <see cref="DataRequest.Subject"/>. Answered as a number.
         /// </summary>
         SkillDamage = 8,
+
+        /// <summary>
+        /// The game mode - <c>GameModeController.currentMode</c> - by its enum name. Names no
+        /// subject; answered as text.
+        /// </summary>
+        GameMode = 9,
+
+        /// <summary>
+        /// Whether a game has been finished in hardcore mode -
+        /// <c>GameStatsManager.HardcorePlaythroughCompleted</c>. Names no subject; answered as a
+        /// boolean.
+        /// </summary>
+        HardcorePlaythroughCompleted = 10,
     }
 }

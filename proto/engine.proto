@@ -130,6 +130,13 @@ enum DataKind {
   // A skill's damage value - World.you.<skill>.damageValue - named in subject by its SkillType
   // name, VOLITION or ENDURANCE, and answered as a number.
   DATA_KIND_SKILL_DAMAGE = 8;
+  // The game mode - GameModeController.currentMode - by its enum name, NORMAL or HARDCORE.
+  // Names no subject; answered as text.
+  DATA_KIND_GAME_MODE = 9;
+  // Whether a game has been finished in hardcore mode -
+  // GameStatsManager.HardcorePlaythroughCompleted, profile state no save records. Names no
+  // subject; answered as a boolean.
+  DATA_KIND_HARDCORE_PLAYTHROUGH_COMPLETED = 10;
 }
 
 message DataRequest {

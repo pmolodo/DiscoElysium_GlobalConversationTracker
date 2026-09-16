@@ -1222,6 +1222,9 @@ pub struct Holdings {
     /// Each skill's damage, by `SkillType` name: what HasVolitionDamage and
     /// HasEnduranceDamage compare against zero. A skill the save records no damage on is 0.
     pub skill_damage: HashMap<String, f64>,
+    /// The game mode the save records, NORMAL or HARDCORE: what IsHardcoreModeActive was
+    /// measured to answer from.
+    pub game_mode: String,
     /// Journal tasks taken and not yet closed.
     pub tasks: HashSet<String>,
     /// Thoughts the cabinet has reached, whatever state they are in.
@@ -1315,6 +1318,12 @@ impl Holdings {
                         .tab_counts
                         .get(&request.subject)
                         .is_some_and(|count| *count > 0),
+                }),
+                // PROFILE STATE, which no save records - see `core::game_mode` - so it is left
+                // unread, and the question reads Unknown offline.
+                DataKind::HardcorePlaythroughCompleted => DataAnswer::default(),
+                DataKind::GameMode => DataAnswer::of_value(WireValue::Text {
+                    value: self.game_mode.clone(),
                 }),
                 DataKind::SkillDamage => DataAnswer::of_value(WireValue::Number {
                     value: self
@@ -1444,6 +1453,10 @@ pub fn holdings_in_save(save: &str) -> Holdings {
         equipment,
         tab_counts: tab_counts(&carried),
         skill_damage: skill_damage(&world_state(save, "characterSheet")),
+        game_mode: world_state(save, "gameModeState")["gameMode"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{save} records no game mode"))
+            .to_string(),
         tasks: active_tasks(&journal),
         // WHAT gainedThoughts HOLDS, which is neither of the two states that mean the
         // player does not have the thought: never reached, or reached and given up.

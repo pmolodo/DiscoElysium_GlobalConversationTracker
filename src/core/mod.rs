@@ -5,6 +5,7 @@ pub mod clock;
 pub mod damage;
 pub mod env;
 pub mod equipment;
+pub mod game_mode;
 pub mod guard;
 pub mod guard_value;
 pub mod inventory_tabs;

@@ -20,15 +20,30 @@
 //! Lua, the call threw a `NullReferenceException` while a save was still loading and read as
 //! Unknown; a read that finds no scene properties says so the same way.
 //!
-//! ## `IsRaining` and `IsSnowing`: MEASURED, not read
+//! ## `IsRaining` and `IsSnowing`: recovered from the binary, and measured
 //!
 //! Both are registered by `FELDLuaFunctions`, which exists only in Final Cut, and whose
-//! exported bodies are AssetRipper stubs. What they read was established without the body:
-//! `ArcticSwimmerEasterEgg` watches `auto.is_snowing` for the same condition the guards ask
-//! about, and evaluating `IsRaining()` in the shipped game over saves that differ in
-//! `auto.is_raining` (2026-09-12, see `tests/scene_queries.rs`) answered with the variable.
-//! `WeatherController` rewrites both variables from the weather preset whenever the weather
-//! changes, including on load, which the offline reader simulates.
+//! exported bodies are AssetRipper stubs. Cpp2IL's ISIL dump of the shipped `GameAssembly.dll`
+//! (de-h0f1.8) reads:
+//!
+//! ```text
+//! IsRaining:
+//!     Move rcx, "auto.is_raining"
+//!     Call LuaHelper.GetVariable, rcx, rdx
+//!     Return rax
+//!
+//! IsSnowing:
+//!     Move rcx, "auto.is_snowing"
+//!     Call LuaHelper.GetVariable, rcx, rdx
+//!     Return rax
+//! ```
+//!
+//! which agrees with what was established before the body was: `ArcticSwimmerEasterEgg`
+//! watches `auto.is_snowing` for the same condition, and evaluating `IsRaining()` in the
+//! shipped game over saves that differ in `auto.is_raining` (2026-09-12, see
+//! `tests/scene_queries.rs`) answered with the variable. `WeatherController` rewrites both
+//! variables from the weather preset whenever the weather changes, including on load, which
+//! the offline reader simulates.
 //!
 //! So both are answered from the dialogue variable, which the plugin already sends.
 

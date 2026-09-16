@@ -739,6 +739,17 @@ impl ILookAheadWorld for SnapshotWorld {
         if name == crate::core::scene::IS_EXTERIOR {
             return read_value(DataRequest::set(DataKind::SceneIsOutside));
         }
+        if name == crate::core::game_mode::WAS_GAME_BEATEN_IN_HARDCORE_MODE {
+            return read_value(DataRequest::set(DataKind::HardcorePlaythroughCompleted));
+        }
+        if name == crate::core::game_mode::IS_HARDCORE_MODE_ACTIVE {
+            let mode = read_value(DataRequest::set(DataKind::GameMode));
+            return if mode.kind() == GuardValueKind::Text {
+                GuardValue::from_boolean(mode.text() == crate::core::game_mode::HARDCORE)
+            } else {
+                GuardValue::unknown()
+            };
+        }
         if let Some(skill) = crate::core::damage::skill_read_by(name) {
             let damage = read_value(DataRequest::about(DataKind::SkillDamage, skill));
             return damage
@@ -864,6 +875,12 @@ pub enum DataKind {
     /// A skill's damage value, named in the subject by its `SkillType` name. Answered as a
     /// number. See [`crate::core::damage`].
     SkillDamage,
+    /// The game mode - `GameModeController.currentMode` - by its enum name. Names no subject;
+    /// answered as text. See [`crate::core::game_mode`].
+    GameMode,
+    /// Whether a game has been finished in hardcore mode -
+    /// `GameStatsManager.HardcorePlaythroughCompleted`. Names no subject; answered as a boolean.
+    HardcorePlaythroughCompleted,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -1473,6 +1490,13 @@ fn collect(
                     // WHETHER THE SCENE IS OUTDOORS, read from the scene's own properties.
                     (crate::core::scene::IS_EXTERIOR, _) => {
                         data.insert(DataRequest::set(DataKind::SceneIsOutside));
+                    }
+                    // WHICH MODE THE GAME IS IN, read off its controller.
+                    (crate::core::game_mode::IS_HARDCORE_MODE_ACTIVE, _) => {
+                        data.insert(DataRequest::set(DataKind::GameMode));
+                    }
+                    (crate::core::game_mode::WAS_GAME_BEATEN_IN_HARDCORE_MODE, _) => {
+                        data.insert(DataRequest::set(DataKind::HardcorePlaythroughCompleted));
                     }
                     // HOW DAMAGED A SKILL IS, read off the character sheet.
                     (other, _) if crate::core::damage::skill_read_by(other).is_some() => {
@@ -2950,6 +2974,45 @@ mod tests {
         );
     }
 
+    /// The hardcore question reads the game mode, and is never run.
+    #[test]
+    fn the_hardcore_question_reads_the_game_mode() {
+        let found = asked(r#"IsHardcoreModeActive()"#);
+        assert!(
+            found.queries.is_empty(),
+            "asked as a call: {:?}",
+            found.queries
+        );
+        let request = DataRequest::set(DataKind::GameMode);
+        assert_eq!(found.data, vec![request.clone()]);
+
+        let in_mode = |mode: &str| {
+            let mut snapshot = WorldSnapshot::default();
+            snapshot.data.insert(
+                request.clone(),
+                DataAnswer::of_value(WireValue::Text {
+                    value: mode.to_string(),
+                }),
+            );
+            SnapshotWorld::new(snapshot)
+                .query("IsHardcoreModeActive", &[])
+                .boolean()
+        };
+        assert!(in_mode("HARDCORE"));
+        assert!(!in_mode("NORMAL"));
+
+        let beaten = asked(r#"WasGameBeatenInHardcoreMode()"#);
+        assert!(
+            beaten.queries.is_empty(),
+            "asked as a call: {:?}",
+            beaten.queries
+        );
+        assert_eq!(
+            beaten.data,
+            vec![DataRequest::set(DataKind::HardcorePlaythroughCompleted)]
+        );
+    }
+
     /// A damage question reads the skill's damage, and is never run.
     #[test]
     fn a_damage_question_reads_the_skill_and_compares_below_zero() {
@@ -3033,13 +3096,10 @@ mod tests {
 
     #[test]
     fn an_ordinary_query_is_asked_for_by_its_key() {
-        let found = asked(r#"WasGameBeatenInHardcoreMode() and IsKimHere()"#);
+        let found = asked(r#"IsCunoInParty() and IsKimHere()"#);
         assert_eq!(
             found.queries,
-            vec![
-                "IsKimHere()".to_string(),
-                "WasGameBeatenInHardcoreMode()".to_string()
-            ],
+            vec!["IsCunoInParty()".to_string(), "IsKimHere()".to_string()],
         );
     }
 

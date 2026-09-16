@@ -316,6 +316,10 @@ namespace GlobalConversationTracker.Engine
                     return DataKind.SceneIsOutside;
                 case Wire.DataKind.SkillDamage:
                     return DataKind.SkillDamage;
+                case Wire.DataKind.GameMode:
+                    return DataKind.GameMode;
+                case Wire.DataKind.HardcorePlaythroughCompleted:
+                    return DataKind.HardcorePlaythroughCompleted;
                 default:
                     return DataKind.Unspecified;
             }

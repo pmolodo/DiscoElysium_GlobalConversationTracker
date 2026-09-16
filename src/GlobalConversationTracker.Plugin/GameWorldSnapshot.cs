@@ -143,6 +143,11 @@ namespace GlobalConversationTracker
                         return SceneIsOutside();
                     case DataKind.SkillDamage:
                         return SkillDamage(wanted.Subject);
+                    case DataKind.GameMode:
+                        return GameMode();
+                    case DataKind.HardcorePlaythroughCompleted:
+                        return DataAnswer.Of(
+                            WireValue.FromBoolean(GameStatsManager.HardcorePlaythroughCompleted));
                     default:
                         return DataAnswer.Unreadable();
                 }
@@ -217,6 +222,19 @@ namespace GlobalConversationTracker
             }
 
             return DataAnswer.Unreadable();
+        }
+
+        /// <summary>The game mode, by its enum name.</summary>
+        /// <remarks>
+        /// What <c>IsHardcoreModeActive</c> answers from, recovered from the binary and measured
+        /// - see <c>core::game_mode</c> in the engine. No controller yet is unserviced.
+        /// </remarks>
+        private static DataAnswer GameMode()
+        {
+            GameModeController? controller = GameModeController.Singleton;
+            return controller == null
+                ? DataAnswer.Unreadable()
+                : DataAnswer.Of(WireValue.FromText(controller.currentMode.ToString()));
         }
 
         /// <summary>One skill's damage value, named by its skill type.</summary>

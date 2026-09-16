@@ -20,6 +20,20 @@ pub const MONEY_QUERY: &str = "MoneyAmount";
 
 /// The guard-language call that asks whether a flag is set, which is `Variable[name]` written
 /// another way and answered from the same place.
+///
+/// `FELDLuaFunctions` exists only in Final Cut and its exported bodies are stubs; Cpp2IL's ISIL
+/// dump of the shipped `GameAssembly.dll` (de-h0f1.8) recovers both:
+///
+/// ```text
+/// FlagSet(string variableName):
+///     Call LuaHelper.GetVariable, rcx, rdx
+///     Return rax
+///
+/// FlagNotSet(string variableName):
+///     Call LuaHelper.GetVariable, rcx, rdx
+///     Xor rax, rax, 1
+///     Return rax
+/// ```
 pub const FLAG_SET_QUERY: &str = "FlagSet";
 
 /// The same question asked the other way round. Nine guards use [`FLAG_SET_QUERY`] and three
