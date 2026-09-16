@@ -50,8 +50,9 @@ that started this was a local.
 
 Generated from the code rather than maintained by hand, by `tools/env-table.py`: it greps each
 tracked file for a variable spelled out in full or asked for by bare name through the helper
-for its language, so it says what the code actually asks for. 39 variables.
+for its language, so it says what the code actually asks for. 40 variables.
 
+| `DEGCT_ALL_COMMITTED_SAVES` | `tests/common/mod.rs` |
 | `DEGCT_ARMS` | `tools/measure-residue-arms.sh` |
 | `DEGCT_BUDGET_MB` | `measurements/bidirectional_headroom.rs`, `measurements/bound_slack.rs`, `measurements/cache_split.rs`, `measurements/cache_split_menu.rs`, `measurements/manager_reuse.rs`, `measurements/menu_matrix.rs`, `measurements/onward_or_back.rs`, `measurements/repeat_question.rs`, `measurements/search_residue.rs`, `tools/measure-residue-arms.sh` |
 | `DEGCT_COMPARE` | `measurements/onward_or_back.rs` |
@@ -64,7 +65,7 @@ for its language, so it says what the code actually asks for. 39 variables.
 | `DEGCT_HEADER` | `measurements/menu_matrix.rs`, `tools/measure-menus.py`, `tools/measurement_common.py` |
 | `DEGCT_LAYERS` | `measurements/bidirectional_headroom.rs` |
 | `DEGCT_LOG_DIR` | `tools/measure-symbolic.sh`, `tools/run-logged.sh` |
-| `DEGCT_MARKING` | `measurements/README.md`, `measurements/menu_matrix.rs` |
+| `DEGCT_MARKING` | `AGENTS.md`, `CLAUDE.md`, `measurements/README.md`, `measurements/menu_matrix.rs`, `tools/measurement_common.py`, `tools/menu-costs-diff.py` |
 | `DEGCT_MEASUREMENT` | `tools/measure-symbolic.sh` |
 | `DEGCT_MEMORY_BUDGET_MB` | `measurements/menu_residue.rs` |
 | `DEGCT_MENUS_OUT` | `measurements/README.md`, `tools/DegctEnv.psm1`, `tools/degct-env.sh`, `tools/measure-menus.py`, `tools/measurement_common.py` |

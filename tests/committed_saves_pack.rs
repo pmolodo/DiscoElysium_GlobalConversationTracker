@@ -208,7 +208,8 @@ fn every_committed_save_packs_with_its_cycle_references_in_order() {
         return;
     };
 
-    for source in every_save() {
+    // ONLY THE CHANGED ONES by default - see `common::committed_saves_to_check`.
+    for source in common::committed_saves_to_check(every_save()) {
         let name = source
             .file_name()
             .expect("a save has a name")

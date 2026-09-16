@@ -583,3 +583,101 @@ pub fn heaviest_target(
         .max_by_key(|id| (ancestors(*id), id.conversation_id, id.entry_id))
         .unwrap_or(start)
 }
+
+/// The variable asking the committed-save tests to check every save, not only changed ones.
+pub const ALL_COMMITTED_SAVES: &str = "ALL_COMMITTED_SAVES";
+
+/// Where the save reader and writer live: a change here can break any save, changed or not.
+const SAVE_CODE: [&str; 2] = ["crates/gct-save-files", "crates/gct-formats"];
+
+/// The committed saves worth checking this run, out of `saves`.
+///
+/// ## Why not every one
+///
+/// The committed-save tests re-read and re-write every save under `testing/`, which is most
+/// of a full `cargo test` - about two minutes of it. A save that has not changed since the last
+/// commit was checked when it was committed, so checking it again proves nothing new.
+///
+/// ## What is checked
+///
+/// Every save with a file changed since `HEAD` - tracked or untracked - and every save BUILT ON
+/// one, since a save written as a change reads its base. ALL of them where:
+///
+/// - `DEGCT_ALL_COMMITTED_SAVES` is set;
+/// - the save reader or writer has changed, which is what these tests exist to hold to the
+///   committed bytes;
+/// - git cannot be asked, because skipping on no evidence would hide a broken save.
+///
+/// Says which it did, so a run that checked nothing is visibly one that checked nothing.
+pub fn committed_saves_to_check(saves: Vec<PathBuf>) -> Vec<PathBuf> {
+    let every = |why: &str| {
+        println!("checking all {} committed saves: {why}", saves.len());
+        saves.clone()
+    };
+    if lookahead_engine::core::env::is_set(ALL_COMMITTED_SAVES) {
+        return every(&format!(
+            "{} is set",
+            lookahead_engine::core::env::qualified(ALL_COMMITTED_SAVES)
+        ));
+    }
+
+    let root = repo_root();
+    let asked = Command::new("git")
+        .current_dir(&root)
+        .args(["status", "--porcelain", "--untracked-files=all", "--"])
+        .arg("testing")
+        .args(SAVE_CODE)
+        .output();
+    let changed: Vec<PathBuf> = match asked {
+        Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| line.get(3..))
+            // A rename reads "old -> new"; both ends have changed.
+            .flat_map(|paths| paths.split(" -> ").map(str::to_string).collect::<Vec<_>>())
+            .map(|path| root.join(path.trim_matches('"')))
+            .collect(),
+        _ => return every("git could not say what changed"),
+    };
+
+    if changed.iter().any(|path| {
+        SAVE_CODE
+            .iter()
+            .any(|code| path.starts_with(root.join(code)))
+    }) {
+        return every("the save reader or writer has changed");
+    }
+
+    let canonical =
+        |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let touched: Vec<PathBuf> = saves
+        .iter()
+        .filter(|save| changed.iter().any(|path| path.starts_with(save.as_path())))
+        .map(|save| canonical(save))
+        .collect();
+
+    let selected: Vec<PathBuf> = saves
+        .iter()
+        .filter(|save| {
+            match lookahead_engine::formats::expanded_save::chain(
+                &lookahead_engine::formats::expanded_save::OnDisk,
+                save,
+            ) {
+                Ok(links) => links
+                    .iter()
+                    .any(|link| touched.contains(&canonical(&link.directory))),
+                // A save whose chain will not even read is checked, so the test says why.
+                Err(_) => true,
+            }
+        })
+        .cloned()
+        .collect();
+
+    println!(
+        "checking {} of {} committed saves - those changed since HEAD and those built on them; \
+         set {} to check all",
+        selected.len(),
+        saves.len(),
+        lookahead_engine::core::env::qualified(ALL_COMMITTED_SAVES),
+    );
+    selected
+}

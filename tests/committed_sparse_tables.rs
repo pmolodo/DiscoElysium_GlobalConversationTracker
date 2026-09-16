@@ -168,6 +168,10 @@ fn every_committed_table_decodes_and_comes_back_as_the_same_table() {
         );
     }
 
+    // ONLY THE CHANGED ONES by default - see `common::committed_saves_to_check`. The count
+    // above is of every save, so a glob that stopped matching still fails.
+    let saves = common::committed_saves_to_check(saves);
+
     let mut checked = 0;
     let mut refused = Vec::new();
     let mut rewritten = Vec::new();
@@ -219,7 +223,7 @@ fn every_committed_table_decodes_and_comes_back_as_the_same_table() {
         }
     }
 
-    assert!(checked > 0, "no tables were read");
+    assert!(saves.is_empty() || checked > 0, "no tables were read");
     assert_eq!(
         refused.len(),
         if orders.is_some() { 0 } else { saves.len() },

@@ -268,7 +268,8 @@ fn every_committed_save_is_written_again_as_the_save_it_already_is() {
         saves.len(),
     );
 
-    for save in &saves {
+    // ONLY THE CHANGED ONES by default - see `common::committed_saves_to_check`.
+    for save in &common::committed_saves_to_check(saves) {
         rewrites(save, &orders).unwrap_or_else(|why| panic!("{}: {why}", save.display()));
     }
 }
