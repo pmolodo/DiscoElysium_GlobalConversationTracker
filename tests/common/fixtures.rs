@@ -1184,9 +1184,12 @@ fn document_member(save: &str, suffix: &str, member_name: &str) -> serde_json::V
 /// The names are the save's, and the meanings are what the game's own tables say rather
 /// than what this code decides:
 ///
-/// - PRESENT, for a thought, is any state but `UNKNOWN`. The cabinet lists every thought in
-///   the game and marks the ones the player has reached - cooking, known, fixed, forgotten -
-///   so presence is the absence of the one state that means "not yet".
+/// - PRESENT, for a thought, is what `gainedThoughts` holds, and the cabinet's states are
+///   read to match it rather than the other way round. The cabinet lists every thought in
+///   the game; `UNKNOWN` is the one the player has never reached, and `FORGOTTEN` is one
+///   they reached and then gave up - `CharacterThoughts.ForgetThought` REMOVES it from
+///   `gainedThoughts` as it sets that state. So presence is every state but those two, and
+///   counting `FORGOTTEN` as present answers the opposite of what the game answers.
 /// - ACTIVE, for a task, is acquired and not resolved. The journal records when each was
 ///   taken and when each was closed, and a task closed at a time is no longer active; one
 ///   acquired with a null resolution is.
@@ -1244,6 +1247,13 @@ const FIXED: &str = "FIXED";
 
 /// The state a thought still being thought is in.
 const COOKING: &str = "COOKING";
+
+/// The state a thought the player has given up is in.
+///
+/// NOT PRESENT, though the player once had it. `CharacterThoughts.ForgetThought` removes the
+/// thought from `gainedThoughts` before setting this, and `IsTHCPresent` is
+/// `gainedThoughts.Contains` - so the game answers false for one of these.
+const FORGOTTEN: &str = "FORGOTTEN";
 
 impl Holdings {
     /// The world queries this can answer, out of the ones a group asks.
@@ -1379,9 +1389,11 @@ pub fn holdings_in_save(save: &str) -> Holdings {
             .collect(),
         equipped,
         tasks: active_tasks(&journal),
+        // WHAT gainedThoughts HOLDS, which is neither of the two states that mean the
+        // player does not have the thought: never reached, or reached and given up.
         thoughts: thought_states
             .iter()
-            .filter(|(_, state)| *state != NOT_YET)
+            .filter(|(_, state)| *state != NOT_YET && *state != FORGOTTEN)
             .map(|(name, _)| name.clone())
             .collect(),
         thought_states,
