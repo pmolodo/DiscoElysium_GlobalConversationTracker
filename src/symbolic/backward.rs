@@ -1324,6 +1324,26 @@ mod tests {
         );
     }
 
+    /// Leaving Kim at the church shuts what needs Kim present and opens what needs Kim gone.
+    #[test]
+    fn leaving_kim_at_the_church_moves_the_kim_questions() {
+        let shape = |script: &str, guard: &str| {
+            vec![
+                Entry::new(0).links(&[1]),
+                Entry::new(1).script(script).links(&[2]),
+                Entry::new(2).guard(guard),
+            ]
+        };
+        let with_kim = TestWorld::new()
+            .set_query_bool("IsKimHere", true)
+            .set_query_bool("IsKimInParty", true);
+        let left = "RemoveKitsuragiWaitAtChurch()";
+
+        agree(shape("", "IsKimHere()"), &with_kim, 2, true);
+        agree(shape(left, "IsKimHere()"), &with_kim, 2, false);
+        agree(shape(left, "not IsKimInParty()"), &with_kim, 2, true);
+    }
+
     /// A deadline stored from the world's clock is compared against the same clock, so what
     /// opens only once it has passed stays shut - and opens where the deadline is behind.
     #[test]

@@ -161,7 +161,6 @@ pub const DECISIONS: &[Decision] = &[
             "ReturnKitsuragi",
             "RemoveAndHideKitsuragi",
             "RemoveAndHideKitsuragiUntilMorning",
-            "RemoveKitsuragiWaitAtChurch",
             "RemoveKitsuragiWaitAtLair",
             "RemoveKitsuragiWaitAtTent",
             "NightyNightKitsuragiShack",
@@ -174,7 +173,8 @@ pub const DECISIONS: &[Decision] = &[
               IsKimHere alone is 323 guards, the largest single world query - and these \
               move it. Held at the save's answer because a party model is a model of \
               where everybody is, and the writers are rare: 21 scripts across the \
-              database.",
+              database. The one with a downstream reader, \
+              RemoveKitsuragiWaitAtChurch, is modelled - see core::party.",
     },
     Decision {
         writers: &[

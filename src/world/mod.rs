@@ -389,6 +389,18 @@ impl IGuardContext for BoundContext<'_> {
                     None => self.world.query(name, arguments),
                 }
             }
+            // WHETHER KIM IS HERE OR IN THE PARTY: false once this group has taken Kim out of
+            // the party, and the world's answer until then. See `core::party`.
+            other
+                if crate::core::party::reads_kim_removal(other)
+                    && self.state.is_some_and(|state| {
+                        self.symbols
+                            .find(crate::core::party::KIM_REMOVED_SLOT)
+                            .is_some_and(|slot| state.is_set(slot))
+                    }) =>
+            {
+                GuardValue::from_boolean(false)
+            }
             // WHETHER ANYTHING IN AN ITEM GROUP IS HELD, each member answered the way
             // `CheckItem` is - from its slot where the group moves it, from the starting
             // inventory where it does not. See `core::item_group`.

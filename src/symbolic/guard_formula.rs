@@ -695,6 +695,38 @@ impl<'a> GuardCompiler<'a> {
                 }
             }
 
+            // WHETHER KIM IS HERE OR IN THE PARTY, where the group takes Kim out of it: the
+            // world's answer while the removal slot is clear, and false once it is set - as
+            // `BoundContext::query` has it. See `core::party`.
+            GuardExpression::Call(name, args)
+                if crate::core::party::reads_kim_removal(name)
+                    && self
+                        .vars
+                        .slot_of(crate::core::party::KIM_REMOVED_SLOT)
+                        .is_some() =>
+            {
+                let kept = self
+                    .slot_is_set(crate::core::party::KIM_REMOVED_SLOT)
+                    .and_then(|removed| removed.not().ok());
+                match (kept, self.constant_query(name, args)) {
+                    (None, _) => self.no_room(guard.to_string()),
+                    (Some(kept), Some(true)) => self.decided(kept),
+                    (Some(_), Some(false)) => {
+                        let f = self.bottom();
+                        self.decided(f)
+                    }
+                    // Unknown until the removal, and false after it.
+                    (Some(kept), None) => {
+                        let open =
+                            self.undecided("call: party, world cannot say", guard.to_string());
+                        MayBe {
+                            may_be_true: kept,
+                            may_be_false: open.may_be_false,
+                        }
+                    }
+                }
+            }
+
             // A query the SEARCH cannot change is a constant, and the engine says which
             // those are: `BoundContext::query` intercepts MoneyAmount, CheckItem,
             // IsTaskActive and the clock, and lets everything else fall through to the
@@ -1387,6 +1419,15 @@ impl<'a> GuardCompiler<'a> {
             return (answer.kind() != GuardValueKind::Unknown).then_some(answer);
         }
         if Self::search_can_change(name) {
+            return None;
+        }
+        // The Kim questions are fixed only where the group never takes Kim out of the party.
+        if crate::core::party::reads_kim_removal(name)
+            && self
+                .vars
+                .slot_of(crate::core::party::KIM_REMOVED_SLOT)
+                .is_some()
+        {
             return None;
         }
         self.constant_value(name, args)

@@ -573,6 +573,11 @@ fn translate_call(
                 actions.push(DialogueAction::increment(slot, amount, false, call.name));
             }
         }
+        // KIM LEFT AT THE CHURCH, as the slot that answers the Kim questions false - see
+        // `core::party`.
+        name if crate::core::party::removes_kim(name) => {
+            actions.push(DialogueAction::assign(symbols.kim_removed(), 1, call.name));
+        }
         "GainThought" => {
             let slot = symbols.thought(&unquote(call.args.first().unwrap_or(&String::new())));
             actions.push(DialogueAction::assign(slot, 1, call.name));

@@ -60,7 +60,7 @@ today; `verdict` is how that compares with the game for the writes a downstream 
 | CancelTask                         | journal         |   280 |    39 | cancel unless done                        | ported                                 |
 | GainItem                           | items           |   242 |    92 | `item:<name>` = 1                         | ported for the item; see Items         |
 | DamageVolition                     | damage          |   220 |    32 | damage amount += n                        | ported                                 |
-| PassTime                           | clock           |   207 |    72 | clock +15 min unless locked; plugin locks | held - de-70eo.8                       |
+| PassTime                           | clock           |   207 |    72 | clock +15 min unless locked; plugin locks | held by decision: clock not modelled   |
 | ReputationLowers                   | reputation      |   178 |    27 | once-decrement `reputation.<name>`        | ported                                 |
 | LoseItem                           | items           |   177 |   108 | `item:<name>` = 0                         | unequip not applied - de-70eo.7        |
 | XPMinorSetBool                     | variables       |   172 |    32 | assign the variable 1                     | ported                                 |
@@ -98,7 +98,7 @@ today; `verdict` is how that compares with the game for the writes a downstream 
 | OpenBookstoreCurtains              | scenery         |     2 |     0 | held by decision                          | excluded                               |
 | RemoveCunoFromParty                | party           |     2 |     0 | held by decision                          | excluded                               |
 | RemoveCunoWaitAtFort               | party           |     2 |     0 | held by decision                          | excluded                               |
-| RemoveKitsuragiWaitAtChurch        | party           |     2 |     2 | held by decision                          | held - de-70eo.8                       |
+| RemoveKitsuragiWaitAtChurch        | party           |     2 |     2 | Kim removed := 1                          | ported                                 |
 | TequilaExpressionStopped           | presentation    |     2 |     0 | declared, no effect                       | excluded                               |
 | TequilaFascist                     | presentation    |     2 |     0 | held by decision                          | excluded                               |
 | TequilaShaved                      | presentation    |     2 |     0 | held by decision                          | excluded                               |
@@ -317,15 +317,22 @@ which also bakes cooking thoughts (`ThoughtManager.BakeThoughts`) and substances
 **ENGINE.** `PassTime` adds 15 minutes unless the world's clock is locked, and the plugin always
 sends it locked, so time stands still for a crawl. 72 call sites are live - 50 through a clock
 question and 45 through a cabinet question, since baking can turn a cooking thought fixed. Held
-by that approximation. de-70eo.8.
+by that approximation, as a decision: thought baking is infrequent, and a moving clock would
+change state on every unseen option, which a search would pay for everywhere.
 
 ## Party
 
 **GAME.** `KimLuaFunctions` and `CunoLuaFunctions` set `IsInParty` and `IsLeftOutside` on the
 party members through `PartyManager` and `PartyMember.Remove`, and record wait locations.
 
-**ENGINE.** Held at the world's answer by a `Decision` in `core::modelling`. Only
-`RemoveKitsuragiWaitAtChurch` has live call sites (2). de-70eo.8.
+**ENGINE.** `RemoveKitsuragiWaitAtChurch` is the only party writer with live call sites (2),
+and it is ported. `KimKitsuragi.RemoveAndHide` takes Kim out of the party through
+`Party.Player.Remove` and leaves `IsLeftOutside` alone, so afterwards `IsKimInParty` and
+`IsKimHere` are both false. A search holds that in one `party:kimRemoved` slot, clear at the start
+and set by the call. While it is clear the two questions are the world's answer, and an unread
+flag stays unknown. The other party writers are held at the world's answer by a `Decision` in
+`core::modelling`. Tested by `leaving_kim_at_the_church_moves_the_kim_questions` in `oracle.rs`
+and `backward.rs`.
 
 ## Excluded
 

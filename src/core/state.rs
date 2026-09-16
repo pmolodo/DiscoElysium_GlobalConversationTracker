@@ -20,14 +20,17 @@ pub const ITEM_PREFIX: &str = "item:";
 pub const THOUGHT_PREFIX: &str = "thought:";
 /// How badly a skill is damaged, by `SkillType` name - see `core::damage`.
 pub const DAMAGE_PREFIX: &str = "damage:";
+/// What dialogue has done to the party during a search - see `core::party`.
+pub const PARTY_PREFIX: &str = "party:";
 pub const ONCE_PREFIX: &str = "once:";
 pub const SEEN_PREFIX: &str = "seen:";
 
 /// The prefixes a slot's name carries when the slot is not a dialogue variable.
-const NOT_A_VARIABLE: [&str; 5] = [
+pub const NOT_A_VARIABLE: [&str; 6] = [
     ITEM_PREFIX,
     THOUGHT_PREFIX,
     DAMAGE_PREFIX,
+    PARTY_PREFIX,
     ONCE_PREFIX,
     SEEN_PREFIX,
 ];
@@ -113,6 +116,11 @@ impl StateSymbols {
 
     pub fn damage(&mut self, skill: &str) -> usize {
         self.intern(format!("{DAMAGE_PREFIX}{skill}"))
+    }
+
+    /// The slot saying Kim has been taken out of the party during the search.
+    pub fn kim_removed(&mut self) -> usize {
+        self.intern(crate::core::party::KIM_REMOVED_SLOT.to_string())
     }
 
     pub fn once(&mut self, node: DialogueNodeId) -> usize {

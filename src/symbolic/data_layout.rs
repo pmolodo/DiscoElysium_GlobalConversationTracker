@@ -28,7 +28,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::core::guard::{Guard, GuardExpression, GuardRef};
 use crate::core::state::{
-    DAMAGE_PREFIX, ITEM_PREFIX, ONCE_PREFIX, SEEN_PREFIX, StateSymbols, THOUGHT_PREFIX,
+    DAMAGE_PREFIX, ITEM_PREFIX, NOT_A_VARIABLE, ONCE_PREFIX, SEEN_PREFIX, StateSymbols,
+    THOUGHT_PREFIX,
 };
 use crate::core::types::DialogueNodeId;
 use crate::graph::LookAheadGraph;
@@ -320,17 +321,9 @@ impl DataLayout {
         // barring them costs nothing and removes the whole question.
         let symbols = graph.symbols();
         let elsewhere = |slot: usize| {
-            symbols.name_of(slot).is_some_and(|name| {
-                [
-                    ITEM_PREFIX,
-                    THOUGHT_PREFIX,
-                    DAMAGE_PREFIX,
-                    ONCE_PREFIX,
-                    SEEN_PREFIX,
-                ]
-                .iter()
-                .any(|prefix| name.starts_with(prefix))
-            })
+            symbols
+                .name_of(slot)
+                .is_some_and(|name| NOT_A_VARIABLE.iter().any(|prefix| name.starts_with(prefix)))
         };
 
         let mut deltas = HashMap::new();
@@ -855,6 +848,11 @@ impl DataLayout {
                 {
                     let skill = crate::core::damage::skill_read_by(function).expect("just matched");
                     names.insert(format!("{DAMAGE_PREFIX}{skill}"));
+                }
+                GuardExpression::Call(function, _)
+                    if crate::core::party::reads_kim_removal(function) =>
+                {
+                    names.insert(crate::core::party::KIM_REMOVED_SLOT.to_string());
                 }
                 GuardExpression::Call(function, arguments) => {
                     // The two queries `BoundContext::query` answers from a slot. Their

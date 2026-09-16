@@ -43,11 +43,11 @@ walks - see [What the search can move](#what-the-search-can-move):
 
 | function                    | family       | guards | entries | mechanism  | during a search                    |
 | --------------------------- | ------------ | -----: | ------: | ---------- | ---------------------------------- |
-| IsKimHere                   | party        |    323 |   4,687 | data       | held - de-70eo.8                   |
+| IsKimHere                   | party        |    323 |   4,687 | data, slot | tracked where removed              |
 | CheckItem                   | inventory    |    493 |     835 | set        | tracked                            |
 | IsTHCPresent                | cabinet      |    213 |     731 | set        | tracked                            |
 | CheckEquipped               | equipment    |    199 |     514 | data       | held - de-70eo.7                   |
-| IsCunoInParty               | party        |     22 |     358 | data       | held - de-70eo.8                   |
+| IsCunoInParty               | party        |     22 |     358 | data       | held by decision                   |
 | IsTaskActive                | journal      |    204 |     341 | slot       | tracked                            |
 | DayCount                    | clock        |     66 |     111 | port       | constant                           |
 | IsHourBetween               | clock        |     63 |     108 | port       | held - clock locked                |
@@ -82,7 +82,7 @@ walks - see [What the search can move](#what-the-search-can-move):
 | TotalHourCount              | clock        |      5 |       5 | port       | held - clock locked                |
 | FlagNotSet                  | flags        |      3 |       3 | slot       | tracked                            |
 | IsTHCCooking                | cabinet      |      3 |       3 | data       | constant while the clock is locked |
-| IsKimInParty                | party        |      2 |       3 | data       | held - de-70eo.8                   |
+| IsKimInParty                | party        |      2 |       3 | data, slot | tracked where removed              |
 | HourCount                   | clock        |      2 |       2 | port       | held - clock locked                |
 | IsDusk                      | clock        |      2 |       2 | port       | held - clock locked                |
 | IsNoon                      | clock        |      2 |       2 | port       | held - clock locked                |
@@ -300,9 +300,13 @@ through the interop layer; the fixture reads the save's `partyState`.
 `IsKimHere` is `isKimInParty && !isKimLeftOutside`. The measurement found it reads no other
 party flag: not `isKimAbandoned`, `isKimAwayUpToMorning` or `isKimSleepingInHisRoom`.
 
-Party is held at the world's answer for the length of a search - a recorded decision in
-`core::modelling`, since the party actions (`ReturnKitsuragi`, `AddCunoToParty` and the rest)
-are rare and a party model is a model of where everyone is.
+Where a group leaves Kim at the church (`RemoveKitsuragiWaitAtChurch`), `IsKimHere` and
+`IsKimInParty` are false once its `party:kimRemoved` slot is set, and the world's answer until
+then - see `docs/actions.md`. Tested by `leaving_kim_at_the_church_moves_the_kim_questions`.
+Otherwise the party is held at the world's answer for the length of a search - a recorded
+decision in `core::modelling`, since the other party actions (`ReturnKitsuragi`,
+`AddCunoToParty` and the rest) have no downstream reader and a party model is a model of where
+everyone is.
 
 ### Reputation
 

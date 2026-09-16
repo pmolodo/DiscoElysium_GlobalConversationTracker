@@ -774,6 +774,40 @@ mod tests {
         );
     }
 
+    /// Leaving Kim at the church shuts what needs Kim present and opens what needs Kim gone -
+    /// and a Kim the world could not read stays unknown until then.
+    #[test]
+    fn leaving_kim_at_the_church_moves_the_kim_questions() {
+        let shape = |script: &str, guard: &str| {
+            GraphBuilder::new()
+                .add(Entry::new(0).links(&[1]))
+                .add(Entry::new(1).script(script).links(&[2]))
+                .add(Entry::new(2).guard(guard))
+                .build()
+        };
+        let with_kim = TestWorld::new()
+            .set_query_bool("IsKimHere", true)
+            .set_query_bool("IsKimInParty", true);
+        let left = "RemoveKitsuragiWaitAtChurch()";
+
+        let kept = walk(&shape("", "IsKimHere()"), node(0), &with_kim, COUNTER_CAP);
+        assert!(kept.reached(node(2)), "Kim is here until left somewhere");
+
+        let gone = walk(&shape(left, "IsKimHere()"), node(0), &with_kim, COUNTER_CAP);
+        assert!(
+            !gone.reached(node(2)),
+            "a Kim left at the church is not here"
+        );
+
+        let out = walk(
+            &shape(left, "not IsKimInParty()"),
+            node(0),
+            &with_kim,
+            COUNTER_CAP,
+        );
+        assert!(out.reached(node(2)), "nor in the party");
+    }
+
     /// A deadline set from the clock is not already past.
     ///
     /// 1 sets the deadline eight hours ahead and 2 opens once it has passed. The clock does not
