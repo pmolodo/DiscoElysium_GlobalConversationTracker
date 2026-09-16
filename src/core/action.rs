@@ -43,14 +43,24 @@ pub struct DialogueAction {
     /// every other kind.
     #[serde(default)]
     unless: Option<i32>,
-    /// The thought that has to be fixed for this action to fire, and `None` for an action that
-    /// always fires - see [`crate::core::thought_effects`].
+    /// What has to hold in the world for this action to fire, and `None` for an action that
+    /// always fires.
     #[serde(default)]
-    fixed_thought: Option<String>,
+    condition: Option<ActionCondition>,
     /// Whether the action fires: always for an unconditional one, and for a conditional one
-    /// whether the world the graph was last fitted to holds its thought fixed.
+    /// whether its condition held in the world the graph was last fitted to.
     #[serde(default = "fires_by_default")]
     enabled: bool,
+}
+
+/// A fact about the world, constant for a search, that decides whether an action fires.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ActionCondition {
+    /// The thought is fixed - see [`crate::core::thought_effects`].
+    ThoughtFixed(String),
+    /// The variable is unset, and nothing in the group writes it - see
+    /// [`DialogueAction::settled_by_world`].
+    VariableUnset(String),
 }
 
 fn fires_by_default() -> bool {
@@ -119,7 +129,7 @@ impl DialogueAction {
             name,
             reading: None,
             unless: None,
-            fixed_thought: None,
+            condition: None,
             enabled: true,
         }
     }
@@ -206,15 +216,43 @@ impl DialogueAction {
     /// fixed, until [`Self::fit`] is told otherwise.
     pub fn when_thought_fixed(self, thought: &str) -> Self {
         Self {
-            fixed_thought: Some(thought.to_string()),
+            condition: Some(ActionCondition::ThoughtFixed(thought.to_string())),
             enabled: false,
+            ..self
+        }
+    }
+
+    /// An [`DialogueActionKind::AssignUnless`] whose tested slot nothing in its group writes,
+    /// turned into a plain assignment that fires while the world holds `variable` unset.
+    ///
+    /// The tested value is then the world's for the whole search, so the condition is settled
+    /// once, by [`Self::fit`], rather than carried as a slot the search splits on. It starts
+    /// firing, as for a world holding the variable unset - what an unread variable seeds as.
+    pub fn settled_by_world(self, variable: &str) -> Self {
+        debug_assert_eq!(self.kind, DialogueActionKind::AssignUnless);
+        Self {
+            kind: DialogueActionKind::Assign,
+            unless: None,
+            condition: Some(ActionCondition::VariableUnset(variable.to_string())),
+            enabled: true,
             ..self
         }
     }
 
     /// The thought this action needs fixed, if it needs one.
     pub fn fixed_thought(&self) -> Option<&str> {
-        self.fixed_thought.as_deref()
+        match &self.condition {
+            Some(ActionCondition::ThoughtFixed(thought)) => Some(thought),
+            _ => None,
+        }
+    }
+
+    /// The variable this action needs the world to hold unset, if it needs one.
+    pub fn unset_variable(&self) -> Option<&str> {
+        match &self.condition {
+            Some(ActionCondition::VariableUnset(variable)) => Some(variable),
+            _ => None,
+        }
     }
 
     /// Whether the action fires in the world it was last fitted to.
@@ -222,11 +260,11 @@ impl DialogueAction {
         self.enabled
     }
 
-    /// Switches a conditional action on or off by whether its thought is fixed; an
+    /// Switches a conditional action on or off by whether its condition holds; an
     /// unconditional action is left firing.
-    pub fn fit(&mut self, is_fixed: impl Fn(&str) -> bool) {
-        if let Some(thought) = &self.fixed_thought {
-            self.enabled = is_fixed(thought);
+    pub fn fit(&mut self, holds: impl Fn(&ActionCondition) -> bool) {
+        if let Some(condition) = &self.condition {
+            self.enabled = holds(condition);
         }
     }
 

@@ -239,9 +239,12 @@ part's three variables. The parser turns each action into writes to that part's 
 | CancelTask | cancel := 1 unless done is set; nothing without a cancel variable |
 
 "Unless" is `DialogueActionKind::AssignUnless`, applied by the reference walk and split on the
-tested slot in the symbolic image and pre-image. A tested slot is kept however little else reads
-it, since the action has no world to ask. An argument naming no part writes nothing, as the game
-logs and returns.
+tested slot in the symbolic image and pre-image. A tested slot the group also writes is kept
+however little else reads it, since the action has no world to ask. A tested slot nothing in the
+group writes holds the world's value for the whole search, so the write becomes a plain assignment
+switched on or off when the graph is fitted (`DialogueAction::settled_by_world`), and the slot is
+dropped - conversation 368's menu went from 986 ms to about 650 ms for it. An argument naming no
+part writes nothing, as the game logs and returns.
 
 `IsTaskActive("x")` is rewritten when the graph is built into the guard it means over those
 variables - `show and not done and not cancel`, and the parent's done and cancel for a subtask -

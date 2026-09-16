@@ -581,8 +581,31 @@ fn keeping_only_read_slots(
         }
     }
 
-    // WHAT A CONDITIONAL WRITE TESTS, kept whether or not anything writes it: the seed puts
-    // the world's value there, and the action has no other way to ask it.
+    // A CONDITIONAL WRITE WHOSE TESTED SLOT NOTHING WRITES tests the world's value, which is
+    // constant for a search - so the condition is settled when the graph is fitted rather than
+    // carried as a slot the search splits on. Dropping those slots took conversation 368's menu
+    // from 986 ms to 610 ms and its diagram from 1.42 to 0.84 million nodes.
+    let settle = |action: DialogueAction| match action.unless() {
+        Some(tested) if !written.get(tested).copied().unwrap_or(false) => {
+            let variable = symbols
+                .name_of(tested)
+                .expect("a tested slot has a name")
+                .to_string();
+            action.settled_by_world(&variable)
+        }
+        _ => action,
+    };
+    let nodes: Vec<LookAheadNode> = nodes
+        .into_iter()
+        .map(|mut node| {
+            node.actions = node.actions.into_iter().map(&settle).collect();
+            node.failure_actions = node.failure_actions.into_iter().map(&settle).collect();
+            node
+        })
+        .collect();
+
+    // WHAT A CONDITIONAL WRITE STILL TESTS, which the group writes too: kept whatever else reads
+    // it, since the action has no other way to ask it.
     let tested: HashSet<String> = nodes
         .iter()
         .flat_map(|node| DataLayout::tested_by_actions(node, &symbols))
@@ -802,6 +825,64 @@ mod tests {
 
     fn index_of(conversations: Vec<ConversationRecord>) -> Index {
         conversations.into_iter().map(|c| (c.id, c)).collect()
+    }
+
+    /// A journal write whose tested variable nothing in the group writes is settled by the
+    /// world: the tested slot is dropped, and whether the write fires is decided when the graph
+    /// is fitted - so a task is revealed only where the world has not cancelled it.
+    #[test]
+    fn a_conditional_write_on_an_unwritten_variable_is_settled_by_the_world() {
+        use crate::core::action::DialogueActionKind;
+        use crate::core::guard_value::GuardValue;
+        use crate::graph::Fitting;
+        use crate::world::test_world::TestWorld;
+
+        let mut task = conversation(7, Vec::new());
+        task.fields = [
+            ("display_condition_main", r#"Variable["TASK.wall"]"#),
+            ("done_condition_main", r#"Variable["TASK.wall_done"]"#),
+            (
+                "cancel_condition_main",
+                r#"Variable["TASK.wall_cancelled"]"#,
+            ),
+        ]
+        .into_iter()
+        .map(|(name, value)| (name.to_string(), value.to_string()))
+        .collect();
+        let mut gain = entry(1, vec![2], vec![]);
+        gain.script = r#"GainTask("TASK.wall")"#.to_string();
+        let mut reader = entry(2, vec![], vec![]);
+        reader.guard = r#"Variable["TASK.wall"]"#.to_string();
+        let index = index_of(vec![
+            task,
+            conversation(1, vec![entry(0, vec![1], vec![]), gain, reader]),
+        ]);
+
+        let (graph, _) = build_group_graph(&index, 1).expect("the group builds");
+        assert!(graph.symbols().find("TASK.wall_cancelled").is_none());
+        let reveal = &graph
+            .get(DialogueNodeId::new(1, 1))
+            .expect("the entry")
+            .actions[0];
+        assert_eq!(reveal.kind(), DialogueActionKind::Assign);
+        assert_eq!(reveal.unset_variable(), Some("TASK.wall_cancelled"));
+
+        let reaches = |cancelled: bool| {
+            let world = TestWorld::new()
+                .set_variable("TASK.wall", GuardValue::from_boolean(false))
+                .set_variable("TASK.wall_cancelled", GuardValue::from_boolean(cancelled));
+            let mut fitted = graph.clone();
+            fitted.fit(&Fitting::read(&fitted, &world));
+            crate::oracle::walk(
+                &fitted,
+                DialogueNodeId::new(1, 0),
+                &world,
+                crate::oracle::COUNTER_CAP,
+            )
+            .reached(DialogueNodeId::new(1, 2))
+        };
+        assert!(reaches(false));
+        assert!(!reaches(true));
     }
 
     #[test]

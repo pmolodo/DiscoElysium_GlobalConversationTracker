@@ -415,6 +415,17 @@ impl Default for LookAheadState {
 /// Seeding is not a detail. A symbolic run seeded with every data state explores paths that
 /// need an item the player does not have and reports entries no real search can reach; two
 /// searches only agree if they start together.
+/// What a slot holds for a variable the world answers `value`: 1 for true, the number for a
+/// number, and 0 for false, text or a value nobody could read.
+pub fn slot_value_of(value: &crate::core::guard_value::GuardValue) -> i32 {
+    use crate::core::guard_value::GuardValueKind;
+    match value.kind() {
+        GuardValueKind::Boolean if value.boolean() => 1,
+        GuardValueKind::Number => value.number() as i32,
+        _ => 0,
+    }
+}
+
 pub fn seed_state(
     graph: &crate::graph::LookAheadGraph,
     world: &dyn crate::world::ILookAheadWorld,
@@ -445,14 +456,9 @@ pub fn seed_state(
                 let variable = symbols.variable_ref(name).unwrap_or_else(|| {
                     panic!("slot '{name}' is a variable the group does not declare")
                 });
-                let val = world.get_variable(variable);
-                if val.kind() == crate::core::guard_value::GuardValueKind::Boolean && val.boolean()
-                {
-                    state = state.with(slot, 1);
-                } else if val.kind() == crate::core::guard_value::GuardValueKind::Number
-                    && val.number() != 0.0
-                {
-                    state = state.with(slot, val.number() as i32);
+                let value = slot_value_of(&world.get_variable(variable));
+                if value != 0 {
+                    state = state.with(slot, value);
                 }
             }
         }

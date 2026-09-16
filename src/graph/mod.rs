@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt;
 
+use crate::core::action::ActionCondition;
 use crate::core::state::StateSymbols;
 use crate::core::types::{DialogueCheckKind, DialogueNodeId, Novelty};
 use crate::graph::node::LookAheadNode;
@@ -24,6 +25,9 @@ pub struct Fitting {
     /// The passive checks whose margin the group's damage or healing can cross - see
     /// [`crate::core::skill_movers`].
     pub damage_unsettled: HashSet<DialogueNodeId>,
+    /// The variables the world holds set, among those a settled conditional write tests - see
+    /// [`crate::core::action::DialogueAction::settled_by_world`].
+    pub set_variables: BTreeSet<String>,
 }
 
 impl Fitting {
@@ -49,6 +53,16 @@ impl Fitting {
             damage_unsettled: graph.checks_damage_can_flip(world, &fixed),
             fixed,
             lost_worn,
+            set_variables: graph
+                .variables_deciding_actions()
+                .into_iter()
+                .filter(|name| {
+                    graph.symbols().variable_ref(name).is_some_and(|variable| {
+                        crate::core::state::slot_value_of(&world.get_variable(variable)) != 0
+                    })
+                })
+                .map(str::to_string)
+                .collect(),
         }
     }
 }
@@ -190,6 +204,12 @@ impl LookAheadGraph {
                     _ => {}
                 }
             }
+            // A variable a settled condition reads, which the world is asked for like any other.
+            variables.extend(
+                node.all_actions()
+                    .filter_map(|action| action.unset_variable())
+                    .map(str::to_string),
+            );
         }
         symbols.declare_variables(variables);
 
@@ -314,10 +334,20 @@ impl LookAheadGraph {
             .collect()
     }
 
+    /// Every variable whose being unset decides whether a settled conditional write fires,
+    /// sorted.
+    pub fn variables_deciding_actions(&self) -> BTreeSet<&str> {
+        self.nodes()
+            .flat_map(|node| node.all_actions())
+            .filter_map(|action| action.unset_variable())
+            .collect()
+    }
+
     /// Whether anything in the graph depends on a [`Fitting`].
     pub fn needs_fitting(&self) -> bool {
         self.prices_by_mode()
             || !self.thoughts_deciding_actions().is_empty()
+            || !self.variables_deciding_actions().is_empty()
             || !self.items_lost_near_passive_checks().is_empty()
             || self.damages_near_passive_checks()
     }
@@ -338,7 +368,12 @@ impl LookAheadGraph {
             node.cost =
                 crate::core::price::price(node.click_cost, node.price_scale, fitting.hardcore);
             for action in node.actions.iter_mut().chain(&mut node.failure_actions) {
-                action.fit(|thought| fitting.fixed.contains(thought));
+                action.fit(|condition| match condition {
+                    ActionCondition::ThoughtFixed(thought) => fitting.fixed.contains(thought),
+                    ActionCondition::VariableUnset(variable) => {
+                        !fitting.set_variables.contains(variable)
+                    }
+                });
             }
         }
     }
