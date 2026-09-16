@@ -169,7 +169,7 @@ impl<'a> Reachability<'a> {
         counter_cap: u32,
     ) -> Option<BDDFunction> {
         let vars = compiler.vars();
-        let mut image = ActionImage::new(vars, counter_cap);
+        let mut image = ActionImage::for_world(vars, counter_cap, world);
         let mut this = Self {
             vars,
             out_of_memory: false,

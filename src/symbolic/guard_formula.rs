@@ -817,6 +817,9 @@ impl<'a> GuardCompiler<'a> {
         if let Some(compiled) = self.constant_comparison(op, left, right) {
             return Plan::Settled(compiled);
         }
+        if let Some(compiled) = self.variable_against_query(op, left, right) {
+            return Plan::Settled(compiled);
+        }
 
         let (Some(name), Some(literal)) = (Self::variable_of(left), Self::literal_of(right)) else {
             // Also try the other way round: a guard may be written `1 == Variable[..]`.
@@ -1335,6 +1338,56 @@ impl<'a> GuardCompiler<'a> {
         }
     }
 
+    /// The one value a query has at every state this compiler decides for, or `None` where it
+    /// is not one value.
+    ///
+    /// Two kinds qualify. A query the search cannot change at all, asked of the world once. And
+    /// a CLOCK query under [`Self::with_constant_clock`], answered by `ClockTime` at the world's
+    /// time exactly as the conditions `IsNight()` and the like are - a number such as
+    /// `TotalHourCount()` is the same approximation read as a value.
+    fn fixed_value(&self, name: &str, args: Arguments<'_>) -> Option<GuardValue> {
+        if crate::core::clock::ClockTime::owns(name) {
+            if !self.constant_clock {
+                return None;
+            }
+            let world = self.world?;
+            let values = Self::literal_arguments(args)?;
+            let answer = crate::core::clock::ClockTime::answer(
+                name,
+                &values,
+                world.day_minutes(),
+                world.day_counter(),
+            );
+            return (answer.kind() != GuardValueKind::Unknown).then_some(answer);
+        }
+        if Self::search_can_change(name) {
+            return None;
+        }
+        self.constant_value(name, args)
+    }
+
+    /// `Variable[name] op query()`, or the other way round, where the query is one value.
+    ///
+    /// The shape a stored deadline is read back in: `TotalHourCount() >=
+    /// Variable["plaza.alice_serial_next_meeting_time"]`. With the query fixed it is an ordinary
+    /// comparison of a slot against a constant.
+    fn variable_against_query<'g>(
+        &mut self,
+        op: &str,
+        left: GuardRef<'g>,
+        right: GuardRef<'g>,
+    ) -> Option<MayBe> {
+        let (name, (query, args), op) = match (Self::variable_of(left), Self::query_of(right)) {
+            (Some(name), Some(query)) => (name, query, op),
+            _ => match (Self::variable_of(right), Self::query_of(left)) {
+                (Some(name), Some(query)) => (name, query, Self::mirrored(op)),
+                _ => return None,
+            },
+        };
+        let value = self.fixed_value(&query, args)?;
+        Some(self.comparison(op, &name, &value))
+    }
+
     /// What a constant query evaluates to, as a value rather than as a truth.
     ///
     /// Split out from [`Self::constant_query`] because a comparison needs the NUMBER:
@@ -1408,11 +1461,7 @@ impl<'a> GuardCompiler<'a> {
             },
         };
 
-        if Self::search_can_change(&name) {
-            return None;
-        }
-
-        let actual = self.constant_value(&name, args)?;
+        let actual = self.fixed_value(&name, args)?;
         let rendered = format!("({name}(..) {op} {literal})");
 
         let holds = if op == "==" || op == "~=" {
@@ -2222,6 +2271,38 @@ mod tests {
         let compiled = compiler.compile(&Guard::call("IsNight".to_string(), vec![]));
 
         assert!(compiled.is_decided());
+        assert_eq!(compiler.fallbacks(), 0);
+    }
+
+    /// A clock NUMBER compared against a literal is decided at the world's time too.
+    ///
+    /// Day 2 at 10:00 is total hour 34 - so `TotalHourCount() >= 30` holds and `HourCount() > 12`
+    /// does not.
+    #[test]
+    fn a_clock_number_is_compared_at_the_worlds_time() {
+        let (graph, symbols) = fixture(&["a"], None);
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+        let morning = crate::world::test_world::TestWorld::new()
+            .with_day_counter(2)
+            .with_day_minutes(10 * 60);
+
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
+        let mut compiler = GuardCompiler::new(&vars)
+            .with_world(&morning)
+            .with_constant_clock(false);
+
+        let late = compiler.compile(&Guard::comparison(
+            ">=".to_string(),
+            call("TotalHourCount", vec![]),
+            number(30.0),
+        ));
+        assert!(late.may_be_true.satisfiable() && !late.may_be_false.satisfiable());
+        let afternoon = compiler.compile(&Guard::comparison(
+            ">".to_string(),
+            call("HourCount", vec![]),
+            number(12.0),
+        ));
+        assert!(!afternoon.may_be_true.satisfiable());
         assert_eq!(compiler.fallbacks(), 0);
     }
 

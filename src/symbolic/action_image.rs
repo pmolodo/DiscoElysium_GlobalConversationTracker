@@ -39,6 +39,9 @@ pub struct ActionImage<'a> {
     ignored: usize,
     /// Whether a diagram operation could not complete for want of nodes.
     out_of_memory: bool,
+    /// The time of day and the story's day a clock reading is taken at, where it is one number
+    /// for every state - see [`Self::at_clock`].
+    clock: Option<(i32, i32)>,
 }
 
 impl<'a> ActionImage<'a> {
@@ -48,6 +51,69 @@ impl<'a> ActionImage<'a> {
             counter_cap,
             ignored: 0,
             out_of_memory: false,
+            clock: None,
+        }
+    }
+
+    /// An image for a search over `world`, reading the clock where the world says it stands.
+    pub fn for_world(
+        vars: &'a DataVars<'a>,
+        counter_cap: u32,
+        world: &dyn crate::world::ILookAheadWorld,
+    ) -> Self {
+        Self::new(vars, counter_cap).at_clock(world.day_minutes(), world.day_counter())
+    }
+
+    /// Reads the clock at `day_minutes` on `day_counter` when an action stores a reading.
+    ///
+    /// Exact where the layout does not carry the clock, which is where every state has the
+    /// world's time - the shipped searches, whose clock the plugin sends locked. Where the
+    /// layout carries it, or nobody said what time it is, a reading is not one number for the
+    /// whole set and the slot is FORGOTTEN instead: any value, which keeps every state the
+    /// real reading could produce.
+    pub fn at_clock(mut self, day_minutes: i32, day_counter: i32) -> Self {
+        self.clock = Some((day_minutes, day_counter));
+        self
+    }
+
+    /// The value a clock assignment writes into `slot`, or `None` where it is not one number.
+    fn clock_value(&self, action: &DialogueAction, ceiling: u32) -> Option<u32> {
+        if self.vars.clock_ops().is_some() {
+            return None;
+        }
+        let (day_minutes, day_counter) = self.clock?;
+        let value = action.clock_value(day_minutes, day_counter)?;
+        Some((value.max(0) as u32).min(ceiling))
+    }
+
+    /// Every value of `slot`, over a whole set: the image of a write whose value is unknown.
+    ///
+    /// Its own pre-image as well - a state reaches `states` through an unknown write exactly
+    /// when some value of the slot is in `states`.
+    fn forget(&mut self, states: &BDDFunction, slot: usize) -> BDDFunction {
+        let cube = self.vars.slot_cube(slot);
+        let Some(cube) = self.in_layout(cube) else {
+            return states.clone();
+        };
+        self.or_no_room(states.exists(&cube), states)
+    }
+
+    /// `slot := reading`, in either direction.
+    fn clock_write(
+        &mut self,
+        states: &BDDFunction,
+        action: &DialogueAction,
+        slot: usize,
+        pre: bool,
+    ) -> BDDFunction {
+        let Some(ceiling) = self.vars.slot_ceiling(slot) else {
+            self.ignored += 1;
+            return states.clone();
+        };
+        match (self.clock_value(action, ceiling), pre) {
+            (Some(value), false) => self.assign(states, slot, value),
+            (Some(value), true) => self.pre_assign(states, slot, value),
+            (None, _) => self.forget(states, slot),
         }
     }
 
@@ -227,6 +293,7 @@ impl<'a> ActionImage<'a> {
                 let value = action.value().max(0) as u32;
                 self.pre_assign(states, slot, value)
             }
+            DialogueActionKind::AssignClock => self.clock_write(states, action, slot, true),
             DialogueActionKind::Increment => self.pre_increment(states, slot, action.value()),
             _ => {
                 self.ignored += 1;
@@ -339,6 +406,7 @@ impl<'a> ActionImage<'a> {
                 let value = action.value().max(0) as u32;
                 self.assign(states, slot, value)
             }
+            DialogueActionKind::AssignClock => self.clock_write(states, action, slot, false),
             DialogueActionKind::Increment => self.increment(states, slot, action.value()),
             _ => {
                 self.ignored += 1;

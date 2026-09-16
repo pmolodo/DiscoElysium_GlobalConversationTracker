@@ -16,6 +16,9 @@ use crate::parser::action_parser::parse_actions;
 
 const COUNTER_CAP: i32 = 16;
 
+/// The story's day these tests run on, which nothing they apply moves.
+const DAY: i32 = 1;
+
 fn caps() -> CounterCaps<'static> {
     CounterCaps::flat(COUNTER_CAP)
 }
@@ -28,7 +31,7 @@ fn run(
     once_slot: i32,
 ) -> LookAheadState {
     let actions = parse_actions(script, symbols);
-    DialogueAction::apply(&actions, state, once_slot, &caps(), false)
+    DialogueAction::apply(&actions, state, once_slot, &caps(), false, DAY)
 }
 
 /// An empty state wide enough for every slot interned so far.
@@ -133,7 +136,7 @@ fn an_increment_saturates_at_the_cap() {
         r#"SetVariableValue("q.count", Variable["q.count"] + 3)"#,
         &mut symbols,
     );
-    let raised = DialogueAction::apply(&actions, &state, -1, &caps(), false);
+    let raised = DialogueAction::apply(&actions, &state, -1, &caps(), false, DAY);
 
     assert_eq!(raised.get(counter), COUNTER_CAP);
 }
@@ -204,7 +207,7 @@ fn declared_calls_are_recorded_but_change_nothing() {
     );
 
     let before = LookAheadState::empty(symbols.count(), 250, 8 * 60);
-    let after = DialogueAction::apply(&actions, &before, -1, &caps(), false);
+    let after = DialogueAction::apply(&actions, &before, -1, &caps(), false, DAY);
     assert_eq!(after.money(), 250);
     assert_eq!(after.day_minutes(), 8 * 60);
 }
@@ -230,11 +233,11 @@ fn gaining_a_thought_sets_the_thought_slot() {
     let before = empty(&symbols, 0);
     assert!(!before.is_set(slot));
 
-    let after = DialogueAction::apply(&actions, &before, -1, &caps(), false);
+    let after = DialogueAction::apply(&actions, &before, -1, &caps(), false, DAY);
     assert!(after.is_set(slot));
 
     // Twice is once, the way the game has it.
-    let again = DialogueAction::apply(&actions, &after, -1, &caps(), false);
+    let again = DialogueAction::apply(&actions, &after, -1, &caps(), false, DAY);
     assert_eq!(again.get(slot), 1);
 }
 
@@ -261,11 +264,11 @@ fn reputation_moves_by_its_own_amount_and_only_once() {
     let once = symbols.once(DialogueNodeId::new(1, 0)) as i32;
     let before = empty(&symbols, 0);
 
-    let after = DialogueAction::apply(&actions, &before, once, &caps(), false);
+    let after = DialogueAction::apply(&actions, &before, once, &caps(), false, DAY);
     assert_eq!(after.get(slot), 2);
 
     // And a second visit does not move it, which is the half that matters in a loop.
-    let again = DialogueAction::apply(&actions, &after, once, &caps(), false);
+    let again = DialogueAction::apply(&actions, &after, once, &caps(), false, DAY);
     assert_eq!(again.get(slot), 2);
 }
 
@@ -313,11 +316,11 @@ fn reputation_grows_by_one_under_the_variable_the_guards_read() {
 
     let once_slot = symbols.once(DialogueNodeId::new(1, 0)) as i32;
     let before = LookAheadState::empty(symbols.count(), 0, 0);
-    let after = DialogueAction::apply(&actions, &before, once_slot, &caps(), false);
+    let after = DialogueAction::apply(&actions, &before, once_slot, &caps(), false, DAY);
     assert_eq!(after.get(slot), 1);
 
     // Once, so walking the same entry again does not raise it further.
-    let again = DialogueAction::apply(&actions, &after, once_slot, &caps(), false);
+    let again = DialogueAction::apply(&actions, &after, once_slot, &caps(), false, DAY);
     assert_eq!(again.get(slot), 1);
 }
 
@@ -332,7 +335,7 @@ fn reputation_lowers_and_stops_at_zero() {
     let slot = symbols.find("reputation.honour").unwrap();
 
     let before = LookAheadState::empty(symbols.count(), 0, 0).with(slot, 2);
-    let after = DialogueAction::apply(&actions, &before, -1, &caps(), false);
+    let after = DialogueAction::apply(&actions, &before, -1, &caps(), false, DAY);
     assert_eq!(after.get(slot), 1);
 
     let floor = DialogueAction::apply(
@@ -341,6 +344,7 @@ fn reputation_lowers_and_stops_at_zero() {
         -1,
         &caps(),
         false,
+        DAY,
     );
     assert_eq!(floor.get(slot), 0);
 }
@@ -363,7 +367,7 @@ fn an_xp_award_sets_the_variable_it_records_itself_in() {
 
     let sign = symbols.find("XP.butter_sign_i_did_this").unwrap();
     let tree = symbols.find("XP.tree_kicked").unwrap();
-    let after = DialogueAction::apply(&actions, &empty(&symbols, 0), -1, &caps(), false);
+    let after = DialogueAction::apply(&actions, &empty(&symbols, 0), -1, &caps(), false, DAY);
     assert_eq!(after.get(sign), 1);
     assert_eq!(after.get(tree), 1);
 }
@@ -378,7 +382,7 @@ fn pass_time_advances_the_clock() {
     assert_eq!(actions[0].kind(), DialogueActionKind::PassTime);
 
     let before = LookAheadState::empty(symbols.count(), 0, 11 * 60);
-    let after = DialogueAction::apply(&actions, &before, -1, &caps(), false);
+    let after = DialogueAction::apply(&actions, &before, -1, &caps(), false, DAY);
     assert_eq!(after.day_minutes(), 11 * 60 + 15);
 }
 
@@ -389,7 +393,7 @@ fn pass_time_is_ignored_when_the_clock_is_locked() {
     let actions = parse_actions("PassTime()", &mut symbols);
 
     let before = LookAheadState::empty(symbols.count(), 0, 11 * 60);
-    let after = DialogueAction::apply(&actions, &before, -1, &caps(), true);
+    let after = DialogueAction::apply(&actions, &before, -1, &caps(), true, DAY);
     assert_eq!(after.day_minutes(), 11 * 60);
 }
 
@@ -433,7 +437,7 @@ fn every_statement_after_the_first_is_read() {
 
     // The task the entry finishes starts active, so clearing it is visible.
     let before = empty(&symbols, 0).with(done, 1);
-    let after = DialogueAction::apply(&actions, &before, -1, &caps(), false);
+    let after = DialogueAction::apply(&actions, &before, -1, &caps(), false, DAY);
 
     assert_eq!(after.get(done), 0);
     assert_eq!(after.get(firearm), 1);
@@ -462,7 +466,7 @@ fn an_escaped_quote_does_not_end_a_string() {
     assert_eq!(actions[0].name(), "NewspaperEndgame");
 
     let envelope = symbols.find("item:white_envelope").unwrap();
-    let after = DialogueAction::apply(&actions, &empty(&symbols, 0), -1, &caps(), false);
+    let after = DialogueAction::apply(&actions, &empty(&symbols, 0), -1, &caps(), false, DAY);
     assert_eq!(after.get(envelope), 1);
 }
 
@@ -482,8 +486,87 @@ fn a_line_comment_ends_at_the_separator() {
     assert_eq!(actions.len(), 2, "got {actions:?}");
     let badge = symbols.find("item:badge").unwrap();
     let body = symbols.find("task:TASK.find_the_body").unwrap();
-    let after = DialogueAction::apply(&actions, &empty(&symbols, 0), -1, &caps(), false);
+    let after = DialogueAction::apply(&actions, &empty(&symbols, 0), -1, &caps(), false, DAY);
 
     assert_eq!(after.get(badge), 1);
     assert_eq!(after.get(body), 1);
+}
+
+/// A variable assigned as a Lua statement is written like one assigned through a call.
+///
+/// Verbatim shape from the database, between two calls so the order is checked too.
+#[test]
+fn a_direct_assignment_is_a_write() {
+    let mut symbols = StateSymbols::new();
+    let actions = parse_actions(
+        r#"GainItem("badge");\nVariable["tc.electronic_locks"] = true;\nSetVariableValue("tc.electronic_locks", false)"#,
+        &mut symbols,
+    );
+
+    assert_eq!(actions.len(), 3, "got {actions:?}");
+    let locks = symbols.find("tc.electronic_locks").unwrap();
+    assert_eq!(actions[1].slot(), locks as i32);
+    assert_eq!(actions[1].kind(), DialogueActionKind::Assign);
+    let after = DialogueAction::apply(&actions, &empty(&symbols, 0), -1, &caps(), false, DAY);
+    assert_eq!(after.get(locks), 0, "the later call wins");
+}
+
+/// A comparison is not an assignment.
+#[test]
+fn a_comparison_statement_writes_nothing() {
+    let mut symbols = StateSymbols::new();
+    let actions = parse_actions(r#"Variable["x"] == true"#, &mut symbols);
+    assert!(actions.is_empty(), "got {actions:?}");
+}
+
+/// A deadline stored from the clock holds the clock's reading, not a guessed number.
+///
+/// Day 2 at 10:00 is total hour 34, so `TotalHourCount() + 8` is 42; `NextMorningTime()` is
+/// seven in the morning of day 3, total hour 55; `DayCount()` is 2.
+#[test]
+fn a_value_read_off_the_clock_is_the_clock_s_reading() {
+    let mut symbols = StateSymbols::new();
+    let actions = parse_actions(
+        r#"SetVariableValue("deadline", TotalHourCount() + 8) ;\nSetVariableValue("meeting", NextMorningTime()) ;\nSetVariableValue("day", DayCount())"#,
+        &mut symbols,
+    );
+    assert!(
+        actions
+            .iter()
+            .all(|a| a.kind() == DialogueActionKind::AssignClock),
+        "got {actions:?}",
+    );
+
+    let ten_in_the_morning = 10 * 60;
+    let start = LookAheadState::empty(symbols.count(), 0, ten_in_the_morning);
+    let after = DialogueAction::apply(&actions, &start, -1, &caps(), true, 2);
+    assert_eq!(after.get(symbols.find("deadline").unwrap()), 42);
+    assert_eq!(after.get(symbols.find("meeting").unwrap()), 55);
+    assert_eq!(after.get(symbols.find("day").unwrap()), 2);
+}
+
+/// A value that cannot be one number when the script is read is a visible gap, not a 1.
+#[test]
+fn a_value_that_is_not_one_number_is_unmodelled() {
+    let mut symbols = StateSymbols::new();
+    let actions = parse_actions(
+        r#"SetVariableValue("plaza.kineema_lights", not(Variable["plaza.kineema_lights"]))"#,
+        &mut symbols,
+    );
+    assert_eq!(actions.len(), 1, "got {actions:?}");
+    assert_eq!(actions[0].kind(), DialogueActionKind::Unmodelled);
+}
+
+/// A journal write hidden inside a value still happens, before the value is stored.
+#[test]
+fn a_write_inside_a_value_is_applied() {
+    let mut symbols = StateSymbols::new();
+    let actions = parse_actions(
+        r#"SetVariableValue("x", true  and  CancelTask("TASK.become_man_of_plenty_cancelled"))"#,
+        &mut symbols,
+    );
+    let task = symbols
+        .find("task:TASK.become_man_of_plenty_cancelled")
+        .expect("the nested call is read");
+    assert_eq!(actions[0].slot(), task as i32);
 }

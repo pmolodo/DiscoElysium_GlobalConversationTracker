@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+use crate::core::clock::ClockReading;
 use crate::core::state::LookAheadState;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -19,6 +20,9 @@ pub enum DialogueActionKind {
     /// the two is not what the search does with them but whether anybody has decided.
     /// One is a stub somebody argued for; the other is a gap nobody has looked at.
     Declared = 6,
+    /// `slot := reading + value`, a number read off the clock when the action runs - see
+    /// [`ClockReading`].
+    AssignClock = 7,
 }
 
 /// One state change a dialogue entry's userScript makes.
@@ -29,6 +33,9 @@ pub struct DialogueAction {
     value: i32,
     once: bool,
     name: String,
+    /// What an [`DialogueActionKind::AssignClock`] reads, and `None` for every other kind.
+    #[serde(default)]
+    reading: Option<ClockReading>,
 }
 
 /// How high a counter may climb before it stops moving.
@@ -89,6 +96,7 @@ impl DialogueAction {
             value,
             once: false,
             name,
+            reading: None,
         }
     }
 
@@ -99,6 +107,7 @@ impl DialogueAction {
             value: amount,
             once,
             name,
+            reading: None,
         }
     }
 
@@ -113,6 +122,7 @@ impl DialogueAction {
             value: amount,
             once,
             name,
+            reading: None,
         }
     }
 
@@ -123,6 +133,19 @@ impl DialogueAction {
             value: LookAheadState::PASS_TIME_MINUTES,
             once: false,
             name,
+            reading: None,
+        }
+    }
+
+    /// `slot := reading + offset`, with the reading taken when the action runs.
+    pub fn assign_clock(slot: usize, reading: ClockReading, offset: i32, name: String) -> Self {
+        Self {
+            kind: DialogueActionKind::AssignClock,
+            slot: slot as i32,
+            value: offset,
+            once: false,
+            name,
+            reading: Some(reading),
         }
     }
 
@@ -133,6 +156,7 @@ impl DialogueAction {
             value: 0,
             once: false,
             name,
+            reading: None,
         }
     }
 
@@ -151,6 +175,7 @@ impl DialogueAction {
             value: 0,
             once: false,
             name,
+            reading: None,
         }
     }
 
@@ -164,13 +189,26 @@ impl DialogueAction {
 
     /// Whether this action's `slot` names a slot at all.
     ///
-    /// Only the two that write one do. For every other kind `slot` is `-1`, which is a
+    /// Only the three that write one do. For every other kind `slot` is `-1`, which is a
     /// marker rather than an index - see the field.
     pub fn writes_slot(&self) -> bool {
         matches!(
             self.kind,
-            DialogueActionKind::Assign | DialogueActionKind::Increment
+            DialogueActionKind::Assign
+                | DialogueActionKind::Increment
+                | DialogueActionKind::AssignClock
         )
+    }
+
+    /// What an [`DialogueActionKind::AssignClock`] reads off the clock.
+    pub fn reading(&self) -> Option<ClockReading> {
+        self.reading
+    }
+
+    /// The value an [`DialogueActionKind::AssignClock`] writes at this time on this day.
+    pub fn clock_value(&self, day_minutes: i32, day_counter: i32) -> Option<i32> {
+        self.reading
+            .map(|reading| reading.value(day_minutes, day_counter) + self.value)
     }
 
     /// The same action against a renumbered symbol table, or `None` if its slot has gone.
@@ -216,12 +254,16 @@ impl DialogueAction {
     }
 
     /// Apply a node's actions to a state.
+    ///
+    /// `day_counter` is the story's day, which no action in a conversation moves; it is what a
+    /// clock reading needs beside the state's own time of day.
     pub fn apply(
         actions: &[DialogueAction],
         state: &LookAheadState,
         once_slot: i32,
         counter_cap: &CounterCaps<'_>,
         clock_locked: bool,
+        day_counter: i32,
     ) -> LookAheadState {
         if actions.is_empty() {
             return state.clone();
@@ -247,6 +289,14 @@ impl DialogueAction {
             match action.kind {
                 DialogueActionKind::Assign => {
                     changes.push((action.slot as usize, action.value));
+                }
+                // READ AT THE TIME IT RUNS, a PassTime earlier in the same script included -
+                // the game evaluates the call as it reaches the statement.
+                DialogueActionKind::AssignClock => {
+                    let value = action
+                        .clock_value(day_minutes, day_counter)
+                        .expect("a clock assignment carries its reading");
+                    changes.push((action.slot as usize, value.max(0)));
                 }
                 DialogueActionKind::Increment => {
                     let idx = action.slot as usize;
@@ -320,6 +370,15 @@ impl fmt::Display for DialogueAction {
                 self.name,
                 self.value,
                 if self.once { " (once)" } else { "" }
+            ),
+            DialogueActionKind::AssignClock => write!(
+                f,
+                "{}: slot {} = {:?} + {}",
+                self.name,
+                self.slot,
+                self.reading
+                    .expect("a clock assignment carries its reading"),
+                self.value
             ),
             DialogueActionKind::PassTime => write!(f, "{}: clock += {}m", self.name, self.value),
             DialogueActionKind::Unmodelled => write!(f, "{}: not modelled", self.name),

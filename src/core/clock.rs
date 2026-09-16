@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 use crate::core::guard_value::{GuardValue, GuardValueKind};
+use serde::{Deserialize, Serialize};
 
 /// Time of day buckets matching the game's SunshineClockTime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,11 +15,68 @@ pub enum Daytime {
     Evening = 7,
 }
 
+/// A number read off the clock, which a script can store in a dialogue variable.
+///
+/// Scripts write deadlines this way - `SetVariableValue("doomed.dicemaker_order_deadline",
+/// TotalHourCount() + 8)` - and guards later compare the variable against the clock. From the
+/// pre-final-cut export, `DaytimeLuaFunctions`:
+///
+/// ```text
+/// TotalHourCount()   24 * (DayCounter - 1) + Hours
+/// DayCount()         DayCounter
+/// NextMorningTime()  24 * time.DayCounter + SunshineClock.wakeupTime.Hours
+/// ```
+///
+/// with `SunshineClock.wakeupTime` = `new SunshineClockTime(7, 30)`, so its `Hours` is 7.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ClockReading {
+    TotalHourCount,
+    DayCount,
+    NextMorningTime,
+}
+
+impl ClockReading {
+    /// The hour `SunshineClock.wakeupTime` wakes the player at.
+    pub const WAKEUP_HOUR: i32 = 7;
+
+    /// The largest reading a slot is laid out to hold: eight bits.
+    ///
+    /// A layout is built once per group and outlives the world it was built against, so it
+    /// cannot size a slot to today's reading - and a reading is an ABSOLUTE hour, since the
+    /// guards compare it against `TotalHourCount()` rather than against a span. No guard in the
+    /// corpus names a day past 7 and no script adds more than 23 hours, so the largest reading
+    /// the story produces is day 7's `TotalHourCount() + 23`, hour 190. Eight bits hold every
+    /// reading through day 9; a later one is clamped here.
+    pub const VALUE_CEILING: u32 = 255;
+
+    /// The script call that reads this, or `None` for a name that reads nothing here.
+    pub fn called(name: &str) -> Option<Self> {
+        match name {
+            "TotalHourCount" => Some(Self::TotalHourCount),
+            "DayCount" => Some(Self::DayCount),
+            "NextMorningTime" => Some(Self::NextMorningTime),
+            _ => None,
+        }
+    }
+
+    /// What the call returns at this time of day on this day.
+    pub fn value(self, day_minutes: i32, day_counter: i32) -> i32 {
+        match self {
+            Self::TotalHourCount => {
+                ClockTime::HOURS_IN_DAY * (day_counter - 1) + ClockTime::hours_of(day_minutes)
+            }
+            Self::DayCount => day_counter,
+            Self::NextMorningTime => ClockTime::HOURS_IN_DAY * day_counter + Self::WAKEUP_HOUR,
+        }
+    }
+}
+
 /// The game's clock functions.
 pub struct ClockTime;
 
 impl ClockTime {
     pub const MINUTES_IN_DAY: i32 = 1440;
+    pub const HOURS_IN_DAY: i32 = 24;
     pub const PASS_TIME_MINUTES: i32 = 15;
 
     pub fn hours_of(day_minutes: i32) -> i32 {
@@ -188,7 +246,9 @@ impl ClockTime {
                 GuardValue::unknown()
             }
             "HourCount" => GuardValue::from_number(hours as f64),
-            "TotalHourCount" => GuardValue::from_number((24 * (day_counter - 1) + hours) as f64),
+            "TotalHourCount" => GuardValue::from_number(
+                ClockReading::TotalHourCount.value(day_minutes, day_counter) as f64,
+            ),
             _ => GuardValue::unknown(),
         }
     }

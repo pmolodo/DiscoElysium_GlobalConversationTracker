@@ -23,6 +23,7 @@
 //! between about 350 variables and about 1,700.
 
 use crate::core::action::DialogueActionKind;
+use crate::core::clock::ClockReading;
 use std::collections::{HashMap, HashSet};
 
 use crate::core::guard::{Guard, GuardExpression, GuardRef};
@@ -112,6 +113,13 @@ impl DataLayout {
                     DialogueActionKind::Increment => bits_for(counter_cap.max(0) as u32),
                     DialogueActionKind::Assign => {
                         let bits = bits_for(action.value().max(0) as u32);
+                        assigned[slot] = assigned[slot].max(bits);
+                        bits
+                    }
+                    // WIDE ENOUGH FOR ANY DAY'S READING, since the layout outlives the world
+                    // and the value is read off the clock when the action runs.
+                    DialogueActionKind::AssignClock => {
+                        let bits = bits_for(ClockReading::VALUE_CEILING);
                         assigned[slot] = assigned[slot].max(bits);
                         bits
                     }
@@ -294,7 +302,9 @@ impl DataLayout {
                         }
                         entry.sum = entry.sum.saturating_add(amount.max(0) as u32);
                     }
-                    DialogueActionKind::Assign => reach.entry(slot).or_default().barred = true,
+                    DialogueActionKind::Assign | DialogueActionKind::AssignClock => {
+                        reach.entry(slot).or_default().barred = true
+                    }
                     _ => {}
                 }
             }

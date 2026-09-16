@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-use crate::core::action::DialogueAction;
+use crate::core::action::{DialogueAction, DialogueActionKind};
+use crate::core::clock::ClockReading;
 use crate::core::state::StateSymbols;
 
 const ONCE_FN: &str = "once";
@@ -14,14 +15,84 @@ const SEPARATOR_ESCAPE: char = 'n';
 /// ordinary variable and the prefix only says how to build the name.
 const REPUTATION_PREFIX: &str = "reputation.";
 
+/// What an action that assigns a variable as a Lua statement, rather than through
+/// `SetVariableValue`, is named in reports.
+const DIRECT_ASSIGNMENT: &str = "Variable[] =";
+
 /// Parse a userScript into DialogueActions.
 pub fn parse_actions(script: &str, symbols: &mut StateSymbols) -> Vec<DialogueAction> {
     let stripped = normalize(script);
     let mut actions = Vec::new();
-    for call in invocations(&stripped) {
-        translate_call(call, symbols, &mut actions);
+    for statement in statements(&stripped) {
+        // A STATEMENT THAT ASSIGNS A VARIABLE DIRECTLY, which is not a call and which the call
+        // scan below would skip without a word: `Variable["tc.electronic_locks"] = true`. Five
+        // scripts in the database write one.
+        if let Some((variable, value)) = direct_assignment(statement) {
+            let slot = symbols.variable(&variable);
+            translate_value_write(slot, &variable, value, DIRECT_ASSIGNMENT, &mut actions);
+            continue;
+        }
+        for call in invocations(statement) {
+            translate_call(call, symbols, &mut actions);
+        }
     }
     actions
+}
+
+/// The statements of a normalised script, split at newlines and at `;` outside strings and
+/// brackets.
+///
+/// SPLIT RATHER THAN SCANNED WHOLE only so a direct assignment can be told apart from the calls
+/// around it while their order is kept - the order is the order the game applies them in.
+fn statements(script: &str) -> Vec<&str> {
+    let mut found = Vec::new();
+    let mut start = 0;
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (i, c) in script.char_indices() {
+        if in_string {
+            match c {
+                _ if escaped => escaped = false,
+                '\\' => escaped = true,
+                '"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+        match c {
+            '"' => in_string = true,
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth -= 1,
+            ';' | '\n' if depth <= 0 => {
+                found.push(&script[start..i]);
+                start = i + c.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    found.push(&script[start..]);
+    found.into_iter().filter(|s| !s.trim().is_empty()).collect()
+}
+
+/// `Variable["name"] = value` as a statement, split into the name and the value's text.
+///
+/// `==` is a comparison and is not one.
+fn direct_assignment(statement: &str) -> Option<(String, &str)> {
+    let rest = statement.trim().strip_prefix("Variable")?.trim_start();
+    let rest = rest.strip_prefix('[')?.trim_start();
+    let rest = rest.strip_prefix('"')?;
+    let close = rest.find('"')?;
+    let name = &rest[..close];
+    let rest = rest[close + 1..]
+        .trim_start()
+        .strip_prefix(']')?
+        .trim_start();
+    let value = rest.strip_prefix('=')?;
+    if value.starts_with('=') {
+        return None;
+    }
+    Some((name.to_string(), value.trim()))
 }
 
 /// Strips comments and turns the statement separator into a real newline.
@@ -231,7 +302,132 @@ fn is_name_part(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
 }
 
+/// The action a write of `value`'s text to a variable is.
+///
+/// Shared by `SetVariableValue` and a direct `Variable[name] = value` statement, which the game
+/// runs the same way. In order:
+///
+/// - an INCREMENT of the variable by itself, `Variable[name] + N` or `+ once(N)`;
+/// - a CLOCK READING, `TotalHourCount() + N`, `DayCount()` or `NextMorningTime()`, which
+///   scripts store as deadlines - see [`crate::core::clock::ClockReading`];
+/// - a LITERAL, `true`, `false` or a number.
+///
+/// ANYTHING ELSE IS UNMODELLED rather than guessed: `not(Variable[...])` or a reputation
+/// question stored as a value cannot be written as one number when the script is parsed, and a
+/// guessed number would be a wrong value where unmodelled is a visible gap.
+fn translate_value_write(
+    slot: usize,
+    variable: &str,
+    value: &str,
+    name: &str,
+    actions: &mut Vec<DialogueAction>,
+) {
+    let value = value.trim();
+
+    // Read the increment ONCE, keeping what it reports. This previously called
+    // try_read_increment with throwaway temporaries to ask whether the value was
+    // an increment, then called a helper that re-read it with an EMPTY variable
+    // name - so the self-reference it looks for, Variable[""], was never found,
+    // and every counter in the database became an increment of zero that had
+    // also lost its once flag.
+    let mut amount = 0;
+    let mut once = false;
+    if try_read_increment(value, variable, &mut amount, &mut once) {
+        actions.push(DialogueAction::increment(
+            slot,
+            amount,
+            once,
+            name.to_string(),
+        ));
+        return;
+    }
+    if let Some((reading, offset)) = read_clock_value(value) {
+        actions.push(DialogueAction::assign_clock(
+            slot,
+            reading,
+            offset,
+            name.to_string(),
+        ));
+        return;
+    }
+    match read_assigned_value(value) {
+        Some(literal) => actions.push(DialogueAction::assign(slot, literal, name.to_string())),
+        None => actions.push(DialogueAction::unmodelled(name.to_string())),
+    }
+}
+
+/// `Reading()` or `Reading() + N` for a clock reading, as the reading and the offset.
+fn read_clock_value(value: &str) -> Option<(ClockReading, i32)> {
+    let open = value.find('(')?;
+    let reading = ClockReading::called(value[..open].trim())?;
+    let rest = value[open + 1..].trim_start().strip_prefix(')')?.trim();
+    if rest.is_empty() {
+        return Some((reading, 0));
+    }
+    let (sign, amount) = match rest.chars().next()? {
+        '+' => (1, &rest[1..]),
+        '-' => (-1, &rest[1..]),
+        _ => return None,
+    };
+    Some((reading, sign * amount.trim().parse::<i32>().ok()?))
+}
+
+/// Actions a call's ARGUMENTS perform, which Lua runs before the call itself.
+///
+/// One script in the database hides a journal write in a value:
+/// `SetVariableValue(..., true and CancelTask("TASK.become_man_of_plenty_cancelled"))`. Only
+/// calls this parser models as writes are kept - a nested read such as `TotalHourCount()` or
+/// `IsHighestCopotype(...)` is part of the value, not an action.
+fn nested_writes(call: &Invocation, symbols: &mut StateSymbols, actions: &mut Vec<DialogueAction>) {
+    for arg in &call.args {
+        for nested in invocations(&code_of(arg)) {
+            let mut found = Vec::new();
+            translate_call(nested, symbols, &mut found);
+            actions.extend(found.into_iter().filter(|action| {
+                !matches!(
+                    action.kind(),
+                    DialogueActionKind::Unmodelled | DialogueActionKind::Declared
+                )
+            }));
+        }
+    }
+}
+
+/// An argument with the strings at its own level blanked, so only code is scanned for calls.
+///
+/// A string argument is text, and the prose some carry quotes calls - `NewspaperEndgame`'s
+/// reported speech includes `GainItem(\"x\")`. A string INSIDE a nested call's brackets is
+/// that call's argument and is kept: `CancelTask("TASK.x")` needs its subject.
+fn code_of(arg: &str) -> String {
+    let mut out = String::with_capacity(arg.len());
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escaped = false;
+    for c in arg.chars() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_string = false;
+            }
+            out.push(if depth > 0 || c == '"' { c } else { ' ' });
+            continue;
+        }
+        match c {
+            '"' => in_string = true,
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            _ => {}
+        }
+        out.push(c);
+    }
+    out
+}
+
 fn translate_call(call: Invocation, symbols: &mut StateSymbols, actions: &mut Vec<DialogueAction>) {
+    nested_writes(&call, symbols, actions);
     match call.name.as_str() {
         "SetVariableValue" => {
             if call.args.len() < 2 {
@@ -240,22 +436,7 @@ fn translate_call(call: Invocation, symbols: &mut StateSymbols, actions: &mut Ve
             }
             let var_name = unquote(&call.args[0]);
             let slot = symbols.variable(&var_name);
-            let value = call.args[1].trim();
-
-            // Read the increment ONCE, keeping what it reports. This previously called
-            // try_read_increment with throwaway temporaries to ask whether the value was
-            // an increment, then called a helper that re-read it with an EMPTY variable
-            // name - so the self-reference it looks for, Variable[""], was never found,
-            // and every counter in the database became an increment of zero that had
-            // also lost its once flag.
-            let mut amount = 0;
-            let mut once = false;
-            if try_read_increment(value, &var_name, &mut amount, &mut once) {
-                actions.push(DialogueAction::increment(slot, amount, once, call.name));
-                return;
-            }
-            let val = read_assigned_value(value);
-            actions.push(DialogueAction::assign(slot, val, call.name));
+            translate_value_write(slot, &var_name, &call.args[1], &call.name, actions);
         }
         // A flag IS a dialogue variable. The game's Final Cut addition declares
         // `SetFlag(string variableName)` - the parameter name is the giveaway - alongside
@@ -414,15 +595,16 @@ fn try_read_increment(value: &str, variable: &str, amount: &mut i32, once: &mut 
     }
 }
 
-fn read_assigned_value(value: &str) -> i32 {
+/// A literal value as a slot holds it, or `None` for anything that is not a literal.
+fn read_assigned_value(value: &str) -> Option<i32> {
     let t = value.trim();
     if t.eq_ignore_ascii_case("true") {
-        return 1;
+        return Some(1);
     }
     if t.eq_ignore_ascii_case("false") {
-        return 0;
+        return Some(0);
     }
-    t.parse().unwrap_or(1)
+    t.parse().ok()
 }
 
 fn unquote(s: &str) -> String {

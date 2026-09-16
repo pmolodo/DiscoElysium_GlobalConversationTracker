@@ -315,10 +315,9 @@ impl Walker<'_> {
 
     /// Enters an offered entry: the groups on the way to it, then the entry itself.
     fn take(&self, offered: &Offered, state: &LookAheadState) -> LookAheadState {
-        let clock_locked = self.world.is_clock_locked();
         let mut next = state.clone();
         for &id in offered.via.iter().chain(std::iter::once(&offered.id)) {
-            next = charge(self.node(id), &next, &self.caps, clock_locked);
+            next = charge(self.node(id), &next, &self.caps, self.world);
         }
         next
     }

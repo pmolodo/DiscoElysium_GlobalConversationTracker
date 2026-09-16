@@ -192,31 +192,6 @@ pub const DECISIONS: &[Decision] = &[
               database.",
     },
     Decision {
-        writers: &["NextMorningTime"],
-        readers: &[
-            "DayCount",
-            "HourCount",
-            "TotalHourCount",
-            "IsHour",
-            "IsHourBetween",
-            "IsMorning",
-            "IsAfternoon",
-            "IsEvening",
-            "IsNight",
-            "IsNighttime",
-            "IsDaytime",
-            "IsNoon",
-            "IsDusk",
-            "IsMidnight",
-            "IsDayFrom",
-            "IsDayUntil",
-        ],
-        why: "Sleeping to the next morning is the one thing that moves the clock by more \
-              than a PassTime, and it ends the day - which is past where a look-ahead is \
-              answering. Two scripts in the database, and the constant-clock \
-              approximation already covers the readers.",
-    },
-    Decision {
         writers: &[
             "SellItemGroup",
             "SellItemGroupWithModifier",

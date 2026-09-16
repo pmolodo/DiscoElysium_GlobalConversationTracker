@@ -179,8 +179,14 @@ day questions, which no action within a conversation changes.
 | IsDusk         |      2 |       2 | port      | `daytime_of_matches_the_games_buckets` (the bucket, not the name)                                 |
 | IsNoon         |      2 |       2 | port      | `daytime_of_matches_the_games_buckets` (the bucket, not the name)                                 |
 
-The compiler's clock arms are tested by `a_clock_question_is_answered_at_the_worlds_time` and
-`a_clock_question_is_undecided_without_the_approximation` in `guard_formula.rs`.
+The compiler holds the clock at the world's time too (`GuardCompiler::with_constant_clock`), for
+the numbers as well as the conditions: `TotalHourCount() >= 30` is decided against the world's
+hour, and so is a stored deadline read back against the clock - `TotalHourCount() >=
+Variable["plaza.alice_serial_next_meeting_time"]` becomes a comparison of the slot against that
+hour (`fixed_value`, `variable_against_query`). Tested by
+`a_clock_question_is_answered_at_the_worlds_time`, `a_clock_number_is_compared_at_the_worlds_time`
+and `a_clock_question_is_undecided_without_the_approximation` in `guard_formula.rs`, and by
+`a_deadline_set_from_the_clock_is_read_back_exactly` in `backward.rs`.
 
 `IsHour` and `IsMidnight` are ported too and appear in no guard.
 

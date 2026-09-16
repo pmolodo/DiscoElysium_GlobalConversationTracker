@@ -142,13 +142,9 @@ pub fn walk_branch(
     let start_node = graph.get(start).expect("the start is in the graph");
     let context = CrawlContext::new(graph.symbols(), world);
     let caps = CounterCaps::flat(counter_cap);
-    let clock_locked = world.is_clock_locked();
 
     let seed = seed_state(graph, world);
-    let entered = keep(
-        branch,
-        enter(start_node, &seed, &context, &caps, clock_locked),
-    );
+    let entered = keep(branch, enter(start_node, &seed, &context, &caps));
 
     let mut walk = Walk::default();
     if entered.is_empty() {
@@ -178,7 +174,7 @@ pub fn walk_branch(
                 continue;
             };
 
-            for next in enter(child, &state, &context, &caps, clock_locked) {
+            for next in enter(child, &state, &context, &caps) {
                 // SCORED ON ARRIVAL AND EXPANDED ONCE ARE DIFFERENT QUESTIONS. An entry a
                 // loop leads back to is arrived at again even though its states are all
                 // familiar, and an improvement reachable only round a loop is still an
@@ -211,17 +207,10 @@ pub fn choice_distances(
 ) -> Option<HashMap<DialogueNodeId, usize>> {
     let context = CrawlContext::new(graph.symbols(), world);
     let caps = CounterCaps::flat(counter_cap);
-    let clock_locked = world.is_clock_locked();
     let start_node = graph.get(start)?;
     let entered = keep(
         branch,
-        enter(
-            start_node,
-            &seed_state(graph, world),
-            &context,
-            &caps,
-            clock_locked,
-        ),
+        enter(start_node, &seed_state(graph, world), &context, &caps),
     );
     let mut pending = VecDeque::new();
     let mut seen = HashMap::new();
@@ -256,7 +245,7 @@ pub fn choice_distances(
                 continue;
             };
             let candidate = distance + cost;
-            for next in enter(child, &state, &context, &caps, clock_locked) {
+            for next in enter(child, &state, &context, &caps) {
                 let key = (child_id, next.clone(), false);
                 if seen.get(&key).is_none_or(|d| candidate < *d) {
                     seen.insert(key, candidate);
@@ -301,7 +290,6 @@ fn enter(
     state: &LookAheadState,
     context: &CrawlContext<'_>,
     caps: &CounterCaps<'_>,
-    clock_locked: bool,
 ) -> Vec<LookAheadState> {
     let mut results = Vec::new();
 
@@ -322,13 +310,13 @@ fn enter(
 
         DialogueCheckKind::Fake => {
             if !has_been_seen(node, state) {
-                results.push(charge(node, state, caps, clock_locked));
+                results.push(charge(node, state, caps, context.world));
             }
         }
 
         DialogueCheckKind::KimSwitch => {
             if node.boolean_only || !has_been_seen(node, state) {
-                results.push(charge(node, state, caps, clock_locked));
+                results.push(charge(node, state, caps, context.world));
             }
         }
 
@@ -337,7 +325,7 @@ fn enter(
                 node,
                 state,
                 caps,
-                clock_locked,
+                context.world,
                 crate::world::roll_may_succeed(node, context.world),
             ));
         }
@@ -345,7 +333,7 @@ fn enter(
         DialogueCheckKind::Passive => {
             let passes = context.world.check_passes(node.id);
             if passes != Ternary::False {
-                results.push(charge(node, state, caps, clock_locked));
+                results.push(charge(node, state, caps, context.world));
             }
             // The failing branch passes the incoming state through UNCHARGED - the one
             // branch that does not go through `charge`.
@@ -354,7 +342,7 @@ fn enter(
             }
         }
 
-        _ => results.push(charge(node, state, caps, clock_locked)),
+        _ => results.push(charge(node, state, caps, context.world)),
     }
 
     results
@@ -365,7 +353,7 @@ fn enter_rolled(
     node: &LookAheadNode,
     state: &LookAheadState,
     caps: &CounterCaps<'_>,
-    clock_locked: bool,
+    world: &dyn ILookAheadWorld,
     may_succeed: bool,
 ) -> Vec<LookAheadState> {
     let mut results = Vec::new();
@@ -381,7 +369,7 @@ fn enter_rolled(
         return results;
     }
 
-    let entered = charge(node, state, caps, clock_locked);
+    let entered = charge(node, state, caps, world);
 
     // Both branches start from the same charged state, so the success branch takes a copy
     // and leaves the original for the failure branch - where the roll may succeed at all;
@@ -426,7 +414,7 @@ pub(crate) fn charge(
     node: &LookAheadNode,
     state: &LookAheadState,
     caps: &CounterCaps<'_>,
-    clock_locked: bool,
+    world: &dyn ILookAheadWorld,
 ) -> LookAheadState {
     let mut paid = state.clone();
     if node.is_cost_option() {
@@ -444,7 +432,14 @@ pub(crate) fn charge(
         paid = paid.with(node.seen_slot as usize, 1);
     }
 
-    DialogueAction::apply(&node.actions, &paid, node.once_slot, caps, clock_locked)
+    DialogueAction::apply(
+        &node.actions,
+        &paid,
+        node.once_slot,
+        caps,
+        world.is_clock_locked(),
+        world.day_counter(),
+    )
 }
 
 #[cfg(test)]
@@ -736,6 +731,33 @@ mod tests {
         assert!(
             !seen.reached(node(2)),
             "a shown entry's once effect has already fired"
+        );
+    }
+
+    /// A deadline set from the clock is not already past.
+    ///
+    /// 1 sets the deadline eight hours ahead and 2 opens once it has passed. The clock does not
+    /// move in a crawl, so 2 stays shut - a deadline read as 1 would have opened it.
+    #[test]
+    fn a_deadline_set_from_the_clock_has_not_passed() {
+        let graph = GraphBuilder::new()
+            .add(Entry::new(0).links(&[1]))
+            .add(
+                Entry::new(1)
+                    .script(r#"SetVariableValue("deadline", TotalHourCount() + 8)"#)
+                    .links(&[2]),
+            )
+            .add(Entry::new(2).guard(r#"TotalHourCount() >= Variable["deadline"]"#))
+            .build();
+        let world = TestWorld::new()
+            .with_day_counter(2)
+            .with_day_minutes(10 * 60)
+            .set_variable("deadline", GuardValue::from_number(0.0));
+
+        let walk = walk(&graph, node(0), &world, COUNTER_CAP);
+        assert!(
+            !walk.reached(node(2)),
+            "the deadline is hour 42 and it is hour 34"
         );
     }
 

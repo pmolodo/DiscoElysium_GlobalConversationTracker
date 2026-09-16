@@ -336,7 +336,7 @@ impl<'a> Backward<'a> {
             counter_cap,
         } = search;
         let vars = compiler.vars();
-        let mut image = ActionImage::new(vars, counter_cap);
+        let mut image = ActionImage::for_world(vars, counter_cap, world);
         let mut this = Self {
             vars,
             sets: HashMap::new(),
@@ -995,7 +995,7 @@ impl<'a> Backward<'a> {
             known,
             cut,
             positions,
-            image: ActionImage::new(vars, counter_cap),
+            image: ActionImage::for_world(vars, counter_cap, world),
             frontier: HashMap::new(),
             queue: Worklist::new(known.order()),
             distance: 0,
@@ -1246,7 +1246,11 @@ mod tests {
             false,
         );
         let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
-        let mut compiler = GuardCompiler::new(&vars).with_world(world);
+        // THE CLOCK AS THE PRODUCT HOLDS IT, constant at the world's time - see
+        // `workspace` - so a clock question is decided here the way a shipped search decides it.
+        let mut compiler = GuardCompiler::new(&vars)
+            .with_world(world)
+            .with_constant_clock(DataLayout::group_passes_time(&graph));
         let seed = seed_of(&graph, world, &vars).expect("room for a seed");
         let start = node(0);
         let target = node(target);
@@ -1291,6 +1295,30 @@ mod tests {
 
         agree(shape(), &counter(), 2, true);
         agree(shape(), &counter().set_seen(node(1), true), 2, false);
+    }
+
+    /// A deadline stored from the world's clock is compared against the same clock, so what
+    /// opens only once it has passed stays shut - and opens where the deadline is behind.
+    #[test]
+    fn a_deadline_set_from_the_clock_is_read_back_exactly() {
+        let shape = |offset: i32| {
+            vec![
+                Entry::new(0).links(&[1]),
+                Entry::new(1)
+                    .script(&format!(
+                        r#"SetVariableValue("deadline", TotalHourCount() {offset:+})"#
+                    ))
+                    .links(&[2]),
+                Entry::new(2).guard(r#"TotalHourCount() >= Variable["deadline"]"#),
+            ]
+        };
+        let world = TestWorld::new()
+            .with_day_counter(2)
+            .with_day_minutes(10 * 60)
+            .set_variable("deadline", GuardValue::from_number(0.0));
+
+        agree(shape(8), &world, 2, false);
+        agree(shape(-1), &world, 2, true);
     }
 
     #[test]

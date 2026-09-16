@@ -16,7 +16,6 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::action::DialogueActionKind;
 use crate::core::guard::Guard;
 use crate::core::state::{ONCE_PREFIX, SEEN_PREFIX, StateSymbols};
 use crate::core::types::{DialogueCheckKind, DialogueNodeId};
@@ -517,11 +516,8 @@ fn keeping_only_read_slots(
         mark(node.seen_slot, &mut written);
         mark(node.once_slot, &mut written);
         for action in &node.actions {
-            // Only these two carry a slot; money, clock and unmodelled actions do not.
-            if matches!(
-                action.kind(),
-                DialogueActionKind::Assign | DialogueActionKind::Increment
-            ) {
+            // Money, clock and unmodelled actions carry no slot.
+            if action.writes_slot() {
                 mark(action.slot(), &mut written);
             }
         }

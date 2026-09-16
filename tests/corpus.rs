@@ -29,6 +29,9 @@ const ACTION_CORPUS: &str = "distinct_scripts.txt";
 /// The counter cap the engine defaults to, and what the C# corpus test uses.
 const COUNTER_CAP: i32 = 16;
 
+/// The story's day the corpus scripts are applied on; nothing here reads it but a clock value.
+const CORPUS_DAY: i32 = 1;
+
 /// Keeps a failure message readable when a whole corpus regresses.
 const SAMPLE_LIMIT: usize = 10;
 
@@ -220,7 +223,7 @@ fn no_action_drives_money_negative() {
 
     let state = LookAheadState::empty(symbols.count(), 0, 0);
     for (script, line) in scripts.iter().zip(corpus.iter()) {
-        let after = DialogueAction::apply(script, &state, once, &caps, false);
+        let after = DialogueAction::apply(script, &state, once, &caps, false, CORPUS_DAY);
         assert!(
             after.money() >= 0,
             "money went negative on: {}",
