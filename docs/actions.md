@@ -195,7 +195,7 @@ answer changes. Live: 8 `ultraliberal` sites have a money reader downstream and 
 `revacholian_nationhood` sites a damage reader. Tested by
 `a_fixed_copotype_thought_adds_to_a_reputation_action` in `oracle.rs` and `backward.rs`.
 
-Correct except for what `once` reads - see [Once](#once).
+Its `once` reads the seen record - see [Once](#once).
 
 ## Once
 
