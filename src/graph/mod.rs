@@ -114,6 +114,21 @@ impl LookAheadGraph {
                             variables.push(value.text().to_string());
                         }
                     }
+                    // A substance question reads the count variable its literal names - see
+                    // `core::substance`.
+                    crate::core::guard::GuardExpression::Call(function, arguments)
+                        if crate::core::substance::owns(function) =>
+                    {
+                        if let Some(crate::core::guard::GuardExpression::Literal(value)) =
+                            arguments.only().map(|only| only.expression())
+                            && value.kind() == crate::core::guard_value::GuardValueKind::Text
+                        {
+                            variables.extend(crate::core::substance::variable_read_by(
+                                function,
+                                value.text(),
+                            ));
+                        }
+                    }
                     // A reputation question reads a WHOLE RANGE of reputations rather than
                     // the one it names, so the group declares all of them - see
                     // `core::reputation`. Named by the query rather than by its argument for

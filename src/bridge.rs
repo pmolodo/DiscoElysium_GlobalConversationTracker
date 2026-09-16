@@ -1398,6 +1398,9 @@ fn collect(
                     // call it would be answered once from the world and go stale the moment
                     // the group's own ReputationGrows moved one.
                     (other, _) if crate::core::reputation::range_of(other).is_some() => {}
+                    // A substance question, answered from the use-count VARIABLE the group
+                    // declares for it - see `core::substance`.
+                    (other, _) if crate::core::substance::owns(other) => {}
                     // THE CABINET'S NARROW QUESTIONS, answered from sets the plugin
                     // ENUMERATES rather than from a call per thought. Asked as calls these
                     // were three Lua runs per subject; asked as data they are at most two
@@ -2841,6 +2844,24 @@ mod tests {
                 "reputation.ultraliberal".to_string(),
             ],
             "all four political reputations, sorted as the group declares them"
+        );
+        assert!(
+            found.queries.is_empty(),
+            "answered from the variables, not asked as a call: {:?}",
+            found.queries
+        );
+    }
+
+    /// A substance question asks for the use-count variable it reads, and is not run.
+    #[test]
+    fn a_substance_question_asks_for_its_count_variable() {
+        let found = asked(r#"SubstanceUsedOnce("alcohol") or SubstanceUsedMore("speed")"#);
+        assert_eq!(
+            found.variables,
+            vec![
+                "stats.uses_alcohol".to_string(),
+                "stats.uses_speed".to_string()
+            ]
         );
         assert!(
             found.queries.is_empty(),

@@ -10,6 +10,7 @@ pub mod modelling;
 pub mod passive_check;
 pub mod reputation;
 pub mod state;
+pub mod substance;
 pub mod types;
 
 /// What the MACHINE has left, which is a different question from what a budget allows.

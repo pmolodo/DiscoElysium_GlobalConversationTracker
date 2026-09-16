@@ -333,6 +333,15 @@ impl IGuardContext for BoundContext<'_> {
                     None => GuardValue::unknown(),
                 }
             }
+            // HOW OFTEN A SUBSTANCE WAS USED, from the count variable the group declares for
+            // it. A computed argument names no declared variable and reads Unknown.
+            other if crate::core::substance::owns(other) => {
+                crate::core::substance::answer(other, arguments, |variable| {
+                    self.symbols.variable_ref(variable)?;
+                    Some(self.get_variable(variable))
+                })
+                .expect("just matched")
+            }
             _ => self.world.query(name, arguments),
         }
     }
