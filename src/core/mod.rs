@@ -2,6 +2,7 @@
 
 pub mod action;
 pub mod clock;
+pub mod damage;
 pub mod env;
 pub mod equipment;
 pub mod guard;

@@ -179,6 +179,7 @@ fn written_kind(kind: DataKind) -> wire::DataKind {
         DataKind::ItemsInGroup => wire::DataKind::ItemsInGroup,
         DataKind::HeldItemsInGroup => wire::DataKind::HeldItemsInGroup,
         DataKind::SceneIsOutside => wire::DataKind::SceneIsOutside,
+        DataKind::SkillDamage => wire::DataKind::SkillDamage,
     }
 }
 

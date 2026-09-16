@@ -141,6 +141,8 @@ namespace GlobalConversationTracker
                         return HeldItemsInGroup(wanted.Subject);
                     case DataKind.SceneIsOutside:
                         return SceneIsOutside();
+                    case DataKind.SkillDamage:
+                        return SkillDamage(wanted.Subject);
                     default:
                         return DataAnswer.Unreadable();
                 }
@@ -215,6 +217,29 @@ namespace GlobalConversationTracker
             }
 
             return DataAnswer.Unreadable();
+        }
+
+        /// <summary>One skill's damage value, named by its skill type.</summary>
+        /// <remarks>
+        /// What <c>CharacterLuaFunctions.HasVolitionDamage</c> and its sibling compare against
+        /// zero, read directly. The world is found by type for the same reason the scene is -
+        /// its generic singleton answers null through the interop layer.
+        /// </remarks>
+        /// <param name="skill"><c>VOLITION</c> or <c>ENDURANCE</c>.</param>
+        private static DataAnswer SkillDamage(string skill)
+        {
+            World? world = UnityEngine.Object.FindObjectOfType<World>();
+            Sunshine.Metric.CharacterSheet? you = world?.you;
+            Sunshine.Metric.Skill? read = skill switch
+            {
+                "VOLITION" => you?.volition,
+                "ENDURANCE" => you?.endurance,
+                _ => null,
+            };
+
+            return read == null
+                ? DataAnswer.Unreadable()
+                : DataAnswer.Of(WireValue.FromNumber(read.damageValue));
         }
 
         /// <summary>The database field an item's group index is stored in.</summary>

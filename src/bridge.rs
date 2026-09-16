@@ -739,6 +739,14 @@ impl ILookAheadWorld for SnapshotWorld {
         if name == crate::core::scene::IS_EXTERIOR {
             return read_value(DataRequest::set(DataKind::SceneIsOutside));
         }
+        if let Some(skill) = crate::core::damage::skill_read_by(name) {
+            let damage = read_value(DataRequest::about(DataKind::SkillDamage, skill));
+            return damage
+                .try_as_number()
+                .map_or_else(GuardValue::unknown, |value| {
+                    GuardValue::from_boolean(crate::core::damage::is_damaged(value))
+                });
+        }
 
         // THE CABINET'S NARROW QUESTIONS, answered from the sets the plugin enumerated.
         // Nothing asks it to evaluate these any more - see `collect` - so there is no query
@@ -853,6 +861,9 @@ pub enum DataKind {
     /// Whether the current scene is outdoors - `CurrentSceneProperties.IsOutside`. Names no
     /// subject; answered as a boolean. See [`crate::core::scene`].
     SceneIsOutside,
+    /// A skill's damage value, named in the subject by its `SkillType` name. Answered as a
+    /// number. See [`crate::core::damage`].
+    SkillDamage,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -1462,6 +1473,12 @@ fn collect(
                     // WHETHER THE SCENE IS OUTDOORS, read from the scene's own properties.
                     (crate::core::scene::IS_EXTERIOR, _) => {
                         data.insert(DataRequest::set(DataKind::SceneIsOutside));
+                    }
+                    // HOW DAMAGED A SKILL IS, read off the character sheet.
+                    (other, _) if crate::core::damage::skill_read_by(other).is_some() => {
+                        let skill =
+                            crate::core::damage::skill_read_by(other).expect("just matched");
+                        data.insert(DataRequest::about(DataKind::SkillDamage, skill));
                     }
                     // THE CABINET'S NARROW QUESTIONS, answered from sets the plugin
                     // ENUMERATES rather than from a call per thought. Asked as calls these
@@ -2931,6 +2948,32 @@ mod tests {
             "answered from the variables, not asked as a call: {:?}",
             found.queries
         );
+    }
+
+    /// A damage question reads the skill's damage, and is never run.
+    #[test]
+    fn a_damage_question_reads_the_skill_and_compares_below_zero() {
+        let found = asked(r#"HasVolitionDamage()"#);
+        assert!(
+            found.queries.is_empty(),
+            "asked as a call: {:?}",
+            found.queries
+        );
+        let request = DataRequest::about(DataKind::SkillDamage, "VOLITION");
+        assert_eq!(found.data, vec![request.clone()]);
+
+        let damaged = |damage: f64| {
+            let mut snapshot = WorldSnapshot::default();
+            snapshot.data.insert(
+                request.clone(),
+                DataAnswer::of_value(WireValue::Number { value: damage }),
+            );
+            SnapshotWorld::new(snapshot)
+                .query("HasVolitionDamage", &[])
+                .boolean()
+        };
+        assert!(damaged(-2.0));
+        assert!(!damaged(0.0));
     }
 
     /// A held-group question reads its hand and the group's members, and is never run.

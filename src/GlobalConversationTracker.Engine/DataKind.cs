@@ -60,5 +60,12 @@ namespace GlobalConversationTracker.Engine
         /// as a boolean.
         /// </summary>
         SceneIsOutside = 7,
+
+        /// <summary>
+        /// A skill's damage value - <c>World.you.volition.damageValue</c> and its sibling -
+        /// with the skill named by its <c>SkillType</c> name in
+        /// <see cref="DataRequest.Subject"/>. Answered as a number.
+        /// </summary>
+        SkillDamage = 8,
     }
 }

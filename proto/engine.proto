@@ -127,6 +127,9 @@ enum DataKind {
   // Whether the current scene is outdoors - ApplicationManager.CurrentSceneProperties.IsOutside.
   // Names no subject; answered as a boolean.
   DATA_KIND_SCENE_IS_OUTSIDE = 7;
+  // A skill's damage value - World.you.<skill>.damageValue - named in subject by its SkillType
+  // name, VOLITION or ENDURANCE, and answered as a number.
+  DATA_KIND_SKILL_DAMAGE = 8;
 }
 
 message DataRequest {

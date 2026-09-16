@@ -1219,6 +1219,9 @@ pub struct Holdings {
     /// How many items each inventory tab holds, by `ItemTabGroup` name: what
     /// HasPawnablesInInventory answers about. A tab the save does not name is empty.
     pub tab_counts: HashMap<String, usize>,
+    /// Each skill's damage, by `SkillType` name: what HasVolitionDamage and
+    /// HasEnduranceDamage compare against zero. A skill the save records no damage on is 0.
+    pub skill_damage: HashMap<String, f64>,
     /// Journal tasks taken and not yet closed.
     pub tasks: HashSet<String>,
     /// Thoughts the cabinet has reached, whatever state they are in.
@@ -1312,6 +1315,13 @@ impl Holdings {
                         .tab_counts
                         .get(&request.subject)
                         .is_some_and(|count| *count > 0),
+                }),
+                DataKind::SkillDamage => DataAnswer::of_value(WireValue::Number {
+                    value: self
+                        .skill_damage
+                        .get(&request.subject)
+                        .copied()
+                        .unwrap_or_default(),
                 }),
                 DataKind::SceneIsOutside => DataAnswer::of_value(WireValue::Bool {
                     value: self.scene.outside,
@@ -1433,6 +1443,7 @@ pub fn holdings_in_save(save: &str) -> Holdings {
             .collect(),
         equipment,
         tab_counts: tab_counts(&carried),
+        skill_damage: skill_damage(&world_state(save, "characterSheet")),
         tasks: active_tasks(&journal),
         // WHAT gainedThoughts HOLDS, which is neither of the two states that mean the
         // player does not have the thought: never reached, or reached and given up.
@@ -1586,6 +1597,29 @@ fn held(inventory: &serde_json::Value) -> HashSet<String> {
         .flatten()
         .flat_map(|(_, category)| category.as_array().into_iter().flatten())
         .filter_map(|entry| entry["Value"].as_str().map(str::to_string))
+        .collect()
+}
+
+/// Each skill's damage, by skill type name, from the modifiers the character sheet saved.
+///
+/// `Modifiable` recalculates `damageValue` as the sum of its `DAMAGE` modifiers, and
+/// `CharacterSheetPersister` writes a skill's modifiers into `SkillModifierCauseMap` - so the
+/// save's damage is that sum. See `core::damage`.
+fn skill_damage(sheet: &serde_json::Value) -> HashMap<String, f64> {
+    sheet["SkillModifierCauseMap"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .map(|(skill, modifiers)| {
+            let damage = modifiers
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|modifier| modifier["type"] == "DAMAGE")
+                .filter_map(|modifier| modifier["amount"].as_f64())
+                .sum();
+            (skill.clone(), damage)
+        })
         .collect()
 }
 
