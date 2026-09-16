@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using GlobalConversationTracker.Automation;
 
 namespace GlobalConversationTracker.Harness
@@ -99,6 +100,23 @@ namespace GlobalConversationTracker.Harness
 
         /// <summary>A row the table is actually about.</summary>
         private const string TestRole = "test";
+
+        /// <summary>How long to let the world settle after a load reports finished.</summary>
+        /// <remarks>
+        /// <para>LOAD-FINISHED IS NOT THE WORLD BEING READY, and everything asked here is
+        /// asked THROUGH Lua. The look-ahead run documents the same gap - between the
+        /// game's loading flag falling and the loaded save's state reaching Lua - and waits
+        /// five seconds before asking a conversation anything for exactly this reason. An
+        /// evaluate sent into that gap answers about the save BEFORE this one.</para>
+        ///
+        /// <para>IT ALSO SPACES CONSECUTIVE LOADS, which matters at least as much.
+        /// Measured without it: a load issued while the previous one was still settling did
+        /// nothing whatsoever - reporting finished in 0.1s against the 2.5s a real load
+        /// takes, and leaving every answer as the previous save's. The control caught every
+        /// one of those rows, which is the only reason the run was not quietly believed.
+        /// </para>
+        /// </remarks>
+        private static readonly TimeSpan AfterLoad = TimeSpan.FromSeconds(5);
 
         /// <summary>Evaluates every expression against every save, in one launch.</summary>
         /// <param name="game">Path to disco.exe.</param>
@@ -294,6 +312,11 @@ namespace GlobalConversationTracker.Harness
                     watcher.Mark();
                     ProbeCommand.SendLoadSave(saveGames, stagedNames[save]);
                     watcher.WaitForEvent("load-finished", timeout, Log);
+
+                    // AND THEN WAIT. See AfterLoad: the loading flag falling is not the
+                    // loaded state having reached Lua, and everything below is asked
+                    // through Lua.
+                    Thread.Sleep(AfterLoad);
 
                     var asked = new List<Answer>();
                     foreach (string expression in expressions)

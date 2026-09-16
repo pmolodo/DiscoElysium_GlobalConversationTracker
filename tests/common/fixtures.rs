@@ -1480,21 +1480,23 @@ pub fn holdings_in_save(save: &str) -> Holdings {
 /// ```
 ///
 /// `IsKimHere` NAMES TWO FLAGS AND NO OTHERS, which is worth saying because the save keeps
-/// two more that read as though they belonged - and those two are not known to the same
-/// standard.
+/// two more that read as though they belonged. Both are settled, by different means: one
+/// from the readable body, the other by asking the shipped build.
 ///
 /// `isKimAwayUpToMorning` is SETTLED FROM SOURCE. It exists in both builds, and the build
 /// whose `IsKimHere` body is readable declares `PartyManager.IsKimAwayUpToMorning` in that
 /// very class - written by `KitsuragiWillReturnTomorrow` and `RestoreReturnState` - and
 /// `IsKimHere` still does not read it.
 ///
-/// `isKimSleepingInHisRoom` is INFERRED. It is Final Cut only, absent from the pre-final-cut
-/// `PartyPersister.PartyState` and carried in Final Cut's beside a
-/// `timeSinceKimWentSleepingInHisRoom` counter - so the build that has the flag is the build
-/// whose body is stripped. It is left out because Final Cut kept `_isLeftOutside` on
-/// `PartyMember<T>` and kept `isKimLeftOutside` in the save, so the mechanism this query runs
-/// on is intact there and nothing suggests a second term joined it. If that is ever wrong,
-/// this is the line to revisit.
+/// `isKimSleepingInHisRoom` is MEASURED, because nothing readable could settle it. It is
+/// Final Cut only - absent from the pre-final-cut `PartyPersister.PartyState`, and carried
+/// in Final Cut's beside a `timeSinceKimWentSleepingInHisRoom` counter - so the build that
+/// has the flag is the build whose `IsKimHere` is stripped, and reading gets no further.
+/// Saves covering every combination of the party flags were loaded in the shipped game and
+/// `IsKimHere()` evaluated in each (de-h0f1.33). Across the sixteen with Kim in the party,
+/// eight pairs differ in `isKimSleepingInHisRoom` alone and all eight agree; the same holds
+/// for `isKimAwayUpToMorning` and `isKimAbandoned`, and only `isKimLeftOutside` ever flips
+/// the answer. Final Cut computes what the pre-final-cut body reads.
 ///
 /// Both are state the game keeps to decide WHERE Kim is and when he wakes, rather than terms
 /// in "is he standing next to you". Reading them here would also panic on a pre-final-cut
