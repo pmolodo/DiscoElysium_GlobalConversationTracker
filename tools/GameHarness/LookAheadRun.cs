@@ -62,13 +62,6 @@ namespace GlobalConversationTracker.Harness
         /// <summary>What a packed save archive is called.</summary>
         private const string SaveExtension = ".ntwtf.zip";
 
-        /// <summary>
-        /// How long to give one Enter before pressing it again. Short enough to walk
-        /// through a splash screen or a run of dialogue briskly, long enough that a
-        /// loading screen is not hammered.
-        /// </summary>
-        private static readonly TimeSpan BetweenPresses = TimeSpan.FromSeconds(2);
-
         /// <summary>How long to spend trying to wake the display before giving up.</summary>
         /// <remarks>
         /// Short. A display that is going to come back does so in a second or two; one that
@@ -493,7 +486,7 @@ namespace GlobalConversationTracker.Harness
                         watcher.Mark();
                         if (firstScenario)
                         {
-                            StartTheNewestSave(watcher, timeout, report);
+                            FirstSave.Get(watcher, timeout, report, Log);
                             firstScenario = false;
                         }
                         else
@@ -531,7 +524,7 @@ namespace GlobalConversationTracker.Harness
                 if (!keepOpen)
                 {
                     Console.WriteLine();
-                    Quit(saveGames, process);
+                    GameClosing.Quit(saveGames, process);
                 }
 
             }
@@ -563,108 +556,10 @@ namespace GlobalConversationTracker.Harness
                 {
                     // Anything still alive after the polite close, and anything alive
                     // because the run threw before reaching it.
-                    Close(process);
+                    GameClosing.Close(process);
                     staged.Restore();
                 }
             }
-        }
-
-        /// <summary>
-        /// Gets the first save of a run in, by waiting for the main menu and pressing
-        /// Continue.
-        /// </summary>
-        /// <remarks>
-        /// <para>Continue rather than a named load, because loading from the menu through
-        /// the probe dies in HudToggle.FixForDreamScene - the HUD views that path expects
-        /// are not built yet - and Continue takes the newest save, which is what
-        /// <see cref="StagingOrder"/> arranges. Once a save is in and the HUD exists the
-        /// probe can load the rest by name.</para>
-        ///
-        /// <para>Waiting for the menu by looking at it, rather than pressing Enter every
-        /// two seconds and hoping, is what makes the press land somewhere known. The
-        /// watcher also skips the logo deliberately, and refuses to send anything at a
-        /// window that is not in front - a keypress goes to whatever IS in front, so
-        /// pressing blind types into somebody else's window and reports nothing.</para>
-        ///
-        /// <para>Without a phase file there is nothing to look at, so it falls back to
-        /// the old blind pressing. That is a worse way to do it, not a broken one.</para>
-        /// </remarks>
-        private static void StartTheNewestSave(
-            ProbeWatcher watcher, TimeSpan timeout, Report report)
-        {
-            StartupWatcher? startup = LoadStartupWatcher();
-            if (startup == null)
-            {
-                PressEnterUntil(
-                    watcher,
-                    e => e.Name == "save-applied",
-                    timeout,
-                    "a save starts loading",
-                    "still on a splash screen");
-                return;
-            }
-
-            WaitResult atMenu = startup.WaitForMenu(timeout);
-            report.Check(
-                atMenu.Succeeded,
-                "the main menu is on screen",
-                atMenu.ToString());
-
-            if (!atMenu.Succeeded)
-            {
-                throw new TimeoutException(
-                    $"The main menu never appeared: {atMenu}. Nothing can be loaded from a "
-                    + "screen the run cannot identify.");
-            }
-
-            // One press, at a screen known to be the menu, on a window known to be in
-            // front. Retried only if the save does not start, since a single lost
-            // keypress should not cost the whole run.
-            PressEnterUntil(
-                watcher,
-                e => e.Name == "save-applied",
-                timeout,
-                "a save starts loading",
-                "waiting at the main menu");
-        }
-
-        /// <summary>
-        /// The watcher that recognises the main menu, or null when it cannot be built.
-        /// </summary>
-        private static StartupWatcher? LoadStartupWatcher()
-        {
-            string phasePath = Path.Combine(
-                GameInstall.RepoRoot(), "testing", StartupPhases.DefaultFileName);
-            StartupPhase[] phases;
-            try
-            {
-                phases = StartupPhases.Load(phasePath);
-            }
-            catch (Exception error)
-            {
-                Console.WriteLine(
-                    $"        (no startup phases at {phasePath}, so pressing Enter blindly: "
-                    + $"{error.Message})");
-                return null;
-            }
-
-            StartupPhase? menu = Array.Find(
-                phases, phase => phase.Name == StartupWatcher.MenuPhaseName);
-            if (menu == null)
-            {
-                Console.WriteLine(
-                    $"        (no '{StartupWatcher.MenuPhaseName}' phase, so pressing Enter "
-                    + "blindly)");
-                return null;
-            }
-
-            return new StartupWatcher(
-                "disco",
-                phases,
-                menu.Fingerprint,
-                menu.Region,
-                menu.Threshold,
-                progress: Log);
         }
 
         private static void SendPrepareSuite(
@@ -2014,87 +1909,6 @@ namespace GlobalConversationTracker.Harness
             _ => "plain",
         };
 
-        /// <summary>
-        /// Presses Enter until the probe reports what is being waited for.
-        /// </summary>
-        /// <remarks>
-        /// <para>Two places need this and neither can be timed. Nothing says when the main
-        /// menu is actually on screen - both events that sound like it fire about ten
-        /// seconds in, while the legal notice and the logo still have twenty-five seconds
-        /// to run - and nothing says when a conversation has finished showing the lines
-        /// that precede its first response menu.</para>
-        ///
-        /// <para>An Enter that lands on a splash screen skips it, one that lands on the
-        /// menu starts the newest save, and one that lands on a line of dialogue advances
-        /// it. So pressing until the awaited thing happens is both the simplest thing that
-        /// works and the fastest way through.</para>
-        ///
-        /// <para>The last press can race the menu it was waiting for and pick an option.
-        /// That is harmless: the menu has already been reported by then, with every
-        /// option's text, and the next scenario loads a save over whatever it chose.</para>
-        /// </remarks>
-        private static ProbeEvent PressEnterUntil(
-            ProbeWatcher watcher,
-            Func<ProbeEvent, bool> matches,
-            TimeSpan timeout,
-            string what,
-            string whileWaiting)
-        {
-            GameWindow window = GameSession.WaitForWindow("disco", TimeSpan.FromSeconds(60));
-            var clock = Stopwatch.StartNew();
-            var raiser = new ForegroundRaiser();
-            string reported = string.Empty;
-
-            while (true)
-            {
-                // Not sent unless the game is in front. A keypress goes to the foreground
-                // window, so pressing anyway types Enter into whatever that is - and the
-                // run then reports that the game never answered, which is true and
-                // completely misleading.
-                if (!raiser.Ensure(window.Handle))
-                {
-                    string state = raiser.Describe();
-                    if (reported != state)
-                    {
-                        reported = state;
-                        Console.Error.WriteLine(
-                            $"        not pressing Enter: the game is {state}");
-                    }
-
-                    if (clock.Elapsed >= timeout)
-                    {
-                        throw new TimeoutException(
-                            $"Waited {timeout.TotalSeconds:N0}s for {what} and never got the "
-                            + "game in front to ask for it. Something else is holding focus.");
-                    }
-
-                    Thread.Sleep(BetweenPresses);
-                    continue;
-                }
-
-                GameSession.SendKey("Enter");
-
-                try
-                {
-                    ProbeEvent found = watcher.WaitFor(matches, BetweenPresses, what);
-                    Console.WriteLine($"        {what} after {clock.Elapsed.TotalSeconds:N0}s");
-                    return found;
-                }
-                catch (TimeoutException)
-                {
-                    if (clock.Elapsed >= timeout)
-                    {
-                        throw new TimeoutException(
-                            $"Pressed Enter for {timeout.TotalSeconds:N0}s and {what} never "
-                            + "happened. The keypresses may be going to another window.");
-                    }
-
-                    Console.WriteLine(
-                        $"        {whileWaiting} ({clock.Elapsed.TotalSeconds:N0}s)");
-                }
-            }
-        }
-
         private static string Trim(string? text)
         {
             if (text == null)
@@ -2106,103 +1920,10 @@ namespace GlobalConversationTracker.Harness
             return oneLine.Length <= 80 ? oneLine : oneLine.Substring(0, 77) + "...";
         }
 
-        /// <summary>
-        /// Asks the game to close itself, and waits for it to go.
-        /// </summary>
-        /// <remarks>
-        /// Killing it is the fallback, not the plan. A killed game runs neither
-        /// Application.quitting nor AppDomain.ProcessExit, which is where the mod writes
-        /// everything it has been holding - so a run that killed would be measuring a
-        /// shutdown no player ever performs.
-        /// </remarks>
-        private static void Quit(string saveGames, Process? process)
-        {
-            Console.WriteLine("asking the game to close...");
-            try
-            {
-                ProbeCommand.SendQuit(saveGames);
-            }
-            catch (Exception error)
-            {
-                Console.Error.WriteLine($"  could not ask: {error.Message}");
-                return;
-            }
-
-            var clock = Stopwatch.StartNew();
-            while (clock.Elapsed < QuitDeadline)
-            {
-                if (Process.GetProcessesByName("disco").Length == 0)
-                {
-                    Console.WriteLine($"  it closed after {clock.Elapsed.TotalSeconds:N0}s");
-                    return;
-                }
-
-                Thread.Sleep(500);
-            }
-
-            Console.Error.WriteLine(
-                $"  still running after {QuitDeadline.TotalSeconds:N0}s; it will be closed "
-                + "the hard way, and anything the mod writes on the way out will be lost.");
-        }
-
-        /// <summary>How long to wait for the game to close itself before killing it.</summary>
-        private static readonly TimeSpan QuitDeadline = TimeSpan.FromSeconds(30);
-
-        private static void Close(Process? process)
-        {
-            foreach (Process running in Process.GetProcessesByName("disco"))
-            {
-                try
-                {
-                    running.Kill();
-                    running.WaitForExit(10_000);
-                }
-                catch (Exception error)
-                {
-                    Console.Error.WriteLine($"  could not close the game: {error.Message}");
-                }
-            }
-
-            process?.Dispose();
-            // The profile is moved back next, and Windows will not move a folder the game
-            // still has open.
-            Thread.Sleep(2000);
-        }
-
         private static void Log(string message)
         {
             Console.WriteLine($"        {message}");
         }
 
-        /// <summary>Counts what passed and what did not, across every suite.</summary>
-        private sealed class Report
-        {
-            private readonly List<string> _failures = new List<string>();
-
-            /// <summary>How many checks have run.</summary>
-            public int Total { get; private set; }
-
-            /// <summary>How many of them passed.</summary>
-            public int Passed => Total - _failures.Count;
-
-            /// <summary>What failed, in the order it failed.</summary>
-            public IReadOnlyList<string> Failures => _failures;
-
-            /// <summary>Records one check.</summary>
-            public void Check(bool ok, string label, string detail)
-            {
-                Total++;
-                Console.WriteLine($"  {(ok ? "PASS" : "FAIL")}  {label}");
-                if (detail.Length > 0)
-                {
-                    Console.WriteLine($"        {detail}");
-                }
-
-                if (!ok)
-                {
-                    _failures.Add(label);
-                }
-            }
-        }
     }
 }

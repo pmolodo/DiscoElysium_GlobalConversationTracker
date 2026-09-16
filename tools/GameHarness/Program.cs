@@ -193,6 +193,20 @@ namespace GlobalConversationTracker.Harness
                         return RunSession(options, captureReference: true);
                     case "load-save":
                         return RunSession(options, captureReference: false);
+                    case "evaluate":
+                        return EvaluateRun.Run(
+                            ResolveGame(options),
+                            options.SavesDir
+                                ?? Path.Combine(RepoRoot(), ".build", "party-saves"),
+                            options.TestSettings
+                                ?? Path.Combine(RepoRoot(), "testing", "Settings.json"),
+                            Path.Combine(RepoRoot(), ".build", "automation"),
+                            TimeSpan.FromSeconds(options.TimeoutSeconds),
+                            options.Expressions,
+                            options.Controls,
+                            options.FirstControl,
+                            options.KeepOpen,
+                            backupProfile: path => BackupProfile(path, options));
                     case "look-ahead":
                         return LookAheadRun.Run(
                             ResolveGame(options),
@@ -231,6 +245,35 @@ Verbs:
                       main-menu reference. Look at the PNG before trusting it.
   load-save           Launch, confirm the main menu, send the load-save keys, and
                       check the screen changed to something else.
+  evaluate            Launch once, then load each save under --saves-dir in turn
+                      and ask the game what each --expression answers, writing
+                      the answers to .build/automation/evaluate-answers.json.
+                      For learning what a guard whose Final Cut body is stripped
+                      actually computes: vary the state it reads across a set of
+                      saves and read the truth table off the answers. No
+                      conversation is opened. --expression is repeatable and is
+                      never split on commas, since expressions contain them.
+                      --control names a save to load BEFORE a test save, and is
+                      what separates data from wishes: a save whose state the
+                      game's loader will not take answers about whatever was in
+                      before it, which looks exactly like a real row. A stale
+                      answer is the CONTROL'S answer, so a test save whose answer
+                      DIFFERS from the control before it demonstrably loaded, and
+                      that row stops there. Only a row that agrees with its
+                      control tries the next one. Give two controls that answer
+                      differently from each other: no honest save can agree with
+                      both, so a row that never diverges did not load and is
+                      reported rather than believed. Repeatable, and tried in the
+                      order given - put the one that disagrees with most test
+                      saves first and the run is much shorter.
+  --predict <file>    A JSON object of save name to the control to try FIRST for
+                      it, predicted from whatever the caller thinks the function
+                      does. The useful prediction is the control that DISAGREES
+                      with the guess, since that is the one that diverges at
+                      once. This is a schedule and not evidence: it decides only
+                      the order controls are tried in, so a wrong guess costs a
+                      second control and changes no answer. Written by
+                      tools/make-party-saves.py from a named hypothesis.
   look-ahead          Launch once, then for each money scenario ask the test
                       probe to load its save and open Siileng's conversation,
                       and check which options carry a look-ahead marker. The
@@ -1500,6 +1543,44 @@ Options:
             /// <summary>A single save to stage, so Continue has only one thing to load.</summary>
             public string? SaveFile { get; private set; }
 
+            /// <summary>A folder of expanded saves for the evaluate verb to load in turn.</summary>
+            public string? SavesDir { get; private set; }
+
+            private readonly List<string> _expressions = new List<string>();
+
+            /// <summary>
+            /// The expressions the evaluate verb asks of each save.
+            /// </summary>
+            /// <remarks>
+            /// Repeatable rather than comma-separated, unlike --suite and --scenario,
+            /// because an expression legitimately contains commas: IsHourBetween(1,2) would
+            /// be split into two halves that are each invalid Lua.
+            /// </remarks>
+            public IReadOnlyList<string> Expressions => _expressions;
+
+            private readonly List<string> _controls = new List<string>();
+
+            /// <summary>
+            /// Saves the evaluate verb loads before each test save, so a load that did not
+            /// take can be told from one that did.
+            /// </summary>
+            /// <remarks>
+            /// Two of them, answering the expression differently, is the useful shape: a
+            /// test save loaded after each and answering the same both times decided its
+            /// own answer, and one that tracks whichever control preceded it did not load.
+            /// </remarks>
+            public IReadOnlyList<string> Controls => _controls;
+
+            /// <summary>
+            /// Which control to try first for each save, read from a JSON object of save
+            /// name to control name.
+            /// </summary>
+            /// <remarks>
+            /// A SCHEDULE AND NOT EVIDENCE. It decides only the order controls are tried
+            /// in, so a wrong prediction costs a second control and changes no answer.
+            /// </remarks>
+            public IReadOnlyDictionary<string, string>? FirstControl { get; private set; }
+
             private readonly List<string> _suiteNames = new List<string>();
 
             /// <summary>Which look-ahead suites to run, or none for every suite.</summary>
@@ -1615,6 +1696,29 @@ Options:
                         case "--save-reference": options.SaveReference = true; break;
                         case "--whole-frame": options.MenuRegion = null; break;
                         case "--save": options.SaveFile = Next(); break;
+                        case "--saves-dir": options.SavesDir = Next(); break;
+                        case "--expression":
+                            options._expressions.Add(
+                                Next() ?? throw new ArgumentException(
+                                    "--expression needs an expression."));
+                            break;
+                        case "--control":
+                            options._controls.Add(
+                                Next() ?? throw new ArgumentException(
+                                    "--control needs a save name."));
+                            break;
+                        case "--predict":
+                        {
+                            string predictions = Next() ?? throw new ArgumentException(
+                                "--predict needs a file.");
+                            options.FirstControl =
+                                System.Text.Json.JsonSerializer
+                                    .Deserialize<Dictionary<string, string>>(
+                                        File.ReadAllText(predictions))
+                                ?? throw new ArgumentException(
+                                    $"{predictions} holds no save-to-control object.");
+                            break;
+                        }
                         case "--suite":
                         {
                             string suite = Next() ?? throw new ArgumentException(

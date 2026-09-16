@@ -67,6 +67,20 @@ round-trip - but it is exactly the shape that caught the weather saves, where se
 variable without the preset was silently overwritten on load. So a run reads the loaded
 state back rather than assuming it survived.
 
+## AND A GUESS, WHICH IS A SCHEDULE RATHER THAN AN ANSWER
+
+The run loads a control save before each test save, so that a load which did not take can
+be told from one that did: a stale answer is the CONTROL'S answer, so a test save whose
+answer differs from it demonstrably loaded. A row that diverges is settled and stops there,
+which means the control worth trying FIRST is the one that disagrees with what the save is
+expected to say.
+
+So this also writes a prediction: per save, the control to try first, chosen as the opposite
+of what `predicted` below says that save answers. Guessing right settles a row in one control
+instead of two; guessing wrong costs the second control and changes no answer, because what
+settles a row is a divergence the run observed rather than anything predicted here. That is
+the only reason a guess is allowed to touch this at all.
+
 ## WHERE THEY GO
 
 Into a build directory, not `testing/scenarios`. These are measurement fixtures rather than
@@ -111,6 +125,26 @@ NAME_PREFIX = "party"
 
 # Where the index of what was written goes, so a run can join answers to inputs.
 INDEX_NAME = "party-saves.json"
+
+# Where the predicted first control per save goes.
+FIRST_CONTROL_NAME = "party-first-control.json"
+
+# The two saves a run uses as controls, and what each is expected to answer. They are
+# ordinary members of the set: one has Kim in the party and not left outside, the other
+# has him neither in the party nor anywhere else, which are the two combinations the
+# readable body and the load path both agree on.
+TRUE_CONTROL = "party-10000"
+FALSE_CONTROL = "party-00100"
+
+
+def predicted(flags):
+    """What IsKimHere is guessed to answer: the pre-final-cut body, and nothing else.
+
+    Two flags, because that is what the one readable body names. It is a GUESS about the
+    Final Cut build, whose body is stripped - and it is used only to order the controls,
+    so being wrong costs a second control and changes no answer.
+    """
+    return flags["isKimInParty"] and not flags["isKimLeftOutside"]
 
 
 def name_for(flags):
@@ -181,6 +215,7 @@ def make(repo, out_dir):
     out.mkdir(parents=True, exist_ok=True)
 
     written = []
+    first_control = {}
     for flags in combinations():
         name = name_for(flags)
         save = out / f"{name}{EXPANDED_SUFFIX}"
@@ -199,16 +234,29 @@ def make(repo, out_dir):
         write_json(save / "_archive.json", manifest_for(name, template_relative))
         write_json(save / f"{name}{PARTY_SUFFIX}", party_diff(template_relative, flags))
 
-        written.append({"flags": dict(flags), "save": name})
+        # THE OPPOSITE OF THE GUESS, because the control that disagrees is the one that
+        # diverges at once and settles the row without a second.
+        expected = bool(predicted(flags))
+        if name not in (TRUE_CONTROL, FALSE_CONTROL):
+            first_control[name] = FALSE_CONTROL if expected else TRUE_CONTROL
+
+        written.append({"expected": expected, "flags": dict(flags), "save": name})
         spelled = ", ".join(f"{flag}={flags[flag]}" for flag in VARYING)
         print(f"  {name}: {spelled}")
 
     # The index, so a run joins an answer to the flags that produced it rather than
-    # re-deriving them from the name.
+    # re-deriving them from the name. The expectation rides along as a RECORD of what was
+    # guessed, which is not the same as something the run is held to.
     write_json(out / INDEX_NAME, {"saves": written, "varying": VARYING})
+    write_json(out / FIRST_CONTROL_NAME, first_control)
 
+    expected_true = sum(1 for save in written if save["expected"])
     print(f"{len(written)} save(s) written to {out}")
     print(f"and {INDEX_NAME} beside them, naming the flags each one carries")
+    print(
+        f"{FIRST_CONTROL_NAME} guesses {expected_true} of {len(written)} answer true, "
+        f"so those try {FALSE_CONTROL} first and the rest try {TRUE_CONTROL}"
+    )
 
 
 ###############################################################################
