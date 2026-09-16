@@ -312,6 +312,7 @@ namespace GlobalConversationTracker.Harness
                 packed,
                 null,
                 backupProfile: backupProfile,
+                keepPlayerLogAt: Program.PlayerLogPath("look-ahead"),
                 progress: message => Console.WriteLine($"staging:   {message}"));
 
             // THE COLOURS A RUN ASSERTS ARE THE COLOURS IT STAGES. Both of these are

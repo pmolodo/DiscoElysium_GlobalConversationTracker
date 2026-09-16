@@ -263,6 +263,7 @@ namespace GlobalConversationTracker.Harness
                 packed,
                 globalStateFile: null,
                 backupProfile: backupProfile,
+                keepPlayerLogAt: Program.PlayerLogPath("evaluate"),
                 progress: message => Console.WriteLine($"staging:   {message}"));
 
             using ProbeDeployment probe = ProbeDeployment.Deploy(

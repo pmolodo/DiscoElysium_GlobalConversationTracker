@@ -28,6 +28,7 @@ namespace GlobalConversationTracker.Automation
         private readonly string _registryBackupPath;
         private readonly Action<string>? _progress;
         private readonly Action<string> _onFailure;
+        private readonly string? _keepPlayerLogAt;
         private bool _restored;
         private bool _abandoned;
 
@@ -35,11 +36,13 @@ namespace GlobalConversationTracker.Automation
             ProfileBackup profileBackup,
             string registryBackupPath,
             DisplaySettings requested,
+            string? keepPlayerLogAt,
             Action<string>? progress,
             Action<string>? onFailure)
         {
             _profileBackup = profileBackup;
             _registryBackupPath = registryBackupPath;
+            _keepPlayerLogAt = keepPlayerLogAt;
             _progress = progress;
             _onFailure = onFailure ?? (message => Console.Error.WriteLine(message));
             Requested = requested;
@@ -71,6 +74,10 @@ namespace GlobalConversationTracker.Automation
         /// How to move the player's profile aside, or null for the plain move. The
         /// harness passes its own so it can first close whatever is holding the folder.
         /// </param>
+        /// <param name="keepPlayerLogAt">
+        /// Where to copy the run's Unity <c>Player.log</c> before the profile is put back,
+        /// or null to let it go with the staged profile. See <see cref="Restore"/>.
+        /// </param>
         /// <param name="progress">Called with each step, for verbose output.</param>
         /// <param name="onFailure">
         /// Called when something cannot be put back, or null for standard error. This is
@@ -89,6 +96,7 @@ namespace GlobalConversationTracker.Automation
             DisplaySettings? screenOverride = null,
             bool installScreenPrefs = true,
             Func<string, ProfileBackup>? backupProfile = null,
+            string? keepPlayerLogAt = null,
             Action<string>? progress = null,
             Action<string>? onFailure = null)
         {
@@ -156,7 +164,8 @@ namespace GlobalConversationTracker.Automation
                     : $"{profileBackup.EntryCount} entries moved to {profileBackup.MovedTo}");
 
             var staged = new StagedGame(
-                profileBackup, registryBackupPath, requested, progress, onFailure);
+                profileBackup, registryBackupPath, requested, keepPlayerLogAt, progress,
+                onFailure);
 
             try
             {
@@ -211,6 +220,14 @@ namespace GlobalConversationTracker.Automation
         /// reported rather than thrown: this runs in a finally, and throwing there would
         /// replace whatever went wrong during the run with a complaint about the
         /// cleanup.</para>
+        ///
+        /// <para>THE RUN'S UNITY LOG IS KEPT FIRST, when the run asked for it. Unity writes
+        /// <c>Player.log</c> into the profile folder, which is exactly the folder put back
+        /// here, so without the copy the only record of Unity-side errors - exceptions
+        /// thrown inside the game's own code, which BepInEx's log does not carry - is
+        /// replaced by the player's own log the moment the run ends. Copying here rather
+        /// than polling while the game is up cannot race the restore, because it runs
+        /// before it.</para>
         /// </remarks>
         public void Restore()
         {
@@ -220,6 +237,8 @@ namespace GlobalConversationTracker.Automation
             }
 
             _restored = true;
+
+            KeepPlayerLog();
 
             try
             {
@@ -253,6 +272,42 @@ namespace GlobalConversationTracker.Automation
                     + Environment.NewLine
                     + $"The export is at {_registryBackupPath}; the game is left at whatever "
                     + "resolution the run asked for.");
+            }
+        }
+
+        /// <summary>Copies the staged profile's Unity log to where the run asked.</summary>
+        /// <remarks>
+        /// Reported rather than thrown, like the rest of <see cref="Restore"/>: a log that
+        /// could not be kept must not stop the player's profile going back.
+        /// </remarks>
+        private void KeepPlayerLog()
+        {
+            if (_keepPlayerLogAt == null)
+            {
+                return;
+            }
+
+            string log = GameProfile.PlayerLogFile;
+            try
+            {
+                if (!File.Exists(log))
+                {
+                    _onFailure($"No Unity log to keep: nothing at {log}.");
+                    return;
+                }
+
+                string? folder = Path.GetDirectoryName(_keepPlayerLogAt);
+                if (!string.IsNullOrEmpty(folder))
+                {
+                    Directory.CreateDirectory(folder);
+                }
+
+                File.Copy(log, _keepPlayerLogAt, overwrite: true);
+                Console.WriteLine($"Unity log kept at {_keepPlayerLogAt}");
+            }
+            catch (Exception error)
+            {
+                _onFailure($"UNITY LOG NOT KEPT: {error.Message}");
             }
         }
 

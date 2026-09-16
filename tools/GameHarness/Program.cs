@@ -34,6 +34,15 @@ namespace GlobalConversationTracker.Harness
         /// <summary>What this names itself as in a log file's name.</summary>
         private const string ToolName = "GameHarness";
 
+        /// <summary>
+        /// Where a run keeps the game's Unity log: beside the harness's own logs, named
+        /// the same way, so the two for one run sort together.
+        /// </summary>
+        /// <param name="verb">The run's verb.</param>
+        /// <returns>A path in <c>testing/logs</c> that nothing is at yet.</returns>
+        internal static string PlayerLogPath(string verb) =>
+            RunLog.PathFor(ToolName, verb + "-unity-player-log");
+
         /// <summary>The save staged when none is named.</summary>
         /// <remarks>
         /// The archive's entries are named to match it. Every entry in a save is prefixed
@@ -933,6 +942,7 @@ Options:
                 screenOverride: options.RegistryScreen,
                 installScreenPrefs: !options.SkipScreenPrefs,
                 backupProfile: path => BackupProfile(path, options),
+                keepPlayerLogAt: PlayerLogPath(options.Verb),
                 progress: message => Console.WriteLine($"staging:   {message}"));
             DisplaySettings requested = staged.Requested;
 

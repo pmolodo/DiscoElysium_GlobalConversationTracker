@@ -74,6 +74,11 @@ namespace GlobalConversationTracker.Automation
         public static string SavesFolder => Path.Combine(ProfilePath, "SaveGames");
 
         /// <summary>
+        /// Unity's log for the current or last launch, which Unity writes into the profile.
+        /// </summary>
+        public static string PlayerLogFile => Path.Combine(ProfilePath, "Player.log");
+
+        /// <summary>
         /// The mod's global state file, which lives beside the saves rather than in
         /// the game install.
         /// </summary>
