@@ -734,14 +734,12 @@ impl ILookAheadWorld for SnapshotWorld {
 
         // WHAT IS WORN, answered from the slots the plugin read. Like the cabinet, there is
         // no query key behind it to fall back to.
-        if name == equipment::CHECK_EQUIPPED {
-            let item = match arguments {
-                [value] if value.kind() == GuardValueKind::Text => value.text(),
-                _ => return GuardValue::unknown(),
-            };
-
-            return equipment::is_equipped(item, |slot| self.in_slot(slot))
-                .map_or_else(GuardValue::unknown, GuardValue::from_boolean);
+        let argument = match arguments {
+            [value] if value.kind() == GuardValueKind::Text => Some(value.text()),
+            _ => None,
+        };
+        if let Some(worn) = equipment::answer(name, argument, |slot| self.in_slot(slot)) {
+            return worn.map_or_else(GuardValue::unknown, GuardValue::from_boolean);
         }
 
         self.snapshot
@@ -1414,12 +1412,12 @@ fn collect(
                         data.extend(kinds.iter().copied().map(DataRequest::set));
                         thoughts.extend(subject);
                     }
-                    // WHAT IS WORN, read slot by slot rather than asked as a call per item:
-                    // the answer is the equipment table itself, and the same few reads serve
-                    // every item a group asks about. See `core::equipment`.
-                    (equipment::CHECK_EQUIPPED, _) => {
+                    // WHAT IS WORN, read slot by slot rather than asked as a call: the answer
+                    // is the equipment table itself, and the same few reads serve every
+                    // item and clothing question a group asks. See `core::equipment`.
+                    (name, _) if !equipment::slots_read_by(name).is_empty() => {
                         data.extend(
-                            equipment::SLOTS
+                            equipment::slots_read_by(name)
                                 .iter()
                                 .map(|slot| DataRequest::about(DataKind::EquippedInSlot, slot)),
                         );
@@ -2906,6 +2904,25 @@ mod tests {
                 "{slot} is not read"
             );
         }
+    }
+
+    /// A clothing question reads only the slots it is built from, and is never run.
+    #[test]
+    fn a_clothing_question_reads_its_slots_rather_than_running_a_call() {
+        let found = asked(r#"WeirdClothing() or HasHat()"#);
+        assert!(
+            found.queries.is_empty(),
+            "asked as a call: {:?}",
+            found.queries
+        );
+
+        let mut slots: Vec<&str> = found
+            .data
+            .iter()
+            .map(|request| request.subject.as_str())
+            .collect();
+        slots.sort_unstable();
+        assert_eq!(slots, vec!["HAT", "PANTS", "SHIRT", "SHOES"]);
     }
 
     /// The slots answer `CheckEquipped`, and a slot nobody read leaves a missing item Unknown.
