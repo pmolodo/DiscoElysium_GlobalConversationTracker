@@ -516,7 +516,20 @@ fn translate_call(
                     .and_then(|a| a.trim().parse::<i32>().ok())
                     .unwrap_or(0),
             };
-            actions.push(DialogueAction::increment(slot, step, true, call.name));
+            actions.push(DialogueAction::increment(
+                slot,
+                step,
+                true,
+                call.name.clone(),
+            ));
+            // WHAT THE COPOTYPE THOUGHT ADDS, inside the same `Once` - see
+            // `core::thought_effects`. A zero amount fails that `Once` and adds nothing.
+            let effect = (step != 0)
+                .then(|| crate::core::thought_effects::of_reputation(&subject))
+                .flatten();
+            if let Some((thought, effect)) = effect {
+                actions.push(effect.action(thought, symbols, call.name));
+            }
         }
         // Awarding experience the first time and recording that it has been awarded.
         // `TaskLuaFunctions.XPSetBool` is

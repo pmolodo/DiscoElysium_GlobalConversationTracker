@@ -48,7 +48,7 @@
 //! ## What the engine does
 //!
 //! Each priced entry carries the [`PriceScale`] its walk finds, and a graph paired with a world
-//! is priced for that world's mode by [`crate::graph::LookAheadGraph::price_for`].
+//! is priced for that world's mode by [`crate::graph::LookAheadGraph::fit`].
 //!
 //! AN ENTRY WHOSE WALK MEETS A GUARD IS PRICED AT ITS `ClickCost`. No multiplier is below one,
 //! so the unscaled price is never above what the game asks: the engine may show a purchase the

@@ -18,6 +18,7 @@ pub mod reputation;
 pub mod scene;
 pub mod state;
 pub mod substance;
+pub mod thought_effects;
 pub mod types;
 
 /// What the MACHINE has left, which is a different question from what a budget allows.

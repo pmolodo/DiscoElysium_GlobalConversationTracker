@@ -469,13 +469,42 @@ mod tests {
         for entry in entries {
             builder = builder.add(entry);
         }
-        let graph = builder.build();
+        let mut graph = builder.build();
+        graph.fit(&crate::graph::Fitting::read(&graph, world));
         let walk = walk(&graph, node(0), world, COUNTER_CAP);
         assert!(
             !walk.exhausted(),
             "a fixture this small should be exhaustible"
         );
         walk
+    }
+
+    /// A reputation action pays out or hurts only while its thought is fixed.
+    ///
+    /// Ultraliberal's hundred is what makes the second price affordable, and Revacholian
+    /// Nationhood's blow is what opens the damage question.
+    #[test]
+    fn a_fixed_copotype_thought_adds_to_a_reputation_action() {
+        let shape = |reputation: &str, reader: Entry| {
+            vec![
+                Entry::new(0).links(&[1]),
+                Entry::new(1)
+                    .script(&format!(r#"ReputationGrows("{reputation}")"#))
+                    .links(&[2]),
+                reader,
+            ]
+        };
+        let fixed = |world: TestWorld| world.set_query_bool("IsTHCFixed", true);
+
+        let priced = || Entry::new(2).cost(150);
+        let purse = || TestWorld::new().with_money(100);
+        assert!(!walked(shape("ultraliberal", priced()), &purse()).reached(node(2)));
+        assert!(walked(shape("ultraliberal", priced()), &fixed(purse())).reached(node(2)));
+
+        let hurt = || Entry::new(2).guard("HasVolitionDamage()");
+        let whole = || TestWorld::new().set_damage("VOLITION", 0.0);
+        assert!(!walked(shape("revacholian_nationhood", hurt()), &whole()).reached(node(2)));
+        assert!(walked(shape("revacholian_nationhood", hurt()), &fixed(whole())).reached(node(2)));
     }
 
     #[test]

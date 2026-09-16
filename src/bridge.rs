@@ -1420,10 +1420,16 @@ pub fn questions_of(graph: &LookAheadGraph, group: Vec<i32>) -> Questions {
     // `WorldSnapshot::variable_values` - so the order is the agreement between the two
     // sides, and a list that reordered itself between two calls would silently move every
     // answer onto the wrong question.
-    // THE GAME MODE WHERE A PRICE DEPENDS ON IT, which no guard need name - see
-    // `LookAheadGraph::price_for`.
+    // WHAT THE GRAPH IS FITTED TO, which no guard need name - see `LookAheadGraph::fit`: the
+    // game mode where a price depends on it, and whether each thought an action is conditioned
+    // on is fixed.
     if graph.prices_by_mode() {
         data.insert(DataRequest::set(DataKind::GameMode));
+    }
+    let deciding = graph.thoughts_deciding_actions();
+    if !deciding.is_empty() {
+        data.insert(DataRequest::set(DataKind::ThoughtsFixed));
+        thoughts.extend(deciding.into_iter().map(str::to_string));
     }
 
     found.queries = sorted(queries);
@@ -1669,7 +1675,7 @@ pub fn answer(
     }
 
     let world = SnapshotWorld::declaring(snapshot, declared);
-    graph.price_for(crate::core::game_mode::is_hardcore(&world));
+    graph.fit(&crate::graph::Fitting::read(&graph, &world));
     let novelty = |id: DialogueNodeId| {
         let node = NodeRef::from(id);
         if request.unseen_any_game.contains(&node) {
@@ -2884,6 +2890,31 @@ mod tests {
         let mut symbols = StateSymbols::new();
         symbols.declare_variables([name.to_string()]);
         world.get_variable(symbols.variable_ref(name).expect("it was just declared"))
+    }
+
+    /// A group whose actions depend on a fixed thought asks whether it is fixed, though no guard
+    /// names it, and a snapshot's answer switches the action on.
+    #[test]
+    fn a_thought_an_action_depends_on_is_asked_for() {
+        let mut graph = GraphBuilder::new()
+            .add(Entry::new(0).script(r#"ReputationGrows("ultraliberal")"#))
+            .build();
+        let found = questions_of(&graph, Vec::new());
+        let request = DataRequest::set(DataKind::ThoughtsFixed);
+        assert!(found.data.contains(&request), "{:?}", found.data);
+        assert_eq!(found.thoughts, vec!["ultraliberal".to_string()]);
+
+        let mut snapshot = WorldSnapshot::default();
+        snapshot.data.insert(
+            request,
+            DataAnswer::of_names(vec!["ultraliberal".to_string()]),
+        );
+        let fitting = crate::graph::Fitting::read(&graph, &SnapshotWorld::new(snapshot));
+        assert!(fitting.fixed.contains("ultraliberal"));
+
+        graph.fit(&fitting);
+        let node = graph.get(crate::test_graph::node(0)).expect("the entry");
+        assert!(node.actions.iter().all(|action| action.is_enabled()));
     }
 
     #[test]

@@ -83,7 +83,7 @@ use crate::bridge::{
     answer_starts,
 };
 use crate::core::types::{DialogueNodeId, Novelty};
-use crate::graph::LookAheadGraph;
+use crate::graph::{Fitting, LookAheadGraph};
 use crate::index::VariableTable;
 use crate::symbolic::budget::DiagramBudget;
 use crate::symbolic::data_layout::DataLayout;
@@ -102,7 +102,8 @@ use crate::world::ILookAheadWorld;
 /// - `money_ceiling`: the ONLY way the world reaches the layout, through
 ///   `DataLayout::for_group`. Held rather than the money itself, so spending change that
 ///   does not move the ceiling does not throw the manager away.
-/// - `hardcore`: the graph's prices, which the layout's ceiling and every search read.
+/// - `fitting`: the graph's prices and conditional actions, which the layout's ceiling and every
+///   search read.
 /// - `memory` and `cache_split`: the manager is preallocated from both, so neither can move
 ///   under it.
 ///
@@ -124,9 +125,9 @@ struct Key {
     /// menu and hand back more than the smaller layout saves.
     entered_at: Vec<i32>,
     money_ceiling: Option<u32>,
-    /// Whether the graph is priced for hardcore mode, which moves the prices the layout and
-    /// every search read - see [`hardcore_prices`].
-    hardcore: bool,
+    /// What the graph was fitted to, which moves the prices and actions the layout and every
+    /// search read - see [`fitting_of`].
+    fitting: Fitting,
     memory: usize,
     cache_split: usize,
 }
@@ -192,14 +193,14 @@ impl Workspace {
         budget: DiagramBudget,
     ) -> Option<Self> {
         let questions = Arc::new(crate::bridge::questions_of(&graph, group.clone()));
-        let hardcore = hardcore_prices(&graph, &questions, &world, declared.clone());
-        graph.price_for(hardcore);
+        let fitting = fitting_of(&graph, &questions, &world, declared.clone());
+        graph.fit(&fitting);
         let graph = Arc::new(graph);
         let key = Key {
             group,
             entered_at: entered_at.clone(),
             money_ceiling: ceiling_of(&graph, &world, declared.clone()),
-            hardcore,
+            fitting,
             memory: budget.memory(),
             cache_split: budget.cache_split(),
         };
@@ -265,8 +266,7 @@ impl Workspace {
             && self.key.entered_at == entered_at
             && self.key.memory == budget.memory()
             && self.key.cache_split == budget.cache_split()
-            && self.key.hardcore
-                == hardcore_prices(&self.graph, &self.questions, world, declared.clone())
+            && self.key.fitting == fitting_of(&self.graph, &self.questions, world, declared.clone())
             && self.key.money_ceiling == ceiling_of(&self.graph, world, declared)
     }
 
@@ -441,32 +441,33 @@ fn own(opening: Opening, inbox: Receiver<Job>, ready: Sender<bool>) {
     }
 }
 
-/// The money ceiling a world produces for a graph, which is the whole of the key's
-/// dependence on the world.
+/// What a world fits `graph` to - see [`LookAheadGraph::fit`].
 ///
-/// Through the same `DataLayout::money_ceiling` the layout uses, rather than comparing the
-/// money itself: a purchase that does not move the ceiling must not throw a manager away,
-/// and the ceiling saturates well below the range money actually takes.
-/// Whether a world prices `graph` as hardcore - see [`LookAheadGraph::price_for`].
-///
-/// False for a graph with no price the mode moves, so a mode change does not throw away a
-/// manager whose group has nothing to scale. A world whose answers do not line up with the
-/// questions reads as normal mode here; the request it came with is refused when it is
-/// answered.
-fn hardcore_prices(
+/// Only what the graph depends on, through [`Fitting::read`], so a change the graph never asks
+/// about does not throw away a manager. A world whose answers do not line up with the questions
+/// fits as a normal-mode world holding nothing fixed; the request it came with is refused when
+/// it is answered.
+fn fitting_of(
     graph: &LookAheadGraph,
     questions: &Questions,
     world: &WorldSnapshot,
     declared: Option<Arc<VariableTable>>,
-) -> bool {
-    if !graph.prices_by_mode() {
-        return false;
+) -> Fitting {
+    if !graph.needs_fitting() {
+        return Fitting::default();
     }
     let mut snapshot = world.clone();
-    snapshot.resolve(questions).is_ok()
-        && crate::core::game_mode::is_hardcore(&SnapshotWorld::declaring(snapshot, declared))
+    match snapshot.resolve(questions) {
+        Ok(()) => Fitting::read(graph, &SnapshotWorld::declaring(snapshot, declared)),
+        Err(_) => Fitting::default(),
+    }
 }
 
+/// The money ceiling a world produces for a graph.
+///
+/// Through the same `DataLayout::money_ceiling` the layout uses, rather than comparing the
+/// money itself: a purchase that does not move the ceiling must not throw a manager away,
+/// and the ceiling saturates well below the range money actually takes.
 fn ceiling_of(
     graph: &LookAheadGraph,
     world: &WorldSnapshot,

@@ -180,8 +180,20 @@ Lua evaluates it; a call that only reads is part of the value.
 `ReputationAlterant.ReputationOption(name, value)`, which applies
 `Variable["reputation.<name>"] += value` only when `Once(value) != 0`.
 
+`ReputationOption` then runs `ReputationEffect`, which does more while the reputation's own
+copotype thought is fixed: `ultraliberal` adds 100 to money, `revacholian_nationhood` damages
+volition by one, and `moralist` and `the_destroyer` heal volition and endurance by one.
+
 **ENGINE.** An increment of `reputation.<name>` by +1, -1 or the parsed amount, marked once. The
 guards `IsHighestCopotype` and `IsHighestPolitical` read these slots (see guards.md).
+
+The thought's effect follows as a second once action, conditioned on the thought
+(`core::thought_effects`). A graph is fitted to its world before a search
+(`LookAheadGraph::fit`), which switches the action on where the world holds the thought fixed; the
+group asks for `ThoughtsFixed` over those thoughts, and the kept workspace is rebuilt when the
+answer changes. Live: 8 `ultraliberal` sites have a money reader downstream and 4
+`revacholian_nationhood` sites a damage reader. Tested by
+`a_fixed_copotype_thought_adds_to_a_reputation_action` in `oracle.rs` and `backward.rs`.
 
 Correct except for what `once` reads - see [Once](#once).
 
@@ -407,7 +419,8 @@ from one-off queries over the same index rather than from the survey.
 | `XP*SetBool`                                                  | experience                                                                                                              | PFC `TaskLuaFunctions.XPSetBool`                                 | not applied: no guard reads experience                                                                                              |
 | red and white checks                                          | `FlagName` on success; red `FlagName_failed` on failure; a failed white check joins `FailedWhiteChecks`                 | PFC `RedCheckNode.CheckSuccess`, `WhiteCheckNode.CheckSuccess`   | tracked flag slots; a white failure is recorded as a `FlagName_failed` slot                                                         |
 | fake checks                                                   | `FlagName_failed` - all three are forced failures (`AlwaysSucceed` false)                                               | PFC `FakeCheckNode.CheckSuccess`                                 | not written; no guard reads any of the three `_failed` variables                                                                    |
-| a check's result, with certain thoughts fixed                 | money, and volition or endurance damage                                                                                 | PFC `CheckAlterant`                                              | not applied - de-70eo.14                                                                                                            |
+| a check's result, with certain thoughts fixed                 | money, and volition or endurance damage                                                                                 | PFC `CheckAlterant`                                              | not applied - de-70eo.16                                                                                                            |
+| a reputation action, with its copotype thought fixed          | money, and volition or endurance damage                                                                                 | PFC `ReputationAlterant.ReputationEffect`                        | applied while the world holds the thought fixed - see [Reputation](#reputation)                                                     |
 | a failed white check being re-tested                          | the variable, for the five modifier expressions that are `SetVariableValue` calls rather than conditions                | PFC `FailedWhiteChecks.IsFailedWhiteCheckPossible`               | not followed - de-vdy9                                                                                                              |
 
 ## Keeping this current

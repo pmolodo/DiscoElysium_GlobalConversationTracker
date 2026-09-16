@@ -250,7 +250,7 @@ impl<'a> ActionImage<'a> {
         once_already_fired: &BDDFunction,
     ) -> BDDFunction {
         let mut current = states.clone();
-        for action in actions {
+        for action in actions.iter().filter(|action| action.is_enabled()) {
             current = if action.is_once() {
                 // Only the states that have not fired it yet are changed; the rest carry
                 // through untouched. Splitting the set is what keeps a once action from
@@ -284,7 +284,7 @@ impl<'a> ActionImage<'a> {
         once_already_fired: &BDDFunction,
     ) -> BDDFunction {
         let mut current = states.clone();
-        for action in actions.iter().rev() {
+        for action in actions.iter().rev().filter(|action| action.is_enabled()) {
             current = if action.is_once() {
                 // Forward, a once action leaves a spent state alone and changes a fresh
                 // one. So a state reaches `current` either by being spent and already

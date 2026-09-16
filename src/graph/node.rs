@@ -20,7 +20,7 @@ pub struct LookAheadNode {
     pub actions: Vec<DialogueAction>,
     pub links: Vec<DialogueNodeId>,
     /// The price a search charges and checks the purse against: [`Self::click_cost`] as
-    /// [`crate::graph::LookAheadGraph::price_for`] last priced it for a game mode.
+    /// [`crate::graph::LookAheadGraph::fit`] last priced it for a game mode.
     pub cost: i32,
     /// The entry's own `ClickCost`, before any game mode scales it.
     pub click_cost: i32,

@@ -3,12 +3,38 @@
 pub mod node;
 
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt;
 
 use crate::core::state::StateSymbols;
 use crate::core::types::{DialogueNodeId, Novelty};
 use crate::graph::node::LookAheadNode;
+
+/// What a graph needs to know about its world before a search: the facts a search takes as
+/// constant but the graph's prices and actions depend on.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Fitting {
+    /// Whether the world is in hardcore mode, where it matters to a price.
+    pub hardcore: bool,
+    /// The thoughts the world holds fixed, among those an action is conditioned on.
+    pub fixed: BTreeSet<String>,
+}
+
+impl Fitting {
+    /// What `world` says about everything `graph` depends on, and nothing else - so two worlds
+    /// that differ only in what the graph never asks give the same fitting.
+    pub fn read(graph: &LookAheadGraph, world: &dyn crate::world::ILookAheadWorld) -> Self {
+        Self {
+            hardcore: graph.prices_by_mode() && crate::core::game_mode::is_hardcore(world),
+            fixed: graph
+                .thoughts_deciding_actions()
+                .into_iter()
+                .filter(|thought| crate::core::thought_effects::is_fixed(world, thought))
+                .map(str::to_string)
+                .collect(),
+        }
+    }
+}
 
 /// The dialogue entries the look-ahead can walk, indexed by id.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -183,15 +209,33 @@ impl LookAheadGraph {
         self.nodes().any(|node| node.price_scale.is_some())
     }
 
-    /// Sets every entry's price to what the game charges in normal or hardcore mode - see
-    /// [`crate::core::price`].
+    /// Every thought whose being fixed decides whether an action fires, sorted.
+    pub fn thoughts_deciding_actions(&self) -> BTreeSet<&str> {
+        self.nodes()
+            .flat_map(|node| &node.actions)
+            .filter_map(|action| action.fixed_thought())
+            .collect()
+    }
+
+    /// Whether anything in the graph depends on a [`Fitting`].
+    pub fn needs_fitting(&self) -> bool {
+        self.prices_by_mode() || !self.thoughts_deciding_actions().is_empty()
+    }
+
+    /// Fits the graph to a world: every price to the game mode - see [`crate::core::price`] -
+    /// and every conditional action on or off by its thought - see
+    /// [`crate::core::thought_effects`].
     ///
-    /// A graph is built priced as in normal mode. Pricing starts from
-    /// [`LookAheadNode::click_cost`] each time, so a graph can be priced for one mode and then
-    /// the other.
-    pub fn price_for(&mut self, hardcore: bool) {
+    /// A graph is built as for a normal-mode world holding no thought fixed. Fitting starts
+    /// from [`LookAheadNode::click_cost`] and each action's own condition every time, so a graph
+    /// can be fitted to one world and then another.
+    pub fn fit(&mut self, fitting: &Fitting) {
         for node in self.nodes.values_mut() {
-            node.cost = crate::core::price::price(node.click_cost, node.price_scale, hardcore);
+            node.cost =
+                crate::core::price::price(node.click_cost, node.price_scale, fitting.hardcore);
+            for action in &mut node.actions {
+                action.fit(|thought| fitting.fixed.contains(thought));
+            }
         }
     }
 

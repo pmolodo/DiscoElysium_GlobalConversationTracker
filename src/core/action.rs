@@ -43,6 +43,18 @@ pub struct DialogueAction {
     /// every other kind.
     #[serde(default)]
     unless: Option<i32>,
+    /// The thought that has to be fixed for this action to fire, and `None` for an action that
+    /// always fires - see [`crate::core::thought_effects`].
+    #[serde(default)]
+    fixed_thought: Option<String>,
+    /// Whether the action fires: always for an unconditional one, and for a conditional one
+    /// whether the world the graph was last fitted to holds its thought fixed.
+    #[serde(default = "fires_by_default")]
+    enabled: bool,
+}
+
+fn fires_by_default() -> bool {
+    true
 }
 
 /// How high a counter may climb before it stops moving.
@@ -96,94 +108,85 @@ impl DialogueAction {
         self.once
     }
 
-    pub fn assign(slot: usize, value: i32, name: String) -> Self {
+    /// The fields every constructor below shares: no clock reading, no tested slot, and firing
+    /// unconditionally.
+    fn of(kind: DialogueActionKind, slot: i32, value: i32, once: bool, name: String) -> Self {
         Self {
-            kind: DialogueActionKind::Assign,
-            slot: slot as i32,
+            kind,
+            slot,
             value,
-            once: false,
+            once,
             name,
             reading: None,
             unless: None,
+            fixed_thought: None,
+            enabled: true,
         }
+    }
+
+    pub fn assign(slot: usize, value: i32, name: String) -> Self {
+        Self::of(DialogueActionKind::Assign, slot as i32, value, false, name)
     }
 
     pub fn increment(slot: usize, amount: i32, once: bool, name: String) -> Self {
-        Self {
-            kind: DialogueActionKind::Increment,
-            slot: slot as i32,
-            value: amount,
+        Self::of(
+            DialogueActionKind::Increment,
+            slot as i32,
+            amount,
             once,
             name,
-            reading: None,
-            unless: None,
-        }
+        )
     }
 
     pub fn money(gain: bool, amount: i32, once: bool, name: String) -> Self {
-        Self {
-            kind: if gain {
-                DialogueActionKind::GainMoney
-            } else {
-                DialogueActionKind::LoseMoney
-            },
-            slot: -1,
-            value: amount,
-            once,
-            name,
-            reading: None,
-            unless: None,
-        }
+        let kind = if gain {
+            DialogueActionKind::GainMoney
+        } else {
+            DialogueActionKind::LoseMoney
+        };
+        Self::of(kind, -1, amount, once, name)
     }
 
     pub fn pass_time(name: String) -> Self {
-        Self {
-            kind: DialogueActionKind::PassTime,
-            slot: -1,
-            value: LookAheadState::PASS_TIME_MINUTES,
-            once: false,
+        Self::of(
+            DialogueActionKind::PassTime,
+            -1,
+            LookAheadState::PASS_TIME_MINUTES,
+            false,
             name,
-            reading: None,
-            unless: None,
-        }
+        )
     }
 
     /// `slot := reading + offset`, with the reading taken when the action runs.
     pub fn assign_clock(slot: usize, reading: ClockReading, offset: i32, name: String) -> Self {
         Self {
-            kind: DialogueActionKind::AssignClock,
-            slot: slot as i32,
-            value: offset,
-            once: false,
-            name,
             reading: Some(reading),
-            unless: None,
+            ..Self::of(
+                DialogueActionKind::AssignClock,
+                slot as i32,
+                offset,
+                false,
+                name,
+            )
         }
     }
 
     /// `slot := value`, unless `unless` is set when the action runs.
     pub fn assign_unless(slot: usize, value: i32, unless: usize, name: String) -> Self {
         Self {
-            kind: DialogueActionKind::AssignUnless,
-            slot: slot as i32,
-            value,
-            once: false,
-            name,
-            reading: None,
             unless: Some(unless as i32),
+            ..Self::of(
+                DialogueActionKind::AssignUnless,
+                slot as i32,
+                value,
+                false,
+                name,
+            )
         }
     }
 
     pub fn unmodelled(name: String) -> Self {
-        Self {
-            kind: DialogueActionKind::Unmodelled,
-            slot: -1,
-            value: 0,
-            once: false,
-            name,
-            reading: None,
-            unless: None,
-        }
+        Self::of(DialogueActionKind::Unmodelled, -1, 0, false, name)
     }
 
     /// An action the model recognises and deliberately does not apply.
@@ -195,14 +198,35 @@ impl DialogueAction {
             crate::core::modelling::for_action(&name).is_some(),
             "no decision covers {name}",
         );
+        Self::of(DialogueActionKind::Declared, -1, 0, false, name)
+    }
+
+    /// The same action, firing only while `thought` is fixed - see
+    /// [`crate::core::thought_effects`]. It starts switched off, as for a world holding nothing
+    /// fixed, until [`Self::fit`] is told otherwise.
+    pub fn when_thought_fixed(self, thought: &str) -> Self {
         Self {
-            kind: DialogueActionKind::Declared,
-            slot: -1,
-            value: 0,
-            once: false,
-            name,
-            reading: None,
-            unless: None,
+            fixed_thought: Some(thought.to_string()),
+            enabled: false,
+            ..self
+        }
+    }
+
+    /// The thought this action needs fixed, if it needs one.
+    pub fn fixed_thought(&self) -> Option<&str> {
+        self.fixed_thought.as_deref()
+    }
+
+    /// Whether the action fires in the world it was last fitted to.
+    pub fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    /// Switches a conditional action on or off by whether its thought is fixed; an
+    /// unconditional action is left firing.
+    pub fn fit(&mut self, is_fixed: impl Fn(&str) -> bool) {
+        if let Some(thought) = &self.fixed_thought {
+            self.enabled = is_fixed(thought);
         }
     }
 
@@ -329,6 +353,11 @@ impl DialogueAction {
                     continue;
                 }
                 fired_something_once = true;
+            }
+            // A switched-off action still counts towards the once slot above, as the symbolic
+            // images count every once action an entry carries.
+            if !action.enabled {
+                continue;
             }
 
             match action.kind {

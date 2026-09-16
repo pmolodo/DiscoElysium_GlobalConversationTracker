@@ -1225,7 +1225,8 @@ mod tests {
         // From the GRAPH, not from what the builder handed back: `LookAheadGraph::new`
         // interns the once slots itself, after the builder's copy was taken, so the
         // builder's copy cannot name them.
-        let graph = builder.build();
+        let mut graph = builder.build();
+        graph.fit(&crate::graph::Fitting::read(&graph, world));
         let symbols = graph.symbols().clone();
 
         // MONEY WHERE THE FIXTURE READS IT, by the same rule the product lays out by - so a
@@ -1287,6 +1288,37 @@ mod tests {
 
         agree(shape(), &counter(), 2, true);
         agree(shape(), &counter().set_seen(node(1), true), 2, false);
+    }
+
+    /// A reputation action pays out or hurts only while its thought is fixed - the same
+    /// fixtures as the reference walk's.
+    #[test]
+    fn a_fixed_copotype_thought_adds_to_a_reputation_action() {
+        let shape = |reputation: &str, reader: Entry| {
+            vec![
+                Entry::new(0).links(&[1]),
+                Entry::new(1)
+                    .script(&format!(r#"ReputationGrows("{reputation}")"#))
+                    .links(&[2]),
+                reader,
+            ]
+        };
+        let fixed = |world: TestWorld| world.set_query_bool("IsTHCFixed", true);
+
+        let priced = || Entry::new(2).cost(150);
+        let purse = || TestWorld::new().with_money(100);
+        agree(shape("ultraliberal", priced()), &purse(), 2, false);
+        agree(shape("ultraliberal", priced()), &fixed(purse()), 2, true);
+
+        let hurt = || Entry::new(2).guard("HasVolitionDamage()");
+        let whole = || TestWorld::new().set_damage("VOLITION", 0.0);
+        agree(shape("revacholian_nationhood", hurt()), &whole(), 2, false);
+        agree(
+            shape("revacholian_nationhood", hurt()),
+            &fixed(whole()),
+            2,
+            true,
+        );
     }
 
     /// A blow on the way opens a damage question, and a heal after it shuts it again.
