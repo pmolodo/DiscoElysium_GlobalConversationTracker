@@ -11,8 +11,7 @@ namespace GlobalConversationTracker.Engine
     /// <remarks>
     /// <para>THE ENGINE ASKS THE QUESTIONS, and this is the list. Every answer must come
     /// back under the exact key given here - see <see cref="WorldSnapshot"/> - because the
-    /// alternative was for both sides to render <c>CheckEquipped("neck_tie")</c>
-    /// identically forever, including how a number is formatted and how a string is
+    /// alternative was for both sides to render every call identically forever, including how a number is formatted and how a string is
     /// escaped. One disagreement there and the answer silently goes missing, the query
     /// reads Unknown, the guard turns permissive, and the marker is wrong with nothing to
     /// report it.</para>
@@ -55,7 +54,7 @@ namespace GlobalConversationTracker.Engine
 
         /// <summary>
         /// World queries, by the key their answers must come back under - the rendered
-        /// call, such as <c>CheckEquipped("neck_tie")</c>.
+        /// call, such as <c>IsKimHere()</c>.
         /// </summary>
         public IReadOnlyList<string> Queries { get; }
 

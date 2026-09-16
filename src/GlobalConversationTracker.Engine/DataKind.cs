@@ -27,5 +27,12 @@ namespace GlobalConversationTracker.Engine
         /// The thoughts already internalised - <c>CharacterThoughts.fixedEffects</c>.
         /// </summary>
         ThoughtsFixed = 2,
+
+        /// <summary>
+        /// The item in one equipment slot - <c>InventoryViewData.GetEquipped</c> - with the
+        /// slot named by its <c>EquipmentSlotType</c> name in <see cref="DataRequest.Subject"/>.
+        /// Answered as text: the item's name, or empty for an empty slot.
+        /// </summary>
+        EquippedInSlot = 3,
     }
 }

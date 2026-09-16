@@ -304,6 +304,8 @@ namespace GlobalConversationTracker.Engine
                     return DataKind.ThoughtsCooking;
                 case Wire.DataKind.ThoughtsFixed:
                     return DataKind.ThoughtsFixed;
+                case Wire.DataKind.EquippedInSlot:
+                    return DataKind.EquippedInSlot;
                 default:
                     return DataKind.Unspecified;
             }

@@ -1213,8 +1213,9 @@ fn document_member(save: &str, suffix: &str, member_name: &str) -> serde_json::V
 pub struct Holdings {
     /// Items in the player's possession, carried or worn.
     pub items: HashSet<String>,
-    /// Items in a slot: what CheckEquipped answers about.
-    pub equipped: HashSet<String>,
+    /// What each equipment slot holds, by `EquipmentSlotType` name: what CheckEquipped
+    /// answers about. A slot the save does not name is empty.
+    pub equipment: HashMap<String, String>,
     /// Journal tasks taken and not yet closed.
     pub tasks: HashSet<String>,
     /// Thoughts the cabinet has reached, whatever state they are in.
@@ -1288,14 +1289,21 @@ impl Holdings {
     /// them - `cookingThoughts` and `fixedThoughts`, written from `cookingEffects` and
     /// `fixedEffects`. Asked for once each per group rather than once per thought.
     ///
-    /// A request this cannot service is left out, exactly as an unanswerable query is: the
-    /// engine then reads Unknown for it, which is permissive.
+    /// An equipment slot, from `inventoryViewState.equipment`, which is the game's own
+    /// `InventoryViewData.equipment` table written out by slot name.
     pub fn data_for(&self, asked: &[DataRequest]) -> Vec<DataAnswer> {
         asked
             .iter()
             .map(|request| match request.kind {
                 DataKind::ThoughtsCooking => DataAnswer::of_names(self.thoughts_in(COOKING)),
                 DataKind::ThoughtsFixed => DataAnswer::of_names(self.thoughts_in(FIXED)),
+                DataKind::EquippedInSlot => DataAnswer::of_value(WireValue::Text {
+                    value: self
+                        .equipment
+                        .get(&request.subject)
+                        .cloned()
+                        .unwrap_or_default(),
+                }),
             })
             .collect()
     }
@@ -1332,9 +1340,6 @@ impl Holdings {
             // permissive - about a question the save settles exactly.
             "IsTHCCooking" => Some(WireValue::Bool {
                 value: self.thought_states.get(argument?).map(String::as_str) == Some(COOKING),
-            }),
-            "CheckEquipped" => Some(WireValue::Bool {
-                value: self.equipped.contains(argument?),
             }),
             // WHETHER ANYTHING HELD IS IN THAT GROUP, which is what the game walks the bag to
             // decide. The group of an item is database data, carried in the item table beside
@@ -1410,7 +1415,8 @@ pub fn holdings_in_save(save: &str) -> Holdings {
 
     let thought_states = thought_states(&cabinet);
     let carried = world_state(save, "inventoryState");
-    let equipped = equipped(&carried);
+    let equipment = equipment(&carried);
+    let equipped: HashSet<String> = equipment.values().cloned().collect();
 
     Holdings {
         // WHAT THE GAME WOULD ANSWER CheckItem WITH, which is three records rather than one.
@@ -1429,7 +1435,7 @@ pub fn holdings_in_save(save: &str) -> Holdings {
             .chain(keys_held(&carried))
             .chain(bullets_held(&carried))
             .collect(),
-        equipped,
+        equipment,
         tasks: active_tasks(&journal),
         // WHAT gainedThoughts HOLDS, which is neither of the two states that mean the
         // player does not have the thought: never reached, or reached and given up.
@@ -1714,13 +1720,19 @@ fn bullets_held(inventory: &serde_json::Value) -> HashSet<String> {
         .collect()
 }
 
-/// What the player has in a slot, which is what `CheckEquipped` answers about.
-fn equipped(inventory: &serde_json::Value) -> HashSet<String> {
+/// What each slot holds, by slot name, which is what `CheckEquipped` answers about.
+///
+/// A slot recorded empty is left out, as a slot never filled is: the game's `IsEquipped`
+/// treats both as nothing there.
+fn equipment(inventory: &serde_json::Value) -> HashMap<String, String> {
     inventory["inventoryViewState"]["equipment"]
         .as_object()
         .into_iter()
         .flatten()
-        .filter_map(|(_, item)| item.as_str().map(str::to_string))
+        .filter_map(|(slot, item)| {
+            let item = item.as_str().filter(|item| !item.is_empty())?;
+            Some((slot.clone(), item.to_string()))
+        })
         .collect()
 }
 

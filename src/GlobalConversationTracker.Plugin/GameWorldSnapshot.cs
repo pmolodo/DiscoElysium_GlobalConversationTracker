@@ -4,6 +4,7 @@ using GlobalConversationTracker.Core;
 using GlobalConversationTracker.Engine;
 using GlobalConversationTracker.Session;
 using PixelCrushers.DialogueSystem;
+using Sunshine.Metric;
 using Voidforge;
 
 namespace GlobalConversationTracker
@@ -89,7 +90,7 @@ namespace GlobalConversationTracker
 
         /// <summary>
         /// The queries the engine names are the CALLS themselves - <c>IsKimHere()</c>,
-        /// <c>CheckEquipped("neck_tie")</c> - so a key runs as Lua as it stands.
+        /// <c>IsCunoInParty()</c> - so a key runs as Lua as it stands.
         /// </summary>
         /// <remarks>
         /// A coupling worth naming: the engine renders these keys and this runs them,
@@ -130,6 +131,8 @@ namespace GlobalConversationTracker
                         return ThoughtsWhere(questions.Thoughts, "IsTHCCooking");
                     case DataKind.ThoughtsFixed:
                         return ThoughtsWhere(questions.Thoughts, "IsTHCFixed");
+                    case DataKind.EquippedInSlot:
+                        return EquippedIn(wanted.Subject);
                     default:
                         return DataAnswer.Unreadable();
                 }
@@ -140,6 +143,26 @@ namespace GlobalConversationTracker
                 // unserviced keeps the crawl correct rather than guessing.
                 return DataAnswer.Unreadable();
             }
+        }
+
+        /// <summary>The item in one equipment slot, named by its slot type.</summary>
+        /// <remarks>
+        /// <para>A READ OF THE GAME'S OWN TABLE, not a dialogue function:
+        /// <c>InventoryViewData.GetEquipped</c> looks the slot up in the equipment dictionary
+        /// and nothing else. An empty slot answers empty text, which is a definite "nothing
+        /// here", while a slot name this build does not know is unserviced.</para>
+        /// </remarks>
+        /// <param name="slot">An <c>EquipmentSlotType</c> name, such as <c>HAT</c>.</param>
+        private static DataAnswer EquippedIn(string slot)
+        {
+            InventoryViewData? inventory = InventoryViewData.Singleton;
+            if (inventory == null
+                || !System.Enum.TryParse(slot, ignoreCase: false, out EquipmentSlotType type))
+            {
+                return DataAnswer.Unreadable();
+            }
+
+            return DataAnswer.Of(WireValue.FromText(inventory.GetEquipped(type) ?? string.Empty));
         }
 
         /// <summary>Which of the thoughts the group asks about are in one state.</summary>

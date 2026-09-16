@@ -174,6 +174,7 @@ fn written_kind(kind: DataKind) -> wire::DataKind {
     match kind {
         DataKind::ThoughtsCooking => wire::DataKind::ThoughtsCooking,
         DataKind::ThoughtsFixed => wire::DataKind::ThoughtsFixed,
+        DataKind::EquippedInSlot => wire::DataKind::EquippedInSlot,
     }
 }
 

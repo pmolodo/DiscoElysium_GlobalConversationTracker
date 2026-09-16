@@ -15,7 +15,7 @@
 //!
 //! The alternative was for the plugin to build the keys itself, and it is worse in a way
 //! that would not show up until it mattered: the two sides would have to render
-//! `CheckEquipped("neck_tie")` identically, forever, including how a number is formatted
+//! every call identically, forever, including how a number is formatted
 //! and how a string is escaped. One disagreement and the answer silently goes missing,
 //! the query reads Unknown, the guard turns permissive, and the marker is wrong in a way
 //! nothing reports. Having the engine name its own keys removes the possibility.
@@ -44,6 +44,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::core::equipment;
 use crate::core::guard::{Guard, GuardExpression};
 use crate::core::guard_value::{GuardValue, GuardValueKind};
 use crate::core::state::{ITEM_PREFIX, TASK_PREFIX, THOUGHT_PREFIX, VariableRef};
@@ -620,6 +621,23 @@ impl SnapshotWorld {
 
         Some(answer.names.iter().any(|name| name == subject))
     }
+
+    /// The item one equipment slot holds - empty for an empty slot - or `None` where the
+    /// slot was not read.
+    fn in_slot(&self, slot: &str) -> Option<&str> {
+        let answer = self
+            .snapshot
+            .data
+            .get(&DataRequest::about(DataKind::EquippedInSlot, slot))?;
+        if !answer.read {
+            return None;
+        }
+
+        match &answer.value {
+            WireValue::Text { value } => Some(value),
+            _ => None,
+        }
+    }
 }
 
 /// The sets a cabinet question is answered from, or `None` for anything else.
@@ -714,6 +732,18 @@ impl ILookAheadWorld for SnapshotWorld {
             };
         }
 
+        // WHAT IS WORN, answered from the slots the plugin read. Like the cabinet, there is
+        // no query key behind it to fall back to.
+        if name == equipment::CHECK_EQUIPPED {
+            let item = match arguments {
+                [value] if value.kind() == GuardValueKind::Text => value.text(),
+                _ => return GuardValue::unknown(),
+            };
+
+            return equipment::is_equipped(item, |slot| self.in_slot(slot))
+                .map_or_else(GuardValue::unknown, GuardValue::from_boolean);
+        }
+
         self.snapshot
             .queries
             .get(&query_key(name, arguments))
@@ -766,6 +796,10 @@ pub enum DataKind {
     ThoughtsCooking,
     /// The thoughts already internalised - `CharacterThoughts.fixedEffects`.
     ThoughtsFixed,
+    /// The item in one equipment slot, named in the subject by its `EquipmentSlotType` name -
+    /// `InventoryViewData.GetEquipped`. Answered as text: the item, or empty for an empty
+    /// slot. See [`crate::core::equipment`].
+    EquippedInSlot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -773,9 +807,7 @@ pub struct DataRequest {
     pub kind: DataKind,
     /// What it is about, for a kind that names one thing.
     ///
-    /// A set-valued kind leaves this empty, which is every kind there is today - nothing
-    /// uses this yet, and it is here because the item-group question is the next family and
-    /// is per-subject.
+    /// A set-valued kind leaves this empty. [`DataKind::EquippedInSlot`] names the slot.
     ///
     /// A STRING, though the possible values are as closed a set as [`DataKind`] is: item and
     /// thought names are DERIVED GAME DATA, versioned with the content rather than with this
@@ -796,6 +828,14 @@ impl DataRequest {
         Self {
             kind,
             subject: String::new(),
+        }
+    }
+
+    /// A request about one named subject.
+    pub fn about(kind: DataKind, subject: &str) -> Self {
+        Self {
+            kind,
+            subject: subject.to_string(),
         }
     }
 }
@@ -849,6 +889,15 @@ impl DataAnswer {
         Self {
             value: WireValue::Unknown,
             names: names.into_iter().collect(),
+            read: true,
+        }
+    }
+
+    /// An answer about one subject, read successfully.
+    pub fn of_value(value: WireValue) -> Self {
+        Self {
+            value,
+            names: Vec::new(),
             read: true,
         }
     }
@@ -1364,6 +1413,16 @@ fn collect(
                     ("IsTHCCookingOrFixed", _) => {
                         data.insert(DataRequest::set(DataKind::ThoughtsCooking));
                         data.insert(DataRequest::set(DataKind::ThoughtsFixed));
+                    }
+                    // WHAT IS WORN, read slot by slot rather than asked as a call per item:
+                    // the answer is the equipment table itself, and the same few reads serve
+                    // every item a group asks about. See `core::equipment`.
+                    (equipment::CHECK_EQUIPPED, _) => {
+                        data.extend(
+                            equipment::SLOTS
+                                .iter()
+                                .map(|slot| DataRequest::about(DataKind::EquippedInSlot, slot)),
+                        );
                     }
                     _ => {
                         // Only literal arguments can be answered ahead of time. A computed
@@ -2769,12 +2828,12 @@ mod tests {
 
     #[test]
     fn an_ordinary_query_is_asked_for_by_its_key() {
-        let found = asked(r#"IsKimHere() and CheckEquipped("neck_tie")"#);
+        let found = asked(r#"WasGameBeatenInHardcoreMode() and IsKimHere()"#);
         assert_eq!(
             found.queries,
             vec![
-                "CheckEquipped(\"neck_tie\")".to_string(),
-                "IsKimHere()".to_string()
+                "IsKimHere()".to_string(),
+                "WasGameBeatenInHardcoreMode()".to_string()
             ],
         );
     }
@@ -2783,7 +2842,7 @@ mod tests {
     /// because the two sides agreeing is the whole point of naming them here.
     #[test]
     fn the_key_asked_for_is_the_key_answered() {
-        let found = asked(r#"CheckEquipped("neck_tie")"#);
+        let found = asked(r#"IsKimHere()"#);
         let key = &found.queries[0];
 
         let mut world = WorldSnapshot::default();
@@ -2792,14 +2851,70 @@ mod tests {
             .insert(key.clone(), WireValue::Bool { value: true });
         let world = SnapshotWorld::new(world);
 
-        let answer = world.query(
-            "CheckEquipped",
-            &[GuardValue::from_text("neck_tie".to_string())],
-        );
+        let answer = world.query("IsKimHere", &[]);
         assert!(
             answer.boolean(),
             "the answer did not come back under the key given"
         );
+    }
+
+    /// `CheckEquipped` asks for every slot as DATA, and never as a call to run.
+    #[test]
+    fn check_equipped_reads_every_slot_rather_than_running_a_call() {
+        let found = asked(r#"CheckEquipped("neck_tie")"#);
+        assert!(
+            found.queries.is_empty(),
+            "asked as a call: {:?}",
+            found.queries
+        );
+        assert_eq!(
+            found.data.len(),
+            equipment::SLOTS.len(),
+            "one read per slot: {:?}",
+            found.data
+        );
+        for slot in equipment::SLOTS {
+            assert!(
+                found
+                    .data
+                    .contains(&DataRequest::about(DataKind::EquippedInSlot, slot)),
+                "{slot} is not read"
+            );
+        }
+    }
+
+    /// The slots answer `CheckEquipped`, and a slot nobody read leaves a missing item Unknown.
+    #[test]
+    fn check_equipped_is_answered_from_the_slots() {
+        let found = asked(r#"CheckEquipped("neck_tie")"#);
+        let world_with = |neck: Option<&str>| {
+            let mut snapshot = WorldSnapshot::default();
+            for request in &found.data {
+                let answer = match (request.subject.as_str(), neck) {
+                    ("NECK", None) => DataAnswer::default(),
+                    ("NECK", Some(item)) => DataAnswer::of_value(WireValue::Text {
+                        value: item.to_string(),
+                    }),
+                    _ => DataAnswer::of_value(WireValue::Text {
+                        value: String::new(),
+                    }),
+                };
+                snapshot.data.insert(request.clone(), answer);
+            }
+            SnapshotWorld::new(snapshot)
+        };
+        let tie = [GuardValue::from_text("neck_tie".to_string())];
+
+        let worn = world_with(Some("neck_tie")).query("CheckEquipped", &tie);
+        assert_eq!(worn.kind(), GuardValueKind::Boolean);
+        assert!(worn.boolean());
+
+        let bare = world_with(Some("")).query("CheckEquipped", &tie);
+        assert_eq!(bare.kind(), GuardValueKind::Boolean);
+        assert!(!bare.boolean());
+
+        let unread = world_with(None).query("CheckEquipped", &tie);
+        assert_eq!(unread.kind(), GuardValueKind::Unknown);
     }
 
     /// A variable the plugin could not read falls back to what the database declares.

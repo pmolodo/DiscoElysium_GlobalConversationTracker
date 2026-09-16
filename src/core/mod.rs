@@ -3,6 +3,7 @@
 pub mod action;
 pub mod clock;
 pub mod env;
+pub mod equipment;
 pub mod guard;
 pub mod guard_value;
 pub mod modelling;

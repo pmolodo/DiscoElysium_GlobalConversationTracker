@@ -178,8 +178,8 @@ fn the_questions_survive_the_wire() {
                 subject: String::new(),
             },
             wire::DataRequest {
-                kind: wire::DataKind::ThoughtsFixed as i32,
-                subject: "aces_high".to_string(),
+                kind: wire::DataKind::EquippedInSlot as i32,
+                subject: "HAT".to_string(),
             },
         ],
     });

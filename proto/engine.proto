@@ -110,6 +110,10 @@ enum DataKind {
   DATA_KIND_THOUGHTS_COOKING = 1;
   // The thoughts already internalised - CharacterThoughts.fixedEffects.
   DATA_KIND_THOUGHTS_FIXED = 2;
+  // The item in one equipment slot, named in subject by its EquipmentSlotType name - HAT,
+  // HELDRIGHT - and answered as a text value: the item's name, or empty for an empty slot.
+  // InventoryViewData.GetEquipped(EquipmentSlotType).
+  DATA_KIND_EQUIPPED_IN_SLOT = 3;
 }
 
 message DataRequest {
