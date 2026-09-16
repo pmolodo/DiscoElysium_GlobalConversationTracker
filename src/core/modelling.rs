@@ -75,16 +75,12 @@ impl Decision {
 /// and among them these have readers and no writer whatsoever - so their answer at the
 /// start of a search is their answer at the end of it, and asking the world once is exact.
 ///
-/// Worth writing down because it does not LOOK exact. An action that gains an item could
-/// plausibly change what `CheckEquipped` answers - putting the thing on - and the audit in
-/// de-p95 raised precisely that doubt. The registry settles it: there is no equip
-/// function, no wear function, nothing that dresses the player. Equipping is the inventory
-/// screen, which no conversation can reach.
+/// Read what the game lets dialogue call, rather than reasoning about what it might.
 ///
-/// The same shape of answer as the thought cabinet's, and found the same way: read what
-/// the game lets dialogue call, rather than reasoning about what it might.
+/// EQUIPMENT IS NOT HERE, though dialogue has no equip function: `LoseItem` takes a worn item
+/// off, so the equipment questions move where a group loses one - see `core::equipment`.
 ///
-/// THE CABINET'S THREE NARROW QUESTIONS ARE HERE FOR THE SAME REASON, and the argument is
+/// THE CABINET'S THREE NARROW QUESTIONS ARE THE WHOLE LIST, and the argument is
 /// worth stating because it does not look true either. `GainThought` is a modelled write, so
 /// `IsTHCCooking`, `IsTHCFixed` and `IsTHCCookingOrFixed` plainly ask about something a
 /// conversation moves. They do not. `CharacterThoughts.GainThought` adds to `gainedThoughts`
@@ -93,24 +89,14 @@ impl Decision {
 /// fills. `THCLuaFunctions` registers exactly five functions and `GainThought` is the only
 /// writer among them, so nothing dialogue can call moves these three.
 ///
+/// Time passing is the exception the game has: `PassTime` bakes cooking thoughts
+/// (`ThoughtManager.BakeThoughts`), but only while the clock runs, and the plugin always sends
+/// it locked - see `docs/actions.md`.
+///
 /// `IsTHCPresent` is the one that DOES move, and it is not here: it is `gainedThoughts`
 /// itself, which is exactly what `GainThought` adds to.
-pub const CONSTANT_BY_CONSTRUCTION: &[&str] = &[
-    "CheckEquipped",
-    "CheckEquippedGroup",
-    "CheckHeldLeftGroup",
-    "CheckHeldRightGroup",
-    "HasHat",
-    "HasJacket",
-    "HasNecktie",
-    "HasPants",
-    "HasShirt",
-    "HasShoes",
-    "IsTHCCooking",
-    "IsTHCCookingOrFixed",
-    "IsTHCFixed",
-    "WeirdClothing",
-];
+pub const CONSTANT_BY_CONSTRUCTION: &[&str] =
+    &["IsTHCCooking", "IsTHCCookingOrFixed", "IsTHCFixed"];
 
 /// Actions the database calls FROM A GUARD, which must never be run to answer one.
 ///

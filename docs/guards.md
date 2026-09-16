@@ -46,7 +46,7 @@ walks - see [What the search can move](#what-the-search-can-move):
 | IsKimHere                   | party        |    323 |   4,687 | data, slot | tracked where removed              |
 | CheckItem                   | inventory    |    493 |     835 | set        | tracked                            |
 | IsTHCPresent                | cabinet      |    213 |     731 | set        | tracked                            |
-| CheckEquipped               | equipment    |    199 |     514 | data       | held - de-70eo.7                   |
+| CheckEquipped               | equipment    |    199 |     514 | data, slot | tracked where lost                 |
 | IsCunoInParty               | party        |     22 |     358 | data       | held by decision                   |
 | IsTaskActive                | journal      |    204 |     341 | slot       | tracked                            |
 | DayCount                    | clock        |     66 |     111 | port       | constant                           |
@@ -65,20 +65,20 @@ walks - see [What the search can move](#what-the-search-can-move):
 | IsDaytime                   | clock        |      3 |      33 | port       | held - clock locked                |
 | IsNighttime                 | clock        |      3 |      29 | port       | held - clock locked                |
 | CheckItemGroup              | inventory    |     23 |      28 | set        | tracked                            |
-| CheckEquippedGroup          | equipment    |     13 |      25 | data       | held - de-70eo.7                   |
+| CheckEquippedGroup          | equipment    |     13 |      25 | data, slot | tracked where lost                 |
 | SubstanceUsedMore           | substances   |     11 |      19 | slot       | tracked                            |
 | IsExterior                  | scene        |      4 |      14 | data       | held by decision                   |
-| HasJacket                   | equipment    |     10 |      12 | data       | held - de-70eo.7                   |
+| HasJacket                   | equipment    |     10 |      12 | data, slot | tracked where lost                 |
 | HasVolitionDamage           | damage       |      4 |      12 | data, slot | tracked                            |
-| CheckHeldRightGroup         | equipment    |      8 |      12 | data       | held - de-70eo.7                   |
-| HasShirt                    | equipment    |      9 |      11 | data       | held - de-70eo.7                   |
+| CheckHeldRightGroup         | equipment    |      8 |      12 | data, slot | tracked where lost                 |
+| HasShirt                    | equipment    |      9 |      11 | data, slot | tracked where lost                 |
 | IsDayUntil                  | clock        |      4 |      11 | port       | constant                           |
 | FlagSet                     | flags        |      9 |      10 | slot       | tracked                            |
 | HasEnduranceDamage          | damage       |      2 |       6 | data, slot | tracked                            |
-| HasShoes                    | equipment    |      4 |       6 | data       | held - de-70eo.7                   |
+| HasShoes                    | equipment    |      4 |       6 | data, slot | tracked where lost                 |
 | IsHardcoreModeActive        | game mode    |      2 |       6 | data       | constant                           |
 | WasGameBeatenInHardcoreMode | game mode    |      2 |       6 | data       | constant                           |
-| HasHat                      | equipment    |      2 |       5 | data       | held - de-70eo.7                   |
+| HasHat                      | equipment    |      2 |       5 | data, slot | tracked where lost                 |
 | TotalHourCount              | clock        |      5 |       5 | port       | held - clock locked                |
 | FlagNotSet                  | flags        |      3 |       3 | slot       | tracked                            |
 | IsTHCCooking                | cabinet      |      3 |       3 | data       | constant while the clock is locked |
@@ -88,7 +88,7 @@ walks - see [What the search can move](#what-the-search-can-move):
 | IsNoon                      | clock        |      2 |       2 | port       | held - clock locked                |
 | IsRaining                   | scene        |      2 |       2 | slot       | tracked                            |
 | IsSnowing                   | scene        |      2 |       2 | slot       | tracked                            |
-| WeirdClothing               | equipment    |      2 |       2 | data       | held - de-70eo.7                   |
+| WeirdClothing               | equipment    |      2 |       2 | data, slot | tracked where lost                 |
 | XPStandardSetBool           | guard action |      2 |       2 | answered   | not applicable                     |
 | FinishTask                  | guard action |      1 |       1 | answered   | not applicable                     |
 | HasPawnablesInInventory     | inventory    |      1 |       1 | data       | held - tab read at the start       |
@@ -253,6 +253,10 @@ questions also read `DataKind::ItemsInGroup`. PFC: `InventoryLuaFunctions`,
 
 `CheckEquipped` reads all twelve slots and counts an item in any of them as equipped, since
 `Equip` files an item under its own type's slot.
+
+Where the group loses an item (`LoseItem`), a slot holding it at the start reads as empty once
+its `unequipped:` slot is set - see `docs/actions.md`. Tested by
+`losing_a_worn_item_takes_it_off`.
 
 | function            | guards | entries | mechanism | tests                                                                                                                                                                                                                                                                                                       |
 | ------------------- | -----: | ------: | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -444,18 +448,19 @@ it reads. Three positions, per function above:
 
 - **Tracked.** The answer is read from search state, which the search's own actions write: the
   two slot-backed sets, the journal, `CheckItemGroup`'s members, reputation, flags, money,
-  substance counts, weather, and every `Variable[...]` read.
+  substance counts, weather, damage, equipment a group takes away, Kim left at the church, and
+  every `Variable[...]` read.
 - **Constant.** No dialogue action can write the data: game mode and the day - and the cabinet
   states while the clock is locked, since only passing time bakes a thought.
 - **Held.** Dialogue actions CAN write the data, and the engine answers from the starting value
   anyway, by a decision recorded in `core::modelling::DECISIONS`, a note in the module, or the
-  locked clock: party, damage, equipment, the clock, the pawnables tab, the scene.
+  locked clock: the party writers other than leaving Kim at the church, the clock, the pawnables
+  tab, the scene.
 
 Which actions write what, and whether any of them reaches a guard that reads it, is in
-[actions.md](actions.md). One of its findings bears on this document: equipment is held rather
-than constant. `LoseItem` unequips what it deletes (`Inventory.DeleteItem`) and 26 call sites
-have an equipment question downstream, although `core::modelling` still lists the equipment
-questions as constant by construction (de-70eo.7).
+[actions.md](actions.md). One of its findings bears on this document: equipment is not
+constant. `LoseItem` unequips what it deletes (`Inventory.DeleteItem`), and 26 call sites have an
+equipment question downstream, so the engine tracks it.
 
 `UseSubstanceInHand` does write `stats.uses_<group>` (`HudHeldPanelController.OnSubstanceUse`),
 though `core::substance` says no dialogue script does; no call site has a substance question

@@ -29,7 +29,7 @@ use std::collections::{HashMap, HashSet};
 use crate::core::guard::{Guard, GuardExpression, GuardRef};
 use crate::core::state::{
     DAMAGE_PREFIX, ITEM_PREFIX, NOT_A_VARIABLE, ONCE_PREFIX, SEEN_PREFIX, StateSymbols,
-    THOUGHT_PREFIX,
+    THOUGHT_PREFIX, UNEQUIPPED_PREFIX,
 };
 use crate::core::types::DialogueNodeId;
 use crate::graph::LookAheadGraph;
@@ -804,6 +804,16 @@ impl DataLayout {
 
         for node in nodes {
             Self::read_by_guard(&node.guard, &mut names);
+            if Self::reads_any_slot_contents(&node.guard) {
+                // Which item a slot holds is the world's to say, so a question about whether
+                // a slot is filled reads every item the group can take away.
+                names.extend(
+                    (0..symbols.count())
+                        .filter_map(|slot| symbols.name_of(slot))
+                        .filter(|name| name.starts_with(UNEQUIPPED_PREFIX))
+                        .map(str::to_string),
+                );
+            }
 
             for slot in [node.flag_slot, node.failed_flag_slot] {
                 if let Ok(slot) = usize::try_from(slot)
@@ -835,6 +845,21 @@ impl DataLayout {
             .map(str::to_string)
     }
 
+    /// Whether a guard asks an equipment question that any lost item could change.
+    fn reads_any_slot_contents(guard: &Guard) -> bool {
+        guard.nodes().any(|node| match node.expression() {
+            GuardExpression::Call(function, arguments) => {
+                crate::core::equipment::reads_equipment(function)
+                    && crate::core::equipment::only_loss_read_by(
+                        function,
+                        Self::literal_text(arguments).as_deref(),
+                    )
+                    .is_none()
+            }
+            _ => false,
+        })
+    }
+
     /// The names one guard reads, including the subjects of the queries answered from
     /// search state.
     fn read_by_guard(guard: &Guard, names: &mut HashSet<String>) {
@@ -853,6 +878,16 @@ impl DataLayout {
                     if crate::core::party::reads_kim_removal(function) =>
                 {
                     names.insert(crate::core::party::KIM_REMOVED_SLOT.to_string());
+                }
+                GuardExpression::Call(function, arguments)
+                    if crate::core::equipment::reads_equipment(function) =>
+                {
+                    let argument = Self::literal_text(arguments);
+                    if let Some(item) =
+                        crate::core::equipment::only_loss_read_by(function, argument.as_deref())
+                    {
+                        names.insert(format!("{UNEQUIPPED_PREFIX}{item}"));
+                    }
                 }
                 GuardExpression::Call(function, arguments) => {
                     // The two queries `BoundContext::query` answers from a slot. Their
@@ -877,6 +912,14 @@ impl DataLayout {
                 }
                 _ => {}
             }
+        }
+    }
+
+    /// A call's single literal argument, as text.
+    fn literal_text(arguments: crate::core::guard::Arguments<'_>) -> Option<String> {
+        match arguments.only()?.expression() {
+            GuardExpression::Literal(value) => Some(value.text().to_string()),
+            _ => None,
         }
     }
 

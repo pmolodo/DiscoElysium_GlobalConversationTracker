@@ -20,6 +20,8 @@ pub struct TestWorld {
     pub thoughts: HashMap<String, bool>,
     /// Each skill's damage value, by `SkillType` name - negative where damaged.
     pub damage: HashMap<String, f64>,
+    /// What each equipment slot holds, by `EquipmentSlotType` name.
+    pub equipment: HashMap<String, String>,
     pub check_results: HashMap<DialogueNodeId, Ternary>,
     pub seen: HashMap<DialogueNodeId, bool>,
     /// Answers to named world queries, keyed by function name.
@@ -105,6 +107,12 @@ impl TestWorld {
         self
     }
 
+    /// Puts `item` in an equipment slot.
+    pub fn set_equipped(mut self, slot: &str, item: &str) -> Self {
+        self.equipment.insert(slot.to_string(), item.to_string());
+        self
+    }
+
     /// Answers a named world query, such as `IsKimHere`.
     pub fn set_query(mut self, name: &str, value: GuardValue) -> Self {
         self.queries.insert(name.to_string(), value);
@@ -141,6 +149,9 @@ impl ILookAheadWorld for TestWorld {
     }
     fn initial_damage(&self, skill: &str) -> Option<f64> {
         self.damage.get(skill).copied()
+    }
+    fn item_in_slot(&self, slot: &str) -> Option<String> {
+        Some(self.equipment.get(slot).cloned().unwrap_or_default())
     }
     fn query(&self, name: &str, _arguments: &[GuardValue]) -> GuardValue {
         self.queries

@@ -22,15 +22,18 @@ pub const THOUGHT_PREFIX: &str = "thought:";
 pub const DAMAGE_PREFIX: &str = "damage:";
 /// What dialogue has done to the party during a search - see `core::party`.
 pub const PARTY_PREFIX: &str = "party:";
+/// A worn or held item dialogue has taken away, by item name - see `core::equipment`.
+pub const UNEQUIPPED_PREFIX: &str = "unequipped:";
 pub const ONCE_PREFIX: &str = "once:";
 pub const SEEN_PREFIX: &str = "seen:";
 
 /// The prefixes a slot's name carries when the slot is not a dialogue variable.
-pub const NOT_A_VARIABLE: [&str; 6] = [
+pub const NOT_A_VARIABLE: [&str; 7] = [
     ITEM_PREFIX,
     THOUGHT_PREFIX,
     DAMAGE_PREFIX,
     PARTY_PREFIX,
+    UNEQUIPPED_PREFIX,
     ONCE_PREFIX,
     SEEN_PREFIX,
 ];
@@ -116,6 +119,11 @@ impl StateSymbols {
 
     pub fn damage(&mut self, skill: &str) -> usize {
         self.intern(format!("{DAMAGE_PREFIX}{skill}"))
+    }
+
+    /// The slot saying dialogue has taken `item` away, and with it out of any equipment slot.
+    pub fn unequipped(&mut self, item: &str) -> usize {
+        self.intern(format!("{UNEQUIPPED_PREFIX}{item}"))
     }
 
     /// The slot saying Kim has been taken out of the party during the search.

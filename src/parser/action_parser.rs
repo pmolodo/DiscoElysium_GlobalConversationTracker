@@ -535,9 +535,19 @@ fn translate_call(
             let slot = symbols.item(&unquote(call.args.first().unwrap_or(&String::new())));
             actions.push(DialogueAction::assign(slot, 1, call.name));
         }
+        // A lost item also leaves whatever equipment slot held it - see `core::equipment`.
         "LoseItem" => {
-            let slot = symbols.item(&unquote(call.args.first().unwrap_or(&String::new())));
-            actions.push(DialogueAction::assign(slot, 0, call.name));
+            let item = unquote(call.args.first().unwrap_or(&String::new()));
+            actions.push(DialogueAction::assign(
+                symbols.item(&item),
+                0,
+                call.name.clone(),
+            ));
+            actions.push(DialogueAction::assign(
+                symbols.unequipped(&item),
+                1,
+                call.name,
+            ));
         }
         // The only way dialogue writes the thought cabinet, and it writes exactly one
         // thing: the thought joins `gainedThoughts`, which is what `IsTHCPresent` reads.

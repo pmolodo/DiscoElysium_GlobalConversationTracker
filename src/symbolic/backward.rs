@@ -1344,6 +1344,47 @@ mod tests {
         agree(shape(left, "not IsKimInParty()"), &with_kim, 2, true);
     }
 
+    /// Losing a worn item takes it off, and losing something else does not.
+    #[test]
+    fn losing_a_worn_item_takes_it_off() {
+        let shape = |script: &str, guard: &str| {
+            vec![
+                Entry::new(0).links(&[1]),
+                Entry::new(1).script(script).links(&[2]),
+                Entry::new(2).guard(guard),
+            ]
+        };
+        let dressed = TestWorld::new()
+            .set_equipped("SHIRT", "shirt_x")
+            .set_query_bool("HasShirt", true)
+            .set_query_bool("CheckEquipped", true);
+
+        agree(
+            shape(r#"LoseItem("hat_y")"#, "HasShirt()"),
+            &dressed,
+            2,
+            true,
+        );
+        agree(
+            shape(r#"LoseItem("shirt_x")"#, "HasShirt()"),
+            &dressed,
+            2,
+            false,
+        );
+        agree(
+            shape(r#"LoseItem("shirt_x")"#, r#"CheckEquipped("shirt_x")"#),
+            &dressed,
+            2,
+            false,
+        );
+        agree(
+            shape(r#"LoseItem("shirt_x")"#, "not HasShirt()"),
+            &dressed,
+            2,
+            true,
+        );
+    }
+
     /// A deadline stored from the world's clock is compared against the same clock, so what
     /// opens only once it has passed stays shut - and opens where the deadline is behind.
     #[test]

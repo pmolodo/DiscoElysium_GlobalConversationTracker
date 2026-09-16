@@ -808,6 +808,34 @@ mod tests {
         assert!(out.reached(node(2)), "nor in the party");
     }
 
+    /// Losing a worn item takes it off: what asks for it, or for anything in its slot, shuts -
+    /// and losing something else leaves both alone.
+    #[test]
+    fn losing_a_worn_item_takes_it_off() {
+        let shape = |script: &str, guard: &str| {
+            GraphBuilder::new()
+                .add(Entry::new(0).links(&[1]))
+                .add(Entry::new(1).script(script).links(&[2]))
+                .add(Entry::new(2).guard(guard))
+                .build()
+        };
+        let dressed = TestWorld::new()
+            .set_equipped("SHIRT", "shirt_x")
+            .set_query_bool("HasShirt", true)
+            .set_query_bool("CheckEquipped", true);
+        let reached = |script: &str, guard: &str| {
+            walk(&shape(script, guard), node(0), &dressed, COUNTER_CAP).reached(node(2))
+        };
+
+        assert!(reached(r#"LoseItem("hat_y")"#, "HasShirt()"));
+        assert!(!reached(r#"LoseItem("shirt_x")"#, "HasShirt()"));
+        assert!(!reached(
+            r#"LoseItem("shirt_x")"#,
+            r#"CheckEquipped("shirt_x")"#
+        ));
+        assert!(reached(r#"LoseItem("shirt_x")"#, "not HasShirt()"));
+    }
+
     /// A deadline set from the clock is not already past.
     ///
     /// 1 sets the deadline eight hours ahead and 2 opens once it has passed. The clock does not

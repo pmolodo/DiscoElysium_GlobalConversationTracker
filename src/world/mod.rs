@@ -104,6 +104,15 @@ pub trait ILookAheadWorld: Send + Sync {
         None
     }
 
+    /// The item an equipment slot holds WHEN THE SEARCH STARTS, by `EquipmentSlotType` name -
+    /// empty for an empty slot - or `None` where it is not known.
+    ///
+    /// Read only where the group takes an item away, to empty the slot that held it; see
+    /// `core::equipment`. Otherwise an equipment question is answered by [`Self::query`].
+    fn item_in_slot(&self, _slot: &str) -> Option<String> {
+        None
+    }
+
     /// Every item the database files under an item group, or `None` where it is not known.
     ///
     /// What `CheckItemGroup` is answered over - see `core::item_group`. A world that cannot
@@ -232,6 +241,34 @@ impl BoundContext<'_> {
 }
 
 impl BoundContext<'_> {
+    /// A query's single text argument.
+    fn text_of(arguments: &[GuardValue]) -> Option<&str> {
+        match arguments {
+            [value] if value.kind() == crate::core::guard_value::GuardValueKind::Text => {
+                Some(value.text())
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether this state says dialogue has taken `item` away.
+    fn is_unequipped(&self, state: &LookAheadState, item: &str) -> bool {
+        self.symbols
+            .find(&format!("{}{item}", crate::core::state::UNEQUIPPED_PREFIX))
+            .is_some_and(|slot| state.is_set(slot))
+    }
+
+    /// Whether some slot an equipment question reads holds an item this state has taken away.
+    fn lost_worn_item(&self, name: &str, arguments: &[GuardValue]) -> bool {
+        let Some(state) = self.state else {
+            return false;
+        };
+        crate::core::equipment::slots_read_by(name, Self::text_of(arguments))
+            .into_iter()
+            .filter_map(|slot| self.world.item_in_slot(slot))
+            .any(|item| !item.is_empty() && self.is_unequipped(state, &item))
+    }
+
     /// The slot tracking the damage a damage question asks about, where this group has one.
     fn damage_slot(&self, question: &str) -> Option<usize> {
         let skill = crate::core::damage::skill_read_by(question)?;
@@ -388,6 +425,24 @@ impl IGuardContext for BoundContext<'_> {
                     Some(state) => GuardValue::from_boolean(state.is_set(slot)),
                     None => self.world.query(name, arguments),
                 }
+            }
+            // WHAT IS WORN, where this group has taken away an item a slot the question reads
+            // holds: that slot reads empty. Anything else is the world's answer. See
+            // `core::equipment`.
+            other
+                if crate::core::equipment::reads_equipment(other)
+                    && self.lost_worn_item(other, arguments) =>
+            {
+                let state = self.state.expect("just matched");
+                crate::core::equipment::answer_after_losses(
+                    name,
+                    Self::text_of(arguments),
+                    |slot| self.world.item_in_slot(slot),
+                    |item| self.is_unequipped(state, item),
+                    |group| self.world.items_in_group(group),
+                )
+                .expect("just matched")
+                .map_or_else(GuardValue::unknown, GuardValue::from_boolean)
             }
             // WHETHER KIM IS HERE OR IN THE PARTY: false once this group has taken Kim out of
             // the party, and the world's answer until then. See `core::party`.

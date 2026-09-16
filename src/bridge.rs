@@ -523,6 +523,10 @@ impl ILookAheadWorld for Unlocked<'_> {
         self.inner.initial_damage(skill)
     }
 
+    fn item_in_slot(&self, slot: &str) -> Option<String> {
+        self.inner.item_in_slot(slot)
+    }
+
     fn items_in_group(&self, group: &str) -> Option<Vec<String>> {
         self.inner.items_in_group(group)
     }
@@ -720,6 +724,10 @@ impl ILookAheadWorld for SnapshotWorld {
             return None;
         }
         GuardValue::from(&answer.value).try_as_number()
+    }
+
+    fn item_in_slot(&self, slot: &str) -> Option<String> {
+        self.in_slot(slot).map(str::to_string)
     }
 
     fn items_in_group(&self, group: &str) -> Option<Vec<String>> {

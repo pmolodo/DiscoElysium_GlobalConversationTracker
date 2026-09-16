@@ -695,6 +695,17 @@ impl<'a> GuardCompiler<'a> {
                 }
             }
 
+            // WHAT IS WORN, where the group can take away an item a slot the question reads
+            // holds: one case per combination of those items lost or kept, the all-kept case
+            // the world's answer - as `BoundContext::query` has it. See `core::equipment`.
+            GuardExpression::Call(name, args)
+                if crate::core::equipment::reads_equipment(name)
+                    && !self.losable_worn_items(name, args).is_empty() =>
+            {
+                let items = self.losable_worn_items(name, args);
+                self.equipment_after_losses(name, args, &items, guard.to_string())
+            }
+
             // WHETHER KIM IS HERE OR IN THE PARTY, where the group takes Kim out of it: the
             // world's answer while the removal slot is clear, and false once it is set - as
             // `BoundContext::query` has it. See `core::party`.
@@ -1316,6 +1327,125 @@ impl<'a> GuardCompiler<'a> {
         }
     }
 
+    /// The items in the slots an equipment question reads that the group can take away.
+    fn losable_worn_items(&self, name: &str, args: Arguments<'_>) -> Vec<String> {
+        let Some(world) = self.world else {
+            return Vec::new();
+        };
+        let argument = Self::text_argument(args);
+        let mut items: Vec<String> =
+            crate::core::equipment::slots_read_by(name, argument.as_deref())
+                .into_iter()
+                .filter_map(|slot| world.item_in_slot(slot))
+                .filter(|item| {
+                    !item.is_empty()
+                        && self
+                            .vars
+                            .slot_of(&format!("{}{item}", crate::core::state::UNEQUIPPED_PREFIX))
+                            .is_some()
+                })
+                .collect();
+        items.sort();
+        items.dedup();
+        items
+    }
+
+    /// An equipment question over the items the group can take away, one case per
+    /// combination of them lost or kept.
+    ///
+    /// A handful of items at most - one per slot the question reads - so enumerating the
+    /// combinations is cheaper than it sounds. With nothing lost the answer is the world's,
+    /// exactly as `BoundContext::query` falls through to it.
+    fn equipment_after_losses(
+        &mut self,
+        name: &str,
+        args: Arguments<'_>,
+        items: &[String],
+        subject: String,
+    ) -> MayBe {
+        let Some(world) = self.world else {
+            return self.undecided("call: equipment, no world", subject);
+        };
+        let argument = Self::text_argument(args);
+        let lost_slots: Option<Vec<BDDFunction>> = items
+            .iter()
+            .map(|item| {
+                self.slot_is_set(&format!("{}{item}", crate::core::state::UNEQUIPPED_PREFIX))
+            })
+            .collect();
+        let Some(lost_slots) = lost_slots else {
+            return self.no_room(subject);
+        };
+
+        let mut may_be_true = self.bottom();
+        let mut may_be_false = self.bottom();
+        let mut unknown = false;
+        for case in 0..1u32 << items.len() {
+            let lost = |item: &str| {
+                items
+                    .iter()
+                    .position(|i| i == item)
+                    .is_some_and(|index| case & (1 << index) != 0)
+            };
+            let answer = if case == 0 {
+                self.constant_query(name, args)
+            } else {
+                crate::core::equipment::answer_after_losses(
+                    name,
+                    argument.as_deref(),
+                    |slot| world.item_in_slot(slot),
+                    lost,
+                    |group| world.items_in_group(group),
+                )
+                .flatten()
+            };
+
+            let mut cube = Ok(self.top());
+            for (index, slot) in lost_slots.iter().enumerate() {
+                cube = cube.and_then(|c| {
+                    if case & (1 << index) != 0 {
+                        c.and(slot)
+                    } else {
+                        slot.not().and_then(|clear| c.and(&clear))
+                    }
+                });
+            }
+            let Ok(cube) = cube else {
+                return self.no_room(subject);
+            };
+
+            let joined = match answer {
+                Some(true) => may_be_true.or(&cube).map(|t| may_be_true = t),
+                Some(false) => may_be_false.or(&cube).map(|f| may_be_false = f),
+                None => {
+                    unknown = true;
+                    may_be_true
+                        .or(&cube)
+                        .and_then(|t| may_be_false.or(&cube).map(|f| (t, f)))
+                        .map(|(t, f)| {
+                            may_be_true = t;
+                            may_be_false = f;
+                        })
+                }
+            };
+            if joined.is_err() {
+                return self.no_room(subject);
+            }
+        }
+
+        // Counted as a fallback where some case is unknowable, but the rails stay exact: the
+        // unknowable cases are already on both.
+        if unknown {
+            self.undecided("call: equipment, world cannot say", subject);
+        } else {
+            self.compiled += 1;
+        }
+        MayBe {
+            may_be_true,
+            may_be_false,
+        }
+    }
+
     /// The single text argument a query names its subject with, if that is its shape.
     fn text_argument(args: Arguments<'_>) -> Option<String> {
         let GuardExpression::Literal(value) = args.only()?.expression() else {
@@ -1419,6 +1549,12 @@ impl<'a> GuardCompiler<'a> {
             return (answer.kind() != GuardValueKind::Unknown).then_some(answer);
         }
         if Self::search_can_change(name) {
+            return None;
+        }
+        // Nor what is worn, where the group can take a worn item away.
+        if crate::core::equipment::reads_equipment(name)
+            && !self.losable_worn_items(name, args).is_empty()
+        {
             return None;
         }
         // The Kim questions are fixed only where the group never takes Kim out of the party.

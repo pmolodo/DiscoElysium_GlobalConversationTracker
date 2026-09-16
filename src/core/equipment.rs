@@ -166,6 +166,23 @@
 //! is database data, so the members of the group come from `core::item_group`'s data read
 //! rather than from a table here.
 //!
+//! ## What dialogue does to it
+//!
+//! Dialogue has no equip function, but it can take a worn item away. `LoseItem` is
+//! `Inventory.DeleteItem`:
+//!
+//! ```text
+//! if (byName != null && !OnLoseSpecialStackable(byName) && !OnLoseStackable(byName)
+//!     && (ChangeInventoryItem(byName, null) || ChangeEquippedItem(byName, null)))
+//! ```
+//!
+//! and `ChangeEquippedItem` empties the slot holding it (`InventoryViewData.ReplaceEquipped`).
+//! So a search sets an `unequipped:<item>` slot when an item is lost, and every question here
+//! reads a slot holding a lost item as empty. The slot never clears: getting an item back
+//! through `GainItem` puts it in the inventory, not on the player - except for an item the
+//! database marks autoequip, which no call site gains ahead of an equipment question, and which
+//! is not modelled.
+//!
 //! `HasNecktie` and `HasPants` are asked by no guard in the shipped corpus. They are here
 //! because `WeirdClothing` is built from `HasPants`, and the six share one shape.
 
@@ -285,6 +302,24 @@ pub fn slots_read_by(name: &str, argument: Option<&str>) -> Vec<&'static str> {
     }
 }
 
+/// Whether `name` is a question answered from what the equipment slots hold.
+pub fn reads_equipment(name: &str) -> bool {
+    !slots_read_by(name, None).is_empty()
+}
+
+/// The one lost item whose slot `name` reads with this argument, where that is all it reads.
+///
+/// `CheckEquipped(item)` only asks whether `item` is in a slot, so only `item`'s loss can
+/// change it. Every other question asks whether a slot holds anything at all, which any lost
+/// item might have been - `None` for those.
+pub fn only_loss_read_by<'a>(name: &str, argument: Option<&'a str>) -> Option<&'a str> {
+    if name == CHECK_EQUIPPED {
+        argument
+    } else {
+        None
+    }
+}
+
 /// The item group whose members `name` needs with this argument, if any.
 pub fn group_read_by(name: &str, argument: Option<&str>) -> Option<&'static str> {
     if name == CHECK_EQUIPPED_GROUP || hand_of(name).is_some() {
@@ -348,6 +383,39 @@ pub fn answer<'a>(
     }
 
     slot_filled_by(name).map(filled)
+}
+
+/// [`answer`], with every slot holding an item `lost` says was taken away read as empty.
+pub fn answer_after_losses(
+    name: &str,
+    argument: Option<&str>,
+    in_slot: impl Fn(&str) -> Option<String>,
+    lost: impl Fn(&str) -> bool,
+    members: impl Fn(&str) -> Option<Vec<String>>,
+) -> Option<Option<bool>> {
+    let held: Vec<(&str, Option<String>)> = SLOTS
+        .iter()
+        .map(|slot| {
+            let item = in_slot(slot).map(|item| {
+                if !item.is_empty() && lost(&item) {
+                    String::new()
+                } else {
+                    item
+                }
+            });
+            (*slot, item)
+        })
+        .collect();
+    answer(
+        name,
+        argument,
+        |slot| {
+            held.iter()
+                .find(|(s, _)| *s == slot)
+                .and_then(|(_, item)| item.as_deref())
+        },
+        members,
+    )
 }
 
 /// `a || b || c`, where any of them may be unknowable: a known true settles it, and an unknown

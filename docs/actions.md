@@ -49,85 +49,85 @@ downstream guard reading something the call writes.
 Every function a script calls, by call sites. `engine` is what the engine does with the call
 today; `verdict` is how that compares with the game for the writes a downstream guard reads.
 
-| function                           | family          | calls |  live | engine                                    | verdict                                |
-| ---------------------------------- | --------------- | ----: | ----: | ----------------------------------------- | -------------------------------------- |
-| SetVariableValue                   | variables       | 9,829 | 5,582 | assign, increment or clock reading        | ported; 2 shapes unmodelled, none live |
-| ReputationGrows                    | reputation      | 1,106 |   101 | once-increment `reputation.<name>`        | ported                                 |
-| GainTask                           | journal         |   810 |   222 | show unless cancelled                     | ported                                 |
-| FinishTask                         | journal         |   744 |   367 | show unless done, then done               | ported                                 |
-| XPPicoSetBool                      | variables       |   486 |    10 | assign the variable 1                     | ported                                 |
-| XPTinySetBool                      | variables       |   390 |    31 | assign the variable 1                     | ported                                 |
-| CancelTask                         | journal         |   280 |    39 | cancel unless done                        | ported                                 |
-| GainItem                           | items           |   242 |    92 | `item:<name>` = 1                         | ported for the item; see Items         |
-| DamageVolition                     | damage          |   220 |    32 | damage amount += n                        | ported                                 |
-| PassTime                           | clock           |   207 |    72 | clock +15 min unless locked; plugin locks | held by decision: clock not modelled   |
-| ReputationLowers                   | reputation      |   178 |    27 | once-decrement `reputation.<name>`        | ported                                 |
-| LoseItem                           | items           |   177 |   108 | `item:<name>` = 0                         | unequip not applied - de-70eo.7        |
-| XPMinorSetBool                     | variables       |   172 |    32 | assign the variable 1                     | ported                                 |
-| HealVolition                       | damage          |   106 |     8 | damage amount -= n, once                  | ported                                 |
-| GainThought                        | thoughts        |   101 |     9 | `thought:<name>` = 1                      | ported                                 |
-| DamageEndurance                    | damage          |    90 |     0 | damage amount += n                        | ported; no downstream reader           |
-| SetFlag                            | variables       |    65 |    32 | assign the variable 1                     | ported                                 |
-| HealEndurance                      | damage          |    44 |     0 | damage amount -= n, once                  | ported; no downstream reader           |
-| XPStandardSetBool                  | variables       |    36 |     8 | assign the variable 1                     | ported                                 |
-| GainMoneyOnce                      | money           |    28 |     0 | once-add to the money register            | excluded; ported anyway                |
-| ShowVisCal                         | presentation    |    22 |     0 | declared, no effect                       | excluded                               |
-| Reputation                         | reputation      |    19 |     6 | once-add `reputation.<name>`              | ported                                 |
-| NewspaperEndgame                   | endgame         |    17 |     0 | declared, no effect                       | excluded                               |
-| XPMajorSetBool                     | variables       |    14 |     4 | assign the variable 1                     | ported                                 |
-| UseSubstanceInHand                 | substances      |    12 |     0 | held by decision                          | excluded                               |
-| SetAreaState                       | scenery         |    11 |     0 | held by decision                          | excluded                               |
-| GoToDestination                    | movement        |    10 |     0 | held by decision                          | excluded                               |
-| HideVisCal                         | presentation    |    10 |     0 | declared, no effect                       | excluded                               |
-| ReturnKitsuragi                    | party           |    10 |     0 | held by decision                          | excluded                               |
-| ShowDialogueImage                  | presentation    |     9 |     0 | declared, no effect                       | excluded                               |
-| HideVisCalAfterConversation        | presentation    |     7 |     0 | declared, no effect                       | excluded                               |
-| PrimeSpecialEndButton              | endgame         |     7 |     0 | declared, no effect                       | excluded                               |
-| GainMoneyAlways                    | money           |     6 |     6 | add to the money register                 | ported                                 |
-| `Variable["x"] = value` statement  | variables       |     5 |     5 | assign, as `SetVariableValue`             | ported                                 |
-| HideDialogueImage                  | presentation    |     5 |     0 | declared, no effect                       | excluded                               |
-| GoTo                               | movement        |     4 |     0 | held by decision                          | excluded                               |
-| Obsession                          | journal flavour |     4 |     0 | declared, no effect                       | excluded                               |
-| RemoveWhiteCheck                   | checks          |     4 |     0 | declared, no effect                       | excluded; read by checks - de-70eo.2   |
-| DestroyObject                      | scenery         |     3 |     0 | held by decision                          | excluded                               |
-| HealAllVolition                    | damage          |     3 |     0 | damage amount := 0                        | ported; no downstream reader           |
-| LoseMoneyAlways                    | money           |     3 |     3 | subtract from the money register          | ported                                 |
-| WhirlingBedWasUsed                 | endday          |     3 |     0 | held by decision                          | excluded                               |
-| AddCunoToParty                     | party           |     2 |     0 | held by decision                          | excluded                               |
-| CloseTequilaDoor                   | scenery         |     2 |     0 | held by decision                          | excluded                               |
-| OpenBookstoreCurtains              | scenery         |     2 |     0 | held by decision                          | excluded                               |
-| RemoveCunoFromParty                | party           |     2 |     0 | held by decision                          | excluded                               |
-| RemoveCunoWaitAtFort               | party           |     2 |     0 | held by decision                          | excluded                               |
-| RemoveKitsuragiWaitAtChurch        | party           |     2 |     2 | Kim removed := 1                          | ported                                 |
-| TequilaExpressionStopped           | presentation    |     2 |     0 | declared, no effect                       | excluded                               |
-| TequilaFascist                     | presentation    |     2 |     0 | held by decision                          | excluded                               |
-| TequilaShaved                      | presentation    |     2 |     0 | held by decision                          | excluded                               |
-| TurnOffFanLight                    | scenery         |     2 |     0 | held by decision                          | excluded                               |
-| TurnOnFanLight                     | scenery         |     2 |     0 | held by decision                          | excluded                               |
-| WhirlingEngineStart                | scenery         |     2 |     0 | held by decision                          | excluded                               |
-| DamageEnduranceWithNewspaper       | damage          |     1 |     0 | damage amount += n                        | ported; no downstream reader           |
-| GraffitoAlight                     | scenery         |     1 |     0 | held by decision                          | excluded                               |
-| GraffitoExtinguish                 | scenery         |     1 |     0 | held by decision                          | excluded                               |
-| LetterSleep                        | endday          |     1 |     0 | held by decision                          | excluded; not fully traced             |
-| LoseMoneyOnce                      | money           |     1 |     0 | once-subtract from the money register     | excluded; ported anyway                |
-| NightyNightKitsuragiShack          | party           |     1 |     0 | held by decision                          | excluded                               |
-| PlaySoundGroup                     | presentation    |     1 |     0 | declared, no effect                       | excluded                               |
-| PosseEndgame                       | endgame         |     1 |     0 | declared, no effect                       | excluded                               |
-| RemoveAndHideKitsuragi             | party           |     1 |     0 | held by decision                          | excluded                               |
-| RemoveAndHideKitsuragiUntilMorning | party           |     1 |     0 | held by decision                          | excluded                               |
-| RemoveKitsuragiWaitAtLair          | party           |     1 |     0 | held by decision                          | excluded                               |
-| RemoveKitsuragiWaitAtTent          | party           |     1 |     0 | held by decision                          | excluded                               |
-| ResetCamera                        | presentation    |     1 |     0 | declared, no effect                       | excluded                               |
-| SellItemGroup                      | items           |     1 |     0 | held by decision                          | excluded                               |
-| SellItemGroupWithModifier          | items           |     1 |     0 | held by decision                          | excluded                               |
-| ShackBedWasUsed                    | endday          |     1 |     0 | held by decision                          | excluded                               |
-| ShowInventoryForPawning            | items           |     1 |     0 | held by decision                          | excluded                               |
-| SkipToDebriefLocation              | endday          |     1 |     0 | held by decision                          | excluded; not fully traced             |
-| TequilaPutOnBodysuit               | presentation    |     1 |     0 | held by decision                          | excluded; body not recovered           |
-| TequilaRemoveBodysuit              | presentation    |     1 |     0 | held by decision                          | excluded; body not recovered           |
-| TequilaUnobscured                  | presentation    |     1 |     0 | declared, no effect                       | excluded                               |
-| TequilaWakeUp                      | scenery         |     1 |     0 | held by decision                          | excluded                               |
-| TurnOffCeilingFan                  | scenery         |     1 |     0 | held by decision                          | excluded                               |
+| function                           | family          | calls |  live | engine                                     | verdict                                |
+| ---------------------------------- | --------------- | ----: | ----: | ------------------------------------------ | -------------------------------------- |
+| SetVariableValue                   | variables       | 9,829 | 5,582 | assign, increment or clock reading         | ported; 2 shapes unmodelled, none live |
+| ReputationGrows                    | reputation      | 1,106 |   101 | once-increment `reputation.<name>`         | ported                                 |
+| GainTask                           | journal         |   810 |   222 | show unless cancelled                      | ported                                 |
+| FinishTask                         | journal         |   744 |   367 | show unless done, then done                | ported                                 |
+| XPPicoSetBool                      | variables       |   486 |    10 | assign the variable 1                      | ported                                 |
+| XPTinySetBool                      | variables       |   390 |    31 | assign the variable 1                      | ported                                 |
+| CancelTask                         | journal         |   280 |    39 | cancel unless done                         | ported                                 |
+| GainItem                           | items           |   242 |    92 | `item:<name>` = 1                          | ported; autoequip not live             |
+| DamageVolition                     | damage          |   220 |    32 | damage amount += n                         | ported                                 |
+| PassTime                           | clock           |   207 |    72 | clock +15 min unless locked; plugin locks  | held by decision: clock not modelled   |
+| ReputationLowers                   | reputation      |   178 |    27 | once-decrement `reputation.<name>`         | ported                                 |
+| LoseItem                           | items           |   177 |   108 | `item:<name>` = 0, `unequipped:<name>` = 1 | ported                                 |
+| XPMinorSetBool                     | variables       |   172 |    32 | assign the variable 1                      | ported                                 |
+| HealVolition                       | damage          |   106 |     8 | damage amount -= n, once                   | ported                                 |
+| GainThought                        | thoughts        |   101 |     9 | `thought:<name>` = 1                       | ported                                 |
+| DamageEndurance                    | damage          |    90 |     0 | damage amount += n                         | ported; no downstream reader           |
+| SetFlag                            | variables       |    65 |    32 | assign the variable 1                      | ported                                 |
+| HealEndurance                      | damage          |    44 |     0 | damage amount -= n, once                   | ported; no downstream reader           |
+| XPStandardSetBool                  | variables       |    36 |     8 | assign the variable 1                      | ported                                 |
+| GainMoneyOnce                      | money           |    28 |     0 | once-add to the money register             | excluded; ported anyway                |
+| ShowVisCal                         | presentation    |    22 |     0 | declared, no effect                        | excluded                               |
+| Reputation                         | reputation      |    19 |     6 | once-add `reputation.<name>`               | ported                                 |
+| NewspaperEndgame                   | endgame         |    17 |     0 | declared, no effect                        | excluded                               |
+| XPMajorSetBool                     | variables       |    14 |     4 | assign the variable 1                      | ported                                 |
+| UseSubstanceInHand                 | substances      |    12 |     0 | held by decision                           | excluded                               |
+| SetAreaState                       | scenery         |    11 |     0 | held by decision                           | excluded                               |
+| GoToDestination                    | movement        |    10 |     0 | held by decision                           | excluded                               |
+| HideVisCal                         | presentation    |    10 |     0 | declared, no effect                        | excluded                               |
+| ReturnKitsuragi                    | party           |    10 |     0 | held by decision                           | excluded                               |
+| ShowDialogueImage                  | presentation    |     9 |     0 | declared, no effect                        | excluded                               |
+| HideVisCalAfterConversation        | presentation    |     7 |     0 | declared, no effect                        | excluded                               |
+| PrimeSpecialEndButton              | endgame         |     7 |     0 | declared, no effect                        | excluded                               |
+| GainMoneyAlways                    | money           |     6 |     6 | add to the money register                  | ported                                 |
+| `Variable["x"] = value` statement  | variables       |     5 |     5 | assign, as `SetVariableValue`              | ported                                 |
+| HideDialogueImage                  | presentation    |     5 |     0 | declared, no effect                        | excluded                               |
+| GoTo                               | movement        |     4 |     0 | held by decision                           | excluded                               |
+| Obsession                          | journal flavour |     4 |     0 | declared, no effect                        | excluded                               |
+| RemoveWhiteCheck                   | checks          |     4 |     0 | declared, no effect                        | excluded; read by checks - de-70eo.2   |
+| DestroyObject                      | scenery         |     3 |     0 | held by decision                           | excluded                               |
+| HealAllVolition                    | damage          |     3 |     0 | damage amount := 0                         | ported; no downstream reader           |
+| LoseMoneyAlways                    | money           |     3 |     3 | subtract from the money register           | ported                                 |
+| WhirlingBedWasUsed                 | endday          |     3 |     0 | held by decision                           | excluded                               |
+| AddCunoToParty                     | party           |     2 |     0 | held by decision                           | excluded                               |
+| CloseTequilaDoor                   | scenery         |     2 |     0 | held by decision                           | excluded                               |
+| OpenBookstoreCurtains              | scenery         |     2 |     0 | held by decision                           | excluded                               |
+| RemoveCunoFromParty                | party           |     2 |     0 | held by decision                           | excluded                               |
+| RemoveCunoWaitAtFort               | party           |     2 |     0 | held by decision                           | excluded                               |
+| RemoveKitsuragiWaitAtChurch        | party           |     2 |     2 | Kim removed := 1                           | ported                                 |
+| TequilaExpressionStopped           | presentation    |     2 |     0 | declared, no effect                        | excluded                               |
+| TequilaFascist                     | presentation    |     2 |     0 | held by decision                           | excluded                               |
+| TequilaShaved                      | presentation    |     2 |     0 | held by decision                           | excluded                               |
+| TurnOffFanLight                    | scenery         |     2 |     0 | held by decision                           | excluded                               |
+| TurnOnFanLight                     | scenery         |     2 |     0 | held by decision                           | excluded                               |
+| WhirlingEngineStart                | scenery         |     2 |     0 | held by decision                           | excluded                               |
+| DamageEnduranceWithNewspaper       | damage          |     1 |     0 | damage amount += n                         | ported; no downstream reader           |
+| GraffitoAlight                     | scenery         |     1 |     0 | held by decision                           | excluded                               |
+| GraffitoExtinguish                 | scenery         |     1 |     0 | held by decision                           | excluded                               |
+| LetterSleep                        | endday          |     1 |     0 | held by decision                           | excluded; not fully traced             |
+| LoseMoneyOnce                      | money           |     1 |     0 | once-subtract from the money register      | excluded; ported anyway                |
+| NightyNightKitsuragiShack          | party           |     1 |     0 | held by decision                           | excluded                               |
+| PlaySoundGroup                     | presentation    |     1 |     0 | declared, no effect                        | excluded                               |
+| PosseEndgame                       | endgame         |     1 |     0 | declared, no effect                        | excluded                               |
+| RemoveAndHideKitsuragi             | party           |     1 |     0 | held by decision                           | excluded                               |
+| RemoveAndHideKitsuragiUntilMorning | party           |     1 |     0 | held by decision                           | excluded                               |
+| RemoveKitsuragiWaitAtLair          | party           |     1 |     0 | held by decision                           | excluded                               |
+| RemoveKitsuragiWaitAtTent          | party           |     1 |     0 | held by decision                           | excluded                               |
+| ResetCamera                        | presentation    |     1 |     0 | declared, no effect                        | excluded                               |
+| SellItemGroup                      | items           |     1 |     0 | held by decision                           | excluded                               |
+| SellItemGroupWithModifier          | items           |     1 |     0 | held by decision                           | excluded                               |
+| ShackBedWasUsed                    | endday          |     1 |     0 | held by decision                           | excluded                               |
+| ShowInventoryForPawning            | items           |     1 |     0 | held by decision                           | excluded                               |
+| SkipToDebriefLocation              | endday          |     1 |     0 | held by decision                           | excluded; not fully traced             |
+| TequilaPutOnBodysuit               | presentation    |     1 |     0 | held by decision                           | excluded; body not recovered           |
+| TequilaRemoveBodysuit              | presentation    |     1 |     0 | held by decision                           | excluded; body not recovered           |
+| TequilaUnobscured                  | presentation    |     1 |     0 | declared, no effect                        | excluded                               |
+| TequilaWakeUp                      | scenery         |     1 |     0 | held by decision                           | excluded                               |
+| TurnOffCeilingFan                  | scenery         |     1 |     0 | held by decision                           | excluded                               |
 
 Five more names are called from scripts but are READS used inside an action rather than writers:
 `TotalHourCount` (17), `IsHighestCopotype` (5), `NextMorningTime` (2), `DayCount` (1) - all as
@@ -260,18 +260,22 @@ then `Inventory.HandlePickedUpItem`:
 The database's `itemType` is the game's `ItemType` enum plus one, so types 1 to 11 (ARMOR to HELD)
 go in an equipment slot; keys and papers are 13.
 
-**ENGINE.** `item:<name>` set to 1 or 0, which `CheckItem` and `CheckItemGroup` read. Equipment is
-answered from the slots as they were when the crawl started, and `core::modelling` declares the
-equipment questions constant by construction.
+**ENGINE.** `item:<name>` set to 1 or 0, which `CheckItem` and `CheckItemGroup` read. `LoseItem`
+also sets `unequipped:<name>`. Every equipment question reads a slot holding a lost item as empty,
+using what each slot held when the crawl started (`ILookAheadWorld::item_in_slot`). The guard
+compiler takes one case per combination of the losable items in the slots a question reads.
+Tested by `losing_a_worn_item_takes_it_off` in `oracle.rs` and `backward.rs`.
 
 | action   | calls | live | live via the item | via equipment | via an item group | via a tab |
 | -------- | ----: | ---: | ----------------: | ------------: | ----------------: | --------: |
 | GainItem |   242 |   92 |                88 |             0 |                 2 |         4 |
 | LoseItem |   177 |  108 |                93 |            26 |                 8 |         2 |
 
-So the item slot is right, and the gap is `LoseItem` of a worn or held item with an equipment
-question downstream - 26 call sites, such as `neck_setting_sun_medal` in conversation 280 and
-`prybar` in 350. No autoequip gain has a downstream equipment reader today. de-70eo.7.
+The 26 `LoseItem` sites live through equipment, such as `neck_setting_sun_medal` in conversation
+280 and `prybar` in 350, are what the unequip covers. `GainItem` is not ported beyond the item:
+no autoequip gain has a downstream equipment reader, and no gain of a consumable (which never
+joins the inventory) has a downstream item reader - `drouamine`, `hypnogamma`, `magnesium` and
+`nosaphed` are the consumables gained, at 8 sites, all without one.
 
 The pawnables tab is read from the start of the crawl (see guards.md); its 6 live sites are
 covered by that note rather than by a port.
