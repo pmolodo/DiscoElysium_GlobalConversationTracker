@@ -22,6 +22,29 @@ pub const MONEY_QUERY: &str = "MoneyAmount";
 /// another way and answered from the same place.
 pub const FLAG_SET_QUERY: &str = "FlagSet";
 
+/// The same question asked the other way round. Nine guards use [`FLAG_SET_QUERY`] and three
+/// use this one.
+pub const FLAG_NOT_SET_QUERY: &str = "FlagNotSet";
+
+/// Whether `name` asks about a flag, and whether it wants the answer negated.
+///
+/// `Some(false)` for `FlagSet`, `Some(true)` for `FlagNotSet`, `None` for anything else.
+///
+/// FOUR PLACES HAVE TO AGREE, which is why this is a function rather than two constants
+/// compared at each of them: the graph declares the flag as one of the group's variables so
+/// it can be read at all, the layout spends a slot on it, `bridge::collect` keeps it out of
+/// what the plugin is asked because it is asked for as a variable instead, and
+/// [`BoundContext::query`] answers it from that variable. A name honoured in three of the
+/// four is worse than one honoured in none: it is declared and slotted and then read from a
+/// snapshot that was never told about it, which is the starting value forever.
+pub fn flag_query(name: &str) -> Option<bool> {
+    match name {
+        FLAG_SET_QUERY => Some(false),
+        FLAG_NOT_SET_QUERY => Some(true),
+        _ => None,
+    }
+}
+
 /// Everything outside the dialogue graph that the look-ahead needs to know.
 pub trait ILookAheadWorld: Send + Sync {
     fn money(&self) -> i32;
@@ -218,14 +241,26 @@ impl IGuardContext for BoundContext<'_> {
             // A FLAG THE GROUP DOES NOT DECLARE is one named by something other than a literal,
             // which nothing asked the plugin for - so the world cannot have been told it, and
             // it is asked as the query it is, which answers Unknown.
-            FLAG_SET_QUERY => {
+            _ if flag_query(name).is_some() => {
+                let negated = flag_query(name).expect("just matched");
                 match arguments
                     .first()
                     .filter(|v| v.kind() == GuardValueKind::Text)
                     .map(|v| v.text())
                 {
                     Some(flag) if self.symbols.variable_ref(flag).is_some() => {
-                        self.get_variable(flag)
+                        let held = self.get_variable(flag);
+                        if negated {
+                            // `FlagNotSet(f)` is `not FlagSet(f)`, and the negation happens
+                            // HERE rather than at the call site so it cannot be forgotten by
+                            // one caller. A flag the search has raised reads raised, which
+                            // is the whole point: SetFlag and UnsetFlag are modelled writes,
+                            // and answering from the snapshot instead reports the value the
+                            // crawl started with.
+                            GuardValue::from_boolean(held.as_condition() == Ternary::False)
+                        } else {
+                            held
+                        }
                     }
                     _ => self.world.query(name, arguments),
                 }

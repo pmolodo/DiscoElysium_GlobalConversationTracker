@@ -105,7 +105,7 @@ impl LookAheadGraph {
                         variables.push(name.to_string());
                     }
                     crate::core::guard::GuardExpression::Call(function, arguments)
-                        if function == crate::world::FLAG_SET_QUERY =>
+                        if crate::world::flag_query(function).is_some() =>
                     {
                         if let Some(crate::core::guard::GuardExpression::Literal(value)) =
                             arguments.only().map(|only| only.expression())

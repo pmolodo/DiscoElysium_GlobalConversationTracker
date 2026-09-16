@@ -828,8 +828,9 @@ impl DataLayout {
                         "CheckItem" => Some(ITEM_PREFIX),
                         "IsTaskActive" => Some(TASK_PREFIX),
                         "IsTHCPresent" => Some(THOUGHT_PREFIX),
-                        // FlagSet(name) is Variable[name] written another way.
-                        crate::world::FLAG_SET_QUERY => Some(""),
+                        // FlagSet(name) and FlagNotSet(name) are Variable[name] written
+                        // another way, so both spend a slot on the same name.
+                        _ if crate::world::flag_query(function).is_some() => Some(""),
                         _ => None,
                     };
 

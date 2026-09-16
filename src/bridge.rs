@@ -1110,10 +1110,10 @@ fn collect(
                     ("IsTHCPresent", Some(subject)) => {
                         thoughts.insert(subject);
                     }
-                    // `FlagSet(name)` is `Variable[name]` written another way, and a flag
-                    // named by a literal is one of the group's variables, which are asked
-                    // for whole rather than here.
-                    (crate::world::FLAG_SET_QUERY, Some(_)) => {}
+                    // `FlagSet(name)` and `FlagNotSet(name)` are `Variable[name]` written
+                    // another way, and a flag named by a literal is one of the group's
+                    // variables, which are asked for whole rather than here.
+                    (flag, Some(_)) if crate::world::flag_query(flag).is_some() => {}
                     // An ACTION the database calls from a guard. Never asked of the plugin,
                     // because the plugin answers a query by RUNNING it - and running these
                     // finishes a task or awards experience in the player's save. Answered
@@ -2473,6 +2473,26 @@ mod tests {
         let found = asked(r#"FlagSet("church.done")"#);
         assert_eq!(found.variables, vec!["church.done".to_string()]);
         assert!(found.queries.is_empty());
+    }
+
+    /// AND SO IS THE FLAG ASKED ABOUT THE OTHER WAY ROUND.
+    ///
+    /// `FlagNotSet` is `FlagSet` negated, so its flag is a variable too. Asked as a query
+    /// instead, it would be answered from the snapshot - the value the crawl STARTED with -
+    /// and `SetFlag` is a modelled write, so a group that raises a flag and then asks about
+    /// it would read its own write as not having happened.
+    #[test]
+    fn a_flag_asked_about_negatively_is_also_asked_for_as_a_variable() {
+        let found = asked(r#"FlagNotSet("village.said_the_cock_thing")"#);
+        assert_eq!(
+            found.variables,
+            vec!["village.said_the_cock_thing".to_string()]
+        );
+        assert!(
+            found.queries.is_empty(),
+            "answered from the variable, not asked as a query: {:?}",
+            found.queries
+        );
     }
 
     #[test]

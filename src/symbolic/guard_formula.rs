@@ -577,6 +577,35 @@ impl<'a> GuardCompiler<'a> {
                 }
             }
 
+            // A FLAG, which is a dialogue variable written as a call - so it is read off the
+            // variable's own slot, exactly as `Variable[name]` is, and `FlagNotSet` is that
+            // negated. `SetFlag` and `UnsetFlag` are modelled writes, so this is a question
+            // the search really does change, and answering it from the world would report
+            // the value the crawl started with.
+            //
+            // Where the group declares no such variable the flag is named by something other
+            // than a literal, so no slot exists and there is nothing to read; that falls
+            // through to the arms below and ends up undecided, which is permissive.
+            GuardExpression::Call(name, args)
+                if crate::world::flag_query(name).is_some()
+                    && Self::text_argument(args)
+                        .is_some_and(|flag| self.vars.slot_of(&flag).is_some()) =>
+            {
+                let negated = crate::world::flag_query(name).expect("just matched");
+                let flag = Self::text_argument(args).expect("just matched");
+                match self.slot_is_set(&flag) {
+                    // NEGATED BY BUILDING THE COMPLEMENT, which is diagram work like any
+                    // other and can run out of room - so it is reported as no_room rather
+                    // than as a guard the language could not express.
+                    Some(set) if negated => match set.not() {
+                        Ok(clear) => self.decided(clear),
+                        Err(_) => self.no_room(guard.to_string()),
+                    },
+                    Some(set) => self.decided(set),
+                    None => self.undecided("call: flag has no slot", guard.to_string()),
+                }
+            }
+
             // An ACTION the database calls from a guard, which the plugin is never asked to
             // run because running it writes to the player's save. `BoundContext::query`
             // answers it false - a function returning nothing answers nil, and `nil == true`
@@ -1195,6 +1224,7 @@ impl<'a> GuardCompiler<'a> {
     fn search_can_change(name: &str) -> bool {
         matches!(name, MONEY_QUERY)
             || Self::slot_backed_query(name).is_some()
+            || crate::world::flag_query(name).is_some()
             || crate::core::clock::ClockTime::owns(name)
     }
 
@@ -1481,6 +1511,42 @@ mod tests {
         ));
         assert!(compiled.may_be_true.satisfiable());
         assert_eq!(compiler.fallbacks(), 0);
+    }
+
+    /// A flag is read off its own slot, and asking the other way round is the complement.
+    ///
+    /// `FlagSet(f)` and `FlagNotSet(f)` are `Variable[f]` written as calls, so both are
+    /// decided against the slot rather than handed to the world. TRACKED ON PURPOSE: the
+    /// fixture's counter argument is what gives the flag a slot at all, since the layout
+    /// spends one only on what the group moves - and a flag nothing moves is constant
+    /// anyway, which is the case this test is not about.
+    #[test]
+    fn a_flag_is_decided_against_its_slot_either_way_round() {
+        let (graph, symbols) = fixture(&["f"], Some("f"));
+        let layout = DataLayout::for_graph(&graph, 16, None, false);
+        let vars = DataVars::new(&layout, &symbols, DiagramBudget::modest());
+        let mut compiler = GuardCompiler::new(&vars);
+        let flag = || Guard::literal(GuardValue::from_text("f".to_string()));
+
+        let set = compiler.compile(&call("FlagSet", vec![flag()]));
+        let clear = compiler.compile(&call("FlagNotSet", vec![flag()]));
+
+        // NEITHER WAS GIVEN UP ON. Left to fall through, both would have been asked of a
+        // world that was never told about this flag - it is asked for as a variable - and
+        // would have gone undecided, which is permissive.
+        assert_eq!(compiler.fallbacks(), 0);
+        assert!(set.may_be_true.satisfiable(), "the flag can be set");
+        assert!(clear.may_be_true.satisfiable(), "and can be clear");
+
+        // And they are opposites rather than merely both decided.
+        let both = set
+            .may_be_true
+            .and(&clear.may_be_true)
+            .expect("room to intersect two slot reads");
+        assert!(
+            !both.satisfiable(),
+            "a flag cannot be set and not set at once"
+        );
     }
 
     /// Written the other way round, the operator turns with the operands.
