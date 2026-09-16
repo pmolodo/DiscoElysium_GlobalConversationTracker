@@ -7,6 +7,16 @@ For every function a userScript calls, this finds the state the game's body writ
 from the entry carrying the call reads that state. An action whose writes no downstream guard
 can observe cannot change which branch a crawl takes, whatever it does to the game.
 
+## Readers that are not guards
+
+An entry can read state without a guard naming it, and those count as readers too - see
+`hidden_reads_of`:
+
+    a priced entry (ClickCost)               money
+    a red, white or fake check               its FlagName and FlagName_failed
+    a white check's modifier expressions     whatever they read, since they decide whether a
+                                             failed check reopens
+
 ## What downstream means
 
 Reachable along dialogue links from the entry that carries the script, following links into
@@ -207,7 +217,11 @@ def read_index(derived):
             record = json.loads(line)
             for entry in record["entries"]:
                 node = (record["id"], entry["id"])
-                nodes[node] = (entry.get("guard") or "", entry.get("script") or "")
+                nodes[node] = (
+                    entry.get("guard") or "",
+                    entry.get("script") or "",
+                    entry.get("fields") or {},
+                )
                 targets = entry.get("to", [])
                 conversations = entry.get("to_conversation") or [record["id"]] * len(targets)
                 for target, conversation in zip(targets, conversations):
@@ -457,6 +471,34 @@ def assigned_kind(args):
 ###############################################################################
 
 
+PRICE_FIELD = "ClickCost"
+FLAGGED_CHECK_FIELDS = ("DifficultyRed", "DifficultyWhite", "DifficultyAtmo")
+WHITE_CHECK_FIELD = "DifficultyWhite"
+FLAG_NAME_FIELD = "FlagName"
+MODIFIER_FIELDS = [f"variable{i}" for i in range(1, 11)]
+
+
+def hidden_reads_of(fields, parts, items):
+    """The keys an entry reads through its fields rather than its guard.
+
+    `CostOptionNode.HaveMoney` compares the price with the purse. `RedCheckNode.IsRedCheckDecided`
+    reads the flag and its `_failed` twin, and `FakeCheckNode.HandleResponseText` hides a fake
+    check on the same test. `WhiteCheckNode.IsWhiteCheckPassed` reads the flag, and
+    `FailedWhiteChecks.IsFailedWhiteCheckPossible` evaluates each modifier expression to decide
+    whether a failed check reopens.
+    """
+    keys = set()
+    if PRICE_FIELD in fields:
+        keys.add("money")
+    flag = fields.get(FLAG_NAME_FIELD, "")
+    if flag and any(field in fields for field in FLAGGED_CHECK_FIELDS):
+        keys.update({f"var:{flag}", f"var:{flag}_failed"})
+    if WHITE_CHECK_FIELD in fields:
+        for field in MODIFIER_FIELDS:
+            keys |= reads_of(fields.get(field, ""), parts, items)
+    return keys
+
+
 def reversed_links(edges):
     reverse = collections.defaultdict(list)
     for source, targets in edges.items():
@@ -483,12 +525,12 @@ def survey(derived, asset, detail):
     nodes, edges = read_index(derived)
 
     readers = collections.defaultdict(set)
-    for node, (guard, _) in nodes.items():
-        for key in reads_of(guard, parts, items):
+    for node, (guard, _, fields) in nodes.items():
+        for key in reads_of(guard, parts, items) | hidden_reads_of(fields, parts, items):
             readers[key].add(node)
 
     instances = collections.defaultdict(list)
-    for node, (_, script) in nodes.items():
+    for node, (_, script, _) in nodes.items():
         text = normalise(script)
         for name, args in calls(text):
             keys, note = writes_of(name, args, parts, items)

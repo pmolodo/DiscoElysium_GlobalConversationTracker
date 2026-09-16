@@ -11,8 +11,10 @@ for that first and everything that cannot is listed once as excluded.
 
 ## The rule an action is judged by
 
-An action is **in scope** when at least one call site writes state that some guard
-**downstream** of it reads.
+An action is **in scope** when at least one call site writes state that some reader
+**downstream** of it reads. A reader is a guard, or an entry that reads state through its fields:
+a priced entry reads money, a rolled or fake check reads its flags, and a white check's modifier
+expressions decide whether a failed check reopens - see [Hidden writes](#hidden-writes).
 
 - Downstream means reachable along dialogue links from the entry carrying the call, including
   links into other conversations, **ignoring guards** - a link counts whether or not its guard
@@ -42,7 +44,7 @@ variables and item properties, which the derived index does not carry):
 | items in the database             |     206 |
 
 `calls` below is the number of call sites across all entries. `live` is how many of those have a
-downstream guard reading something the call writes.
+downstream reader of something the call writes.
 
 ## Overview
 
@@ -51,26 +53,26 @@ today; `verdict` is how that compares with the game for the writes a downstream 
 
 | function                           | family          | calls |  live | engine                                     | verdict                                |
 | ---------------------------------- | --------------- | ----: | ----: | ------------------------------------------ | -------------------------------------- |
-| SetVariableValue                   | variables       | 9,829 | 5,582 | assign, increment or clock reading         | ported; 2 shapes unmodelled, none live |
-| ReputationGrows                    | reputation      | 1,106 |   101 | once-increment `reputation.<name>`         | ported                                 |
+| SetVariableValue                   | variables       | 9,829 | 5,673 | assign, increment or clock reading         | ported; 2 shapes unmodelled, none live |
+| ReputationGrows                    | reputation      | 1,106 |   102 | once-increment `reputation.<name>`         | ported                                 |
 | GainTask                           | journal         |   810 |   222 | show unless cancelled                      | ported                                 |
 | FinishTask                         | journal         |   744 |   367 | show unless done, then done                | ported                                 |
-| XPPicoSetBool                      | variables       |   486 |    10 | assign the variable 1                      | ported                                 |
-| XPTinySetBool                      | variables       |   390 |    31 | assign the variable 1                      | ported                                 |
+| XPPicoSetBool                      | variables       |   486 |    12 | assign the variable 1                      | ported                                 |
+| XPTinySetBool                      | variables       |   390 |    37 | assign the variable 1                      | ported                                 |
 | CancelTask                         | journal         |   280 |    39 | cancel unless done                         | ported                                 |
-| GainItem                           | items           |   242 |    92 | `item:<name>` = 1                          | ported; autoequip not live             |
+| GainItem                           | items           |   242 |    93 | `item:<name>` = 1                          | ported; autoequip not live             |
 | DamageVolition                     | damage          |   220 |    32 | damage amount += n                         | ported                                 |
 | PassTime                           | clock           |   207 |    72 | clock +15 min unless locked; plugin locks  | held by decision: clock not modelled   |
-| ReputationLowers                   | reputation      |   178 |    27 | once-decrement `reputation.<name>`         | ported                                 |
+| ReputationLowers                   | reputation      |   178 |    32 | once-decrement `reputation.<name>`         | ported                                 |
 | LoseItem                           | items           |   177 |   108 | `item:<name>` = 0, `unequipped:<name>` = 1 | ported                                 |
 | XPMinorSetBool                     | variables       |   172 |    32 | assign the variable 1                      | ported                                 |
 | HealVolition                       | damage          |   106 |     8 | damage amount -= n, once                   | ported                                 |
-| GainThought                        | thoughts        |   101 |     9 | `thought:<name>` = 1                       | ported                                 |
+| GainThought                        | thoughts        |   101 |    22 | `thought:<name>` = 1                       | ported; reopening a white check not    |
 | DamageEndurance                    | damage          |    90 |     0 | damage amount += n                         | ported; no downstream reader           |
 | SetFlag                            | variables       |    65 |    32 | assign the variable 1                      | ported                                 |
 | HealEndurance                      | damage          |    44 |     0 | damage amount -= n, once                   | ported; no downstream reader           |
 | XPStandardSetBool                  | variables       |    36 |     8 | assign the variable 1                      | ported                                 |
-| GainMoneyOnce                      | money           |    28 |     0 | once-add to the money register             | excluded; ported anyway                |
+| GainMoneyOnce                      | money           |    28 |     5 | once-add to the money register             | ported                                 |
 | ShowVisCal                         | presentation    |    22 |     0 | declared, no effect                        | excluded                               |
 | Reputation                         | reputation      |    19 |     6 | once-add `reputation.<name>`               | ported                                 |
 | NewspaperEndgame                   | endgame         |    17 |     0 | declared, no effect                        | excluded                               |
@@ -88,7 +90,7 @@ today; `verdict` is how that compares with the game for the writes a downstream 
 | HideDialogueImage                  | presentation    |     5 |     0 | declared, no effect                        | excluded                               |
 | GoTo                               | movement        |     4 |     0 | held by decision                           | excluded                               |
 | Obsession                          | journal flavour |     4 |     0 | declared, no effect                        | excluded                               |
-| RemoveWhiteCheck                   | checks          |     4 |     0 | declared, no effect                        | excluded; read by checks - de-70eo.2   |
+| RemoveWhiteCheck                   | checks          |     4 |     0 | declared, no effect                        | excluded; names no check               |
 | DestroyObject                      | scenery         |     3 |     0 | held by decision                           | excluded                               |
 | HealAllVolition                    | damage          |     3 |     0 | damage amount := 0                         | ported; no downstream reader           |
 | LoseMoneyAlways                    | money           |     3 |     3 | subtract from the money register           | ported                                 |
@@ -156,7 +158,7 @@ alike, and reads the value as one of:
 | `true`, `false`, a number                                 | assign                                                        |
 | anything else                                             | unmodelled, and reported as a gap                             |
 
-Of the 5,582 live `SetVariableValue` call sites, 5,222 assign a literal, 353 increment and 7 store
+Of the 5,673 live `SetVariableValue` call sites, 5,313 assign a literal, 353 increment and 7 store
 a clock reading - `doomed.dicemaker_order_deadline` in conversation 460 and two meeting times in
 965. Three guards read such a deadline back against `TotalHourCount()`.
 
@@ -236,7 +238,7 @@ so it is declared, asked for and decided like any other variable read.
 | action     | calls | live | live via a variable | live via IsTaskActive |
 | ---------- | ----: | ---: | ------------------: | --------------------: |
 | GainTask   |   810 |  222 |                 190 |                    82 |
-| FinishTask |   744 |  367 |                 425 |                   149 |
+| FinishTask |   744 |  367 |                 426 |                   149 |
 | CancelTask |   280 |   39 |                   7 |                    42 |
 
 A call site can be live through several keys, so the last two columns can sum past `live`.
@@ -268,7 +270,7 @@ Tested by `losing_a_worn_item_takes_it_off` in `oracle.rs` and `backward.rs`.
 
 | action   | calls | live | live via the item | via equipment | via an item group | via a tab |
 | -------- | ----: | ---: | ----------------: | ------------: | ----------------: | --------: |
-| GainItem |   242 |   92 |                88 |             0 |                 2 |         4 |
+| GainItem |   242 |   93 |                89 |             0 |                 2 |         4 |
 | LoseItem |   177 |  108 |                93 |            26 |                 8 |         2 |
 
 The 26 `LoseItem` sites live through equipment, such as `neck_setting_sun_medal` in conversation
@@ -287,16 +289,18 @@ covered by that note rather than by a port.
 `gainedThoughts`.
 
 **ENGINE.** `thought:<name>` = 1, read by `IsTHCPresent`. Ported: a forgotten thought cannot be
-regained, and no crawl can forget one. 9 live call sites.
+regained, and no crawl can forget one. 22 live call sites: 9 with an `IsTHCPresent` guard
+downstream, and 13 more whose only downstream reader is a white check modifier, which can reopen a
+failed check - not followed, de-vdy9.
 
 ## Money
 
 **GAME.** `MoneyLuaFunctions`: `GainMoneyAlways` and `LoseMoneyAlways` move
 `PlayerCharacter.Money` by the amount; the `Once` forms move it by `Once(amount)`.
 
-**ENGINE.** The money register, read by `MoneyAmount`. Ported. `GainMoneyAlways` (6) and
-`LoseMoneyAlways` (3) have live sites; the once forms have none. Their `once` reads the seen
-record - see
+**ENGINE.** The money register, read by `MoneyAmount` and by every priced entry. Ported.
+`GainMoneyAlways` (6), `LoseMoneyAlways` (3) and `GainMoneyOnce` (5, all through a priced entry)
+have live sites; `LoseMoneyOnce` has none. The once forms' `once` reads the seen record - see
 [Once](#once).
 
 A priced entry (`ClickCost`) is not a script call, but it moves the same register.
@@ -355,18 +359,19 @@ and `backward.rs`.
 
 ## Excluded
 
-No call site of these writes anything a downstream guard reads.
+No call site of these writes anything a downstream reader reads.
 
-- **No guard reads what they write.** Presentation (`ShowVisCal`, `HideVisCal`,
+- **Nothing reads what they write.** Presentation (`ShowVisCal`, `HideVisCal`,
   `HideVisCalAfterConversation`, `ShowDialogueImage`, `HideDialogueImage`, `PlaySoundGroup`,
   `ResetCamera`, and the `Tequila*` visual states); scenery (`SetAreaState` and `DestroyObject`
   write the `AreaState` Lua table, which no guard reads, and the fan, curtain, graffito, door and
   engine functions move objects); `Obsession` (the orb manager); the endgame functions;
   `ShackBedWasUsed` and `WhirlingBedWasUsed` (`PartyManager.sleepLocation`).
-- **Guards read what they write, but never downstream.** `UseSubstanceInHand` (`HudHeldPanelController.OnSubstanceUse` increments `stats.uses_<group>`,
-  which `SubstanceUsedOnce` and `SubstanceUsedMore` read), the party writers other than
-  `RemoveKitsuragiWaitAtChurch`, `SellItemGroup`, `SellItemGroupWithModifier` and
-  `ShowInventoryForPawning`, and the once forms of money.
+- **Something reads what they write, but never downstream.** `UseSubstanceInHand`
+  (`HudHeldPanelController.OnSubstanceUse` increments `stats.uses_<group>`, which
+  `SubstanceUsedOnce` and `SubstanceUsedMore` read), the party writers other than
+  `RemoveKitsuragiWaitAtChurch`, `SellItemGroup`, `SellItemGroupWithModifier`,
+  `ShowInventoryForPawning` and `LoseMoneyOnce`.
 - **Movement.** `GoTo` and `GoToDestination` call `ConversationLogger.ForceStopConversation`
   before changing area, so nothing after them in the conversation runs.
 - **Not fully traced.** `LetterSleep` and `SkipToDebriefLocation` hand off to `EnddayManager`,
@@ -374,8 +379,36 @@ No call site of these writes anything a downstream guard reads.
   not traced here. `TequilaPutOnBodysuit` and `TequilaRemoveBodysuit` are Final Cut coroutines
   whose bodies were not recovered.
 
-`RemoveWhiteCheck` writes the failed white check cache, which is read by the white check itself
-rather than by a guard - see de-70eo.2, which covers what checks read and write.
+`RemoveWhiteCheck` retires a white check from the failed and seen caches, which the check reads
+rather than a guard - see [Hidden reads in guards.md](guards.md#hidden-reads). All four call sites
+(conversation 627) pass `Variable["yard.hanged_inland_corpse_answered"]`, a variable's value
+rather than a check's flag name, so none of them names a check to retire.
+
+## Hidden writes
+
+A hidden write is state a script, a check or a priced entry changes without naming it in its own
+text. The reads on the other side are in [Hidden reads in guards.md](guards.md#hidden-reads).
+Counts use this document's rule for downstream; the passive-check and check-result counts come
+from one-off queries over the same index rather than from the survey.
+
+| writer                                                        | writes without naming it                                                                                                | game source                                                      | engine                                                                                                                              |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| entering any entry                                            | its `SimStatus`, `WasDisplayed`                                                                                         | Dialogue System, captured first by `ConversationLogger`          | read only by `Once`, `CostOnce`, fake checks and Kim switches, which are `once:` and `seen:` slots; no guard reads `SimStatus`      |
+| priced entry                                                  | money, the price `GetCost` computes                                                                                     | PFC `CostOptionNode.HandleEntry`                                 | tracked - see [Money](#money)                                                                                                       |
+| `GainTask`, `FinishTask`, `CancelTask`                        | the part's show, done or cancel variable                                                                                | PFC `Completeable.Reveal`, `MarkDone`, `CancelTask`              | tracked - see [Journal](#journal)                                                                                                   |
+| `GainItem`                                                    | equipment for an `autoequip` item; money for a consumable with an `itemValue`; the healing pools; a substance's charges | PFC `Inventory.HandlePickedUpItem`                               | the item is tracked; no autoequip gain has a downstream equipment reader, and no valued consumable is gained anywhere in the corpus |
+| `GainItem`, `LoseItem` of equipment                           | the skill values its bonuses add to                                                                                     | PFC `Modifiable.Recalc`                                          | not followed: 51 `LoseItem` and 2 autoequip `GainItem` call sites have a passive check downstream - de-70eo.13                      |
+| `LoseItem`                                                    | equipment, which it unequips                                                                                            | PFC `Inventory.DeleteItem`                                       | tracked - see [Items](#items)                                                                                                       |
+| `DamageVolition`, `HealVolition` and the endurance forms      | the skill value itself, since `DAMAGE` is one of its modifiers                                                          | PFC `Modifiable.Recalc`                                          | the damage slot is tracked; a passive check on the same skill is not moved by it - de-70eo.13                                       |
+| `UseSubstanceInHand`                                          | `stats.uses_<group>`                                                                                                    | PFC `HudHeldPanelController.OnSubstanceUse`                      | excluded: no downstream reader                                                                                                      |
+| `PassTime`                                                    | cooking thoughts become fixed, substances wear off                                                                      | PFC `SunshineClock.Clang`, `ThoughtManager.BakeThoughts`         | held: the plugin sends the clock locked - see [Clock](#clock)                                                                       |
+| `LetterSleep`, `SkipToDebriefLocation`                        | `auto.daychange_*` through `EnddayManager` property setters                                                             | PFC `EnddayManager`                                              | excluded; which variables each reaches is not traced                                                                                |
+| `SetAreaState`, `DestroyObject`, `GainItem("ledger_damaged")` | the `AreaState` Lua table                                                                                               | PFC `AreaStatePlaceholder.SwitchTo`, `Alterant.HandleItemPickup` | excluded: no guard reads it                                                                                                         |
+| `XP*SetBool`                                                  | experience                                                                                                              | PFC `TaskLuaFunctions.XPSetBool`                                 | not applied: no guard reads experience                                                                                              |
+| red and white checks                                          | `FlagName` on success; red `FlagName_failed` on failure; a failed white check joins `FailedWhiteChecks`                 | PFC `RedCheckNode.CheckSuccess`, `WhiteCheckNode.CheckSuccess`   | tracked flag slots; a white failure is recorded as a `FlagName_failed` slot                                                         |
+| fake checks                                                   | `FlagName_failed` - all three are forced failures (`AlwaysSucceed` false)                                               | PFC `FakeCheckNode.CheckSuccess`                                 | not written; no guard reads any of the three `_failed` variables                                                                    |
+| a check's result, with certain thoughts fixed                 | money, and volition or endurance damage                                                                                 | PFC `CheckAlterant`                                              | not applied - de-70eo.14                                                                                                            |
+| a failed white check being re-tested                          | the variable, for the five modifier expressions that are `SetVariableValue` calls rather than conditions                | PFC `FailedWhiteChecks.IsFailedWhiteCheckPossible`               | not followed - de-vdy9                                                                                                              |
 
 ## Keeping this current
 
