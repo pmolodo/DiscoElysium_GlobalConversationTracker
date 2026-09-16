@@ -196,7 +196,6 @@ impl GraphBuilder {
                     actions.iter().chain(&failure_actions),
                     &symbols,
                 ),
-                damageable_skill: crate::index::damageable_skill(&entry.fields, entry.kind),
                 actions,
                 failure_actions,
                 links,

@@ -22,37 +22,41 @@
 //! - EQUIPMENT. A worn item's bonuses are modifiers. `LoseItem` unequips what it deletes
 //!   (`Inventory.DeleteItem`), and `GainItem` equips an `autoequip` item
 //!   (`Inventory.HandlePickedUpItem`). Which skills an item moves is item data the dialogue
-//!   database does not carry, so any such change unsettles every passive check.
+//!   database does not carry.
 //! - DAMAGE. `DamageVolition`, `HealVolition` and the endurance forms move the `DAMAGE` modifier
-//!   of Volition or Endurance, and so the value a check on that skill compares.
+//!   of Volition or Endurance.
 //!
 //! ## What the engine does
 //!
 //! The plugin evaluates each passive check once, against the character as the request finds
-//! it. Where a group can move the checked skill, the graph is fitted to answer that check
+//! it. Where a group can change what is worn, the graph is fitted to answer every passive check
 //! Unknown instead (`LookAheadNode::check_settled`), which carries both outcomes - more markers
-//! than earned, never fewer. A lost item unsettles checks only if the world has it on: an item
-//! not worn has no bonus to take away.
+//! than earned, never fewer. A lost item counts only if the world has it on: an item not worn has
+//! no bonus to take away. Such groups are rare, and the bonus sizes are not known, so nothing
+//! narrower is possible.
+//!
+//! DAMAGE IS HELD at the plugin's answer. Treating every Volition or Endurance check as Unknown in
+//! a group that damages the skill over-marks the most visited conversations - Kim's, group 29,
+//! damages Volition unconditionally, and a blow of one rarely crosses a check's threshold. Doing it
+//! exactly needs each check's margin from the plugin (de-70eo.18).
 
 use serde::{Deserialize, Serialize};
 
 use crate::core::action::DialogueAction;
-use crate::core::state::{DAMAGE_PREFIX, ITEM_PREFIX, StateSymbols, UNEQUIPPED_PREFIX};
+use crate::core::state::{ITEM_PREFIX, StateSymbols, UNEQUIPPED_PREFIX};
 
-/// What one entry's actions can do to skill values, named before a group drops the slots
-/// nothing reads - an unread `unequipped:` or `damage:` slot still moves a skill.
+/// What one entry's actions can do to what is worn, named before a group drops the slots nothing
+/// reads - an unread `unequipped:` slot still takes an item off.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkillMoves {
     /// Items the entry takes away, which unequips them if worn.
     pub lost_items: Vec<String>,
     /// Whether the entry gains an item that puts itself on.
     pub puts_on: bool,
-    /// Skills whose damage the entry moves, by `SkillType` name.
-    pub damaged_skills: Vec<String>,
 }
 
 impl SkillMoves {
-    /// What `actions` do to skills, read off the slots they write.
+    /// What `actions` do to what is worn, read off the slots they write.
     pub fn of<'a>(
         actions: impl IntoIterator<Item = &'a DialogueAction>,
         symbols: &StateSymbols,
@@ -72,8 +76,6 @@ impl SkillMoves {
                 moves.lost_items.push(item.to_string());
             } else if let Some(item) = name.strip_prefix(ITEM_PREFIX) {
                 moves.puts_on |= action.value() > 0 && is_autoequip(item);
-            } else if let Some(skill) = name.strip_prefix(DAMAGE_PREFIX) {
-                moves.damaged_skills.push(skill.to_string());
             }
         }
         moves
@@ -97,18 +99,6 @@ pub fn is_autoequip(item: &str) -> bool {
     AUTOEQUIP_ITEMS.contains(&item)
 }
 
-/// The skills damage moves, by the speaker's actor id in the shipped database - Volition is
-/// actor 405 and Endurance 409, which `tests/shipped_index.rs` pins against the actor table.
-pub const DAMAGEABLE_SKILL_ACTORS: [(&str, &str); 2] = [("405", "VOLITION"), ("409", "ENDURANCE")];
-
-/// The damageable skill a passive check spoken by `actor` tests, if it tests one.
-pub fn damageable_skill_of_actor(actor: &str) -> Option<&'static str> {
-    DAMAGEABLE_SKILL_ACTORS
-        .iter()
-        .find(|(id, _)| *id == actor)
-        .map(|(_, skill)| *skill)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -117,7 +107,5 @@ mod tests {
     fn the_outfit_is_what_puts_itself_on() {
         assert!(is_autoequip("neck_tie"));
         assert!(!is_autoequip("hat_mullen"));
-        assert_eq!(damageable_skill_of_actor("405"), Some("VOLITION"));
-        assert_eq!(damageable_skill_of_actor("399"), None);
     }
 }

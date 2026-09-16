@@ -502,18 +502,19 @@ mod tests {
         walk
     }
 
-    /// A passive check the world says fails is carried both ways where the group can move its
-    /// skill: a blow to Volition before a Volition check, or taking off a worn hat - and only
-    /// then. What the check's own script raises is what shows it was entered.
+    /// A passive check the world says fails is carried both ways where the group can take off
+    /// something worn - and not where what it takes is not worn. What the check's own script
+    /// raises is what shows it was entered.
     #[test]
     fn a_passive_check_whose_skill_can_move_is_undecided() {
-        let shape = |before: &str, actor: &str| {
+        let shape = || {
             vec![
                 Entry::new(0).links(&[1]),
-                Entry::new(1).script(before).links(&[2]),
+                Entry::new(1)
+                    .script(r#"LoseItem("hat_mullen")"#)
+                    .links(&[2]),
                 Entry::new(2)
                     .kind(DialogueCheckKind::Passive)
-                    .field("Actor", actor)
                     .script(r#"SetVariableValue("fired", true)"#)
                     .links(&[3]),
                 Entry::new(3).guard(r#"Variable["fired"]"#),
@@ -522,19 +523,12 @@ mod tests {
         let failing = || {
             TestWorld::new()
                 .set_variable("fired", GuardValue::from_boolean(false))
-                .set_damage("VOLITION", 0.0)
                 .set_check_result(node(2), Ternary::False)
         };
-        let volition = "405";
-        let encyclopedia = "399";
 
-        assert!(walked(shape("DamageVolition(1)", volition), &failing()).reached(node(3)));
-        assert!(!walked(shape("DamageVolition(1)", encyclopedia), &failing()).reached(node(3)));
-
-        let lose_hat = r#"LoseItem("hat_mullen")"#;
-        let wearing = || failing().set_equipped("HAT", "hat_mullen");
-        assert!(walked(shape(lose_hat, encyclopedia), &wearing()).reached(node(3)));
-        assert!(!walked(shape(lose_hat, encyclopedia), &failing()).reached(node(3)));
+        let wearing = failing().set_equipped("HAT", "hat_mullen");
+        assert!(walked(shape(), &wearing).reached(node(3)));
+        assert!(!walked(shape(), &failing()).reached(node(3)));
     }
 
     /// A failed Logic check pays out with Return on Investment fixed, and an Encyclopedia passive

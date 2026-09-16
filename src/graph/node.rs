@@ -30,11 +30,8 @@ pub struct LookAheadNode {
     /// What this entry's actions do to skill values - see [`crate::core::skill_movers`].
     #[serde(default)]
     pub skill_moves: SkillMoves,
-    /// For a passive check on Volition or Endurance, that skill: the one damage moves.
-    #[serde(default)]
-    pub damageable_skill: Option<String>,
     /// Whether a passive check's outcome is the world's answer, or Unknown because the group
-    /// can move the skill it compares - set by [`crate::graph::LookAheadGraph::fit`].
+    /// can change what is worn - set by [`crate::graph::LookAheadGraph::fit`].
     #[serde(default = "settled_by_default")]
     pub check_settled: bool,
     pub links: Vec<DialogueNodeId>,
@@ -84,7 +81,6 @@ impl LookAheadNode {
             actions: Vec::new(),
             failure_actions: Vec::new(),
             skill_moves: SkillMoves::default(),
-            damageable_skill: None,
             check_settled: true,
             links: Vec::new(),
             cost: 0,

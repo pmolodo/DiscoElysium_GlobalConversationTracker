@@ -60,7 +60,7 @@ today; `verdict` is how that compares with the game for the writes a downstream 
 | XPPicoSetBool                      | variables       |   486 |    12 | assign the variable 1                      | ported                                 |
 | XPTinySetBool                      | variables       |   390 |    37 | assign the variable 1                      | ported                                 |
 | CancelTask                         | journal         |   280 |    39 | cancel unless done                         | ported                                 |
-| GainItem                           | items           |   242 |    93 | `item:<name>` = 1                          | ported; autoequip not live             |
+| GainItem                           | items           |   242 |    93 | `item:<name>` = 1                          | ported; autoequip unsettles passives   |
 | DamageVolition                     | damage          |   220 |    32 | damage amount += n                         | ported                                 |
 | PassTime                           | clock           |   207 |    72 | clock +15 min unless locked; plugin locks  | held by decision: clock not modelled   |
 | ReputationLowers                   | reputation      |   178 |    32 | once-decrement `reputation.<name>`         | ported                                 |
@@ -286,10 +286,15 @@ Tested by `losing_a_worn_item_takes_it_off` in `oracle.rs` and `backward.rs`.
 | LoseItem |   177 |  108 |                93 |            26 |                 8 |         2 |
 
 The 26 `LoseItem` sites live through equipment, such as `neck_setting_sun_medal` in conversation
-280 and `prybar` in 350, are what the unequip covers. `GainItem` is not ported beyond the item:
-no autoequip gain has a downstream equipment reader, and no gain of a consumable (which never
-joins the inventory) has a downstream item reader - `drouamine`, `hypnogamma`, `magnesium` and
-`nosaphed` are the consumables gained, at 8 sites, all without one.
+280 and `prybar` in 350, are what the unequip covers. `GainItem` writes nothing beyond the item
+slot: no autoequip gain has a downstream equipment question, and no gain of a consumable (which
+never joins the inventory) has a downstream item reader - `drouamine`, `hypnogamma`, `magnesium`
+and `nosaphed` are the consumables gained, at 8 sites, all without one.
+
+Equipment also moves skill values, which a passive check compares. Item bonuses are not in the
+dialogue database, so a passive check is answered Unknown in any group that can take off an item
+the world has on, or gain one of the seven autoequip items (`core::skill_movers`). The two
+autoequip gains in the corpus are the necktie in conversation 9.
 
 The pawnables tab is read from the start of the crawl (see guards.md); its 6 live sites are
 covered by that note rather than by a port.
@@ -411,7 +416,7 @@ from one-off queries over the same index rather than from the survey.
 | `GainItem`                                                    | equipment for an `autoequip` item; money for a consumable with an `itemValue`; the healing pools; a substance's charges | PFC `Inventory.HandlePickedUpItem`                               | the item is tracked; no autoequip gain has a downstream equipment reader, and no valued consumable is gained anywhere in the corpus                                                                                                                                |
 | `GainItem`, `LoseItem` of equipment                           | the skill values its bonuses add to                                                                                     | PFC `Modifiable.Recalc`                                          | a passive check is answered Unknown in a group that can take off an item the world has on or put on an autoequip item, since item bonuses are not in the database (`core::skill_movers`)                                                                           |
 | `LoseItem`                                                    | equipment, which it unequips                                                                                            | PFC `Inventory.DeleteItem`                                       | tracked - see [Items](#items)                                                                                                                                                                                                                                      |
-| `DamageVolition`, `HealVolition` and the endurance forms      | the skill value itself, since `DAMAGE` is one of its modifiers                                                          | PFC `Modifiable.Recalc`                                          | the damage slot is tracked; a Volition or Endurance passive check in a group that damages or heals that skill is answered Unknown                                                                                                                                  |
+| `DamageVolition`, `HealVolition` and the endurance forms      | the skill value itself, since `DAMAGE` is one of its modifiers                                                          | PFC `Modifiable.Recalc`                                          | the damage slot is tracked; a passive check on the skill keeps the plugin's answer, since exactly when a blow flips one needs its margin - de-70eo.18                                                                                                              |
 | `UseSubstanceInHand`                                          | `stats.uses_<group>`                                                                                                    | PFC `HudHeldPanelController.OnSubstanceUse`                      | excluded: no downstream reader                                                                                                                                                                                                                                     |
 | `PassTime`                                                    | cooking thoughts become fixed, substances wear off                                                                      | PFC `SunshineClock.Clang`, `ThoughtManager.BakeThoughts`         | held: the plugin sends the clock locked - see [Clock](#clock)                                                                                                                                                                                                      |
 | `LetterSleep`, `SkipToDebriefLocation`                        | `auto.daychange_*` through `EnddayManager` property setters                                                             | PFC `EnddayManager`                                              | excluded; which variables each reaches is not traced                                                                                                                                                                                                               |

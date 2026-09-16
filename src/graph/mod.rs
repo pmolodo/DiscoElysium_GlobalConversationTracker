@@ -254,25 +254,15 @@ impl LookAheadGraph {
     /// Fits the graph to a world: every price to the game mode - see [`crate::core::price`] -
     /// every conditional action on or off by its thought - see
     /// [`crate::core::thought_effects`] - and every passive check settled or not by whether the
-    /// group can move its skill - see [`crate::core::skill_movers`].
+    /// group can change what is worn - see [`crate::core::skill_movers`].
     ///
     /// A graph is built as for a normal-mode world holding no thought fixed and wearing nothing
     /// the group takes. Fitting starts from each node's own data every time, so a graph can be
     /// fitted to one world and then another.
     pub fn fit(&mut self, fitting: &Fitting) {
-        let puts_on = self.nodes().any(|node| node.skill_moves.puts_on);
-        let damaged: HashSet<String> = self
-            .nodes()
-            .flat_map(|node| node.skill_moves.damaged_skills.iter().cloned())
-            .collect();
+        let unsettled = fitting.lost_worn || self.nodes().any(|node| node.skill_moves.puts_on);
         for node in self.nodes.values_mut() {
-            node.check_settled = node.kind != DialogueCheckKind::Passive
-                || !(fitting.lost_worn
-                    || puts_on
-                    || node
-                        .damageable_skill
-                        .as_ref()
-                        .is_some_and(|skill| damaged.contains(skill)));
+            node.check_settled = node.kind != DialogueCheckKind::Passive || !unsettled;
             node.cost =
                 crate::core::price::price(node.click_cost, node.price_scale, fitting.hardcore);
             for action in node.actions.iter_mut().chain(&mut node.failure_actions) {

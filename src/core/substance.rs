@@ -42,9 +42,10 @@
 //!
 //! The count IS a dialogue variable - `stats.uses_alcohol` and its four siblings are declared
 //! in the database as numbers starting at 0 - so a group that asks declares it, the plugin
-//! already sends its value, and nothing has to run. Its only writer is `SubstanceChargeUsed`,
-//! called when the player uses a substance from the HUD; no dialogue script writes it, so it
-//! is constant for a search.
+//! already sends its value, and nothing has to run. It is written by `SubstanceChargeUsed`,
+//! called when the player uses a substance from the HUD, and by `UseSubstanceInHand` in a
+//! dialogue script; no call site of that has a substance question downstream, so the count is
+//! read from the world.
 //!
 //! `AsInt` is Pixel Crushers' `Lua.Result.AsInt`, whose body is not in the export: taken to
 //! truncate a number to an integer, as a cast does, and to give 0 for anything that is not a
