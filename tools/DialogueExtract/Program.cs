@@ -15,6 +15,7 @@ namespace GlobalConversationTracker.DialogueExtract
         private const string CorpusCommand = "corpus";
         private const string VariablesCommand = "variables";
         private const string ActorsCommand = "actors";
+        private const string ItemNamesCommand = "item-names";
         private const string ShippedIndexCommand = "shipped-index";
         private const string WorstCaseStateCommand = "worst-case-state";
         private const int ExitFailure = 1;
@@ -41,6 +42,12 @@ namespace GlobalConversationTracker.DialogueExtract
               actors              The database's actor table - id and name, one JSON object
                                   per line - so an entry's Actor field can be read as the
                                   skill a passive check tests.
+              item-names          The database's item table with each item's English display
+                                  name from the lockit - id, stack name and display name, one
+                                  JSON object per line - so a reader with only a save can
+                                  answer CheckItem: the key pocket a save writes is display
+                                  names, and what a key is called is in neither the save nor
+                                  the database.
               shipped-index       The index as the mod ships it: the same records with
                                   everything no crawl reads removed. Reads the index that
                                   conversation-index wrote.
@@ -54,12 +61,15 @@ namespace GlobalConversationTracker.DialogueExtract
                               .game_reference_copies/AssetRipperExport/ExportedProject/Assets/Dialogue Databases/Disco Elysium.asset
               --index PATH    worst-case-state: the index conversation-index wrote. Default:
                               .game_reference_copies/derived/conversation_index.jsonl
+              --lockit PATH   item-names: the English lockit the display names are in.
+                              Default:
+                              .game_reference_copies/AssetRipperExport/ExportedProject/Assets/Resources/lockits/english/GeneralLockitEnglish.asset
               --out PATH      Where to write the output. Defaults:
                               articy-ids          articy_ids_final_cut.json
                               conversation-index  .game_reference_copies/derived/conversation_index.jsonl
                               worst-case-state    testing/scenarios/global-state-worst-case.json
-              --out-dir PATH  corpus, variables, actors: the directory to write into.
-                              Default: .game_reference_copies/derived
+              --out-dir PATH  corpus, variables, actors, item-names: the directory to write
+                              into. Default: .game_reference_copies/derived
               -h, --help      Show this message.
             """;
 
@@ -67,6 +77,10 @@ namespace GlobalConversationTracker.DialogueExtract
             "ExportedProject", "Assets", "Dialogue Databases", "Disco Elysium.asset");
 
         private static readonly string DefaultDerived = Path.Combine(".game_reference_copies", "derived");
+
+        private static readonly string DefaultLockit = Path.Combine(".game_reference_copies",
+            "AssetRipperExport", "ExportedProject", "Assets", "Resources", "lockits", "english",
+            "GeneralLockitEnglish.asset");
 
         private static readonly string DefaultOut = Path.Combine(DefaultDerived,
             "conversation_index.jsonl");
@@ -124,6 +138,8 @@ namespace GlobalConversationTracker.DialogueExtract
                     return Variables(ParseOptions(args, command));
                 case ActorsCommand:
                     return Actors(ParseOptions(args, command));
+                case ItemNamesCommand:
+                    return ItemNames(ParseOptions(args, command));
                 case ShippedIndexCommand:
                     return TrimmedIndex(ParseOptions(args, command));
                 case WorstCaseStateCommand:
@@ -233,6 +249,62 @@ namespace GlobalConversationTracker.DialogueExtract
             ActorTableFile.Write(outPath, actors);
 
             Console.WriteLine($"wrote {actors.Count} actors to {outPath}");
+            return 0;
+        }
+
+        /// <summary>
+        /// Writes the item table with each item's display name, so a save can answer CheckItem.
+        /// </summary>
+        /// <remarks>
+        /// <para>TWO INPUTS, and the only command with two. What a guard names is the item's
+        /// ID; what a SAVE records in its key pocket is the English DISPLAY NAME, because that
+        /// is what <c>InventoryViewPersister</c> writes - so neither the database nor the save
+        /// alone can say which key is held.</para>
+        ///
+        /// <para>The stack name comes from the database and is what decides which of a save's
+        /// three records answers for an item at all - see <see cref="DialogueItem"/>.</para>
+        /// </remarks>
+        private static int ItemNames(Dictionary<string, string> options)
+        {
+            string asset = Option(options, "--asset", DefaultAsset);
+            string lockit = Option(options, "--lockit", DefaultLockit);
+            string outDir = Option(options, "--out-dir", DefaultDerived);
+            RejectUnknownOptions(options);
+            Directory.CreateDirectory(outDir);
+
+            IReadOnlyList<DialogueItem> items = ItemTableExtractor.Extract(asset);
+            IReadOnlyDictionary<string, string> names = ItemNameExtractor.Extract(lockit);
+
+            var named = new List<DialogueItem>(items.Count);
+            int unnamed = 0;
+            int keys = 0;
+            foreach (DialogueItem item in items)
+            {
+                // AN ITEM WITH NO TERM KEEPS AN EMPTY NAME rather than being left out: its
+                // stack name still says how the game answers for it, and only an item on the
+                // key ring is ever looked up by name.
+                if (names.TryGetValue(item.Name, out string? shown))
+                {
+                    named.Add(item with { DisplayName = shown });
+                }
+                else
+                {
+                    named.Add(item);
+                    unnamed++;
+                }
+
+                if (item.StackName == "key_ring")
+                {
+                    keys++;
+                }
+            }
+
+            string outPath = Path.Combine(outDir, ItemTableFile.FileName);
+            ItemTableFile.Write(outPath, named);
+
+            Console.WriteLine(
+                $"wrote {named.Count} items ({keys} on the key ring, {unnamed} with no "
+                + $"display name) to {outPath}");
             return 0;
         }
 

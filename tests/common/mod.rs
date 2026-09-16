@@ -79,6 +79,28 @@ const INDEX_COMMAND: [&str; 5] = [
     "conversation-index",
 ];
 
+/// What to run to rebuild the item table, which carries each item's display name.
+const ITEM_NAMES_COMMAND: [&str; 5] = [
+    "run",
+    "--project",
+    "tools/DialogueExtract",
+    "--",
+    "item-names",
+];
+
+/// The file that command writes.
+const ITEM_NAMES_FILE: &str = "item_names.jsonl";
+
+/// The item table, regenerated if absent; `None` only where the game data cannot be had.
+///
+/// WHAT IT IS FOR: answering `CheckItem` from a save. The game branches on an item's stack
+/// name - the key pocket answers for one on the key ring, the bullet count for one stacked as
+/// bullets, the bag and the equipment for anything else - and the pocket a save writes is
+/// English display names rather than ids. See `fixtures::holdings_in_save`.
+pub fn item_names() -> Option<PathBuf> {
+    derived(ITEM_NAMES_FILE, &ITEM_NAMES_COMMAND, "the item table")
+}
+
 /// The repo root, found by walking up from this crate.
 pub fn repo_root() -> PathBuf {
     let mut dir: Option<&Path> = Some(Path::new(env!("CARGO_MANIFEST_DIR")));

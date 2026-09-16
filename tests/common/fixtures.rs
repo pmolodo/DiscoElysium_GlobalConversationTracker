@@ -1191,13 +1191,20 @@ fn document_member(save: &str, suffix: &str, member_name: &str) -> serde_json::V
 ///   taken and when each was closed, and a task closed at a time is no longer active; one
 ///   acquired with a null resolution is.
 ///
-/// WHAT IS HELD IS STILL NOT ANSWERED, and the near miss is worth writing down because the
-/// data looks like the answer and is not. `inventoryState.itemListState` names 206 items in
-/// every save here, which is every item the database defines - it is the per-item state of
-/// the catalogue, not what is in hand. Reading it as the inventory told the world the player
-/// already owned the Faln speakers, which shut the route the money suite exists to measure
-/// and turned its first scenario red. `CheckItem` therefore stays unanswered, which reads as
-/// not held, exactly as it did before. See de-bnh6 for where to look next.
+/// WHAT IS HELD IS ANSWERED FROM THREE RECORDS, because the game answers from three.
+/// `CharacterItems.IsItemGained` - which is all `CheckItem` does - looks the item up and
+/// branches on its stack name: `key_ring` asks the KEY POCKET, `bullets` asks the COUNT, and
+/// anything else asks the bag and the equipment. A save writes those differently:
+/// `inventoryViewState.inventory` and `.equipment` carry item ids, `.keys` carries English
+/// display names, and `.bullets` is a number. [`keys_held`] turns the pocket back into ids the
+/// way the game does on load.
+///
+/// NOT `inventoryState.itemListState`, and the near miss is worth writing down because the
+/// data looks like the answer and is not: it names 206 items in every save here, the template
+/// included, which is every item the database defines - the per-item state of the catalogue,
+/// not what is in hand. Reading it as the inventory told the world the player already owned
+/// the Faln speakers, which shut the route the money suite exists to measure and turned its
+/// first scenario red.
 pub struct Holdings {
     /// Items in the player's possession, carried or worn.
     pub items: HashSet<String>,
@@ -1219,6 +1226,12 @@ pub struct Holdings {
     /// Who is with them.
     pub party: Party,
 }
+
+/// What an item stacks as when the key pocket answers for it, per `Inventory.KeysStackName`.
+const KEY_RING_STACK: &str = "key_ring";
+
+/// What it stacks as when the bullet count answers for it, per `Inventory.BulletsStackName`.
+const BULLETS_STACK: &str = "bullets";
 
 /// Minutes in an hour, for a clock the game answers to the hour.
 const MINUTES_PER_HOUR: i32 = 60;
@@ -1341,12 +1354,22 @@ pub fn holdings_in_save(save: &str) -> Holdings {
     let equipped = equipped(&carried);
 
     Holdings {
-        // WORN COUNTS AS HELD, since an item in a slot is still the player's. What is NOT
-        // in either is the catalogue: inventoryState.itemListState names every item the
-        // database defines - 206 of them, in every save here - and reading THAT as the
-        // inventory told the world the Faln speakers were already bought, which shut the
-        // route the money suite exists to measure.
-        items: held(&carried).union(&equipped).cloned().collect(),
+        // WHAT THE GAME WOULD ANSWER CheckItem WITH, which is three records rather than one.
+        // CharacterItems.IsItemGained branches on the item's stack name: one on the key ring
+        // is held when the KEY POCKET holds it, one stacked as bullets when the COUNT is above
+        // zero, and anything else when it is in the bag or worn - worn counting as held, since
+        // an item in a slot is still the player's.
+        //
+        // What is NOT any of them is the catalogue: inventoryState.itemListState names every
+        // item the database defines - 206 of them, in every save here, the template included -
+        // and reading THAT as the inventory told the world the Faln speakers were already
+        // bought, which shut the route the money suite exists to measure.
+        items: held(&carried)
+            .union(&equipped)
+            .cloned()
+            .chain(keys_held(&carried))
+            .chain(bullets_held(&carried))
+            .collect(),
         equipped,
         tasks: active_tasks(&journal),
         thoughts: thought_states
@@ -1430,6 +1453,96 @@ fn held(inventory: &serde_json::Value) -> HashSet<String> {
         .flatten()
         .flat_map(|(_, category)| category.as_array().into_iter().flatten())
         .filter_map(|entry| entry["Value"].as_str().map(str::to_string))
+        .collect()
+}
+
+/// The item table with each item's stack name and English display name.
+///
+/// DERIVED FROM TWO PLACES, and read here rather than rebuilt: `DialogueExtract item-names`
+/// takes the ids and stack names from the dialogue database and the display names from the
+/// English lockit - see `tools/DialogueAsset/DialogueItem.cs`. A save records its key pocket
+/// in display names, so without this no reader could say which key is held.
+///
+/// IN THE ORDER THE TABLE DECLARES THEM, because that is what decides a name naming two items:
+/// the game resolves a pocket entry with `FirstOrDefault` over its item list, so
+/// "Débardeurs' Union Card" is always `union_membership_card` and never
+/// `union_membership_card_other`.
+///
+/// EMPTY WHERE THE GAME DATA CANNOT BE HAD, which is the one case
+/// [`super::item_names`] allows: a checkout without the export answers no item by name, and
+/// says so loudly there rather than quietly here.
+///
+/// # Panics
+///
+/// If the file is there and a line will not read.
+fn item_table() -> &'static Vec<(String, String, String)> {
+    static TABLE: OnceLock<Vec<(String, String, String)>> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        let Some(path) = super::item_names() else {
+            return Vec::new();
+        };
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("{} does not read: {error}", path.display()));
+
+        text.lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| {
+                let row: serde_json::Value = serde_json::from_str(line)
+                    .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+                let field = |name: &str| row[name].as_str().unwrap_or_default().to_string();
+                (field("name"), field("stack"), field("display"))
+            })
+            .collect()
+    })
+}
+
+/// The keys the pocket holds, as the ids a guard names.
+///
+/// THE GAME'S OWN LOOKUP: `InventoryViewPersister.ConvertStringToInventoryItemsKeyList` turns
+/// each saved display name back into the FIRST item of that name, and only an item on the key
+/// ring is ever found this way. A name in the pocket that names nothing is dropped, exactly as
+/// the game drops it.
+fn keys_held(inventory: &serde_json::Value) -> HashSet<String> {
+    let pocket: HashSet<&str> = inventory["inventoryViewState"]["keys"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .collect();
+
+    let mut found = HashSet::new();
+    let mut taken: HashSet<&str> = HashSet::new();
+    for (name, stack, display) in item_table() {
+        if stack != KEY_RING_STACK || !pocket.contains(display.as_str()) {
+            continue;
+        }
+
+        // FIRST MATCH ONLY, as FirstOrDefault gives: a second item of the same name is one the
+        // game would never restore from a save.
+        if taken.insert(display.as_str()) {
+            found.insert(name.clone());
+        }
+    }
+    found
+}
+
+/// The bullet item, where the save's count is above zero.
+///
+/// ONE ITEM RATHER THAN A NUMBER, because that is the shape the question takes: the game
+/// answers `CheckItem` for anything stacked as bullets by asking whether the count is above
+/// zero, and a world holds a set of names.
+fn bullets_held(inventory: &serde_json::Value) -> HashSet<String> {
+    let count = inventory["inventoryViewState"]["bullets"]
+        .as_i64()
+        .unwrap_or_default();
+    if count <= 0 {
+        return HashSet::new();
+    }
+
+    item_table()
+        .iter()
+        .filter(|(_, stack, _)| stack == BULLETS_STACK)
+        .map(|(name, _, _)| name.clone())
         .collect()
 }
 
