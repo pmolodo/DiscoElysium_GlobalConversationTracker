@@ -223,6 +223,26 @@ namespace GlobalConversationTracker
             SnapshotAgreementCheck.Report(log, Session, store.DirectoryPath, conversation);
         }
 
+        /// <summary>
+        /// What a Lua expression answers in the running game, or null where it could not be
+        /// read.
+        /// </summary>
+        /// <remarks>
+        /// <para>A HARNESS ENTRY POINT AND NOTHING ELSE, like the ones above it. Nothing in
+        /// play calls it; what calls it is a run measuring what a guard whose Final Cut body
+        /// is stripped actually computes, by loading saves that vary what it reads and
+        /// asking.</para>
+        ///
+        /// <para>It needs a LOADED GAME, like the snapshot comparison: the Lua variable
+        /// table and the registered dialogue functions both have to exist.</para>
+        /// </remarks>
+        /// <param name="expression">The expression, without a leading <c>return</c>.</param>
+        /// <returns>A bool, a number, a string, or null where it could not be read.</returns>
+        public static object? EvaluateLua(string expression)
+        {
+            return GameFacts.Evaluate(expression);
+        }
+
         private Harmony? _harmony;
 
         /// <summary>What a search may spend: the two budgets, and nothing else.</summary>

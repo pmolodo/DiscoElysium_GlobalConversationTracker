@@ -59,6 +59,16 @@ namespace GlobalConversationTracker.Automation.Tests
         }
 
         [Fact]
+        public void AnEvaluateCommandCarriesTheExpression()
+        {
+            ProbeCommand.SendEvaluate(_saveGames, "IsKimHere()");
+
+            JsonElement body = Parsed();
+            Assert.Equal(ProbeCommand.Evaluate, body.GetProperty("command").GetString());
+            Assert.Equal("IsKimHere()", body.GetProperty("expression").GetString());
+        }
+
+        [Fact]
         public void AReportCommandCarriesNothingElse()
         {
             ProbeCommand.SendReport(_saveGames);
@@ -156,6 +166,8 @@ namespace GlobalConversationTracker.Automation.Tests
             Assert.Throws<ArgumentNullException>(() => ProbeCommand.Send(_saveGames, null!));
             Assert.Throws<ArgumentException>(
                 () => ProbeCommand.SendLoadSave(_saveGames, "  "));
+            Assert.Throws<ArgumentException>(
+                () => ProbeCommand.SendEvaluate(_saveGames, "  "));
         }
     }
 }

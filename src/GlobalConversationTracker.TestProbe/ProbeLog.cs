@@ -113,6 +113,16 @@ namespace GlobalConversationTracker.TestProbe
                     case long number:
                         writer.WriteNumber(key, number);
                         break;
+
+                    // A Lua expression answers in floats, and an answer stringified here
+                    // would come back as text that a reader has to parse and a comparison
+                    // has to guess the culture of.
+                    case float number:
+                        writer.WriteNumber(key, number);
+                        break;
+                    case double number:
+                        writer.WriteNumber(key, number);
+                        break;
                     default:
                         writer.WriteString(key, Convert.ToString(value) ?? string.Empty);
                         break;

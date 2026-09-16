@@ -45,6 +45,14 @@ namespace GlobalConversationTracker.TestProbe
         /// <summary>Report the state a scenario cares about.</summary>
         internal const string ReportCommand = "report";
 
+        /// <summary>Evaluate a Lua expression and report what it answered.</summary>
+        /// <remarks>
+        /// What a guard whose Final Cut body is stripped actually computes can only be
+        /// learned from a running game, and the look-ahead capture records only the queries
+        /// a conversation's group happens to make. This asks outright.
+        /// </remarks>
+        internal const string EvaluateCommand = "evaluate";
+
         /// <summary>
         /// Tell an open conversation to go on to the next line.
         /// </summary>
@@ -457,6 +465,9 @@ namespace GlobalConversationTracker.TestProbe
                             "conversation", TestProbePlugin.ConversationId(),
                             "active", TestProbePlugin.IsConversationActive());
                         break;
+                    case EvaluateCommand:
+                        Evaluate(root);
+                        break;
                     case AdvanceCommand:
                         Advance();
                         break;
@@ -560,6 +571,35 @@ namespace GlobalConversationTracker.TestProbe
             // Says the comparison RAN. What it found is in the BepInEx log, which is where
             // the plugin wrote it and where the harness reads it from.
             ProbeLog.Write("snapshot-checked", "conversation", conversation);
+        }
+
+        /// <summary>Asks the game what a Lua expression answers, and reports it.</summary>
+        /// <remarks>
+        /// <para>THE ANSWER COMES BACK HERE rather than going to the log the way the
+        /// snapshot comparison's does, because it is a VALUE a run has to read back and act
+        /// on - a row of a truth table - rather than a report for a person.</para>
+        ///
+        /// <para>READ IS SEPARATE FROM VALUE, and that is the whole care of it. An
+        /// expression the game could not answer must not read as false: false is what most
+        /// guards answer, so silence reported as false would quietly fill a truth table with
+        /// plausible rows. The value is written only when there is one, and <c>read</c> says
+        /// whether there was.</para>
+        /// </remarks>
+        private static void Evaluate(JsonElement root)
+        {
+            string expression = Member(root, "expression")
+                ?? throw new ArgumentException("No expression was given.");
+
+            ProbeLog.Write(
+                "command-started", "command", EvaluateCommand, "expression", expression);
+
+            object? value = InvokePluginFor("EvaluateLua", new object[] { expression });
+
+            ProbeLog.Write(
+                "evaluated",
+                "expression", expression,
+                "read", value != null,
+                "value", value);
         }
 
         /// <summary>

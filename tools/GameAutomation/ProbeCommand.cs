@@ -36,6 +36,14 @@ namespace GlobalConversationTracker.Automation
         /// <summary>Ask the probe to report the state a scenario cares about.</summary>
         public const string Report = "report";
 
+        /// <summary>Evaluate a Lua expression and report what it answered.</summary>
+        /// <remarks>
+        /// For learning what a guard whose body no export carries actually computes: load a
+        /// save that varies what it reads, ask, and write the answer down. The running game
+        /// is the only authority on a Final Cut body that was compiled to native code.
+        /// </remarks>
+        public const string Evaluate = "evaluate";
+
         /// <summary>
         /// Tell an open conversation to go on to its next line.
         /// </summary>
@@ -222,6 +230,25 @@ namespace GlobalConversationTracker.Automation
         public static void SendReport(string saveGamesFolder)
         {
             Send(saveGamesFolder, Report);
+        }
+
+        /// <summary>Asks the probe what a Lua expression answers.</summary>
+        /// <remarks>
+        /// Answered by an <c>evaluated</c> event carrying <c>read</c> and, when that is
+        /// true, <c>value</c>. The two are separate because an expression the game could
+        /// not answer must not read as false.
+        /// </remarks>
+        /// <param name="saveGamesFolder">The profile's SaveGames folder.</param>
+        /// <param name="expression">The expression, without a leading <c>return</c>.</param>
+        /// <exception cref="ArgumentException">The expression is blank.</exception>
+        public static void SendEvaluate(string saveGamesFolder, string expression)
+        {
+            if (string.IsNullOrWhiteSpace(expression))
+            {
+                throw new ArgumentException("An expression is needed.", nameof(expression));
+            }
+
+            Send(saveGamesFolder, Evaluate, "expression", expression);
         }
 
         /// <summary>Asks the mod to prepare one look-ahead suite.</summary>

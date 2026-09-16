@@ -46,6 +46,48 @@ namespace GlobalConversationTracker
             }
         }
 
+        /// <summary>
+        /// What a Lua expression answers, as a plain value, or null where it could not be
+        /// read.
+        /// </summary>
+        /// <remarks>
+        /// <para>A HARNESS INSTRUMENT, and this is why it exists: most of what Final Cut
+        /// ships has no readable body anywhere, because the export stubs every method it
+        /// could not reconstruct. What such a function COMPUTES can then only be learned by
+        /// asking a running game - load a save that varies what it reads, evaluate it, and
+        /// write the answer down. That is the shipped build answering, which is the only
+        /// authority there is once the source is gone.</para>
+        ///
+        /// <para>The kinds are the ones a dialogue guard can answer in, discriminated the
+        /// way the world snapshot discriminates them. NULL IS "COULD NOT READ" AND NEVER A
+        /// VALUE - an expression this build does not define, one that threw, or one
+        /// answering something that is none of these - so a caller can tell silence from
+        /// false. Reading them the same way matters more than it looks: a truth table built
+        /// here is compared against what the snapshot reports, and two discriminations would
+        /// make a disagreement about the reader look like one about the game.</para>
+        /// </remarks>
+        /// <param name="expression">The expression, without a leading <c>return</c>.</param>
+        internal static object? Evaluate(string expression)
+        {
+            Lua.Result? result = Run(expression);
+            if (result == null)
+            {
+                return null;
+            }
+
+            if (result.isBool)
+            {
+                return result.asBool;
+            }
+
+            if (result.isNumber)
+            {
+                return result.asFloat;
+            }
+
+            return result.isString ? result.asString : null;
+        }
+
         /// <summary>The player's balance in centimes, or <see cref="UnknownMoney"/>.</summary>
         internal static int ReadMoney()
         {
