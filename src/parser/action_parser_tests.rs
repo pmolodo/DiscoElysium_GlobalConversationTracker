@@ -248,11 +248,11 @@ fn money_never_goes_negative() {
 #[test]
 fn declared_calls_are_recorded_but_change_nothing() {
     let mut symbols = StateSymbols::new();
-    // Both write state the search does not carry: one the character sheet's morale, the
-    // other the screen. Both have a decision on file saying so, so both parse to a stub
-    // rather than to an unknown.
+    // Both write state the search does not carry: one an object in the scene, the other the
+    // screen. Both have a decision on file saying so, so both parse to a stub rather than to
+    // an unknown.
     let actions = parse_actions(
-        "DamageVolition(1);\nShowDialogueImage(\"darkness\")",
+        "TurnOnFanLight();\nShowDialogueImage(\"darkness\")",
         &mut symbols,
     );
 

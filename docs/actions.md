@@ -59,16 +59,16 @@ today; `verdict` is how that compares with the game for the writes a downstream 
 | XPTinySetBool                      | variables       |   390 |    31 | assign the variable 1                     | ported                                 |
 | CancelTask                         | journal         |   280 |    39 | cancel unless done                        | ported                                 |
 | GainItem                           | items           |   242 |    92 | `item:<name>` = 1                         | ported for the item; see Items         |
-| DamageVolition                     | damage          |   220 |    32 | held by decision                          | not applied - de-70eo.6                |
+| DamageVolition                     | damage          |   220 |    32 | damage amount += n                        | ported                                 |
 | PassTime                           | clock           |   207 |    72 | clock +15 min unless locked; plugin locks | held - de-70eo.8                       |
 | ReputationLowers                   | reputation      |   178 |    27 | once-decrement `reputation.<name>`        | ported                                 |
 | LoseItem                           | items           |   177 |   108 | `item:<name>` = 0                         | unequip not applied - de-70eo.7        |
 | XPMinorSetBool                     | variables       |   172 |    32 | assign the variable 1                     | ported                                 |
-| HealVolition                       | damage          |   106 |     8 | held by decision                          | not applied - de-70eo.6                |
+| HealVolition                       | damage          |   106 |     8 | damage amount -= n, once                  | ported                                 |
 | GainThought                        | thoughts        |   101 |     9 | `thought:<name>` = 1                      | ported                                 |
-| DamageEndurance                    | damage          |    90 |     0 | held by decision                          | excluded                               |
+| DamageEndurance                    | damage          |    90 |     0 | damage amount += n                        | ported; no downstream reader           |
 | SetFlag                            | variables       |    65 |    32 | assign the variable 1                     | ported                                 |
-| HealEndurance                      | damage          |    44 |     0 | held by decision                          | excluded                               |
+| HealEndurance                      | damage          |    44 |     0 | damage amount -= n, once                  | ported; no downstream reader           |
 | XPStandardSetBool                  | variables       |    36 |     8 | assign the variable 1                     | ported                                 |
 | GainMoneyOnce                      | money           |    28 |     0 | once-add to the money register            | excluded; ported anyway                |
 | ShowVisCal                         | presentation    |    22 |     0 | declared, no effect                       | excluded                               |
@@ -90,7 +90,7 @@ today; `verdict` is how that compares with the game for the writes a downstream 
 | Obsession                          | journal flavour |     4 |     0 | declared, no effect                       | excluded                               |
 | RemoveWhiteCheck                   | checks          |     4 |     0 | declared, no effect                       | excluded; read by checks - de-70eo.2   |
 | DestroyObject                      | scenery         |     3 |     0 | held by decision                          | excluded                               |
-| HealAllVolition                    | damage          |     3 |     0 | held by decision                          | excluded                               |
+| HealAllVolition                    | damage          |     3 |     0 | damage amount := 0                        | ported; no downstream reader           |
 | LoseMoneyAlways                    | money           |     3 |     3 | subtract from the money register          | ported                                 |
 | WhirlingBedWasUsed                 | endday          |     3 |     0 | held by decision                          | excluded                               |
 | AddCunoToParty                     | party           |     2 |     0 | held by decision                          | excluded                               |
@@ -105,7 +105,7 @@ today; `verdict` is how that compares with the game for the writes a downstream 
 | TurnOffFanLight                    | scenery         |     2 |     0 | held by decision                          | excluded                               |
 | TurnOnFanLight                     | scenery         |     2 |     0 | held by decision                          | excluded                               |
 | WhirlingEngineStart                | scenery         |     2 |     0 | held by decision                          | excluded                               |
-| DamageEnduranceWithNewspaper       | damage          |     1 |     0 | held by decision                          | excluded                               |
+| DamageEnduranceWithNewspaper       | damage          |     1 |     0 | damage amount += n                        | ported; no downstream reader           |
 | GraffitoAlight                     | scenery         |     1 |     0 | held by decision                          | excluded                               |
 | GraffitoExtinguish                 | scenery         |     1 |     0 | held by decision                          | excluded                               |
 | LetterSleep                        | endday          |     1 |     0 | held by decision                          | excluded; not fully traced             |
@@ -302,9 +302,12 @@ modifier, clamped to its current value (`Modifiable.DamageValue`). `HealVolition
 `Once(n)` in conversation - clamps to `maximumValue - value` and removes that much damage
 (`Modifiable.HealValue`). `HealAllVolition` heals all of it. Endurance is the same.
 
-**ENGINE.** A `Decision` in `core::modelling` holds `HasVolitionDamage` and `HasEnduranceDamage`
-at the world's answer. 32 `DamageVolition` and 8 `HealVolition` call sites have a downstream
-`HasVolitionDamage`; no endurance writer has a downstream reader. de-70eo.6.
+**ENGINE.** A `damage:` slot per skill holds the damage AMOUNT, seeded from the damage value
+the plugin reads (`DataKind::SkillDamage`). `DamageVolition(n)` adds n, `HealVolition(n)` subtracts
+n once and stops at none, `HealAllVolition` clears it; endurance the same. `HasVolitionDamage` and
+`HasEnduranceDamage` read the slot where the group writes one and the world where it does not.
+The clamp of damage to the skill's current value is not followed - a blow that large ends the
+game. 32 `DamageVolition` and 8 `HealVolition` call sites have a downstream `HasVolitionDamage`.
 
 ## Clock
 
@@ -334,8 +337,7 @@ No call site of these writes anything a downstream guard reads.
   write the `AreaState` Lua table, which no guard reads, and the fan, curtain, graffito, door and
   engine functions move objects); `Obsession` (the orb manager); the endgame functions;
   `ShackBedWasUsed` and `WhirlingBedWasUsed` (`PartyManager.sleepLocation`).
-- **Guards read what they write, but never downstream.** Endurance damage and healing,
-  `UseSubstanceInHand` (`HudHeldPanelController.OnSubstanceUse` increments `stats.uses_<group>`,
+- **Guards read what they write, but never downstream.** `UseSubstanceInHand` (`HudHeldPanelController.OnSubstanceUse` increments `stats.uses_<group>`,
   which `SubstanceUsedOnce` and `SubstanceUsedMore` read), the party writers other than
   `RemoveKitsuragiWaitAtChurch`, `SellItemGroup`, `SellItemGroupWithModifier` and
   `ShowInventoryForPawning`, and the once forms of money.

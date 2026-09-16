@@ -30,8 +30,27 @@
 //! itself - `DataKind::SkillDamage` - and a save records the modifiers, in the character
 //! sheet's `SkillModifierCauseMap`, which the offline fixture sums.
 //!
-//! Constant for a search: damage and healing are the character sheet rather than dialogue
-//! state, held at what the world says by a recorded modelling decision.
+//! ## What dialogue does to it
+//!
+//! `CharacterLuaFunctions`, from the same export:
+//!
+//! ```text
+//! DamageVolition(amount)  -> CharacterManipulations.DamageVolition((int)amount)
+//! HealVolition(amount)    -> CharacterManipulations.HealVolition((int)GenericLuaFunctions.Once(amount))  // in conversation
+//! HealAllVolition()       -> CharacterManipulations.HealVolition(-you.volition.damageValue)
+//! DamageEndurance, HealEndurance, DamageEnduranceWithNewspaper(amount, newspaper): the same for endurance
+//!
+//! // Modifiable
+//! DamageValue(amount): if (amount > value) amount = value;  DAMAGE modifier.Amount -= amount
+//! HealValue(amount):   removes up to amount from the DAMAGE modifiers
+//! // CharacterManipulations.HealX clamps the heal to maximumValue - value first
+//! ```
+//!
+//! So a search tracks the damage AMOUNT per skill, in a `damage:` slot seeded from what the
+//! world reads: damage adds, a heal subtracts and stops at none, healing everything clears
+//! it. A heal is once-only in conversation, which is the only place a search runs. The clamp
+//! of damage to the skill's current value is not followed: a blow that large ends the game,
+//! which is past where a look-ahead answers.
 
 /// Each question, with the skill whose damage it asks about, by `SkillType` name.
 const DAMAGE_QUERIES: [(&str, &str); 2] = [
@@ -50,6 +69,29 @@ pub fn skill_read_by(name: &str) -> Option<&'static str> {
 /// Whether a skill with this damage value is damaged.
 pub fn is_damaged(damage: f64) -> bool {
     damage < 0.0
+}
+
+/// A damage value as the positive amount a `damage:` slot holds.
+pub fn amount_of(damage: f64) -> i32 {
+    (-damage).max(0.0).round() as i32
+}
+
+/// The script calls that move damage, with the skill each moves, as `(call, skill)`.
+pub const DAMAGE_WRITERS: [(&str, &str); 6] = [
+    ("DamageVolition", "VOLITION"),
+    ("HealVolition", "VOLITION"),
+    ("HealAllVolition", "VOLITION"),
+    ("DamageEndurance", "ENDURANCE"),
+    ("HealEndurance", "ENDURANCE"),
+    ("DamageEnduranceWithNewspaper", "ENDURANCE"),
+];
+
+/// The skill a damage or heal call moves, or `None` for anything else.
+pub fn skill_written_by(call: &str) -> Option<&'static str> {
+    DAMAGE_WRITERS
+        .iter()
+        .find(|(writer, _)| *writer == call)
+        .map(|(_, skill)| *skill)
 }
 
 #[cfg(test)]

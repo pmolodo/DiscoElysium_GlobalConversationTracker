@@ -739,6 +739,41 @@ mod tests {
         );
     }
 
+    /// Damage taken on the way opens what asks whether morale is damaged; healing it closes
+    /// that again; and damage the save already carries is where the count starts.
+    #[test]
+    fn damage_and_healing_move_the_damage_question() {
+        let shape = |script: &str| {
+            GraphBuilder::new()
+                .add(Entry::new(0).links(&[1]))
+                .add(Entry::new(1).script(script).links(&[2]))
+                .add(Entry::new(2).guard("HasVolitionDamage()"))
+                .build()
+        };
+        let whole = TestWorld::new().set_damage("VOLITION", 0.0);
+
+        let hurt = walk(&shape("DamageVolition(1)"), node(0), &whole, COUNTER_CAP);
+        assert!(hurt.reached(node(2)), "a blow damages");
+
+        let healed = walk(
+            &shape(r#"DamageVolition(1);\nHealVolition(1)"#),
+            node(0),
+            &whole,
+            COUNTER_CAP,
+        );
+        assert!(
+            !healed.reached(node(2)),
+            "a heal as large as the blow undoes it"
+        );
+
+        let already = TestWorld::new().set_damage("VOLITION", -3.0);
+        let partly = walk(&shape("HealVolition(2)"), node(0), &already, COUNTER_CAP);
+        assert!(
+            partly.reached(node(2)),
+            "three damage healed by two leaves one"
+        );
+    }
+
     /// A deadline set from the clock is not already past.
     ///
     /// 1 sets the deadline eight hours ahead and 2 opens once it has passed. The clock does not

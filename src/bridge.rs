@@ -519,6 +519,10 @@ impl ILookAheadWorld for Unlocked<'_> {
         self.inner.initially_has_thought(name)
     }
 
+    fn initial_damage(&self, skill: &str) -> Option<f64> {
+        self.inner.initial_damage(skill)
+    }
+
     fn items_in_group(&self, group: &str) -> Option<Vec<String>> {
         self.inner.items_in_group(group)
     }
@@ -705,6 +709,17 @@ impl ILookAheadWorld for SnapshotWorld {
 
     fn initially_has_thought(&self, name: &str) -> bool {
         self.snapshot.thoughts.contains(name)
+    }
+
+    fn initial_damage(&self, skill: &str) -> Option<f64> {
+        let answer = self
+            .snapshot
+            .data
+            .get(&DataRequest::about(DataKind::SkillDamage, skill))?;
+        if !answer.read {
+            return None;
+        }
+        GuardValue::from(&answer.value).try_as_number()
     }
 
     fn items_in_group(&self, group: &str) -> Option<Vec<String>> {

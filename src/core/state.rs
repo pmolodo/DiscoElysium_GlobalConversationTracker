@@ -18,11 +18,19 @@ pub const ITEM_PREFIX: &str = "item:";
 /// forgetting costs a skill point, so `IsTHCCooking` and `IsTHCFixed` are constants for
 /// the length of any search and get no slot.
 pub const THOUGHT_PREFIX: &str = "thought:";
+/// How badly a skill is damaged, by `SkillType` name - see `core::damage`.
+pub const DAMAGE_PREFIX: &str = "damage:";
 pub const ONCE_PREFIX: &str = "once:";
 pub const SEEN_PREFIX: &str = "seen:";
 
 /// The prefixes a slot's name carries when the slot is not a dialogue variable.
-const NOT_A_VARIABLE: [&str; 4] = [ITEM_PREFIX, THOUGHT_PREFIX, ONCE_PREFIX, SEEN_PREFIX];
+const NOT_A_VARIABLE: [&str; 5] = [
+    ITEM_PREFIX,
+    THOUGHT_PREFIX,
+    DAMAGE_PREFIX,
+    ONCE_PREFIX,
+    SEEN_PREFIX,
+];
 
 /// Whether a slot of this name holds a dialogue variable, rather than an item, a
 /// thought or the engine's own bookkeeping.
@@ -101,6 +109,10 @@ impl StateSymbols {
 
     pub fn thought(&mut self, name: &str) -> usize {
         self.intern(format!("{THOUGHT_PREFIX}{name}"))
+    }
+
+    pub fn damage(&mut self, skill: &str) -> usize {
+        self.intern(format!("{DAMAGE_PREFIX}{skill}"))
     }
 
     pub fn once(&mut self, node: DialogueNodeId) -> usize {
@@ -403,6 +415,15 @@ pub fn seed_state(
             } else if let Some(stripped) = name.strip_prefix("thought:") {
                 if world.initially_has_thought(stripped) {
                     state = state.with(slot, 1);
+                }
+            } else if let Some(skill) = name.strip_prefix(DAMAGE_PREFIX) {
+                // THE AMOUNT, as a positive count, where the game keeps a negative modifier.
+                // Unread reads as undamaged - there is no unknown a slot can hold.
+                let damage = world
+                    .initial_damage(skill)
+                    .map_or(0, crate::core::damage::amount_of);
+                if damage > 0 {
+                    state = state.with(slot, damage);
                 }
             } else if names_a_variable(name) {
                 let variable = symbols.variable_ref(name).unwrap_or_else(|| {

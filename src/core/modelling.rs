@@ -150,21 +150,6 @@ pub fn is_action_used_as_guard(name: &str) -> bool {
 /// Every decision taken so far.
 pub const DECISIONS: &[Decision] = &[
     Decision {
-        writers: &[
-            "DamageVolition",
-            "HealVolition",
-            "HealAllVolition",
-            "DamageEndurance",
-            "HealEndurance",
-            "DamageEnduranceWithNewspaper",
-        ],
-        readers: &["HasVolitionDamage", "HasEnduranceDamage"],
-        why: "Morale and health are the character sheet, not dialogue state, and modelling \
-              them means two more counters plus the healing items and skill checks that \
-              move them - which is a second simulation, not a slot. 150 conversations \
-              write them; 6 guards in the whole database read them back.",
-    },
-    Decision {
         writers: &["UseSubstanceInHand"],
         readers: &["SubstanceUsedOnce", "SubstanceUsedMore"],
         why: "Substance use is inventory plus a per-substance counter the search has no \

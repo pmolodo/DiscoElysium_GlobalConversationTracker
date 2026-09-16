@@ -27,7 +27,9 @@ use crate::core::clock::ClockReading;
 use std::collections::{HashMap, HashSet};
 
 use crate::core::guard::{Guard, GuardExpression, GuardRef};
-use crate::core::state::{ITEM_PREFIX, ONCE_PREFIX, SEEN_PREFIX, StateSymbols, THOUGHT_PREFIX};
+use crate::core::state::{
+    DAMAGE_PREFIX, ITEM_PREFIX, ONCE_PREFIX, SEEN_PREFIX, StateSymbols, THOUGHT_PREFIX,
+};
 use crate::core::types::DialogueNodeId;
 use crate::graph::LookAheadGraph;
 use crate::graph::node::LookAheadNode;
@@ -319,9 +321,15 @@ impl DataLayout {
         let symbols = graph.symbols();
         let elsewhere = |slot: usize| {
             symbols.name_of(slot).is_some_and(|name| {
-                [ITEM_PREFIX, THOUGHT_PREFIX, ONCE_PREFIX, SEEN_PREFIX]
-                    .iter()
-                    .any(|prefix| name.starts_with(prefix))
+                [
+                    ITEM_PREFIX,
+                    THOUGHT_PREFIX,
+                    DAMAGE_PREFIX,
+                    ONCE_PREFIX,
+                    SEEN_PREFIX,
+                ]
+                .iter()
+                .any(|prefix| name.starts_with(prefix))
             })
         };
 
@@ -841,6 +849,12 @@ impl DataLayout {
             match node.expression() {
                 GuardExpression::Variable(name) => {
                     names.insert(name.to_string());
+                }
+                GuardExpression::Call(function, _)
+                    if crate::core::damage::skill_read_by(function).is_some() =>
+                {
+                    let skill = crate::core::damage::skill_read_by(function).expect("just matched");
+                    names.insert(format!("{DAMAGE_PREFIX}{skill}"));
                 }
                 GuardExpression::Call(function, arguments) => {
                     // The two queries `BoundContext::query` answers from a slot. Their

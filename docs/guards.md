@@ -41,57 +41,57 @@ walks - see [What the search can move](#what-the-search-can-move):
 - `held` - a dialogue action can change it, and the engine answers from the crawl's starting
   value anyway, by a recorded decision or an approximation named in the family's section.
 
-| function                    | family       | guards | entries | mechanism | during a search                    |
-| --------------------------- | ------------ | -----: | ------: | --------- | ---------------------------------- |
-| IsKimHere                   | party        |    323 |   4,687 | data      | held - de-70eo.8                   |
-| CheckItem                   | inventory    |    493 |     835 | set       | tracked                            |
-| IsTHCPresent                | cabinet      |    213 |     731 | set       | tracked                            |
-| CheckEquipped               | equipment    |    199 |     514 | data      | held - de-70eo.7                   |
-| IsCunoInParty               | party        |     22 |     358 | data      | held - de-70eo.8                   |
-| IsTaskActive                | journal      |    204 |     341 | slot      | tracked                            |
-| DayCount                    | clock        |     66 |     111 | port      | constant                           |
-| IsHourBetween               | clock        |     63 |     108 | port      | held - clock locked                |
-| IsHighestPolitical          | reputation   |     17 |      75 | slot      | tracked                            |
-| IsEvening                   | clock        |      6 |      69 | port      | held - clock locked                |
-| IsTHCFixed                  | cabinet      |     47 |      65 | data      | constant while the clock is locked |
-| IsMorning                   | clock        |      7 |      60 | port      | held - clock locked                |
-| IsNight                     | clock        |      4 |      54 | port      | held - clock locked                |
-| IsAfternoon                 | clock        |      5 |      44 | port      | held - clock locked                |
-| IsHighestCopotype           | reputation   |     12 |      43 | slot      | tracked                            |
-| IsTHCCookingOrFixed         | cabinet      |     32 |      42 | data      | constant while the clock is locked |
-| SubstanceUsedOnce           | substances   |     24 |      41 | slot      | tracked                            |
-| MoneyAmount                 | money        |     31 |      37 | slot      | tracked                            |
-| IsDayFrom                   | clock        |     16 |      36 | port      | constant                           |
-| IsDaytime                   | clock        |      3 |      33 | port      | held - clock locked                |
-| IsNighttime                 | clock        |      3 |      29 | port      | held - clock locked                |
-| CheckItemGroup              | inventory    |     23 |      28 | set       | tracked                            |
-| CheckEquippedGroup          | equipment    |     13 |      25 | data      | held - de-70eo.7                   |
-| SubstanceUsedMore           | substances   |     11 |      19 | slot      | tracked                            |
-| IsExterior                  | scene        |      4 |      14 | data      | held by decision                   |
-| HasJacket                   | equipment    |     10 |      12 | data      | held - de-70eo.7                   |
-| HasVolitionDamage           | damage       |      4 |      12 | data      | held - de-70eo.6                   |
-| CheckHeldRightGroup         | equipment    |      8 |      12 | data      | held - de-70eo.7                   |
-| HasShirt                    | equipment    |      9 |      11 | data      | held - de-70eo.7                   |
-| IsDayUntil                  | clock        |      4 |      11 | port      | constant                           |
-| FlagSet                     | flags        |      9 |      10 | slot      | tracked                            |
-| HasEnduranceDamage          | damage       |      2 |       6 | data      | held - de-70eo.6                   |
-| HasShoes                    | equipment    |      4 |       6 | data      | held - de-70eo.7                   |
-| IsHardcoreModeActive        | game mode    |      2 |       6 | data      | constant                           |
-| WasGameBeatenInHardcoreMode | game mode    |      2 |       6 | data      | constant                           |
-| HasHat                      | equipment    |      2 |       5 | data      | held - de-70eo.7                   |
-| TotalHourCount              | clock        |      5 |       5 | port      | held - clock locked                |
-| FlagNotSet                  | flags        |      3 |       3 | slot      | tracked                            |
-| IsTHCCooking                | cabinet      |      3 |       3 | data      | constant while the clock is locked |
-| IsKimInParty                | party        |      2 |       3 | data      | held - de-70eo.8                   |
-| HourCount                   | clock        |      2 |       2 | port      | held - clock locked                |
-| IsDusk                      | clock        |      2 |       2 | port      | held - clock locked                |
-| IsNoon                      | clock        |      2 |       2 | port      | held - clock locked                |
-| IsRaining                   | scene        |      2 |       2 | slot      | tracked                            |
-| IsSnowing                   | scene        |      2 |       2 | slot      | tracked                            |
-| WeirdClothing               | equipment    |      2 |       2 | data      | held - de-70eo.7                   |
-| XPStandardSetBool           | guard action |      2 |       2 | answered  | not applicable                     |
-| FinishTask                  | guard action |      1 |       1 | answered  | not applicable                     |
-| HasPawnablesInInventory     | inventory    |      1 |       1 | data      | held - tab read at the start       |
+| function                    | family       | guards | entries | mechanism  | during a search                    |
+| --------------------------- | ------------ | -----: | ------: | ---------- | ---------------------------------- |
+| IsKimHere                   | party        |    323 |   4,687 | data       | held - de-70eo.8                   |
+| CheckItem                   | inventory    |    493 |     835 | set        | tracked                            |
+| IsTHCPresent                | cabinet      |    213 |     731 | set        | tracked                            |
+| CheckEquipped               | equipment    |    199 |     514 | data       | held - de-70eo.7                   |
+| IsCunoInParty               | party        |     22 |     358 | data       | held - de-70eo.8                   |
+| IsTaskActive                | journal      |    204 |     341 | slot       | tracked                            |
+| DayCount                    | clock        |     66 |     111 | port       | constant                           |
+| IsHourBetween               | clock        |     63 |     108 | port       | held - clock locked                |
+| IsHighestPolitical          | reputation   |     17 |      75 | slot       | tracked                            |
+| IsEvening                   | clock        |      6 |      69 | port       | held - clock locked                |
+| IsTHCFixed                  | cabinet      |     47 |      65 | data       | constant while the clock is locked |
+| IsMorning                   | clock        |      7 |      60 | port       | held - clock locked                |
+| IsNight                     | clock        |      4 |      54 | port       | held - clock locked                |
+| IsAfternoon                 | clock        |      5 |      44 | port       | held - clock locked                |
+| IsHighestCopotype           | reputation   |     12 |      43 | slot       | tracked                            |
+| IsTHCCookingOrFixed         | cabinet      |     32 |      42 | data       | constant while the clock is locked |
+| SubstanceUsedOnce           | substances   |     24 |      41 | slot       | tracked                            |
+| MoneyAmount                 | money        |     31 |      37 | slot       | tracked                            |
+| IsDayFrom                   | clock        |     16 |      36 | port       | constant                           |
+| IsDaytime                   | clock        |      3 |      33 | port       | held - clock locked                |
+| IsNighttime                 | clock        |      3 |      29 | port       | held - clock locked                |
+| CheckItemGroup              | inventory    |     23 |      28 | set        | tracked                            |
+| CheckEquippedGroup          | equipment    |     13 |      25 | data       | held - de-70eo.7                   |
+| SubstanceUsedMore           | substances   |     11 |      19 | slot       | tracked                            |
+| IsExterior                  | scene        |      4 |      14 | data       | held by decision                   |
+| HasJacket                   | equipment    |     10 |      12 | data       | held - de-70eo.7                   |
+| HasVolitionDamage           | damage       |      4 |      12 | data, slot | tracked                            |
+| CheckHeldRightGroup         | equipment    |      8 |      12 | data       | held - de-70eo.7                   |
+| HasShirt                    | equipment    |      9 |      11 | data       | held - de-70eo.7                   |
+| IsDayUntil                  | clock        |      4 |      11 | port       | constant                           |
+| FlagSet                     | flags        |      9 |      10 | slot       | tracked                            |
+| HasEnduranceDamage          | damage       |      2 |       6 | data, slot | tracked                            |
+| HasShoes                    | equipment    |      4 |       6 | data       | held - de-70eo.7                   |
+| IsHardcoreModeActive        | game mode    |      2 |       6 | data       | constant                           |
+| WasGameBeatenInHardcoreMode | game mode    |      2 |       6 | data       | constant                           |
+| HasHat                      | equipment    |      2 |       5 | data       | held - de-70eo.7                   |
+| TotalHourCount              | clock        |      5 |       5 | port       | held - clock locked                |
+| FlagNotSet                  | flags        |      3 |       3 | slot       | tracked                            |
+| IsTHCCooking                | cabinet      |      3 |       3 | data       | constant while the clock is locked |
+| IsKimInParty                | party        |      2 |       3 | data       | held - de-70eo.8                   |
+| HourCount                   | clock        |      2 |       2 | port       | held - clock locked                |
+| IsDusk                      | clock        |      2 |       2 | port       | held - clock locked                |
+| IsNoon                      | clock        |      2 |       2 | port       | held - clock locked                |
+| IsRaining                   | scene        |      2 |       2 | slot       | tracked                            |
+| IsSnowing                   | scene        |      2 |       2 | slot       | tracked                            |
+| WeirdClothing               | equipment    |      2 |       2 | data       | held - de-70eo.7                   |
+| XPStandardSetBool           | guard action |      2 |       2 | answered   | not applicable                     |
+| FinishTask                  | guard action |      1 |       1 | answered   | not applicable                     |
+| HasPawnablesInInventory     | inventory    |      1 |       1 | data       | held - tab read at the start       |
 
 ## How a question is answered
 
@@ -352,14 +352,17 @@ the dialogue variable `stats.uses_<substance>`, read like any other variable.
 
 `src/core/damage.rs`, from `DataKind::SkillDamage`. PFC `CharacterLuaFunctions` and `Modifiable`:
 damaged means the skill's `damageValue` is below zero. The plugin reads `damageValue`; the
-fixture sums the skill's `DAMAGE` modifiers from the save's character sheet.
+fixture sums the skill's `DAMAGE` modifiers from the save's character sheet. Where the group
+damages or heals the skill, the answer comes from its `damage:` slot instead - see
+`docs/actions.md`.
 
 | function           | guards | entries | mechanism | tests                                                                                                 |
 | ------------------ | -----: | ------: | --------- | ----------------------------------------------------------------------------------------------------- |
 | HasVolitionDamage  |      4 |      12 | data      | `damage_is_a_negative_value`; `bridge.rs` `a_damage_question_reads_the_skill_and_compares_below_zero` |
 | HasEnduranceDamage |      2 |       6 | data      | `damage_is_a_negative_value`                                                                          |
 
-Held at the world's answer for a search - a recorded decision in `core::modelling`.
+Tested as moved by the search in `damage_and_healing_move_the_damage_question`, in both
+`oracle.rs` and `backward.rs`.
 
 ### Scene and weather
 

@@ -548,6 +548,31 @@ fn translate_call(
         // which this does not model. That direction is safe: forgetting costs a skill
         // point and no search can do it, so a thought the save says is forgotten is one
         // the search was never going to be told about anyway.
+        // DAMAGE AND HEALING, as the amount a `damage:` slot holds - see `core::damage`. A
+        // heal in conversation goes through `Once`; an amount that will not parse moves
+        // nothing rather than a guessed amount.
+        name if crate::core::damage::skill_written_by(name).is_some() => {
+            let skill = crate::core::damage::skill_written_by(name).expect("just matched");
+            let slot = symbols.damage(skill);
+            if name == "HealAllVolition" {
+                actions.push(DialogueAction::assign(slot, 0, call.name));
+                return;
+            }
+            let Some(amount) = call
+                .args
+                .first()
+                .and_then(|a| a.trim().parse::<f64>().ok())
+                .map(|a| a as i32)
+            else {
+                actions.push(DialogueAction::unmodelled(call.name));
+                return;
+            };
+            if name.starts_with("Heal") {
+                actions.push(DialogueAction::increment(slot, -amount, true, call.name));
+            } else {
+                actions.push(DialogueAction::increment(slot, amount, false, call.name));
+            }
+        }
         "GainThought" => {
             let slot = symbols.thought(&unquote(call.args.first().unwrap_or(&String::new())));
             actions.push(DialogueAction::assign(slot, 1, call.name));

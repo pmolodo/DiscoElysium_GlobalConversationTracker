@@ -18,6 +18,8 @@ pub struct TestWorld {
     pub items: HashMap<String, bool>,
     /// Thoughts already in the cabinet, which is what `IsTHCPresent` asks about.
     pub thoughts: HashMap<String, bool>,
+    /// Each skill's damage value, by `SkillType` name - negative where damaged.
+    pub damage: HashMap<String, f64>,
     pub check_results: HashMap<DialogueNodeId, Ternary>,
     pub seen: HashMap<DialogueNodeId, bool>,
     /// Answers to named world queries, keyed by function name.
@@ -88,6 +90,11 @@ impl TestWorld {
         self
     }
 
+    pub fn set_damage(mut self, skill: &str, value: f64) -> Self {
+        self.damage.insert(skill.to_string(), value);
+        self
+    }
+
     pub fn set_check_result(mut self, node: DialogueNodeId, result: Ternary) -> Self {
         self.check_results.insert(node, result);
         self
@@ -131,6 +138,9 @@ impl ILookAheadWorld for TestWorld {
     }
     fn initially_has_thought(&self, name: &str) -> bool {
         self.thoughts.get(name).copied().unwrap_or(false)
+    }
+    fn initial_damage(&self, skill: &str) -> Option<f64> {
+        self.damage.get(skill).copied()
     }
     fn query(&self, name: &str, _arguments: &[GuardValue]) -> GuardValue {
         self.queries

@@ -1297,6 +1297,33 @@ mod tests {
         agree(shape(), &counter().set_seen(node(1), true), 2, false);
     }
 
+    /// A blow on the way opens a damage question, and a heal after it shuts it again.
+    #[test]
+    fn damage_and_healing_move_the_damage_question() {
+        let shape = |script: &str| {
+            vec![
+                Entry::new(0).links(&[1]),
+                Entry::new(1).script(script).links(&[2]),
+                Entry::new(2).guard("HasVolitionDamage()"),
+            ]
+        };
+        let whole = TestWorld::new().set_damage("VOLITION", 0.0);
+
+        agree(shape("DamageVolition(1)"), &whole, 2, true);
+        agree(
+            shape(r#"DamageVolition(1);\nHealVolition(1)"#),
+            &whole,
+            2,
+            false,
+        );
+        agree(
+            shape("HealVolition(2)"),
+            &TestWorld::new().set_damage("VOLITION", -3.0),
+            2,
+            true,
+        );
+    }
+
     /// A deadline stored from the world's clock is compared against the same clock, so what
     /// opens only once it has passed stays shut - and opens where the deadline is behind.
     #[test]

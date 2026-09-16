@@ -94,6 +94,16 @@ pub trait ILookAheadWorld: Send + Sync {
     /// different questions, and why only this one moves.
     fn initially_has_thought(&self, name: &str) -> bool;
 
+    /// A skill's damage value WHEN THE SEARCH STARTS, by `SkillType` name - negative where
+    /// damaged - or `None` where it is not known.
+    ///
+    /// Seeds a `damage:` slot for a skill this group's actions damage or heal; see
+    /// `core::damage`. For a skill nothing in the group moves, the question is answered by
+    /// [`Self::query`] instead.
+    fn initial_damage(&self, _skill: &str) -> Option<f64> {
+        None
+    }
+
     /// Every item the database files under an item group, or `None` where it is not known.
     ///
     /// What `CheckItemGroup` is answered over - see `core::item_group`. A world that cannot
@@ -218,6 +228,15 @@ impl BoundContext<'_> {
         }
 
         GuardValue::from_boolean(from_world(self.world, subject))
+    }
+}
+
+impl BoundContext<'_> {
+    /// The slot tracking the damage a damage question asks about, where this group has one.
+    fn damage_slot(&self, question: &str) -> Option<usize> {
+        let skill = crate::core::damage::skill_read_by(question)?;
+        self.symbols
+            .find(&format!("{}{skill}", crate::core::state::DAMAGE_PREFIX))
     }
 }
 
@@ -356,6 +375,18 @@ impl IGuardContext for BoundContext<'_> {
                     // empty string, which equals no reputation's name.
                     Some(winner) => GuardValue::from_boolean(winner == Some(wanted)),
                     None => GuardValue::unknown(),
+                }
+            }
+            // WHETHER A SKILL IS DAMAGED, from its `damage:` slot where this group damages or
+            // heals it, and from the world where nothing does. See `core::damage`.
+            other
+                if crate::core::damage::skill_read_by(other).is_some()
+                    && self.damage_slot(other).is_some() =>
+            {
+                let slot = self.damage_slot(other).expect("just matched");
+                match self.state {
+                    Some(state) => GuardValue::from_boolean(state.is_set(slot)),
+                    None => self.world.query(name, arguments),
                 }
             }
             // WHETHER ANYTHING IN AN ITEM GROUP IS HELD, each member answered the way

@@ -668,6 +668,33 @@ impl<'a> GuardCompiler<'a> {
                 self.decided(f)
             }
 
+            // WHETHER A SKILL IS DAMAGED: its `damage:` slot where the group damages or heals
+            // it, and the world's answer where nothing does - as `BoundContext::query` has it.
+            GuardExpression::Call(name, args)
+                if crate::core::damage::skill_read_by(name).is_some() =>
+            {
+                let skill = crate::core::damage::skill_read_by(name).expect("just matched");
+                let slot = format!("{}{skill}", crate::core::state::DAMAGE_PREFIX);
+                if self.vars.slot_of(&slot).is_some() {
+                    match self.slot_is_set(&slot) {
+                        Some(holds) => self.decided(holds),
+                        None => self.no_room(guard.to_string()),
+                    }
+                } else {
+                    match self.constant_query(name, args) {
+                        Some(true) => {
+                            let t = self.top();
+                            self.decided(t)
+                        }
+                        Some(false) => {
+                            let f = self.bottom();
+                            self.decided(f)
+                        }
+                        None => self.undecided("call: damage, world cannot say", guard.to_string()),
+                    }
+                }
+            }
+
             // A query the SEARCH cannot change is a constant, and the engine says which
             // those are: `BoundContext::query` intercepts MoneyAmount, CheckItem,
             // IsTaskActive and the clock, and lets everything else fall through to the
@@ -1285,6 +1312,7 @@ impl<'a> GuardCompiler<'a> {
             || crate::world::flag_query(name).is_some()
             || crate::core::reputation::range_of(name).is_some()
             || name == crate::core::item_group::CHECK_ITEM_GROUP
+            || crate::core::damage::skill_read_by(name).is_some()
             || crate::core::clock::ClockTime::owns(name)
     }
 
