@@ -596,6 +596,27 @@ namespace GlobalConversationTracker.TestProbe
                     "The main menu is showing but offers no Continue yet.");
             }
 
+            // THE MENU CAN BE UP BEFORE THE GAME IS. Measured 2026-09-16: a press accepted at
+            // eleven seconds went in while the dialogue bundle was still loading and the LOBBY
+            // view was not yet registered - the load logged "No View class for view type
+            // LOBBY" and "The scene is invalid", applied the save over the menu's world, and
+            // the probe never answered again. Both are ready in every run whose load worked.
+            DialogueDatabase? database = DialogueManager.masterDatabase;
+            if (database == null || database.conversations == null
+                || database.conversations.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    "The main menu is showing but the dialogue database is not loaded yet.");
+            }
+
+            Sunshine.Views.ViewController? views =
+                UnityEngine.Object.FindObjectOfType<Sunshine.Views.ViewController>();
+            if (views == null || views.GetViewByType(Sunshine.Views.ViewType.LOBBY) == null)
+            {
+                throw new InvalidOperationException(
+                    "The main menu is showing but its lobby view is not registered yet.");
+            }
+
             GameLevelCommand commands = UnityEngine.Object.FindObjectOfType<GameLevelCommand>()
                 ?? throw new InvalidOperationException(
                     "The main menu is showing but its commands object is not there.");
