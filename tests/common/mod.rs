@@ -475,6 +475,10 @@ impl ILookAheadWorld for SaveWorld {
 
         match name {
             "IsKimHere" | "IsKimInParty" => GuardValue::from_boolean(true),
+            // Profile state no save records; see `fixtures::HARDCORE_PLAYTHROUGH_COMPLETED`.
+            lookahead_engine::core::game_mode::WAS_GAME_BEATEN_IN_HARDCORE_MODE => {
+                GuardValue::from_boolean(fixtures::HARDCORE_PLAYTHROUGH_COMPLETED)
+            }
             "IsCunoInParty" => GuardValue::from_boolean(false),
             "CheckEquipped" => membership(&self.equipped),
             "IsTHCCooking" => membership(&self.cooking),

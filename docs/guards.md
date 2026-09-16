@@ -358,13 +358,14 @@ reader simulates that step rather than editing the committed saves.
 
 `src/core/game_mode.rs`. Both functions exist only in Final Cut.
 
-| function                    | guards | entries | mechanism | data                                                     | game source                                                          | tests                                                   |
-| --------------------------- | -----: | ------: | --------- | -------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------- |
-| IsHardcoreModeActive        |      2 |       6 | data      | `GameMode`; offline, the save's `gameModeState.gameMode` | ISIL `GameModeController.IsHardcoreOn`, and measured over four saves | `bridge.rs` `the_hardcore_question_reads_the_game_mode` |
-| WasGameBeatenInHardcoreMode |      2 |       6 | data      | `HardcorePlaythroughCompleted`; offline, unread          | ISIL `GameStatsManager.HardcorePlaythroughCompleted`                 | `bridge.rs` `the_hardcore_question_reads_the_game_mode` |
+| function                    | guards | entries | mechanism | data                                                                     | game source                                                          | tests                                                   |
+| --------------------------- | -----: | ------: | --------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------- | ------------------------------------------------------- |
+| IsHardcoreModeActive        |      2 |       6 | data      | `GameMode`; offline, the save's `gameModeState.gameMode`                 | ISIL `GameModeController.IsHardcoreOn`, and measured over four saves | `bridge.rs` `the_hardcore_question_reads_the_game_mode` |
+| WasGameBeatenInHardcoreMode |      2 |       6 | data      | `HardcorePlaythroughCompleted`; offline, a fixed value, false by default | ISIL `GameStatsManager.HardcorePlaythroughCompleted`                 | `bridge.rs` `the_hardcore_question_reads_the_game_mode` |
 
-`WasGameBeatenInHardcoreMode` is profile state, not save state, so no save records it and the
-offline world leaves it Unknown.
+`WasGameBeatenInHardcoreMode` is profile state, not save state, so no save records it. The
+offline worlds answer `fixtures::HARDCORE_PLAYTHROUGH_COMPLETED`, which is false, and a scenario
+row fixes it otherwise with `hardcorePlaythroughCompleted`.
 
 ### Actions called from a guard
 

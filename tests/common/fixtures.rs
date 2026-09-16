@@ -1225,6 +1225,10 @@ pub struct Holdings {
     /// The game mode the save records, NORMAL or HARDCORE: what IsHardcoreModeActive was
     /// measured to answer from.
     pub game_mode: String,
+    /// Whether a game has been finished in hardcore mode: what WasGameBeatenInHardcoreMode
+    /// answers from. PROFILE STATE, which no save records, so it is not read from the save -
+    /// it starts at [`HARDCORE_PLAYTHROUGH_COMPLETED`] and a scenario may fix it otherwise.
+    pub hardcore_playthrough_completed: bool,
     /// Journal tasks taken and not yet closed.
     pub tasks: HashSet<String>,
     /// Thoughts the cabinet has reached, whatever state they are in.
@@ -1241,6 +1245,14 @@ pub struct Holdings {
     /// Who is with them.
     pub party: Party,
 }
+
+/// What an offline world answers WasGameBeatenInHardcoreMode with where nothing says otherwise.
+///
+/// The question is profile state - see `core::game_mode` - so no save can settle it. Answered
+/// rather than left Unknown, because Unknown is permissive and would open a hardcore-veteran
+/// line to every offline run; FALSE is the answer for a profile that has never finished a
+/// hardcore game, which is the profile a test is most often standing in for.
+pub const HARDCORE_PLAYTHROUGH_COMPLETED: bool = false;
 
 /// What an item stacks as when the key pocket answers for it, per `Inventory.KeysStackName`.
 const KEY_RING_STACK: &str = "key_ring";
@@ -1295,9 +1307,9 @@ impl Holdings {
                         .get(&request.subject)
                         .is_some_and(|count| *count > 0),
                 }),
-                // PROFILE STATE, which no save records - see `core::game_mode` - so it is left
-                // unread, and the question reads Unknown offline.
-                DataKind::HardcorePlaythroughCompleted => DataAnswer::default(),
+                DataKind::HardcorePlaythroughCompleted => DataAnswer::of_value(WireValue::Bool {
+                    value: self.hardcore_playthrough_completed,
+                }),
                 // WHO IS WITH THE PLAYER, which the save keeps in its party state.
                 DataKind::PartyFlag => match self.party.flag(&request.subject) {
                     Some(value) => DataAnswer::of_value(WireValue::Bool { value }),
@@ -1399,6 +1411,20 @@ pub fn holdings_in_save(save: &str) -> Holdings {
         day_counter: whole(&clock["time"]["dayCounter"], save, "the day"),
         scene: scene_in_save(save),
         party: party_in_save(save),
+        hardcore_playthrough_completed: HARDCORE_PLAYTHROUGH_COMPLETED,
+    }
+}
+
+impl Holdings {
+    /// The same holdings with the profile's hardcore completion fixed, where `value` names one.
+    ///
+    /// For a scenario row's `hardcorePlaythroughCompleted`: the save cannot say, so the row is
+    /// the only place a scenario can stage a profile that has finished a hardcore game.
+    pub fn with_hardcore_playthrough_completed(mut self, value: Option<bool>) -> Self {
+        if let Some(value) = value {
+            self.hardcore_playthrough_completed = value;
+        }
+        self
     }
 }
 

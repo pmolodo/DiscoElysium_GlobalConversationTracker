@@ -132,7 +132,8 @@ fn the_kim_case_menu_as_the_engine_answers_it() {
     let read_here = fixtures::read_in_save_group(&scenario.save, &group);
     let checks = fixtures::checks_in_save(&scenario.save, &group)
         .expect("the actor table and the full index are both present");
-    let holdings = fixtures::holdings_in_save(&scenario.save);
+    let holdings = fixtures::holdings_in_save(&scenario.save)
+        .with_hardcore_playthrough_completed(scenario.hardcore_playthrough_completed);
 
     let asked = lookahead_engine::bridge::questions_of(&graph, group.clone());
     // WHAT THE WORLD COULD NOT BE TOLD, on every run of this report rather than in a note

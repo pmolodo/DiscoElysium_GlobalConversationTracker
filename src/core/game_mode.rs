@@ -33,8 +33,9 @@
 //! The ISIL inlines `GameStatsManager.get_HardcorePlaythroughCompleted` - both read the same
 //! static field, `GameStatsManager`'s statics at offset 24 - so it answers that flag. The stat
 //! is kept under the key `hardcore_playthrough_completed` beside the substance-use counters,
-//! which is profile state rather than save state: no save records it, so an offline world
-//! cannot answer it and leaves it Unknown. The plugin reads it directly.
+//! which is profile state rather than save state: no save records it, so an offline world cannot
+//! read it and answers a fixed value instead - false, unless a scenario row names
+//! `hardcorePlaythroughCompleted`. The plugin reads it directly.
 //!
 //! Both are constant for a search: nothing in dialogue switches the mode or finishes a game.
 

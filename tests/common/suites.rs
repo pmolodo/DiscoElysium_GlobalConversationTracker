@@ -99,6 +99,10 @@ pub struct Scenario {
     pub money: Option<i32>,
     #[serde(default, rename = "dayMinutes")]
     pub day_minutes: Option<i32>,
+    /// Whether the profile has finished a hardcore game, which no save records. Unnamed, an
+    /// offline run answers `fixtures::HARDCORE_PLAYTHROUGH_COMPLETED`.
+    #[serde(default, rename = "hardcorePlaythroughCompleted")]
+    pub hardcore_playthrough_completed: Option<bool>,
     /// How much the scenario claims about the markers: named, noneAnywhere or ignored.
     #[serde(default = "named")]
     pub markers: String,

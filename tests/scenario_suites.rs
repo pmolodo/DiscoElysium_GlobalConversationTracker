@@ -225,7 +225,8 @@ fn stage(
     // missing them is not a stricter one, it is a different one - an empty item set says
     // "not held" rather than "unknown" - and a guard on either side of that opens or closes
     // a route the game does not.
-    let holdings = fixtures::holdings_in_save(&scenario.save);
+    let holdings = fixtures::holdings_in_save(&scenario.save)
+        .with_hardcore_playthrough_completed(scenario.hardcore_playthrough_completed);
     let asked = lookahead_engine::bridge::questions_of(&graph, group.clone());
 
     // BUILT BEFORE THE FIELD THAT MOVES IT, since the rungs and the seen set are the same
@@ -308,23 +309,43 @@ fn stage(
     Some(staged)
 }
 
-/// What an offline world cannot answer for any save, because no save records it.
-///
-/// A question here reads Unknown offline, which is permissive. It is listed rather than
-/// tolerated wholesale so that a NEW gap fails the check below instead of joining it quietly.
-const UNANSWERABLE_OFFLINE: [DataKind; 1] = [
-    // Profile state, kept beside the substance counters rather than in a save - see
-    // `core::game_mode`.
-    DataKind::HardcorePlaythroughCompleted,
-];
+/// Whether a hardcore game was finished is answered offline though no save records it: false
+/// unless the scenario row fixes it.
+#[test]
+fn a_hardcore_completion_no_save_records_is_answered_from_the_row() {
+    let asked = [lookahead_engine::bridge::DataRequest::set(
+        DataKind::HardcorePlaythroughCompleted,
+    )];
+    let answered = |row: Option<bool>| {
+        let answers = fixtures::holdings_in_save(COMPLETION_TEST_SAVE)
+            .with_hardcore_playthrough_completed(row)
+            .data_for(&asked);
+        assert!(
+            answers[0].read,
+            "the question is answered, not left Unknown"
+        );
+        match answers[0].value {
+            lookahead_engine::bridge::WireValue::Bool { value } => value,
+            ref other => panic!("answered as {other:?} rather than a boolean"),
+        }
+    };
+
+    assert!(!answered(None));
+    assert!(answered(Some(true)));
+}
+
+/// The save the hardcore-completion test stages its world from. Which one does not matter:
+/// whether a hardcore game was ever finished is profile state no save records, so that one
+/// answer comes from the row. Whether hardcore mode is ACTIVE is still read from each save's
+/// `gameModeState.gameMode`, and staging a different mode means a new save diff, not a row.
+const COMPLETION_TEST_SAVE: &str = "at-trashcan";
 
 /// Every question a suite's groups ask is answered by the world the offline run stages.
 ///
 /// WHY THIS EXISTS: an unanswered question reads Unknown, and Unknown is permissive, so a
 /// suite over a group that asks something the fixtures cannot answer passes by NOT SEEING
 /// rather than by being right - the all-seen suite once guarded on five such functions
-/// (de-eb2d). Crossing the questions against the staged answers catches that per group, and
-/// the list above says which gaps are known and why.
+/// (de-eb2d). Crossing the questions against the staged answers catches that per group.
 #[test]
 fn every_question_the_suites_ask_is_answered_offline() {
     let Some(path) = common::shipped_index() else {
@@ -360,7 +381,7 @@ fn every_question_the_suites_ask_is_answered_offline() {
             }
 
             for (request, answer) in staged.questions.data.iter().zip(&world.data_values) {
-                if !answer.read && !UNANSWERABLE_OFFLINE.contains(&request.kind) {
+                if !answer.read {
                     blind.push(format!("{place}: data {request:?}"));
                 }
             }
