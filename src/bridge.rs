@@ -1484,6 +1484,11 @@ fn collect(
                     // A substance question, answered from the use-count VARIABLE the group
                     // declares for it - see `core::substance`.
                     (other, _) if crate::core::substance::owns(other) => {}
+                    // THE CLOCK AND THE DAY, answered by `ClockTime` from the clock the plugin
+                    // already sends - see `BoundContext::query`.
+                    (other, _)
+                        if crate::core::clock::ClockTime::owns(other)
+                            || crate::core::clock::ClockTime::owns_day(other) => {}
                     // A weather question, answered from the weather VARIABLE the group
                     // declares - see `core::scene`.
                     (other, _) if crate::core::scene::variable_read_by(other).is_some() => {}

@@ -247,13 +247,14 @@ impl IGuardContext for BoundContext<'_> {
     }
 
     fn query(&self, name: &str, arguments: &[GuardValue]) -> GuardValue {
-        // Clock queries answered from search state
-        if let Some(state) = self.state
-            && ClockTime::owns(name)
-        {
-            let day_minutes = state.day_minutes();
-            let day_counter = self.world.day_counter();
-            return ClockTime::answer(name, arguments, day_minutes, day_counter);
+        // Clock queries answered from search state, or from the world's clock where there is
+        // no state yet - which is the time the search starts at. Never asked of the plugin:
+        // `ClockTime` is the game's own table, and the plugin already sends the clock.
+        if ClockTime::owns(name) {
+            let day_minutes = self
+                .state
+                .map_or_else(|| self.world.day_minutes(), |state| state.day_minutes());
+            return ClockTime::answer(name, arguments, day_minutes, self.world.day_counter());
         }
 
         // The day, which is not the clock. A search's `PassTime` moves the time of day and

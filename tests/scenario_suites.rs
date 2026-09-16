@@ -45,7 +45,8 @@
 use std::collections::HashSet;
 
 use lookahead_engine::bridge::{
-    LookAheadAnswer, LookAheadRequest, NodeRef, Questions, SnapshotWorld, WorldSnapshot, answer,
+    DataKind, LookAheadAnswer, LookAheadRequest, NodeRef, Questions, SnapshotWorld, WorldSnapshot,
+    answer,
 };
 use lookahead_engine::core::types::{DialogueNodeId, Novelty};
 use lookahead_engine::index::{Index, build_group_graph, read_index};
@@ -306,6 +307,72 @@ fn stage(
         .collect();
 
     Some(staged)
+}
+
+/// What an offline world cannot answer for any save, because no save records it.
+///
+/// A question here reads Unknown offline, which is permissive. It is listed rather than
+/// tolerated wholesale so that a NEW gap fails the check below instead of joining it quietly.
+const UNANSWERABLE_OFFLINE: [DataKind; 1] = [
+    // Profile state, kept beside the substance counters rather than in a save - see
+    // `core::game_mode`.
+    DataKind::HardcorePlaythroughCompleted,
+];
+
+/// Every question a suite's groups ask is answered by the world the offline run stages.
+///
+/// WHY THIS EXISTS: an unanswered question reads Unknown, and Unknown is permissive, so a
+/// suite over a group that asks something the fixtures cannot answer passes by NOT SEEING
+/// rather than by being right - the all-seen suite once guarded on five such functions
+/// (de-eb2d). Crossing the questions against the staged answers catches that per group, and
+/// the list above says which gaps are known and why.
+#[test]
+fn every_question_the_suites_ask_is_answered_offline() {
+    let Some(path) = common::shipped_index() else {
+        eprintln!("no shipped index; skipping.");
+        return;
+    };
+    if common::actors().is_none() {
+        eprintln!("no actor table; skipping.");
+        return;
+    }
+    let index = read_index(&path).expect("the shipped index reads");
+
+    let mut blind: Vec<String> = Vec::new();
+    for suite in &suites::table().suites {
+        if suite.disabled.is_some() {
+            continue;
+        }
+
+        for scenario in &suite.scenarios {
+            let Some(staged) = stage(&index, suite, scenario) else {
+                continue;
+            };
+            let world = &staged.request.world;
+            let place = format!(
+                "{}/{} (group of {})",
+                suite.suite, scenario.save, scenario.conversation
+            );
+
+            for key in &staged.questions.queries {
+                if !world.queries.contains_key(key) {
+                    blind.push(format!("{place}: query {key}"));
+                }
+            }
+
+            for (request, answer) in staged.questions.data.iter().zip(&world.data_values) {
+                if !answer.read && !UNANSWERABLE_OFFLINE.contains(&request.kind) {
+                    blind.push(format!("{place}: data {request:?}"));
+                }
+            }
+        }
+    }
+
+    assert!(
+        blind.is_empty(),
+        "offline runs cannot see these, so a suite over them passes by not seeing:\n{}",
+        blind.join("\n"),
+    );
 }
 
 #[test]
