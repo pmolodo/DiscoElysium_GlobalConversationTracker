@@ -99,7 +99,6 @@ use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
-use lookahead_engine::symbolic::known::GroupShape;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 
@@ -242,7 +241,6 @@ where
             .with_world(&world)
             .with_constant_clock(DataLayout::group_passes_time(graph));
         let seed = seed_of(graph, &world, &vars).expect("room for a seed");
-        let shape = GroupShape::of(graph);
 
         // THE WHOLE MENU IN ONE CALL, which is what a request is. This asked the options one
         // at a time until the per-option path was deleted; the sweep is about what an
@@ -260,15 +258,7 @@ where
             ..Default::default()
         };
         let began = Instant::now();
-        let answers = answer_starts(
-            graph,
-            &world,
-            &request,
-            novelty,
-            &mut compiler,
-            &seed,
-            &shape,
-        );
+        let answers = answer_starts(graph, &world, &request, novelty, &mut compiler, &seed);
         let found = answers
             .iter()
             .filter(|answer| answer.best > Novelty::SeenThisGame as i32)

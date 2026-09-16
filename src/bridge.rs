@@ -1846,13 +1846,6 @@ where
         .with_starts(graph, &starts_of(request));
     let seed = seed_of(graph, world, &vars)?;
 
-    // ONCE FOR THE MENU, like the manager and the compiler above. The parent map and the
-    // SCC decomposition are facts about the LINKS - no start, no world, no budget - and
-    // every option below wants the same ones. Each used to build its own: twenty-four
-    // Tarjan passes over conversation 631's 4,514 entries for one answer, which
-    // `measurements/per_start_setup.rs` priced at 246 ms a menu. See `GroupShape`.
-    let shape = GroupShape::of(graph);
-
     Some(answer_starts(
         graph,
         world,
@@ -1860,8 +1853,27 @@ where
         novelty,
         &mut compiler,
         &seed,
-        &shape,
     ))
+}
+
+/// The group as one menu can walk it, with the shape and the novelty that go with it.
+///
+/// THE ONE PLACE A MENU'S GRAPH IS TRIMMED, for [`answer_starts`] and the menu measurement
+/// alike - see [`crate::symbolic::trim`].
+///
+/// THE SHAPE IS BUILT HERE, ONCE FOR THE MENU. The parent map and the SCC decomposition are
+/// facts about the links, which trimming is what changes; every option below wants the same
+/// ones. Each option used to build its own: twenty-four Tarjan passes over conversation 631's
+/// 4,514 entries for one answer, which `measurements/per_start_setup.rs` priced at 246 ms a
+/// menu. See `GroupShape`.
+pub fn walkable_menu(
+    graph: &LookAheadGraph,
+    compiler: &mut GuardCompiler<'_>,
+    starts: &[DialogueNodeId],
+) -> (crate::symbolic::trim::Trimmed, GroupShape) {
+    let trimmed = crate::symbolic::trim::trimmed(graph, compiler, starts);
+    let shape = GroupShape::of(&trimmed.graph);
+    (trimmed, shape)
 }
 
 /// The answers for one request, against a manager and a compiler somebody else built.
@@ -1887,17 +1899,28 @@ where
 ///
 /// A separate position and baseline is retained for each roll, so a check is two contestants.
 pub fn answer_starts<'a, F: Fn(DialogueNodeId) -> Novelty>(
-    graph: &LookAheadGraph,
+    group: &LookAheadGraph,
     world: &dyn ILookAheadWorld,
     request: &LookAheadRequest,
     novelty: &F,
     compiler: &mut GuardCompiler<'a>,
     seed: &BDDFunction,
-    shape: &GroupShape,
 ) -> Vec<LookAheadAnswer> {
     use crate::symbolic::menu::{self, Contestant};
     use crate::symbolic::search::Search;
     let began = std::time::Instant::now();
+    // THE GROUP AS THIS MENU CAN WALK IT, and what there is to find in it - see
+    // [`walkable_menu`]. Every search below sees the trimmed links and the trimmed novelty.
+    let starts: Vec<DialogueNodeId> = request
+        .starts
+        .iter()
+        .map(|start| DialogueNodeId::from(*start))
+        .collect();
+    let (trimmed, shape) = walkable_menu(group, compiler, &starts);
+    let graph = &trimmed.graph;
+    let shape = &shape;
+    let reachable_novelty = trimmed.novelty(novelty);
+    let novelty = &reachable_novelty;
     let mut answers = Vec::new();
     let mut contestants = Vec::new();
     let mut indices = Vec::new();
@@ -2397,15 +2420,7 @@ mod branch_wire_tests {
             starts: starts.iter().map(|start| NodeRef::from(*start)).collect(),
             ..Default::default()
         };
-        answer_starts(
-            graph,
-            world,
-            &request,
-            &novelty,
-            &mut compiler,
-            &seed,
-            &GroupShape::of(graph),
-        )
+        answer_starts(graph, world, &request, &novelty, &mut compiler, &seed)
     }
 
     /// What the wire calls an outcome, so a test can find the answer it wanted.

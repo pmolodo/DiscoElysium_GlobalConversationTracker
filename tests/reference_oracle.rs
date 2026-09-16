@@ -45,7 +45,7 @@ use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated::on_its_own_thread;
-use lookahead_engine::symbolic::known::{GroupShape, Known};
+use lookahead_engine::symbolic::known::Known;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::world::ILookAheadWorld;
@@ -355,15 +355,7 @@ fn the_driver_and_the_shipped_call_find_what_the_reference_walk_finds() {
                 starts: vec![NodeRef::from(start)],
                 ..Default::default()
             };
-            let answers = answer_starts(
-                &graph,
-                &world,
-                &request,
-                &novelty,
-                &mut compiler,
-                &seed,
-                &GroupShape::of(&graph),
-            );
+            let answers = answer_starts(&graph, &world, &request, &novelty, &mut compiler, &seed);
             let answer = answers.into_iter().next().expect("one start, one answer");
 
             (answer.best, answer, began.elapsed().as_millis())

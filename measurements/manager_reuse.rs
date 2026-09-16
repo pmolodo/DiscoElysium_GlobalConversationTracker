@@ -93,7 +93,6 @@ use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
-use lookahead_engine::symbolic::known::GroupShape;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 
@@ -182,7 +181,6 @@ fn main() {
             eprintln!("no room for the manager; skipping.");
             return;
         };
-        let shape = GroupShape::of(&graph);
 
         // Entries that will be marked seen, one more per round, in a fixed order so two
         // runs vary the world the same way.
@@ -241,15 +239,7 @@ fn main() {
                 ..Default::default()
             };
             let began = Instant::now();
-            let answers = answer_starts(
-                &graph,
-                &world,
-                &request,
-                &novelty,
-                &mut compiler,
-                &seed,
-                &shape,
-            );
+            let answers = answer_starts(&graph, &world, &request, &novelty, &mut compiler, &seed);
             let found = answers
                 .iter()
                 .filter(|answer| answer.best > Novelty::SeenThisGame as i32)

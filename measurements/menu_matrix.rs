@@ -143,7 +143,6 @@ use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
-use lookahead_engine::symbolic::known::GroupShape;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 use lookahead_engine::symbolic::{menu, novelty_search};
@@ -452,10 +451,13 @@ where
             .with_world(&world)
             .with_constant_clock(DataLayout::group_passes_time(graph));
         let seed = seed_of(graph, &world, &vars).expect("room for a seed");
-        // WORKED OUT ONCE FOR THE MENU, which is what the bridge does: the parent map and
-        // the order are facts about the links, so a menu of eight options builds them once
-        // rather than eight times. See `GroupShape::of`.
-        let shape = GroupShape::of(graph);
+        // THE GROUP AS THIS MENU CAN WALK IT, and its shape, through the call the bridge makes,
+        // so a row pays what a player's menu pays for it. See `bridge::walkable_menu`.
+        let (trimmed, shape) =
+            lookahead_engine::bridge::walkable_menu(graph, &mut compiler, starts);
+        let reachable_novelty = trimmed.novelty(novelty);
+        let novelty = &reachable_novelty;
+        let graph = &trimmed.graph;
         let setup = began.elapsed();
 
         // WHAT THE PLUGIN ASKS FOR, taken from the product rather than restated here, so a

@@ -44,7 +44,6 @@ use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::budget::DiagramBudget;
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
-use lookahead_engine::symbolic::known::GroupShape;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 
@@ -129,7 +128,6 @@ fn main() {
         "round", "verdict", "nodes", "asked", "ms"
     );
 
-    let shape = GroupShape::of(&graph);
     let mut counts: Vec<usize> = Vec::new();
     for round in 1..=rounds {
         {
@@ -170,15 +168,8 @@ fn main() {
                         ..Default::default()
                     };
                     let began = std::time::Instant::now();
-                    let answers = answer_starts(
-                        &graph,
-                        &world,
-                        &request,
-                        &novelty,
-                        &mut compiler,
-                        &seed,
-                        &shape,
-                    );
+                    let answers =
+                        answer_starts(&graph, &world, &request, &novelty, &mut compiler, &seed);
                     let took = began.elapsed();
                     let answer = answers.into_iter().next().expect("one start, one answer");
                     (

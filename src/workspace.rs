@@ -22,9 +22,12 @@
 //!
 //! ## What is kept and what is rebuilt, which is not what the issue assumed
 //!
-//! KEPT: the graph, the layout, the manager ([`DataVars`]) and the [`GroupShape`].
-//! `DataLayout::for_group` reads the world through `money()` alone - the money ceiling - so
-//! the layout, and the manager sized from it, survives everything else the world does.
+//! KEPT: the graph, the layout and the manager ([`DataVars`]). `DataLayout::for_group` reads
+//! the world through `money()` alone - the money ceiling - so the layout, and the manager
+//! sized from it, survives everything else the world does.
+//!
+//! NOT THE GROUP'S SHAPE: each menu walks the group trimmed to what its world lets it enter,
+//! and works the shape out from that - see `bridge::walkable_menu`.
 //!
 //! NOTHING ELSE IS KEPT ACROSS REQUESTS. Settled backward passes used to be, on a key of
 //! their own - de-znov.3 - and they halved a served request: twelve requests of eight starts
@@ -89,7 +92,6 @@ use crate::symbolic::budget::DiagramBudget;
 use crate::symbolic::data_layout::DataLayout;
 use crate::symbolic::guard_formula::GuardCompiler;
 use crate::symbolic::isolated;
-use crate::symbolic::known::GroupShape;
 use crate::symbolic::reachability::seed_of;
 use crate::symbolic::vars::DataVars;
 use crate::world::ILookAheadWorld;
@@ -365,7 +367,6 @@ fn own(opening: Opening, inbox: Receiver<Job>, ready: Sender<bool>) {
         let _ = ready.send(false);
         return;
     };
-    let shape = GroupShape::of(&graph);
     if ready.send(true).is_err() {
         return;
     }
@@ -426,15 +427,7 @@ fn own(opening: Opening, inbox: Receiver<Job>, ready: Sender<bool>) {
             }
         };
 
-        let answers = answer_starts(
-            &graph,
-            &world,
-            request,
-            &novelty,
-            &mut compiler,
-            &seed,
-            &shape,
-        );
+        let answers = answer_starts(&graph, &world, request, &novelty, &mut compiler, &seed);
 
         // A caller that has gone away is not an error - it means the request was abandoned,
         // and the next one is already waiting.

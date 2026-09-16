@@ -33,7 +33,6 @@ use lookahead_engine::index::{build_group_graph, read_index};
 use lookahead_engine::symbolic::data_layout::DataLayout;
 use lookahead_engine::symbolic::guard_formula::GuardCompiler;
 use lookahead_engine::symbolic::isolated;
-use lookahead_engine::symbolic::known::GroupShape;
 use lookahead_engine::symbolic::reachability::seed_of;
 use lookahead_engine::symbolic::vars::DataVars;
 
@@ -228,7 +227,6 @@ fn answers_on_this_thread(
         .with_world(&world)
         .with_constant_clock(DataLayout::group_passes_time(graph));
     let seed = seed_of(graph, &world, &vars).expect("room for a seed");
-    let shape = GroupShape::of(graph);
 
     let novelty = |id: DialogueNodeId| {
         let node = NodeRef::from(id);
@@ -248,7 +246,6 @@ fn answers_on_this_thread(
         &novelty,
         &mut compiler,
         &seed,
-        &shape,
     ))
 }
 
